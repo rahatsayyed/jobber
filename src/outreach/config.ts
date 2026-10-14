@@ -1,0 +1,48 @@
+// src/outreach/config.ts
+export interface OutreachConfig {
+  linkedinMaxInvitesPerWeek: number;
+  linkedinMaxMessagesPerWeek: number;
+  naukriMaxAppliesPerDay: number;
+  naukriMaxMessagesPerDay: number;
+  companyContactLimit: number;
+  speculativeCompanyLimit: number;
+  quietStartHour: number;
+  quietEndHour: number;
+}
+
+const DEFAULTS: OutreachConfig = {
+  linkedinMaxInvitesPerWeek: 100,
+  linkedinMaxMessagesPerWeek: 100,
+  naukriMaxAppliesPerDay: 30,
+  naukriMaxMessagesPerDay: 40,
+  companyContactLimit: 5,
+  speculativeCompanyLimit: 2,
+  quietStartHour: 1,
+  quietEndHour: 7,
+};
+
+const ENV_KEYS: Record<keyof OutreachConfig, string> = {
+  linkedinMaxInvitesPerWeek: 'LINKEDIN_MAX_INVITES_PER_WEEK',
+  linkedinMaxMessagesPerWeek: 'LINKEDIN_MAX_MESSAGES_PER_WEEK',
+  naukriMaxAppliesPerDay: 'NAUKRI_MAX_APPLIES_PER_DAY',
+  naukriMaxMessagesPerDay: 'NAUKRI_MAX_MESSAGES_PER_DAY',
+  companyContactLimit: 'COMPANY_CONTACT_LIMIT',
+  speculativeCompanyLimit: 'SPECULATIVE_COMPANY_LIMIT',
+  quietStartHour: 'QUIET_HOURS_START',
+  quietEndHour: 'QUIET_HOURS_END',
+};
+
+function parse(value: string | undefined, fallback: number, max: number): number {
+  if (value === undefined || value.trim() === '') return fallback;
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 0 && n <= max ? n : fallback;
+}
+
+export function loadOutreachConfig(env: NodeJS.ProcessEnv = process.env): OutreachConfig {
+  const config = { ...DEFAULTS };
+  for (const key of Object.keys(DEFAULTS) as (keyof OutreachConfig)[]) {
+    const max = key.endsWith('Hour') ? 23 : 100000;
+    config[key] = parse(env[ENV_KEYS[key]], DEFAULTS[key], max);
+  }
+  return config;
+}
