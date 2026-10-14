@@ -12,6 +12,7 @@ export interface FakeSite {
   popup?: boolean;
   clickTimeout?: boolean;
   redirects?: Record<string, string>; // requested path -> final URL
+  noResponse?: boolean; // waitForResponse rejects (no send-invitation response seen)
 }
 export type FakeLauncher = LiLauncher & { closed: boolean; launches: number; browsers: Array<{ closed: boolean }>; storageStateCalls: number };
 
@@ -45,11 +46,15 @@ export function makeFakeLauncher(site: FakeSite, log: string[]): FakeLauncher {
       },
       fill: async () => { log.push(`fill:${sel}`); },
       textContent: async () => elementsFor(sel)[idx]?.text ?? null,
-      waitFor: async () => {},
+      waitFor: async () => {
+        const n = elementsFor(sel).length;
+        if (all ? n === 0 : n <= idx) throw new Error('waitFor timeout');
+      },
       evaluateAll: async <T>(fn: (els: any[]) => T) =>
         fn((all ? elementsFor(sel) : elementsFor(sel).slice(idx, idx + 1)).map((e) => ({
           innerText: e.text, textContent: e.text,
           getAttribute: (n: string) => e.attrs?.[n] ?? null,
+          getBoundingClientRect: () => ({ x: e.box?.x ?? 0, y: e.box?.y ?? 0, height: e.box?.height ?? 0, width: 10 }),
           offsetWidth: e.visible === false ? 0 : 10, offsetHeight: e.visible === false ? 0 : 10,
           getClientRects: () => (e.visible === false ? [] : [{}]),
         }))),
@@ -72,7 +77,10 @@ export function makeFakeLauncher(site: FakeSite, log: string[]): FakeLauncher {
       }) as LiPage['evaluate'],
       locator: (sel: string) => loc(sel, 0, true),
       waitForTimeout: async () => {},
-      waitForResponse: async () => ({}),
+      waitForResponse: async () => {
+        if (site.noResponse) throw new Error('timeout');
+        return {};
+      },
       goBack: async () => { log.push('goBack'); },
       keyboard: { press: async (k: string) => { log.push(`press:${k}`); } },
       screenshot: async () => Buffer.from('png'),
