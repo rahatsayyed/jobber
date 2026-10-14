@@ -56,6 +56,20 @@ describe('loadBackupConfig', () => {
     expect(ok.retain.weekly).toBe(365);
     expect(ok.problems).toEqual([]);
   });
+  it('BACKUP_DIR at the root or inside user-data, config, secrets is a problem', () => {
+    for (const d of ['.', 'user-data/b', 'config', 'secrets/x', path.join(root, 'user-data')]) {
+      const c = loadBackupConfig({ BACKUP_DIR: d, BACKUP_AGE_RECIPIENT: KEY }, root);
+      expect(c.dir, d).toBeNull();
+      expect(c.configured, d).toBe(false);
+      expect(c.problems.length, d).toBe(1);
+    }
+    expect(loadBackupConfig({ BACKUP_DIR: '.backups' }, root).dir).toBe(path.join(root, '.backups'));
+  });
+  it('rclone remote rejects leading non-alnum and dotdot', () => {
+    for (const v of ['-x:p', '.x:p', 'gdrive:../up']) {
+      expect(loadBackupConfig({ BACKUP_RCLONE_REMOTE: v }, root).rcloneRemote, v).toBeNull();
+    }
+  });
   it('rclone remote shape', () => {
     expect(loadBackupConfig({ BACKUP_RCLONE_REMOTE: 'gdrive:jobber/backups' }, root).rcloneRemote).toBe('gdrive:jobber/backups');
     const bad = loadBackupConfig({ BACKUP_RCLONE_REMOTE: 'no-colon; rm -rf' }, root);

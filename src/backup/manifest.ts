@@ -39,6 +39,7 @@ export function parseManifest(text: string): Manifest {
   if (m.commit !== null && typeof m.commit !== 'string') throw new Error('manifest commit is invalid');
   if (typeof m.includes_secrets !== 'boolean') throw new Error('manifest includes_secrets is invalid');
   if (!Array.isArray(m.files)) throw new Error('manifest files is invalid');
+  const seen = new Set<string>();
   const files = m.files.map((f: unknown) => {
     if (!f || typeof f !== 'object') throw new Error('manifest file entry is invalid');
     const e = f as Record<string, unknown>;
@@ -49,6 +50,8 @@ export function parseManifest(text: string): Manifest {
     if (typeof e.bytes !== 'number' || !Number.isInteger(e.bytes) || e.bytes < 0) {
       throw new Error('manifest file bytes is invalid');
     }
+    if (seen.has(e.path)) throw new Error('manifest file path is duplicated');
+    seen.add(e.path);
     return { path: e.path, sha256: e.sha256, bytes: e.bytes };
   });
   const db = m.db as Record<string, unknown> | null;
@@ -59,6 +62,7 @@ export function parseManifest(text: string): Manifest {
     throw new Error('manifest db tables is invalid');
   }
   for (const [k, v] of Object.entries(rawTables as Record<string, unknown>)) {
+    if (!/^[A-Za-z0-9_]+$/.test(k)) throw new Error('manifest db table name is invalid');
     if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) throw new Error('manifest db table count is invalid');
     tables[k] = v;
   }
@@ -72,11 +76,11 @@ export function parseManifest(text: string): Manifest {
   };
 }
 
-/** `actual` optionally lists every path present, so files not in the manifest are reported as extra. */
+/** `actual` lists every path present (the caller must exclude manifest.json itself), so files not in the manifest are reported as extra. */
 export function verifyFiles(
   m: Manifest,
   hashOf: (p: string) => string | null,
-  actual: string[] = [],
+  actual: string[],
 ): { ok: boolean; missing: string[]; mismatched: string[]; extra: string[] } {
   const missing: string[] = [];
   const mismatched: string[] = [];

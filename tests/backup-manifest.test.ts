@@ -34,6 +34,11 @@ describe('manifest', () => {
     expect(() => parseManifest(withFile({ path: 'a', sha256: H, bytes: 1.5 }))).toThrow();
     expect(() => parseManifest(JSON.stringify({ ...base(), created_at: 'nope' }))).toThrow();
   });
+  it('rejects duplicate paths and bad table names', () => {
+    const f = { path: 'a', sha256: H, bytes: 1 };
+    expect(() => parseManifest(JSON.stringify({ ...base(), files: [f, f] }))).toThrow();
+    expect(() => parseManifest(JSON.stringify({ ...base(), db: { path: 'data.sqlite', tables: { 'a-b': 1 } } }))).toThrow();
+  });
   it('verifyFiles reports missing, mismatched and extra', () => {
     const m = buildManifest({
       ...base(),

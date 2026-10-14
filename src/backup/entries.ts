@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { isSafeArchivePath } from './manifest.js';
 
 export interface ArchiveEntry {
@@ -27,20 +28,45 @@ const ALWAYS_EXCLUDED: { path: string; why: string }[] = [
   { path: 'data.sqlite-journal', why: 'journal file; the snapshot is used instead' },
 ];
 
+const EXCLUDED_DIR_NAMES = new Set(['node_modules', '.git', '.ccgram', 'reports', 'debug', '.backups', '.update']);
+const EXCLUDED_SUFFIXES = ['.bak', '.pdf', '.sqlite-wal', '.sqlite-shm', '.sqlite-journal'];
+
+/**
+ * True when a root-relative path matches the "excluded always" patterns at any depth.
+ * The archiver (Task 9) MUST apply this when expanding `dir` entries (user-data/, secrets/)
+ * and MUST NOT follow symlinks.
+ */
+export function isExcludedName(relPath: string): boolean {
+  const segs = relPath.split(/[\\/]+/).filter(Boolean);
+  if (segs.length === 0) return false;
+  const base = segs[segs.length - 1].toLowerCase();
+  if (EXCLUDED_SUFFIXES.some((x) => base.endsWith(x))) return true;
+  if (segs.some((x) => EXCLUDED_DIR_NAMES.has(x))) return true;
+  for (let i = 0; i + 2 < segs.length; i++) {
+    if (segs[i] === 'scripts' && segs[i + 1] === 'eval' && segs[i + 2] === 'runs') return true;
+  }
+  return false;
+}
+
+const clean = (s: string): string => s.replace(/[\x00-\x1f\x7f]/g, '?');
+
 /** Entries come from an explicit allow-list; the project root is never walked. */
 export function planEntries(
   root: string,
-  ex: { exists(p: string): boolean; list(dir: string): string[] },
+  ex: { exists(p: string): boolean; list(dir: string): string[]; isFile?: (p: string) => boolean },
   cfg: { includeSecrets: boolean },
   dbSnapshotPath: string,
 ): { entries: ArchiveEntry[]; excluded: Excluded[] } {
-  void root;
+  const resolved = path.resolve(dbSnapshotPath);
+  if (resolved === path.resolve(root, 'data.sqlite') || /-(wal|shm|journal)$/.test(resolved)) {
+    throw new Error('dbSnapshotPath must be a snapshot copy, not the live database or its WAL files');
+  }
   const entries: ArchiveEntry[] = [];
   const excluded: Excluded[] = [];
 
   const add = (e: ArchiveEntry): void => {
     if (!isSafeArchivePath(e.archivePath)) {
-      excluded.push({ path: e.archivePath, why: 'unsafe archive path' });
+      excluded.push({ path: clean(e.archivePath), why: 'unsafe archive path' });
       return;
     }
     entries.push(e);
@@ -59,9 +85,11 @@ export function planEntries(
 
   if (ex.exists('config')) {
     for (const name of ex.list('config')) {
-      if (name.endsWith('.bak')) {
-        excluded.push({ path: `config/${name}`, why: 'backup copy (*.bak)' });
-      } else if (name.endsWith('.json')) {
+      if (name.includes('/') || name.includes('\\')) {
+        excluded.push({ path: clean(`config/${name}`), why: 'unsafe name' });
+      } else if (name.endsWith('.bak')) {
+        excluded.push({ path: clean(`config/${name}`), why: 'backup copy (*.bak)' });
+      } else if (name.endsWith('.json') && (!ex.isFile || ex.isFile(`config/${name}`))) {
         add({ archivePath: `config/${name}`, source: `config/${name}`, kind: 'file', why: 'local tuning may be uncommitted' });
       }
     }

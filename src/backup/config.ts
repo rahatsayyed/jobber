@@ -12,7 +12,7 @@ export interface BackupConfig {
 }
 
 const RECIPIENT_RE = /^age1[a-z0-9]{50,}$/;
-const REMOTE_RE = /^[A-Za-z0-9_.-]+:[A-Za-z0-9_./ -]*$/;
+const REMOTE_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*:[A-Za-z0-9_./ -]*$/;
 
 function retention(env: NodeJS.ProcessEnv, key: string, def: number, problems: string[]): number {
   const raw = env[key]?.trim();
@@ -31,7 +31,16 @@ export function loadBackupConfig(env: NodeJS.ProcessEnv, root: string): BackupCo
   const rawDir = env.BACKUP_DIR?.trim();
   if (rawDir) {
     if (/[\0\r\n]/.test(rawDir)) problems.push('BACKUP_DIR contains control characters');
-    else dir = path.isAbsolute(rawDir) ? path.normalize(rawDir) : path.resolve(root, rawDir);
+    else {
+      const d = path.isAbsolute(rawDir) ? path.normalize(rawDir) : path.resolve(root, rawDir);
+      const rel = path.relative(path.resolve(root), d);
+      const top = rel.split(path.sep)[0];
+      if (rel === '' || ['user-data', 'config', 'secrets'].includes(top)) {
+        problems.push('BACKUP_DIR must not be the project root or inside user-data, config or secrets');
+      } else {
+        dir = d;
+      }
+    }
   }
 
   let recipient: string | null = null;
@@ -49,7 +58,7 @@ export function loadBackupConfig(env: NodeJS.ProcessEnv, root: string): BackupCo
   let rcloneRemote: string | null = null;
   const rawRemote = env.BACKUP_RCLONE_REMOTE?.trim();
   if (rawRemote) {
-    if (REMOTE_RE.test(rawRemote)) rcloneRemote = rawRemote;
+    if (REMOTE_RE.test(rawRemote) && !rawRemote.includes('..')) rcloneRemote = rawRemote;
     else problems.push('BACKUP_RCLONE_REMOTE must look like name:path');
   }
 
