@@ -91,6 +91,62 @@ describe('SNAPSHOT_SRC', () => {
   });
 });
 
+// Fake-document harness: runs SNAPSHOT_SRC against fake elements with explicit computed style and rect.
+type Sty = Record<string, string>;
+const BASE: Sty = { display: 'block', visibility: 'visible', opacity: '1', fontSize: '16px', textIndent: '0px',
+  color: 'rgb(0, 0, 0)', backgroundColor: 'rgba(0, 0, 0, 0)', overflow: 'visible', overflowX: 'visible', overflowY: 'visible',
+  clipPath: 'none', clip: 'auto', webkitTextFillColor: 'rgb(0, 0, 0)' };
+function liveBodyText(style: Sty, text: string, rect = { width: 200, height: 20, right: 300, bottom: 40 }): string {
+  const mk = (tag: string, parent: any, st: Sty, r: any): any => ({
+    tagName: tag, nodeType: 1, parentElement: parent, childNodes: [] as any[],
+    hasAttribute: () => false, getAttribute: () => null, querySelectorAll: () => [],
+    getBoundingClientRect: () => r, _st: st,
+  });
+  const body = mk('BODY', null, { ...BASE, backgroundColor: 'rgb(255, 255, 255)' }, { width: 1000, height: 800, right: 1000, bottom: 800 });
+  const div = mk('DIV', body, { ...BASE, ...style }, rect);
+  div.childNodes.push({ nodeType: 3, nodeValue: text });
+  body.childNodes.push(div);
+  const fakeDoc = { title: '', body, querySelector: () => null, querySelectorAll: () => [] };
+  const run = new Function('document', 'window', 'location', 'getComputedStyle', 'return (' + SNAPSHOT_SRC + ')');
+  const out = run(fakeDoc, { scrollX: 0, scrollY: 0 }, { href: 'https://www.linkedin.com/feed/', pathname: '/feed/' }, (e: any) => e._st);
+  return out.bodyText as string;
+}
+describe('SNAPSHOT_SRC leak paths (fake computed style)', () => {
+  it('shows ordinary text', () => { expect(liveBodyText({}, 'plain-ok')).toContain('plain-ok'); });
+  it('hides 1px overflow-hidden sr-only text', () => {
+    expect(liveBodyText({ overflow: 'hidden' }, 'srleak', { width: 1, height: 1, right: 5, bottom: 5 })).not.toContain('srleak');
+    expect(liveBodyText({ overflowX: 'clip' }, 'srleak2', { width: 200, height: 2, right: 205, bottom: 5 })).not.toContain('srleak2');
+  });
+  it('hides text under any non-none clip-path', () => {
+    for (const cp of ['inset(50%)', 'circle(0)', 'polygon(0 0)']) expect(liveBodyText({ clipPath: cp }, 'cpleak')).not.toContain('cpleak');
+  });
+  it('hides a clip rect with 1px sides', () => {
+    expect(liveBodyText({ clip: 'rect(1px, 1px, 1px, 1px)' }, 'cliprect')).not.toContain('cliprect');
+  });
+  it('hides text with transparent, background-matching or unparseable -webkit-text-fill-color', () => {
+    expect(liveBodyText({ webkitTextFillColor: 'rgba(0, 0, 0, 0)' }, 'fillleak')).not.toContain('fillleak');
+    expect(liveBodyText({ webkitTextFillColor: 'rgb(255, 255, 255)' }, 'fillleak2')).not.toContain('fillleak2');
+    expect(liveBodyText({ webkitTextFillColor: 'color(display-p3 1 0 0)' }, 'fillleak3')).not.toContain('fillleak3');
+  });
+  it('hides text-indent of -200px or more negative', () => {
+    expect(liveBodyText({ textIndent: '-200px' }, 'indleak')).not.toContain('indleak');
+    expect(liveBodyText({ textIndent: '-10px' }, 'indok')).toContain('indok');
+  });
+  it('hides opacity 0.04, font-size 5.5px and near-background colour', () => {
+    expect(liveBodyText({ opacity: '0.04' }, 'opleak')).not.toContain('opleak');
+    expect(liveBodyText({ fontSize: '5.5px' }, 'fsleak')).not.toContain('fsleak');
+    expect(liveBodyText({ color: 'rgb(250, 250, 250)', webkitTextFillColor: 'rgb(250, 250, 250)' }, 'nearleak')).not.toContain('nearleak');
+  });
+});
+describe('profile-hidden-tricks fixture', () => {
+  it('parses, and the visible sentence survives (the tricks are asserted in the owner-run parity test)', () => {
+    // The fixture builder only knows inline hiding rules (htmlVisible.ts); several tricks here need
+    // computed style, so the real assertion that none leak is the opt-in Chrome parity test below.
+    const s = buildSnapshotFromHtml(fx('profile-hidden-tricks.html'), U);
+    expect(s.bodyText).toContain('Visible tricks-page sentence');
+  });
+});
+
 import { describe as d, it as i } from 'vitest';
 const RUN = process.env.LINKEDIN_BROWSER_TESTS === 'true';
 (RUN ? d : d.skip)('SNAPSHOT_SRC parity in real Chrome (owner-run)', () => {
@@ -101,13 +157,14 @@ const RUN = process.env.LINKEDIN_BROWSER_TESTS === 'true';
     const browser = await launchRealChrome();
     try {
       const page = (await (await browser.newContext({ ...LINKEDIN_CONTEXT_OPTIONS })).newPage()) as any; // setContent is not in LiPage
-      for (const name of ['profile-injection.html', 'profile-not-connected.html', 'search-results.html']) {
+      for (const name of ['profile-injection.html', 'profile-not-connected.html', 'search-results.html', 'profile-hidden-tricks.html']) {
         await page.setContent(fx(name));
         const live = (await page.evaluate(SNAPSHOT_SRC)) as any;
         const built = buildSnapshotFromHtml(fx(name), U);
         expect(live.profile?.name ?? null).toBe(built.profile?.name ?? null);
         expect(live.results.length).toBe(built.results.length);
         expect(live.bodyText).not.toMatch(/ignore all previous|admin mode|attacker\.test|secrets\//i);
+        expect(live.bodyText).not.toMatch(/TRICK-[A-Z0-9-]+-LEAK/);
       }
     } finally { await browser.close(); }
   });

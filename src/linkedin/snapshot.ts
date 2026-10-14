@@ -10,7 +10,7 @@ import { extractAboutText } from './verify.js';
  * helpers that do not exist in the browser). Only reads the DOM. An element is invisible when it, or
  * any ancestor, is display:none, visibility hidden/collapse, opacity < 0.05, zero width or height,
  * font-size < 6px, more than 200px left of or above the page, aria-hidden="true", hidden, a closed
- * dialog, text-indent <= -999px, clipped to nothing, or has text colour equal to (within 8 per
+ * dialog, text-indent <= -200px, clipped to nothing, or has text colour equal to (within 8 per
  * channel) its resolved background. Anything computed that cannot be read fails closed (hidden).
  */
 export const SNAPSHOT_SRC = String.raw`(function () {
@@ -74,21 +74,33 @@ export const SNAPSHOT_SRC = String.raw`(function () {
       var f = parseFloat(cs.fontSize);
       if (isNaN(f) || f < 6) return true;
       var ti = parseFloat(cs.textIndent);
-      if (!isNaN(ti) && ti <= -999) return true;
-      if (cs.clipPath && /^inset\(\s*100%/.test(cs.clipPath)) return true;
-      if (cs.clip && /^rect\(0(px)?,?\s*0(px)?,?\s*0(px)?,?\s*0(px)?\)$/.test(cs.clip)) return true;
+      if (!isNaN(ti) && ti <= -200) return true;
+      var own = hasOwnText(e);
+      var cp = String(cs.clipPath || 'none').trim().toLowerCase();
+      if (own && cp !== 'none') return true;
+      if (cp.indexOf('inset(100%') === 0) return true;
+      var clp = String(cs.clip || 'auto').trim().toLowerCase();
+      if (own && clp !== 'auto') return true;
       var r = e.getBoundingClientRect();
       if (!r) return true;
       if (tag !== 'HTML' && tag !== 'BODY' && (r.width <= 0 || r.height <= 0)) return true;
+      var ovs = String(cs.overflow || '') + ' ' + String(cs.overflowX || '') + ' ' + String(cs.overflowY || '');
+      if ((ovs.indexOf('hidden') >= 0 || ovs.indexOf('clip') >= 0) && (r.width <= 2 || r.height <= 2)) return true;
       var sx = window.scrollX || 0, sy = window.scrollY || 0;
       if (r.right + sx < -200 || r.bottom + sy < -200) return true;
-      if (hasOwnText(e)) {
-        var c = parseRgb(cs.color);
-        if (!c) return true;
-        if (c[3] < 0.05) return true;
+      if (own) {
         var bg = resolveBg(e);
         if (!bg) return true;
-        if (Math.abs(c[0] - bg[0]) <= 8 && Math.abs(c[1] - bg[1]) <= 8 && Math.abs(c[2] - bg[2]) <= 8) return true;
+        var fill = cs.webkitTextFillColor;
+        if (fill === undefined && cs.getPropertyValue) fill = cs.getPropertyValue('-webkit-text-fill-color');
+        var cols = [cs.color];
+        if (fill) cols.push(fill);
+        for (var ci = 0; ci < cols.length; ci++) {
+          var c = parseRgb(cols[ci]);
+          if (!c) return true;
+          if (c[3] < 0.05) return true;
+          if (Math.abs(c[0] - bg[0]) <= 8 && Math.abs(c[1] - bg[1]) <= 8 && Math.abs(c[2] - bg[2]) <= 8) return true;
+        }
       }
       return false;
     }
