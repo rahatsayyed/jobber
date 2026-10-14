@@ -1,0 +1,45 @@
+{
+  "name": "jobber",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "user-data": "tsx scripts/user-data.ts",
+    "build": "tsc -p .",
+    "mcp:job-fetch": "tsx src/mcp/job-fetch.ts",
+    "mcp:resume": "tsx src/mcp/resume.ts",
+    "mcp:contacts": "tsx src/mcp/contacts.ts",
+    "mcp:email": "tsx src/mcp/email.ts",
+    "mcp:db": "tsx src/mcp/db.ts",
+    "mcp:gates": "tsx src/mcp/gates.ts",
+    "mcp:apply": "tsx src/mcp/apply.ts",
+    "mcp:connect": "tsx src/mcp/connect.ts",
+    "mcp:discover": "tsx src/mcp/discover.ts",
+    "eval:gen": "tsx scripts/eval/generate.ts",
+    "eval:metrics": "tsx scripts/eval/metrics.ts",
+    "eval:judge": "tsx scripts/eval/judge.ts",
+    "report": "tsx scripts/funnel-report.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@musistudio/claude-code-router": "^2.0.0",
+    "better-sqlite3": "^12.11.1",
+    "nodemailer": "^6.10.0",
+    "patchright": "^1.63.0",
+    "pdf-parse": "1.1.1",
+    "playwright": "^1.58.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.10.0",
+    "@types/nodemailer": "^6.4.17",
+    "@types/pdf-parse": "^1.1.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

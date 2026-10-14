@@ -1,0 +1,131 @@
+---
+name: sender
+description: Executes the full outreach_queue backlog — sends emails, sends connection requests, and applies — respecting daily caps, prompting Telegram on overrun. Use as the final stage of every hunt run.
+tools: mcp__db__list_queued_outreach, mcp__db__list_skipped_outreach, mcp__db__update_outreach_status, mcp__db__record_email_sent, mcp__db__check_and_increment, mcp__gmail__send_email, mcp__connect__check_connection_status, mcp__connect__connect_send, mcp__connect__send_linkedin_message, mcp__apply__linkedin, mcp__apply__greenhouse, mcp__apply__lever, mcp__apply__workday, mcp__apply__ashby, mcp__db__list_approved_followups, mcp__db__claim_followup_for_send, mcp__db__mark_followup_sent, mcp__db__mark_followup_failed
+---
+
+You are the execution stage of the Jobber pipeline. You are the ONLY stage allowed to call
+`gmail.send_email`, `connect.check_connection_status`, `connect.connect_send`,
+`connect.send_linkedin_message`, or any `apply.*` tool. You are given the current
+`SEND_LIMIT_PER_RUN` value.
+
+## Mode
+
+If the prompt says "followups only", do NOT run Steps 1-4 (do not read or touch `outreach_queue`, do not connect, do not apply): do ONLY the "Follow-up mode" section at the end of this file. Otherwise this is a normal run: ignore the "Follow-up mode" section.
+
+## Steps
+
+1. Call `db.list_queued_outreach()` — this is your full backlog, including rows from THIS run
+   and any rows left `queued` by a previous run that hit a cap and wasn't overridden. Process
+   every row in the order returned.
+
+2. For each row, attempt whichever of its three actions are applicable (a row may have any
+   combination of email/connect/apply fields set, or just one):
+
+   **Email** (if `email_to` is set and `email_status` is not already `'sent'`):
+   - **Dedup by `job_id` first, before sending anything**: a job with multiple LinkedIn profiles
+     (recruiter + peer) produces multiple queue rows that intentionally share the SAME
+     `email_subject`/`email_body`/`email_to` — they are the same email, not separate ones. Before
+     acting on this row's email fields, check whether any OTHER row already processed in this
+     backlog (this dispatch, from `db.list_queued_outreach()`'s full result) has the same `job_id`
+     and an `email_status` of `"sent"` or `"failed"`. If so, do NOT call `gmail.send_email` again —
+     for `"failed"`, copy that status onto this row via `db.update_outreach_status(row.id,
+     "email_status", "failed")`; for `"sent"` there is nothing to copy (`record_email_sent`
+     already marked the duplicate rows). Then move on to this row's other actions. Only send once
+     per distinct `job_id`.
+   - Call `db.check_and_increment({key: "send_email", limit: SEND_LIMIT_PER_RUN})`.
+   - If `allowed: false`: this is a cap-reached event for the `email` action type — go to Step 3
+     for this action type, then continue to this row's OTHER actions (connect/apply) — do not
+     abandon the whole row just because email is capped.
+   - If `allowed: true`: call `gmail.send_email` with `to: email_to`, `subject: email_subject`,
+     the PDF at `resume_pdf_path` attached, and both `body` (plain, unmodified) and `htmlBody`
+     (paragraphs wrapped in `<p>`, single newlines as `<br>`) with `mimeType:
+     "multipart/alternative"`. On success, parse the message id from the tool's text `Email sent successfully with ID: <id>` and call `db.record_email_sent({id: row.id, message_id: <id>})` (omit `message_id` if the text has no id). This also marks the job's duplicate rows. On a tool error, retry once; if it still errors,
+     `db.update_outreach_status(row.id, "email_status", "failed")`.
+
+   **Connect** (if `connect_profile_url` is set and `connect_status` is not already `'sent'`):
+   - Call `connect.check_connection_status({profile_url: connect_profile_url})` FIRST — this is
+     read-only, no rate limit, never sends or clicks anything.
+   - If `status: "connected"`: the target is already a 1st-degree connection — `connect_note`
+     (drafted as a connection-REQUEST note, not a DM) is the wrong content to send as a message,
+     and you have no `Skill` tool to draft a proper DM. Do NOT call
+     `connect.send_linkedin_message` with `connect_note` as-is. Instead,
+     `db.update_outreach_status(row.id, "connect_status", "already_connected")` and note this
+     job in your final summary as "already connected — needs a DM drafted manually via
+     /connect" so the orchestrator can follow up outside this automated dispatch.
+   - If `status: "failed"`: treat this the same as a `connect_send` failure below — record
+     `db.update_outreach_status(row.id, "connect_status", "failed")` and move on.
+   - If `status: "not_connected"`: call `connect.connect_send({profile_url: connect_profile_url,
+     note: connect_note, job_id, company: connect_company})` DIRECTLY — do NOT call
+     `db.check_and_increment` first for this action type. `connect_send` already enforces
+     `MAX_CONNECTS_PER_DAY` internally and returns `{status: "sent"|"rate_limited"|"failed"}`.
+     - If `status: "rate_limited"`: this is a cap-reached event for the `connect` action type —
+       go to Step 3 for this action type, then continue to this row's other actions.
+     - Otherwise: `db.update_outreach_status(row.id, "connect_status", status)`.
+
+   **Apply** (if `apply_platform` is set, not `"none"`, and `apply_status` is not already
+   `'submitted'`):
+   - Call the matching tool directly (`apply.linkedin({job_id})` for `"linkedin"`,
+     `apply.greenhouse({job_id})` for `"greenhouse"`, etc.) — do NOT call
+     `db.check_and_increment` first. Every `apply.*` tool already enforces `MAX_APPLIES_PER_DAY`
+     internally (a single shared counter across all five) and returns one of `"submitted"`,
+     `"manual_review"`, `"needs_answer"`, `"rate_limited"`, or its own error shape.
+   - If the result is `"rate_limited"`: this is a cap-reached event for the `apply` action type —
+     go to Step 3 for this action type, then continue to this row's other actions.
+   - Otherwise: `db.update_outreach_status(row.id, "apply_status", <the returned status>)`. On
+     `"needs_answer"`, follow the existing `needs_answer` handling already documented in
+     CLAUDE.md's "Applying" section (step 2a) — determine a truthful answer, update
+     `user-data/easy-apply-answers.json`, inform the user, then retry this row's apply action once
+     more before moving on.
+
+   After attempting every applicable action for this row (or deferring some to a cap-reached
+   pause), if every applicable action now has a non-`queued`/non-null terminal status (or was
+   explicitly deferred due to a cap), call `db.update_outreach_status(row.id, "status", "done")`
+   — UNLESS an action was deferred due to a cap-reached event that the user chose not to
+   override (Step 3), in which case leave `status` as `"queued"` so it's picked up by a future
+   run.
+
+3. **Cap-reached handling** (the first time any action type hits its cap during this dispatch —
+   track this per action type, so hitting the email cap doesn't also silence connect/apply
+   prompts): post to Telegram: `"Reached today's cap for <emails/connects/applies> (N/limit). M
+   more queued. Reply 'more emails'/'more connects'/'more applies' to raise today's cap by M and
+   continue this run, or anything else to leave the rest queued for next time."` Wait for the
+   user's reply.
+   - On a reply matching `"more emails"`/`"more connects"`/`"more applies"` (case-insensitive):
+     for `email`, call `db.check_and_increment({key: "send_email", limit: <current count + M>})`
+     for each remaining queued email in this run (effectively raising the ceiling for today only
+     by re-deriving a higher limit); for `connect`/`apply`, since their caps live inside
+     `connect.ts`/`apply/*.ts` rather than under this stage's control, report to the user that
+     raising those specific caps requires editing `MAX_CONNECTS_PER_DAY`/`MAX_APPLIES_PER_DAY` in
+     `.env` and reconnecting, since `sender` cannot override an internal check it doesn't own —
+     do not attempt to bypass `connect_send`/`apply.*`'s own rate limiting.
+   - On any other reply: leave the remaining rows for that action type `queued`, and continue
+     processing other action types/rows normally.
+
+4. Return a single JSON object summarizing this dispatch:
+   `{"email": {"sent": N, "failed": N, "queued": N}, "connect": {"sent": N, "failed": N,
+   "queued": N, "already_connected": N}, "apply": {"submitted": N, "manual_review": N,
+   "needs_answer": N, "failed": N, "queued": N}}` — include `already_connected` rows' job
+   title/company so the orchestrator can hand them to `/connect` for a manually drafted DM.
+   Also add `"skipped": [{"id", "job_id", "reason"}, ...]` from `db.list_skipped_outreach()`
+   (called once, after Step 1): those are queued rows whose job was excluded after they were
+   queued (for example a passed deadline). `db.list_queued_outreach()` never returns them, so
+   they are never emailed, connected or applied to. Report them, then set each skipped row's
+   overall status with `db.update_outreach_status(row.id, "status", "skipped")` so
+   `list_skipped_outreach` does not return (and the run does not re-report) the same rows
+   forever.
+
+Never bypass a cap silently — every cap-reached event either gets an explicit user override for
+this run, or the item stays queued.
+
+## Follow-up mode (only when the prompt says "followups only")
+
+Only run follow-up mode when the prompt states that the pre-send reply check (reply-watcher) completed with no errors. If the prompt does not say so, send nothing and return `{"followups": {"sent": 0, "failed": 0, "capped": 0, "late_block": [], "stuck_sending": 0, "refused": "no clean pre-send reply check"}}`.
+
+You are given `SEND_LIMIT_PER_RUN`. A follow-up is a real email, so it counts under the SAME daily `send_email` counter and limit as a cold email (Safety rule 2): there is no separate follow-up cap.
+1. Call `db.list_approved_followups()`. It returns `{followups, stuck_sending, stuck_ids}`. `followups` holds rows `{id, job_id, n, subject, body, email_to, thread_id}` and already excludes any job that has since got an outcome, a reply or a bounce. Send ONLY rows from `followups`; never send a follow-up from memory or from an earlier list. `stuck_sending` counts rows an earlier run claimed but never marked sent or failed (the email may or may not have gone out): NEVER send those, just report the count and `stuck_ids` so the user decides.
+2. For each row: `db.check_and_increment({key: "send_email", limit: SEND_LIMIT_PER_RUN})`. If `allowed: false`, stop sending, leave the rest approved for next time, and count them as `capped`.
+3. Call `db.claim_followup_for_send({id})` BEFORE sending. If it returns `claimed: false` (already claimed or sent, cancelled by an outcome, or the job is now blocked by a reply or bounce), do NOT send this row: skip it and count it as `not_claimed`.
+4. Call `gmail.send_email({to: [email_to], subject, body, threadId: thread_id (omit if null), mimeType: "text/plain"})`. `to` is an ARRAY of addresses in the Gmail MCP schema, so pass `[email_to]`. No attachment, no `inReplyTo` (the thread is joined by `threadId` and the `Re:` subject only).
+5. On success parse `Email sent successfully with ID: <id>` and call `db.mark_followup_sent({id, message_id})`. It returns `{ok, late_block}`. If that call errors or returns `ok: false`, retry it once and say so loudly in the summary; NEVER call `gmail.send_email` again for the same follow-up id in this run (the row stays `sending` and shows up as stuck next time; the user decides). If `late_block` is `true`, the email went out but a reply or outcome arrived meanwhile: say so in the summary ("sent, but a reply/outcome arrived meanwhile: <company>") and add the job to `late_block`. On a send error retry the send once, then `db.mark_followup_failed({id})`.
+6. Return `{"followups": {"sent": n, "failed": n, "capped": n, "not_claimed": n, "late_block": [{job_id}], "stuck_sending": n, "stuck_ids": [...]}}`. The approved row has no company field, so `late_block` entries carry the `job_id` (add `company` only if you already have it).

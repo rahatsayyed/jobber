@@ -1,0 +1,6 @@
+{
+  "allow_facts": [],
+  "allow_metrics": [],
+  "forbidden_phrases": [],
+  "warn_phrases": []
+}

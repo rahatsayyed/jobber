@@ -1,0 +1,133 @@
+<div class="content">
+  <!-- ===== SUMMARY ===== -->
+  <h2>Professional Summary</h2>
+  <hr class="section-divider" />
+  <div class="summary-content">{{{summary}}}</div>
+
+  <!-- ===== EXPERIENCE ===== -->
+  {{#if experience}}
+  <h2>Professional Experience</h2>
+  <hr class="section-divider" />
+
+  {{#each experience}}
+  <div class="job">
+    <div class="job-role-title">{{title}}</div>
+    <div class="job-company-dates">
+      <span class="company">
+        {{#if companyUrl}}<a
+          href="{{companyUrl}}"
+          class="company-with-link"
+          aria-label="Company link"
+          >{{company}}
+          <span class="company-link-icon"
+            ><svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 36 36"
+              fill="currentColor"
+            >
+              <path
+                d="M17.6 24.32l-2.46 2.44a4 4 0 01-5.62 0 3.92 3.92 0 010-5.55l4.69-4.65a4 4 0 015.62 0 3.86 3.86 0 011 1.71 2 2 0 00.27-.27l1.29-1.28a5.89 5.89 0 00-1.15-1.62 6 6 0 00-8.44 0l-4.7 4.69a5.91 5.91 0 000 8.39 6 6 0 008.44 0l3.65-3.62h-.5a8 8 0 01-2.09-.24z"
+              />
+              <path
+                d="M28.61 7.82a6 6 0 00-8.44 0l-3.65 3.62h.49a8 8 0 012.1.28l2.46-2.44a4 4 0 015.62 0 3.92 3.92 0 010 5.55l-4.69 4.65a4 4 0 01-5.62 0 3.86 3.86 0 01-1-1.71 2 2 0 00-.28.23l-1.29 1.28a5.89 5.89 0 001.15 1.62 6 6 0 008.44 0l4.69-4.65a5.92 5.92 0 000-8.39z"
+              /></svg></span></a
+        >{{else}}{{company}}{{/if}}
+      </span>
+      <span class="dates">{{start}}{{#if end}} - {{end}}{{/if}}</span>
+    </div>
+
+    <ul>
+      {{#each description}}
+      <li>{{this}}</li>
+      {{/each}}
+    </ul>
+  </div>
+  {{/each}} {{/if}}
+
+  <!-- ===== PROJECTS ===== -->
+  {{#if projects}}
+  <h2>Projects</h2>
+  <hr class="section-divider" />
+
+  {{#each projects}}
+  <div class="project-block">
+    <div class="project-row">
+      <span class="project-title">
+        {{#if link}}
+        <a href="{{link}}"
+          >{{title}}
+          <span class="project-link-icon">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 36 36"
+              fill="currentColor"
+            >
+              <path
+                d="M17.6 24.32l-2.46 2.44a4 4 0 01-5.62 0 3.92 3.92 0 010-5.55l4.69-4.65a4 4 0 015.62 0 3.86 3.86 0 011 1.71 2 2 0 00.27-.27l1.29-1.28a5.89 5.89 0 00-1.15-1.62 6 6 0 00-8.44 0l-4.7 4.69a5.91 5.91 0 000 8.39 6 6 0 008.44 0l3.65-3.62h-.5a8 8 0 01-2.09-.24z"
+              />
+              <path
+                d="M28.61 7.82a6 6 0 00-8.44 0l-3.65 3.62h.49a8 8 0 012.1.28l2.46-2.44a4 4 0 015.62 0 3.92 3.92 0 010 5.55l-4.69 4.65a4 4 0 01-5.62 0 3.86 3.86 0 01-1-1.71 2 2 0 00-.28.23l-1.29 1.28a5.89 5.89 0 001.15 1.62 6 6 0 008.44 0l4.69-4.65a5.92 5.92 0 000-8.39z"
+              />
+            </svg>
+          </span>
+        </a>
+        {{else}} {{title}} {{/if}}
+      </span>
+      <span class="project-dates">{{start}}{{#if end}} - {{end}}{{/if}}</span>
+    </div>
+
+    <ul>
+      {{#each description}}
+      <li>{{this}}</li>
+      {{/each}}
+    </ul>
+  </div>
+  {{/each}} {{/if}}
+
+  <!-- ===== EDUCATION ===== -->
+  {{#if education}}
+  <h2>Education</h2>
+  <hr class="section-divider" />
+
+  {{#each education}}
+  <div class="edu-block">
+    <div class="edu-degree">{{degree}}</div>
+    <div class="edu-school-year">
+      <span class="school"
+        >{{school}}{{#if location}} | {{location}}{{/if}}</span
+      >
+      <span class="year">{{year}}</span>
+    </div>
+  </div>
+  {{/each}} {{/if}}
+
+  <!-- ===== SKILLS ===== -->
+  {{#if skills}}
+  <h2>Skills</h2>
+  <hr class="section-divider" />
+  <div class="skills-section">
+    {{#each skills}}
+    <div class="skill-category-row">
+      <span class="skills-group-label">{{category}}</span>: {{#each
+      items}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}
+    </div>
+    {{/each}}
+  </div>
+  {{/if}}
+
+  <!-- ===== CERTIFICATIONS ===== -->
+  {{#if certificates}}
+  <h2>Certifications</h2>
+  <hr class="section-divider" />
+  <div class="certifications-section">
+    <ul class="certifications-list">
+      {{#each certificates}}
+      <li class="cert-item">
+        <strong>{{name}}</strong>{{#if issuer}} by {{issuer}}{{/if}}{{#if year}}
+        <span class="cert-year">({{year}})</span>{{/if}}
+      </li>
+      {{/each}}
+    </ul>
+  </div>
+  {{/if}}
+</div>

@@ -1,0 +1,6 @@
+{
+  "home": ["India"],
+  "targets": ["United Arab Emirates", "UAE", "Dubai", "Abu Dhabi", "Sharjah", "Saudi Arabia", "KSA", "Riyadh", "Jeddah", "Qatar", "Doha", "Kuwait", "Bahrain", "Oman", "Muscat", "GCC", "Middle East", "MENA", "Manama", "Kuwait City", "Ajman", "Ras Al Khaimah", "Dammam", "Al Khobar", "Salalah", "دبي", "أبوظبي", "الرياض", "الدوحة", "مسقط", "الكويت", "المنامة", "الإمارات", "السعودية", "قطر", "البحرين"],
+  "remote": true,
+  "remote_anywhere": true
+}

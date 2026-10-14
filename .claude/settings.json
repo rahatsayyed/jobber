@@ -1,0 +1,35 @@
+{
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npx vitest run *)",
+      "Bash(npx tsc *)",
+      "mcp__n8n-mcp__n8n_get_workflow",
+      "mcp__n8n-mcp__n8n_validate_workflow",
+      "mcp__n8n-mcp__n8n_executions",
+      "mcp__connect__find_linkedin_profile",
+      "mcp__n8n-mcp__get_node",
+      "mcp__job-fetch__search_jobs",
+      "mcp__n8n-mcp__n8n_list_workflows",
+      "mcp__sqlite__get_job_stats",
+      "mcp__sqlite__get_outreach_stats"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Write|Edit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-outside-project.cjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

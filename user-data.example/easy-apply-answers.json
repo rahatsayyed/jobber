@@ -1,0 +1,14 @@
+{
+  "years_experience": 1,
+  "authorized_to_work": true,
+  "requires_sponsorship": {
+    "india": false,
+    "other": true
+  },
+  "willing_to_relocate": true,
+  "notice_period_days": 1,
+  "expected_salary": "Negotiable",
+  "phone": "+00 0000000000",
+  "linkedin_profile_url": "linkedin.com/in/example-person",
+  "custom": {}
+}

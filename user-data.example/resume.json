@@ -1,0 +1,77 @@
+{
+  "name": "Jane Doe",
+  "jobTitle": null,
+  "email": "jane@example.com",
+  "phone": "+00 0000000000",
+  "website": {
+    "url": "https://example.com/example",
+    "label": "example.com"
+  },
+  "social": {
+    "linkedin": {
+      "url": "https://linkedin.com/in/example-person",
+      "label": "linkedin.com/in/example-person"
+    },
+    "github": {
+      "url": "https://example.com/github",
+      "label": "example.com/github"
+    },
+    "flowcv": {
+      "url": "https://example.com/flowcv",
+      "label": "example.com/flowcv"
+    }
+  },
+  "summary": "Full stack developer with experience building web applications.",
+  "experience": [
+    {
+      "title": "Software Engineer",
+      "company": "Example Corp",
+      "companyUrl": "https://example.com/example",
+      "location": null,
+      "start": "2020-01",
+      "end": "2020-01",
+      "description": [
+        "Built and maintained web application features.",
+        "Improved performance of an existing service."
+      ]
+    },
+    {
+      "title": "Software Engineer",
+      "company": "Example Corp",
+      "companyUrl": "https://example.com/example",
+      "location": null,
+      "start": "2020-01",
+      "end": "2020-01",
+      "description": [
+        "Built and maintained web application features.",
+        "Improved performance of an existing service."
+      ]
+    }
+  ],
+  "projects": [],
+  "education": [
+    {
+      "degree": "Bachelor of Science",
+      "school": "Example University",
+      "location": "Example City",
+      "year": "2020-01"
+    }
+  ],
+  "skills": [
+    {
+      "category": "Frontend",
+      "items": [
+        "React",
+        "TypeScript"
+      ]
+    },
+    {
+      "category": "Backend",
+      "items": [
+        "Node.js",
+        "PostgreSQL"
+      ]
+    }
+  ],
+  "certificates": []
+}

@@ -1,0 +1,1357 @@
+[
+  {
+    "id": "R1",
+    "description": "move forward with other candidates",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi Jane, thank you for your interest. We have decided to move forward with other candidates for this role. Wish you the best.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R2",
+    "description": "unfortunately will not be proceeding",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Dear Jane,\nUnfortunately we will not be proceeding with your candidature at this stage.\nRegards,\nNeha",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R3",
+    "description": "profile does not match requirements",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi Jane, thanks for writing. Your profile does not match our current requirements. We will reach out in future.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R4",
+    "description": "position has already been filled",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hello, thank you. The position has already been filled.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R5",
+    "description": "we regret to inform",
+    "subject": "Application update - Zentrix",
+    "from": "Talent Team <talent@zentrix.in>",
+    "body_text": "We regret to inform you that your application was unsuccessful.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R6",
+    "description": "careful consideration, other applicants",
+    "subject": "Your application",
+    "from": "Talent Team <talent@zentrix.in>",
+    "body_text": "After careful consideration, we have chosen to pursue other applicants whose qualifications better meet our needs.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R7",
+    "description": "not been selected",
+    "subject": "Update on your application",
+    "from": "Talent Team <talent@zentrix.in>",
+    "body_text": "Thank you for your time. You have not been selected for this position.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R8",
+    "description": "no opening + keep resume on file",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Thanks Jane. At the moment we do not have an opening that suits your profile. We will keep your resume on file for future opportunities.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R9",
+    "description": "impressive but different direction",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "While your background is impressive and we enjoyed reading about your projects, we have decided to go in a different direction for this role.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R10",
+    "description": "not shortlisted, interview word",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi, we reviewed your profile for the interview process but unfortunately you have not been shortlisted.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R11",
+    "description": "hiring freeze, cannot take forward",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi Jane, appreciate the email. We have put hiring on hold due to a freeze, so we cannot take this forward.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R12",
+    "description": "unsuccessful on this occasion",
+    "subject": "Your application for Software Engineer",
+    "from": "Careers <careers@globalbank.co.uk>",
+    "body_text": "Thank you for your application. On this occasion your application has been unsuccessful.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R13",
+    "description": "Lever: move fwd w. aligned candidates",
+    "subject": "Your application to Northwind",
+    "from": "Lever <no-reply@hire.lever.co>",
+    "body_text": "Hi Jane, thanks so much for your interest in Northwind. We have decided to move forward with candidates whose experience more closely aligns with our needs at this time.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R14",
+    "description": "Greenhouse rejection",
+    "subject": "Northwind - Software Engineer",
+    "from": "Northwind Recruiting <no-reply@us.greenhouse-mail.io>",
+    "body_text": "Thank you for applying. Unfortunately, we will not be moving forward with your application.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R15",
+    "description": "Workday: decided not to proceed",
+    "subject": "Application Status",
+    "from": "Workday <globex@myworkday.com>",
+    "body_text": "Thank you for your interest in Globex. We have decided not to proceed with your application for the role of Developer.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R16",
+    "description": "rej after interview, not extending offer",
+    "subject": "Re: Interview feedback",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Thanks for interviewing with us last week. The panel felt the role needs deeper system design experience, so we will not be extending an offer.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R17",
+    "description": "Hinglish rejection",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi Jane, abhi ke liye hum aapka profile aage nahi le ja rahe hain. Position close ho gayi hai. All the best!",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected",
+      "replied"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "R18",
+    "description": "respectfully decline",
+    "subject": "Re: Application",
+    "from": "HR <hr@kappa.io>",
+    "body_text": "We must respectfully decline your application at this time.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "I1",
+    "description": "schedule a call",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi Jane, thanks for reaching out. I would like to schedule a call to discuss the role. Does Tuesday 4pm IST work?",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "I2",
+    "description": "shortlisted for technical round",
+    "subject": "Technical Round - Zentrix",
+    "from": "HR <hr@zentrix.in>",
+    "body_text": "Dear Jane, You have been shortlisted for the technical round on 15th Oct at 11 AM. Please confirm your availability.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "I3",
+    "description": "Calendly link",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Sounds great. Pick a time that suits you here: https://calendly.com/neha-zentrix/30min",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "I4",
+    "description": "are you available on Friday",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi, are you available on Friday for a 30 min discussion with our engineering lead?",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "I5",
+    "description": "HR round scheduled",
+    "subject": "HR Round",
+    "from": "HR <hr@zentrix.in>",
+    "body_text": "Hi Jane, congratulations on clearing the technical interview. Your HR round is scheduled for Monday at 3 PM.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "I6",
+    "description": "shortlisted for an interview",
+    "subject": "Interview Invitation",
+    "from": "HR <hr@zentrix.in>",
+    "body_text": "Dear Candidate, we are happy to inform you that you have been shortlisted for an interview. Kindly share a convenient slot.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "I7",
+    "description": "Google Meet link",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Let us talk tomorrow at 5 PM. Joining link: https://meet.google.com/abc-defg-hij",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "I8",
+    "description": "Hinglish call proposal",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi Jane, kal 3 baje call kar sakte hain? Let me know if that works for you.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview",
+      "replied"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "I9",
+    "description": "phone screen next week",
+    "subject": "Re: Software Engineer",
+    "from": "Recruiter <sam@acmecorp.com>",
+    "body_text": "Thanks for your note. I would love to set up a 20 minute phone screen next week. What times work?",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "I10",
+    "description": "take-home assignment",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi Jane, as the next step please complete the attached take-home assignment within 3 days.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "I11",
+    "description": "meet the team, come in Thursday",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Thanks for reaching out! We would love for you to meet the team. Could you come in on Thursday at 11?",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "I12",
+    "description": "Ashby interview confirmed",
+    "subject": "Interview confirmed: Northwind",
+    "from": "Ashby <no-reply@ashbyhq.com>",
+    "body_text": "Your interview with Northwind has been scheduled for Oct 16, 10:00 AM IST. Video link below.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "H1",
+    "description": "ack: if shortlisted, invited to intvw",
+    "subject": "Application received",
+    "from": "Talent <talent@zentrix.in>",
+    "body_text": "Thank you for applying. If shortlisted, you will be invited for an interview.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "H2",
+    "description": "Naukri interview tips mailer",
+    "subject": "Interview tips for you",
+    "from": "Naukri <info@naukri.com>",
+    "body_text": "Top 10 tips to crack your next technical interview. Schedule a mock interview today!",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "noise"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "H3",
+    "description": "process description (3 rounds)",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi Jane, our process has three rounds: a technical round, a system design round and an HR round. I will share your profile with the hiring manager first.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "H4",
+    "description": "ack: back if shortlisted for intvw",
+    "subject": "Thank you for your application",
+    "from": "Careers <careers@zentrix.in>",
+    "body_text": "We have received your application and will review it. We will get back to you if you are shortlisted for an interview.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "H5",
+    "description": "Workday ack",
+    "subject": "Thank you for applying to Globex",
+    "from": "Workday <globex@myworkday.com>",
+    "body_text": "Thank you for submitting your application for Developer. Our recruiting team will review your qualifications and contact you regarding next steps.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "H6",
+    "description": "Greenhouse ack",
+    "subject": "Thanks for applying to Northwind",
+    "from": "Northwind <no-reply@us.greenhouse-mail.io>",
+    "body_text": "Hi Jane, thanks for applying to Northwind! Our team is reviewing applications and will be in touch soon.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "H7",
+    "description": "ack: only selected contacted for intvw",
+    "subject": "Application received",
+    "from": "HR <hr@kappa.io>",
+    "body_text": "Your application has been received. Due to the high volume of applications, only selected candidates will be contacted for the interview.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "H8",
+    "description": "ack: next steps incl technical round",
+    "subject": "Application received",
+    "from": "Careers <careers@zentrix.in>",
+    "body_text": "Thank you for applying. Next steps: our team reviews your profile, then shortlisted candidates take a technical round and an HR round.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "H9",
+    "description": "Naukri: recruiters want to schedule",
+    "subject": "Naukri: 3 recruiters want to schedule a call",
+    "from": "Naukri <info@naukri.com>",
+    "body_text": "Recruiters from 3 companies want to connect. Log in to view.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "noise"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "O1",
+    "description": "OOO plain",
+    "subject": "Automatic reply: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Thank you for your email. I am out of office till 20th October with no access to email.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "O2",
+    "description": "OOO annual leave + scheduling words",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi, I am on annual leave until 18 Oct. For scheduling interviews please contact hr@zentrix.in.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "O3",
+    "description": "OOO Diwali leave",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "I am on Diwali leave and will be back on 4th Nov. For urgent matters please reach Amit.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "O4",
+    "description": "OOO parental leave, intvw mention",
+    "subject": "Auto: Re: Software Engineer",
+    "from": "Sam <sam@acmecorp.com>",
+    "body_text": "Hello! I am currently on parental leave and checking email intermittently. If this is about an interview, please email recruiting@acmecorp.com.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "O5",
+    "description": "OOO away till Mon, call colleague",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "I will be away till Monday. For anything urgent you can call Ravi at +91 98xxxxxx or schedule a call with him.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "N1",
+    "description": "LinkedIn job alert",
+    "subject": "30+ new jobs for \"react developer\"",
+    "from": "LinkedIn Job Alerts <jobalerts-noreply@linkedin.com>",
+    "body_text": "Senior React Developer - Zentrix - Bengaluru. Apply now. Full Stack Engineer - Northwind - Remote.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "noise",
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "N2",
+    "description": "Naukri profile views",
+    "subject": "Recruiters are looking at your profile",
+    "from": "Naukri <info@naukri.com>",
+    "body_text": "Your profile was viewed by 5 recruiters. Update your profile to get more interview calls.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "noise",
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "N3",
+    "description": "company newsletter, \"we offer\"",
+    "subject": "Zentrix Monthly",
+    "from": "Zentrix <news@zentrix.in>",
+    "body_text": "This month we launched new features. We offer competitive benefits and are hiring across teams. Read more on our blog.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "noise",
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "N4",
+    "description": "JD shared: \"we offer\" salary",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Sharing the JD: We offer competitive salary, health insurance and flexible hours. Let me know if you are interested.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "N5",
+    "description": "Instahyre digest",
+    "subject": "Companies hiring this week",
+    "from": "Instahyre <noreply@instahyre.com>",
+    "body_text": "12 companies are hiring React developers this week. Click to view matches.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "noise",
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "N6",
+    "description": "LinkedIn application viewed",
+    "subject": "Your application was viewed by Zentrix",
+    "from": "LinkedIn <jobs-noreply@linkedin.com>",
+    "body_text": "Your application for Full Stack Developer was viewed by Zentrix. Jobs you may be interested in below.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "noise"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "B1",
+    "description": "mailer-daemon address not found",
+    "subject": "Delivery Status Notification (Failure)",
+    "from": "Mail Delivery Subsystem <mailer-daemon@googlemail.com>",
+    "body_text": "Address not found. Your message wasn't delivered to neha@zentrix.in.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "bounce"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "B2",
+    "description": "Outlook undeliverable",
+    "subject": "Undeliverable: Full Stack Developer",
+    "from": "Microsoft Outlook <MicrosoftExchange329e71ec@zentrix.in>",
+    "body_text": "Your message to neha@zentrix.in couldn't be delivered. neha wasn't found at zentrix.in.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "bounce"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "B3",
+    "description": "postmaster mailbox full 452",
+    "subject": "Returned mail: see transcript for details",
+    "from": "postmaster@zentrix.in",
+    "body_text": "The original message was received. ----- The following addresses had permanent fatal errors ----- 452 4.2.2 Mailbox full",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "bounce"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "B4",
+    "description": "bounce in same thread (Re:)",
+    "subject": "Re: Full Stack Developer",
+    "from": "Mail Delivery System <MAILER-DAEMON@mx.zentrix.in>",
+    "body_text": "This is the mail system at host mx.zentrix.in. I'm sorry to have to inform you that your message could not be delivered to one or more recipients.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "bounce"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "B5",
+    "description": "DSN delay",
+    "subject": "Delivery Status Notification (Delay)",
+    "from": "Mail Delivery Subsystem <mailer-daemon@googlemail.com>",
+    "body_text": "Message not delivered yet. Gmail will keep trying for 47 more hours.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "bounce"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "B6",
+    "description": "block bounce, non-daemon sender + our text",
+    "subject": "Message blocked",
+    "from": "Zentrix Mail <noreply@zentrix.in>",
+    "body_text": "Your message to neha@zentrix.in has been blocked. 550 5.7.1 Recipient rejected.\n\nHi Neha, I came across the Full Stack Developer role at Zentrix and would love to interview for it. I have 4 years of React and Node experience. Happy to share more or set up a call whenever convenient. Thanks, Jane",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "bounce"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M1",
+    "description": "forwarded to hiring manager",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi Jane, I have forwarded your profile to the hiring manager. Will update you.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M2",
+    "description": "share CTC and notice period",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Please share your current CTC, expected CTC and notice period.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M3",
+    "description": "pleased to offer + offer letter",
+    "subject": "Offer - Zentrix",
+    "from": "HR <hr@zentrix.in>",
+    "body_text": "Dear Jane, we are pleased to offer you the position of Full Stack Developer. Please find the offer letter attached.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "offer"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M4",
+    "description": "selected, offer details to follow",
+    "subject": "Congratulations!",
+    "from": "HR <hr@zentrix.in>",
+    "body_text": "Congratulations Jane! You have been selected for the Full Stack Developer role. The HR team will share the offer details shortly.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "offer",
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M5",
+    "description": "Thanks",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Thanks",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M6",
+    "description": "Not now.",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Not now.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied",
+      "rejected"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M7",
+    "description": "Please remove me from your list",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Please remove me from your list.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied",
+      "noise"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M8",
+    "description": "Who is this?",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Who is this?",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M9",
+    "description": "different person replies",
+    "subject": "Re: Full Stack Developer",
+    "from": "Amit Verma <amit.verma@zentrix.in>",
+    "body_text": "Hi Jane, Neha moved on from Zentrix. I handle hiring now; please send me your latest resume.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M10",
+    "description": "not the right person",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "I am not the right person for this, I work in finance. Try careers@zentrix.in.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M11",
+    "description": "apply via portal",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi, kindly apply via our careers portal; we do not accept applications over email.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M12",
+    "description": "\"not a good fit\" re other team+referral",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Honestly the frontend team is not a good fit for remote folks, but our platform team might be. Shall I refer you?",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M13",
+    "description": "we will get back to you (human)",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Thanks Jane, we will get back to you.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied",
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M14",
+    "description": "still reviewing, keep you posted",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi Jane, the team is still reviewing profiles. Will keep you posted.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied",
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M15",
+    "description": "role on hold (soft)",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Hi, the role is on hold for now. I will ping you if it reopens.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "rejected",
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M16",
+    "description": "\"not going to sit on this\" positive",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Your profile looks strong. I am not going to sit on this; sharing with the team today.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M17",
+    "description": "not hiring in my team, referred",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "We are not hiring in my team, but I have passed your resume to the platform team lead who is.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied",
+      "rejected"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M18",
+    "description": "positive: not looking further, yours",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Great profile. Honestly we are not looking at anyone else right now; sending you the assignment brief shortly.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied",
+      "interview"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "M19",
+    "description": "sure, can talk next week",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Sure, I will check with the team and we can talk next week.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied",
+      "interview"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "Q1",
+    "description": "\"On..wrote\" quote w. interview",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Thanks, noted.\n\nOn Mon, Oct 6, 2026 at 10:12 AM Jane Doe <jane@example.com> wrote:\n> Hi Neha, I came across the Full Stack Developer role at Zentrix and would love to interview for it. I have 4 years of React and Node experience. Happy to share more or set up a call whenever convenient. Thanks, Jane",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "Q2",
+    "description": "HTML gmail_quote",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": null,
+    "body_html": "<div dir=\"ltr\">Will check and revert.</div><br><div class=\"gmail_quote\"><div dir=\"ltr\" class=\"gmail_attr\">On Mon, Oct 6, 2026 Jane wrote:<br></div><blockquote class=\"gmail_quote\" style=\"margin:0 0 0 .8ex\">Hi Neha, I came across the Full Stack Developer role at Zentrix and would love to interview for it. I have 4 years of React and Node experience. Happy to share more or set up a call whenever convenient. Thanks, Jane</blockquote></div>",
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "Q3",
+    "description": "Outlook HTML divRplyFwdMsg",
+    "subject": "RE: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": null,
+    "body_html": "<html><body><div>Noted, thanks.</div><hr style=\"display:inline-block;width:98%\" tabindex=\"-1\"><div id=\"divRplyFwdMsg\" dir=\"ltr\"><font face=\"Calibri\"><b>From:</b> Jane Doe<br><b>Sent:</b> Monday<br></font></div><div>Hi Neha, I came across the Full Stack Developer role at Zentrix and would love to interview for it. I have 4 years of React and Node experience. Happy to share more or set up a call whenever convenient. Thanks, Jane</div></body></html>",
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "Q4",
+    "description": "Outlook plain From:/Sent: (no ____)",
+    "subject": "RE: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Ok noted.\n\nFrom: Jane Doe\nSent: 06 October 2026 10:12\nTo: Neha Sharma\nSubject: Full Stack Developer\n\nHi Neha, I came across the Full Stack Developer role at Zentrix and would love to interview for it. I have 4 years of React and Node experience. Happy to share more or set up a call whenever convenient. Thanks, Jane",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "Q5",
+    "description": "unmarked full quote (ours not passed)",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Sure.\n\nHi Neha, I came across the Full Stack Developer role at Zentrix and would love to interview for it. I have 4 years of React and Node experience. Happy to share more or set up a call whenever convenient. Thanks, Jane",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "Q6",
+    "description": "-----Original Message-----",
+    "subject": "RE: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Will discuss internally.\n-----Original Message-----\nHi Neha, I came across the Full Stack Developer role at Zentrix and would love to interview for it. I have 4 years of React and Node experience. Happy to share more or set up a call whenever convenient. Thanks, Jane",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "Q7",
+    "description": "French \"Le ... a ecrit\"",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Merci, noted.\n\nLe lun. 6 oct. 2026 a 10:12, Jane Doe <jane@example.com> a écrit :\nHi Neha, I came across the Full Stack Developer role at Zentrix and would love to interview for it. I have 4 years of React and Node experience. Happy to share more or set up a call whenever convenient. Thanks, Jane",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "Q8",
+    "description": "HTML yahoo_quoted",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": null,
+    "body_html": "<div>Ok.</div><div class=\"yahoo_quoted\"><div>On Monday, Jane wrote:</div><div>Hi Neha, I came across the Full Stack Developer role at Zentrix and would love to interview for it. I have 4 years of React and Node experience. Happy to share more or set up a call whenever convenient. Thanks, Jane</div></div>",
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "Q9",
+    "description": "rejection + HTML quote w. interview",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": null,
+    "body_html": "<div>Thanks Jane, unfortunately we will not be moving forward with your profile.</div><div class=\"gmail_quote\"><blockquote>Hi Neha, I came across the Full Stack Developer role at Zentrix and would love to interview for it. I have 4 years of React and Node experience. Happy to share more or set up a call whenever convenient. Thanks, Jane</blockquote></div>",
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "Q10",
+    "description": "Hinglish + On..wrote quote",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Theek hai, main HR ko bhej deti hoon.\n\nOn Mon, 6 Oct 2026, 10:12 Jane Doe, <jane@example.com> wrote:\n\n> Hi Neha, I came across the Full Stack Developer role at Zentrix and would love to interview for it. I have 4 years of React and Node experience. Happy to share more or set up a call whenever convenient. Thanks, Jane",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "Q11",
+    "description": "Apple Mail quoted header in > lines",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": "Noted.\n\n> On 6 Oct 2026, at 10:12,\n> Jane Doe <jane@example.com> wrote:\n>\n> Hi Neha, I came across the Full Stack Developer role at Zentrix and would love to interview for it. I have 4 years of React and Node experience. Happy to share more or set up a call whenever convenient. Thanks, Jane",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "Q12",
+    "description": "HTML Outlook web \"appendonsend\"",
+    "subject": "RE: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": null,
+    "body_html": "<div>Let me check internally.</div><div id=\"appendonsend\"></div><hr><div><b>From:</b> Jane</div><p>Hi Neha, I came across the Full Stack Developer role at Zentrix and would love to interview for it. I have 4 years of React and Node experience. Happy to share more or set up a call whenever convenient. Thanks, Jane</p>",
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "Q13",
+    "description": "HTML no-class quote (plain div)",
+    "subject": "Re: Full Stack Developer",
+    "from": "Neha Sharma <neha.sharma@zentrix.in>",
+    "body_text": null,
+    "body_html": "<div>Ok thanks.</div><br><div>On Mon, Oct 6, 2026 at 10:12 AM Jane wrote:</div><div>Hi Neha, I came across the Full Stack Developer role at Zentrix and would love to interview for it. I have 4 years of React and Node experience. Happy to share more or set up a call whenever convenient. Thanks, Jane</div>",
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "X1",
+    "description": "unmarked quote of strong ours, ours not passed",
+    "subject": "Re: FSD",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": "Sure.\n\nHi Neha, I am a React developer with 4 years of experience. Could we schedule a 15-minute call this week to discuss the Full Stack Developer role? Thanks, Jane",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "X2",
+    "description": "unmarked quote of strong ours, ours passed",
+    "subject": "Re: FSD",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": "Sure.\n\nHi Neha, I am a React developer with 4 years of experience. Could we schedule a 15-minute call this week to discuss the Full Stack Developer role? Thanks, Jane",
+    "body_html": null,
+    "ours": "Hi Neha, I am a React developer with 4 years of experience. Could we schedule a 15-minute call this week to discuss the Full Stack Developer role? Thanks, Jane",
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "X3",
+    "description": "French header + strong ours, ours not passed",
+    "subject": "Re: FSD",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": "Merci.\n\nLe lun. 6 oct. 2026, Jane a écrit :\nHi Neha, I am a React developer with 4 years of experience. Could we schedule a 15-minute call this week to discuss the Full Stack Developer role? Thanks, Jane",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "X4",
+    "description": "auto-ack: review, back if shortlisted for intvw",
+    "subject": "Thank you for your application",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": "We have received your application. We will review and get back to you if shortlisted for an interview.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "X5",
+    "description": "reschedule: cannot proceed with slot",
+    "subject": "Re: Interview",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": "Hi Jane, we can't proceed with Monday's slot as the panel is unavailable. Can you do Tuesday at 4 instead?",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "X6",
+    "description": "reschedule: not moving forward with 3 PM",
+    "subject": "Re: Interview",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": "We are not moving forward with the 3 PM time; are you free at 5 PM?",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "X7",
+    "description": "not a fit junior, call for senior",
+    "subject": "Re: FSD",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": "You are not a fit for the junior role, but I would like to schedule a call for our senior opening.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "X8",
+    "description": "not accepting resumes by email",
+    "subject": "Re: FSD",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": "We are not accepting resumes over email. Please apply on our careers page and I will flag it.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "X9",
+    "description": "positive: not considering others, HR will call",
+    "subject": "Re: FSD",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": "Good news, we are not considering other candidates at this stage; HR will call you tomorrow.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "interview"
+    ],
+    "expected_auto_record": true
+  },
+  {
+    "id": "X10",
+    "description": "OOO sick leave Hinglish",
+    "subject": "Re: FSD",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": "Main chhutti par hoon, I am on sick leave till Friday.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "X11",
+    "description": "OOO travelling + will call on return",
+    "subject": "Re: FSD",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": "I am travelling this week. Will call you on my return.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "X12",
+    "description": "unable to offer remote, conditional call",
+    "subject": "Re: FSD",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": "We are unable to offer remote work for this role, but if you can relocate to Pune let us set up a call.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "replied",
+      "interview"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "X13",
+    "description": "\"Invitation:\" careers live-session promo",
+    "subject": "Invitation: Careers at Zentrix live session",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": "Join our live session on Thursday.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "noise"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "X14",
+    "description": "ack + \"we offer\"",
+    "subject": "Thank you for applying",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": "Thank you for applying. We offer a hybrid culture. We will be in touch.",
+    "body_html": null,
+    "ours": null,
+    "expected": [
+      "auto_ack"
+    ],
+    "expected_auto_record": false
+  },
+  {
+    "id": "X15",
+    "description": "rejection in HTML",
+    "subject": "Re: FSD",
+    "from": "Neha <neha@zentrix.in>",
+    "body_text": null,
+    "body_html": "<p>Hi Jane,</p><p>Unfortunately, the position has been filled.</p>",
+    "ours": null,
+    "expected": [
+      "rejected"
+    ],
+    "expected_auto_record": true
+  }
+]

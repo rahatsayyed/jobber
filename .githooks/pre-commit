@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Blocks commits that contain personal data, secrets or local-only files.
+# Allowed: .env.example and the committed user-data.example/ templates.
+set -euo pipefail
+shopt -s nocasematch   # the owner is on case-insensitive macOS
+
+# Blocked at any depth: secrets/, user-data/, .ccgram/ directories.
+DIR_RE='(^|/)(secrets|user-data|\.ccgram)/'
+DB_RE='\.sqlite(-journal|-wal)?(/|$)'
+LOCAL_RE='settings\.local\.json$'
+ENV_RE='(^|/)\.env($|\.|/)|(^|/)\.envrc$'
+ENV_EXAMPLE_RE='^(.*/)?\.env\.example$'
+
+# Reads staged names NUL-delimited, so quoting, spaces and non-ASCII are safe.
+# Only paths are ever printed, never contents. Returns 1 if anything is blocked.
+check_names() {
+  local rc=0 f
+  while IFS= read -r -d '' f; do
+    if [[ $f == *$'\n'* || $f == *$'\r'* ]]; then
+      # Names with a newline or CR defeat line-anchored matching: refuse outright.
+      printf '%q\n' "$f" >&2
+      rc=1
+    elif [[ $f =~ $DIR_RE || $f =~ $DB_RE || $f =~ $LOCAL_RE ]]; then
+      printf '%q\n' "$f" >&2
+      rc=1
+    elif [[ $f =~ $ENV_RE ]] && ! [[ $f =~ $ENV_EXAMPLE_RE ]]; then
+      printf '%q\n' "$f" >&2
+      rc=1
+    fi
+  done
+  return $rc
+}
+
+# pipefail makes a failing git (not just a blocked name) fail the hook closed.
+if ! git -c core.quotePath=false diff --cached --name-only -z --diff-filter=ACMR | check_names; then
+  echo "Refusing to commit the files listed above (secrets, databases, user data or local settings), or the staged file list could not be read." >&2
+  exit 1
+fi

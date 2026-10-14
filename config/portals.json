@@ -1,0 +1,27 @@
+{
+  "tracked_companies": [
+    { "name": "GitLab", "ats": "greenhouse", "slug": "gitlab", "enabled": true },
+    { "name": "Razorpay", "ats": "greenhouse", "slug": "razorpaysoftwareprivatelimited", "enabled": true },
+    { "name": "Meesho", "ats": "lever", "slug": "meesho", "enabled": true },
+    { "name": "Linear", "ats": "ashby", "slug": "linear", "enabled": true },
+    { "name": "Hugging Face", "ats": "workable", "slug": "huggingface", "enabled": false, "note": "unverified example slug (from career-ops fixtures); run check-portal.ts first, then enable" },
+    { "name": "Channable", "ats": "recruitee", "slug": "channable", "enabled": false, "note": "unverified example slug (from career-ops fixtures); run check-portal.ts first, then enable" },
+    { "name": "SGS", "ats": "smartrecruiters", "slug": "sgs", "enabled": false, "note": "unverified example slug (from career-ops fixtures; SmartRecruiters slugs may be case-sensitive); run check-portal.ts first, then enable" },
+    { "name": "CrowdStrike", "ats": "workday", "slug": "crowdstrike", "wd": "wd5", "site": "crowdstrikecareers", "max_detail": 40, "enabled": false, "note": "unverified example tenant (from career-ops fixtures); run check-portal.ts first, then enable" },
+    { "name": "NVIDIA", "ats": "workday", "slug": "nvidia", "wd": "wd5", "site": "NVIDIAExternalCareerSite", "max_detail": 40, "enabled": false, "note": "unverified example tenant (from career-ops fixtures); run check-portal.ts first, then enable" }
+  ],
+  "aggregators": {
+    "hackernews": { "enabled": false },
+    "himalayas": { "enabled": false, "max_pages": 3 },
+    "weworkremotely": { "enabled": false }
+  },
+  "title_filter": {
+    "positive": ["frontend", "front-end", "front end", "full stack", "full-stack", "fullstack", "react", "javascript", "typescript", "node", "web developer", "software engineer", "software development engineer", "sde", "word:mern", "word:ui engineer", "word:ui developer"],
+    "negative": ["word:staff", "principal", "director", "manager", "head of", "vp", "word:intern", "word:interns", "word:internship", "word:sales", "account executive", "lead:marketing", "recruiter", "lead:designer", "data scientist", "lead:android", "lead:ios", "lead:qa"]
+  },
+  "location_filter": {
+    "allow": ["india", "bengaluru", "bangalore", "pune", "mumbai", "hyderabad", "chennai", "delhi", "new delhi", "gurgaon", "gurugram", "noida", "kolkata", "ahmedabad", "jaipur", "kochi", "apac", "united arab emirates", "uae", "dubai", "abu dhabi", "sharjah", "saudi arabia", "ksa", "riyadh", "jeddah", "qatar", "doha", "kuwait", "bahrain", "oman", "muscat", "gcc", "middle east", "mena", "manama", "kuwait city", "ajman", "ras al khaimah", "dammam", "al khobar", "salalah", "دبي", "أبوظبي", "الرياض", "الدوحة", "مسقط", "الكويت", "المنامة", "الإمارات", "السعودية", "قطر", "البحرين"],
+    "global": ["remote", "anywhere", "worldwide", "global"],
+    "remote_anywhere": true
+  }
+}
