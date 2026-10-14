@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "db": { "command": "npx", "args": ["tsx", "src/mcp/db.ts"] },
+    "naukri": { "command": "npx", "args": ["tsx", "src/mcp/naukri.ts"] }
+  }
+}
