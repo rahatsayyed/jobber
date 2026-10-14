@@ -10,6 +10,7 @@ export interface FakeSite {
   gotoFails?: boolean;
   launchFails?: string;
   popup?: boolean;
+  clickTimeout?: boolean;
 }
 export type FakeLauncher = LiLauncher & { closed: boolean; launches: number; browsers: Array<{ closed: boolean }>; storageStateCalls: number };
 
@@ -36,6 +37,7 @@ export function makeFakeLauncher(site: FakeSite, log: string[]): FakeLauncher {
       click: async () => {
         const el = elementsFor(sel)[idx];
         if (!el) throw new Error('no element');
+        if (site.clickTimeout) { log.push(`click_attempt:${el.text}`); throw new Error('Timeout 2000ms exceeded'); }
         log.push(`click:${sel}:${el.text}`);
         el.onClick?.();
         if (el.navigateTo) current = el.navigateTo;

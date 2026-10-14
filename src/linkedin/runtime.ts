@@ -34,6 +34,7 @@ export interface Runtime {
 export const CLICKABLE_SELECTOR = 'a, button, [role=button], [role=menuitem], [role=tab]';
 export const SEARCH_INPUT_SELECTOR = 'input[type=search], input[placeholder*="Search" i]';
 export const MAX_TYPE_CHARS = 200;
+export const CLICK_TIMEOUT_MS = 2000;
 export const TYPED_TOOL_ONLY_REASON = 'use linkedin_connect_send / linkedin_send_message / linkedin_accept_invite';
 
 const REFUSED_WORDS = [
@@ -206,6 +207,7 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
     const c = pick.c;
     if (isRefusedControl(c.text, c.aria)) return typedOnly;
     // Re-read the SAME resolved handle right before clicking: the SPA may have shifted indices.
+    // The re-read and the click use the same locator; the residual window is bounded by CLICK_TIMEOUT_MS.
     const target = page.locator(CLICKABLE_SELECTOR).nth(c.i);
     const again = await target
       .evaluateAll((els) =>
@@ -222,8 +224,11 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
     if (isRefusedControl(now1.text, now1.aria)) return typedOnly;
     const popupP = context.waitForEvent('page', { timeout: 1200 }).catch(() => null);
     try {
-      await target.click({ timeout: 8000 });
+      await target.click({ timeout: CLICK_TIMEOUT_MS });
     } catch (e) {
+      if (/timeout/i.test((e as Error).name + ' ' + ((e as Error).message ?? ''))) {
+        return { ok: false, code: 'click_timeout', reason: 'click did not become actionable in time; not retried' };
+      }
       return { ok: false, code: 'failed', reason: `click failed: ${((e as Error).message ?? '').slice(0, 100)}` };
     }
     const popup = (await popupP) as { close?: () => Promise<void> } | null;

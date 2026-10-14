@@ -219,6 +219,8 @@ describe('fix round 1', () => {
 
   it('aborts when the element at the index changes between read and click', async () => {
     const site = profileSite();
+    // Fragile by design: the fake reads `text` once for the candidate list and once for the re-read,
+    // so the getter flips on the second read to simulate the SPA shifting the element.
     let reads = 0;
     const shifting = { get text() { reads++; return reads <= 1 ? 'More' : 'Connect'; } } as { text: string };
     site.pages['/in/jane-doe/'].elements![CLICKABLE_SELECTOR] = [shifting];
@@ -282,5 +284,15 @@ describe('fix round 1', () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(s.launcher.browsers[0].closed).toBe(true);
     expect(readFileSync(sessionPath).equals(before)).toBe(true);
+  });
+
+  it('maps a click timeout to click_timeout with no retry', async () => {
+    const site = profileSite();
+    site.pages['/in/jane-doe/'].elements![CLICKABLE_SELECTOR] = [{ text: 'More' }];
+    site.clickTimeout = true;
+    const s = setup(site);
+    await open(s);
+    expect(await s.rt.click('More')).toMatchObject({ ok: false, code: 'click_timeout' });
+    expect(s.log.filter((l) => l.startsWith('click_attempt:'))).toHaveLength(1);
   });
 });
