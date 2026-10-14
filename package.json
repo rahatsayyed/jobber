@@ -37,6 +37,7 @@
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@musistudio/claude-code-router": "^2.0.0",
     "better-sqlite3": "^12.11.1",
+    "jose": "6.2.3",
     "nodemailer": "^6.10.0",
     "onnxruntime-node": "1.30.0",
     "patchright": "^1.63.0",
