@@ -1,9 +1,9 @@
 // src/setup/steps/index.ts
-// The wizard's step order. A later task inserts the classifier step with one line between
-// accessStep and dashboardStep.
+// The wizard's step order.
 import type { SetupStep } from '../runner.js';
 import { accessStep } from './access.js';
 import { claudeStep } from './claude.js';
+import { classifierStep } from './classifier.js';
 import { dashboardStep } from './dashboard.js';
 import { finalStep } from './final.js';
 import { gmailStep } from './gmail.js';
@@ -24,6 +24,7 @@ export const ALL_STEPS: SetupStep[] = [
   profileStep,
   limitsStep,
   accessStep,
+  classifierStep,
   dashboardStep,
   finalStep,
 ];

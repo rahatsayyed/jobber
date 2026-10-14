@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
 import { loadRegistry, type ClassifierProfile, type ClassifierRegistry } from '../src/safety/classifierRegistry.js';
 import {
+  defaultFetchDeps,
   fetchProfile,
   GatedProfileError,
   listProfiles,
@@ -143,22 +144,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
 }
 
 async function main(): Promise<void> {
-  const fetchDeps: FetchDeps = {
-    log: (l) => console.log(l),
-    timeoutMs: 60000,
-    async fetch(url, init) {
-      const res = await fetch(url, {
-        headers: init.headers,
-        redirect: init.redirect,
-        signal: init.signal ?? AbortSignal.timeout(60000),
-      });
-      return {
-        status: res.status,
-        headers: { get: (n: string) => res.headers.get(n) },
-        body: res.body as unknown as AsyncIterable<Uint8Array> | null,
-      };
-    },
-  };
+  const fetchDeps: FetchDeps = defaultFetchDeps((l) => console.log(l));
   const deps: CliDeps = {
     registryPath: 'config/classifier-models.json',
     root: process.cwd(),

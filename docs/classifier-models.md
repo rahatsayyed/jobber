@@ -50,7 +50,7 @@ Manual route (works today):
 6. `npm run doctor` checks the selected profile, its hashes, the fit and a smoke inference (`classifier_model`, `classifier_smoke`).
 7. Restart the MCP servers and sessions; the model loads once per process.
 
-Note: a guided step, `npm run setup -- --step classifier`, is planned but is NOT built yet. It depends on plan 7B. Use the manual route above until then.
+Guided route: `npm run setup -- --step classifier` does steps 2 to 4 for you. It shows the licence, attribution, limitations and size, downloads only after you answer yes (ungated profiles), verifies the files, runs a smoke inference (benign must score below 0.5, an injection at or above 0.5) and then writes `CLASSIFIER_MODEL` to `.env`. It never pins files for you: if it reports unpinned files, run `npm run models -- pin <id>` and review the registry diff, then rerun the step. Gated or owner-supplied profiles are never fetched and the step never asks for a token. The step does not fit a threshold; run step 5 afterwards (sends are refused until a fit exists, dry runs work).
 
 ## 5. Adding a profile
 

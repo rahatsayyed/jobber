@@ -1,7 +1,7 @@
 // src/safety/modelFetch.ts
-// Pinned, size-capped, resumable, hash-verified model download. Uses an INJECTED fetch only
-// (never global fetch), sends no credentials, and treats downloaded files as bytes: nothing is
-// executed, imported or unpacked.
+// Pinned, size-capped, resumable, hash-verified model download. Every function takes an
+// INJECTED fetch (FetchDeps); only defaultFetchDeps wraps the global fetch. Sends no
+// credentials, and treats downloaded files as bytes: nothing is executed, imported or unpacked.
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { chmod, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
@@ -28,6 +28,27 @@ export interface FetchDeps {
   log(line: string): void;
   now?: () => number;
   timeoutMs?: number;
+}
+
+/** The real network wrapper shared by the CLI and the setup step. The only place global fetch is
+ *  used; no credentials, redirects stay manual (the caller's loop validates every hop). */
+export function defaultFetchDeps(log: (line: string) => void): FetchDeps {
+  return {
+    log,
+    timeoutMs: 60000,
+    async fetch(url, init) {
+      const res = await fetch(url, {
+        headers: init.headers,
+        redirect: init.redirect,
+        signal: init.signal ?? AbortSignal.timeout(60000),
+      });
+      return {
+        status: res.status,
+        headers: { get: (n: string) => res.headers.get(n) },
+        body: res.body as unknown as AsyncIterable<Uint8Array> | null,
+      };
+    },
+  };
 }
 
 export class GatedProfileError extends Error {
