@@ -86,12 +86,12 @@ export function manifestPath(settingsPath: string): string {
   return settingsPath.replace(/\.json$/, '') + '.managed.json';
 }
 
-function backupTarget(path: string, suffix: string): string {
+export function backupTarget(path: string, suffix: string): string {
   const first = `${path}.${suffix}`;
   return existsSync(first) ? `${path}.${Date.now()}.${suffix}` : first;
 }
 
-function writeSecure(path: string, text: string): void {
+export function writeSecure(path: string, text: string): void {
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, text, { mode: 0o600 });
   renameSync(tmp, path);
