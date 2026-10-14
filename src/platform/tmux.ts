@@ -72,8 +72,18 @@ export async function capture(run: Run, session: string, window: string, lines =
 export function validateSendText(text: string): void {
   if (text.trim().length === 0) throw new Error('empty text');
   if (text.length > 2000) throw new Error('text too long');
-  if (/[\u0000-\u001f\u007f-\u009f  ​-‏‪-‮⁦-⁩﻿]/.test(text)) {
-    throw new Error('text contains control characters');
+  for (const ch of text) {
+    const c = ch.codePointAt(0) as number;
+    const bad =
+      c <= 0x1f ||
+      (c >= 0x7f && c <= 0x9f) ||
+      c === 0x2028 ||
+      c === 0x2029 ||
+      (c >= 0x200b && c <= 0x200f) ||
+      (c >= 0x202a && c <= 0x202e) ||
+      (c >= 0x2066 && c <= 0x2069) ||
+      c === 0xfeff;
+    if (bad) throw new Error('text contains control characters');
   }
   if (text.trimStart().startsWith('!')) throw new Error('text must not start with !');
 }

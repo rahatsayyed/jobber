@@ -118,7 +118,8 @@ describe('sendText', () => {
 
   it('rejects C1, separators, zero-width, bidi and whitespace-prefixed bang', async () => {
     const { run, calls } = fakeRun();
-    for (const bad of ['a\x7fb', 'a\u0085b', 'a b', ' !ls', ' !ls', 'a​b', 'a‮b', '﻿!x']) {
+    const bads = ['a\x7fb', 'a\u0085b', 'a\u2028b', ' !ls', '\u00a0!ls', 'a\u200bb', 'a\u202eb', '\ufeff!x'];
+    for (const bad of bads) {
       await expect(sendText(run, 's', 'w', bad)).rejects.toThrow();
     }
     expect(calls).toHaveLength(0);
