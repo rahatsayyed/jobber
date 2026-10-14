@@ -23,10 +23,12 @@ export interface LockDeps {
 export interface LockHandle {
   readonly info: LockInfo;
   heartbeat(): void;
+  // Callers treat release() === false as "lock lost" (stale, reclaimed or re-taken).
   release(): boolean;
 }
 
 const DEFAULT_TTL_MS = 120000;
+const GUARD_STALE_MS = 5000;
 const NAME_RE = /^[a-z0-9-]{1,32}$/;
 
 export const defaultLockDeps: LockDeps = {
@@ -52,7 +54,7 @@ function readInfo(dir: string): LockInfo | null {
   try {
     const v = JSON.parse(readFileSync(path.join(dir, 'info.json'), 'utf8')) as Partial<LockInfo>;
     if (
-      v && typeof v.token === 'string' && typeof v.pid === 'number' &&
+      v && typeof v.token === 'string' && Number.isInteger(v.pid) && (v.pid as number) > 0 &&
       typeof v.heartbeatAt === 'string' && Number.isFinite(Date.parse(v.heartbeatAt))
     ) {
       return v as LockInfo;
@@ -73,7 +75,8 @@ function writeInfo(dir: string, info: LockInfo): void {
 function isStale(dir: string, deps: LockDeps, ttlMs: number): boolean {
   const info = readInfo(dir);
   if (info) {
-    if (deps.now().getTime() - Date.parse(info.heartbeatAt) > ttlMs) return true;
+    const age = deps.now().getTime() - Date.parse(info.heartbeatAt);
+    if (age > ttlMs || age < -ttlMs) return true; // silent too long, or stamped far in the future
     return !deps.isAlive(info.pid);
   }
   try {
@@ -93,6 +96,19 @@ function tryCreate(dir: string): boolean {
   }
 }
 
+// Short-lived guard that serialises stale reclaim, so one process cannot delete a
+// lock another process just re-took. A guard left by a crash goes stale after seconds.
+function takeGuard(guard: string, deps: LockDeps): boolean {
+  if (tryCreate(guard)) return true;
+  try {
+    if (deps.now().getTime() - statSync(guard).mtimeMs <= GUARD_STALE_MS) return false;
+    rmSync(guard, { recursive: true, force: true });
+  } catch {
+    return false;
+  }
+  return tryCreate(guard);
+}
+
 export function acquireLock(
   root: string,
   name: string,
@@ -104,12 +120,23 @@ export function acquireLock(
   const ttlMs = opts.ttlMs ?? DEFAULT_TTL_MS;
   mkdirSync(root, { recursive: true });
 
-  let created = tryCreate(dir);
-  if (!created) {
+  if (!tryCreate(dir)) {
+    const judged = readInfo(dir)?.token ?? null;
     if (!isStale(dir, deps, ttlMs)) return null;
-    rmSync(dir, { recursive: true, force: true });
-    created = tryCreate(dir); // one retry only; a lost race means someone else holds it
-    if (!created) return null;
+    const guard = `${dir}.reclaim`;
+    if (!takeGuard(guard, deps)) return null;
+    try {
+      // Re-check inside the guard: only reclaim the exact holder judged stale.
+      if ((readInfo(dir)?.token ?? null) !== judged || !isStale(dir, deps, ttlMs)) return null;
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        return null;
+      }
+      if (!tryCreate(dir)) return null;
+    } finally {
+      rmSync(guard, { recursive: true, force: true });
+    }
   }
 
   const at = deps.now().toISOString();
@@ -121,29 +148,59 @@ export function acquireLock(
     acquiredAt: at,
     heartbeatAt: at,
   };
-  writeInfo(dir, info);
+  try {
+    writeInfo(dir, info);
+  } catch {
+    // the directory vanished under us: nothing of ours is left to clean up
+    return null;
+  }
 
   let current: LockInfo = info;
+  const ours = (): boolean => readInfo(dir)?.token === info.token;
   return {
     get info() {
       return current;
     },
     heartbeat() {
-      const stored = readInfo(dir);
-      if (!stored || stored.token !== info.token) return; // no longer ours
-      current = { ...current, heartbeatAt: deps.now().toISOString() };
-      writeInfo(dir, current);
+      const tmp = path.join(dir, `info.json.${process.pid}.hb`);
+      try {
+        if (!ours()) return;
+        const next = { ...current, heartbeatAt: deps.now().toISOString() };
+        writeFileSync(tmp, JSON.stringify(next));
+        if (!ours()) {
+          rmSync(tmp, { force: true });
+          return;
+        }
+        renameSync(tmp, path.join(dir, 'info.json'));
+        current = next;
+      } catch {
+        // lock gone or replaced; release() will report it
+      }
     },
     release() {
-      const stored = readInfo(dir);
-      if (!stored || stored.token !== info.token) return false;
-      rmSync(dir, { recursive: true, force: true });
-      return true;
+      const tomb = path.join(root, `${name}.lock.tomb-${randomUUID()}`);
+      try {
+        renameSync(dir, tomb);
+      } catch {
+        return false;
+      }
+      if (readInfo(tomb)?.token === info.token) {
+        rmSync(tomb, { recursive: true, force: true });
+        return true;
+      }
+      try {
+        renameSync(tomb, dir); // not ours: put the live lock back untouched
+      } catch {
+        rmSync(tomb, { recursive: true, force: true });
+      }
+      return false;
     },
   };
 }
 
-// The live holder, or null when the lock is free or stale.
+// The live holder, or null when the lock is free or stale. A held lock whose info.json
+// is missing or corrupt also reads as null, while acquireLock still refuses it until
+// the directory mtime is older than the ttl.
 export function peekLock(
   root: string,
   name: string,
