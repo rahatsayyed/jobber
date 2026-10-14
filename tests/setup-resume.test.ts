@@ -10,7 +10,9 @@ import {
 } from '../src/setup/resumeConvert.js';
 import type { SetupContext, SetupFs } from '../src/setup/runner.js';
 import { emptyState } from '../src/setup/state.js';
-import { makeResumeStep } from '../src/setup/steps/resume.js';
+import { claudeArgs, makeResumeStep, type ClaudeSpawn } from '../src/setup/steps/resume.js';
+
+const untmp = (p: string): string => p.split('.tmp-')[0];
 
 const ROOT = '/home/u/proj';
 const TARGET = `${ROOT}/user-data/resume.json`;
@@ -49,6 +51,7 @@ function setup(
 ) {
   const store = new Map<string, string>(Object.entries(files));
   const writes: { p: string; data: string; mode: number }[] = [];
+  const renames: string[] = [];
   const prompts: { prompt: string; input: string }[] = [];
   const fs: SetupFs = {
     exists: (p) => store.has(p),
@@ -61,7 +64,11 @@ function setup(
       writes.push({ p, data: d, mode: m });
       store.set(p, d);
     },
-    rename: () => undefined,
+    rename: (a, b) => {
+      renames.push(`${a}>${b}`);
+      store.set(b, store.get(a) ?? '');
+      store.delete(a);
+    },
     chmod: () => undefined,
     remove: () => undefined,
     mkdirp: () => undefined,
@@ -101,7 +108,7 @@ function setup(
       return claudeOut;
     },
   };
-  return { ctx, sio, store, writes, prompts, step: makeResumeStep(deps) };
+  return { ctx, sio, store, writes, renames, prompts, step: makeResumeStep(deps) };
 }
 
 describe('convertResume', () => {
@@ -149,7 +156,7 @@ describe('convertResume', () => {
 
 describe('checkNumbersInSource / summarizeResume', () => {
   it('flags only numbers missing from the source', () => {
-    expect(checkNumbersInSource({ a: 'Grew 2019 to 2022 by 45%, 7 teams' }, 'in 2019 and 2022')).toEqual(['45%']);
+    expect(checkNumbersInSource({ a: 'Grew 2019 to 2022 by 45%' }, 'in 2019 and 2022')).toEqual(['45%']);
   });
   it('masks the phone to the last 4 digits', () => {
     const lines = summarizeResume(resumeJson());
@@ -163,7 +170,9 @@ describe('resume step', () => {
     const out = JSON.stringify(resumeJson({ summary: 'Cut costs 40%.' }));
     const t = setup([{ ask: '/home/u/cv.txt' }, { confirm: true }], out);
     expect(await t.step.run(t.ctx)).toBe('done');
-    expect(t.writes.map((w) => w.p)).toEqual([TARGET]);
+    expect(t.writes.map((w) => untmp(w.p))).toEqual([TARGET]);
+    expect(t.renames).toHaveLength(1);
+    expect(t.store.has(TARGET)).toBe(true);
     expect(t.writes[0].mode).toBe(0o600);
     const say = t.sio.transcript.join('\n');
     expect(say).toContain('40%');
@@ -176,7 +185,7 @@ describe('resume step', () => {
   it('never writes the resume text anywhere but user-data/resume.json', async () => {
     const t = setup([{ ask: '/home/u/cv.txt' }, { confirm: true }], JSON.stringify(resumeJson()));
     await t.step.run(t.ctx);
-    for (const w of t.writes) expect(w.p).toBe(TARGET);
+    for (const w of t.writes) expect(untmp(w.p)).toBe(TARGET);
   });
 
   it('non-JSON output: no write, offers stop', async () => {
@@ -215,7 +224,7 @@ describe('resume step', () => {
     expect(t.writes[0].p).toBe(`${TARGET}.bak-2026-10-14T00-00-00-000Z`);
     expect(t.writes[0].mode).toBe(0o600);
     expect(t.writes[0].data).toBe(existing);
-    expect(t.writes[1].p).toBe(TARGET);
+    expect(t.writes[1].p.startsWith(`${TARGET}.tmp-`)).toBe(true);
   });
 
   it('rejects .docx and paths outside home and project at the prompt', async () => {
@@ -228,5 +237,71 @@ describe('resume step', () => {
     expect(tr).toContain('export to PDF');
     expect(tr).toContain('inside your home folder');
     expect(t.prompts).toHaveLength(1);
+  });
+});
+
+describe('checkNumbersInSource boundaries', () => {
+  it('40% is not satisfied by 140%, 19 not by 2019', () => {
+    expect(checkNumbersInSource({ a: 'Up 40%' }, 'grew 140% fast')).toEqual(['40%']);
+    expect(checkNumbersInSource({ a: 'Since 19' }, 'in 2019')).toEqual(['19']);
+  });
+  it('thousands separators, ranges and decimals', () => {
+    expect(checkNumbersInSource({ a: '1,000 users' }, '1000 users')).toEqual([]);
+    expect(checkNumbersInSource({ a: '2019-2021' }, 'from 2019 to 2020')).toEqual(['2021']);
+    expect(checkNumbersInSource({ a: '2.5x' }, 'a 25 point')).toEqual(['2.5x']);
+    expect(checkNumbersInSource({ a: '2.5x' }, 'a 2.5x gain')).toEqual([]);
+  });
+  it('k and M suffixes compare against the expanded or literal source', () => {
+    expect(checkNumbersInSource({ a: '10k users' }, '10,000 users')).toEqual([]);
+    expect(checkNumbersInSource({ a: '$2M' }, 'raised 3')).toEqual(['$2M']);
+  });
+  it('single digits only when attached to a unit', () => {
+    expect(checkNumbersInSource({ a: 'Led 3 projects' }, 'nothing')).toEqual([]);
+    expect(checkNumbersInSource({ a: '5% and 7 years' }, 'nothing')).toEqual(['5%', '7']);
+  });
+});
+
+describe('nested shape', () => {
+  const shape = { experience: [{ title: 'x', description: ['a'] }], skills: [{ category: 'c', items: ['i'] }] };
+  const run = (out: unknown) =>
+    convertResume(
+      '/home/u/cv.txt',
+      { readText: async () => SOURCE, runClaude: async () => JSON.stringify(out) },
+      ['experience', 'skills'],
+      shape,
+    );
+  it('rejects wrong nested keys and kinds', async () => {
+    expect((await run({ experience: ['text'], skills: [] })).ok).toBe(false);
+    expect((await run({ experience: [{ title: 'x', bogus: 1 }], skills: [] })).ok).toBe(false);
+    expect((await run({ experience: [{ title: 5 }], skills: [] })).ok).toBe(false);
+    const good = { experience: [{ title: 'x', description: ['a'] }], skills: [{ category: 'c', items: ['i'] }] };
+    expect((await run(good)).ok).toBe(true);
+  });
+});
+
+describe('default runClaude spawn', () => {
+  it('uses a tool-less isolated call with allowlisted env, neutral cwd and stdin input', async () => {
+    const calls: { cmd: string; args: string[]; opts: Parameters<ClaudeSpawn>[2] }[] = [];
+    const fake: ClaudeSpawn = async (cmd, args, opts) => {
+      calls.push({ cmd, args, opts });
+      return { stdout: JSON.stringify(resumeJson()), code: 0 };
+    };
+    const t = setup([{ ask: '/home/u/cv.txt' }, { confirm: true }], '');
+    t.ctx.env = { HOME: '/home/u', PATH: '/bin', ANTHROPIC_API_KEY: 'k', TELEGRAM_BOT_TOKEN: 't', LANG: 'C' };
+    const step = makeResumeStep({ readText: async () => SOURCE }, fake);
+    expect(await step.run(t.ctx)).toBe('done');
+    const c = calls[0];
+    expect(c.cmd).toBe('claude');
+    expect(c.args[c.args.indexOf('--tools') + 1]).toBe('');
+    expect(c.args).toContain('--strict-mcp-config');
+    expect(c.args[c.args.indexOf('--setting-sources') + 1]).toBe('user');
+    expect(c.args[c.args.indexOf('--permission-mode') + 1]).toBe('dontAsk');
+    expect(c.args).toContain('--max-turns');
+    expect(c.args.join(' ')).not.toContain('alex@roe.dev');
+    expect(c.opts.input).toBe(SOURCE);
+    expect(c.opts.timeoutMs).toBe(120_000);
+    expect(c.opts.cwd).not.toBe(ROOT);
+    expect(Object.keys(c.opts.env).sort()).toEqual(['HOME', 'LANG', 'PATH']);
+    expect(claudeArgs('p')[1]).toBe('p');
   });
 });

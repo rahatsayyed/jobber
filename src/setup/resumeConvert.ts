@@ -46,30 +46,72 @@ function strings(v: unknown, out: string[]): void {
   else if (v && typeof v === 'object') for (const x of Object.values(v)) strings(x, out);
 }
 
-/** Numbers with 2+ digits or a % in the output that do not occur in the source text. */
+const UNIT_WORDS =
+  'years?|yrs?|months?|weeks?|days?|hours?|ms|gb|mb|tb|users?|customers?|clients?|teams?|engineers?|people|million|billion|thousand|percent';
+const TOKEN_RE = new RegExp(
+  `([$€£₹])?(\\d+(?:[.,]\\d+)*)(?:\\s?(%|[kKmMbB](?![A-Za-z])|[xX](?![A-Za-z]))|(?=\\s(?:${UNIT_WORDS})\\b)(\\s))?`,
+  'gi',
+);
+
+function normalizeNumber(tok: string): string {
+  return tok.replace(/,(?=\d{3}(?!\d))/g, '');
+}
+
+/** Whole digit runs (decimals kept together) in the source, thousands separators removed. */
+function sourceNumbers(source: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of normalizeNumber(source).matchAll(/\d+(?:\.\d+)?/g)) out.add(m[0]);
+  return out;
+}
+
+const SUFFIX_FACTOR: Record<string, number> = { k: 1e3, m: 1e6, b: 1e9 };
+
+/** Numbers in the output that do not occur as a whole number in the source. Flags numbers
+ *  with 2+ digits, or a single digit attached to %, a currency sign, a k/m/b/x suffix or a unit word. */
 export function checkNumbersInSource(json: unknown, source: string): string[] {
   const texts: string[] = [];
   strings(json, texts);
-  const srcCompact = source.replace(/,(?=\d{3}\b)/g, '');
+  const have = sourceNumbers(source);
   const missing: string[] = [];
   const seen = new Set<string>();
   for (const t of texts) {
-    for (const m of t.matchAll(/\d+(?:[.,]\d+)*%?/g)) {
-      const tok = m[0];
-      const bare = tok.replace(/,(?=\d{3}\b)/g, '');
-      if (tok.replace(/\D/g, '').length < 2 && !tok.endsWith('%')) continue;
-      if (seen.has(bare)) continue;
-      seen.add(bare);
-      if (source.includes(tok) || srcCompact.includes(bare)) continue;
-      // "40 %" in the source counts for "40%".
-      if (bare.endsWith('%')) {
-        const num = bare.slice(0, -1).replace(/\./g, '\\.');
-        if (new RegExp(`${num}\\s?%`).test(source)) continue;
-      }
-      missing.push(bare);
+    for (const m of t.matchAll(TOKEN_RE)) {
+      const cur = m[1];
+      const num = normalizeNumber(m[2]);
+      const suffix = m[3];
+      const attached = Boolean(cur) || suffix !== undefined || m[4] !== undefined;
+      if (!attached && num.replace(/\D/g, '').length < 2) continue;
+      const label = `${cur ?? ''}${num}${suffix ?? ''}`;
+      if (seen.has(label)) continue;
+      seen.add(label);
+      if (have.has(num)) continue;
+      const f = suffix ? SUFFIX_FACTOR[suffix.toLowerCase()] : undefined;
+      if (f !== undefined && have.has(String(Number(num) * f))) continue;
+      missing.push(label);
     }
   }
   return missing;
+}
+
+/** Nested shape: array elements are objects whose keys and value kinds follow the template's first element. */
+function shapeProblem(tpl: unknown, val: unknown): boolean {
+  if (Array.isArray(tpl) && tpl.length > 0) {
+    if (!Array.isArray(val)) return true;
+    const t0 = tpl[0];
+    for (const el of val) {
+      if (t0 && typeof t0 === 'object' && !Array.isArray(t0)) {
+        if (!el || typeof el !== 'object' || Array.isArray(el)) return true;
+        const keys = Object.keys(t0 as object);
+        for (const [k, v] of Object.entries(el as object)) {
+          if (!keys.includes(k)) return true;
+          const tv = (t0 as Record<string, unknown>)[k];
+          if (typeof tv === 'string' && v !== null && typeof v !== 'string') return true;
+          if (Array.isArray(tv) && v !== null && !Array.isArray(v)) return true;
+        }
+      } else if (typeof t0 === 'string' && typeof el !== 'string') return true;
+    }
+  }
+  return false;
 }
 
 export async function convertResume(
@@ -107,6 +149,10 @@ export async function convertResume(
   if (absent.length > 0) return { ok: false, problem: `The result is missing keys: ${absent.join(', ')}` };
   const extra = Object.keys(obj).filter((k) => !templateKeys.includes(k));
   if (extra.length > 0) return { ok: false, problem: `The result has ${extra.length} unexpected key(s).` };
+  if (templateShape && typeof templateShape === 'object' && !Array.isArray(templateShape)) {
+    const bad = templateKeys.filter((k) => shapeProblem((templateShape as Record<string, unknown>)[k], obj[k]));
+    if (bad.length > 0) return { ok: false, problem: `The result has the wrong structure in: ${bad.join(', ')}` };
+  }
   const warnings = checkNumbersInSource(obj, source).map(
     (n) => `number ${n} is not in your source text: check it`,
   );
