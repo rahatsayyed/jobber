@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { Check, CheckResult, DoctorContext } from './doctor.js';
 import { parseEnv } from './envFile.js';
 import { hooksStatus, type HookSettings } from './ccgramHooks.js';
-import { detectSet, type RawSets } from './permissions.js';
+import { detectSet, type LocalSettings, type RawSets } from './permissions.js';
 import { hasSession } from './tmux.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -35,6 +35,14 @@ function readPin(ctx: DoctorContext): Pin {
 function lastToken(text: string): string {
   const parts = (text.split('\n')[0] ?? '').trim().split(/\s+/);
   return parts[parts.length - 1] ?? '';
+}
+
+function parseJson(text: string): { ok: true; value: unknown } | { ok: false } {
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch {
+    return { ok: false };
+  }
 }
 
 const TOKEN_SHAPE = /^\d{5,}:[A-Za-z0-9_-]{10,}$/;
@@ -118,7 +126,8 @@ export const ccgramChecks: Check[] = [
       const dir = join(ctx.root, '.ccgram');
       if (!ctx.fs.exists(dir)) return pass('not created yet');
       const mode = ctx.fs.mode(dir);
-      return mode !== null && (mode & 0o777) !== 0o700
+      if (mode === null) return fail('mode could not be read', 'chmod 700 .ccgram');
+      return (mode & 0o777) !== 0o700
         ? fail(`mode is ${(mode & 0o777).toString(8)}, expected 700`, 'chmod 700 .ccgram')
         : pass('mode 700');
     },
@@ -128,14 +137,15 @@ export const ccgramChecks: Check[] = [
     title: 'no skip-permissions flag anywhere',
     async run(ctx) {
       const env = readEnv(ctx) ?? {};
-      const wrapper = join(ctx.root, 'scripts', 'ccgram', 'claude-session.sh');
-      const texts = [
-        env.CCGRAM_CLAUDE_COMMAND ?? '',
-        ctx.env.CCGRAM_CLAUDE_COMMAND ?? '',
-        ctx.fs.exists(wrapper) ? ctx.fs.read(wrapper) : '',
-      ];
+      const dir = join(ctx.root, 'scripts', 'ccgram');
+      const names = ctx.fs.list ? ctx.fs.list(dir) : ['claude-session.sh'];
+      const texts = [env.CCGRAM_CLAUDE_COMMAND ?? '', ctx.env.CCGRAM_CLAUDE_COMMAND ?? ''];
+      for (const name of names) {
+        const p = join(dir, name);
+        if (ctx.fs.exists(p)) texts.push(ctx.fs.read(p));
+      }
       return texts.some((t) => SKIP_FLAG.test(t))
-        ? fail('a skip-permissions flag is configured', 'remove it from CCGRAM_CLAUDE_COMMAND and the wrapper')
+        ? fail('a skip-permissions flag is configured', 'remove it from CCGRAM_CLAUDE_COMMAND and scripts/ccgram')
         : pass('none found');
     },
   },
@@ -155,7 +165,9 @@ export const ccgramChecks: Check[] = [
     title: 'ccgram hooks installed in the project',
     async run(ctx) {
       if (!ctx.fs.exists(settingsPath(ctx))) return warn('.claude/settings.local.json does not exist', 'run setup to install hooks');
-      const status = hooksStatus(JSON.parse(ctx.fs.read(settingsPath(ctx))) as HookSettings);
+      const parsed = parseJson(ctx.fs.read(settingsPath(ctx)));
+      if (!parsed.ok) return fail('settings.local.json is invalid JSON', 'repair or remove .claude/settings.local.json');
+      const status = hooksStatus(parsed.value as HookSettings);
       const missing = Object.entries(status).filter(([, ok]) => !ok).map(([e]) => e);
       return missing.length ? warn(`missing events: ${missing.join(', ')}`, 'run setup to install hooks') : pass('all nine events');
     },
@@ -167,7 +179,11 @@ export const ccgramChecks: Check[] = [
       const setsPath = join(ctx.root, 'config', 'permission-sets.json');
       if (!ctx.fs.exists(setsPath)) return fail('config/permission-sets.json is missing');
       if (!ctx.fs.exists(settingsPath(ctx))) return warn('no .claude/settings.local.json yet', 'run setup to choose a permission set');
-      const set = detectSet(JSON.parse(ctx.fs.read(settingsPath(ctx))), JSON.parse(ctx.fs.read(setsPath)) as RawSets);
+      const settings = parseJson(ctx.fs.read(settingsPath(ctx)));
+      if (!settings.ok) return fail('settings.local.json is invalid JSON', 'repair or remove .claude/settings.local.json');
+      const sets = parseJson(ctx.fs.read(setsPath));
+      if (!sets.ok) return fail('config/permission-sets.json is invalid JSON', 'restore it from git');
+      const set = detectSet(settings.value as LocalSettings, sets.value as RawSets);
       if (set === 'custom') return warn('allow list matches no named set (custom)');
       if (set === 'full') return warn('full: every tool, including Gmail and LinkedIn send, is allowed');
       return pass(set);
@@ -189,8 +205,12 @@ export const ccgramChecks: Check[] = [
     id: 'daemon',
     title: 'ccgram is running',
     async run(ctx) {
-      return (await hasSession(ctx.run, 'ccgram-daemon'))
-        ? pass('tmux session ccgram-daemon is up')
+      const name = ctx.env.CCGRAM_DAEMON_SESSION ?? readEnv(ctx)?.CCGRAM_DAEMON_SESSION ?? 'ccgram-daemon';
+      if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+        return fail('CCGRAM_DAEMON_SESSION is not a valid tmux session name', 'use letters, digits, _ and - only');
+      }
+      return (await hasSession(ctx.run, name))
+        ? pass(`tmux session ${name} is up`)
         : warn('not running', 'bash scripts/ccgram/start.sh');
     },
   },

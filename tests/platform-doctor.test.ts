@@ -34,6 +34,10 @@ function ctxWith(
       exists: (p) => p in files,
       read: (p) => files[p].text,
       mode: (p) => (p in files ? (files[p].mode ?? 0o600) : null),
+      list: (p) =>
+        Object.keys(files)
+          .filter((k) => k.startsWith(p + '/') && !k.slice(p.length + 1).includes('/'))
+          .map((k) => k.slice(p.length + 1)),
     },
   };
 }
@@ -162,6 +166,59 @@ describe('ccgram checks', () => {
   it('fails on a skip-permissions flag in the process environment', async () => {
     const env = { CCGRAM_CLAUDE_COMMAND: 'claude --dangerously-skip-permissions' };
     expect((await byId(ctxWith(goodFiles(), { env })))['no-skip-permissions'].status).toBe('fail');
+  });
+
+  it('resolves the daemon session name from the environment and rejects bad names', async () => {
+    const seen: string[] = [];
+    const ctx = ctxWith(goodFiles(), { env: { CCGRAM_DAEMON_SESSION: 'my-daemon' } });
+    const spy: DoctorContext = {
+      ...ctx,
+      run: async (cmd, args) => {
+        if (args[0] === 'has-session') seen.push(args.join(' '));
+        return ctx.run(cmd, args);
+      },
+    };
+    const r = await byId(spy);
+    expect(seen.join(' ')).toContain('my-daemon');
+    expect(r['daemon'].detail).not.toContain('ccgram-daemon');
+    const bad = await byId(ctxWith(goodFiles(), { env: { CCGRAM_DAEMON_SESSION: 'a b;rm' } }));
+    expect(bad['daemon'].status).toBe('fail');
+    expect(JSON.stringify(bad['daemon'])).not.toContain('a b;rm');
+  });
+
+  it('catches skip-permissions in any scripts/ccgram file and in an exported .env line', async () => {
+    const files = goodFiles();
+    files['/p/scripts/ccgram/run.sh'] = { text: 'claude --dangerously-skip-permissions\n' };
+    expect((await byId(ctxWith(files)))['no-skip-permissions'].status).toBe('fail');
+    const exp = goodFiles();
+    exp['/p/.env'] = {
+      text: GOOD_ENV + 'export CCGRAM_CLAUDE_COMMAND=claude --dangerously-skip-permissions\n',
+      mode: 0o600,
+    };
+    expect((await byId(ctxWith(exp)))['no-skip-permissions'].status).toBe('fail');
+    expect(parseEnv('export A=1\n')).toEqual({ A: '1' });
+  });
+
+  it('reports malformed settings JSON with a fixed message and fails closed on unknown dir mode', async () => {
+    const files = goodFiles();
+    files['/p/.claude/settings.local.json'] = { text: '{"secret": SECRET-TOKEN-VALUE' };
+    const r = await byId(ctxWith(files));
+    for (const id of ['project-hooks', 'permission-set']) {
+      expect(r[id].detail).toBe('settings.local.json is invalid JSON');
+    }
+    const ctx = ctxWith(goodFiles());
+    const nullMode: DoctorContext = {
+      ...ctx,
+      fs: { ...ctx.fs, exists: (p) => p === '/p/.ccgram' || ctx.fs.exists(p), mode: (p) => (p === '/p/.ccgram' ? null : ctx.fs.mode(p)) },
+    };
+    expect((await byId(nullMode))['ccgram-dir-mode'].status).toBe('fail');
+  });
+
+  it('crash path prints no error message', async () => {
+    const boom = [{ id: 'x', title: 'X', run: async () => { throw new Error('SECRET-TOKEN-VALUE'); } }];
+    const out = await runChecks(boom, ctxWith({}));
+    expect(JSON.stringify(out)).not.toContain('SECRET-TOKEN-VALUE');
+    expect(out[0].result.status).toBe('fail');
   });
 
   it('never leaks a synthetic token anywhere in the report', async () => {

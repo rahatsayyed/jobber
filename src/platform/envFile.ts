@@ -2,7 +2,8 @@
 export function parseEnv(text: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const raw of text.split('\n')) {
-    const line = raw.trim();
+    let line = raw.trim();
+    if (line.startsWith('export ')) line = line.slice(7).trim();
     if (!line || line.startsWith('#')) continue;
     const eq = line.indexOf('=');
     if (eq < 1) continue;

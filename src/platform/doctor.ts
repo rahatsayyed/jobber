@@ -15,6 +15,7 @@ export interface DoctorContext {
     exists(path: string): boolean;
     read(path: string): string;
     mode(path: string): number | null;
+    list?(path: string): string[];
   };
 }
 export interface Check {
@@ -33,11 +34,11 @@ export async function runChecks(checks: Check[], ctx: DoctorContext): Promise<Ch
   for (const check of checks) {
     try {
       out.push({ id: check.id, title: check.title, result: await check.run(ctx) });
-    } catch (err) {
+    } catch {
       out.push({
         id: check.id,
         title: check.title,
-        result: { status: 'fail', detail: `check crashed: ${err instanceof Error ? err.message : String(err)}` },
+        result: { status: 'fail', detail: `check ${check.id} crashed (details withheld)` },
       });
     }
   }

@@ -1,5 +1,5 @@
 // scripts/doctor.ts
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ccgramChecks } from '../src/platform/checks.js';
 import { exitCode, formatReport, runChecks, type DoctorContext } from '../src/platform/doctor.js';
@@ -12,6 +12,7 @@ const ctx: DoctorContext = {
   fs: {
     exists: (p) => existsSync(p),
     read: (p) => readFileSync(p, 'utf8'),
+    list: (p) => (existsSync(p) ? readdirSync(p) : []),
     mode: (p) => (existsSync(p) ? statSync(p).mode & 0o777 : null),
   },
 };
