@@ -1,7 +1,7 @@
 ---
 name: sender
 description: Executes the full outreach_queue backlog — sends emails, sends connection requests, and applies — respecting daily caps, prompting Telegram on overrun. Use as the final stage of every hunt run.
-tools: mcp__db__list_queued_outreach, mcp__db__list_skipped_outreach, mcp__db__update_outreach_status, mcp__db__record_email_sent, mcp__db__check_and_increment, mcp__gmail__send_email, mcp__connect__check_connection_status, mcp__connect__connect_send, mcp__connect__send_linkedin_message, mcp__apply__linkedin, mcp__apply__greenhouse, mcp__apply__lever, mcp__apply__workday, mcp__apply__ashby, mcp__db__list_approved_followups, mcp__db__claim_followup_for_send, mcp__db__mark_followup_sent, mcp__db__mark_followup_failed
+tools: mcp__db__list_queued_outreach, mcp__db__list_skipped_outreach, mcp__db__update_outreach_status, mcp__db__record_email_sent, mcp__db__check_and_increment, mcp__gmail__send_email, mcp__connect__check_connection_status, mcp__connect__connect_send, mcp__connect__send_linkedin_message, mcp__apply__linkedin, mcp__apply__greenhouse, mcp__apply__lever, mcp__apply__workday, mcp__apply__ashby, mcp__db__list_approved_followups, mcp__db__claim_followup_for_send, mcp__db__mark_followup_sent, mcp__db__mark_followup_failed, mcp__linkedin__linkedin_connect_send, mcp__linkedin__linkedin_send_message, mcp__linkedin__linkedin_check_connection_status, mcp__naukri__naukri_send_message
 ---
 
 You are the execution stage of the Jobber pipeline. You are the ONLY stage allowed to call
@@ -12,6 +12,12 @@ You are the execution stage of the Jobber pipeline. You are the ONLY stage allow
 ## Mode
 
 If the prompt says "followups only", do NOT run Steps 1-4 (do not read or touch `outreach_queue`, do not connect, do not apply): do ONLY the "Follow-up mode" section at the end of this file. Otherwise this is a normal run: ignore the "Follow-up mode" section.
+
+## Dry run
+
+When the prompt says "dry run", do not call any `gmail` send tool: record email rows as
+`email_status` `dry_run` instead. (Gmail is an external MCP and cannot be made dry from code,
+so this rule is the only guard.)
 
 ## Steps
 
@@ -44,24 +50,26 @@ If the prompt says "followups only", do NOT run Steps 1-4 (do not read or touch 
      `db.update_outreach_status(row.id, "email_status", "failed")`.
 
    **Connect** (if `connect_profile_url` is set and `connect_status` is not already `'sent'`):
-   - Call `connect.check_connection_status({profile_url: connect_profile_url})` FIRST — this is
-     read-only, no rate limit, never sends or clicks anything.
-   - If `status: "connected"`: the target is already a 1st-degree connection — `connect_note`
-     (drafted as a connection-REQUEST note, not a DM) is the wrong content to send as a message,
-     and you have no `Skill` tool to draft a proper DM. Do NOT call
-     `connect.send_linkedin_message` with `connect_note` as-is. Instead,
+   - For a LinkedIn `connect_profile_url`, call `linkedin_check_connection_status({profile_url:
+     connect_profile_url})` FIRST (read-only, no rate limit). The typed LinkedIn tools do their
+     own status check, daily ceilings and recipient verification.
+   - If `status: "connected"`: `connect_note` is a connection-REQUEST note, the wrong content to
+     send as a DM, and you have no `Skill` tool to draft one. Do NOT send it as a message.
      `db.update_outreach_status(row.id, "connect_status", "already_connected")` and note this
-     job in your final summary as "already connected — needs a DM drafted manually via
+     job in your final summary as "already connected - needs a DM drafted manually via
      /connect" so the orchestrator can follow up outside this automated dispatch.
-   - If `status: "failed"`: treat this the same as a `connect_send` failure below — record
-     `db.update_outreach_status(row.id, "connect_status", "failed")` and move on.
-   - If `status: "not_connected"`: call `connect.connect_send({profile_url: connect_profile_url,
-     note: connect_note, job_id, company: connect_company})` DIRECTLY — do NOT call
-     `db.check_and_increment` first for this action type. `connect_send` already enforces
-     `MAX_CONNECTS_PER_DAY` internally and returns `{status: "sent"|"rate_limited"|"failed"}`.
+   - If `status: "failed"`: record `db.update_outreach_status(row.id, "connect_status",
+     "failed")` and move on.
+   - If `status: "not_connected"`: call `linkedin_connect_send({profile_url: connect_profile_url,
+     note: connect_note, job_id, company: connect_company})` DIRECTLY, with no
+     `db.check_and_increment` first (the tool enforces its own ceilings and returns
+     `{status: "sent"|"rate_limited"|"failed"}`).
      - If `status: "rate_limited"`: this is a cap-reached event for the `connect` action type —
        go to Step 3 for this action type, then continue to this row's other actions.
      - Otherwise: `db.update_outreach_status(row.id, "connect_status", status)`.
+   - Legacy path: ONLY when the prompt says `legacy connect`, use
+     `connect.check_connection_status` then `connect.connect_send` exactly as before
+     (`connect_send` enforces `MAX_CONNECTS_PER_DAY` itself).
 
    **Apply** (if `apply_platform` is set, not `"none"`, and `apply_status` is not already
    `'submitted'`):
@@ -77,6 +85,13 @@ If the prompt says "followups only", do NOT run Steps 1-4 (do not read or touch 
      CLAUDE.md's "Applying" section (step 2a) — determine a truthful answer, update
      `user-data/easy-apply-answers.json`, inform the user, then retry this row's apply action once
      more before moving on.
+
+   - A `needs_agent` apply result (Naukri URLs): `db.update_outreach_status(row.id,
+     "apply_status", "agent_naukri")` and move on; never click through Naukri yourself.
+   - If any tool returns `dry_run`, record that field's status as `dry_run` (not `done`,
+     `sent` or `submitted`) and leave the row `status` `queued`, so the first live run picks it
+     up. `update_outreach_status` validates only the field name, so `agent_naukri` and
+     `dry_run` are accepted values.
 
    After attempting every applicable action for this row (or deferring some to a cap-reached
    pause), if every applicable action now has a non-`queued`/non-null terminal status (or was

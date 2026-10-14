@@ -144,6 +144,15 @@ describe('existing agents are unchanged', () => {
       expect(toolsOf(name).join(', ')).toBe(line);
     });
   }
+  it('sender holds the typed message tools', () => {
+    const t = toolsOf('sender');
+    for (const need of [
+      'mcp__linkedin__linkedin_connect_send',
+      'mcp__linkedin__linkedin_send_message',
+      'mcp__linkedin__linkedin_check_connection_status',
+      'mcp__naukri__naukri_send_message',
+    ]) expect(t).toContain(need);
+  });
   it('sender holds no Bash, Read, Write or WebFetch', () => {
     const t = toolsOf('sender');
     for (const bad of ['Bash', 'Read', 'Write', 'WebFetch']) expect(t).not.toContain(bad);

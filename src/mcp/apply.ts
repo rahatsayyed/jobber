@@ -4,6 +4,46 @@ import { z } from 'zod';
 import { applyEasyApply } from '../apply/linkedin.js';
 import { applyExternal } from '../apply/external.js';
 import { routeApplyAuto } from './applyAutoRouter.js';
+import { isDryRun, recordDryRun } from '../safety/dryRun.js';
+import { openDb } from '../db.js';
+
+/**
+ * Dry-run seam: checked at the top of every apply tool, before any browser, counter or file use.
+ * Returns the dry_run result (after recording a dry_run_actions row) or null when live.
+ */
+export function dryRunApply(
+  platform: string,
+  args: { job_id: string; apply_url?: string },
+  env: NodeJS.ProcessEnv = process.env,
+): { status: 'dry_run'; platform: string; job_id: string; id: number } | null {
+  if (!isDryRun(env)) return null;
+  const payload: Record<string, unknown> = { job_id: args.job_id };
+  if (args.apply_url !== undefined) payload.apply_url = args.apply_url;
+  const db = openDb();
+  const rec = recordDryRun(db, { runId: null, action: 'apply', platform, payload }, new Date(), env);
+  return { status: 'dry_run', platform, job_id: args.job_id, id: rec.id };
+}
+
+/** apply.auto handler body, exported so it can be tested without a browser. */
+export async function handleApplyAuto(
+  { apply_url, job_id }: { apply_url: string; job_id: string },
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<unknown> {
+  const route = routeApplyAuto(apply_url);
+  if (route.kind === 'naukri_agent') {
+    return {
+      status: 'needs_agent',
+      platform: 'naukri',
+      reason: 'naukri apply is agent-driven: dispatch the naukri-search worker or use naukri_open',
+    };
+  }
+  const platform = route.kind === 'linkedin' ? 'linkedin' : route.platform ?? 'external';
+  const dry = dryRunApply(platform, { job_id, apply_url }, env);
+  if (dry) return dry;
+  return route.kind === 'linkedin'
+    ? await applyEasyApply({ job_id })
+    : await applyExternal({ job_id, expected_platform: route.platform ?? undefined });
+}
 
 // One MCP server, one tool per apply platform. src/apply/linkedin.ts and src/apply/external.ts
 // keep their own Playwright flows and unit tests (applyEasyApply / applyExternal), unchanged —
@@ -24,7 +64,7 @@ server.registerTool(
     },
   },
   async ({ job_id }) => {
-    const result = await applyEasyApply({ job_id });
+    const result = dryRunApply('linkedin', { job_id }) ?? (await applyEasyApply({ job_id }));
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
 );
@@ -45,7 +85,8 @@ function registerExternalPlatform(platform: string) {
       },
     },
     async ({ job_id }) => {
-      const result = await applyExternal({ job_id, expected_platform: platform });
+      const result =
+        dryRunApply(platform, { job_id }) ?? (await applyExternal({ job_id, expected_platform: platform }));
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
   );
@@ -70,11 +111,7 @@ server.registerTool(
     },
   },
   async ({ apply_url, job_id }) => {
-    const route = routeApplyAuto(apply_url);
-    const result =
-      route.kind === 'linkedin'
-        ? await applyEasyApply({ job_id })
-        : await applyExternal({ job_id, expected_platform: route.platform ?? undefined });
+    const result = await handleApplyAuto({ apply_url, job_id });
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
 );
