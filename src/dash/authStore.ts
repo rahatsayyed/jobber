@@ -77,11 +77,22 @@ export function pinSub(db: AuthDb, sub: string, now: Date): boolean {
   return r.changes === 1;
 }
 
+const PENDING_CAP = 100;
+
 export function savePendingLogin(db: AuthDb, p: PendingLogin): void {
-  db.prepare(
-    `INSERT OR REPLACE INTO pending_login (state_hash, nonce, verifier, reauth, session_hash, created_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(p.stateHash, p.nonce, p.verifier, p.reauth ? 1 : 0, p.sessionHash, p.createdAt, p.expiresAt);
+  db.transaction(() => {
+    // prune expired rows (relative to this row's creation time), then keep at most PENDING_CAP live rows
+    db.prepare('DELETE FROM pending_login WHERE expires_at <= ?').run(p.createdAt);
+    db.prepare(
+      `DELETE FROM pending_login WHERE state_hash IN (
+         SELECT state_hash FROM pending_login ORDER BY created_at ASC, rowid ASC
+         LIMIT MAX(0, (SELECT COUNT(*) FROM pending_login) - ?))`,
+    ).run(PENDING_CAP - 1);
+    db.prepare(
+      `INSERT OR REPLACE INTO pending_login (state_hash, nonce, verifier, reauth, session_hash, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(p.stateHash, p.nonce, p.verifier, p.reauth ? 1 : 0, p.sessionHash, p.createdAt, p.expiresAt);
+  })();
 }
 
 export function takePendingLogin(db: AuthDb, stateHash: string, now: Date): PendingLogin | null {

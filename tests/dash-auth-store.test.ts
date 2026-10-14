@@ -71,3 +71,30 @@ describe('authStore', () => {
     expect(listAudit(db, 200, all[2]!.id).length).toBe(3);
   });
 });
+
+describe('pending login prune and cap', () => {
+  const mk = (i: number, createdMs: number, ttlMs: number) => ({
+    stateHash: `h${i}`, nonce: 'n', verifier: 'v', reauth: false, sessionHash: null,
+    createdAt: new Date(createdMs).toISOString(), expiresAt: new Date(createdMs + ttlMs).toISOString(),
+  });
+  const count = (db: ReturnType<typeof fresh>['db']) =>
+    (db.prepare('SELECT COUNT(*) AS n FROM pending_login').get() as { n: number }).n;
+
+  it('caps live rows, drops the oldest, keeps the newest takeable', () => {
+    const { db } = fresh();
+    const t0 = now.getTime();
+    for (let i = 0; i < 150; i++) savePendingLogin(db, mk(i, t0 + i * 1000, 600_000));
+    expect(count(db)).toBe(100);
+    expect(takePendingLogin(db, 'h0', new Date(t0 + 200_000))).toBeNull();
+    expect(takePendingLogin(db, 'h149', new Date(t0 + 200_000))).not.toBeNull();
+  });
+
+  it('removes expired rows on the next save', () => {
+    const { db } = fresh();
+    const t0 = now.getTime();
+    for (let i = 0; i < 5; i++) savePendingLogin(db, mk(i, t0, 1000));
+    expect(count(db)).toBe(5);
+    savePendingLogin(db, mk(99, t0 + 5000, 600_000));
+    expect(count(db)).toBe(1);
+  });
+});

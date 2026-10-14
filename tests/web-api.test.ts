@@ -246,6 +246,18 @@ describe('login flow', () => {
   });
 });
 
+describe('pending login growth', () => {
+  it('a flood of unauthenticated login starts keeps pending_login bounded', async () => {
+    h = await makeHarness();
+    for (let i = 0; i < 130; i++) {
+      const r = await h.call('GET', '/auth/login');
+      expect(r.status).toBe(302);
+    }
+    const n = (h.auth.prepare('SELECT COUNT(*) AS n FROM pending_login').get() as { n: number }).n;
+    expect(n).toBeLessThanOrEqual(100);
+  });
+});
+
 describe('csrf and origin', () => {
   it('session endpoint returns the csrf token; POST without it is 403, foreign origin 403, correct passes', async () => {
     const { h: hh, cookie } = await authed();
