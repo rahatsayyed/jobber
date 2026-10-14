@@ -4,6 +4,8 @@ import path from 'node:path';
 import { launchRealChrome, LINKEDIN_LAUNCH_OPTIONS, LINKEDIN_HEADED_LAUNCH_OPTIONS, LINKEDIN_CONTEXT_OPTIONS } from '../src/linkedin/browser.js';
 import { HEADLESS_CONTEXT_OPTIONS } from '../src/sources/naukri.js';
 import type { LiBrowser, LiLauncher } from '../src/linkedin/types.js';
+import { linkedinBrowserChecks } from '../src/linkedin/chromeCheck.js';
+import type { DoctorContext } from '../src/platform/doctor.js';
 
 function fakeLauncher(): { launcher: LiLauncher; calls: Array<Record<string, unknown>> } {
   const calls: Array<Record<string, unknown>> = [];
@@ -41,6 +43,25 @@ describe('context options', () => {
     expect(LINKEDIN_CONTEXT_OPTIONS.timezoneId).toBe('Asia/Kolkata');
     expect(LINKEDIN_CONTEXT_OPTIONS.viewport).toEqual({ width: 1440, height: 900 });
   });
+});
+
+describe('linkedin doctor checks', () => {
+  const ctx = { root: '.', env: { PATH: 'bin' }, run: async () => ({ stdout: '', stderr: '', code: 0 }), fs: {} } as unknown as DoctorContext;
+  for (const platform of ['darwin', 'linux'] as const) {
+    it(`passes when Chrome and patchright exist (${platform})`, async () => {
+      const checks = linkedinBrowserChecks({ exists: () => true, importPatchright: async () => ({}), platform });
+      expect(checks.map((c) => c.id)).toEqual(['linkedin.chrome-installed', 'linkedin.patchright-importable']);
+      for (const c of checks) expect((await c.run(ctx)).status).toBe('pass');
+    });
+    it(`fails without suggesting a bundled browser install (${platform})`, async () => {
+      const checks = linkedinBrowserChecks({ exists: () => false, importPatchright: async () => { throw new Error('nope'); }, platform });
+      for (const c of checks) {
+        const r = await c.run(ctx);
+        expect(r.status).toBe('fail');
+        expect(`${r.detail} ${r.fix ?? ''}`).not.toMatch(/playwright\s+install|install\s+chromium/i);
+      }
+    });
+  }
 });
 
 describe('source scan', () => {

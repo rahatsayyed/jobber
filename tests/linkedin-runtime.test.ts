@@ -1,0 +1,215 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { openDb } from '../src/db.js';
+import { haltReason } from '../src/outreach/limits.js';
+import { createRuntime, CLICKABLE_SELECTOR, SEARCH_INPUT_SELECTOR, isRefusedControl, type Runtime } from '../src/linkedin/runtime.js';
+import { SELECTORS } from '../src/linkedin/selectors.js';
+import { makeFakeLauncher, type FakeSite } from './helpers/fakeLinkedin.js';
+
+const STATE = { cookies: [{ name: 'li_at', value: 'SENTINEL-NOT-REAL', domain: '.linkedin.com', path: '/' }], origins: [] };
+let dir: string;
+let sessionPath: string;
+let lockPath: string;
+const runtimes: Runtime[] = [];
+
+beforeEach(() => {
+  dir = mkdtempSync(path.join(tmpdir(), 'li-'));
+  sessionPath = path.join(dir, 'state.json');
+  lockPath = path.join(dir, 'linkedin.lock');
+  writeFileSync(sessionPath, JSON.stringify(STATE), { mode: 0o600 });
+  chmodSync(sessionPath, 0o600);
+});
+afterEach(async () => {
+  vi.useRealTimers();
+  for (const r of runtimes.splice(0)) await r.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+const btn = (text: string, onClick?: () => void) => ({ text, onClick });
+
+function setup(site: FakeSite, extra: { idleMs?: number } = {}) {
+  const log: string[] = [];
+  const launcher = makeFakeLauncher(site, log);
+  const db = openDb(':memory:');
+  const rt = createRuntime({ db, launcher, sessionPath, lockPath, settleMs: 0, idleMs: extra.idleMs, env: {} });
+  runtimes.push(rt);
+  return { rt, log, launcher, db };
+}
+
+const profileSite = (): FakeSite => ({
+  state: STATE,
+  pages: {
+    '/in/jane-doe/': {
+      title: 'Jane Doe | LinkedIn',
+      elements: {
+        [CLICKABLE_SELECTOR]: [btn('Connect'), btn('Send'), btn('Message'), btn('Accept'), btn('More'), btn('Sender Name'), btn('Home')],
+        [SELECTORS.messageComposeTextarea]: [],
+        [SEARCH_INPUT_SELECTOR]: [{ text: '' }],
+      },
+    },
+    '/checkpoint/challenge': { title: 'Security Verification', bodyText: 'Please verify' },
+  },
+});
+
+describe('open', () => {
+  it('refuses non-LinkedIn and blocked paths without launching', async () => {
+    const { rt, launcher } = setup(profileSite());
+    const a = await rt.open('https://example.com/in/x/');
+    const b = await rt.open('https://www.linkedin.com/m/logout');
+    expect(a.ok).toBe(false);
+    expect(b.ok).toBe(false);
+    expect(launcher.launches).toBe(0);
+  });
+
+  it('keeps one session at a time and locks across runtimes', async () => {
+    const s = setup(profileSite());
+    const r1 = await s.rt.open('https://www.linkedin.com/in/jane-doe/');
+    expect(r1.ok).toBe(true);
+    const log2: string[] = [];
+    const launcher2 = makeFakeLauncher(profileSite(), log2);
+    const rt2 = createRuntime({ db: s.db, launcher: launcher2, sessionPath, lockPath, settleMs: 0, env: {} });
+    runtimes.push(rt2);
+    const r2 = await rt2.open('https://www.linkedin.com/in/jane-doe/');
+    expect(r2).toMatchObject({ ok: false, code: 'session_locked' });
+    expect(launcher2.launches).toBe(0);
+    await s.rt.open('https://www.linkedin.com/in/jane-doe/');
+    expect(s.launcher.launches).toBe(2);
+    expect(s.launcher.browsers[0].closed).toBe(true);
+    expect(s.launcher.browsers[1].closed).toBe(false);
+  });
+
+  it('halts on a checkpoint page (path only) and refuses later opens', async () => {
+    const s = setup(profileSite());
+    const r = await s.rt.open('https://www.linkedin.com/checkpoint/challenge?token=secret');
+    expect(r).toMatchObject({ ok: false, code: 'halted' });
+    const reason = haltReason(s.db, 'linkedin');
+    expect(reason).toContain('/checkpoint/challenge');
+    expect(reason).not.toContain('secret');
+    const before = s.launcher.launches;
+    const r2 = await s.rt.open('https://www.linkedin.com/in/jane-doe/');
+    expect(r2).toMatchObject({ ok: false, code: 'halted' });
+    expect(s.launcher.launches).toBe(before);
+  });
+
+  it('chrome_unavailable does not set the halt flag', async () => {
+    const site = profileSite();
+    site.launchFails = 'Executable does not exist';
+    const s = setup(site);
+    const r = await s.rt.open('https://www.linkedin.com/in/jane-doe/');
+    expect(r).toMatchObject({ ok: false, code: 'chrome_unavailable' });
+    expect(haltReason(s.db, 'linkedin')).toBeNull();
+  });
+
+  it('refuses an invalid session file', async () => {
+    chmodSync(sessionPath, 0o644);
+    const s = setup(profileSite());
+    const r = await s.rt.open('https://www.linkedin.com/in/jane-doe/');
+    expect(r).toMatchObject({ ok: false, code: 'session_invalid' });
+    expect(s.launcher.launches).toBe(0);
+  });
+});
+
+describe('click', () => {
+  it('refuses irreversible controls and clicks harmless ones', async () => {
+    const s = setup(profileSite());
+    await s.rt.open('https://www.linkedin.com/in/jane-doe/');
+    for (const t of ['Connect', 'Send', 'Message', 'Accept']) {
+      const r = await s.rt.click(t);
+      expect(r).toMatchObject({ ok: false, code: 'typed_tool_only' });
+    }
+    expect(s.log.filter((l) => l.startsWith('click:'))).toEqual([]);
+    const more = await s.rt.click('More');
+    expect(more.ok).toBe(true);
+    expect(s.log.filter((l) => l.startsWith('click:'))).toEqual([`click:${CLICKABLE_SELECTOR}:More`]);
+    // whole-word: "Sender Name" is not a Send control
+    const sender = await s.rt.click('Sender Name');
+    expect(sender.ok).toBe(true);
+  });
+
+  it('refuses by aria-label and the invite pattern', () => {
+    expect(isRefusedControl('', 'Invite Jane Doe to connect')).toBe(true);
+    expect(isRefusedControl('Go', 'Send invitation')).toBe(true);
+    expect(isRefusedControl('Sender Name', '')).toBe(false);
+    expect(isRefusedControl('Remove connection', '')).toBe(true);
+    expect(isRefusedControl('Home', '')).toBe(false);
+  });
+
+  it('reports no_match and ambiguous without clicking', async () => {
+    const site = profileSite();
+    site.pages['/in/jane-doe/'].elements![CLICKABLE_SELECTOR] = [btn('Open A'), btn('Open B')];
+    const s = setup(site);
+    await s.rt.open('https://www.linkedin.com/in/jane-doe/');
+    expect((await s.rt.click('Open')).code).toBe('ambiguous');
+    expect((await s.rt.click('Nothing')).code).toBe('no_match');
+    expect(s.log.filter((l) => l.startsWith('click:'))).toEqual([]);
+  });
+
+  it('halts when a click lands on a block page', async () => {
+    const site = profileSite();
+    site.pages['/in/jane-doe/'].elements![CLICKABLE_SELECTOR] = [
+      btn('Details', () => { site.onGoto = undefined; }),
+    ];
+    const s = setup(site);
+    await s.rt.open('https://www.linkedin.com/in/jane-doe/');
+    site.pages['/in/jane-doe/'].notices = ['Quick security check'];
+    const r = await s.rt.click('Details');
+    expect(r).toMatchObject({ ok: false, code: 'halted' });
+    expect(haltReason(s.db, 'linkedin')).toContain('captcha');
+    expect(await s.rt.click('Details')).toMatchObject({ code: 'halted' });
+  });
+});
+
+describe('type', () => {
+  it('refuses compose boxes, fills the search box, caps length', async () => {
+    const site = profileSite();
+    const s = setup(site);
+    await s.rt.open('https://www.linkedin.com/in/jane-doe/');
+    site.pages['/in/jane-doe/'].elements![SELECTORS.messageComposeTextarea] = [{ text: '' }];
+    expect(await s.rt.type('hello')).toMatchObject({ ok: false, code: 'typed_tool_only' });
+    expect(s.log.some((l) => l.startsWith('fill:'))).toBe(false);
+    site.pages['/in/jane-doe/'].elements![SELECTORS.messageComposeTextarea] = [];
+    expect((await s.rt.type('react engineer')).ok).toBe(true);
+    expect(s.log).toContain(`fill:${SEARCH_INPUT_SELECTOR}`);
+    expect((await s.rt.type('x'.repeat(201))).ok).toBe(false);
+  });
+});
+
+describe('serial and lifecycle', () => {
+  it('runs concurrent snapshots in order', async () => {
+    const s = setup(profileSite());
+    await s.rt.open('https://www.linkedin.com/in/jane-doe/');
+    s.log.length = 0;
+    const order: number[] = [];
+    await Promise.all([
+      s.rt.serial(async () => { await new Promise((r) => setTimeout(r, 15)); order.push(1); }),
+      s.rt.snapshot().then(() => order.push(2)),
+    ]);
+    expect(order).toEqual([1, 2]);
+  });
+
+  it('idle timer saves state once, closes the browser and releases the lock', async () => {
+    vi.useFakeTimers();
+    const s = setup(profileSite(), { idleMs: 20 });
+    const p = s.rt.open('https://www.linkedin.com/in/jane-doe/');
+    await vi.advanceTimersByTimeAsync(0);
+    expect((await p).ok).toBe(true);
+    expect(existsSync(lockPath)).toBe(true);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(s.launcher.browsers[0].closed).toBe(true);
+    expect(s.launcher.storageStateCalls).toBe(1);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('close() with a logged-out state leaves the session file untouched', async () => {
+    const site = profileSite();
+    site.state = { cookies: [{ name: 'JSESSIONID', value: 'x' }] };
+    const s = setup(site);
+    await s.rt.open('https://www.linkedin.com/in/jane-doe/');
+    const before = readFileSync(sessionPath);
+    expect(await s.rt.close()).toBe(true);
+    expect(readFileSync(sessionPath).equals(before)).toBe(true);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+});
