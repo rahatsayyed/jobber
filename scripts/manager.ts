@@ -12,6 +12,7 @@ import {
   SUBCOMMANDS,
   USAGE,
 } from '../src/platform/manager.js';
+import { redactPane } from '../src/platform/redact.js';
 import { assertName, defaultRun, listWindows } from '../src/platform/tmux.js';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -32,13 +33,16 @@ async function status(): Promise<string> {
     const db = new Database(path, { readonly: true, fileMustExist: true });
     try {
       const snap = snapMod.buildSnapshot(db, loadOutreachConfig(), new Date());
+      // WEB_TMUX_SESSION on purpose: the output must match scripts/status.ts health.
       const session = process.env.WEB_TMUX_SESSION?.trim() || 'ccgram';
       return renderMod.renderHealth(snap, await listWindows(defaultRun, session));
     } finally {
       db.close();
     }
   } catch (e) {
-    return `status error: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`;
+    const code = (e as { code?: unknown }).code;
+    if (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND') return 'status: install plan 7C-lite';
+    return `status error: ${redactPane(e instanceof Error ? e.message.split('\n')[0] : String(e))}`;
   }
 }
 
@@ -60,7 +64,13 @@ async function main(): Promise<number> {
       }
       assertName(arg);
     }
-    const cfg = loadManagerConfig(readFileSync(resolve(ROOT, 'config/manager-windows.json'), 'utf8'));
+    let cfg: ReturnType<typeof loadManagerConfig>;
+    try {
+      cfg = loadManagerConfig(readFileSync(resolve(ROOT, 'config/manager-windows.json'), 'utf8'));
+    } catch (e) {
+      console.error(`config error: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`);
+      return 1;
+    }
     if (sub === 'list') {
       const wins = await listManaged(defaultRun, cfg, process.env);
       if (wins.length === 0) console.log(`no windows in session ${sessionName(cfg, process.env)}`);

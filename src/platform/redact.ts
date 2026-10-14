@@ -3,7 +3,7 @@
 // NOTE: this duplicates the intent of redactSecrets in src/web/server.ts on purpose (that
 // module is owned by another plan); the pane variant is line oriented and always strict.
 
-const LINE_MARKERS = /(TOKEN\s*=|PASSWORD\s*=|SECRET\s*=|API_KEY\s*=|WEB_OIDC_CLIENT_SECRET|^\s*(cookie|set-cookie|authorization)\s*:)/i;
+const LINE_MARKERS = /(TOKEN\s*=|PASSWORD\s*=|SECRET\s*=|API_KEY\s*=|WEB_OIDC_CLIENT_SECRET|(token|password|secret|api[_-]?key)\s*:|\b(cookie|set-cookie|authorization)\s*:)/i;
 
 const PATTERNS: RegExp[] = [
   /\b\d{6,}:[A-Za-z0-9_-]{30,}\b/g, // Telegram bot token shape

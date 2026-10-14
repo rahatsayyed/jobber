@@ -33,6 +33,7 @@ export function loadManagerConfig(text: string): ManagerConfig {
   const windows: ManagerConfig['windows'] = {};
   for (const [name, w] of Object.entries(raw.windows)) {
     assertName(name);
+    if (name in Object.prototype) throw new Error(`manager config: window name ${name} is reserved`);
     if (prot.includes(name)) throw new Error(`manager config: ${name} is protected and cannot be managed`);
     if (!isObj(w) || !Array.isArray(w.argv) || w.argv.length === 0 || !w.argv.every((a) => typeof a === 'string')) {
       throw new Error(`manager config: ${name}.argv must be a non-empty string array`);
@@ -66,7 +67,7 @@ export async function listManaged(run: Run, cfg: ManagerConfig, env: NodeJS.Proc
     name: w.name,
     active: w.active,
     command: w.command,
-    managed: Object.prototype.hasOwnProperty.call(cfg.windows, w.name),
+    managed: Object.hasOwn(cfg.windows, w.name),
     protected: cfg.protected.includes(w.name),
   }));
 }
@@ -88,7 +89,7 @@ export async function readWindow(
 function guard(cfg: ManagerConfig, name: string): ManagerConfig['windows'][string] {
   assertName(name);
   if (cfg.protected.includes(name)) throw new Error(`window ${name} is protected`);
-  if (!Object.prototype.hasOwnProperty.call(cfg.windows, name)) throw new Error(`window ${name} is not in the manager allowlist`);
+  if (!Object.hasOwn(cfg.windows, name)) throw new Error(`window ${name} is not in the manager allowlist`);
   return cfg.windows[name];
 }
 
@@ -110,7 +111,7 @@ export async function startWindow(
   const session = sessionName(cfg, env);
   const command = buildCommand(w.argv);
   if ((await listWindows(run, session)).some((x) => x.name === name)) return 'exists';
-  const r = await run('tmux', ['new-window', '-d', '-t', `=${session}`, '-n', name, '-c', root, command]);
+  const r = await run('tmux', ['new-window', '-d', '-t', `=${session}:`, '-n', name, '-c', root, command]);
   if (r.code !== 0) throw new Error(`failed to start window ${name}`);
   return 'started';
 }

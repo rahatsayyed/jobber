@@ -66,7 +66,7 @@ describe('start, stop, restart', () => {
     const { run, calls } = fake([]);
     expect(await startWindow(run, cfg, {}, 'hunt', '/proj')).toBe('started');
     const nw = calls.find((c) => c[0] === 'new-window')!;
-    expect(nw).toEqual(['new-window', '-d', '-t', '=ccgram', '-n', 'hunt', '-c', '/proj', "'bash' 'scripts/ccgram/claude-session.sh'"]);
+    expect(nw).toEqual(['new-window', '-d', '-t', '=ccgram:', '-n', 'hunt', '-c', '/proj', "'bash' 'scripts/ccgram/claude-session.sh'"]);
   });
   it('returns exists without starting', async () => {
     const { run, calls } = fake(['hunt']);
@@ -81,6 +81,16 @@ describe('start, stop, restart', () => {
       await expect(restartWindow(run, cfg, {}, n, '/p')).rejects.toThrow();
     }
     expect(calls).toEqual([]);
+  });
+  it('refuses prototype-property window names', async () => {
+    const { run, calls } = fake(['x']);
+    for (const n of ['__proto__', 'constructor', 'toString']) {
+      await expect(startWindow(run, cfg, {}, n, '/p')).rejects.toThrow(/allowlist/);
+      await expect(stopWindow(run, cfg, {}, n)).rejects.toThrow(/allowlist/);
+    }
+    expect(calls).toEqual([]);
+    const mk = (n: string) => `{"session":"s","protected":[],"windows":{"${n}":{"argv":["bash","x"]}}}`;
+    for (const n of ['__proto__', 'constructor', 'toString']) expect(() => loadManagerConfig(mk(n))).toThrow(/reserved/);
   });
   it('rejects an unsafe argv element', async () => {
     const bad = { ...cfg, windows: { x: { argv: ['bash', 'a b;rm'], description: '' } } };
@@ -140,6 +150,9 @@ describe('redactPane', () => {
   it('replaces credential lines and leaves prose', () => {
     expect(redactPane('ANTHROPIC_AUTH_TOKEN=xyz')).toBe('[redacted line]');
     expect(redactPane('Cookie: a=b')).toBe('[redacted line]');
+    for (const l of ['token: abc123', 'password: hunter2', 'secret: s', 'api_key: k', 'X-Req Set-Cookie: sid=1', 'sent Cookie: a=b']) {
+      expect(redactPane(`ok\n${l}`)).toBe('ok\n[redacted line]');
+    }
     expect(redactPane('Applied to 3 jobs today.')).toBe('Applied to 3 jobs today.');
   });
 });
