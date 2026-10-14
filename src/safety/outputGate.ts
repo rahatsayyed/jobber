@@ -39,7 +39,7 @@ const PATH_RES: RegExp[] = [
   /\bsecrets\//i,
   /\.env\b/i,
 ];
-const SECRET_SHAPES: RegExp[] = [
+export const SECRET_SHAPES: RegExp[] = [
   /\bsk-[A-Za-z0-9]{16,200}/,
   /\bAKIA[0-9A-Z]{16}\b/,
   /\bghp_[A-Za-z0-9]{20,200}/,
