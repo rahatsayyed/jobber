@@ -12,6 +12,7 @@
     "doctor": "tsx scripts/doctor.ts",
     "auto-update": "tsx scripts/auto-update.ts",
     "backup": "tsx scripts/backup.ts",
+    "restore": "tsx scripts/restore.ts",
     "linkedin:login": "tsx scripts/linkedin-login.ts",
     "linkedin:clear-halt": "tsx scripts/linkedin-clear-halt.ts",
     "linkedin:seed": "tsx scripts/linkedin-seed-person.ts",
