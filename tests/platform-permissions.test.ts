@@ -187,11 +187,35 @@ describe('manifest-based ownership, mode and shape validation', () => {
     }
   });
 
-  it('treats a malformed manifest as none and does not crash', () => {
+  // Deliberate change: a present-but-invalid manifest used to fail open (treated as absent).
+  it('refuses an unparseable manifest and leaves settings and manifest untouched', () => {
     const p = mk();
-    applySetToFile(p, real, 'read_only');
+    applySetToFile(p, real, 'full');
     writeFileSync(manifestPath(p), '{ nope');
-    expect(() => applySetToFile(p, real, 'read_only')).not.toThrow();
+    const before = readFileSync(p, 'utf8');
+    expect(() => applySetToFile(p, real, 'read_only')).toThrow(/manifest|managed|not valid JSON/);
+    expect(readFileSync(p, 'utf8')).toBe(before);
+    expect(readFileSync(manifestPath(p), 'utf8')).toBe('{ nope');
+  });
+
+  it('refuses a wrong-shaped manifest', () => {
+    const p = mk();
+    applySetToFile(p, real, 'full');
+    writeFileSync(manifestPath(p), JSON.stringify({ entries: 'nope' }));
+    const before = readFileSync(p, 'utf8');
+    expect(() => applySetToFile(p, real, 'read_only')).toThrow(/invalid shape/);
+    expect(readFileSync(p, 'utf8')).toBe(before);
+  });
+
+  it('a missing manifest is fine, and manifest entries absent from settings are ignored', () => {
+    const p = mk();
+    writeFileSync(p, JSON.stringify({ permissions: { allow: ['Bash(ls)'] } }));
+    writeFileSync(manifestPath(p), JSON.stringify({ set: 'full', entries: ['mcp__ghost__tool'] }));
+    applySetToFile(p, real, 'read_only');
+    expect(allowOf(p)).toContain('Bash(ls)');
+    expect(allowOf(p)).not.toContain('mcp__ghost__tool');
+    const q = mk();
+    expect(() => applySetToFile(q, real, 'read_only')).not.toThrow();
   });
 
   it('validateSets rejects a non-array allow', () => {

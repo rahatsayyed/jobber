@@ -98,21 +98,26 @@ export function writeSecure(path: string, text: string): void {
   chmodSync(path, 0o600);
 }
 
+// Missing manifest: null (fine). Present but unparseable or wrong-shaped: throw, so a switch can
+// never silently keep entries we own. The message is fixed (no file content echoed).
 function readManifest(path: string): string[] | null {
   if (!existsSync(path)) return null;
+  let m: unknown;
   try {
-    const m: unknown = JSON.parse(readFileSync(path, 'utf8'));
-    if (isPlainObject(m) && isStringArray(m.entries)) return m.entries as string[];
+    m = JSON.parse(readFileSync(path, 'utf8'));
   } catch {
-    // fall through to the warning
+    throw new Error(`${path} exists but is not valid JSON; refusing to change permissions (fix or delete it)`);
   }
-  console.warn(`${path} is malformed; treating as no manifest (nothing will be removed)`);
-  return null;
+  if (isPlainObject(m) && isStringArray(m.entries)) return m.entries as string[];
+  throw new Error(`${path} exists but has an invalid shape; refusing to change permissions (fix or delete it)`);
 }
 
 export function applySetToFile(path: string, sets: RawSets, name: SetName): void {
   validateSets(sets);
   const desired = resolveSet(sets, name);
+  // Validated before anything is read or written, so a bad manifest leaves settings untouched.
+  const mPath = manifestPath(path);
+  const old = new Set(readManifest(mPath) ?? []);
   let current: LocalSettings = {};
   let hadFile = false;
   if (existsSync(path)) {
@@ -132,8 +137,6 @@ export function applySetToFile(path: string, sets: RawSets, name: SetName): void
     }
     current = parsed as LocalSettings;
   }
-  const mPath = manifestPath(path);
-  const old = new Set(readManifest(mPath) ?? []);
   const kept = (current.permissions?.allow ?? []).filter((e) => !old.has(e));
   const added = desired.filter((e) => !kept.includes(e));
   const next: LocalSettings = {
@@ -141,6 +144,12 @@ export function applySetToFile(path: string, sets: RawSets, name: SetName): void
     permissions: { ...current.permissions, allow: [...kept, ...added] },
   };
   if (hadFile) copyFileSync(path, backupTarget(path, 'bak'));
+  // Crash window: the two files cannot be replaced atomically together. The manifest goes first
+  // with the union of old and new entries (a superset), so a crash before the settings rename
+  // never orphans an entry we own; manifest entries absent from settings are ignored. The final
+  // manifest (exactly what we added) is written after the settings file.
+  const union = [...old, ...added.filter((e) => !old.has(e))];
+  writeSecure(mPath, JSON.stringify({ set: name, entries: union }, null, 2) + '\n');
   writeSecure(path, JSON.stringify(next, null, 2) + '\n');
   writeSecure(mPath, JSON.stringify({ set: name, entries: added }, null, 2) + '\n');
 }
