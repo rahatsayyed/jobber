@@ -1,5 +1,8 @@
 // tests/safety-style-gate.test.ts
 import { describe, it, expect } from 'vitest';
+import { writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { checkStyle, loadStyleConfig, loadStyleConfigSafe, DEFAULT_STYLE_CONFIG, type StyleConfig } from '../src/safety/styleGate.js';
 
 const cfg: StyleConfig = loadStyleConfig('config/ai-tells.json');
@@ -73,5 +76,48 @@ describe('checkStyle', () => {
     expect(Date.now() - t).toBeLessThan(1500);
     expect(r.ok).toBe(false);
     expect(r.hits.map((h) => h.rule)).toContain('too_long');
+  });
+});
+
+describe('phrase matching normalization', () => {
+  it('catches curly apostrophes and newline-split phrases', () => {
+    expect(rules('I’d love to chat')).toContain('banned_phrase');
+    expect(rules('In today’s market')).toContain('banned_phrase');
+    expect(rules('Iʼd love to chat')).toContain('banned_phrase');
+    expect(rules('just following\n  up on this')).toContain('banned_phrase');
+    const r = checkStyle('I’d love to chat', 'followup', cfg);
+    expect(r.hits[0].detail).toBe("i'd love to");
+  });
+  it('still passes a normal message', () => {
+    expect(rules("Hi Sam, I'm curious how the team ships.\nThanks.")).toEqual([]);
+  });
+});
+
+describe('config sanitizing', () => {
+  const write = (o: unknown): string => {
+    const p = join(mkdtempSync(join(tmpdir(), 'style-')), 'c.json');
+    writeFileSync(p, JSON.stringify(o));
+    return p;
+  };
+  it('drops blank phrases so a space entry cannot match everything', () => {
+    const c = loadStyleConfig(write({ ...cfg, banned_phrases: [' ', '', ' circling back '] }));
+    expect(c.banned_phrases).toEqual(['circling back']);
+    expect(checkStyle('hello there friend', 'followup', c).ok).toBe(true);
+    expect(checkStyle('circling back soon', 'followup', c).ok).toBe(false);
+  });
+  it('rejects or defaults invalid numeric limits', () => {
+    const bad = write({ ...cfg, max_exclamations: -1, max_words: { connect: 'x', role_ask: -5, followup: 10 } });
+    expect(() => loadStyleConfig(bad)).toThrow();
+    const s = loadStyleConfigSafe(bad);
+    expect(s.note).toMatch(/max_exclamations/);
+    expect(s.cfg.max_exclamations).toBe(DEFAULT_STYLE_CONFIG.max_exclamations);
+    expect(s.cfg.max_words.connect).toBe(55);
+    expect(s.cfg.max_words.role_ask).toBe(110);
+    expect(s.cfg.max_words.followup).toBe(10);
+  });
+  it('checkStyle does not let a NaN cap disable the limit', () => {
+    const c: StyleConfig = { ...cfg, max_words: { connect: NaN } };
+    const long = Array.from({ length: 80 }, () => 'word').join(' ');
+    expect(checkStyle(long, 'connect', c).hits.map((h) => h.rule)).toContain('too_long');
   });
 });

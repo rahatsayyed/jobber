@@ -53,6 +53,14 @@ export const DEFAULT_STYLE_CONFIG: StyleConfig = {
   max_words: { connect: 55, role_ask: 110, rapport: 90, referral_ask: 110, followup: 70, feedback: 60 },
 };
 
+function validLimit(n: unknown): n is number {
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0;
+}
+
+function cleanPhrases(list: string[]): string[] {
+  return list.map((p) => p.trim()).filter((p) => p.length > 0);
+}
+
 function parseConfig(raw: unknown, path: string): StyleConfig {
   const r = raw as Partial<StyleConfig> | null;
   const ok =
@@ -62,27 +70,74 @@ function parseConfig(raw: unknown, path: string): StyleConfig {
     r.banned_phrases.every((p) => typeof p === 'string') &&
     typeof r.forbid_em_dash === 'boolean' &&
     typeof r.forbid_en_dash === 'boolean' &&
-    typeof r.max_exclamations === 'number' &&
+    validLimit(r.max_exclamations) &&
     typeof r.forbid_markdown === 'boolean' &&
     typeof r.max_words === 'object' &&
     r.max_words !== null &&
-    Object.values(r.max_words).every((n) => typeof n === 'number');
+    Object.values(r.max_words).every(validLimit);
   if (!ok) throw new Error(`${path} is not a valid style config`);
-  return r as StyleConfig;
+  const c = r as StyleConfig;
+  return { ...c, banned_phrases: cleanPhrases(c.banned_phrases) };
 }
 
 export function loadStyleConfig(path: string): StyleConfig {
   return parseConfig(JSON.parse(readFileSync(path, 'utf8')), path);
 }
 
-/** Never throws: on a missing or invalid file, returns built-in defaults plus a note to surface. */
+/** Never throws: a bad value falls back to the built-in default for that value, with a note to surface. */
 export function loadStyleConfigSafe(path: string): { cfg: StyleConfig; note: string | null } {
+  const d = DEFAULT_STYLE_CONFIG;
+  let raw: unknown;
   try {
-    return { cfg: loadStyleConfig(path), note: null };
+    raw = JSON.parse(readFileSync(path, 'utf8'));
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
-    return { cfg: DEFAULT_STYLE_CONFIG, note: `style config invalid, using built-in defaults: ${why}` };
+    return { cfg: d, note: `style config invalid, using built-in defaults: ${why}` };
   }
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return { cfg: d, note: `style config invalid, using built-in defaults: ${path} is not an object` };
+  }
+  const r = raw as Record<string, unknown>;
+  const bad: string[] = [];
+  const bool = (k: 'forbid_em_dash' | 'forbid_en_dash' | 'forbid_markdown'): boolean => {
+    if (typeof r[k] === 'boolean') return r[k] as boolean;
+    bad.push(k);
+    return d[k];
+  };
+  let phrases = d.banned_phrases;
+  if (Array.isArray(r.banned_phrases) && r.banned_phrases.every((p) => typeof p === 'string')) {
+    phrases = cleanPhrases(r.banned_phrases as string[]);
+  } else bad.push('banned_phrases');
+  let maxExcl = d.max_exclamations;
+  if (validLimit(r.max_exclamations)) maxExcl = r.max_exclamations;
+  else bad.push('max_exclamations');
+  const maxWords: Record<string, number> = {};
+  if (typeof r.max_words === 'object' && r.max_words !== null && !Array.isArray(r.max_words)) {
+    for (const [k, v] of Object.entries(r.max_words as Record<string, unknown>)) {
+      if (validLimit(v)) maxWords[k] = v;
+      else {
+        bad.push(`max_words.${k}`);
+        if (d.max_words[k] !== undefined) maxWords[k] = d.max_words[k];
+      }
+    }
+  } else {
+    bad.push('max_words');
+    Object.assign(maxWords, d.max_words);
+  }
+  const cfg: StyleConfig = {
+    banned_phrases: phrases,
+    forbid_em_dash: bool('forbid_em_dash'),
+    forbid_en_dash: bool('forbid_en_dash'),
+    max_exclamations: maxExcl,
+    forbid_markdown: bool('forbid_markdown'),
+    max_words: maxWords,
+  };
+  return { cfg, note: bad.length ? `style config invalid, defaults used for: ${bad.join(', ')}` : null };
+}
+
+/** Lowercase, unify curly apostrophes, collapse whitespace runs to one space. */
+function normalizeForMatch(s: string): string {
+  return s.toLowerCase().replace(/[‘’ʼ]/g, "'").replace(/\s+/g, ' ');
 }
 
 // Line-anchored, every pattern is linear: no nested or overlapping quantifiers.
@@ -136,7 +191,7 @@ export function checkStyle(text: string, kind: string, cfg: StyleConfig): { ok: 
   const hits: StyleHit[] = [];
   const truncated = text.length > MAX_STYLE_INPUT_CHARS;
   const body = truncated ? text.slice(0, MAX_STYLE_INPUT_CHARS) : text;
-  const lower = body.toLowerCase();
+  const lower = normalizeForMatch(body);
 
   if (truncated) hits.push({ rule: 'too_long', detail: `input over ${MAX_STYLE_INPUT_CHARS} characters` });
 
@@ -147,7 +202,7 @@ export function checkStyle(text: string, kind: string, cfg: StyleConfig): { ok: 
   }
 
   for (const phrase of cfg.banned_phrases) {
-    if (hasPhrase(lower, phrase.toLowerCase())) hits.push({ rule: 'banned_phrase', detail: phrase });
+    if (hasPhrase(lower, normalizeForMatch(phrase).trim())) hits.push({ rule: 'banned_phrase', detail: phrase });
   }
 
   let bangs = 0;
@@ -156,7 +211,8 @@ export function checkStyle(text: string, kind: string, cfg: StyleConfig): { ok: 
 
   if (cfg.forbid_markdown && hasMarkdown(body)) hits.push({ rule: 'markdown', detail: 'markdown formatting found' });
 
-  const cap = cfg.max_words[kind];
+  const rawCap = cfg.max_words[kind];
+  const cap = rawCap === undefined ? undefined : validLimit(rawCap) ? rawCap : DEFAULT_STYLE_CONFIG.max_words[kind];
   if (cap !== undefined && !truncated) {
     const words = countWords(body);
     if (words > cap) hits.push({ rule: 'too_long', detail: `${words} words, cap ${cap}` });
