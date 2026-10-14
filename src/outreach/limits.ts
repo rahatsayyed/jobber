@@ -77,9 +77,16 @@ export function clearHalt(db: Db, platform: string, at: Date): void {
   db.prepare('UPDATE halt_flags SET cleared_at = ? WHERE platform = ?').run(at.toISOString(), platform);
 }
 
-export function haltReason(db: Db, platform: string): string | null {
+function activeReason(db: Db, platform: string): string | null {
   const row = db
     .prepare('SELECT reason FROM halt_flags WHERE platform = ? AND cleared_at IS NULL')
     .get(platform) as { reason: string } | undefined;
   return row ? row.reason : null;
+}
+
+// For a platform other than all, the global all halt applies too: own reason first, then all.
+export function haltReason(db: Db, platform: string): string | null {
+  const own = activeReason(db, platform);
+  if (platform === 'all') return own;
+  return own ?? activeReason(db, 'all');
 }

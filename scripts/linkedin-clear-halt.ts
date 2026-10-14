@@ -6,8 +6,12 @@ import { dbPath } from '../src/dbPath.js';
 import { clearHalt, haltReason } from '../src/outreach/limits.js';
 
 export function run(db: BetterSqlite3.Database, argv: string[], now: Date = new Date()): { code: number; lines: string[] } {
-  const reason = haltReason(db, 'linkedin');
-  const lines = [`Current LinkedIn halt: ${reason ?? 'none'}`];
+  const own = db
+    .prepare('SELECT reason FROM halt_flags WHERE platform = ? AND cleared_at IS NULL')
+    .get('linkedin') as { reason: string } | undefined;
+  const lines = [`Current LinkedIn halt: ${own?.reason ?? 'none'}`];
+  const all = haltReason(db, 'all');
+  if (all !== null) lines.push(`Global halt (all) is also active and is not cleared here: ${all}`);
   if (!argv.includes('--yes')) {
     lines.push('Re-run with --yes to clear it.');
     return { code: 1, lines };

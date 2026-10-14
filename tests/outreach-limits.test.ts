@@ -74,6 +74,21 @@ describe('halt flags', () => {
     clearHalt(db, 'linkedin', NOW);
     expect(haltReason(db, 'linkedin')).toBeNull();
   });
+
+  it('a platform also honours the all halt, own reason wins, all itself is exact', () => {
+    const db = openDb(':memory:');
+    haltPlatform(db, 'all', 'global stop', NOW);
+    expect(haltReason(db, 'linkedin')).toBe('global stop');
+    expect(haltReason(db, 'naukri')).toBe('global stop');
+    expect(haltReason(db, 'all')).toBe('global stop');
+    haltPlatform(db, 'linkedin', 'captcha', NOW);
+    expect(haltReason(db, 'linkedin')).toBe('captcha');
+    expect(haltReason(db, 'naukri')).toBe('global stop');
+    clearHalt(db, 'all', NOW);
+    expect(haltReason(db, 'naukri')).toBeNull();
+    expect(haltReason(db, 'all')).toBeNull();
+    expect(haltReason(db, 'linkedin')).toBe('captcha');
+  });
 });
 
 describe('tryConsume concurrency safety', () => {
