@@ -20,6 +20,7 @@ import { tmuxLauncher } from '../src/scheduler/launch.js';
 import { fileNotifier } from '../src/scheduler/notify.js';
 import { loadPlanKnobs, planWake } from '../src/scheduler/plan.js';
 import { getState, listRuns } from '../src/scheduler/runLog.js';
+import { makeAfterWakeHooks } from '../src/scheduler/hooks.js';
 
 const projectRoot = resolve(process.cwd());
 const root = join(projectRoot, '.jobber');
@@ -94,27 +95,28 @@ async function main(): Promise<void> {
   }
   const db = openDb();
   const now = (): Date => new Date();
+  const cfg = loadOutreachConfig(env);
+  const tuning = loadTuning(env);
+  const notifier = fileNotifier(join(root, 'notify.jsonl'), now, defaultRun, env.JOBBER_NOTIFY_CMD);
   const deps: DriverDeps = {
     db,
     now,
     rng: Math.random,
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-    cfg: loadOutreachConfig(env),
-    tuning: loadTuning(env),
+    cfg,
+    tuning,
     env,
     lockRoot: root,
     stopFile,
     runDir: join(root, 'runs'),
     projectRoot,
     launcher: tmuxLauncher(defaultRun),
-    notifier: fileNotifier(
-      join(root, 'notify.jsonl'),
-      now,
-      defaultRun,
-      env.JOBBER_NOTIFY_CMD,
-    ),
+    notifier,
     newRunId: () => randomBytes(8).toString('hex'),
     session: env.SCHEDULER_TMUX_SESSION || undefined,
+    afterWake: makeAfterWakeHooks({
+      db, env, projectRoot, now, pacing: pacingFromConfig(cfg, tuning), notifier,
+    }),
   };
   const stop = { stopped: false };
   const halt = (): void => {
