@@ -90,7 +90,7 @@ describe('runSetup', () => {
   });
 
   it('retries on a failing post-check and fails when declined', async () => {
-    const { ctx } = makeCtx([{ confirm: false }]);
+    const { ctx } = makeCtx([{ confirm: false }, { confirm: false }]);
     const steps = [step('a', ['c1'], async () => 'done')];
     const checks = [check('c1', () => 'fail')];
     expect(await runSetup(steps, ctx, { checks })).toBe(1);
@@ -108,7 +108,7 @@ describe('runSetup', () => {
         return 'done';
       }),
     ];
-    const first = makeCtx([{ confirm: false }], fs);
+    const first = makeCtx([{ confirm: false }, { confirm: false }], fs);
     expect(await runSetup(mk(true), first.ctx, { checks: [] })).toBe(1);
     expect(fs.exists(STATE_PATH)).toBe(true);
     const second = makeCtx([], fs);
@@ -117,7 +117,7 @@ describe('runSetup', () => {
   });
 
   it('writes the state file mode 600 with no secret, and redacts error messages', async () => {
-    const { ctx, sio, fs } = makeCtx([{ confirm: false }]);
+    const { ctx, sio, fs } = makeCtx([{ confirm: false }, { confirm: false }]);
     const steps = [
       step('tg', [], async () => {
         ctx.io.registerSecret('s3cr3t-value-xyz');
@@ -150,6 +150,120 @@ describe('runSetup', () => {
     ];
     await runSetup(steps, ctx, { only: 'a', redo: true, checks: [check('c1', () => 'pass')] });
     expect(ran).toEqual(['a']);
+  });
+});
+
+describe('runSetup fix round 1', () => {
+  it('declined retry then accepted skip records skipped, exit 0', async () => {
+    const { ctx, sio } = makeCtx([{ confirm: false }, { confirm: true }]);
+    const steps = [step('a', ['c1'], async () => 'done')];
+    expect(await runSetup(steps, ctx, { checks: [check('c1', () => 'fail')] })).toBe(0);
+    expect(ctx.state.steps.a.status).toBe('skipped');
+    expect(sio.transcript).toContain('say: 0 done, 1 skipped, 0 failed');
+  });
+
+  it('thrown error: declined retry then accepted skip records skipped', async () => {
+    const { ctx } = makeCtx([{ confirm: false }, { confirm: true }]);
+    const steps = [
+      step('a', [], async () => {
+        throw new Error('x');
+      }),
+    ];
+    expect(await runSetup(steps, ctx, { checks: [] })).toBe(0);
+    expect(ctx.state.steps.a.status).toBe('skipped');
+  });
+
+  it('accepted retry then success', async () => {
+    const { ctx } = makeCtx([{ confirm: true }]);
+    let n = 0;
+    const steps = [
+      step('a', [], async () => {
+        if (n++ === 0) throw new Error('once');
+        return 'done';
+      }),
+    ];
+    expect(await runSetup(steps, ctx, { checks: [] })).toBe(0);
+    expect(n).toBe(2);
+  });
+
+  it('final line counts done, skipped and failed together', async () => {
+    const { ctx, sio } = makeCtx([{ confirm: false }, { confirm: false }]);
+    const steps = [
+      step('a', [], async () => 'done'),
+      step('b', [], async () => 'skipped'),
+      step('c', ['c1'], async () => 'done'),
+    ];
+    expect(await runSetup(steps, ctx, { checks: [check('c1', () => 'fail')] })).toBe(1);
+    expect(sio.transcript).toContain('say: 1 done, 1 skipped, 1 failed');
+  });
+
+  it('a warn check triggers the step to run', async () => {
+    const { ctx } = makeCtx([]);
+    let ran = 0;
+    const steps = [step('a', ['c1'], async () => (ran++, 'done'))];
+    await runSetup(steps, ctx, { checks: [check('c1', () => 'warn')] });
+    expect(ran).toBe(1);
+  });
+
+  it('a throwing check is reported as fail without crashing', async () => {
+    const { ctx, sio } = makeCtx([{ confirm: false }, { confirm: false }]);
+    const bad: Check = {
+      id: 'c1',
+      title: 'c1',
+      run: async () => {
+        throw new Error('nope');
+      },
+    };
+    const steps = [step('a', ['c1'], async () => 'done')];
+    expect(await runSetup(steps, ctx, { checks: [bad] })).toBe(1);
+    expect(sio.transcript.some((l) => l.includes('FAIL  c1'))).toBe(true);
+  });
+
+  it('state write is atomic: tmp then rename', async () => {
+    const fs = memFs();
+    const log: string[] = [];
+    const w = fs.write.bind(fs);
+    const r = fs.rename.bind(fs);
+    fs.write = (p, d, m) => (log.push(`write ${p}`), w(p, d, m));
+    fs.rename = (a, b) => (log.push(`rename ${a} ${b}`), r(a, b));
+    const { ctx } = makeCtx([], fs);
+    await runSetup([step('a', [], async () => 'done')], ctx, { checks: [] });
+    expect(log[0]).toMatch(/^write proj.user-data..setup-state\.json\.tmp-/);
+    expect(log[1]).toMatch(/^rename .*\.tmp-\d+ proj.user-data..setup-state\.json$/);
+  });
+
+  it('a skipped step with no checkIds is asked again next run', async () => {
+    const fs = memFs();
+    let ran = 0;
+    const mk = () => [step('a', [], async () => (ran++, 'skipped'))];
+    await runSetup(mk(), makeCtx([], fs).ctx, { checks: [] });
+    await runSetup(mk(), makeCtx([], fs).ctx, { checks: [] });
+    expect(ran).toBe(2);
+  });
+
+  it('unknown check id warns and runs the step', async () => {
+    const { ctx, sio } = makeCtx([]);
+    let ran = 0;
+    const steps = [step('a', ['ghost'], async () => (ran++, 'done'))];
+    expect(await runSetup(steps, ctx, { checks: [] })).toBe(0);
+    expect(ran).toBe(1);
+    expect(sio.transcript).toContain('say: unknown check id: ghost');
+  });
+
+  it('state write failure warns and continues; done timestamp kept', async () => {
+    const fs = memFs();
+    fs.write = () => {
+      throw new Error('disk full');
+    };
+    const { ctx, sio } = makeCtx([], fs);
+    expect(await runSetup([step('a', [], async () => 'done')], ctx, { checks: [] })).toBe(0);
+    expect(sio.transcript).toContain('say: warning: could not save setup state');
+    const at = ctx.state.steps.a.at;
+    ctx.now = () => new Date('2030-01-01T00:00:00Z');
+    await runSetup([step('a', ['c1'], async () => 'done')], ctx, {
+      checks: [check('c1', () => 'pass')],
+    });
+    expect(ctx.state.steps.a.at).toBe(at);
   });
 });
 

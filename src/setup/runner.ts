@@ -47,10 +47,17 @@ export interface RunOptions {
   checks: Check[];
 }
 
+// A failed state write is a one-line warning, never a crash. A step already recorded with
+// the same status keeps its original timestamp and is not rewritten.
 function record(ctx: SetupContext, id: string, status: 'done' | 'skipped'): void {
+  if (ctx.state.steps[id]?.status === status) return;
   ctx.state.steps[id] = { status, at: ctx.now().toISOString() };
-  ctx.fs.mkdirp(path.dirname(ctx.statePath), 0o700);
-  saveState(ctx.statePath, ctx.state, ctx.fs, ctx.now);
+  try {
+    ctx.fs.mkdirp(path.dirname(ctx.statePath), 0o700);
+    saveState(ctx.statePath, ctx.state, ctx.fs, ctx.now);
+  } catch {
+    ctx.io.say('warning: could not save setup state');
+  }
 }
 
 export async function runSetup(
@@ -75,8 +82,14 @@ export async function runSetup(
     if (opts.only !== undefined && step.id !== opts.only) continue;
     io.say(`Step ${i + 1} of ${total}: ${step.title}`);
     const checks = checksFor(step);
+    // A checkId naming no known check is a wiring bug: warn and treat the step as needing to
+    // run (never "already done") instead of silently falling into the empty-checks branch.
+    const unknown = step.checkIds.filter((id) => !opts.checks.some((c) => c.id === id));
+    for (const id of unknown) io.say(`unknown check id: ${id}`);
 
-    if (!opts.redo) {
+    // A step with no checkIds is gated only by state "done". One that returned 'skipped' is
+    // recorded skipped, which does not gate, so it is asked again on the next run.
+    if (!opts.redo && unknown.length === 0) {
       if (checks.length > 0) {
         const pre = await runChecks(checks, ctx.doctor);
         if (!pre.some((r) => r.result.status === 'fail' || r.result.status === 'warn')) {
@@ -101,6 +114,7 @@ export async function runSetup(
         // io.say redacts registered secrets from this message.
         io.say(`step failed: ${(e as Error).message}`);
         if (await io.confirm('Retry this step?', true)) continue;
+        if (await io.confirm('Skip this step?', false)) outcome = 'skipped';
         break;
       }
       if (result === 'skipped') {
@@ -114,6 +128,7 @@ export async function runSetup(
       }
       if (post.some((r) => r.result.status === 'fail')) {
         if (await io.confirm('Retry this step?', true)) continue;
+        if (await io.confirm('Skip this step?', false)) outcome = 'skipped';
         break;
       }
       outcome = 'done';
