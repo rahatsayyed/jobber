@@ -10,7 +10,8 @@ import { SELECTORS } from './selectors.js';
 import { gateField, MAX_FIELD_CHARS } from './state.js';
 import { finishTouch, pauseContact, type TouchStatus } from './touches.js';
 import { refusal, type ToolDeps, type TypedResult } from './toolDeps.js';
-import type { LiPage } from './types.js';
+import { SNAPSHOT_SRC } from './snapshot.js';
+import type { LiPage, RawSnapshot } from './types.js';
 import {
   extractDialogRecipientName, extractExpectedNameFromTitle, isLikelySendInvitationResponse,
   namesPlausiblyMatch, pickButtonShapedIndex, verifyProfileUrl, verifyRecipientName,
@@ -62,12 +63,21 @@ export async function connectSend(
       if (opened.code === 'halted') return done('refused', refusal('halted', 'halted', 'linkedin halted'));
       return fail(opened.code, opened.reason);
     }
-    const snap = opened.snapshot;
 
     return await rt.serial(async (): Promise<TypedResult> => {
       const page = rt.page();
       if (!page) return fail('no_session', 'browser session is not open');
-      if (!verifyProfileUrl(a.profile_url, snap.url).ok) {
+      // open() released the queue before this block: never trust its snapshot, take a fresh one.
+      const takeSnap = () => page.evaluate<RawSnapshot>(SNAPSHOT_SRC).then((s) => s ?? null, () => null);
+      const haltIfBlocked = async (): Promise<TypedResult | null> => {
+        const s = await takeSnap();
+        if (!s) return fail('no_snapshot', 'could not read the page');
+        return rt.afterNavigation(s) ? done('refused', refusal('halted', 'halted', 'linkedin block page')) : null;
+      };
+      const snap = await takeSnap();
+      if (!snap) return fail('no_snapshot', 'could not read the page');
+      if (rt.afterNavigation(snap)) return done('refused', refusal('halted', 'halted', 'linkedin block page'));
+      if (!verifyProfileUrl(a.profile_url, page.url()).ok) {
         return fail('profile_url_mismatch', 'page is not the requested profile');
       }
       // Step 3: title name must plausibly match the seeded person.
@@ -108,10 +118,22 @@ export async function connectSend(
       if (haltReason(db, 'linkedin')) return done('refused', refusal('halted', 'halted', 'linkedin halted'));
 
       // Step 7: open the invite dialog (direct Connect near the name, else the More menu).
-      const namePoint = await getProfileNamePoint(page, titleName);
+      const alt = [person.name ?? ''];
+      const namePoint = await getProfileNamePoint(page, titleName, alt);
+      if (namePoint === null) {
+        await page.keyboard.press('Escape').catch(() => undefined);
+        return fail('name_position_unknown', 'could not locate the profile name on the page');
+      }
       const direct = await pickNearestLocator(page, SELECTORS.directConnectButton, namePoint);
       if ((await direct.count()) > 0) {
+        const aria = await direct.evaluateAll((els) => els.map((el) => String(el.getAttribute('aria-label') ?? '')));
+        const target = /^Invite (.+) to connect$/i.exec((aria[0] ?? '').trim())?.[1] ?? '';
+        if (!target || !namesPlausiblyMatch(person.name ?? '', target)) {
+          return fail('connect_target_mismatch', 'Connect control names a different person');
+        }
         await direct.click({ timeout: CLICK_TIMEOUT_MS });
+        const hb = await haltIfBlocked();
+        if (hb) return hb;
       } else {
         const mores = page.locator(SELECTORS.moreButton);
         const boxes = (await mores.count()) > 0
@@ -122,6 +144,8 @@ export async function connectSend(
         await mores.nth(mi).click({ timeout: CLICK_TIMEOUT_MS });
         await page.locator(SELECTORS.connectMenuItem).first()
           .waitFor({ state: 'visible', timeout: stepTimeout }).catch(() => undefined);
+        const hm = await haltIfBlocked();
+        if (hm) return hm;
         // Exact `Connect` only: a menu with just "Remove connection" never matches.
         const item = page.locator(SELECTORS.connectMenuItem);
         if ((await item.count()) === 0) {
@@ -129,11 +153,15 @@ export async function connectSend(
           return fail('connect_menu_item_missing', 'no exact Connect item in the More menu');
         }
         await item.first().click({ timeout: CLICK_TIMEOUT_MS });
+        const hi = await haltIfBlocked();
+        if (hi) return hi;
       }
 
       // Step 8: dialog verification, fail closed.
       const dlg = page.locator(SELECTORS.noteDialogContainer);
       await dlg.first().waitFor({ state: 'visible', timeout: stepTimeout }).catch(() => undefined);
+      const hd = await haltIfBlocked();
+      if (hd) return hd;
       const close = () => page.keyboard.press('Escape').catch(() => undefined);
       if (!verifyProfileUrl(a.profile_url, page.url()).ok) {
         await close();
@@ -190,7 +218,10 @@ export async function connectSend(
 
       // Step 12: confirm by response, else by the Pending control after a reload.
       let confirmed = await net;
-      if (!confirmed) confirmed = await pollPending(page, a.profile_url, titleName, pendingTimeout, pendingPoll);
+      if (!confirmed) confirmed = await pollPending(page, a.profile_url, titleName, alt, pendingTimeout, pendingPoll, async () => {
+          const s = await takeSnap();
+          return !s || rt.afterNavigation(s) !== null;
+        });
       if (!confirmed) {
         return done('unconfirmed', {
           status: 'unconfirmed', code: 'unconfirmed', reason: 'Send clicked but not confirmed; verify manually',
@@ -214,14 +245,17 @@ export async function connectSend(
 }
 
 async function pollPending(
-  page: LiPage, url: string, name: string, timeoutMs: number, pollMs: number,
+  page: LiPage, url: string, name: string, alt: string[], timeoutMs: number, pollMs: number,
+  blocked: () => Promise<boolean>,
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   do {
     try {
       await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' });
+      if (await blocked()) return false;
       if (verifyProfileUrl(url, page.url()).ok) {
-        const point = await getProfileNamePoint(page, name);
+        const point = await getProfileNamePoint(page, name, alt);
+        if (point === null) return false; // no proximity anchor: only the response can confirm
         const loc = await pickNearestLocator(page, SELECTORS.pendingButton, point);
         if ((await loc.count()) > 0) {
           const seen = await loc.waitFor({ state: 'visible', timeout: pollMs }).then(() => true, () => false);

@@ -4,8 +4,19 @@ import { SELECTORS } from './selectors.js';
 import { pickNearestToNameIndex, type Point } from './verify.js';
 import type { LiLocator, LiPage } from './types.js';
 
-/** Position of the heading whose text matches `expectedName`, or null if none found. */
-export async function getProfileNamePoint(page: Pick<LiPage, 'locator'>, expectedName: string): Promise<Point | null> {
+/** Heading text without parenthetical pronouns/credentials and trailing ", credentials". */
+const normHeading = (t: string): string =>
+  t.replace(/\([^)]*\)/g, ' ').replace(/,.*$/, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/**
+ * Position of the heading whose text matches `expectedName` (original exact match first), then
+ * each of `alsoTry` exactly, then a normalized comparison; null if none found.
+ */
+export async function getProfileNamePoint(
+  page: Pick<LiPage, 'locator'>,
+  expectedName: string,
+  alsoTry: string[] = [],
+): Promise<Point | null> {
   if (!expectedName) return null;
   const headings = await page
     .locator(SELECTORS.nameHeadings)
@@ -15,8 +26,14 @@ export async function getProfileNamePoint(page: Pick<LiPage, 'locator'>, expecte
         return { text: (el.textContent ?? '').trim(), x: box.x, y: box.y };
       }),
     );
-  const match = headings.find((h) => h.text === expectedName);
-  return match ? { x: match.x, y: match.y } : null;
+  const names = [expectedName, ...alsoTry.filter(Boolean)];
+  for (const n of names) {
+    const m = headings.find((h) => h.text === n);
+    if (m) return { x: m.x, y: m.y };
+  }
+  const wanted = new Set(names.map(normHeading).filter(Boolean));
+  const m = headings.find((h) => wanted.has(normHeading(h.text)));
+  return m ? { x: m.x, y: m.y } : null;
 }
 
 /**
