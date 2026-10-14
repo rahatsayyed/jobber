@@ -73,12 +73,26 @@ describe('updateEnvText', () => {
 
   it('quotes values with whitespace, #, quote or $ and round-trips through parseEnv', () => {
     const r = updateEnvText('', { A: 'two words', B: 'x#y', C: 'cost$5' });
-    expect(r.text).toBe('A="two words"\nB="x#y"\nC="cost$5"\n');
+    expect(r.text).toBe("A='two words'\nB='x#y'\nC='cost$5'\n");
     expect(parseEnv(r.text)).toEqual({ A: 'two words', B: 'x#y', C: 'cost$5' });
-    const q = updateEnvText('', { Q: 'say "hi" \\ ok' });
-    expect(q.text).toBe('Q="say \\"hi\\" \\\\ ok"\n');
-    // second pass sees the same value, so it is a no-op
-    expect(updateEnvText(q.text, { Q: 'say "hi" \\ ok' }).changed).toEqual([]);
+  });
+
+  it('never escapes: parseEnv reads every quoted value back exactly', () => {
+    const vals = ['a\\b', 'say "hi"', "it's", `it's "x"`, '$HOME', 'a b # c', '"hi"'];
+    for (const v of vals) {
+      const r = updateEnvText('', { K: v });
+      expect(parseEnv(r.text).K).toBe(v);
+      expect(r.text).not.toContain('\\"');
+      // the writer's own reader agrees with the loaders, so a second pass is a no-op
+      expect(updateEnvText(r.text, { K: v }).changed).toEqual([]);
+    }
+    expect(updateEnvText('', { A: "it's" }).text).toBe('A="it\'s"\n');
+    expect(updateEnvText('', { A: 'a\\b' }).text).toBe("A='a\\b'\n");
+  });
+
+  it('keeps an inline comment after a quoted value', () => {
+    const r = updateEnvText("K='a b'   # why\n", { K: 'c d' });
+    expect(r.text).toBe("# why\nK='c d'\n");
   });
 
   it('onlyIfMissing leaves non-empty values and fills empty ones', () => {
@@ -131,8 +145,13 @@ describe('writeEnvFile', () => {
     const bak = writeEnvFile('/p/.env', 'NEW=2\n', fs, now);
     expect(bak).not.toBeNull();
     expect(bak).toMatch(/^\/p\/\.env\.bak-/);
+    // same millisecond, second write: backup name must not collide
+    const again = writeEnvFile('/p/.env', 'NEWER=3\n', fs, now);
+    expect(again).not.toBe(bak);
+    expect(files.get(bak as string)?.data).toBe('OLD=1\n');
+    expect(files.get(again as string)?.data).toBe('NEW=2\n');
     expect(files.get(bak as string)).toEqual({ data: 'OLD=1\n', mode: 0o600 });
-    expect(files.get('/p/.env')).toEqual({ data: 'NEW=2\n', mode: 0o600 });
+    expect(files.get('/p/.env')).toEqual({ data: 'NEWER=3\n', mode: 0o600 });
     expect([...files.keys()].some((k) => k.includes('.tmp-'))).toBe(false);
   });
 

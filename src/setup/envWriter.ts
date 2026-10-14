@@ -28,26 +28,15 @@ interface ParsedValue {
 function parseValue(raw: string): ParsedValue {
   const rest = raw.replace(/^\s+/, '');
   const q = rest[0];
-  if (q === '"') {
-    let out = '';
-    for (let i = 1; i < rest.length; i++) {
-      const c = rest[i];
-      if (c === '\\' && i + 1 < rest.length && (rest[i + 1] === '"' || rest[i + 1] === '\\')) {
-        out += rest[i + 1];
-        i++;
-      } else if (c === '"') {
-        const tail = rest.slice(i + 1).trim();
-        return { value: out, comment: tail.startsWith('#') ? tail.slice(1).trim() : null };
-      } else {
-        out += c;
-      }
+  if (q === '"' || q === "'") {
+    // No backslash handling: parseEnv and claude-session.sh strip the outer quote pair only.
+    const trimmed = rest.trimEnd();
+    if (trimmed.length >= 2 && trimmed.endsWith(q)) {
+      return { value: trimmed.slice(1, -1), comment: null };
     }
-  } else if (q === "'") {
-    const end = rest.indexOf("'", 1);
-    if (end > 0) {
-      const tail = rest.slice(end + 1).trim();
-      return { value: rest.slice(1, end), comment: tail.startsWith('#') ? tail.slice(1).trim() : null };
-    }
+    // closing quote followed by whitespace and an inline comment
+    const m2 = new RegExp('^' + q + '(.*)' + q + '\\s+#\\s*(.*)$').exec(trimmed);
+    if (m2) return { value: m2[1], comment: m2[2].trim() };
   }
   const m = /\s+#/.exec(rest);
   if (m) return { value: rest.slice(0, m.index).trim(), comment: rest.slice(m.index + m[0].length).trim() };
@@ -55,7 +44,8 @@ function parseValue(raw: string): ParsedValue {
 }
 
 function formatValue(v: string): string {
-  if (/[\s#"'$\\]/.test(v)) return '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  // Never escapes: the loaders strip the outer quote pair and nothing else.
+  if (/[\s#"'$\\]/.test(v)) return v.includes("'") ? `"${v}"` : `'${v}'`;
   return v;
 }
 
@@ -64,7 +54,7 @@ function formatValue(v: string): string {
  *    an inline " # comment" on that line is moved to its own comment line directly above.
  *  - key absent: append "KEY=value" at the end (blank line separation kept).
  *  - onlyIfMissing: skip keys whose current value is non-empty.
- *  - values containing whitespace, '#', quotes or '$' are written double-quoted with \" and \\ escaped.
+ *  - values containing whitespace, '#', quotes or '$' are written single-quoted (double-quoted when they contain `'`), never escaped.
  *  - throws on a key not matching ^[A-Za-z_][A-Za-z0-9_]*$ and on a value containing \n or \r. */
 export function updateEnvText(
   text: string,
@@ -140,7 +130,9 @@ export function writeEnvFile(path: string, text: string, fs: EnvFs, now: () => D
   if (fs.exists(path)) {
     const old = fs.read(path);
     if (old === text) return null;
-    backup = `${path}.bak-${now().toISOString().replace(/[:.]/g, '-')}`;
+    const stamp = now().toISOString().replace(/[:.]/g, '-');
+    backup = `${path}.bak-${stamp}`;
+    for (let n = 1; fs.exists(backup); n++) backup = `${path}.bak-${stamp}-${n}`;
     fs.write(backup, old, 0o600);
     fs.chmod(backup, 0o600);
   }
