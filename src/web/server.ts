@@ -5,6 +5,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { confirmSend, prepareSend, sha256Hex as textHash, STATUS_COMMANDS, validateChatText } from './chat.js';
 import { fileURLToPath } from 'node:url';
 import type BetterSqlite3 from 'better-sqlite3';
 import type { OutreachConfig } from '../outreach/config.js';
@@ -32,7 +33,7 @@ import { readRunLog } from '../dash/runlog.js';
 import { sessionsPanel } from '../dash/sessionsPanel.js';
 import { buildConfigView } from '../dash/configView.js';
 import { loadStatic } from './page.js';
-import { applySecurityHeaders, HttpError, json, securityHeaders, type Ctx } from './router.js';
+import { applySecurityHeaders, HttpError, json, readJson, securityHeaders, type Ctx } from './router.js';
 
 export interface WebDeps {
   port: number;
@@ -57,8 +58,7 @@ export interface WebDeps {
   staticDir?: string; // default: ./static next to this file
 }
 
-// Kept here until Task 10 moves it to src/web/chat.ts.
-export const STATUS_COMMANDS = ['limits', 'working', 'health'] as const;
+export { STATUS_COMMANDS };
 
 export { redactSecrets };
 
@@ -366,6 +366,70 @@ export function createWebServer(deps: WebDeps): http.Server {
     // redact the whole capture before slicing so a secret wrapped across the cut is still masked
     const whole = redactSecrets(raw, secrets);
     json(c.res, 200, { window: cleanText(window, 64), text: whole.split('\n').slice(-PANE_LINES).join('\n') });
+  });
+
+  // ---- confirmed chat send (CSRF and Origin are enforced by the gate for every POST) ----------------------
+
+  const lastSend = new Map<string, number>(); // session id hash -> last send time (ms)
+  const stale = (c: Ctx): boolean => !isFresh(c.session!, now(), deps.oidcCfg.reauthMaxAgeSec);
+  const reauth = (c: Ctx): void =>
+    json(c.res, 401, { error: 'reauth_required', url: '/auth/login?reauth=1' });
+  const bodyText = async (c: Ctx): Promise<{ text: unknown; token: unknown }> => {
+    const b = await readJson(c.req, 8192);
+    const o = (b && typeof b === 'object' ? b : {}) as Record<string, unknown>;
+    return { text: o.text, token: o.token };
+  };
+
+  add('POST', '/api/send/prepare', false, async (c) => {
+    if (!deps.chat.enabled) return json(c.res, 404, { error: 'not found' });
+    const { text } = await bodyText(c);
+    if (stale(c)) return reauth(c);
+    const t = now();
+    const v = validateChatText(text);
+    if (!v.ok) {
+      audit(deps.auth, 'chat_reject', {
+        ip: c.ip, note: v.reason, ...(typeof text === 'string' ? { textHash: textHash(text) } : {}),
+      }, t);
+      return json(c.res, 400, { error: 'invalid text', reason: v.reason });
+    }
+    const p = prepareSend(deps.auth, c.session!.idHash, v.text, t);
+    audit(deps.auth, 'chat_prepare', { ip: c.ip, textHash: textHash(v.text) }, t);
+    json(c.res, 200, { token: p.token, preview: p.preview, expiresInSec: p.expiresInSec });
+  });
+
+  add('POST', '/api/send/confirm', false, async (c) => {
+    if (!deps.chat.enabled) return json(c.res, 404, { error: 'not found' });
+    const { text, token } = await bodyText(c);
+    const t = now();
+    const v = validateChatText(text);
+    if (!v.ok || typeof token !== 'string') {
+      audit(deps.auth, 'chat_reject', {
+        ip: c.ip, note: v.ok ? 'bad token' : v.reason, ...(typeof text === 'string' ? { textHash: textHash(text) } : {}),
+      }, t);
+      return json(c.res, 400, { error: 'invalid request' });
+    }
+    if (stale(c)) return reauth(c);
+    const idHash = c.session!.idHash;
+    const last = lastSend.get(idHash);
+    if (last !== undefined && t.getTime() - last < 2000) {
+      return json(c.res, 429, { error: 'too many sends' }, { 'Retry-After': '2' });
+    }
+    const r = confirmSend(deps.auth, idHash, token, v.text, t);
+    if (!r.ok) {
+      audit(deps.auth, 'chat_reject', { ip: c.ip, note: r.reason, textHash: textHash(v.text) }, t);
+      return json(c.res, 409, { error: r.reason });
+    }
+    lastSend.set(idHash, t.getTime());
+    if (lastSend.size > 64) for (const [k, ts] of lastSend) if (t.getTime() - ts > 60_000) lastSend.delete(k);
+    try {
+      await deps.chat.send(v.text);
+    } catch (e) {
+      audit(deps.auth, 'chat_reject', { ip: c.ip, note: 'send failed', textHash: textHash(v.text) }, t);
+      console.error(`web: chat send failed: ${e instanceof Error ? e.name : 'error'}`);
+      return json(c.res, 502, { error: 'send failed' });
+    }
+    audit(deps.auth, 'chat_send', { ip: c.ip, textHash: textHash(v.text) }, t);
+    json(c.res, 200, { ok: true });
   });
 
   add('GET', '/api/runs', false, (c) => json(c.res, 200, readRunLog(deps.data, clampLimit(q(c, 'limit')))));
