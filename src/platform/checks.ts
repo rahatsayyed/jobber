@@ -205,8 +205,10 @@ export const ccgramChecks: Check[] = [
     id: 'daemon',
     title: 'ccgram is running',
     async run(ctx) {
-      const name = ctx.env.CCGRAM_DAEMON_SESSION ?? readEnv(ctx)?.CCGRAM_DAEMON_SESSION ?? 'ccgram-daemon';
-      if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+      // Scripts read this from the process environment only and treat empty as unset.
+      const raw = ctx.env.CCGRAM_DAEMON_SESSION;
+      const name = raw === undefined || raw === '' ? 'ccgram-daemon' : raw;
+      if (!/^[A-Za-z0-9_-]+$/.test(name) || name.startsWith('-')) {
         return fail('CCGRAM_DAEMON_SESSION is not a valid tmux session name', 'use letters, digits, _ and - only');
       }
       return (await hasSession(ctx.run, name))

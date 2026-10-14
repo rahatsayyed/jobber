@@ -186,6 +186,22 @@ describe('ccgram checks', () => {
     expect(JSON.stringify(bad['daemon'])).not.toContain('a b;rm');
   });
 
+  it('daemon session: leading dash fails with the fixed message, empty counts as unset', async () => {
+    const dash = await byId(ctxWith(goodFiles(), { env: { CCGRAM_DAEMON_SESSION: '-evil' } }));
+    expect(dash['daemon'].status).toBe('fail');
+    expect(JSON.stringify(dash['daemon'])).toContain('not a valid tmux session name');
+    expect(JSON.stringify(dash['daemon'])).not.toContain('-evil');
+    const empty = await byId(ctxWith(goodFiles(), { env: { CCGRAM_DAEMON_SESSION: '' } }));
+    expect(empty['daemon'].status).not.toBe('fail');
+  });
+
+  it('daemon session: ignores CCGRAM_DAEMON_SESSION from the project .env', async () => {
+    const files = goodFiles();
+    files['/p/.env'] = { text: GOOD_ENV + 'CCGRAM_DAEMON_SESSION=bad name;x\n' };
+    const r = await byId(ctxWith(files));
+    expect(r['daemon'].status).not.toBe('fail');
+  });
+
   it('catches skip-permissions in any scripts/ccgram file and in an exported .env line', async () => {
     const files = goodFiles();
     files['/p/scripts/ccgram/run.sh'] = { text: 'claude --dangerously-skip-permissions\n' };
