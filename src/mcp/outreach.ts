@@ -1,0 +1,151 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
+import type BetterSqlite3 from 'better-sqlite3';
+import { openDb } from '../db.js';
+import { dbPath } from '../dbPath.js';
+import { loadOutreachConfig } from '../outreach/config.js';
+import { loadTuning } from '../outreach/tuning.js';
+import {
+  addEscalation,
+  clampLimit,
+  listDueTouches,
+  listOpenEscalations,
+  nextContactsForCompany,
+  recordInbound,
+  type InboundClass,
+} from '../outreach/service.js';
+import type { Platform } from '../scheduler/control.js';
+
+/**
+ * `outreach` MCP server: thin registration over src/outreach/service.ts. Local sqlite only: no
+ * network, no claude calls. Free text arriving here (escalate.detail) is untrusted and is clamped
+ * and sanitized in the service.
+ */
+
+type Db = BetterSqlite3.Database;
+export interface OutreachDeps {
+  db?: Db;
+  now?: () => Date;
+}
+
+let lazyDb: Db | null = null;
+function getDb(deps: OutreachDeps): Db {
+  if (deps.db) return deps.db;
+  if (!lazyDb) lazyDb = openDb(dbPath());
+  return lazyDb;
+}
+const nowOf = (deps: OutreachDeps): Date => (deps.now ? deps.now() : new Date());
+
+const PLATFORM = z.enum(['linkedin', 'naukri']);
+const KLASS = z.enum(['recruiter_inquiry', 'reply', 'rejection', 'interview', 'noise', 'injection_suspect']);
+
+export function handleListDueTouches(deps: OutreachDeps, a: { platform?: Platform; limit?: number }) {
+  return listDueTouches(getDb(deps), nowOf(deps), loadTuning(), { platform: a.platform, limit: clampLimit(a.limit) });
+}
+export function handleNextContacts(deps: OutreachDeps, a: { platform: Platform; company_key: string; limit?: number }) {
+  return nextContactsForCompany(getDb(deps), loadOutreachConfig(), a.platform, a.company_key).slice(0, clampLimit(a.limit));
+}
+export function handleRecordInbound(
+  deps: OutreachDeps,
+  a: { platform: Platform; thread_ref: string; person_id?: number; text_hash: string; klass: InboundClass; escalated: boolean },
+) {
+  return recordInbound(
+    getDb(deps),
+    { platform: a.platform, threadRef: a.thread_ref, personId: a.person_id, textHash: a.text_hash, klass: a.klass, escalated: a.escalated },
+    nowOf(deps),
+  );
+}
+export function handleEscalate(
+  deps: OutreachDeps,
+  a: { run_id?: string; platform: string; person_id?: number; thread_ref?: string; reason: string; detail?: string },
+) {
+  const id = addEscalation(
+    getDb(deps),
+    { runId: a.run_id ?? null, platform: a.platform, personId: a.person_id, threadRef: a.thread_ref, reason: a.reason, detail: a.detail },
+    nowOf(deps),
+  );
+  return { id };
+}
+export function handleListOpenEscalations(deps: OutreachDeps, a: { limit?: number }) {
+  return listOpenEscalations(getDb(deps), clampLimit(a.limit));
+}
+
+const text = (v: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(v) }] });
+function safe<T>(fn: () => T) {
+  try {
+    return text(fn());
+  } catch (err: any) {
+    return { ...text({ error: String(err?.message ?? err).slice(0, 300) }), isError: true as const };
+  }
+}
+
+export function buildServer(deps: OutreachDeps = {}): McpServer {
+  const server = new McpServer({ name: 'outreach', version: '1.0.0' });
+  server.registerTool(
+    'list_due_touches',
+    {
+      description: 'Follow-up touches due now (max 20), oldest first, with profile_url and name.',
+      inputSchema: { platform: PLATFORM.optional(), limit: z.number().int().min(1).max(20).optional() },
+    },
+    async (a) => safe(() => handleListDueTouches(deps, a)),
+  );
+  server.registerTool(
+    'next_contacts',
+    {
+      description: 'Next not-yet-contacted people to approach at a company, within the company contact limit.',
+      inputSchema: { platform: PLATFORM, company_key: z.string().min(1).max(200), limit: z.number().int().min(1).max(20).optional() },
+    },
+    async (a) => safe(() => handleNextContacts(deps, a)),
+  );
+  server.registerTool(
+    'record_inbound',
+    {
+      description: 'Record an inbound message by thread_ref + text_hash (deduped). Never pass message text.',
+      inputSchema: {
+        platform: PLATFORM,
+        thread_ref: z.string().min(1).max(300),
+        person_id: z.number().int().optional(),
+        text_hash: z.string().min(1).max(128),
+        klass: KLASS,
+        escalated: z.boolean(),
+      },
+    },
+    async (a) => safe(() => handleRecordInbound(deps, a)),
+  );
+  server.registerTool(
+    'escalate',
+    {
+      description: 'Escalate to the owner. detail is clamped to 200 chars and sanitized.',
+      inputSchema: {
+        run_id: z.string().max(100).optional(),
+        platform: z.string().min(1).max(40),
+        person_id: z.number().int().optional(),
+        thread_ref: z.string().max(300).optional(),
+        reason: z.string().min(1).max(200),
+        detail: z.string().max(5000).optional(),
+      },
+    },
+    async (a) => safe(() => handleEscalate(deps, a)),
+  );
+  server.registerTool(
+    'list_open_escalations',
+    {
+      description: 'Unresolved escalations (max 20).',
+      inputSchema: { limit: z.number().int().min(1).max(20).optional() },
+    },
+    async (a) => safe(() => handleListOpenEscalations(deps, a)),
+  );
+  return server;
+}
+
+async function main() {
+  await buildServer().connect(new StdioServerTransport());
+}
+
+if (process.env.VITEST !== 'true' && !process.env.OUTREACH_NO_MAIN) {
+  main().catch((err) => {
+    console.error('[outreach] fatal error:', err);
+    process.exit(1);
+  });
+}

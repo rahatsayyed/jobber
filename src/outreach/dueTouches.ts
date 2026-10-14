@@ -40,6 +40,20 @@ const toDate = (s: string | null): Date | null => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
+/** Normalized profile keys the legacy `connections` table records as messaged or connected. */
+export function loadConnectedKeys(db: Db): Set<string> {
+  const keys = new Set<string>();
+  try {
+    const cr = db
+      .prepare("SELECT profile_url FROM connections WHERE status IN ('messaged', 'connected') AND profile_url IS NOT NULL")
+      .all() as { profile_url: string }[];
+    for (const c of cr) keys.add(normalizeProfileKey(c.profile_url));
+  } catch {
+    // legacy table missing: no signal
+  }
+  return keys;
+}
+
 /**
  * Follow-ups due at `now`, oldest due first. Only people in stage 'active' are considered; a
  * 'connect' step is new outreach, not a follow-up, so it is never returned.
@@ -74,15 +88,7 @@ export function dueTouchesFor(
       ORDER BY sent_at ASC, id ASC`,
   );
 
-  const connectedKeys = new Set<string>();
-  try {
-    const cr = db
-      .prepare("SELECT profile_url FROM connections WHERE status IN ('messaged', 'connected') AND profile_url IS NOT NULL")
-      .all() as { profile_url: string }[];
-    for (const c of cr) connectedKeys.add(normalizeProfileKey(c.profile_url));
-  } catch {
-    // legacy table missing: no signal
-  }
+  const connectedKeys = loadConnectedKeys(db);
   const pendingStmt = db.prepare(
     `SELECT 1 AS hit FROM touches WHERE person_id = ? AND status NOT IN (${TERMINAL.map(() => '?').join(',')}) LIMIT 1`,
   );

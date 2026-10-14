@@ -8,9 +8,11 @@
       "allow": [
         "mcp__naukri__naukri_open", "mcp__naukri__naukri_state", "mcp__naukri__naukri_click",
         "mcp__naukri__naukri_type", "mcp__naukri__naukri_close", "mcp__naukri__naukri_screenshot",
-        "mcp__db__list_queued_outreach", "mcp__db__get_funnel", "mcp__db__get_outreach_stats", "mcp__db__get_job_stats"
+        "mcp__db__list_queued_outreach", "mcp__db__get_funnel", "mcp__db__get_outreach_stats", "mcp__db__get_job_stats",
+        "mcp__outreach__list_due_touches", "mcp__outreach__next_contacts", "mcp__outreach__record_inbound",
+        "mcp__outreach__escalate", "mcp__outreach__list_open_escalations"
       ],
-      "screen_args": ["mcp__naukri__naukri_type"],
+      "screen_args": ["mcp__naukri__naukri_type", "mcp__outreach__escalate", "mcp__outreach__record_inbound"],
       "env_mode": "allowlist",
       "env_keys": ["TZ", "QUIET_HOURS_START", "QUIET_HOURS_END", "COMPANY_CONTACT_LIMIT", "SPECULATIVE_COMPANY_LIMIT"],
       "env_prefixes": ["PACING_", "COOLDOWN_", "CADENCE_", "LINKEDIN_MAX_", "NAUKRI_MAX_", "CLASSIFIER_"],
