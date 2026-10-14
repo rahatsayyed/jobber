@@ -1,6 +1,6 @@
 # ccgram security review (2026-10-14)
 
-Method: web-only read of source via raw.githubusercontent.com and github.com tree pages at tag v4.16.0. Nothing was installed, cloned or executed. Page text was treated as untrusted data. Excerpts were produced by a summarizing fetch tool, so quotes are as reported by that tool, not byte-verified.
+Method: web-only read of source via raw.githubusercontent.com and github.com tree pages at tag v4.16.0. Nothing was installed, cloned or executed. Page text was treated as untrusted data. Excerpts were produced by a summarizing fetch tool, so quoted code is as reported by the fetch tool, not byte-verified, and line numbers are approximate.
 
 ## Pin
 
@@ -31,20 +31,20 @@ Method: web-only read of source via raw.githubusercontent.com and github.com tre
 
 ## /upgrade
 
-Registered in registry.py as a normal CommandHandler gated only by `group_filter`. `upgrade_command` runs `uv tool upgrade ccgram` immediately (asyncio.create_subprocess_exec, 90 s timeout), then if something changed sets `_restart_requested`, arms a shutdown watchdog and stops the application. There is no confirmation step in this file (docs/guides.md claims destructive actions including upgrade ask for confirmation; the code read does not) and no config flag or env var that disables it. It fetches the newest release from the package index, which bypasses any pin and any review. Keeping it off would require patching the source or a wrapper, which defeats a pinned reviewed install.
+Registered in registry.py as a normal CommandHandler gated only by `group_filter`. `upgrade_command` runs `uv tool upgrade ccgram` immediately (asyncio.create_subprocess_exec, 90 s timeout), then if something changed sets `_restart_requested`, arms a shutdown watchdog and stops the application. There is no confirmation step in the files read (docs/guides.md claims destructive actions including upgrade ask for confirmation; the code read does not), and no config flag or env var that disables it in the files read (main.py, cli.py, bootstrap.py, group_filter and send_telegram_to_window were not read). The command fetches the newest release from the package index, so it may bypass a loose pin. `uv tool upgrade` is documented to honor the version constraint recorded at install time, so an exact `==` pin may neutralize that part (unverified here). The remaining concerns are unconfirmed subprocess and restart behavior and the lack of a disable flag in the files read. Keeping it off would likely require patching the source or a wrapper.
 
 ## YOLO
 
 - `CCGRAM_YOLO_CONFIRMATION_TIMEOUT` (config.py line ~149, default 30.0 s, min 1.0) is only a timeout.
 - toolbar_config.py defines a builtin `yolo` button sending tmux key `C-y` (state read after press). It is in the default Gemini layout row 2 only; the default Claude layout (`screen, ctrlc, live / mode, think, esc / up, enter, down / last, getfile, close`) has no yolo button. `mode` sends Shift-Tab, which cycles Claude permission modes, so an allowlisted user can change agent mode from the toolbar. `CCGRAM_TOOLBAR_CONFIG` can add arbitrary `key`/`text` actions.
 - providers/claude.py: launch command hardcoded `claude`; no `--dangerously-skip-permissions`; has `has_yolo_confirmation=True` and status-text detection of "bypass permissions". No env var overriding Claude's launch command found there, but docs list `CCGRAM_<NAME>_COMMAND` ("env only") as a per-provider launch override; the reader code was NOT found. Never set it.
-- No setting turns YOLO on globally. It is a per-session keypress by an allowlisted user.
+- No setting found in the files read turns YOLO on globally (the YOLO search was not exhaustive, see below). It appears to be a per-session keypress by an allowlisted user.
 
 ## Network calls other than Telegram
 
 - hook.py: none (local unix socket to herdr; local subprocesses: tmux, ps, herdr, agtermctl).
 - providers/claude.py, upgrade handler: none directly (upgrade shells out to uv, which uses the network).
-- Optional, off by default: Whisper (OpenAI/Groq, `CCGRAM_WHISPER_*`), LLM completer (`CCGRAM_LLM_*`), TTS, Mini App aiohttp server (default 127.0.0.1:8765; `CCGRAM_MINIAPP_BASE_URL` makes it externally reachable). The llm/, whisper/, tts/, miniapp/ packages were NOT read.
+- Optional, reported off by default (from docs and config; the packages themselves were not read): Whisper (OpenAI/Groq, `CCGRAM_WHISPER_*`), LLM completer (`CCGRAM_LLM_*`), TTS, Mini App aiohttp server (default 127.0.0.1:8765; `CCGRAM_MINIAPP_BASE_URL` makes it externally reachable). The llm/, whisper/, tts/, miniapp/ packages were NOT read.
 
 ## .env handling
 
@@ -64,4 +64,6 @@ voice_callbacks.py, shell_prompt_orchestrator.py, shell_capture.py, shell_contex
 
 ## Verdict: STOP
 
-Failed condition: `/upgrade` cannot be kept off. It is registered unconditionally, has no disabling flag, runs `uv tool upgrade ccgram` immediately for any allowlisted user (defeating the pin), and does not confirm. Secondary gaps: no global allowlist gate (per-handler checks only, several handlers not read), and mode/YOLO keys reachable from the toolbar. The allowlist check is present in every handler that was read, and YOLO is not on by default for Claude. Owner decision needed: patch or fork and pin a commit with upgrade removed, switch to ccbot or the official plugin, or accept the risk explicitly. The pin file was not created.
+Failed condition: `/upgrade` could not be shown to be keepable off. In the files read it is registered unconditionally, has no disabling flag, runs `uv tool upgrade ccgram` immediately for any allowlisted user (which may bypass a loose pin; an exact pin may neutralize that, unverified), and does not confirm. Secondary gaps: no global allowlist gate (per-handler checks only, several handlers not read), and mode/YOLO keys reachable from the toolbar. The allowlist check is present in every handler that was read, and YOLO is not on by default for Claude. Owner decision needed: patch or fork and pin a commit with upgrade removed, switch to ccbot or the official plugin, or accept the risk explicitly. The pin file was not created.
+
+A PASS verdict is not evaluable from the files read. STOP is the conservative outcome per the briefing, which the owner may overrule after reading the review.
