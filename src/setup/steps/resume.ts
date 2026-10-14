@@ -112,14 +112,15 @@ function defaultDeps(ctx: SetupContext, spawnClaude: ClaudeSpawn): ConvertDeps {
       const cmdPath = path.join(ctx.root, '.claude', 'commands', 'setup-resume.md');
       if (ctx.fs.exists(cmdPath)) {
         const body = ctx.fs.read(cmdPath).replace(/^---[\s\S]*?---\s*/, '');
-        full = prompt.replace(/^\/setup-resume\n/, `${body}\n`);
+        full = prompt.replace(/^\/setup-resume\n/, () => `${body}\n`);
       }
       const cwd = path.join(os.tmpdir(), 'jobber-setup-resume');
       ctx.fs.mkdirp(cwd, 0o700);
       const env: Record<string, string> = {};
-      for (const k of ENV_ALLOW) {
-        const v = ctx.env[k];
-        if (v !== undefined) env[k] = v;
+      for (const [k, v] of Object.entries(ctx.env)) {
+        if (v === undefined) continue;
+        // Claude's own auth and config only; every other key (Gmail, Telegram, ...) is dropped.
+        if (ENV_ALLOW.includes(k) || k.startsWith('ANTHROPIC_') || k.startsWith('CLAUDE_')) env[k] = v;
       }
       const r = await spawnClaude('claude', claudeArgs(full), {
         cwd,

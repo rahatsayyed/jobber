@@ -261,6 +261,17 @@ describe('checkNumbersInSource boundaries', () => {
   });
 });
 
+describe('version numbers and lists', () => {
+  it('versions and lists present in the source are clean', () => {
+    const src = 'React 18.2.0, Node 20.11.1 from 2019,2020';
+    expect(checkNumbersInSource({ a: 'React 18.2.0, Node 20.11.1' }, src)).toEqual([]);
+    expect(checkNumbersInSource({ a: 'Active 2019,2020' }, src)).toEqual([]);
+  });
+  it('an invented version warns', () => {
+    expect(checkNumbersInSource({ a: 'React 18.9.9' }, 'React 18.2.0')).toEqual(['18.9.9']);
+  });
+});
+
 describe('nested shape', () => {
   const shape = { experience: [{ title: 'x', description: ['a'] }], skills: [{ category: 'c', items: ['i'] }] };
   const run = (out: unknown) =>
@@ -301,7 +312,24 @@ describe('default runClaude spawn', () => {
     expect(c.opts.input).toBe(SOURCE);
     expect(c.opts.timeoutMs).toBe(120_000);
     expect(c.opts.cwd).not.toBe(ROOT);
-    expect(Object.keys(c.opts.env).sort()).toEqual(['HOME', 'LANG', 'PATH']);
+    expect(Object.keys(c.opts.env).sort()).toEqual(['ANTHROPIC_API_KEY', 'HOME', 'LANG', 'PATH']);  });
+
+  it('keeps ANTHROPIC_ and CLAUDE_ keys, drops Gmail and Telegram keys', async () => {
+    let envSeen: Record<string, string> = {};
+    const fake: ClaudeSpawn = async (_c, _a, opts) => {
+      envSeen = opts.env;
+      return { stdout: JSON.stringify(resumeJson()), code: 0 };
+    };
+    const t = setup([{ ask: '/home/u/cv.txt' }, { confirm: true }], '');
+    t.ctx.env = {
+      HOME: '/home/u',
+      ANTHROPIC_AUTH_TOKEN: 'a',
+      CLAUDE_CONFIG_DIR: '/c',
+      GMAIL_OAUTH_PATH: 'g',
+      TELEGRAM_BOT_TOKEN: 't',
+    };
+    await makeResumeStep({ readText: async () => SOURCE }, fake).run(t.ctx);
+    expect(Object.keys(envSeen).sort()).toEqual(['ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CONFIG_DIR', 'HOME']);
     expect(claudeArgs('p')[1]).toBe('p');
   });
 });

@@ -57,10 +57,14 @@ function normalizeNumber(tok: string): string {
   return tok.replace(/,(?=\d{3}(?!\d))/g, '');
 }
 
-/** Whole digit runs (decimals kept together) in the source, thousands separators removed. */
+// Source tokens are built like output tokens: whole dotted or comma runs (18.2.0, 2019,2020)
+// plus plain digit runs and decimals, thousands separators removed. Whole-run matching keeps
+// 40 from matching 140 and 19 from matching 2019.
 function sourceNumbers(source: string): Set<string> {
   const out = new Set<string>();
-  for (const m of normalizeNumber(source).matchAll(/\d+(?:\.\d+)?/g)) out.add(m[0]);
+  const norm = normalizeNumber(source);
+  for (const m of norm.matchAll(/\d+(?:[.,]\d+)*/g)) out.add(m[0]);
+  for (const m of norm.matchAll(/\d+(?:\.\d+)?/g)) out.add(m[0]);
   return out;
 }
 
@@ -85,6 +89,8 @@ export function checkNumbersInSource(json: unknown, source: string): string[] {
       if (seen.has(label)) continue;
       seen.add(label);
       if (have.has(num)) continue;
+      // A comma-only list such as 2019,2020 is fine when every part is in the source.
+      if (!num.includes('.') && num.includes(',') && num.split(',').every((x) => have.has(x))) continue;
       const f = suffix ? SUFFIX_FACTOR[suffix.toLowerCase()] : undefined;
       if (f !== undefined && have.has(String(Number(num) * f))) continue;
       missing.push(label);
