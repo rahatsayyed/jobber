@@ -6,11 +6,24 @@ const SIGNATURES = new Set<string>(['G', 'U', 'B', 'X', 'Y', 'R', 'E', 'N']);
 const SHA_RE = /^[0-9a-f]{40}$/;
 const TAG_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9_.+-]{0,99}$/;
 const SEP = '\x1f';
+const SCRUBBED_ENV = /^(GIT_DIR|GIT_WORK_TREE|GIT_INDEX_FILE|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_CONFIG.*)$/;
+// eslint-disable-next-line no-control-regex
+const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;
+
+function cleanSubject(s: string): string {
+  return s.replace(UNSAFE_CHARS, '').slice(0, 200);
+}
+
+function gitEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(process.env)) if (!SCRUBBED_ENV.test(k)) env[k] = v;
+  return { ...env, ...extra };
+}
 
 // Read-only: fetch only updates remote-tracking refs and tags, nothing touches the tree or index.
 export async function gatherFacts(exec: Exec, cfg: UpdateConfig, root: string): Promise<RepoFacts> {
   const git = (args: string[], env?: NodeJS.ProcessEnv) =>
-    exec('git', args, { cwd: root, env: env ?? process.env, timeoutMs: 60_000 });
+    exec('git', args, { cwd: root, env: env ?? gitEnv(), timeoutMs: 60_000 });
   const signerArgs = cfg.signersFile ? ['-c', `gpg.ssh.allowedSignersFile=${cfg.signersFile}`] : [];
   const tagMode = cfg.tagPattern !== null;
 
@@ -23,7 +36,7 @@ export async function gatherFacts(exec: Exec, cfg: UpdateConfig, root: string): 
   const sym = await git(['symbolic-ref', '--short', '-q', 'HEAD']);
   const currentBranch = sym.code === 0 && sym.stdout.trim() !== '' ? sym.stdout.trim() : null;
 
-  const fetchEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+  const fetchEnv = gitEnv({ GIT_TERMINAL_PROMPT: '0' });
   const fetchArgs = tagMode
     ? ['fetch', '--tags', '--', cfg.remote]
     : ['fetch', '--prune', '--', cfg.remote, cfg.branch];
@@ -41,11 +54,11 @@ export async function gatherFacts(exec: Exec, cfg: UpdateConfig, root: string): 
         upstreamLabel = tag;
         const rp = await git(['rev-parse', '--verify', '--quiet', `${tag}^{commit}`]);
         const sha = rp.stdout.trim();
-        if (rp.code === 0 && SHA_RE.test(sha)) {
-          upstreamSha = sha;
-          const vt = await git([...signerArgs, 'verify-tag', tag]);
-          tagSignature = vt.code === 0 ? 'G' : 'N';
-        }
+        if (rp.code !== 0 || !SHA_RE.test(sha)) throw new Error('update facts: rev-parse of the tag failed');
+        upstreamSha = sha;
+        const vt = await git([...signerArgs, 'verify-tag', tag]);
+        if (vt.code !== 0) throw new Error('update facts: verify-tag failed');
+        tagSignature = 'G';
       }
     } else {
       const rp = await git(['rev-parse', '--verify', '--quiet', `${cfg.remote}/${cfg.branch}^{commit}`]);
@@ -61,27 +74,30 @@ export async function gatherFacts(exec: Exec, cfg: UpdateConfig, root: string): 
 
   if (upstreamSha !== null && head !== '') {
     const counts = await git(['rev-list', '--left-right', '--count', `HEAD...${upstreamSha}`]);
-    const m = counts.code === 0 ? counts.stdout.trim().split(/\s+/) : [];
-    ahead = Number.parseInt(m[0] ?? '0', 10) || 0;
-    behind = Number.parseInt(m[1] ?? '0', 10) || 0;
+    if (counts.code !== 0) throw new Error('update facts: rev-list failed');
+    const m = counts.stdout.trim().split(/\s+/);
+    ahead = Number.parseInt(m[0] ?? '', 10);
+    behind = Number.parseInt(m[1] ?? '', 10);
+    if (!Number.isInteger(ahead) || !Number.isInteger(behind)) throw new Error('update facts: rev-list output malformed');
 
     const log = await git([...signerArgs, 'log', '--reverse', '--format=%H%x1f%G?%x1f%s', `HEAD..${upstreamSha}`]);
-    if (log.code === 0) {
-      commits = log.stdout.split('\n').filter((l) => l.trim() !== '').flatMap((line) => {
-        const parts = line.split(SEP);
-        const sha = parts[0]?.trim() ?? '';
-        if (!SHA_RE.test(sha)) return [];
-        const sig = (parts[1] ?? '').trim();
-        return [{
-          sha,
-          signature: (SIGNATURES.has(sig) ? sig : 'E') as Signature,
-          subject: parts.slice(2).join(SEP),
-        }];
-      });
-    }
+    if (log.code !== 0) throw new Error('update facts: log failed');
+    commits = log.stdout.split('\n').filter((l) => l.trim() !== '').map((line) => {
+      const parts = line.split(SEP);
+      const sha = parts[0]?.trim() ?? '';
+      if (!SHA_RE.test(sha)) throw new Error('update facts: log output malformed');
+      const sig = (parts[1] ?? '').trim();
+      return {
+        sha,
+        signature: (SIGNATURES.has(sig) ? sig : 'E') as Signature,
+        subject: cleanSubject(parts.slice(2).join(SEP)),
+      };
+    });
+    if (commits.length !== behind) throw new Error('update facts: commit range not fully verified');
 
     const diff = await git(['diff', '--name-only', '--no-renames', '-z', 'HEAD', upstreamSha, '--']);
-    if (diff.code === 0) changedPaths = diff.stdout.split('\0').filter((p) => p !== '');
+    if (diff.code !== 0) throw new Error('update facts: diff failed');
+    changedPaths = diff.stdout.split('\0').filter((p) => p !== '');
   }
 
   return { head, currentBranch, dirty, upstreamSha, upstreamLabel, ahead, behind, commits, changedPaths, tagSignature };

@@ -26,7 +26,7 @@ const base: Record<string, Reply> = {
   'symbolic-ref': { stdout: 'main\n' },
   'rev-parse --verify --quiet HEAD': { stdout: A + '\n' },
   'origin/main^{commit}': { stdout: B + '\n' },
-  'rev-list': { stdout: '0\t2\n' },
+  'rev-list': { stdout: '0\t1\n' },
   'log': { stdout: `${B}${SEP}G${SEP}feat: y\n` },
   'diff': { stdout: 'src/a.ts\0src/b.ts\0' },
 };
@@ -36,7 +36,7 @@ describe('gatherFacts (branch mode)', () => {
     const { exec, calls } = fake(base);
     const f = await gatherFacts(exec, cfg, ROOT);
     expect(f).toMatchObject({ head: A, currentBranch: 'main', dirty: false, upstreamSha: B,
-      upstreamLabel: 'origin/main', ahead: 0, behind: 2, changedPaths: ['src/a.ts', 'src/b.ts'], tagSignature: null });
+      upstreamLabel: 'origin/main', ahead: 0, behind: 1, changedPaths: ['src/a.ts', 'src/b.ts'], tagSignature: null });
     expect(f.commits).toEqual([{ sha: B, subject: 'feat: y', signature: 'G' }]);
     const verbs = calls.map((c) => c.args.filter((a) => !a.startsWith('-') && !a.includes('=')).slice(0, 1)[0]);
     expect(verbs).toEqual(['status', 'rev-parse', 'symbolic-ref', 'fetch', 'rev-parse', 'rev-list', 'log', 'diff']);
@@ -100,6 +100,41 @@ describe('gatherFacts (branch mode)', () => {
   });
 });
 
+describe('gatherFacts fail-closed', () => {
+  it('throws when rev-list, log or diff fail', async () => {
+    await expect(gatherFacts(fake({ ...base, 'rev-list': { code: 1 } }).exec, cfg, ROOT)).rejects.toThrow(/rev-list/);
+    await expect(gatherFacts(fake({ ...base, log: { code: 1 } }).exec, cfg, ROOT)).rejects.toThrow(/log/);
+    await expect(gatherFacts(fake({ ...base, diff: { code: 1 } }).exec, cfg, ROOT)).rejects.toThrow(/diff/);
+  });
+  it('throws on a malformed log line and on a count mismatch', async () => {
+    await expect(gatherFacts(fake({ ...base, log: { stdout: `zzz${SEP}G${SEP}s\n` } }).exec, cfg, ROOT)).rejects.toThrow(/malformed/);
+    await expect(gatherFacts(fake({ ...base, 'rev-list': { stdout: '0\t3\n' } }).exec, cfg, ROOT)).rejects.toThrow(/not fully verified/);
+  });
+  it('strips control and bidi characters and caps subjects at 200', async () => {
+    const subj = 'a‮b\u0007c' + 'x'.repeat(300);
+    const f = await gatherFacts(fake({ ...base, log: { stdout: `${B}${SEP}G${SEP}${subj}\n` } }).exec, cfg, ROOT);
+    expect(f.commits[0].subject).toHaveLength(200);
+    expect(f.commits[0].subject.startsWith('abcx')).toBe(true);
+  });
+  it('scrubs inherited git location variables but keeps others', async () => {
+    const keys = ['GIT_DIR', 'GIT_CONFIG_COUNT', 'GIT_SSH_COMMAND'];
+    const saved = keys.map((k) => process.env[k]);
+    process.env.GIT_DIR = '/evil'; process.env.GIT_CONFIG_COUNT = '1'; process.env.GIT_SSH_COMMAND = 'ssh -i k';
+    try {
+      const { exec, calls } = fake(base);
+      await gatherFacts(exec, cfg, ROOT);
+      for (const c of calls) {
+        expect(c.env?.GIT_DIR).toBeUndefined();
+        expect(c.env?.GIT_CONFIG_COUNT).toBeUndefined();
+        expect(c.env?.GIT_SSH_COMMAND).toBe('ssh -i k');
+      }
+      expect(calls.find((c) => c.args[0] === 'fetch')!.env?.GIT_TERMINAL_PROMPT).toBe('0');
+    } finally {
+      keys.forEach((k, i) => { if (saved[i] === undefined) delete process.env[k]; else process.env[k] = saved[i]; });
+    }
+  });
+});
+
 describe('gatherFacts (tag mode)', () => {
   const tcfg = loadUpdateConfig({ AUTO_UPDATE: 'true', AUTO_UPDATE_SIGNERS_FILE: '/x/allowed_signers', AUTO_UPDATE_TAG_PATTERN: 'v*' });
   const tagReplies: Record<string, Reply> = {
@@ -121,10 +156,9 @@ describe('gatherFacts (tag mode)', () => {
     expect(rp).toBeTruthy();
   });
 
-  it('a failed verify-tag is not G', async () => {
-    const { exec } = fake({ ...tagReplies, 'verify-tag': { code: 1 } });
-    const f = await gatherFacts(exec, tcfg, ROOT);
-    expect(f.tagSignature).toBe('N');
+  it('a failed verify-tag or tag rev-parse throws', async () => {
+    await expect(gatherFacts(fake({ ...tagReplies, 'verify-tag': { code: 1 } }).exec, tcfg, ROOT)).rejects.toThrow(/verify-tag/);
+    await expect(gatherFacts(fake({ ...tagReplies, 'v1.2.0^{commit}': { code: 1 } }).exec, tcfg, ROOT)).rejects.toThrow(/rev-parse/);
   });
 
   it('no matching tag means no upstream', async () => {

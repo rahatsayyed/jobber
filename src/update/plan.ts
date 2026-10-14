@@ -25,7 +25,12 @@ export type UpdatePlan =
 export const PERMISSION_SETS_PATH = 'config/permission-sets.json';
 
 export function matchesReviewPath(path: string, reviewPaths: string[]): boolean {
-  return reviewPaths.some((entry) => (entry.endsWith('/') ? path.startsWith(entry) : path === entry));
+  const norm = (x: string) => x.normalize('NFC').toLowerCase();
+  const p = norm(path);
+  return reviewPaths.some((raw) => {
+    const e = norm(raw);
+    return e.endsWith('/') ? p.startsWith(e) || p === e.slice(0, -1) : p === e;
+  });
 }
 
 export function planUpdate(facts: RepoFacts, cfg: UpdateConfig, opts: { ignoreEnabled?: boolean } = {}): UpdatePlan {

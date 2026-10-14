@@ -70,4 +70,10 @@ describe('matchesReviewPath', () => {
     expect(matchesReviewPath('.claude/settings.json', ['.claude/settings.json'])).toBe(true);
     expect(matchesReviewPath('.claude/settings.json.bak', ['.claude/settings.json'])).toBe(false);
   });
+  it('is case-insensitive, NFC-normalized, and matches a bare directory name', () => {
+    expect(matchesReviewPath('.CLAUDE/hooks/x.sh', ['.claude/hooks/'])).toBe(true);
+    expect(matchesReviewPath('Config/ccgram.pin.json', ['config/ccgram.pin.json'])).toBe(true);
+    expect(matchesReviewPath('.githooks', ['.githooks/'])).toBe(true);
+    expect(matchesReviewPath('café/x', ['café/'])).toBe(true);
+  });
 });
