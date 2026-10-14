@@ -208,3 +208,63 @@ describe('profileStep', () => {
     expect(p.salary.INR).toEqual({ floor: 2000000, target: 2500000 });
   });
 });
+
+describe('profileStep fix round 1', () => {
+  const TEMPLATE = {
+    ...ANSWERS,
+    requires_sponsorship: { india: false, other: true },
+    phone: '+00 0000000000',
+    linkedin_profile_url: 'linkedin.com/in/example-person',
+    custom: {},
+  };
+  const TPL = 'proj/user-data.example/easy-apply-answers.json';
+  const langFile = { [`${D}/languages.json`]: `${JSON.stringify(LANGS, null, 2)}\n` };
+
+  it('prompts for phone and url when creating the answers file, no placeholders written', async () => {
+    const s = script();
+    s.splice(10, 1); // template sponsorship already matches
+    s.splice(11, 0, { ask: '+91 90000 00000' }, { ask: 'https://www.linkedin.com/in/someone-else' });
+    const t = setup(s, { [TPL]: JSON.stringify(TEMPLATE), ...langFile });
+    await profileStep.run(t.ctx);
+    const out = t.store.get(`${D}/easy-apply-answers.json`) ?? '';
+    const a = JSON.parse(out);
+    expect(a.phone).toBe('+91 90000 00000');
+    expect(a.linkedin_profile_url).toBe('https://www.linkedin.com/in/someone-else');
+    expect(out).not.toContain('0000000000');
+    expect(out).not.toContain('example-person');
+    t.sio.assertDone();
+  });
+
+  it('writes empty strings when left blank and re-asks a bad url', async () => {
+    const s = script();
+    s.splice(10, 1);
+    s.splice(11, 0, { ask: '' }, { ask: 'linkedin.com/in/x' }, { ask: '' });
+    const t = setup(s, { [TPL]: JSON.stringify(TEMPLATE), ...langFile });
+    await profileStep.run(t.ctx);
+    const a = JSON.parse(t.store.get(`${D}/easy-apply-answers.json`) ?? '');
+    expect(a.phone).toBe('');
+    expect(a.linkedin_profile_url).toBe('');
+  });
+
+  it('never prompts for phone or url when the answers file exists', async () => {
+    const t = setup(script(), files());
+    await profileStep.run(t.ctx);
+    expect(t.sio.transcript.join('\n')).not.toContain('Phone number');
+    t.sio.assertDone();
+  });
+
+  it('adding a language to a confirmed list needs a fresh confirm', async () => {
+    const confirmed = { ...LANGS, confirmed: true };
+    const mk = (keep: boolean) => {
+      const s = script();
+      s.splice(12, 2, { confirm: true }, { ask: 'Arabic' }, { choose: 'basic' }, { confirm: false }, { confirm: keep });
+      return setup(s, { ...files(), [`${D}/languages.json`]: `${JSON.stringify(confirmed, null, 2)}\n` });
+    };
+    const dropped = mk(false);
+    await profileStep.run(dropped.ctx);
+    expect(JSON.parse(dropped.store.get(`${D}/languages.json`) ?? '').confirmed).toBe(false);
+    const kept = mk(true);
+    await profileStep.run(kept.ctx);
+    expect(JSON.parse(kept.store.get(`${D}/languages.json`) ?? '').confirmed).toBe(true);
+  });
+});

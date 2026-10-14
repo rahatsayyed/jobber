@@ -191,6 +191,20 @@ export const profileStep: SetupStep = {
         await io.ask('Expected salary text for application forms (blank keeps the current value)', { default: '' })
       ).trim();
       if (exp !== '') next.expected_salary = exp;
+      if (!ctx.fs.exists(answersPath)) {
+        // Creating from the template: never write its placeholder phone or profile URL.
+        io.say('Creating your answers file. Phone and LinkedIn URL are optional; leave blank to skip.');
+        next.phone = (await io.ask('Phone number for application forms (optional)', { default: '' })).trim();
+        next.linkedin_profile_url = (
+          await io.ask('LinkedIn profile URL (optional, https://www.linkedin.com/in/...)', {
+            default: '',
+            validate: (v) =>
+              v.trim() === '' || /^https:\/\/www\.linkedin\.com\/in\/[A-Za-z0-9_%.-]+\/?$/.test(v.trim())
+                ? null
+                : 'Use https://www.linkedin.com/in/<name> or leave blank',
+          })
+        ).trim();
+      }
     } else {
       io.say('No easy-apply-answers.json or template found: skipping the application answers file.');
     }
@@ -218,7 +232,12 @@ export const profileStep: SetupStep = {
       }
     }
     const langNext: Json | null = langs ? { ...langs, declared } : null;
-    if (langNext && langNext.confirmed !== true) {
+    if (langNext && langNext.confirmed === true && JSON.stringify(declared) !== JSON.stringify(langs?.declared ?? [])) {
+      if (!(await io.confirm('The language list changed. Keep it marked as confirmed?', false))) {
+        langNext.confirmed = false;
+        io.say('The language list is no longer confirmed; the gate only flags until you confirm it.');
+      }
+    } else if (langNext && langNext.confirmed !== true) {
       io.say(
         'Confirming makes the language gate exclude postings that require a language you have not declared; until then it only flags them.',
       );
