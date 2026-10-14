@@ -104,6 +104,14 @@ describe('createClassifier', () => {
     expect(maxActive).toBe(1);
   });
 
+  it('fails closed on non-finite logits', async () => {
+    for (const bad of [[NaN, NaN], [Infinity, Infinity]]) {
+      const r: ModelRunner = async () => bad;
+      const v = await createClassifier({ tokenizer, run: r, config: cfg }).classify('a');
+      expect(v.malicious).toBe(true);
+    }
+  });
+
   it('respects the threshold', async () => {
     const mid: ModelRunner = async () => [0, 0.4]; // p about 0.6
     const lo = await createClassifier({ tokenizer, run: mid, config: { ...cfg, threshold: 0.9 } }).classify('a');

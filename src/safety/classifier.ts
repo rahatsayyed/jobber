@@ -76,7 +76,10 @@ export function createClassifier(deps: {
     let score = 0;
     for (const chunk of chunks) {
       const logits = await run([tokenizer.clsId, ...chunk, tokenizer.sepId]);
-      score = Math.max(score, maliciousProbability(logits, config.maliciousIndex));
+      const p = maliciousProbability(logits, config.maliciousIndex);
+      // A non-finite probability (NaN or Infinity logits) is unreadable output: fail closed.
+      if (!Number.isFinite(p)) return { malicious: true, score: 1, chunks: chunks.length, truncated };
+      score = Math.max(score, p);
     }
     // Input that needs more windows than allowed is unreviewed text: fail closed.
     return { malicious: truncated || score >= config.threshold, score, chunks: chunks.length, truncated };
