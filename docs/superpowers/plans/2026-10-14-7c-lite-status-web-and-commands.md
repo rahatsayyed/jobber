@@ -131,7 +131,24 @@ Requirements, each with a test:
 4. README: how to start (`npm run web`), the one-line warning that the send box controls a live Claude session so keep the permission set at `read_only` unless needed, and that the page is localhost only (use an SSH tunnel from another machine, never open the port).
 5. Commit: `feat(web): runner script, env keys, doctor check, docs`.
 
-## Task 7: Final checks (controller, not a subagent)
+## Task 7: Telegram bot branding (docs only, no ccgram patching, no Telegram calls)
+
+Owner wants the bot's start screen to say "Jobber, built by Rahat" with a link to https://github.com/rahatsayyed/jobber instead of "ccgram".
+
+**Files:** create `docs/telegram-branding.md`; modify `docs/superpowers/specs/2026-10-14-ccgram-review.md` only by appending a short "Branding" section.
+
+1. Find out, from web pages only (GitHub `alexei-led/ccgram` at tag v4.16.0, its docs and README; do not install, execute or read the installed copy), where the `/start` greeting text and the bot's visible name come from, and whether any env var or config file changes them. Record the finding (file, setting name, or "hard-coded") in the review doc's Branding section. Do not patch, fork or wrap ccgram.
+2. Write `docs/telegram-branding.md` with exact text the owner pastes into BotFather, nothing else:
+   - `/setname`: `Jobber`
+   - `/setabouttext` (max 120 characters): `Jobber: autonomous job-hunting agent, built by Rahat. https://github.com/rahatsayyed/jobber`
+   - `/setdescription` (max 512 characters, shown on the empty chat screen before Start): `Jobber finds roles, tailors resumes and handles outreach within strict limits. Built by Rahat. Source: https://github.com/rahatsayyed/jobber`
+   - `/setcommands`: the full list from the CLAUDE.md "Setting up Telegram slash commands" block, plus `limits`, `working`, `health` with one-line descriptions.
+   - A note that Telegram renders URLs as tappable links in these fields but does not support HTML or Markdown hyperlinks there, so the visible text is the URL.
+   - A note that the greeting message ccgram sends after `/start` stays whatever ccgram hard-codes unless step 1 found a setting; if it is hard-coded, say so plainly and list the two options (accept it, or patch ccgram in a private fork, owner's call) without choosing.
+3. Verify the character limits with a small test in `tests/telegram-branding.test.ts` that reads the doc and asserts the about text is at most 120 characters, the description at most 512, and that the GitHub URL appears.
+4. Commit: `docs(platform): Telegram bot branding text and ccgram greeting findings`.
+
+## Task 8: Final checks (controller, not a subagent)
 
 1. `npx tsc -p . --noEmit` clean; `npx vitest run` shows only the 5 baseline failures.
 2. `git grep -n innerHTML src/web` returns nothing; `git grep -n "0.0.0.0" src scripts` returns nothing.
