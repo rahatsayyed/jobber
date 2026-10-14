@@ -137,7 +137,10 @@ export async function gateInputAsync(raw: string, opts: InputGateAsyncOptions = 
     const port = typeof opts.classifier === 'function' ? await opts.classifier() : opts.classifier;
     const v = await port.classify(result.text);
     result.classifier = { score: v.score, malicious: v.malicious, truncated: v.truncated };
-    if (v.truncated) result.flags.push('classifier_truncated');
+    if (v.truncated) {
+      result.flags.push('classifier_truncated');
+      result.blocked = true;
+    }
     if (v.malicious) {
       result.flags.push('classifier_injection');
       result.blocked = true;

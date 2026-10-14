@@ -73,4 +73,11 @@ describe('gateInputAsync', () => {
     expect(r.flags).toContain('classifier_truncated');
     expect(r.blocked).toBe(true);
   });
+
+  it('blocks on a truncated verdict even when the model says not malicious', async () => {
+    const r = await gateInputAsync('hello', { classifier: verdict(false, 0.1, true) });
+    expect(r.blocked).toBe(true);
+    expect(r.flags).toContain('classifier_truncated');
+    expect(r.flags).not.toContain('classifier_injection');
+  });
 });
