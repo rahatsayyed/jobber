@@ -1,6 +1,6 @@
 // tests/platform-tmux.test.ts
 import { describe, it, expect } from 'vitest';
-import { assertName, capture, ensureSession, hasSession, listWindows, sendText, type Run } from '../src/platform/tmux.js';
+import { assertName, capture, ensureSession, hasSession, listWindows, sendText, validateSendText, type Run } from '../src/platform/tmux.js';
 
 function fakeRun(responses: Record<string, { stdout?: string; code?: number }> = {}, callCodes: number[] = []) {
   const calls: { cmd: string; args: string[] }[] = [];
@@ -114,6 +114,20 @@ describe('sendText', () => {
     await expect(sendText(run, 'bad name', 'w', 'hi')).rejects.toThrow();
     await expect(sendText(run, 's', '-t', 'hi')).rejects.toThrow();
     expect(calls).toHaveLength(0);
+  });
+
+  it('rejects C1, separators, zero-width, bidi and whitespace-prefixed bang', async () => {
+    const { run, calls } = fakeRun();
+    for (const bad of ['a\x7fb', 'a\u0085b', 'a b', ' !ls', ' !ls', 'a​b', 'a‮b', '﻿!x']) {
+      await expect(sendText(run, 's', 'w', bad)).rejects.toThrow();
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it('validateSendText is exported and allows ordinary leading space', () => {
+    expect(() => validateSendText(' hello')).not.toThrow();
+    expect(() => validateSendText('')).toThrow();
+    expect(() => validateSendText('  !ls')).toThrow();
   });
 
   it('accepts exactly 2000 characters', async () => {
