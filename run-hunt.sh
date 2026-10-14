@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Jobber — run the hunt (headless / cron-friendly).
-# Loads .env (keys) and, if present, .env.ccr (Grok via claude-code-router).
+# The restricted launcher (scripts/run-claude.ts) parses .env and, if present, .env.ccr itself;
+# this script does not source them. Claude output is JSON (--output-format json).
 # Usage: ./run-hunt.sh ["custom prompt"]   (default prompt: "run the hunt")
 set -euo pipefail
 cd "$(dirname "$0")"

@@ -36,10 +36,21 @@ async function readStdin(): Promise<string> {
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
-  const flags = new Set<string>(argv.filter((a) => a === '--print-args' || a === '--no-classifier'));
-  const positional = argv.filter((a) => !flags.has(a));
-  const profileName = positional[0];
-  if (!profileName) die(2, 'usage: run-claude <profile> [prompt] [--print-args] [--no-classifier]');
+  const profileName = argv[0];
+  if (!profileName) die(2, 'usage: run-claude <profile> [flags] [--] [prompt]');
+  // Launcher flags are honoured only before the prompt; "--" ends them.
+  const flags = new Set<string>();
+  let i = 1;
+  for (; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--') {
+      i++;
+      break;
+    }
+    if (a === '--print-args' || a === '--no-classifier') flags.add(a);
+    else break;
+  }
+  const promptParts = argv.slice(i);
 
   let profiles;
   try {
@@ -58,9 +69,6 @@ async function main(): Promise<void> {
   const hookPath = '$CLAUDE_PROJECT_DIR/.claude/hooks/tool-allowlist.cjs';
   const policyRef = `$CLAUDE_PROJECT_DIR/debug/runner/${profileName}.policy.json`;
 
-  writeSecure(settingsPath, JSON.stringify(renderSettings(profileName, profile, { hookPath, policyPath: policyRef }), null, 2));
-  writeSecure(policyPath, JSON.stringify(renderPolicy(profileName, profile), null, 2));
-
   const dotenv: Record<string, string> = {};
   if (profile.env_mode === 'dotenv_all') {
     for (const f of profile.env_files ?? ['.env']) {
@@ -77,6 +85,9 @@ async function main(): Promise<void> {
     die(2, (e as Error).message);
   }
 
+  writeSecure(settingsPath, JSON.stringify(renderSettings(profileName, profile, { hookPath, policyPath: policyRef }), null, 2));
+  writeSecure(policyPath, JSON.stringify(renderPolicy(profileName, profile), null, 2));
+
   if (flags.has('--print-args')) {
     process.stdout.write(`${JSON.stringify(['claude', ...args])}\n`);
     process.stdout.write(`env keys: ${Object.keys(env).sort().join(',')}\n`);
@@ -87,7 +98,7 @@ async function main(): Promise<void> {
     die(2, '--no-classifier is only allowed with JOBBER_DRY_RUN=1');
   }
 
-  let prompt = positional.length > 1 ? positional.slice(1).join(' ') : await readStdin();
+  let prompt = promptParts.length > 0 ? promptParts.join(' ') : await readStdin();
   prompt = prompt.trim();
   if (!prompt) die(2, 'empty prompt');
 
