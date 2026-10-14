@@ -216,4 +216,15 @@ export const ccgramChecks: Check[] = [
         : warn('not running', 'bash scripts/ccgram/start.sh');
     },
   },
+  {
+    id: 'web',
+    title: 'status web page token',
+    async run(ctx) {
+      const token = (readEnv(ctx) ?? {}).WEB_TOKEN ?? ctx.env.WEB_TOKEN ?? '';
+      if (token === '') return pass('WEB_TOKEN is unset: web page is off');
+      return token.length < 24
+        ? fail('WEB_TOKEN is shorter than 24 characters', 'generate one with openssl rand -hex 24')
+        : pass('WEB_TOKEN is set');
+    },
+  },
 ];

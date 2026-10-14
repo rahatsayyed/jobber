@@ -269,3 +269,20 @@ describe('ccgram checks', () => {
     expect(exitCode(await runChecks(ccgramChecks, ctxWith(goodFiles(), { session: true })))).toBe(0);
   });
 });
+
+describe('web check', () => {
+  const runWeb = async (extra: string) => {
+    const files = goodFiles();
+    files['/p/.env'] = { text: GOOD_ENV + extra, mode: 0o600 };
+    return (await byId(ctxWith(files)))['web'];
+  };
+  it('passes when unset, fails when short, passes when long, never prints the token', async () => {
+    expect((await runWeb('')).status).toBe('pass');
+    const short = await runWeb('WEB_TOKEN=shortsecret\n');
+    expect(short.status).toBe('fail');
+    expect(JSON.stringify(short)).not.toContain('shortsecret');
+    const ok = await runWeb(`WEB_TOKEN=${'z'.repeat(30)}\n`);
+    expect(ok.status).toBe('pass');
+    expect(JSON.stringify(ok)).not.toContain('zzzz');
+  });
+});

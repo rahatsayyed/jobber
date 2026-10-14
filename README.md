@@ -407,6 +407,13 @@ jobber/
 
 ---
 
+## Status web page
+
+Start it with `npm run web` (needs `WEB_TOKEN` of at least 24 characters in `.env`; see `.env.example`). It prints `http://127.0.0.1:<port>`.
+
+- The send box types into a live Claude session. Keep the permission set at `read_only` unless you need more.
+- The page listens on localhost only. From another machine use an SSH tunnel (`ssh -L 8787:127.0.0.1:8787 host`); never open the port.
+
 ## Next Steps
 
 **Phase 1 (now):** smoke test locally, then deploy to VPS + Telegram + cron.

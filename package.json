@@ -10,6 +10,7 @@
     "test": "vitest run",
     "doctor": "tsx scripts/doctor.ts",
     "status": "tsx scripts/status.ts",
+    "web": "tsx scripts/web.ts",
     "permissions": "tsx scripts/permissions.ts",
     "ccgram-hooks": "tsx scripts/ccgram-hooks.ts",
     "user-data": "tsx scripts/user-data.ts",
