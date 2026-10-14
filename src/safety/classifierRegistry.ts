@@ -218,7 +218,7 @@ export function resolveProfile(reg: ClassifierRegistry, env: NodeJS.ProcessEnv):
   const known = Object.keys(reg.profiles);
   if (!id) {
     throw new Error(
-      `CLASSIFIER_MODEL is not set. Run \`npm run setup\` to choose a classifier model (known: ${known.join(', ')}).`,
+      `CLASSIFIER_MODEL is not set. Set CLASSIFIER_MODEL in .env (see docs/classifier-models.md section 4) to choose a classifier model (known: ${known.join(', ')}).`,
     );
   }
   if (!ID_RE.test(id) || !Object.prototype.hasOwnProperty.call(reg.profiles, id)) {

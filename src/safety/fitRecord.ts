@@ -17,6 +17,8 @@ export function parseFitArgs(argv: string[], env: NodeJS.ProcessEnv, reg: Classi
     const i = argv.indexOf(n);
     return i >= 0 && argv[i + 1] !== undefined && !argv[i + 1].startsWith('--') ? argv[i + 1] : undefined;
   };
+  const pi = argv.indexOf('--profile');
+  if (pi >= 0 && opt('--profile') === undefined) throw new Error('--profile requires a value');
   const profileId = (opt('--profile') ?? env.CLASSIFIER_MODEL ?? '').trim();
   const known = Object.keys(reg.profiles);
   if (argv.includes('--pin')) throw new Error(`use: npm run models -- pin ${profileId || '<id>'}`);

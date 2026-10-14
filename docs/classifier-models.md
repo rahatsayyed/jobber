@@ -9,7 +9,7 @@ The classifier scores untrusted text for injection attempts (instructions aimed 
 Rules that matter in practice:
 
 - **Exactly one classifier per process.** `CLASSIFIER_MODEL` picks the profile and it loads once. There is no fallback chain. Changing profile needs a restart of every MCP server and session that loaded the old one.
-- **`CLASSIFIER_MODEL` unset fails closed.** There is no implicit default; the loader refuses with a message listing the known profile ids.
+- **`CLASSIFIER_MODEL` unset fails closed.** There is no implicit default; `resolveProfile` and the selector refuse with a message listing the known profile ids.
 - **The shipped default is not fully pinned yet.** Some files carry only a sha1 or no hash until the owner runs `npm run models -- pin <id>`. The loader refuses until the model is pinned.
 - **An unfitted profile is refused in send paths.** It only runs, at a placeholder threshold of 0.5, in dry runs (`JOBBER_DRY_RUN=1`). Fit it with `npm run classifier:fit` first.
 - **A gated profile is never fetched** by this project.
@@ -35,7 +35,7 @@ The Prompt Guard 2 entry is a stub: `fetch` rejects the placeholder revision and
 
 Summary of what the cards and licence files say. Not legal advice. Read the licence files yourself.
 
-- **protectai-deberta-v3-base-v2, Apache-2.0.** Keep the licence text and notices. This project does not redistribute weights; each user downloads them. Setup and `npm run models -- fetch` print the attribution line: "Model by ProtectAI ..., based on microsoft/deberta-v3-base, licensed under Apache-2.0." The repo `LICENSE` is downloaded with the model. The licences of the training datasets behind it were not checked.
+- **protectai-deberta-v3-base-v2, Apache-2.0.** Keep the licence text and notices. This project does not redistribute weights; each user downloads them. `npm run models -- fetch` prints the attribution line: "Model by ProtectAI ..., based on microsoft/deberta-v3-base, licensed under Apache-2.0." The repo `LICENSE` is downloaded with the model. The licences of the training datasets behind it were not checked.
 - **llama-prompt-guard-2-22m, Llama 4 Community License.** You request access with your own Hugging Face account and export or obtain the ONNX yourself. Display "Built with Llama" as the licence requires. Weights are not redistributed or fetched by this project. Read the licence for terms beyond this summary.
 
 ## 4. How to switch
@@ -74,3 +74,5 @@ Reading sizes and hashes: open `https://huggingface.co/api/models/<repo>?blobs=t
 - Redirects are followed only to allowlisted Hugging Face hosts. A CDN on another host is refused with a message naming it; widening the allowlist is a code change.
 - Tokenizer loading and the ONNX input names (`input_ids`, `attention_mask`) are unverified until the first real model load.
 - Non-LFS files are sha1-pinned only until `models pin` runs.
+- A fit is bound only to the model file's sha256, not to the other scoring-relevant profile fields (max_tokens, stride, max_chunks, special_tokens, labels, inputs/output, tokenizer and config digests). After changing any of them the owner must refit; the loader does not detect it.
+- Dry run is the env var `JOBBER_DRY_RUN=1` alone, and nothing in `src` makes such a process non-sending. Never set `JOBBER_DRY_RUN=1` in a process that can send; the unfitted-at-0.5 path is only as safe as that.

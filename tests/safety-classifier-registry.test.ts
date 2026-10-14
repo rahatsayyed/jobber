@@ -156,8 +156,8 @@ describe('validateRegistry rejections', () => {
 
 describe('resolveProfile', () => {
   const reg = fixture() as ClassifierRegistry;
-  it('unset throws mentioning env var and setup', () => {
-    expect(() => resolveProfile(reg, {})).toThrow(/CLASSIFIER_MODEL[\s\S]*npm run setup/);
+  it('unset throws mentioning env var and .env', () => {
+    expect(() => resolveProfile(reg, {})).toThrow(/CLASSIFIER_MODEL[\s\S]*docs\/classifier-models\.md section 4/);
   });
   it('unknown lists known ids', () => {
     expect(() => resolveProfile(reg, { CLASSIFIER_MODEL: 'zzz' })).toThrow(/fx/);

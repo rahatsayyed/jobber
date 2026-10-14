@@ -65,7 +65,7 @@ describe('classifier_model check', () => {
     const r = (await run(mk().checks, makeCtx({})))['classifier_model'];
     expect(r.status).toBe('fail');
     expect(r.detail).toBe('CLASSIFIER_MODEL is not set');
-    expect(r.fix).toBe('npm run setup -- --step classifier');
+    expect(r.fix).toBe('set CLASSIFIER_MODEL in .env (see docs/classifier-models.md section 4)');
   });
   it('2: fails on an unreadable registry or unknown profile', async () => {
     const bad = mk({ loadRegistry: () => { throw new Error('config/classifier-models.json is invalid: x\nsecond'); } });
@@ -159,6 +159,14 @@ describe('classifier_smoke check', () => {
     const r = (await run(m.checks, makeCtx(withModel())))['classifier_smoke'];
     expect(r.status).toBe('fail');
     expect(r.detail).toContain('boom');
+  });
+  it('unpinned files skip smoke with a pin fix', async () => {
+    const m = mk({ verifyProfile: async () => okReport({ unpinned: ['a'] }) });
+    const r = (await run(m.checks, makeCtx(withModel())))['classifier_smoke'];
+    expect(r.status).toBe('warn');
+    expect(r.detail).toBe('skipped: files not sha256-pinned');
+    expect(r.fix).toBe('npm run models -- pin pg2, then commit config/classifier-models.json');
+    expect(m.smoke).not.toHaveBeenCalled();
   });
   it('DOCTOR_SKIP_SMOKE=1 warns without running smoke', async () => {
     const m = mk();

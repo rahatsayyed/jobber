@@ -331,7 +331,7 @@ describe('restricted-run checks', () => {
     delete f['/p/.env'];
     const r = await run(mk(), f);
     expect(r.classifier_model.status).toBe('fail');
-    expect(r.classifier_model.fix).toContain('--step classifier');
+    expect(r.classifier_model.fix).toContain('docs/classifier-models.md section 4');
   });
   it('classifier_model: fails naming the file on a problem', async () => {
     const bad = { ...okReport, ok: false, problems: ['model.onnx: sha256 mismatch'] };

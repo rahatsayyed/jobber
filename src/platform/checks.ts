@@ -106,7 +106,7 @@ export function restrictedChecks(deps: Partial<RestrictedDeps> = {}): Check[] {
   async function ready(ctx: DoctorContext): Promise<Ready> {
     const env = mergedEnv(ctx);
     const id = (env.CLASSIFIER_MODEL ?? '').trim();
-    if (!id) return { ok: false, result: fail('CLASSIFIER_MODEL is not set', 'npm run setup -- --step classifier') };
+    if (!id) return { ok: false, result: fail('CLASSIFIER_MODEL is not set', 'set CLASSIFIER_MODEL in .env (see docs/classifier-models.md section 4)') };
     let profile: ClassifierProfile;
     try {
       profile = resolveProfile(d.loadRegistry(join(ctx.root, 'config', 'classifier-models.json')), env as NodeJS.ProcessEnv);
@@ -175,6 +175,9 @@ export function restrictedChecks(deps: Partial<RestrictedDeps> = {}): Check[] {
         const r = await ready(ctx);
         if (!r.ok) return warn('skipped: model not ready');
         const id = r.profile.id;
+        if (r.report.unpinned.length > 0) {
+          return warn('skipped: files not sha256-pinned', `npm run models -- pin ${id}, then commit config/classifier-models.json`);
+        }
         const fix = `npm run models -- verify ${id}; if files verify, the profile labels or inputs are wrong`;
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {

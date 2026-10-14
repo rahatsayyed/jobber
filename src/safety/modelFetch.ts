@@ -148,7 +148,7 @@ async function request(url: string, headers: Record<string, string>, deps: Fetch
       } catch {
         throw new Error('redirect to an unparseable location');
       }
-      if (next.protocol !== 'https:' || !isAllowedHost(next.hostname)) {
+      if (next.protocol !== 'https:' || next.port !== '' || !isAllowedHost(next.hostname)) {
         throw new Error(`redirect to a host that is not allowed: ${next.hostname}`);
       }
       current = next.toString();

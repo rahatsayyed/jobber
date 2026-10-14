@@ -101,6 +101,10 @@ describe('parseFitArgs', () => {
     expect(() => parseFitArgs(['--profile', 'zzz'], {}, r)).toThrow(/unknown/);
     expect(parseFitArgs(['--profile', 'one'], { CLASSIFIER_MODEL_DIR: '/x' }, r).profileId).toBe('one');
   });
+  it('rejects --profile without a value', () => {
+    expect(() => parseFitArgs(['--profile'], { CLASSIFIER_MODEL: 'one' }, r)).toThrow(/requires a value/);
+    expect(() => parseFitArgs(['--profile', '--write'], { CLASSIFIER_MODEL: 'one' }, r)).toThrow(/requires a value/);
+  });
   it('rejects --pin with the pointer', () => {
     expect(() => parseFitArgs(['--pin', '--profile', 'one'], {}, r)).toThrow('use: npm run models -- pin one');
   });

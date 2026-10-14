@@ -268,6 +268,11 @@ describe('redirects and headers', () => {
       expect(names).not.toContain('cookie');
     }
   });
+  it('rejects an explicit port, naming the host', async () => {
+    const p = mkProfile();
+    const { deps } = fakeFetch(() => resp(302, null, { location: 'https://huggingface.co:8443/x' }));
+    await expect(downloadFile(p, p.files[0], root, deps)).rejects.toThrow(/huggingface\.co/);
+  });
   it('rejects http, foreign hosts and loops', async () => {
     const p = mkProfile();
     const f = p.files[0];
