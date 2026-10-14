@@ -19,3 +19,6 @@ user-data/
 renderer/input/resume.json
 scripts/eval/fixtures/base-resume.json
 scripts/eval/fixtures/baseline/
+.ccgram/
+.claude/settings.local.json
+.claude/settings.local.managed.json
