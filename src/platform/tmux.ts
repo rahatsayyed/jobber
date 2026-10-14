@@ -85,7 +85,19 @@ export function validateSendText(text: string): void {
       c === 0xfeff;
     if (bad) throw new Error('text contains control characters');
   }
-  if (text.trimStart().startsWith('!')) throw new Error('text must not start with !');
+  const head = text.trimStart()[0];
+  if (head === '!' || head === '#' || head === '&') throw new Error(`text must not start with ${head}`);
+}
+
+const CLAUDE_COMMAND_RE = /^(claude|node|\d+\.\d+\.\d+.*)$/;
+
+/** Fail closed unless the named window is running Claude (never type into a shell). */
+export async function assertClaudePane(run: Run, session: string, window: string): Promise<void> {
+  assertName(session);
+  assertName(window);
+  const w = (await listWindows(run, session)).find((x) => x.name === window);
+  if (!w) throw new Error('tmux window not found');
+  if (!CLAUDE_COMMAND_RE.test(w.command)) throw new Error('tmux window is not running claude');
 }
 
 export async function sendText(run: Run, session: string, window: string, text: string): Promise<void> {

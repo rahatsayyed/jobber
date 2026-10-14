@@ -19,7 +19,7 @@ export interface WebDeps {
   secrets?: string[]; // extra literal secret values to mask in the pane (token is always included)
 }
 
-export const STATUS_COMMANDS = ['limits', 'working', 'health', 'status'] as const;
+export const STATUS_COMMANDS = ['limits', 'working', 'health'] as const;
 
 const COOKIE = 'jobber_session';
 const MAX_BODY = 4096;
@@ -37,7 +37,7 @@ const PANE_LINES = 40;
 const REDACTED = '[redacted]';
 
 /** Replace secret shapes (shared with the outbound gate) and any WEB_TOKEN line; `extra` literals are also masked. */
-export function redactSecrets(text: string, extra: string[] = []): string {
+export function redactSecrets(text: string, extra: string[] = [], opts: { tokenLines?: boolean } = {}): string {
   // Matching runs over the whole text with line breaks removed, so a secret wrapped across lines is still found.
   const map: number[] = []; // stripped index -> original index
   let stripped = '';
@@ -77,7 +77,7 @@ export function redactSecrets(text: string, extra: string[] = []): string {
   out += text.slice(pos);
   return out
     .split('\n')
-    .map((l) => (l.includes('WEB_TOKEN') ? REDACTED : l))
+    .map((l) => (opts.tokenLines !== false && l.includes('WEB_TOKEN') ? REDACTED : l))
     .join('\n');
 }
 
@@ -123,6 +123,7 @@ export function createWebServer(deps: WebDeps): http.Server {
   let lastSend = -Infinity;
   let server: http.Server;
 
+  const maskList = (): string[] => [deps.token, ...(deps.secrets ?? [])];
   const port = (): number => deps.port || (server.address() as AddressInfo | null)?.port || 0;
 
   function hasSession(req: http.IncomingMessage): boolean {
@@ -224,7 +225,9 @@ export function createWebServer(deps: WebDeps): http.Server {
     if (path === '/api/status') {
       if (method !== 'GET') return json(405, { error: 'method not allowed' }, { Allow: 'GET' });
       try {
-        json(200, await deps.getSnapshot());
+        const snapText = JSON.stringify(await deps.getSnapshot());
+        // redact the serialized string: the replacement token is valid inside a JSON string
+        respond(res, nonce, 200, redactSecrets(snapText, maskList(), { tokenLines: false }), 'application/json; charset=utf-8');
       } catch {
         json(500, { error: 'status unavailable' });
       }
@@ -235,8 +238,8 @@ export function createWebServer(deps: WebDeps): http.Server {
       if (method !== 'GET') return json(405, { error: 'method not allowed' }, { Allow: 'GET' });
       try {
         const raw = await deps.capture();
-        const last = raw.split('\n').slice(-PANE_LINES).join('\n');
-        json(200, { text: redactSecrets(last, [deps.token, ...(deps.secrets ?? [])]) });
+        const whole = redactSecrets(raw, maskList());
+        json(200, { text: whole.split('\n').slice(-PANE_LINES).join('\n') });
       } catch {
         json(500, { error: 'pane unavailable' });
       }

@@ -382,6 +382,43 @@ describe('fix round 1', () => {
   });
 });
 
+describe('final wave', () => {
+  it('status command is not allowed', async () => {
+    const s = await start();
+    const cookie = await s.login();
+    expect((await s.sendJson(cookie, '/status')).status).toBe(400);
+    expect(s.send).not.toHaveBeenCalled();
+  });
+
+  it('pane redacts the whole capture before slicing to 40 lines', async () => {
+    const secret = 'sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWX';
+    const lines = Array.from({ length: 80 }, (_, i) => 'row' + i);
+    // last 40 lines start at index 40; the secret straddles that cut
+    lines[39] = 'pre ' + secret.slice(0, 20);
+    lines[40] = secret.slice(20) + ' post';
+    const s = await start({ capture: async () => lines.join('\n') });
+    const cookie = await s.login();
+    const text = JSON.parse((await s.call('GET', '/api/pane', { headers: { cookie } })).body).text as string;
+    expect(text).not.toContain('QRSTUVWX');
+    expect(text).not.toContain('UVWX post');
+    expect(text.split('\n').length).toBe(40);
+  });
+
+  it('status json is redacted and still parses', async () => {
+    const s = await start({
+      secrets: ['supersecretvalue1'],
+      getSnapshot: async () =>
+        snap({ halts: [{ platform: 'p', reason: 'bad supersecretvalue1 WEB_TOKEN x', setAt: 't' }] }),
+    });
+    const cookie = await s.login();
+    const r = await s.call('GET', '/api/status', { headers: { cookie } });
+    expect(r.body).not.toContain('supersecretvalue1');
+    const j = JSON.parse(r.body);
+    expect(j.halts[0].reason).toContain('[redacted]');
+    expect(j.halts[0].platform).toBe('p');
+  });
+});
+
 describe('redactSecrets', () => {
   it('replaces secret shapes and WEB_TOKEN lines', () => {
     const out = redactSecrets('a ghp_abcdefghijklmnopqrstuvwx b\nWEB_TOKEN=1\nAKIAABCDEFGHIJKLMNOP');

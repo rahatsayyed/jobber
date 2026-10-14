@@ -16,12 +16,13 @@ async function main(): Promise<number> {
     return 2;
   }
   const path = dbPath();
-  if (path !== ':memory:' && !existsSync(path)) {
+  if (path === ':memory:' || !existsSync(path)) {
     console.log('no database yet');
     return 0;
   }
-  const db = new Database(path, { readonly: true, fileMustExist: true });
+  let db: Database.Database | undefined;
   try {
+    db = new Database(path, { readonly: true, fileMustExist: true });
     const snap = buildSnapshot(db, loadOutreachConfig(), new Date());
     if (cmd === 'limits') console.log(renderLimits(snap));
     else if (cmd === 'working') console.log(renderWorking(snap));
@@ -36,7 +37,7 @@ async function main(): Promise<number> {
     console.log(`status error: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`);
     return 1;
   } finally {
-    db.close();
+    db?.close();
   }
 }
 

@@ -1,6 +1,6 @@
 // tests/platform-tmux.test.ts
 import { describe, it, expect } from 'vitest';
-import { assertName, capture, ensureSession, hasSession, listWindows, sendText, validateSendText, type Run } from '../src/platform/tmux.js';
+import { assertClaudePane, assertName, capture, ensureSession, hasSession, listWindows, sendText, validateSendText, type Run } from '../src/platform/tmux.js';
 
 function fakeRun(responses: Record<string, { stdout?: string; code?: number }> = {}, callCodes: number[] = []) {
   const calls: { cmd: string; args: string[] }[] = [];
@@ -129,6 +129,9 @@ describe('sendText', () => {
     expect(() => validateSendText(' hello')).not.toThrow();
     expect(() => validateSendText('')).toThrow();
     expect(() => validateSendText('  !ls')).toThrow();
+    expect(() => validateSendText('  #note')).toThrow();
+    expect(() => validateSendText('&bg')).toThrow();
+    expect(() => validateSendText('a # b & c')).not.toThrow();
   });
 
   it('accepts exactly 2000 characters', async () => {
@@ -146,5 +149,21 @@ describe('sendText', () => {
     const { run, calls } = fakeRun({}, [0, 1]);
     await expect(sendText(run, 's', 'w', 'hi')).rejects.toThrow();
     expect(calls).toHaveLength(2);
+  });
+});
+
+describe('assertClaudePane', () => {
+  const list = (cmd: string) => fakeRun({ 'list-windows': { stdout: `0|hunt|1|${cmd}\n` } }).run;
+  it('accepts claude, node and version-string commands', async () => {
+    for (const c of ['claude', 'node', '2.1.9', '2.1.9-beta']) {
+      await expect(assertClaudePane(list(c), 's', 'hunt')).resolves.toBeUndefined();
+    }
+  });
+  it('rejects shells and a missing window', async () => {
+    for (const c of ['bash', 'zsh', 'fish', '']) {
+      await expect(assertClaudePane(list(c), 's', 'hunt')).rejects.toThrow();
+    }
+    await expect(assertClaudePane(list('claude'), 's', 'other')).rejects.toThrow('not found');
+    await expect(assertClaudePane(fakeRun({ 'list-windows': { code: 1 } }).run, 's', 'hunt')).rejects.toThrow();
   });
 });

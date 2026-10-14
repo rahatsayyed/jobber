@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { dbPath } from '../src/dbPath.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { buildSnapshot } from '../src/status/snapshot.js';
-import { capture, defaultRun, sendText } from '../src/platform/tmux.js';
+import { assertClaudePane, capture, defaultRun, sendText } from '../src/platform/tmux.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { secretValuesFromEnv } from '../src/safety/outputGate.js';
 import { parseWebEnv } from '../src/web/env.js';
@@ -13,9 +13,13 @@ import { redactSecrets, startWebServer } from '../src/web/server.js';
 
 let maskLiterals: string[] = [];
 process.on('unhandledRejection', (reason) => {
-  const first = reason instanceof Error ? (reason.message.split('\n')[0] ?? '') : 'non-error';
-  const line = redactSecrets(first.slice(0, 200), maskLiterals).slice(0, 200);
-  console.error(`web: unhandled rejection: ${line}`);
+  try {
+    const msg = String((reason as { message?: unknown })?.message ?? reason).split('\n')[0];
+    const line = redactSecrets(msg, maskLiterals).slice(0, 200);
+    console.error(`web: unhandled rejection: ${line}`);
+  } catch {
+    console.error('web: unhandled rejection');
+  }
 });
 
 async function main(): Promise<number> {
@@ -47,7 +51,10 @@ async function main(): Promise<number> {
         }
       },
       capture: () => capture(defaultRun, session, window, 40),
-      send: (text) => sendText(defaultRun, session, window, text),
+      send: async (text) => {
+        await assertClaudePane(defaultRun, session, window);
+        await sendText(defaultRun, session, window, text);
+      },
     });
   } catch (e) {
     console.error(`web: could not start: ${e instanceof Error ? e.message.split('\n')[0] : 'error'}`);
