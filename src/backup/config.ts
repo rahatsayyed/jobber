@@ -12,7 +12,11 @@ export interface BackupConfig {
 }
 
 const RECIPIENT_RE = /^age1[a-z0-9]{50,}$/;
-const REMOTE_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*:[A-Za-z0-9_./ -]*$/;
+export const REMOTE_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*:[A-Za-z0-9_./ -]*$/;
+
+export function isValidRcloneRemote(remote: string): boolean {
+  return REMOTE_RE.test(remote) && !remote.includes('..');
+}
 
 function retention(env: NodeJS.ProcessEnv, key: string, def: number, problems: string[]): number {
   const raw = env[key]?.trim();
