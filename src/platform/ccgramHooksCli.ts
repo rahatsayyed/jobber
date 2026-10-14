@@ -51,16 +51,22 @@ export function runHooksCli(args: string[], root: string, deps: HooksCliDeps): C
       removeHooksFromFile(path);
       return { code: 0, lines: ['removed ccgram hooks (other entries untouched)', ...statusLines(path)] };
     }
-    // install: pin check first, fail closed, before anything is written.
+    // install: ccgram must be runnable (version readable); a pin mismatch only warns.
     const pin = deps.pinVersion();
-    const actual = deps.ccgramVersion().trim().split(/\s+/).pop() ?? '';
-    if (!pin || actual !== pin) {
-      throw new Error(`ccgram version does not match the pin (expected ${pin || 'unset'}, found ${actual || 'unknown'})`);
+    let actual = '';
+    try {
+      actual = deps.ccgramVersion().trim().split(/\s+/).pop() ?? '';
+    } catch {
+      actual = '';
     }
+    if (!actual) throw new Error('could not read the ccgram version; is ccgram installed?');
     const python = resolveCcgramPython({ which: deps.which, readFirstLine: deps.readFirstLine });
     if (!python) throw new Error('could not resolve the ccgram python interpreter');
     installHooksToFile(path, python);
-    return { code: 0, lines: [`interpreter: ${python}`, 'installed ccgram hooks', ...statusLines(path)] };
+    const lines: string[] = [];
+    if (actual !== pin) lines.push(`WARN: ccgram ${actual} differs from pinned ${pin || 'unset'}; hooks installed anyway`);
+    lines.push(`interpreter: ${python}`, 'installed ccgram hooks', ...statusLines(path));
+    return { code: 0, lines };
   } catch (e) {
     return { code: 1, lines: [e instanceof Error ? e.message : String(e)] };
   }

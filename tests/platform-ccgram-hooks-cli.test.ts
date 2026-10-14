@@ -50,8 +50,24 @@ describe('ccgram hooks cli', () => {
     expect(text).not.toContain('/old/python3');
   });
 
-  it('refuses on version mismatch and writes nothing', () => {
+  it('warns on version mismatch and installs anyway', () => {
     const r = runHooksCli(['install'], root, deps({ ccgramVersion: () => 'ccgram 4.17.0' }));
+    expect(r.code).toBe(0);
+    expect(r.lines[0]).toBe('WARN: ccgram 4.17.0 differs from pinned 4.16.0; hooks installed anyway');
+    expect(r.lines.join('\n')).toContain('ccgram hooks present: 9/9');
+    expect(existsSync(settings)).toBe(true);
+  });
+
+  it('fails and writes nothing when the version cannot be read', () => {
+    const r = runHooksCli(
+      ['install'],
+      root,
+      deps({
+        ccgramVersion: () => {
+          throw new Error('boom');
+        },
+      }),
+    );
     expect(r.code).toBe(1);
     expect(existsSync(settings)).toBe(false);
     expect(readdirSync(join(root, '.claude'))).toEqual([]);
