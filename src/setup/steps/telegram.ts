@@ -3,27 +3,13 @@
 // to the Telegram URL path (via ctx.fetch) and into .env through the writer.
 import path from 'node:path';
 import { hasSession } from '../../platform/tmux.js';
-import { updateEnvText, writeEnvFile } from '../envWriter.js';
+import { envFileValue, updateEnvText, writeEnvFile } from '../envWriter.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 
 const TOKEN_RE = /^\d{5,}:[A-Za-z0-9_-]{10,}$/;
 const ID_RE = /^\d{5,15}$/;
 const TEST_TEXT = 'Jobber setup: test message';
 const API = 'https://api.telegram.org/bot';
-
-function envFileValue(text: string, key: string): string {
-  let out = '';
-  for (const line of text.split('\n')) {
-    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line.replace(/\r$/, ''));
-    if (!m || m[1] !== key) continue;
-    let v = m[2].trim();
-    const q = v[0];
-    if ((q === '"' || q === "'") && v.length >= 2 && v.endsWith(q)) v = v.slice(1, -1);
-    else v = v.replace(/\s+#.*$/, '').trim();
-    out = v;
-  }
-  return out;
-}
 
 async function getMeOk(ctx: SetupContext, token: string): Promise<boolean> {
   try {

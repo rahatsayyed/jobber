@@ -2,24 +2,11 @@
 // Step 4: Gmail OAuth. The wizard never reads the OAuth keys or the credentials file; the
 // doctor `gmail-oauth` check is the only reader. The auth helper gets exactly two env keys.
 import path from 'node:path';
+import { envFileValue } from '../envWriter.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 
 const KEYS_DEFAULT = './secrets/gcp-oauth.keys.json';
 const CREDS_DEFAULT = './secrets/gmail-credentials.json';
-
-function envFileValue(text: string, key: string): string {
-  let out = '';
-  for (const line of text.split('\n')) {
-    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line.replace(/\r$/, ''));
-    if (!m || m[1] !== key) continue;
-    let v = m[2].trim();
-    const q = v[0];
-    if ((q === '"' || q === "'") && v.length >= 2 && v.endsWith(q)) v = v.slice(1, -1);
-    else v = v.replace(/\s+#.*$/, '').trim();
-    out = v;
-  }
-  return out;
-}
 
 // Same resolution as the doctor `gmail-oauth` check: process env, then .env, then default.
 function resolvePath(ctx: SetupContext, envText: string, key: string, fallback: string): string {

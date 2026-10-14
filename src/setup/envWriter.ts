@@ -27,6 +27,10 @@ interface ParsedValue {
 /** Read the value part of a line the way the loaders do (outer quotes stripped), plus any inline comment. */
 function parseValue(raw: string): ParsedValue {
   const rest = raw.replace(/^\s+/, '');
+  // `KEY=   # comment`: an empty value followed by a comment (whitespace before the #).
+  if (rest.startsWith('#') && rest.length < raw.length) {
+    return { value: '', comment: rest.slice(1).trim() };
+  }
   const q = rest[0];
   if (q === '"' || q === "'") {
     // No backslash handling: parseEnv and claude-session.sh strip the outer quote pair only.
@@ -41,6 +45,30 @@ function parseValue(raw: string): ParsedValue {
   const m = /\s+#/.exec(rest);
   if (m) return { value: rest.slice(0, m.index).trim(), comment: rest.slice(m.index + m[0].length).trim() };
   return { value: rest.trim(), comment: null };
+}
+
+export interface EnvEntry {
+  value: string;
+  // True for an unquoted value followed by ` # comment` (the loaders read the comment as value).
+  inlineComment: boolean;
+}
+
+// Every KEY=value line of .env text, last line wins, read the way updateEnvText reads them.
+// The one shared parser for the setup steps.
+export function envEntries(text: string): Map<string, EnvEntry> {
+  const out = new Map<string, EnvEntry>();
+  for (const line of text.split('\n')) {
+    const m = LINE_RE.exec(line.replace(/\r$/, ''));
+    if (!m) continue;
+    const p = parseValue(m[4]);
+    out.set(m[3], { value: p.value, inlineComment: p.comment !== null && !/["']/.test(m[4]) });
+  }
+  return out;
+}
+
+// Value of one key in .env text ('' when absent).
+export function envFileValue(text: string, key: string): string {
+  return envEntries(text).get(key)?.value ?? '';
 }
 
 function formatValue(v: string): string {

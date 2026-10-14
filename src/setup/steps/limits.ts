@@ -11,7 +11,7 @@ import {
   type LimitGroup,
   type LimitSpec,
 } from '../limitsCatalog.js';
-import { updateEnvText, writeEnvFile } from '../envWriter.js';
+import { envEntries, updateEnvText, writeEnvFile } from '../envWriter.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 
 const GROUPS: { id: LimitGroup; title: string }[] = [
@@ -23,33 +23,6 @@ const GROUPS: { id: LimitGroup; title: string }[] = [
   { id: 'pacing', title: 'Pacing' },
   { id: 'cooldowns', title: 'Cooldowns and cadence' },
 ];
-
-const LINE_RE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
-
-interface EnvEntry {
-  value: string;
-  inlineComment: boolean;
-}
-
-// Same reading the loaders and the doctor checks use: outer quote pair stripped, an unquoted
-// " #..." tail is a comment. Last line wins.
-function parseEnv(text: string): Map<string, EnvEntry> {
-  const out = new Map<string, EnvEntry>();
-  for (const line of text.split('\n')) {
-    const m = LINE_RE.exec(line.replace(/\r$/, ''));
-    if (!m) continue;
-    const raw = m[2].trim();
-    const q = raw[0];
-    if ((q === '"' || q === "'") && raw.length >= 2 && raw.endsWith(q)) {
-      out.set(m[1], { value: raw.slice(1, -1), inlineComment: false });
-      continue;
-    }
-    const c = /\s+#/.exec(raw);
-    if (c) out.set(m[1], { value: raw.slice(0, c.index).trim(), inlineComment: !/["']/.test(raw) });
-    else out.set(m[1], { value: raw, inlineComment: false });
-  }
-  return out;
-}
 
 function readEnvText(ctx: SetupContext): string {
   if (ctx.fs.exists(ctx.envPath)) return ctx.fs.read(ctx.envPath);
@@ -66,7 +39,7 @@ export const limitsStep: SetupStep = {
   async run(ctx) {
     const { io } = ctx;
     const envText = readEnvText(ctx);
-    const parsed = parseEnv(envText);
+    const parsed = envEntries(envText);
     const current = (spec: LimitSpec): string | null => {
       const v = parsed.get(spec.key)?.value;
       return v === undefined || v === '' ? null : v;

@@ -4,27 +4,13 @@
 // The client secret travels from askSecret straight into .env; it is never in state, argv, the
 // child environment or any say line. The wizard never signs in and never calls the provider.
 import path from 'node:path';
-import { updateEnvText, writeEnvFile } from '../envWriter.js';
+import { envFileValue, updateEnvText, writeEnvFile } from '../envWriter.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const DEFAULT_REDIRECT = 'http://127.0.0.1:8787/auth/callback';
 const CALLBACK_PATH = '/auth/callback';
 const PLAN_DOC = 'docs/superpowers/plans/2026-10-14-7c-dashboard-v1.md';
-
-function envFileValue(text: string, key: string): string {
-  let out = '';
-  for (const line of text.split('\n')) {
-    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line.replace(/\r$/, ''));
-    if (!m || m[1] !== key) continue;
-    let v = m[2].trim();
-    const q = v[0];
-    if ((q === '"' || q === "'") && v.length >= 2 && v.endsWith(q)) v = v.slice(1, -1);
-    else v = v.replace(/\s+#.*$/, '').trim();
-    out = v;
-  }
-  return out;
-}
 
 function readEnvText(ctx: SetupContext): string {
   if (ctx.fs.exists(ctx.envPath)) return ctx.fs.read(ctx.envPath);
