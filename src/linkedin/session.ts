@@ -64,7 +64,7 @@ function readHolder(lockPath: string): { pid?: number; raw: string | null; ageMs
 // so it never exists empty, and a stale lock is taken over by an atomic rename-away (one winner).
 export function acquireLock(
   lockPath: string,
-  opts: { pid?: number; isAlive?: (pid: number) => boolean; beforeTakeover?: () => void; duringTakeover?: () => void; beforeMutexClear?: () => void } = {},
+  opts: { pid?: number; isAlive?: (pid: number) => boolean; beforeTakeover?: () => void; duringTakeover?: () => void } = {},
 ): { ok: true; handle: LockHandle } | { ok: false; reason: string; holderPid?: number } {
   const pid = opts.pid ?? process.pid;
   const isAlive = opts.isAlive ?? pidAlive;
@@ -109,25 +109,15 @@ export function acquireLock(
           if ((e as NodeJS.ErrnoException).code !== 'EEXIST') return { ok: false, reason: 'lock_unavailable' };
         }
         if (!gotMutex) {
-          // Stale ONLY when the pid is dead (or unparseable and older than 5 s). A reused pid reads as
-          // alive and fails closed; no age override, so a slow live taker never loses its mutex.
+          // The takeover mutex is NEVER auto-cleared: no filesystem compare-and-remove is atomic.
+          // OWNER NOTE: if a process crashed mid-takeover the file <lockPath>.takeover is left behind;
+          // remove it by hand (only when no other linkedin process is running).
           const m = readHolder(mutex);
-          if (m.raw === null) continue; // vanished, retry
-          const mStale = m.pid !== undefined ? !isAlive(m.pid) : m.ageMs >= FRESH_LOCK_MS;
-          if (!mStale) return { ok: false, reason: 'lock takeover in progress', holderPid: m.pid };
-          opts.beforeMutexClear?.();
-          const gone = `${mutex}.stale-${uniq}`;
-          try { renameSync(mutex, gone); } catch { continue; } // lost the race
-          let goneRaw = '';
-          try { goneRaw = readFileSync(gone, 'utf8'); } catch { /* ignore */ }
-          if (goneRaw !== m.raw) {
-            // we moved a different (live) mutex: put it back if the path is free, then yield
-            try { linkSync(gone, mutex); } catch { /* EEXIST: someone else published */ }
-            try { unlinkSync(gone); } catch { /* ignore */ }
-            return { ok: false, reason: 'lock takeover in progress' };
-          }
-          try { unlinkSync(gone); } catch { /* ignore */ }
-          continue;
+          return {
+            ok: false,
+            reason: 'lock takeover in progress or left by a crashed process (remove linkedin.lock.takeover by hand if no other linkedin process is running)',
+            holderPid: m.pid,
+          };
         }
         opts.duringTakeover?.();
         const cur = readHolder(lockPath);

@@ -189,45 +189,28 @@ describe('fix round 2: takeover mutex', () => {
     expect(a.ok).toBe(true);
     expect(readdirSync(d).sort()).toEqual(['l.lock']);
   });
-  it('a stale takeover mutex (dead pid) is cleared', () => {
+  it('a leftover mutex (any pid) fails closed and leaves the lock untouched', () => {
     const d = tmp();
     const lp = path.join(d, 'l.lock');
     writeFileSync(lp, stale);
     writeFileSync(`${lp}.takeover`, JSON.stringify({ pid: 999, started: 'x' }));
-    expect(acquireLock(lp, { pid: 111, isAlive: alive }).ok).toBe(true);
-    expect(readdirSync(d).sort()).toEqual(['l.lock']);
-  });
-  it('two actors judging the same dead mutex stale: exactly one proceeds', () => {
-    const d = tmp();
-    const lp = path.join(d, 'l.lock');
-    writeFileSync(lp, stale);
-    writeFileSync(`${lp}.takeover`, JSON.stringify({ pid: 999, started: 'x' }));
-    let inner: ReturnType<typeof acquireLock> | undefined;
-    let fired = false;
-    const x = acquireLock(lp, {
-      pid: 111, isAlive: alive,
-      beforeMutexClear: () => {
-        if (fired) return;
-        fired = true;
-        inner = acquireLock(lp, { pid: 222, isAlive: alive });
-      },
-    });
-    const winners = [x.ok, inner?.ok].filter(Boolean);
-    expect(winners).toHaveLength(1);
-    expect(existsSync(lp)).toBe(true);
-    expect(readdirSync(d).filter((f) => f !== 'l.lock')).toEqual([]);
-  });
-  it('a live-pid mutex older than 10 s is not removed', () => {
-    const d = tmp();
-    const lp = path.join(d, 'l.lock');
-    writeFileSync(lp, stale);
-    const mp = `${lp}.takeover`;
-    writeFileSync(mp, JSON.stringify({ pid: 222, started: 'x' }));
-    const old = new Date(Date.now() - 60_000);
-    utimesSync(mp, old, old);
     const r = acquireLock(lp, { pid: 111, isAlive: alive });
-    expect(r.ok).toBe(false);
-    expect(existsSync(mp)).toBe(true);
-    expect(JSON.parse(readFileSync(lp, 'utf8')).pid).toBe(1);
+    expect(r).toMatchObject({ ok: false, holderPid: 999 });
+    expect(readFileSync(lp, 'utf8')).toBe(stale);
+    expect(existsSync(`${lp}.takeover`)).toBe(true);
+  });
+  it('mutex is released after a takeover and after a throw in the critical section', () => {
+    const d = tmp();
+    const lp = path.join(d, 'l.lock');
+    writeFileSync(lp, stale);
+    expect(acquireLock(lp, { pid: 111, isAlive: alive }).ok).toBe(true);
+    expect(existsSync(`${lp}.takeover`)).toBe(false);
+    writeFileSync(lp, stale);
+    expect(() => acquireLock(lp, {
+      pid: 222, isAlive: alive,
+      duringTakeover: () => { throw new Error('boom'); },
+    })).toThrow('boom');
+    expect(existsSync(`${lp}.takeover`)).toBe(false);
+    expect(readFileSync(lp, 'utf8')).toBe(stale);
   });
 });
