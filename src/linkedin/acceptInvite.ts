@@ -48,11 +48,6 @@ export async function acceptInvite(
   const slug = extractProfileSlug(url);
   if (!slug) return refusal('refused', 'bad_url', 'profile slug not found');
   const person = personByProfileKey(db, profileKeyOf(url));
-  // Unknown sender and acceptUnknown off: refuse BEFORE any navigation. The sender can only be
-  // listed after a page load, so the list is empty here (documented trade-off).
-  if (!person && !cfg.acceptUnknown) {
-    return { ...refusal('refused', 'unknown_recipient', 'sender is not in people'), unknown_senders: [] };
-  }
   const dryRun = effectiveDryRun(cfg, a.dry_run);
   let clickIssued = false;
 
@@ -101,7 +96,28 @@ export async function acceptInvite(
       const rowIndex = matches[0];
       const inv: RawInvitation | undefined = snapMatches[0];
 
-      // Recipient: unknown senders were refused before navigation unless acceptUnknown.
+      // Unknown sender (not in people) and acceptUnknown off: list the sender for the owner, no click.
+      if (!person && !cfg.acceptUnknown) {
+        const flags = new Set<string>();
+        let injection = false;
+        const gated = (s: string, max: number): string => {
+          const g = gateField(s, max);
+          for (const f of g.flags) flags.add(f);
+          if (g.blocked) { injection = true; return BLOCKED; }
+          return g.text;
+        };
+        const sender: UnknownSender = {
+          name: gated(inv?.name ?? '', MAX_FIELD_CHARS.name),
+          headline: gated(inv?.headline ?? '', MAX_FIELD_CHARS.headline),
+          path: `/in/${slug}`,
+        };
+        return {
+          ...refusal('refused', 'unknown_recipient', 'sender is not in people'),
+          unknown_senders: [sender],
+          input_flags: [...flags].sort(),
+          injection_suspected: injection,
+        };
+      }
       if (person) {
         const rowName = inv?.name ?? '';
         if (!rowName.trim()) return refusal('failed', 'row_name_unreadable', 'could not read the invitation sender name');
