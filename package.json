@@ -9,6 +9,8 @@
   "scripts": {
     "test": "vitest run",
     "doctor": "tsx scripts/doctor.ts",
+    "linkedin:login": "tsx scripts/linkedin-login.ts",
+    "linkedin:clear-halt": "tsx scripts/linkedin-clear-halt.ts",
     "classifier:fit": "tsx scripts/classifier/fit.ts",
     "classifier:bench": "tsx scripts/classifier/bench.ts",
     "status": "tsx scripts/status.ts",
