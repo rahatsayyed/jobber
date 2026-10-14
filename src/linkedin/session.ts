@@ -46,7 +46,6 @@ function pidAlive(pid: number): boolean {
 }
 
 const FRESH_LOCK_MS = 5000;
-const MUTEX_MAX_MS = 10000;
 
 function readHolder(lockPath: string): { pid?: number; raw: string | null; ageMs: number } {
   let raw: string | null = null;
@@ -65,7 +64,7 @@ function readHolder(lockPath: string): { pid?: number; raw: string | null; ageMs
 // so it never exists empty, and a stale lock is taken over by an atomic rename-away (one winner).
 export function acquireLock(
   lockPath: string,
-  opts: { pid?: number; isAlive?: (pid: number) => boolean; beforeTakeover?: () => void; duringTakeover?: () => void } = {},
+  opts: { pid?: number; isAlive?: (pid: number) => boolean; beforeTakeover?: () => void; duringTakeover?: () => void; beforeMutexClear?: () => void } = {},
 ): { ok: true; handle: LockHandle } | { ok: false; reason: string; holderPid?: number } {
   const pid = opts.pid ?? process.pid;
   const isAlive = opts.isAlive ?? pidAlive;
@@ -110,12 +109,24 @@ export function acquireLock(
           if ((e as NodeJS.ErrnoException).code !== 'EEXIST') return { ok: false, reason: 'lock_unavailable' };
         }
         if (!gotMutex) {
+          // Stale ONLY when the pid is dead (or unparseable and older than 5 s). A reused pid reads as
+          // alive and fails closed; no age override, so a slow live taker never loses its mutex.
           const m = readHolder(mutex);
-          const mAlive = m.pid !== undefined ? isAlive(m.pid) && m.ageMs < MUTEX_MAX_MS : m.ageMs < FRESH_LOCK_MS;
-          if (m.raw !== null && mAlive) return { ok: false, reason: 'lock takeover in progress', holderPid: m.pid };
-          // stale mutex: move it away (one winner), then retry
+          if (m.raw === null) continue; // vanished, retry
+          const mStale = m.pid !== undefined ? !isAlive(m.pid) : m.ageMs >= FRESH_LOCK_MS;
+          if (!mStale) return { ok: false, reason: 'lock takeover in progress', holderPid: m.pid };
+          opts.beforeMutexClear?.();
           const gone = `${mutex}.stale-${uniq}`;
-          try { renameSync(mutex, gone); unlinkSync(gone); } catch { /* lost the race */ }
+          try { renameSync(mutex, gone); } catch { continue; } // lost the race
+          let goneRaw = '';
+          try { goneRaw = readFileSync(gone, 'utf8'); } catch { /* ignore */ }
+          if (goneRaw !== m.raw) {
+            // we moved a different (live) mutex: put it back if the path is free, then yield
+            try { linkSync(gone, mutex); } catch { /* EEXIST: someone else published */ }
+            try { unlinkSync(gone); } catch { /* ignore */ }
+            return { ok: false, reason: 'lock takeover in progress' };
+          }
+          try { unlinkSync(gone); } catch { /* ignore */ }
           continue;
         }
         opts.duringTakeover?.();
