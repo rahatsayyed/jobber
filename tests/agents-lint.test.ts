@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const WORKERS = ['due-followups', 'new-outreach', 'inbox-recruiter-replies', 'naukri-search'] as const;
-const SEND_WORKERS = ['due-followups', 'new-outreach', 'inbox-recruiter-replies'];
 
 // Tools Tasks 12 and 13 will register; remove from here as they land.
 const PLANNED_TOOLS = [
@@ -106,18 +105,33 @@ describe('worker agents', () => {
       it('body states the required rules', () => {
         for (const s of ['untrusted', 'escalate', 'quota']) expect(body).toContain(s);
       });
-      if (SEND_WORKERS.includes(name)) {
-        it('has no type tool, and click only for the inbox reader', () => {
-          for (const t of tools) {
-            expect(/_type$/.test(t)).toBe(false);
-            if (name !== 'inbox-recruiter-replies') expect(/_click$/.test(t)).toBe(false);
-          }
-        });
-      }
+      it('stop rule names halted, rate_limited and killed', () => {
+        for (const w of ['halted', 'rate_limited', 'killed']) expect(body).toContain(w);
+      });
+      it('has no type tool, and click only for the inbox reader', () => {
+        for (const t of tools) {
+          expect(t.endsWith('_type')).toBe(false);
+          if (name !== 'inbox-recruiter-replies') expect(t.endsWith('_click')).toBe(false);
+        }
+      });
     });
   }
   it('worker-tools.json has exactly the four workers', () => {
     expect(Object.keys(config).sort()).toEqual([...WORKERS].sort());
+  });
+  it('per-worker body contracts', () => {
+    expect(frontmatter('due-followups').body).toContain('kind');
+    const no = frontmatter('new-outreach').body;
+    expect(no.indexOf('linkedin_state')).toBeGreaterThan(-1);
+    expect(no.indexOf('linkedin_state')).toBeLessThan(no.indexOf('linkedin_connect_send'));
+    const ib = frontmatter('inbox-recruiter-replies').body;
+    expect(ib).toContain('salary');
+    expect(ib.indexOf('record_inbound')).toBeLessThan(ib.indexOf('naukri_send_message({person_id'));
+    expect(ib).toContain('https://www.linkedin.com/messaging/');
+    expect(frontmatter('naukri-search').body).toMatch(/never apply/);
+  });
+  it('inbox-recruiter-replies has no LinkedIn send tool', () => {
+    expect(toolsOf('inbox-recruiter-replies')).not.toContain('mcp__linkedin__linkedin_send_message');
   });
   it('inbox-recruiter-replies cannot record outcomes', () => {
     expect(toolsOf('inbox-recruiter-replies')).not.toContain('mcp__db__record_outcome');

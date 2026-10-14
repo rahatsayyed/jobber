@@ -25,7 +25,6 @@
     "mcp__linkedin__linkedin_state",
     "mcp__linkedin__linkedin_scroll",
     "mcp__linkedin__linkedin_click",
-    "mcp__linkedin__linkedin_send_message",
     "mcp__naukri__naukri_inbox",
     "mcp__naukri__naukri_read_thread",
     "mcp__naukri__naukri_send_message",

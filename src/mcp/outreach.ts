@@ -12,6 +12,7 @@ import {
   listDueTouches,
   listOpenEscalations,
   nextContactsForCompany,
+  hashInboundText,
   recordInbound,
   type InboundClass,
 } from '../outreach/service.js';
@@ -49,11 +50,11 @@ export function handleNextContacts(deps: OutreachDeps, a: { platform: Platform; 
 }
 export function handleRecordInbound(
   deps: OutreachDeps,
-  a: { platform: Platform; thread_ref: string; person_id?: number; text_hash: string; klass: InboundClass; escalated: boolean },
+  a: { platform: Platform; thread_ref: string; person_id?: number; text: string; klass: InboundClass; escalated: boolean },
 ) {
   return recordInbound(
     getDb(deps),
-    { platform: a.platform, threadRef: a.thread_ref, personId: a.person_id, textHash: a.text_hash, klass: a.klass, escalated: a.escalated },
+    { platform: a.platform, threadRef: a.thread_ref, personId: a.person_id, textHash: hashInboundText(a.text), klass: a.klass, escalated: a.escalated },
     nowOf(deps),
   );
 }
@@ -102,12 +103,12 @@ export function buildServer(deps: OutreachDeps = {}): McpServer {
   server.registerTool(
     'record_inbound',
     {
-      description: 'Record an inbound message by thread_ref + text_hash (deduped). Never pass message text.',
+      description: 'Record an inbound message, deduped on platform + thread_ref + a server-side hash of text (first 1000 chars as read). Only the hash is stored; the text is never stored or logged.',
       inputSchema: {
         platform: PLATFORM,
         thread_ref: z.string().regex(THREAD_REF),
         person_id: z.number().int().optional(),
-        text_hash: z.string().regex(/^[0-9a-f]{16,128}$/),
+        text: z.string().min(1).max(1000),
         klass: KLASS,
         escalated: z.boolean(),
       },

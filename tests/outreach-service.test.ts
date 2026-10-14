@@ -12,7 +12,7 @@ import {
   pausePersonOnReply,
   recordInbound,
 } from '../src/outreach/service.js';
-import { handleListDueTouches, handleEscalate } from '../src/mcp/outreach.js';
+import { handleListDueTouches, handleEscalate, handleRecordInbound } from '../src/mcp/outreach.js';
 
 const NOW = new Date('2026-10-15T08:00:00.000Z');
 const day = 24 * 3600 * 1000;
@@ -140,6 +140,25 @@ describe('recordInbound', () => {
     expect(second).toEqual({ id: first.id, duplicate: true });
     expect(recordInbound(db, { ...base, textHash: 'b2'.repeat(8) }, NOW).duplicate).toBe(false);
     expect(recordInbound(db, { ...base, platform: 'naukri' }, NOW).duplicate).toBe(false);
+  });
+});
+
+describe('handleRecordInbound hashes text server-side', () => {
+  it('dedupes identical text, new row for different text, stores no text', () => {
+    const db = openDb(':memory:');
+    const deps = { db, now: () => NOW };
+    const secret = 'Hi, call me on 555-0100 about the salary';
+    const base = { platform: 'linkedin' as const, thread_ref: 't9', klass: 'reply' as const, escalated: false };
+    const a = handleRecordInbound(deps, { ...base, text: secret });
+    const b = handleRecordInbound(deps, { ...base, text: secret });
+    const c = handleRecordInbound(deps, { ...base, text: 'a different message' });
+    expect(a.duplicate).toBe(false);
+    expect(b).toEqual({ id: a.id, duplicate: true });
+    expect(c.duplicate).toBe(false);
+    const rows = db.prepare('SELECT * FROM inbound_messages').all() as Record<string, unknown>[];
+    expect(rows).toHaveLength(2);
+    expect(JSON.stringify(rows)).not.toContain('555-0100');
+    expect(rows[0].text_hash).toMatch(/^[0-9a-f]{32}$/);
   });
 });
 

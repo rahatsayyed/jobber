@@ -1,6 +1,7 @@
 // src/outreach/service.ts
 // Pure service layer for the `outreach` MCP: due touches, contact selection, inbound records and
 // escalations. No network, no claude calls. The MCP file is a thin registration over this.
+import { createHash } from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 import type { Category, TouchKind } from './cadence.js';
 import { dueTouchesFor, loadConnectedKeys } from './dueTouches.js';
@@ -142,6 +143,11 @@ function gateText(raw: string, max: number): { text: string; flags: string[]; bl
   const g = gateInput(String(raw).slice(0, max), { maxChars: max });
   if (g.blocked) return { text: `[blocked: ${g.flags.join(',')}]`.slice(0, max), flags: g.flags, blocked: true };
   return { text: g.text.slice(0, max), flags: g.flags, blocked: false };
+}
+
+// sha256 hex, first 32 chars. The message text is hashed here and never stored or logged.
+export function hashInboundText(text: string): string {
+  return createHash('sha256').update(String(text).slice(0, 1000), 'utf8').digest('hex').slice(0, 32);
 }
 
 export function recordInbound(
