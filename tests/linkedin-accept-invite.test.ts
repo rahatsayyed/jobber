@@ -108,7 +108,7 @@ function setup(o: Opts = {}) {
     db, launcher, sessionPath: path.join(dir, 'state.json'), lockPath: path.join(dir, 'l.lock'), settleMs: 0, env: {},
   });
   runtimes.push(rt);
-  const env = { LINKEDIN_DRY_RUN: 'false', ...o.env };
+  const env = { LINKEDIN_DRY_RUN: 'false', SCHEDULER_DRY_RUN: 'false', ...o.env };
   const deps: ToolDeps = {
     rt, db, now: () => NOW, cfg: loadLinkedinConfig(env), env,
     factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
