@@ -38,6 +38,28 @@ describe('evaluateTestReport', () => {
   });
 });
 
+describe('evaluateTestReport vacuous and unattributed', () => {
+  it('rejects an empty report', () => {
+    expect(evaluateTestReport({ testResults: [] }, allowed, root).ok).toBe(false);
+  });
+  it('rejects unhandled errors with no attributed failure', () => {
+    const r = evaluateTestReport({ success: false, testResults: [file('/proj/tests/a.test.ts', 0)] }, allowed, root);
+    expect(r.ok).toBe(false);
+  });
+  it('rejects more failures than attributed', () => {
+    const r = evaluateTestReport(
+      { success: false, numFailedTests: 3, testResults: [file('/proj/tests/resume.test.ts', 1)] }, allowed, root,
+    );
+    expect(r.ok).toBe(false);
+  });
+  it('accepts known failures when success is false', () => {
+    const r = evaluateTestReport(
+      { success: false, numFailedTests: 1, testResults: [file('/proj/tests/resume.test.ts', 1)] }, allowed, root,
+    );
+    expect(r.ok).toBe(true);
+  });
+});
+
 describe('doctorRegression', () => {
   it('only flags new failures', () => {
     const before = [{ id: 'a', status: 'fail' }, { id: 'b', status: 'pass' }, { id: 'c', status: 'skip' }];

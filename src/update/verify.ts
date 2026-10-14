@@ -4,6 +4,8 @@ import { isAbsolute, relative } from 'node:path';
 export type KnownFailures = Record<string, number>;
 
 interface TestReport {
+  success?: boolean;
+  numFailedTests?: number;
   testResults: { name: string; status: string; assertionResults: { status: string }[] }[];
 }
 
@@ -13,6 +15,9 @@ export function evaluateTestReport(
   root: string,
 ): { ok: boolean; unexpected: string[]; counts: Record<string, number> } {
   const counts: Record<string, number> = {};
+  if (!Array.isArray(report.testResults) || report.testResults.length === 0) {
+    return { ok: false, unexpected: ['empty test report'], counts };
+  }
   for (const f of report.testResults) {
     let failed = f.assertionResults.filter((a) => a.status === 'failed').length;
     if (failed === 0 && f.status === 'failed') failed = 1;
@@ -23,6 +28,11 @@ export function evaluateTestReport(
   const unexpected = Object.entries(counts)
     .filter(([file, n]) => n > (Object.prototype.hasOwnProperty.call(allowed, file) ? allowed[file]! : 0))
     .map(([file]) => file);
+  const attributed = Object.values(counts).reduce((a, b) => a + b, 0);
+  const unattributed =
+    (report.success === false && attributed === 0) ||
+    (typeof report.numFailedTests === 'number' && report.numFailedTests > attributed);
+  if (unattributed) unexpected.push('unattributed failures');
   return { ok: unexpected.length === 0, unexpected, counts };
 }
 

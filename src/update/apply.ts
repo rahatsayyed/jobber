@@ -27,7 +27,7 @@ export interface ApplyDeps {
 export interface ApplyOptions { dryRun: boolean }
 export interface ApplyOutcome { outcome: Outcome; step: string | null; reason: string | null; from: string; to: string }
 
-const SCRUBBED_ENV = /^(GIT_DIR|GIT_WORK_TREE|GIT_INDEX_FILE|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_CONFIG.*)$/;
+const SCRUBBED_ENV = /^(JOBAPPLIER_DB|GIT_DIR|GIT_WORK_TREE|GIT_INDEX_FILE|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_CONFIG.*)$/;
 const MIN = 60_000;
 
 class StepFailure extends Error {
@@ -71,6 +71,7 @@ export async function applyUpdate(
   const updateDir = join(root, '.update');
   const snapshotPath = join(updateDir, `pre-update-${short}.sqlite`);
   const git = (args: string[]) => exec('git', args, { cwd: root, env: cleanEnv(), timeoutMs: MIN });
+  let wroteMarker = false;
   const flags = plan.permissionSetFileChanged ? ['config/permission-sets.json changed in this update'] : [];
 
   const finish = async (
@@ -89,9 +90,13 @@ export async function applyUpdate(
       finalReason = reason ? `${reason}; notify failed` : 'notify failed';
     }
     const base = deps.state.load();
-    const cleared: UpdateState = extra.keepInProgress ? base : { ...base, in_progress: null };
+    const cleared: UpdateState = extra.keepInProgress || !wroteMarker ? base : { ...base, in_progress: null };
     const record = { at: deps.now().toISOString(), outcome, from, to, reason: finalReason, step };
-    deps.state.save(recordResult(cleared, record, extra.lastGood));
+    try {
+      deps.state.save(recordResult(cleared, record, extra.lastGood));
+    } catch {
+      finalReason = finalReason ? `${finalReason}; state save failed` : 'state save failed';
+    }
     return { outcome, step, reason: finalReason, from, to };
   };
 
@@ -101,6 +106,10 @@ export async function applyUpdate(
     if (parsed === null) throw new StepFailure(step, 'doctor output not parseable');
     return parsed;
   };
+
+  const SHA = /^[0-9a-f]{40}$/;
+  if (!SHA.test(from) || !SHA.test(to)) return finish('error', 'preflight', 'invalid commit id in plan');
+  if (deps.state.load().in_progress !== null) return finish('skipped', 'preflight', 'in-progress-marker');
 
   // Steps 1 to 5: nothing is mutated yet, a failure just aborts.
   let baseline: { id: string; status: string }[];
@@ -128,7 +137,12 @@ export async function applyUpdate(
   }
 
   const startedAt = deps.now().toISOString();
-  deps.state.save({ ...deps.state.load(), in_progress: { from, to, started_at: startedAt } });
+  try {
+    deps.state.save({ ...deps.state.load(), in_progress: { from, to, started_at: startedAt } });
+    wroteMarker = true;
+  } catch {
+    return finish('error', 'state-in-progress', 'could not write in-progress marker');
+  }
 
   let failedStep = 'merge';
   let failedReason = '';

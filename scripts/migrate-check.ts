@@ -1,5 +1,6 @@
 // Opens (and so migrates) the database named by JOBAPPLIER_DB, which must be a copy.
 // Prints only an error message, never rows.
+import { existsSync, realpathSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { openDb } from '../src/db.js';
 
@@ -10,7 +11,11 @@ if (!raw || !raw.trim()) {
   process.exit(1);
 }
 const target = raw.trim();
-if (basename(target) === 'data.sqlite' || resolve(target) === resolve(root, 'data.sqlite')) {
+const real = (p: string) => (existsSync(p) ? realpathSync(p) : resolve(p));
+if (
+  basename(target) === 'data.sqlite' || basename(real(target)) === 'data.sqlite' ||
+  real(target) === real(resolve(root, 'data.sqlite'))
+) {
   console.error('migrate-check: JOBAPPLIER_DB points at the live data.sqlite; refusing');
   process.exit(1);
 }

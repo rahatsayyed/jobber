@@ -22,26 +22,41 @@ interface Opts {
   settings?: string[];
   snapshotThrows?: boolean;
   notifyOk?: boolean;
+  notifyThrows?: boolean;
+  marker?: boolean;
+  throwOn?: string;
+  headAfterReset?: string;
+  markerSaveThrows?: boolean;
 }
 
 function setup(o: Opts = {}) {
   const calls: { cmd: string; args: string[]; env?: NodeJS.ProcessEnv }[] = [];
   const removed: string[] = [];
   const sent: string[] = [];
+  const copies: [string, string][] = [];
+  const order: string[] = [];
+  let snapshots = 0;
+  let reset = false;
   let state: UpdateState = { ...emptyState(), last_good_commit: FROM };
+  if (o.marker) state = { ...state, in_progress: { from: 'x'.repeat(40), to: 'y'.repeat(40), started_at: 'then' } };
   const doctorOut = [...(o.doctorCalls ?? [DOCTOR_OK, DOCTOR_OK])];
   const settings = [...(o.settings ?? ['same', 'same'])];
   const used = new Set<string>();
   const exec: Exec = async (cmd, args, opts) => {
     calls.push({ cmd, args, env: opts?.env });
     const key = `${cmd} ${args.join(' ')}`;
+    order.push(key);
+    if (o.throwOn && key === o.throwOn) throw new Error('exec exploded');
+    if (key.startsWith('git reset --hard')) reset = true;
     const s = o.script?.[key];
     if (s && !(s.once && used.has(key))) {
       used.add(key);
       return { stdout: s.stdout ?? '', stderr: '', code: s.code ?? 0 };
     }
     if (key === 'git status --porcelain') return { stdout: '', stderr: '', code: 0 };
-    if (key === 'git rev-parse HEAD') return { stdout: FROM + '\n', stderr: '', code: 0 };
+    if (key === 'git rev-parse HEAD') {
+      return { stdout: (reset && o.headAfterReset ? o.headAfterReset : FROM) + '\n', stderr: '', code: 0 };
+    }
     if (key === 'npm run doctor -- --json') return { stdout: '> x\n' + (doctorOut.shift() ?? DOCTOR_OK), stderr: '', code: 0 };
     return { stdout: '', stderr: '', code: 0 };
   };
@@ -57,15 +72,21 @@ function setup(o: Opts = {}) {
       mkdtemp: (prefix) => `${prefix}XYZ`,
       rmrf: (p) => { removed.push(p); },
       mkdirp: () => undefined,
-      copy: () => undefined,
+      copy: (a, b) => { copies.push([a, b]); },
     },
-    state: { load: () => state, save: (s) => { state = s; } },
-    snapshotDb: async () => { if (o.snapshotThrows) throw new Error('boom'); },
+    state: {
+      load: () => state,
+      save: (s) => {
+        if (o.markerSaveThrows && s.in_progress && !state.in_progress) throw new Error('disk full');
+        state = s;
+      },
+    },
+    snapshotDb: async () => { order.push('SNAPSHOT'); snapshots++; if (o.snapshotThrows) throw new Error('boom'); },
     knownFailures: { 'tests/resume.test.ts': 1 },
-    notify: { send: async (t) => { sent.push(t); return { ok: o.notifyOk ?? true, detail: 'x' }; } },
+    notify: { send: async (t) => { if (o.notifyThrows) throw new Error('net'); sent.push(t); return { ok: o.notifyOk ?? true, detail: 'x' }; } },
     dbPath: '/proj/data.sqlite',
   };
-  return { deps, calls, removed, sent, getState: () => state };
+  return { deps, calls, removed, sent, copies, order, snapshots: () => snapshots, getState: () => state };
 }
 const keys = (c: { cmd: string; args: string[] }[]) => c.map((x) => `${x.cmd} ${x.args.join(' ')}`);
 
@@ -188,6 +209,91 @@ describe('applyUpdate', () => {
       await applyUpdate(t.deps, plan, { dryRun: false });
       const bad = /--force|\bpull\b|\brebase\b|\bpush\b|\bcheckout\b|\bstash\b|\bclean\b/;
       expect(keys(t.calls).filter((k) => bad.test(k))).toEqual([]);
+    }
+  });
+
+  it('a pre-existing marker is never cleared and nothing runs', async () => {
+    for (const dryRun of [false, true]) {
+      const t = setup({ marker: true });
+      const r = await applyUpdate(t.deps, plan, { dryRun });
+      expect(r.outcome).toBe('skipped');
+      expect(r.reason).toBe('in-progress-marker');
+      expect(t.calls).toEqual([]);
+      expect(t.getState().in_progress?.started_at).toBe('then');
+      expect(t.sent).toHaveLength(1);
+    }
+  });
+
+  it('invalid commit ids are an error', async () => {
+    const t = setup();
+    const r = await applyUpdate(t.deps, { ...plan, to: '--force' }, { dryRun: false });
+    expect(r.outcome).toBe('error');
+    expect(r.step).toBe('preflight');
+    expect(t.calls).toEqual([]);
+  });
+
+  it('marker write failure returns error before merge', async () => {
+    const t = setup({ markerSaveThrows: true });
+    const r = await applyUpdate(t.deps, plan, { dryRun: false });
+    expect(r.outcome).toBe('error');
+    expect(r.step).toBe('state-in-progress');
+    expect(keys(t.calls).some((x) => x.includes('merge'))).toBe(false);
+  });
+
+  it('dry run never snapshots; happy path snapshots before merge', async () => {
+    const d = setup();
+    await applyUpdate(d.deps, plan, { dryRun: true });
+    expect(d.snapshots()).toBe(0);
+    const t = setup();
+    await applyUpdate(t.deps, plan, { dryRun: false });
+    expect(t.order.indexOf('SNAPSHOT')).toBeGreaterThan(-1);
+    expect(t.order.indexOf('SNAPSHOT')).toBeLessThan(t.order.indexOf(`git merge --ff-only ${TO}`));
+  });
+
+  it('exec throwing after merge rolls back', async () => {
+    const u = setup({ throwOn: 'npx tsx scripts/migrate-check.ts' });
+    const r2 = await applyUpdate(u.deps, plan, { dryRun: false });
+    expect(r2.outcome).toBe('rolled_back');
+    expect(r2.step).toBe('migrate-copy');
+    const t = setup({ throwOn: 'npm ci' });
+    const r = await applyUpdate(t.deps, plan, { dryRun: false });
+    expect(r.outcome).toBe('rollback_failed');
+  });
+
+  it('HEAD differing after reset is rollback_failed', async () => {
+    const t = setup({ script: { 'npm ci': { code: 1, once: true } }, headAfterReset: 'd'.repeat(40) });
+    const r = await applyUpdate(t.deps, plan, { dryRun: false });
+    expect(r.outcome).toBe('rollback_failed');
+    expect(t.getState().in_progress).not.toBeNull();
+  });
+
+  it('a throwing notifier is swallowed', async () => {
+    const t = setup({ notifyThrows: true });
+    const r = await applyUpdate(t.deps, plan, { dryRun: false });
+    expect(r.outcome).toBe('updated');
+    expect(t.getState().last_good_commit).toBe(TO);
+  });
+
+  it('migrate temp dir is removed on failure and the copy source is the snapshot', async () => {
+    const t = setup({ script: { 'npx tsx scripts/migrate-check.ts': { code: 1 } } });
+    await applyUpdate(t.deps, plan, { dryRun: false });
+    expect(t.copies).toHaveLength(1);
+    const [src, dst] = t.copies[0]!;
+    expect(src).toBe(`/proj/.update/pre-update-${TO.slice(0, 12)}.sqlite`);
+    expect(t.removed).toContain(dst.slice(0, dst.lastIndexOf('/')));
+  });
+
+  it('doctor and vitest calls do not inherit JOBAPPLIER_DB', async () => {
+    process.env.JOBAPPLIER_DB = 'leak';
+    try {
+      const t = setup();
+      await applyUpdate(t.deps, plan, { dryRun: false });
+      for (const c of t.calls) {
+        if (c.args.includes('scripts/migrate-check.ts')) expect(c.env?.JOBAPPLIER_DB).toBeTruthy();
+        else expect(c.env?.JOBAPPLIER_DB).toBeUndefined();
+      }
+    } finally {
+      delete process.env.JOBAPPLIER_DB;
     }
   });
 
