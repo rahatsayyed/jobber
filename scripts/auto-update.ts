@@ -11,6 +11,7 @@ import { loadOutreachConfig } from '../src/outreach/config.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { consoleNotifier, telegramNotifier, type Notifier } from '../src/platform/notify.js';
 import { applyUpdate, type ApplyDeps } from '../src/update/apply.js';
+import { sanitizeLine } from '../src/update/notes.js';
 import { loadUpdateConfig } from '../src/update/config.js';
 import { gatherFacts } from '../src/update/git.js';
 import { runLock } from '../src/update/lockAdapter.js';
@@ -37,8 +38,13 @@ function mergedEnv(): NodeJS.ProcessEnv {
 function quietWindow(env: NodeJS.ProcessEnv): QuietWindow {
   const c = loadOutreachConfig(env);
   const ok = (n: number) => Number.isInteger(n) && n >= 0 && n <= 24;
-  const startHour = ok(c.quietStartHour) ? c.quietStartHour : 1;
-  const endHour = ok(c.quietEndHour) ? c.quietEndHour : 7;
+  let startHour = ok(c.quietStartHour) ? c.quietStartHour : 1;
+  let endHour = ok(c.quietEndHour) ? c.quietEndHour : 7;
+  if (startHour === endHour) {
+    console.warn('auto-update: QUIET_HOURS_START equals QUIET_HOURS_END; using defaults 1 and 7');
+    startHour = 1;
+    endHour = 7;
+  }
   return { startHour, endHour, tzOffsetMinutes: IST_OFFSET_MIN };
 }
 
@@ -117,14 +123,19 @@ async function main(): Promise<number> {
 
   const detachable = args.has('--tick') && !args.has('--now-internal');
   const detach = detachable
-    ? () => {
-        const child = spawn(
-          process.execPath,
-          ['--import', 'tsx', join(root, 'scripts', 'auto-update.ts'), '--now-internal'],
-          { detached: true, stdio: 'ignore', cwd: root, env: process.env },
-        );
-        child.unref();
-      }
+    ? () =>
+        new Promise<void>((res, rej) => {
+          const child = spawn(
+            process.execPath,
+            ['--import', 'tsx', join(root, 'scripts', 'auto-update.ts'), '--now-internal'],
+            { detached: true, stdio: 'ignore', cwd: root, env: process.env },
+          );
+          child.once('error', () => rej(new Error('could not start the detached update run')));
+          child.once('spawn', () => {
+            child.unref();
+            res();
+          });
+        })
     : undefined;
 
   const result = await runUpdate(
@@ -144,8 +155,14 @@ async function main(): Promise<number> {
 
 main().then(
   (code) => process.exit(code),
-  () => {
+  async (e: unknown) => {
     console.error('auto-update: unexpected failure');
+    try {
+      const name = e instanceof Error ? sanitizeLine(e.name, 40) : 'error';
+      await telegramNotifier(mergedEnv()).send(`Jobber update error\nreason: unexpected failure (${name})`);
+    } catch {
+      // nothing more to do
+    }
     process.exit(1);
   },
 );

@@ -86,7 +86,16 @@ describe('runUpdate', () => {
     expect(r.outcome).toBe('skipped');
     expect(r.detail).toContain('lock-held');
     expect(m.deps.gather).not.toHaveBeenCalled();
+    expect(m.deps.notify.send).not.toHaveBeenCalled();
+    expect(m.saved).toHaveLength(0);
+  });
+
+  it('lock held in now mode notifies once and writes no state', async () => {
+    const m = make({ lock: { acquire: vi.fn(async () => null) } });
+    const r = await runUpdate(m.deps, { mode: 'now', dryRun: false });
+    expect(r.detail).toBe('lock-held');
     expect(m.deps.notify.send).toHaveBeenCalledTimes(1);
+    expect(m.saved).toHaveLength(0);
   });
 
   it('noop sends no notification and still sets the next run', async () => {
@@ -112,12 +121,56 @@ describe('runUpdate', () => {
 
   it('tick detaches instead of applying when detach is given', async () => {
     const detach = vi.fn();
-    const m = make({ detach });
+    const m = make({ detach: async () => detach() });
     const r = await runUpdate(m.deps, { mode: 'tick', dryRun: false });
     expect(detach).toHaveBeenCalledTimes(1);
     expect(m.deps.apply).not.toHaveBeenCalled();
     expect(r.outcome).toBe('noop');
     expect(m.release).toHaveBeenCalledTimes(1);
+    expect(m.saved).toHaveLength(0);
+  });
+
+  it('releases the lock before detaching and records error when detach fails', async () => {
+    const order: string[] = [];
+    const m = make();
+    const release = async () => { order.push('release'); };
+    (m.deps as any).lock = { acquire: async () => ({ release }) };
+    (m.deps as any).detach = vi.fn(async () => { order.push('detach'); throw new Error('spawn failed'); });
+    const r = await runUpdate(m.deps, { mode: 'tick', dryRun: false });
+    expect(order).toEqual(['release', 'detach']);
+    expect(r.outcome).toBe('error');
+    expect(m.deps.notify.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('gather error text is sanitized', async () => {
+    const m = make({ gather: vi.fn(async () => { throw new Error('boom token=secret'); }) });
+    await runUpdate(m.deps, { mode: 'now', dryRun: false });
+    const text = (m.deps.notify.send as any).mock.calls[0][0] as string;
+    expect(text).not.toContain('token=secret');
+  });
+
+  it('acquires before gather and releases after apply', async () => {
+    const order: string[] = [];
+    const m = make({
+      lock: { acquire: vi.fn(async () => { order.push('acquire'); return { release: async () => { order.push('release'); } }; }) },
+      gather: vi.fn(async () => { order.push('gather'); return facts(); }),
+      apply: vi.fn(async () => { order.push('apply'); return { outcome: 'updated' as const, step: null, reason: null, from: SHA_A, to: SHA_B }; }),
+    });
+    await runUpdate(m.deps, { mode: 'now', dryRun: false });
+    expect(order).toEqual(['acquire', 'gather', 'apply', 'release']);
+  });
+
+  it('now mode with a dirty tree still skips', async () => {
+    const m = make({ gather: vi.fn(async () => facts({ dirty: true })) });
+    const r = await runUpdate(m.deps, { mode: 'now', dryRun: false });
+    expect(r.outcome).toBe('skipped');
+    expect(m.deps.apply).not.toHaveBeenCalled();
+  });
+
+  it('dry-run tick leaves next_run_at alone', async () => {
+    const m = make({ gather: vi.fn(async () => facts({ behind: 0 })) });
+    await runUpdate(m.deps, { mode: 'tick', dryRun: true });
+    expect(m.state.next_run_at).toBeNull();
   });
 
   it('now mode runs although disabled and does not change next_run_at', async () => {

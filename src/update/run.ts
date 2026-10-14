@@ -3,7 +3,7 @@ import type { Notifier } from '../platform/notify.js';
 import type { ApplyOptions, ApplyOutcome } from './apply.js';
 import type { UpdateConfig } from './config.js';
 import type { LockPort } from './lockAdapter.js';
-import { formatNotification, sanitizeLine } from './notes.js';
+import { formatNotification } from './notes.js';
 import { planUpdate, type RepoFacts, type UpdatePlan } from './plan.js';
 import { isDue, pickRunTime, type QuietWindow, type Rng } from './schedule.js';
 import { recordResult, type Outcome, type UpdateState } from './state.js';
@@ -21,7 +21,8 @@ export interface RunDeps {
   state: { load(): UpdateState; save(s: UpdateState): void };
   quiet: QuietWindow;
   // Tick mode only: hand a due update to a detached child instead of applying inline.
-  detach?: () => void;
+  // Called after the lock is released; rejects when the child could not be started.
+  detach?: () => Promise<void>;
 }
 export interface RunOptions { mode: 'tick' | 'now'; dryRun: boolean }
 
@@ -33,7 +34,7 @@ export async function runUpdate(deps: RunDeps, o: RunOptions): Promise<{ outcome
   }
 
   const reschedule = (s: UpdateState): UpdateState =>
-    tick ? { ...s, next_run_at: pickRunTime(deps.now(), deps.rng, deps.quiet).toISOString() } : s;
+    tick && !o.dryRun ? { ...s, next_run_at: pickRunTime(deps.now(), deps.rng, deps.quiet).toISOString() } : s;
 
   const record = (outcome: Outcome, from: string, to: string | null, reason: string | null, step: string | null): void => {
     const rec = { at: deps.now().toISOString(), outcome, from, to, reason, step };
@@ -50,21 +51,31 @@ export async function runUpdate(deps: RunDeps, o: RunOptions): Promise<{ outcome
 
   const handle = await deps.lock.acquire();
   if (handle === null) {
-    const reason = 'lock-held: another run holds the lock';
-    record('skipped', 'unknown', null, reason, null);
-    await notifyOnce(formatNotification({
-      outcome: 'skipped', from: 'unknown', to: null, reason, step: null, commits: [], flags: [],
-      dryRun: o.dryRun, restartNeeded: false,
-    }));
-    return { outcome: 'skipped', detail: reason };
+    // No state write: the holder may be mid-apply and owns the in-progress marker.
+    if (!tick) {
+      await notifyOnce(formatNotification({
+        outcome: 'skipped', from: 'unknown', to: null, reason: 'lock-held: another run holds the lock', step: null,
+        commits: [], flags: [], dryRun: o.dryRun, restartNeeded: false,
+      }));
+    }
+    return { outcome: 'skipped', detail: 'lock-held' };
   }
+
+  let released = false;
+  const releaseOnce = async (): Promise<void> => {
+    if (released) return;
+    released = true;
+    try { await handle.release(); } catch { /* lock lost or already gone */ }
+  };
 
   try {
     let facts: RepoFacts;
     try {
       facts = await deps.gather();
     } catch (e) {
-      const reason = sanitizeLine(e instanceof Error ? e.message : 'unknown error', 160);
+      // Fixed text only: raw git error text can carry URLs or credentials.
+      void e;
+      const reason = 'could not read git state';
       record('error', 'unknown', null, reason, 'gather');
       await notifyOnce(formatNotification({
         outcome: 'error', from: 'unknown', to: null, reason, step: 'gather', commits: [], flags: [],
@@ -90,7 +101,19 @@ export async function runUpdate(deps: RunDeps, o: RunOptions): Promise<{ outcome
     }
 
     if (tick && !o.dryRun && deps.detach) {
-      deps.detach();
+      await releaseOnce();
+      try {
+        await deps.detach();
+      } catch (e) {
+        void e;
+        const reason = 'could not start the detached update run';
+        record('error', plan.from, plan.to, reason, 'detach');
+        await notifyOnce(formatNotification({
+          outcome: 'error', from: plan.from, to: plan.to, reason, step: 'detach', commits: [], flags: [],
+          dryRun: false, restartNeeded: false,
+        }));
+        return { outcome: 'error', detail: reason };
+      }
       return { outcome: 'noop', detail: 'update handed to a detached run' };
     }
 
@@ -101,7 +124,8 @@ export async function runUpdate(deps: RunDeps, o: RunOptions): Promise<{ outcome
       }
       return { outcome: r.outcome, detail: r.reason ?? r.step ?? '' };
     } catch (e) {
-      const reason = sanitizeLine(e instanceof Error ? e.message : 'unknown error', 160);
+      void e;
+      const reason = 'update run failed unexpectedly';
       record('error', plan.from, plan.to, reason, 'apply');
       await notifyOnce(formatNotification({
         outcome: 'error', from: plan.from, to: plan.to, reason, step: 'apply', commits: plan.commits, flags: [],
@@ -110,6 +134,6 @@ export async function runUpdate(deps: RunDeps, o: RunOptions): Promise<{ outcome
       return { outcome: 'error', detail: reason };
     }
   } finally {
-    try { await handle.release(); } catch { /* lock lost or already gone */ }
+    await releaseOnce();
   }
 }
