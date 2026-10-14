@@ -26,3 +26,5 @@ scripts/eval/fixtures/baseline/
 models/
 .dashboard/
 .jobber/
+.update/
+.backups/
