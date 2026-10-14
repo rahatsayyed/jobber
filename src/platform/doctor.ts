@@ -25,6 +25,8 @@ export interface DoctorContext {
   /** Names of tables in the SQLite file at `path`, or null if it cannot be opened (read-only). */
   sqliteTables?: (path: string) => string[] | null;
   now?: () => Date;
+  // Offline read of the dashboard allowed-account row (email and whether a sub is pinned). Optional.
+  authAccount?(path: string): { email: string; pinned: boolean } | null;
 }
 
 // A check that cannot run yet ("skipped until installed"); never affects the exit code.

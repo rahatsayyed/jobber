@@ -1,376 +1,138 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import http from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { afterEach, describe, expect, it } from 'vitest';
 import net from 'node:net';
-import { createWebServer, startWebServer, redactSecrets, type WebDeps } from '../src/web/server.js';
-import { renderPage } from '../src/web/page.js';
-import type { Snapshot } from '../src/status/snapshot.js';
+import { Readable } from 'node:stream';
+import type { AddressInfo } from 'node:net';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { IncomingMessage } from 'node:http';
+import { createWebServer, redactSecrets, startWebServer, STATUS_COMMANDS } from '../src/web/server.js';
+import { loadStatic } from '../src/web/page.js';
+import { readJson } from '../src/web/router.js';
+import { makeHarness, type Harness } from './helpers/webHarness.js';
 
-const TOKEN = 'unit-test-token-0123456789abcdef';
-
-function snap(over: Partial<Snapshot> = {}): Snapshot {
-  return {
-    generatedAt: '2026-10-14T00:00:00.000Z',
-    ceilings: {} as Snapshot['ceilings'],
-    dailyCounters: [],
-    halts: [],
-    queue: [],
-    funnel: { discovered: 1, matched: 1, contacted: 0, replied: 0, interview: 0, offer: 0 },
-    lastSend: null,
-    degraded: [],
-    ...over,
-  };
-}
-
-interface Res {
-  status: number;
-  headers: http.IncomingHttpHeaders;
-  body: string;
-}
-
-let open: http.Server[] = [];
+let h: Harness | null = null;
 afterEach(async () => {
-  await Promise.all(open.map((s) => new Promise((r) => s.close(() => r(null)))));
-  open = [];
+  if (h) await h.close();
+  h = null;
 });
 
-async function start(over: Partial<WebDeps> = {}) {
-  let clock = 1_000_000;
-  const send = vi.fn(async (_t: string) => {});
-  const deps: WebDeps = {
-    token: TOKEN,
-    port: 0,
-    getSnapshot: async () => snap(),
-    capture: async () => 'hello pane',
-    send,
-    now: () => clock,
-    ...over,
-  };
-  const server = createWebServer(deps);
-  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
-  open.push(server);
-  const port = (server.address() as AddressInfo).port;
-  function call(
-    method: string,
-    path: string,
-    opts: { headers?: Record<string, string>; body?: string | Buffer } = {},
-  ): Promise<Res> {
-    return new Promise((resolve, reject) => {
-      const r = http.request(
-        { host: '127.0.0.1', port, method, path, headers: { host: `127.0.0.1:${port}`, ...opts.headers } },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on('data', (c) => chunks.push(c));
-          res.on('end', () =>
-            resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') }),
-          );
-        },
-      );
-      r.on('error', reject);
-      if (opts.body !== undefined) r.write(opts.body);
-      r.end();
+const HEADERS: Record<string, string> = {
+  'content-security-policy':
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+  'x-content-type-options': 'nosniff',
+  'cache-control': 'no-store',
+  'referrer-policy': 'no-referrer',
+  'x-frame-options': 'DENY',
+  'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-resource-policy': 'same-origin',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+};
+
+describe('host and bind', () => {
+  it('wrong Host is 421, allowed hosts and loopback pass', async () => {
+    h = await makeHarness({ allowedHosts: ['jobber.example.test'] });
+    expect((await h.call('GET', '/api/health', { headers: { host: 'evil.example' } })).status).toBe(421);
+    expect((await h.call('GET', '/api/health', { headers: { host: `127.0.0.1:${h.port + 1}` } })).status).toBe(421);
+    expect((await h.call('GET', '/api/health', { headers: { host: `localhost:${h.port}` } })).status).toBe(200);
+    expect((await h.call('GET', '/api/health', { headers: { host: 'jobber.example.test' } })).status).toBe(200);
+    expect((await h.call('GET', '/api/health', { headers: { host: 'JOBBER.example.test' } })).status).toBe(200);
+  });
+
+  it('refuses a non-loopback bind unless allowRemoteBind', async () => {
+    const anyAddr = ['0', '0', '0', '0'].join('.');
+    h = await makeHarness();
+    const base = {
+      port: 0, bind: anyAddr, allowRemoteBind: false, allowedHosts: [], trustProxy: false, auth: h.auth,
+      oidc: undefined as never, oidcCfg: { redirectUri: 'x', reauthMaxAgeSec: 300 }, data: h.data, cfg: {} as never,
+      run: (async () => ({ stdout: '', code: 0 })) as never, sessionsToShow: [],
+      chat: { enabled: false, session: 's', window: 'w', send: async () => {} },
+    };
+    expect(() => createWebServer(base)).toThrow();
+    expect(() => createWebServer({ ...base, bind: '10.1.2.3' })).toThrow();
+    const ok = createWebServer({ ...base, allowRemoteBind: true });
+    ok.close();
+    expect(() => createWebServer({ ...base, bind: '::1' })).not.toThrow();
+  });
+
+  it('startWebServer listens on the given loopback address', async () => {
+    h = await makeHarness();
+    const s = await startWebServer({
+      port: 0, bind: '127.0.0.1', allowRemoteBind: false, allowedHosts: [], trustProxy: false, auth: h.auth,
+      oidc: undefined as never, oidcCfg: { redirectUri: 'x', reauthMaxAgeSec: 300 }, data: h.data, cfg: {} as never,
+      run: (async () => ({ stdout: '', code: 0 })) as never, sessionsToShow: [],
+      chat: { enabled: false, session: 's', window: 'w', send: async () => {} },
     });
-  }
-  const form = (token: string) => ({
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: `token=${encodeURIComponent(token)}`,
+    expect((s.address() as AddressInfo).address).toBe('127.0.0.1');
+    s.close();
   });
-  async function login(): Promise<string> {
-    const r = await call('POST', '/login', form(TOKEN));
-    expect(r.status).toBe(303);
-    const sc = String(r.headers['set-cookie']?.[0] ?? '');
-    return sc.split(';')[0];
-  }
-  const sendJson = (cookie: string, text: unknown, extra: Record<string, string> = {}) =>
-    call('POST', '/api/send', {
-      headers: {
-        cookie,
-        origin: `http://127.0.0.1:${port}`,
-        'content-type': 'application/json',
-        ...extra,
-      },
-      body: JSON.stringify({ text }),
-    });
-  return { call, form, login, sendJson, send, port, advance: (ms: number) => (clock += ms) };
-}
+});
 
-describe('web server', () => {
-  it('rejects a wrong Host with 421', async () => {
-    const s = await start();
-    const r = await s.call('GET', '/', { headers: { host: 'evil.example:80' } });
-    expect(r.status).toBe(421);
-  });
-
-  it('requires a cookie for api routes', async () => {
-    const s = await start();
-    expect((await s.call('GET', '/api/status')).status).toBe(401);
-    expect((await s.call('GET', '/api/pane')).status).toBe(401);
-    expect((await s.call('GET', '/nope')).status).toBe(401);
-  });
-
-  it('wrong token 401 then lockout 429', async () => {
-    const s = await start();
-    for (let i = 0; i < 5; i++) expect((await s.call('POST', '/login', s.form('bad' + i))).status).toBe(401);
-    expect((await s.call('POST', '/login', s.form('bad'))).status).toBe(429);
-    expect((await s.call('POST', '/login', s.form(TOKEN))).status).toBe(429);
-    s.advance(10 * 60 * 1000 + 1);
-    expect((await s.call('POST', '/login', s.form(TOKEN))).status).toBe(303);
-  });
-
-  it('login sets a hardened cookie and status works', async () => {
-    const s = await start();
-    const r = await s.call('POST', '/login', s.form(TOKEN));
-    const sc = String(r.headers['set-cookie']?.[0]);
-    expect(sc).toMatch(/^jobber_session=[0-9a-f]{64};/);
-    expect(sc).toContain('HttpOnly');
-    expect(sc).toContain('SameSite=Strict');
-    expect(sc).toContain('Path=/');
-    const cookie = sc.split(';')[0];
-    const st = await s.call('GET', '/api/status', { headers: { cookie } });
-    expect(st.status).toBe(200);
-    expect(JSON.parse(st.body).funnel.discovered).toBe(1);
-  });
-
-  it('login rejects wrong content type and oversize body', async () => {
-    const s = await start();
-    const ct = await s.call('POST', '/login', {
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: TOKEN }),
-    });
-    expect(ct.status).toBe(415);
-    const big = await s.call('POST', '/login', {
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: 'token=' + 'a'.repeat(5000),
-    });
-    expect(big.status).toBe(413);
-  });
-
-  it('keeps at most 10 sessions, dropping the oldest', async () => {
-    const s = await start();
-    const first = await s.login();
-    for (let i = 0; i < 10; i++) await s.login();
-    expect((await s.call('GET', '/api/status', { headers: { cookie: first } })).status).toBe(401);
-  });
-
-  it('status errors do not leak the message', async () => {
-    const s = await start({
-      getSnapshot: async () => {
-        throw new Error('secret db path /x/y');
-      },
-    });
-    const cookie = await s.login();
-    const r = await s.call('GET', '/api/status', { headers: { cookie } });
-    expect(r.status).toBe(500);
-    expect(JSON.parse(r.body)).toEqual({ error: 'status unavailable' });
-  });
-
-  it('send: bad Origin 403, wrong content type 415', async () => {
-    const s = await start();
-    const cookie = await s.login();
-    expect((await s.sendJson(cookie, '/limits', { origin: 'http://evil.example' })).status).toBe(403);
-    const noOrigin = await s.call('POST', '/api/send', {
-      headers: { cookie, 'content-type': 'application/json' },
-      body: '{"text":"/limits"}',
-    });
-    expect(noOrigin.status).toBe(403);
-    const ct = await s.call('POST', '/api/send', {
-      headers: { cookie, origin: `http://127.0.0.1:${s.port}`, 'content-type': 'text/plain' },
-      body: '{"text":"/limits"}',
-    });
-    expect(ct.status).toBe(415);
-    expect(s.send).not.toHaveBeenCalled();
-  });
-
-  it('send: over 4096 bytes 413', async () => {
-    const s = await start();
-    const cookie = await s.login();
-    const r = await s.sendJson(cookie, 'a'.repeat(5000));
-    expect(r.status).toBe(413);
-    expect(s.send).not.toHaveBeenCalled();
-  });
-
-  it('send: bang and unknown slash commands are 400', async () => {
-    const s = await start();
-    const cookie = await s.login();
-    expect((await s.sendJson(cookie, '!ls')).status).toBe(400);
-    s.advance(3000);
-    expect((await s.sendJson(cookie, '/login-as-admin')).status).toBe(400);
-    s.advance(3000);
-    expect((await s.sendJson(cookie, '/limits-extra')).status).toBe(400);
-    s.advance(3000);
-    expect((await s.sendJson(cookie, '/')).status).toBe(400);
-    s.advance(3000);
-    expect((await s.sendJson(cookie, 42)).status).toBe(400);
-    s.advance(3000);
-    expect((await s.sendJson(cookie, '')).status).toBe(400);
-    expect(s.send).not.toHaveBeenCalled();
-  });
-
-  it('send: /limits goes through once, second within 2s is 429', async () => {
-    const s = await start();
-    const cookie = await s.login();
-    const r = await s.sendJson(cookie, '/limits');
-    expect(r.status).toBe(200);
-    expect(JSON.parse(r.body)).toEqual({ ok: true });
-    expect(s.send).toHaveBeenCalledTimes(1);
-    expect(s.send).toHaveBeenCalledWith('/limits');
-    expect((await s.sendJson(cookie, '/limits')).status).toBe(429);
-    expect(s.send).toHaveBeenCalledTimes(1);
-    s.advance(2001);
-    expect((await s.sendJson(cookie, '/health')).status).toBe(200);
-    expect(s.send).toHaveBeenCalledTimes(2);
-  });
-
-  it('send failure returns 500 without leaking', async () => {
-    const s = await start({
-      send: async () => {
-        throw new Error('tmux exploded at /secret');
-      },
-    });
-    const cookie = await s.login();
-    const r = await s.sendJson(cookie, 'hello');
-    expect(r.status).toBe(500);
-    expect(r.body).not.toContain('secret');
-  });
-
-  it('pane output is last 40 lines with secrets redacted', async () => {
-    const lines = Array.from({ length: 60 }, (_, i) => `line${i}`);
-    lines[59] = 'key sk-abcdefghijklmnopqrstuvwxyz0123 end';
-    lines[58] = 'WEB_TOKEN=whatever';
-    lines[57] = `echo ${TOKEN}`;
-    const s = await start({ capture: async () => lines.join('\n') });
-    const cookie = await s.login();
-    const r = await s.call('GET', '/api/pane', { headers: { cookie } });
-    expect(r.status).toBe(200);
-    const text = JSON.parse(r.body).text as string;
-    expect(text).not.toContain('sk-abc');
-    expect(text).not.toContain('WEB_TOKEN');
-    expect(text).not.toContain(TOKEN);
-    expect(text).toContain('[redacted]');
-    expect(text).not.toContain('line0\n');
-    expect(text).toContain('line20');
-    expect(text.split('\n').length).toBe(40);
-  });
-
-  it('page html has no innerHTML and requires nonce in CSP', async () => {
-    const s = await start();
-    const cookie = await s.login();
-    const r = await s.call('GET', '/', { headers: { cookie } });
-    expect(r.status).toBe(200);
-    expect(r.body).not.toMatch(/innerhtml/i);
-    const csp = String(r.headers['content-security-policy']);
-    const nonce = /script-src 'nonce-([0-9a-f]+)'/.exec(csp)?.[1];
-    expect(nonce).toBeTruthy();
-    expect(r.body).toContain(`<script nonce="${nonce}">`);
-    expect(renderPage({ nonce: 'abc', authenticated: true })).not.toMatch(/innerhtml/i);
-  });
-
-  it('unauthenticated GET / is the login form without a script', async () => {
-    const s = await start();
-    const r = await s.call('GET', '/');
-    expect(r.status).toBe(200);
-    expect(r.body).toContain('name="token"');
-    expect(r.body).not.toContain('<script');
-  });
-
-  it('security headers on every response including errors', async () => {
-    const s = await start();
-    const cookie = await s.login();
+describe('headers and methods', () => {
+  it('security headers on 200, 401, 404, 405 and 421, never Access-Control-*', async () => {
+    h = await makeHarness();
     const rs = [
-      await s.call('GET', '/api/status'),
-      await s.call('GET', '/', { headers: { host: 'evil:1' } }),
-      await s.call('GET', '/nope', { headers: { cookie } }),
-      await s.call('PUT', '/api/status', { headers: { cookie } }),
-      await s.call('POST', '/login', s.form('x')),
+      await h.call('GET', '/'),
+      await h.call('GET', '/api/status'),
+      await h.call('GET', '/nope'),
+      await h.call('POST', '/'),
+      await h.call('GET', '/api/health', { headers: { host: 'evil.example' } }),
     ];
+    expect(rs.map((r) => r.status)).toEqual([200, 401, 404, 405, 421]);
     for (const r of rs) {
-      expect(String(r.headers['content-security-policy'])).toContain("default-src 'none'");
-      expect(String(r.headers['content-security-policy'])).toContain("frame-ancestors 'none'");
-      expect(r.headers['x-content-type-options']).toBe('nosniff');
-      expect(r.headers['cache-control']).toBe('no-store');
-      expect(r.headers['referrer-policy']).toBe('no-referrer');
+      for (const [k, v] of Object.entries(HEADERS)) expect(r.headers[k], k).toBe(v);
+      expect(Object.keys(r.headers).filter((k) => k.startsWith('access-control-'))).toEqual([]);
+      expect(r.headers['strict-transport-security']).toBeUndefined();
     }
   });
 
-  it('unknown route 404 and wrong method 405 when authenticated', async () => {
-    const s = await start();
-    const cookie = await s.login();
-    expect((await s.call('GET', '/nope', { headers: { cookie } })).status).toBe(404);
-    expect((await s.call('PUT', '/api/status', { headers: { cookie } })).status).toBe(405);
-    expect((await s.call('GET', '/api/send', { headers: { cookie } })).status).toBe(405);
-    expect((await s.call('GET', '/login')).status).toBe(405);
-  });
-});
-
-describe('fix round 1', () => {
-  it('slash commands take no arguments', async () => {
-    const s = await start();
-    const cookie = await s.login();
-    expect((await s.sendJson(cookie, '/limits /exit')).status).toBe(400);
-    expect(s.send).not.toHaveBeenCalled();
+  it('HSTS appears only when secure', async () => {
+    h = await makeHarness({ trustProxy: true });
+    const r = await h.call('GET', '/api/health', { headers: { 'x-forwarded-proto': 'https' } });
+    expect(r.headers['strict-transport-security']).toBe('max-age=31536000');
+    expect((await h.call('GET', '/api/health')).headers['strict-transport-security']).toBeUndefined();
   });
 
-  it('wrong token returns an html 401 with a link back', async () => {
-    const s = await start();
-    const r = await s.call('POST', '/login', s.form('nope'));
-    expect(r.status).toBe(401);
-    expect(String(r.headers['content-type'])).toContain('text/html');
-    expect(r.body).toContain('href="/"');
-    expect(r.body).not.toContain('<script');
-    expect(String(r.headers['content-security-policy'])).toContain("default-src 'none'");
+  it('OPTIONS is 405 and PUT, DELETE, HEAD are not served', async () => {
+    h = await makeHarness();
+    expect((await h.call('OPTIONS', '/api/jobs', { headers: { origin: 'http://evil.example' } })).status).toBe(405);
+    expect((await h.call('OPTIONS', '/')).status).toBe(405);
+    expect((await h.call('PUT', '/api/jobs')).status).toBe(405);
+    expect((await h.call('DELETE', '/api/jobs')).status).toBe(405);
   });
 
-  it('parallel login burst cannot exceed the lockout', async () => {
-    const s = await start();
-    const rs = await Promise.all(Array.from({ length: 12 }, () => s.call('POST', '/login', s.form(TOKEN + 'x'))));
-    expect(rs.filter((r) => r.status === 401).length).toBeLessThanOrEqual(5);
-    expect(rs.some((r) => r.status === 429)).toBe(true);
-    expect((await s.call('POST', '/login', s.form(TOKEN))).status).toBe(429);
+  it('health leaks nothing and the shell is served without a session', async () => {
+    h = await makeHarness();
+    const health = await h.call('GET', '/api/health');
+    expect(JSON.parse(health.body)).toEqual({ ok: true });
+    const shell = await h.call('GET', '/');
+    expect(shell.status).toBe(200);
+    expect(shell.headers['content-type']).toContain('text/html');
+    expect(shell.body).toContain('<div id="app">');
+    expect(shell.body).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/);
+    expect(shell.body).not.toMatch(/\sstyle=|<style/i);
   });
 
-  it('sessions expire after 12h', async () => {
-    const s = await start();
-    const cookie = await s.login();
-    s.advance(12 * 3600 * 1000 - 1);
-    expect((await s.call('GET', '/api/status', { headers: { cookie } })).status).toBe(200);
-    s.advance(2);
-    expect((await s.call('GET', '/api/status', { headers: { cookie } })).status).toBe(401);
+  it('path traversal and unlisted files are 404', async () => {
+    h = await makeHarness();
+    for (const p of ['/../.env', '/%2e%2e/secrets/x', '/..%2f.env', '/views/../../.env', '/app.js/../../x', '/package.json', '/index.html', '/views/nothing.js']) {
+      const r = await h.call('GET', p);
+      expect(r.status, p).toBe(404);
+    }
   });
 
-  it('extra secrets option and wrapped secrets are redacted in the pane', async () => {
-    const wrapped = 'abc sk-ant-api03-AAAAAAAAAAAAAAAA\nBBBBBBBBBBBBBBBBBBBB end';
-    const s = await start({ capture: async () => wrapped + '\nthe value hunter2hunter2 here', secrets: ['hunter2hunter2'] });
-    const cookie = await s.login();
-    const text = JSON.parse((await s.call('GET', '/api/pane', { headers: { cookie } })).body).text as string;
-    expect(text).not.toContain('AAAAAAAA');
-    expect(text).not.toContain('BBBBBBBB');
-    expect(text).not.toContain('hunter2');
-    expect(text).toContain('abc [redacted]');
-    expect(text).toContain(' end');
-  });
-
-  it('redactSecrets handles a long secret split across two lines', () => {
-    const out = redactSecrets('x sk-abcdefghijklmnop\nqrstuvwxyz0123 y');
-    expect(out).not.toContain('qrstuv');
-    expect(out).not.toContain('abcdefgh');
-  });
-
-  it('startWebServer listens on 127.0.0.1 only', async () => {
-    const server = await startWebServer({
-      token: TOKEN,
-      port: 0,
-      getSnapshot: async () => snap(),
-      capture: async () => '',
-      send: async () => {},
-    });
-    open.push(server);
-    expect((server.address() as AddressInfo).address).toBe('127.0.0.1');
+  it('known api path with the wrong method is 405 when authenticated', async () => {
+    h = await makeHarness();
+    const { cookie } = await h.login();
+    expect((await h.call('POST', '/api/jobs', { headers: { cookie } })).status).toBe(405);
+    expect((await h.call('GET', '/api/logout', { headers: { cookie } })).status).toBe(405);
+    expect((await h.call('GET', '/api/nothing', { headers: { cookie } })).status).toBe(404);
   });
 
   it('clientError responses carry the security headers', async () => {
-    const s = await start();
+    h = await makeHarness();
     const raw = await new Promise<string>((resolve, reject) => {
-      const c = net.connect(s.port, '127.0.0.1', () => c.write('GARBAGE\r\n\r\n'));
+      const c = net.connect(h!.port, '127.0.0.1', () => c.write('GARBAGE\r\n\r\n'));
       let buf = '';
       c.on('data', (d) => (buf += d));
       c.on('close', () => resolve(buf));
@@ -378,55 +140,87 @@ describe('fix round 1', () => {
     });
     expect(raw).toContain('400');
     expect(raw.toLowerCase()).toContain('content-security-policy');
+    expect(raw.toLowerCase()).toContain('x-frame-options: deny');
     expect(raw.toLowerCase()).toContain('x-content-type-options: nosniff');
   });
 });
 
-describe('final wave', () => {
-  it('status command is not allowed', async () => {
-    const s = await start();
-    const cookie = await s.login();
-    expect((await s.sendJson(cookie, '/status')).status).toBe(400);
-    expect(s.send).not.toHaveBeenCalled();
+describe('static files', () => {
+  it('loadStatic reads only allowlisted extensions once and maps index to /', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'web-static-'));
+    mkdirSync(join(dir, 'views'));
+    writeFileSync(join(dir, 'index.html'), '<html></html>');
+    writeFileSync(join(dir, 'app.js'), 'x');
+    writeFileSync(join(dir, 'style.css'), 'x');
+    writeFileSync(join(dir, 'views', 'jobs.js'), 'x');
+    writeFileSync(join(dir, 'secret.env'), 'TOKEN=1');
+    writeFileSync(join(dir, 'notes.json'), '{}');
+    const m = loadStatic(dir);
+    expect([...m.keys()].sort()).toEqual(['/', '/app.js', '/style.css', '/views/jobs.js']);
+    expect(m.get('/')!.type).toContain('text/html');
+    expect(m.get('/app.js')!.type).toContain('javascript');
+    expect(m.get('/style.css')!.type).toContain('text/css');
+    expect(loadStatic(join(dir, 'missing')).size).toBe(0);
   });
 
-  it('pane redacts the whole capture before slicing to 40 lines', async () => {
-    const secret = 'sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWX';
-    const lines = Array.from({ length: 80 }, (_, i) => 'row' + i);
-    // last 40 lines start at index 40; the secret straddles that cut
-    lines[39] = 'pre ' + secret.slice(0, 20);
-    lines[40] = secret.slice(20) + ' post';
-    const s = await start({ capture: async () => lines.join('\n') });
-    const cookie = await s.login();
-    const text = JSON.parse((await s.call('GET', '/api/pane', { headers: { cookie } })).body).text as string;
-    expect(text).not.toContain('QRSTUVWX');
-    expect(text).not.toContain('UVWX post');
-    expect(text.split('\n').length).toBe(40);
+  it('the shipped static files contain no innerHTML or inline handlers', () => {
+    const root = join(__dirname, '..', 'src', 'web', 'static');
+    const walk = (d: string): string[] =>
+      readdirSync(d).flatMap((n) => (statSync(join(d, n)).isDirectory() ? walk(join(d, n)) : [join(d, n)]));
+    for (const f of walk(root)) {
+      const text = readFileSync(f, 'utf8');
+      expect(text, f).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\(/);
+      expect(text, f).not.toMatch(/\son[a-z]+\s*=/i);
+    }
   });
+});
 
-  it('status json is redacted and still parses', async () => {
-    const s = await start({
-      secrets: ['supersecretvalue1'],
-      getSnapshot: async () =>
-        snap({ halts: [{ platform: 'p', reason: 'bad supersecretvalue1 WEB_TOKEN x', setAt: 't' }] }),
-    });
-    const cookie = await s.login();
-    const r = await s.call('GET', '/api/status', { headers: { cookie } });
-    expect(r.body).not.toContain('supersecretvalue1');
-    const j = JSON.parse(r.body);
-    expect(j.halts[0].reason).toContain('[redacted]');
-    expect(j.halts[0].platform).toBe('p');
+describe('readJson', () => {
+  const mk = (body: string, headers: Record<string, string>) => {
+    const r = Readable.from([Buffer.from(body)]) as unknown as IncomingMessage;
+    r.headers = headers;
+    return r;
+  };
+  it('parses json, 415 for another type, 413 over the cap, 400 for bad json', async () => {
+    expect(await readJson(mk('{"a":1}', { 'content-type': 'application/json' }), 100)).toEqual({ a: 1 });
+    await expect(readJson(mk('a=1', { 'content-type': 'text/plain' }), 100)).rejects.toMatchObject({ status: 415 });
+    await expect(readJson(mk('{"a":"' + 'x'.repeat(200) + '"}', { 'content-type': 'application/json' }), 100)).rejects.toMatchObject({ status: 413 });
+    await expect(readJson(mk('{', { 'content-type': 'application/json' }), 100)).rejects.toMatchObject({ status: 400 });
   });
 });
 
 describe('redactSecrets', () => {
-  it('replaces secret shapes and WEB_TOKEN lines', () => {
-    const out = redactSecrets('a ghp_abcdefghijklmnopqrstuvwx b\nWEB_TOKEN=1\nAKIAABCDEFGHIJKLMNOP');
+  it('replaces secret shapes and web secret lines', () => {
+    const out = redactSecrets('a ghp_abcdefghijklmnopqrstuvwx b\nWEB_OIDC_CLIENT_SECRET=1\nAKIAABCDEFGHIJKLMNOP');
     expect(out).toBe('a [redacted] b\n[redacted]\n[redacted]');
   });
   it('handles repeated matches (global regex state)', () => {
     const s = 'sk-abcdefghijklmnopqrstuv sk-abcdefghijklmnopqrstuv';
     expect(redactSecrets(s)).toBe('[redacted] [redacted]');
     expect(redactSecrets(s)).toBe('[redacted] [redacted]');
+  });
+  it('handles a long secret split across two lines', () => {
+    const out = redactSecrets('x sk-abcdefghijklmnop\nqrstuvwxyz0123 y');
+    expect(out).not.toContain('qrstuv');
+    expect(out).not.toContain('abcdefgh');
+  });
+  it('STATUS_COMMANDS is unchanged for Task 10', () => {
+    expect([...STATUS_COMMANDS]).toEqual(['limits', 'working', 'health']);
+  });
+});
+
+describe('pane redaction across the cut', () => {
+  it('redacts the whole capture before slicing to 40 lines', async () => {
+    h = await makeHarness();
+    const { cookie } = await h.login();
+    const secret = 'sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWX';
+    const lines = Array.from({ length: 80 }, (_, i) => 'row' + i);
+    lines[39] = 'pre ' + secret.slice(0, 20);
+    lines[40] = secret.slice(20) + ' post';
+    h.paneText.value = lines.join('\n');
+    const r = await h.call('GET', '/api/pane?window=JobApplier', { headers: { cookie } });
+    const text = JSON.parse(r.body).text as string;
+    expect(text).not.toContain('QRSTUVWX');
+    expect(text.split('\n').length).toBe(40);
   });
 });

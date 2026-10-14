@@ -1,5 +1,5 @@
 // src/platform/checks.ts
-import { join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Check, CheckResult, DoctorContext } from './doctor.js';
 import { parseEnv } from './envFile.js';
 import { hooksStatus, type HookSettings } from './ccgramHooks.js';
@@ -10,6 +10,8 @@ import { loadRegistry, resolveProfile, type ClassifierProfile, type ClassifierRe
 import { verifyProfile, type VerifyReport } from '../safety/modelFetch.js';
 import { SMOKE_BENIGN, SMOKE_INJECTION } from '../safety/smoke.js';
 import { loadProfiles } from './runner.js';
+import { authDbPathFromEnv, isLoopbackBind, validateRunnerConfig } from '../web/env.js';
+import { normaliseEmail } from '../dash/account.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
 const warn = (detail: string, fix?: string): CheckResult => ({ status: 'warn', detail, fix });
@@ -20,6 +22,10 @@ const settingsPath = (ctx: DoctorContext): string => join(ctx.root, '.claude', '
 
 function readEnv(ctx: DoctorContext): Record<string, string> | null {
   return ctx.fs.exists(envPath(ctx)) ? parseEnv(ctx.fs.read(envPath(ctx))) : null;
+}
+
+function mergedEnv(ctx: DoctorContext): Record<string, string | undefined> {
+  return { ...(readEnv(ctx) ?? {}), ...ctx.env }; // process env over .env, like the runner
 }
 
 type Pin = { ok: true; version: string; installed?: boolean } | { ok: false; problem: string };
@@ -412,13 +418,76 @@ export const ccgramChecks: Check[] = [
   },
   {
     id: 'web',
-    title: 'status web page token',
+    title: 'dashboard web server config',
     async run(ctx) {
-      const token = ctx.env.WEB_TOKEN ?? (readEnv(ctx) ?? {}).WEB_TOKEN ?? ''; // process env over .env, like scripts/web.ts
-      if (token === '') return pass('WEB_TOKEN is unset: web page is off');
-      return token.length < 24
-        ? fail('WEB_TOKEN is shorter than 24 characters', 'generate one with openssl rand -hex 24')
-        : pass('WEB_TOKEN is set');
+      const r = validateRunnerConfig(mergedEnv(ctx), { accountStored: true });
+      if (r.ok) return pass('port, bind and host values are valid');
+      const problems = r.errors.filter((e) => e.scope === 'web').map((e) => e.message);
+      return problems.length ? fail(problems.join('; '), 'fix the WEB_* values in .env') : pass('port, bind and host values are valid');
+    },
+  },
+  {
+    id: 'dashboard-login',
+    title: 'dashboard login',
+    async run(ctx) {
+      const env = mergedEnv(ctx);
+      const authRel = authDbPathFromEnv(env);
+      const authPath = isAbsolute(authRel) ? authRel : join(ctx.root, authRel);
+      const dirPath = dirname(authPath);
+      const authExists = ctx.fs.exists(authPath);
+      const configured =
+        authExists ||
+        ['WEB_OIDC_CLIENT_ID', 'WEB_OIDC_CLIENT_SECRET', 'WEB_OIDC_REDIRECT_URI', 'DASHBOARD_ALLOWED_EMAIL'].some(
+          (k) => (env[k] ?? '').trim() !== '',
+        );
+      if (!configured) return pass('dashboard login is not configured (off)');
+
+      const fails: string[] = [];
+      const targets: (readonly [string, string])[] = [['auth file', authPath]];
+      if (resolve(dirPath) !== resolve(ctx.root)) targets.unshift(['directory', dirPath]); // bare name: the repo root is not ours to police
+      for (const [label, path] of targets) {
+        const mode = ctx.fs.exists(path) ? ctx.fs.mode(path) : null;
+        if (mode !== null && (mode & 0o077) !== 0) fails.push(`dashboard ${label} is accessible to group or others`);
+      }
+      const cfg = validateRunnerConfig(env, { accountStored: true });
+      if (!cfg.ok) for (const e of cfg.errors) if (e.scope === 'oidc') fails.push(e.message);
+      if (fails.length) {
+        return fail(fails.join('; '), 'chmod 700 the .dashboard directory, chmod 600 auth.sqlite, and fix the WEB_OIDC_* values in .env');
+      }
+
+      const warns: string[] = [];
+      let fix: string | undefined;
+      const acct = authExists && ctx.authAccount ? ctx.authAccount(authPath) : null;
+      if (!acct) {
+        warns.push('no allowed account is stored');
+        fix = 'run npm run dashboard -- allow <email>';
+      } else {
+        if (!acct.pinned) {
+          warns.push('account is not pinned yet');
+          fix = 'the first sign-in pins the account; do it now';
+        }
+        const wanted = normaliseEmail(env.DASHBOARD_ALLOWED_EMAIL ?? '');
+        if (wanted !== null && wanted !== acct.email) {
+          warns.push('stored account differs from DASHBOARD_ALLOWED_EMAIL');
+          fix = fix ?? 'run npm run dashboard -- allow <email> to change the account, or fix DASHBOARD_ALLOWED_EMAIL';
+        }
+      }
+      const bind = (env.WEB_BIND ?? '').trim() || '127.0.0.1';
+      if (!isLoopbackBind(bind)) warns.push('WEB_BIND is not a loopback address');
+      if ((env.WEB_TRUST_PROXY ?? '').trim().toLowerCase() === 'true' && (env.WEB_ALLOWED_HOSTS ?? '').trim() === '') {
+        warns.push('WEB_TRUST_PROXY=true without WEB_ALLOWED_HOSTS');
+      }
+      if ((env.WEB_CHAT_ENABLED ?? '').trim().toLowerCase() === 'true') {
+        let set: string = 'unknown';
+        const setsP = join(ctx.root, 'config', 'permission-sets.json');
+        if (ctx.fs.exists(settingsPath(ctx)) && ctx.fs.exists(setsP)) {
+          const st = parseJson(ctx.fs.read(settingsPath(ctx)));
+          const ss = parseJson(ctx.fs.read(setsP));
+          if (st.ok && ss.ok) set = detectSet(st.value as LocalSettings, ss.value as RawSets);
+        }
+        if (set !== 'read_only') warns.push('WEB_CHAT_ENABLED=true while the permission set is not read_only');
+      }
+      return warns.length ? warn(warns.join('; '), fix) : pass('account pinned, files private, config valid');
     },
   },
 ];

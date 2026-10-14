@@ -5,10 +5,11 @@ import { createRequire } from 'node:module';
 import { ccgramChecks, restrictedChecks } from '../src/platform/checks.js';
 import { setupChecks } from '../src/platform/checksSetup.js';
 import { exitCode, formatReport, runChecks, type DoctorContext } from '../src/platform/doctor.js';
+import BetterSqlite3 from 'better-sqlite3';
 import { defaultRun } from '../src/platform/tmux.js';
 
 interface SqliteDb {
-  prepare(sql: string): { all(): unknown[] };
+  prepare(sql: string): { all(): unknown[]; get(): unknown };
   close(): void;
 }
 type SqliteCtor = new (path: string, opts: { readonly: boolean; fileMustExist: boolean }) => SqliteDb;
@@ -35,6 +36,22 @@ const ctx: DoctorContext = {
       try {
         const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[];
         return rows.map((r) => r.name);
+      } finally {
+        db.close();
+      }
+    } catch {
+      return null;
+    }
+  },
+  authAccount: (p) => {
+    try {
+      const Database = createRequire(import.meta.url)('better-sqlite3') as SqliteCtor;
+      const db = new Database(p, { readonly: true, fileMustExist: true });
+      try {
+        const r = db.prepare('SELECT email, sub FROM allowed_account WHERE id = 1').get() as
+          | { email: string; sub: string | null }
+          | undefined;
+        return r ? { email: r.email, pinned: r.sub !== null } : null;
       } finally {
         db.close();
       }
