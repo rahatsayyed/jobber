@@ -145,6 +145,7 @@ export interface LoadedClassifier {
   classifier: InjectionClassifier;
   inputNames: string[];
   outputName: string;
+  tokenizer: TokenizerLike;
 }
 
 export async function loadClassifier(
@@ -181,7 +182,7 @@ export async function loadClassifier(
     return Array.from(out[outputName].data);
   };
 
-  return { classifier: createClassifier({ tokenizer, run, config }), inputNames: session.inputNames, outputName };
+  return { classifier: createClassifier({ tokenizer, run, config }), inputNames: session.inputNames, outputName, tokenizer };
 }
 
 let singleton: Promise<InjectionClassifier> | null = null;

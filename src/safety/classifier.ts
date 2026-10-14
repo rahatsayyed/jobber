@@ -53,6 +53,14 @@ export function chunkIds(
     : { chunks, truncated: false };
 }
 
+// Nearest-rank percentile on a sorted copy; an empty input gives 0.
+export function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = Math.ceil((p / 100) * sorted.length);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))];
+}
+
 export function maliciousProbability(logits: number[], maliciousIndex: number): number {
   if (maliciousIndex < 0 || maliciousIndex >= logits.length) throw new Error('malicious index out of range');
   const max = Math.max(...logits);

@@ -5,9 +5,18 @@ import {
   createClassifier,
   DEFAULT_CLASSIFIER_CONFIG,
   maliciousProbability,
+  percentile,
   type ModelRunner,
   type TokenizerLike,
 } from '../src/safety/classifier.js';
+
+describe('percentile', () => {
+  it('uses nearest rank', () => {
+    expect(percentile([5, 1, 3, 2, 4], 50)).toBe(3);
+    expect(percentile([1, 2, 3, 4], 100)).toBe(4);
+    expect(percentile([], 50)).toBe(0);
+  });
+});
 
 const EVIL = 999;
 // word "EVIL" -> token 999, every other word -> token 7
