@@ -281,6 +281,50 @@ describe('redirects and headers', () => {
   });
 });
 
+describe('up-front refusal and timeouts', () => {
+  it('refuses an unpinned file before any request', async () => {
+    const p = mkProfile();
+    const { deps, calls } = serveAll(p);
+    const f = { ...p.files[0], sha256: null, git_blob_sha1: null };
+    await expect(downloadFile(p, f, root, deps)).rejects.toThrow(new RegExp(f.local));
+    expect(calls.length).toBe(0);
+    const q = { ...p, files: [f, ...p.files.slice(1)] };
+    await expect(fetchProfile(q, root, deps)).rejects.toThrow();
+    expect(calls.length).toBe(0);
+  });
+  it('rejects an unsafe local name before any request', async () => {
+    const p = mkProfile();
+    const { deps, calls } = serveAll(p);
+    for (const local of ['..' + '/evil', 'a/b']) {
+      await expect(downloadFile(p, { ...p.files[0], local }, root, deps)).rejects.toThrow();
+    }
+    expect(calls.length).toBe(0);
+  });
+  it('timeout covers headers only: slow body completes, silent fetch times out', async () => {
+    const p = mkProfile();
+    const slow: FetchDeps = {
+      log: () => {},
+      timeoutMs: 20,
+      fetch: async () => ({
+        status: 200,
+        headers: { get: () => null },
+        body: (async function* () {
+          await new Promise((r) => setTimeout(r, 60));
+          yield MODEL;
+        })(),
+      }),
+    };
+    expect((await downloadFile(p, p.files[0], root, slow)).sha256).toBe(sha256(MODEL));
+    const silent: FetchDeps = {
+      log: () => {},
+      timeoutMs: 20,
+      fetch: (_u, init) =>
+        new Promise((_res, rej) => init.signal?.addEventListener('abort', () => rej(new Error('aborted')))),
+    };
+    await expect(downloadFile(p, p.files[2], root, silent)).rejects.toThrow();
+  });
+});
+
 describe('fetchProfile, verify, pin, list', () => {
   it('is idempotent and re-downloads a corrupted file; sha1-pinned file works', async () => {
     const p = mkProfile();

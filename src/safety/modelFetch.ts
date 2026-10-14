@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { chmod, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { sha256File } from './classifierModel.js';
+import { safeFile, sha256File } from './classifierModel.js';
 import {
   isFullyPinned,
   modelDir,
@@ -119,14 +119,23 @@ async function request(url: string, headers: Record<string, string>, deps: Fetch
   let current = url;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), deps.timeoutMs ?? 60000);
-    const done = (): void => clearTimeout(timer);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        ac.abort();
+        reject(new Error('request timed out waiting for response headers'));
+      }, deps.timeoutMs ?? 60000);
+    });
+    // The timer covers time to response headers only; it is cleared once they arrive.
+    const done = (): void => {};
     let res: FetchResponseLike;
     try {
-      res = await deps.fetch(current, { headers: { ...headers }, redirect: 'manual', signal: ac.signal });
-    } catch (e) {
-      done();
-      throw e;
+      res = await Promise.race([
+        deps.fetch(current, { headers: { ...headers }, redirect: 'manual', signal: ac.signal }),
+        timeout,
+      ]);
+    } finally {
+      clearTimeout(timer);
     }
     if ([301, 302, 303, 307, 308].includes(res.status)) {
       done();
@@ -157,6 +166,10 @@ export async function downloadFile(
   deps: FetchDeps,
 ): Promise<DownloadResult> {
   guard(p);
+  if (!safeFile(f.local)) throw new Error(`${f.local}: invalid local file name`);
+  if (!f.sha256 && !f.git_blob_sha1) {
+    throw new Error(`${f.local}: no sha256 or git_blob_sha1 pinned, refusing to download`);
+  }
   if (!Number.isInteger(f.size) || f.size <= 0 || f.size > MAX_SIZE) {
     throw new Error(`${f.local}: size must be a positive integer of at most 2 GiB`);
   }
@@ -268,6 +281,12 @@ export interface FetchSummary {
 
 export async function fetchProfile(p: ClassifierProfile, root: string, deps: FetchDeps): Promise<FetchSummary> {
   guard(p);
+  for (const f of p.files) {
+    if (!safeFile(f.local)) throw new Error(`${f.local}: invalid local file name`);
+    if (!f.sha256 && !f.git_blob_sha1) {
+      throw new Error(`${f.local}: no sha256 or git_blob_sha1 pinned, refusing to download`);
+    }
+  }
   const ordered = [...p.files.filter((f) => f.role !== 'model'), ...p.files.filter((f) => f.role === 'model')];
   const files: DownloadResult[] = [];
   const observed: Record<string, string> = {};
