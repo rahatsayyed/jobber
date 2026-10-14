@@ -29,7 +29,7 @@ describe('classifyInbound escalation triggers', () => {
   ];
   for (const [name, text] of cases) {
     it(`escalates: ${name}`, () => {
-      const v = classifyInbound(text);
+      const v = classifyInbound(text, { alreadyRepliedThisThread: false, threadAgeDays: 1 });
       expect(v.escalate).toBe(true);
       expect(v.mayAutoReply).toBe(false);
       expect(v.reasons.length).toBeGreaterThan(0);
@@ -37,18 +37,43 @@ describe('classifyInbound escalation triggers', () => {
   }
 });
 
+const OK = { alreadyRepliedThisThread: false, threadAgeDays: 1 };
 describe('classifyInbound classes', () => {
+  it('unknown thread state never auto replies', () => {
+    const t = 'Are you interested in a React role at Acme?';
+    expect(classifyInbound(t).mayAutoReply).toBe(false);
+    expect(classifyInbound(t, { alreadyRepliedThisThread: false }).mayAutoReply).toBe(false);
+    expect(classifyInbound(t, { threadAgeDays: 1 }).mayAutoReply).toBe(false);
+  });
+  const scripts: Array<[string, string]> = [
+    ['tamil', 'வணக்கம், நீங்கள் ஆர்வமாக உள்ளீர்களா'],
+    ['telugu', 'నమస్కారం మీకు ఆసక్తి ఉందా'],
+    ['bengali', 'নমস্কার আপনি কি আগ্রহী'],
+    ['cyrillic', 'Здравствуйте вы заинтересованы'],
+    ['cjk', '你好 你有兴趣吗'],
+  ];
+  for (const [n, t] of scripts) {
+    it(`escalates ${n}`, () => {
+      const v = classifyInbound(t, OK);
+      expect(v.reasons).toContain('unclassified_non_latin');
+      expect(v.mayAutoReply).toBe(false);
+    });
+  }
+  it('accented latin is not non-latin', () => {
+    const v = classifyInbound('Hola José, are you interested in a role? Señor', OK);
+    expect(v.reasons).not.toContain('unclassified_non_latin');
+  });
   it('plain inquiry may auto reply', () => {
-    const v = classifyInbound('Are you interested in a React role at Acme?');
+    const v = classifyInbound('Are you interested in a React role at Acme?', OK);
     expect(v).toMatchObject({ klass: 'recruiter_inquiry', escalate: false, mayAutoReply: true });
   });
   it('already replied blocks auto reply', () => {
-    const v = classifyInbound('Are you interested in a React role at Acme?', { alreadyRepliedThisThread: true });
+    const v = classifyInbound('Are you interested in a React role at Acme?', { alreadyRepliedThisThread: true, threadAgeDays: 1 });
     expect(v.mayAutoReply).toBe(false);
   });
   it('old thread blocks auto reply', () => {
-    expect(classifyInbound('Are you interested in a React role at Acme?', { threadAgeDays: 15 }).mayAutoReply).toBe(false);
-    expect(classifyInbound('Are you interested in a React role at Acme?', { threadAgeDays: 14 }).mayAutoReply).toBe(true);
+    expect(classifyInbound('Are you interested in a React role at Acme?', { alreadyRepliedThisThread: false, threadAgeDays: 15 }).mayAutoReply).toBe(false);
+    expect(classifyInbound('Are you interested in a React role at Acme?', { alreadyRepliedThisThread: false, threadAgeDays: 14 }).mayAutoReply).toBe(true);
   });
   it('rejection never auto replies', () => {
     const v = classifyInbound('Unfortunately we are not moving forward with your profile.');

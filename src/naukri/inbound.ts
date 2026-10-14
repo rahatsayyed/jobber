@@ -18,7 +18,7 @@ const RULES: Array<[string, RegExp]> = [
   ['email_address', /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i],
 ];
 
-const NON_LATIN = /[ऀ-ॿ؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
+const NON_LATIN = /(?![\p{Script=Latin}])\p{L}/u;
 const TZ = /\b(ist|pst|pdt|est|edt|cst|gmt|utc|cet|gst|time\s*zones?)\b/i;
 const DATE_OR_TIME =
   /\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\b\d{1,2}:\d{2}\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}\b|\b(?:mon|tues?|wed(?:nes)?|thu(?:rs)?|fri|sat(?:ur)?|sun)(?:day)?\b|\btomorrow\b/i;
@@ -57,9 +57,9 @@ export function classifyInbound(
   else klass = 'reply';
 
   const escalate = reasons.length > 0;
-  const age = opts.threadAgeDays ?? 0;
+  const age = opts.threadAgeDays;
   const mayAutoReply =
     !escalate && (klass === 'recruiter_inquiry' || klass === 'reply') &&
-    opts.alreadyRepliedThisThread !== true && Number.isFinite(age) && age <= 14;
+    opts.alreadyRepliedThisThread === false && typeof age === 'number' && Number.isFinite(age) && age <= 14;
   return { klass, escalate, reasons, mayAutoReply };
 }

@@ -4,8 +4,8 @@ import { upsertPerson } from '../src/outreach/people.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { TUNING_DEFAULTS } from '../src/outreach/tuning.js';
 import { haltPlatform, haltReason, countSince } from '../src/outreach/limits.js';
-import { getState } from '../src/scheduler/runLog.js';
-import { naukriSendMessage, type SendDeps, type PageDriver } from '../src/naukri/actions.js';
+import { getState, setState } from '../src/scheduler/runLog.js';
+import { naukriSendMessage, naukriIdempotencyKey, type SendDeps, type PageDriver } from '../src/naukri/actions.js';
 
 type Db = ReturnType<typeof openDb>;
 const now = new Date('2026-10-14T10:00:00Z'); // 15:30 IST
@@ -42,6 +42,7 @@ const touches = () => db.prepare('SELECT * FROM touches').all() as any[];
 beforeEach(() => {
   db = openDb(':memory:');
   pid = upsertPerson(db, { platform: 'naukri', profileKey: 'naukri:pat-recruiter', name: 'Pat Recruiter', company: 'Acme', category: 'recruiter' });
+  setState(db, `naukri_thread_${pid}`, 'thread-1', now);
   calls = 0;
   driverRes = { confirmed: true, observedRecipient: 'Pat Recruiter' };
   driverThrows = false;
@@ -77,9 +78,46 @@ describe('naukriSendMessage', () => {
     const r = await naukriSendMessage(deps(), input(undefined, { kind: 'followup' }));
     expect(r).toMatchObject({ status: 'blocked', reasons: ['cadence_not_due'] });
   });
-  it('reply to inbound skips cadence', async () => {
-    const r = await naukriSendMessage(deps(), input(undefined, { kind: 'followup', replyToInbound: true }));
+  const inbound = (klass: string, escalated: number, at = '2026-10-14T09:00:00.000Z') =>
+    db.prepare(
+      `INSERT INTO inbound_messages (platform, thread_ref, person_id, text_hash, klass, escalated, created_at)
+       VALUES ('naukri', 'thread-1', ?, ?, ?, ?, ?)`,
+    ).run(pid, `h${klass}${escalated}${at}`, klass, escalated, at);
+  it('derived reply-to-inbound skips cadence', async () => {
+    inbound('recruiter_inquiry', 0);
+    const r = await naukriSendMessage(deps(), input(undefined, { kind: 'followup' }));
     expect(r.status).toBe('sent');
+  });
+  it('escalated inbound does not skip cadence', async () => {
+    inbound('recruiter_inquiry', 1);
+    const r = await naukriSendMessage(deps(), input(undefined, { kind: 'followup' }));
+    expect(r.reasons).toEqual(['cadence_not_due']);
+  });
+  it('unverified thread is blocked', async () => {
+    const r = await naukriSendMessage(deps(), input(undefined, { threadRef: 'other-thread' }));
+    expect(r).toMatchObject({ status: 'blocked', reasons: ['unverified_thread'] });
+    expect(calls).toBe(0);
+  });
+  it('inbound thread is accepted without confirmed state', async () => {
+    db.prepare("DELETE FROM scheduler_state WHERE key LIKE 'naukri_thread_%'").run();
+    expect((await naukriSendMessage(deps(), input())).reasons).toEqual(['unverified_thread']);
+    inbound('noise', 1);
+    expect((await naukriSendMessage(deps(), input())).status).toBe('sent');
+  });
+  it('verifyThread mismatch blocks before typing; company mismatch too', async () => {
+    const bad = { ...driver, verifyThread: async () => ({ recipient: 'Someone Else' }) };
+    expect((await naukriSendMessage(deps({ driver: bad }), input())).reasons).toEqual(['recipient_mismatch']);
+    const badCo = { ...driver, verifyThread: async () => ({ recipient: 'Pat Recruiter', company: 'Other Corp' }) };
+    expect((await naukriSendMessage(deps({ driver: badCo }), input())).reasons).toEqual(['recipient_mismatch']);
+    const good = { ...driver, verifyThread: async () => ({ recipient: 'Pat Recruiter', company: 'Acme Pvt Ltd' }) };
+    expect((await naukriSendMessage(deps({ driver: good }), input())).status).toBe('sent');
+    expect(calls).toBe(1);
+  });
+  it('bookkeeping failure still returns sent', async () => {
+    db.exec("CREATE TRIGGER nobook BEFORE UPDATE ON contact_state BEGIN SELECT RAISE(ABORT, 'x'); END");
+    const r = await naukriSendMessage(deps(), input());
+    expect(r.status).toBe('sent');
+    expect(touches()[0].status).toBe('sent');
   });
   it('paused contact blocks', async () => {
     db.prepare('UPDATE contact_state SET paused_reason = ? WHERE person_id = ?').run('manual', pid);
@@ -104,16 +142,25 @@ describe('naukriSendMessage', () => {
     const cfg = { ...loadOutreachConfig({}), quietStartHour: 0, quietEndHour: 0, naukriMaxMessagesPerDay: 0 };
     const r = await naukriSendMessage(deps({ cfg }), input());
     expect(r.status).toBe('rate_limited');
-    expect(touches()).toHaveLength(0);
+    expect(touches()).toHaveLength(1);
+    expect(touches()[0].status).toBe('refused');
     expect(calls).toBe(0);
+    const ok = await naukriSendMessage(deps(), input());
+    expect(ok.status).toBe('sent');
+    expect(touches()).toHaveLength(1);
   });
-  it('duplicate text same kind is blocked', async () => {
-    const first = await naukriSendMessage(deps(), input());
-    expect(first.status).toBe('sent');
-    const second = await naukriSendMessage(deps(), input(undefined, { replyToInbound: true }));
+  it('duplicate (in-flight same key) is blocked without consuming a ceiling unit', async () => {
+    const text = 'Hi Pat, happy to share more about my React work.';
+    const key = naukriIdempotencyKey(pid, 'role_ask', text);
+    db.prepare(
+      "INSERT INTO touches (person_id, kind, body, idempotency_key, status, created_at) VALUES (?, 'role_ask', ?, ?, 'unconfirmed', ?)",
+    ).run(pid, text, key, now.toISOString());
+    const before = countSince(db, 'naukri_message', new Date(0));
+    const second = await naukriSendMessage(deps(), input(text));
+    expect(countSince(db, 'naukri_message', new Date(0))).toBe(before);
     expect(second.status).toBe('blocked');
     expect(second.reasons).toContain('duplicate');
-    expect(calls).toBe(1);
+    expect(calls).toBe(0);
   });
   it('success records touch and contact_state', async () => {
     const r = await naukriSendMessage(deps(), input());
@@ -148,11 +195,12 @@ describe('naukriSendMessage', () => {
     expect((await naukriSendMessage(deps(), input('good one'))).status).toBe('sent');
     expect(getState(db, 'naukri_send_failures_run1')).toBe('0');
     driverRes = { confirmed: true, observedRecipient: 'Nobody' };
+    const later = new Date(now.getTime() + 4 * 24 * 3600 * 1000);
     for (let n = 0; n < 3; n++) {
-      await naukriSendMessage(deps(), input(`bad ${n}`, { replyToInbound: true }));
+      await naukriSendMessage(deps({ now: later }), input(`bad ${n}`, { kind: 'followup' }));
     }
     expect(haltReason(db, 'naukri')).not.toBeNull();
-    expect((await naukriSendMessage(deps(), input('after', { replyToInbound: true }))).status).toBe('halted');
+    expect((await naukriSendMessage(deps({ now: later }), input('after', { kind: 'followup' }))).status).toBe('halted');
   });
   it('driver throw is failed and unconfirmed', async () => {
     driverThrows = true;
