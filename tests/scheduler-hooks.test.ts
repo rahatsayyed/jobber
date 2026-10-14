@@ -12,7 +12,9 @@ const DAY = new Date('2026-10-15T08:00:00.000Z'); // 13:30 IST
 const QUIET = new Date('2026-10-14T21:00:00.000Z'); // 02:30 IST
 const ok: WakeResult = { runId: 'r1', status: 'ok', nextWakeAt: '2026-10-15T09:00:00.000Z' };
 
-function setup(o: { env?: NodeJS.ProcessEnv; files?: string[]; now?: Date; run?: HookRun } = {}) {
+function setup(
+  o: { env?: NodeJS.ProcessEnv; files?: string[]; now?: Date; run?: HookRun; scripts?: Record<string, string> | null } = {},
+) {
   const db = openDb(':memory:');
   const calls: Array<{ cmd: string; args: string[]; opts: HookRunOpts }> = [];
   const notices: Notice[] = [];
@@ -25,6 +27,7 @@ function setup(o: { env?: NodeJS.ProcessEnv; files?: string[]; now?: Date; run?:
     pacing: pacingFromConfig(loadOutreachConfig(env), loadTuning(env)),
     notifier: { notify: async (n) => void notices.push(n) },
     exists: (p) => files.has(p),
+    readScripts: () => (o.scripts === undefined ? { 'auto-update': 'x', backup: 'y' } : o.scripts),
     run: async (c, a, op) => {
       calls.push({ cmd: c, args: a, opts: op });
       return run(c, a, op);
@@ -51,7 +54,7 @@ describe('after-wake hooks', () => {
       ['npm', ['run', 'backup', '--', '--tick']],
     ]);
     expect(s.calls[0].opts.cwd).toBe('/proj');
-    expect(s.calls[0].opts.timeoutMs).toBe(600_000);
+    expect(s.calls[0].opts.timeoutMs).toBe(120_000);
     expect(Object.keys(s.calls[0].opts.env).sort()).toEqual(['AUTO_UPDATE', 'BACKUP_ENABLED', 'HOME', 'PATH', 'TZ']);
   });
 
@@ -68,6 +71,21 @@ describe('after-wake hooks', () => {
     const none = setup({ env: BOTH, files: [] });
     await none.hook(ok);
     expect(none.calls).toHaveLength(0);
+  });
+
+  it('needs both the script file and the package.json script', async () => {
+    const noScript = setup({ env: BOTH, files: FILES, scripts: { backup: 'y' } });
+    await noScript.hook(ok);
+    expect(noScript.calls.map((c) => c.args[1])).toEqual(['backup']); // auto-update: file yes, script no
+    const scriptOnly = setup({ env: BOTH, files: [], scripts: { 'auto-update': 'x', backup: 'y' } });
+    await scriptOnly.hook(ok);
+    expect(scriptOnly.calls).toHaveLength(0); // script yes, file no
+    const noPkg = setup({ env: BOTH, files: FILES, scripts: null });
+    await noPkg.hook(ok);
+    expect(noPkg.calls).toHaveLength(0);
+    const full = setup({ env: BOTH, files: FILES });
+    await full.hook(ok);
+    expect(full.calls).toHaveLength(2);
   });
 
   it('does nothing in quiet hours', async () => {
@@ -111,7 +129,7 @@ describe('after-wake hooks', () => {
   it('bounds the timeout env', async () => {
     const lo = setup({ env: { AUTO_UPDATE: 'true', SCHEDULER_HOOK_TIMEOUT_SEC: '5' }, files: FILES });
     await lo.hook(ok);
-    expect(lo.calls[0].opts.timeoutMs).toBe(600_000);
+    expect(lo.calls[0].opts.timeoutMs).toBe(120_000);
     const set = setup({ env: { AUTO_UPDATE: 'true', SCHEDULER_HOOK_TIMEOUT_SEC: '120' }, files: FILES });
     await set.hook(ok);
     expect(set.calls[0].opts.timeoutMs).toBe(120_000);

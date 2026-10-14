@@ -4,7 +4,7 @@
 // `run` lock itself (the updater does), so nothing here holds it. Errors are swallowed and
 // reported as a warn notice with a fixed title only.
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type BetterSqlite3 from 'better-sqlite3';
 import { inQuietHours, type PacingConfig } from '../outreach/pacing.js';
@@ -26,6 +26,8 @@ export interface HookDeps {
   notifier: Notifier;
   exists?: (path: string) => boolean;
   run?: HookRun;
+  // package.json scripts map, or null when unreadable. Default reads <projectRoot>/package.json.
+  readScripts?: () => Record<string, string> | null;
 }
 
 interface HookSpec { id: string; script: string; enableEnv: string; npmScript: string; stateKey: string }
@@ -35,7 +37,7 @@ const HOOKS: HookSpec[] = [
   { id: 'backup', script: 'scripts/backup.ts', enableEnv: 'BACKUP_ENABLED', npmScript: 'backup', stateKey: 'hook_backup_last_at' },
 ];
 
-const DEFAULT_TIMEOUT_SEC = 600;
+const DEFAULT_TIMEOUT_SEC = 120;
 const DEFAULT_MIN_INTERVAL_MIN = 60;
 
 function boundedInt(v: string | undefined, lo: number, hi: number, fallback: number): number {
@@ -66,6 +68,18 @@ function hookEnv(env: NodeJS.ProcessEnv): Record<string, string> {
 export function makeAfterWakeHooks(deps: HookDeps): (r: WakeResult) => Promise<void> {
   const exists = deps.exists ?? existsSync;
   const run = deps.run ?? defaultHookRun;
+  const readScripts =
+    deps.readScripts ??
+    ((): Record<string, string> | null => {
+      try {
+        const pkg = JSON.parse(readFileSync(join(deps.projectRoot, 'package.json'), 'utf8')) as {
+          scripts?: Record<string, string>;
+        };
+        return pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : null;
+      } catch {
+        return null;
+      }
+    });
   return async (r: WakeResult): Promise<void> => {
     if (r.status === 'killed' || (r.status === 'skipped' && r.reason === 'killed')) return;
     const now = deps.now();
@@ -76,6 +90,8 @@ export function makeAfterWakeHooks(deps: HookDeps): (r: WakeResult) => Promise<v
       try {
         if (deps.env[h.enableEnv] !== 'true') continue;
         if (!exists(join(deps.projectRoot, h.script))) continue;
+        const scripts = readScripts();
+        if (!scripts || typeof scripts[h.npmScript] !== 'string') continue;
         const last = getState(deps.db, h.stateKey);
         const lastMs = last ? Date.parse(last) : NaN;
         if (Number.isFinite(lastMs) && now.getTime() - lastMs < minMs) continue;
