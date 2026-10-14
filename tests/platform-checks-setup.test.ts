@@ -165,6 +165,12 @@ describe('env-limits', () => {
     expect(r.detail).toContain('MAX_APPLIES_PER_DAY');
     expect(r.detail).not.toContain('secret note');
   });
+  it('process env wins over .env', async () => {
+    const bad = makeCtx({ files: { [`${R}/.env`]: { text: 'MATCH_THRESHOLD=500\n' } }, env: { MATCH_THRESHOLD: '60' } });
+    expect((await one('env-limits', bad)).status).toBe('pass');
+    const bad2 = makeCtx({ files: { [`${R}/.env`]: { text: 'MATCH_THRESHOLD=60\n' } }, env: { MATCH_THRESHOLD: '500' } });
+    expect((await one('env-limits', bad2)).status).toBe('fail');
+  });
   it('quoted value is read like the loaders do', async () => {
     expect((await one('env-limits', env('MATCH_THRESHOLD="60"\n'))).status).toBe('pass');
   });
@@ -286,14 +292,33 @@ describe('languages-confirmed and profile-valid', () => {
   it('profile missing warns', async () => {
     expect((await one('profile-valid', makeCtx())).status).toBe('warn');
   });
-  it('profile with bad floor fails', async () => {
-    expect((await one('profile-valid', prof({ salary_floors: { INR: 'lots' } }))).status).toBe('fail');
+  const GOOD = {
+    version: 1, roles: ['dev'], locations: ['India'], remote_ok: true, remote_anywhere: false,
+    salary: { INR: { floor: 1000000, target: 1500000 } }, notice_period_days: 30,
+    work_authorization: { india: true, other: 'unknown' }, languages: ['English'],
+  };
+  it('profile in the Task 11 shape passes', async () => {
+    expect((await one('profile-valid', prof(GOOD))).status).toBe('pass');
   });
-  it('profile with negative floor fails', async () => {
-    expect((await one('profile-valid', prof({ salary_floors: { INR: -5 } }))).status).toBe('fail');
+  it('profile reports field paths only, never values', async () => {
+    const r = await one('profile-valid', prof({
+      ...GOOD, version: 2, salary: { INR: { floor: 5, target: 1 }, rupee: { floor: 1, target: 2 } },
+      notice_period_days: 'sk-planted-secret', work_authorization: { india: 'yes', other: 'maybe' },
+    }));
+    expect(r.status).toBe('fail');
+    for (const f of ['version', 'salary.INR', 'notice_period_days', 'work_authorization.india', 'work_authorization.other']) {
+      expect(r.detail).toContain(f);
+    }
+    expect(r.detail).not.toContain('sk-planted-secret');
+    expect(r.detail).not.toContain('rupee');
   });
-  it('profile with numeric floor passes', async () => {
-    expect((await one('profile-valid', prof({ salary_floors: { INR: 1500000 } }))).status).toBe('pass');
+  it('old salary_floors shape fails', async () => {
+    expect((await one('profile-valid', prof({ salary_floors: { INR: 1500000 } }))).status).toBe('fail');
+  });
+  it('bad languages and non-array roles fail', async () => {
+    const r = await one('profile-valid', prof({ ...GOOD, roles: 'dev', languages: [1] }));
+    expect(r.detail).toContain('roles');
+    expect(r.detail).toContain('languages');
   });
 });
 
