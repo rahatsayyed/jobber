@@ -60,7 +60,9 @@ export function redirectUriProblem(raw: string): string | null {
 export const dashboardStep: SetupStep = {
   id: 'dashboard',
   title: 'Dashboard hand-off',
-  checkIds: ['web', 'dashboard-login'],
+  // No checkIds on purpose: `web` passes with WEB_TOKEN unset and `dashboard-login` is a skip
+  // placeholder until plan 7C, so a check gate would mark this step done on a fresh machine.
+  checkIds: [],
   async run(ctx) {
     const { io, root } = ctx;
 

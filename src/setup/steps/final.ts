@@ -10,6 +10,7 @@ export const finalStep: SetupStep = {
   id: 'final',
   title: 'Final doctor run',
   checkIds: [],
+  always: true,
   async run(ctx) {
     const { io } = ctx;
     const results = await runChecks([...ccgramChecks, ...restrictedChecks(), ...setupChecks], ctx.doctor);

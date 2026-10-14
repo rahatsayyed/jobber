@@ -38,6 +38,8 @@ export interface SetupStep {
   id: string;
   title: string;
   checkIds: string[];
+  /** Runs every time: no pre-check, no "already done", never recorded in state or the totals. */
+  always?: boolean;
   run(ctx: SetupContext): Promise<'done' | 'skipped'>;
 }
 
@@ -89,7 +91,8 @@ export async function runSetup(
 
     // A step with no checkIds is gated only by state "done". One that returned 'skipped' is
     // recorded skipped, which does not gate, so it is asked again on the next run.
-    if (!opts.redo && unknown.length === 0) {
+    const always = step.always === true;
+    if (!opts.redo && !always && unknown.length === 0) {
       if (checks.length > 0) {
         const pre = await runChecks(checks, ctx.doctor);
         if (!pre.some((r) => r.result.status === 'fail' || r.result.status === 'warn')) {
@@ -137,7 +140,7 @@ export async function runSetup(
 
     if (outcome === 'failed') {
       failed++;
-    } else {
+    } else if (!always) {
       record(ctx, step.id, outcome);
       if (outcome === 'done') done++;
       else skipped++;

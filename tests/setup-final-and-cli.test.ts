@@ -1,7 +1,7 @@
 // tests/setup-final-and-cli.test.ts
 import { describe, expect, it } from 'vitest';
 import type { DoctorContext } from '../src/platform/doctor.js';
-import { needTty, parseArgs } from '../src/setup/cli.js';
+import { childEnv, ensureEnvFile, needTty, parseArgs } from '../src/setup/cli.js';
 import { redactingIO, scriptedIO, type ScriptItem } from '../src/setup/io.js';
 import { runSetup, type SetupContext, type SetupFs, type SetupStep } from '../src/setup/runner.js';
 import { loadState } from '../src/setup/state.js';
@@ -190,6 +190,40 @@ describe('ALL_STEPS and runner wiring', () => {
   });
 });
 
+describe('runner with real steps', () => {
+  it('dashboard step runs on a fresh state', async () => {
+    const { ctx, sio } = makeCtx([]);
+    const code = await runSetup([dashboardStep], ctx, { checks: [] });
+    expect(code).toBe(0);
+    expect(sio.transcript.join('\n')).toContain('skipped until installed (plan 7C)');
+    expect(ctx.state.steps.dashboard?.status).toBe('skipped');
+  });
+  it('an always step runs every time and is not recorded', async () => {
+    let n = 0;
+    const st: SetupStep = { id: 'f', title: 'f', checkIds: [], always: true, run: async () => (n++, 'done') };
+    const { ctx, sio } = makeCtx([]);
+    ctx.state.steps.f = { status: 'done', at: 'x' };
+    await runSetup([st], ctx, { checks: [] });
+    await runSetup([st], ctx, { checks: [] });
+    expect(n).toBe(2);
+    expect(sio.transcript.join('\n')).toContain('0 done, 0 skipped, 0 failed');
+    expect(ctx.state.steps.f?.at).toBe('x');
+  });
+  it('an always step that throws follows the retry path', async () => {
+    let n = 0;
+    const st: SetupStep = {
+      id: 'f', title: 'f', checkIds: [], always: true,
+      run: async () => {
+        if (n++ === 0) throw new Error('boom');
+        return 'done';
+      },
+    };
+    const { ctx } = makeCtx([{ confirm: true }]);
+    expect(await runSetup([st], ctx, { checks: [] })).toBe(0);
+    expect(n).toBe(2);
+  });
+});
+
 describe('cli helpers', () => {
   it('parseArgs', () => {
     expect(parseArgs([])).toEqual({ redo: false, list: false, help: false });
@@ -203,5 +237,23 @@ describe('cli helpers', () => {
     expect(needTty(true)).toBe(false);
     expect(needTty(false)).toBe(true);
     expect(needTty(undefined)).toBe(true);
+    expect(needTty(true, false)).toBe(true);
+    expect(needTty(true, true)).toBe(false);
+  });
+  it('childEnv keeps the allowlist and drops secrets', () => {
+    const e = childEnv(
+      { PATH: '/bin', HTTPS_PROXY: 'p', TELEGRAM_BOT_TOKEN: 'x', GMAIL_CLIENT_SECRET: 'y' },
+      { EXTRA: '1' },
+    );
+    expect(e).toEqual({ PATH: '/bin', HTTPS_PROXY: 'p', EXTRA: '1' });
+  });
+  it('ensureEnvFile creates .env mode 600 and never creates directories', () => {
+    const fs = memFs({ 'p/.env.example': 'A=1\n' });
+    let mk = 0;
+    fs.mkdirp = () => void mk++;
+    expect(ensureEnvFile(fs, 'p/.env', 'p/.env.example', () => new Date())).toBe(true);
+    expect(fs.modes.get('p/.env')).toBe(0o600);
+    expect(mk).toBe(0);
+    expect(ensureEnvFile(fs, 'p/.env', 'p/.env.example', () => new Date())).toBe(false);
   });
 });

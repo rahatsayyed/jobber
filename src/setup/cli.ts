@@ -1,5 +1,6 @@
 // src/setup/cli.ts
 // Pure helpers for scripts/setup.ts so they can be unit-tested without running the process.
+import { writeEnvFile, type EnvFs } from './envWriter.js';
 
 export interface SetupArgs {
   step?: string;
@@ -29,8 +30,37 @@ export function parseArgs(argv: string[]): SetupArgs {
 }
 
 /** True when the wizard must refuse to start (stdin is not a terminal). */
-export function needTty(isTTY: boolean | undefined): boolean {
-  return isTTY !== true;
+export function needTty(stdinTTY: boolean | undefined, stdoutTTY: boolean | undefined = true): boolean {
+  return stdinTTY !== true || stdoutTTY !== true;
+}
+
+const CHILD_ENV_KEYS = [
+  'PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'USER', 'TMPDIR', 'SHELL',
+  'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR',
+  'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
+  'SSL_CERT_FILE', 'NODE_EXTRA_CA_CERTS',
+];
+
+// Minimal child environment: an allowlist of the parent env merged with explicit extras.
+export function childEnv(env: NodeJS.ProcessEnv, extra?: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const k of CHILD_ENV_KEYS) {
+    const v = env[k];
+    if (v !== undefined) out[k] = v;
+  }
+  return Object.assign(out, extra ?? {});
+}
+
+// Creates .env from .env.example (mode 600, atomic) when missing. Never touches directories.
+export function ensureEnvFile(
+  fs: EnvFs,
+  envPath: string,
+  examplePath: string,
+  now: () => Date,
+): boolean {
+  if (fs.exists(envPath) || !fs.exists(examplePath)) return false;
+  writeEnvFile(envPath, fs.read(examplePath), fs, now);
+  return true;
 }
 
 export const USAGE = `Usage: npm run setup -- [--step <id>] [--redo] [--list] [--help]

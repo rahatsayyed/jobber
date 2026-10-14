@@ -10,15 +10,15 @@ import {
   readFileSync,
   statSync,
 } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { ccgramChecks, restrictedChecks } from '../src/platform/checks.js';
 import { setupChecks } from '../src/platform/checksSetup.js';
 import type { DoctorContext } from '../src/platform/doctor.js';
 import { defaultRun } from '../src/platform/tmux.js';
 import { userDataDir } from '../src/lib/userData.js';
-import { nodeEnvFs, writeEnvFile } from '../src/setup/envWriter.js';
-import { NO_TTY_MESSAGE, USAGE, needTty, parseArgs } from '../src/setup/cli.js';
+import { nodeEnvFs } from '../src/setup/envWriter.js';
+import { NO_TTY_MESSAGE, USAGE, childEnv, ensureEnvFile, needTty, parseArgs } from '../src/setup/cli.js';
 import { redactingIO, ttyIO } from '../src/setup/io.js';
 import { runSetup, type SetupContext, type SetupFs } from '../src/setup/runner.js';
 import { loadState } from '../src/setup/state.js';
@@ -38,7 +38,7 @@ if (args.list) {
   for (const s of ALL_STEPS) console.log(s.id);
   process.exit(0);
 }
-if (needTty(process.stdin.isTTY)) {
+if (needTty(process.stdin.isTTY, process.stdout.isTTY)) {
   console.error(NO_TTY_MESSAGE);
   process.exit(2);
 }
@@ -59,21 +59,13 @@ const fs: SetupFs = {
   list: (p) => (existsSync(p) ? readdirSync(p) : []),
 };
 
-// Minimal child environment: never the full process.env.
-const CHILD_ENV_KEYS = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'USER', 'TMPDIR', 'SHELL'];
 function spawnInteractive(
   cmd: string,
   argv: string[],
   opts?: { env?: Record<string, string> },
 ): Promise<number> {
-  const childEnv: Record<string, string> = {};
-  for (const k of CHILD_ENV_KEYS) {
-    const v = env[k];
-    if (v !== undefined) childEnv[k] = v;
-  }
-  Object.assign(childEnv, opts?.env ?? {});
   return new Promise((done) => {
-    const child = spawn(cmd, argv, { cwd: root, env: childEnv, stdio: 'inherit' });
+    const child = spawn(cmd, argv, { cwd: root, env: childEnv(env, opts?.env), stdio: 'inherit' });
     child.on('error', () => done(127));
     child.on('close', (code) => done(code ?? 1));
   });
@@ -124,10 +116,7 @@ fs.mkdirp(dataDir, 0o700);
 
 const envPath = join(root, '.env');
 const examplePath = join(root, '.env.example');
-if (!fs.exists(envPath) && fs.exists(examplePath)) {
-  fs.mkdirp(dirname(envPath), 0o755);
-  writeEnvFile(envPath, fs.read(examplePath), fs, now);
-}
+ensureEnvFile(fs, envPath, examplePath, now);
 
 const tty = ttyIO(process.stdin, process.stdout);
 const statePath = join(dataDir, '.setup-state.json');
