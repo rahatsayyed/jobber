@@ -50,7 +50,7 @@ function dotEnv(ctx: DoctorContext): Record<string, string> {
   return t === null ? {} : parseEnv(t);
 }
 
-function dbFile(ctx: DoctorContext): string {
+export function dbFile(ctx: DoctorContext): string {
   const v = { ...dotEnv(ctx), ...ctx.env }.JOBAPPLIER_DB;
   const p = v && v.trim() ? v.trim() : 'data.sqlite'; // mirrors src/dbPath.ts
   return isAbsolute(p) ? p : join(ctx.root, p);
@@ -62,6 +62,19 @@ function dbFile(ctx: DoctorContext): string {
  */
 export function profileProblems(p: unknown): string[] {
   return validateProfile(p);
+}
+
+// The database file and its -wal / -shm sidecars that exist and are readable by group or others.
+// Only modes are looked at; the files are never opened.
+export function looseDbFiles(ctx: DoctorContext): string[] {
+  const file = dbFile(ctx);
+  const out: string[] = [];
+  for (const f of [file, `${file}-wal`, `${file}-shm`]) {
+    if (!ctx.fs.exists(f)) continue;
+    const mode = ctx.fs.mode(f);
+    if (mode === null || (mode & 0o077) !== 0) out.push(f);
+  }
+  return out;
 }
 
 const SERVED = ['user-data', 'docs', 'renderer', 'reports', 'public'];
@@ -150,6 +163,17 @@ export const setupToolingChecks: Check[] = [
       if (mode === null) return fail('database file mode could not be read', 'chmod 600 on the database file');
       if ((mode & 0o077) !== 0) {
         return fail(`database file mode is ${(mode & 0o777).toString(8)}, expected 600`, 'chmod 600 data.sqlite');
+      }
+      for (const suffix of ['-wal', '-shm']) {
+        const side = `${file}${suffix}`;
+        if (!ctx.fs.exists(side)) continue;
+        const m = ctx.fs.mode(side);
+        if (m === null || (m & 0o077) !== 0) {
+          return fail(
+            `database ${suffix.slice(1)} file mode is ${m === null ? 'unreadable' : (m & 0o777).toString(8)}, expected 600`,
+            `chmod 600 data.sqlite${suffix}`,
+          );
+        }
       }
       return pass('exists, mode 600');
     },
