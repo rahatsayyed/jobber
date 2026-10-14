@@ -13,10 +13,25 @@ const DEFAULT_MAX_CHARS = 6000;
 const FORMAT_CHARS =
   /[­͏؜ᅟᅠ឴឵᠎​-‏‪-‮⁠-⁤⁦-⁩ㅤ︀-️﻿]/g;
 const FORMAT_CHARS_TEST = new RegExp(FORMAT_CHARS.source);
-const HTML_COMMENT = /<!--[\s\S]*?-->/g;
-const HTML_COMMENT_TEST = /<!--[\s\S]*?-->/;
-const INSTRUCTION_TAG = /<\/?\s*(system|assistant|developer|instructions?|tool_?call|function_?call)\b[^>]*>/i;
-const ROLE_PREFIX = /^\s*(system|assistant|developer)\s*:/im;
+const INSTRUCTION_TAG = /<\/?\s*(system|assistant|developer|instructions?|tool_?call|function_?call)\b[^>]{0,200}>/i;
+const ROLE_PREFIX = /^[ \t]*(system|assistant|developer)[ \t]*:/im;
+
+// Linear-time comment stripping (no backtracking). An unterminated comment is left in place.
+function stripHtmlComments(input: string): { text: string; found: boolean } {
+  let out = '';
+  let pos = 0;
+  let found = false;
+  for (;;) {
+    const start = input.indexOf('<!--', pos);
+    if (start === -1) break;
+    const end = input.indexOf('-->', start + 4);
+    if (end === -1) break;
+    found = true;
+    out += input.slice(pos, start);
+    pos = end + 3;
+  }
+  return { text: found ? out + input.slice(pos) : input, found };
+}
 
 const OVERRIDE_PHRASES: RegExp[] = [
   /ignore (all |any |the )?(previous|prior|above|earlier) (instructions?|prompts?|messages?)/i,
@@ -42,11 +57,19 @@ const EXFIL_PHRASES: RegExp[] = [
 export function gateInput(raw: string, opts: { maxChars?: number } = {}): InputGateResult {
   const maxChars = opts.maxChars ?? DEFAULT_MAX_CHARS;
   const flags: string[] = [];
+  // Hard-cap the raw input before any regex runs (ReDoS / cost bound).
+  const ceiling = Math.max(maxChars * 4, 100000);
   let text = raw;
+  let rawTruncated = false;
+  if (text.length > ceiling) {
+    text = text.slice(0, ceiling);
+    rawTruncated = true;
+  }
 
-  if (HTML_COMMENT_TEST.test(text)) {
+  const stripped = stripHtmlComments(text);
+  if (stripped.found) {
     flags.push('html_comment');
-    text = text.replace(HTML_COMMENT, '');
+    text = stripped.text;
   }
 
   if (FORMAT_CHARS_TEST.test(text)) {
@@ -72,7 +95,7 @@ export function gateInput(raw: string, opts: { maxChars?: number } = {}): InputG
     blocked = true;
   }
 
-  if (text.length > maxChars) {
+  if (rawTruncated || text.length > maxChars) {
     flags.push('truncated');
     text = text.slice(0, maxChars);
   }
