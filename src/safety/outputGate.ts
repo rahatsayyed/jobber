@@ -25,10 +25,16 @@ const MAX_TEXT_CHARS = 20_000;
 const MAX_PAGE_WORDS = 50_000;
 
 // All quantifiers are bounded so hostile input cannot cause super-linear scanning.
-const URL_RE = /(?:https?:\/\/|www\.)[^\s)>\]]{1,2048}/gi;
+const URL_RES: RegExp[] = [
+  /(?:https?:\/\/|www\.)[^\s)>\]]{1,2048}/gi,
+  /\b[a-z][a-z0-9+.-]{1,20}:\/\/[^\s)>\]]{0,2048}/gi,
+  /\b(?:file|data|javascript|vbscript):[^\s)>\]]{0,2048}/gi,
+  // bare domain.tld/path (not preceded by a scheme, userinfo or another host char)
+  /(?<![\w./@:-])(?:[a-z0-9-]{1,63}\.){1,5}[a-z]{2,24}\/[^\s)>\]]{0,2048}/gi,
+];
 const EMAIL_RE = /[A-Z0-9._%+-]{1,64}@[A-Z0-9.-]{1,255}\.[A-Z]{2,24}/gi;
 const PATH_RES: RegExp[] = [
-  /(?:^|[\s("'])(?:~\/|\.\.?\/|\/(?:etc|home|users|var|usr|opt|tmp|root)\/)[\w.\-/]{0,200}/i,
+  /(?:^|[\s("':/])(?:~\/|\.\.?\/|\/(?:etc|home|users|var|usr|opt|tmp|root)\/)[\w.\-/]{0,200}/i,
   /\b[A-Za-z]:\\[\w\\.-]{1,200}/,
   /\bsecrets\//i,
   /\.env\b/i,
@@ -41,6 +47,29 @@ const SECRET_SHAPES: RegExp[] = [
   /\beyJ[A-Za-z0-9_-]{10,2000}\.[A-Za-z0-9_-]{10,2000}\.[A-Za-z0-9_-]{5,2000}/,
 ];
 const COPY_WINDOW_WORDS = 10;
+
+function parseUrl(raw: string): URL | null {
+  try {
+    const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(raw);
+    return new URL(hasScheme ? raw : 'https://' + raw);
+  } catch {
+    return null;
+  }
+}
+
+function urlAllowed(raw: string, allowed: URL[]): boolean {
+  const u = parseUrl(raw);
+  if (!u) return false;
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  if (u.username || u.password) return false;
+  const origin = u.origin.toLowerCase();
+  return allowed.some((a) => {
+    if (a.origin.toLowerCase() !== origin) return false;
+    const base = a.pathname.replace(/\/+$/, '');
+    if (base === '') return true;
+    return u.pathname === base || u.pathname.startsWith(base + '/');
+  });
+}
 
 const words = (s: string): string[] =>
   s
@@ -70,7 +99,7 @@ export function gateOutbound(text: string, ctx: OutboundContext): OutboundResult
   const reasons: string[] = [];
 
   if (ctx.recipientKey !== ctx.expectedRecipientKey) reasons.push('recipient_mismatch');
-  if (ctx.threadId !== undefined && ctx.threadId !== ctx.expectedThreadId) reasons.push('thread_mismatch');
+  if (ctx.expectedThreadId !== undefined && ctx.threadId !== ctx.expectedThreadId) reasons.push('thread_mismatch');
   if (ctx.factVerdict === 'block') reasons.push('fact_gate_block');
 
   if (text.length > MAX_TEXT_CHARS) {
@@ -79,9 +108,11 @@ export function gateOutbound(text: string, ctx: OutboundContext): OutboundResult
     return { ok: false, reasons };
   }
 
-  const allowedUrls = (ctx.allowedUrls ?? []).map((u) => u.toLowerCase());
-  const urls = text.match(URL_RE) ?? [];
-  if (urls.some((u) => !allowedUrls.some((a) => u.toLowerCase().startsWith(a)))) reasons.push('url_not_allowed');
+  const allowedUrls = (ctx.allowedUrls ?? [])
+    .map(parseUrl)
+    .filter((u): u is URL => u !== null && (u.protocol === 'http:' || u.protocol === 'https:'));
+  const urls = URL_RES.flatMap((re) => text.match(re) ?? []);
+  if (urls.some((u) => !urlAllowed(u, allowedUrls))) reasons.push('url_not_allowed');
 
   const allowedEmails = (ctx.allowedEmails ?? []).map((e) => e.toLowerCase());
   const emails = text.match(EMAIL_RE) ?? [];

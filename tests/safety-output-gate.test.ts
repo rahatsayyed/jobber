@@ -33,6 +33,35 @@ describe('gateOutbound', () => {
     expect(ok.ok).toBe(true);
   });
 
+  it('does not let allowlisted urls be bypassed by prefix tricks', () => {
+    const c = ctx({ allowedUrls: ['https://me.dev'] });
+    for (const bad of ['https://me.dev.evil.example/x', 'https://me.devil.com', 'https://me.dev@evil.example']) {
+      expect(gateOutbound(`${clean} ${bad}`, c).reasons).toContain('url_not_allowed');
+    }
+    expect(gateOutbound(`${clean} https://me.dev`, c).ok).toBe(true);
+    expect(gateOutbound(`${clean} https://me.dev/work`, c).ok).toBe(true);
+  });
+
+  it('enforces path boundaries on allowlist entries with a path', () => {
+    const c = ctx({ allowedUrls: ['https://me.dev/work'] });
+    expect(gateOutbound(`${clean} https://me.dev/work/a`, c).ok).toBe(true);
+    expect(gateOutbound(`${clean} https://me.dev/work`, c).ok).toBe(true);
+    expect(gateOutbound(`${clean} https://me.dev/workshop`, c).reasons).toContain('url_not_allowed');
+  });
+
+  it('blocks non-http schemes and bare domain paths', () => {
+    expect(gateOutbound(`${clean} ftp://evil.example/a`, ctx()).reasons).toContain('url_not_allowed');
+    const f = gateOutbound(`${clean} file:///etc/passwd`, ctx()).reasons;
+    expect(f).toContain('url_not_allowed');
+    expect(f).toContain('path_in_text');
+    expect(gateOutbound(`${clean} data:text/html;base64,AAAA`, ctx()).reasons).toContain('url_not_allowed');
+    expect(gateOutbound(`${clean} evil.example/payload`, ctx()).reasons).toContain('url_not_allowed');
+  });
+
+  it('blocks when expected thread is set but threadId is omitted', () => {
+    expect(gateOutbound(clean, ctx({ expectedThreadId: 't2' })).reasons).toContain('thread_mismatch');
+  });
+
   it('blocks file paths and .env mentions', () => {
     expect(gateOutbound(`${clean} /etc/passwd`, ctx()).reasons).toContain('path_in_text');
     expect(gateOutbound(`${clean} here is my .env`, ctx()).reasons).toContain('path_in_text');
