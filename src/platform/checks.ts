@@ -5,7 +5,10 @@ import { parseEnv } from './envFile.js';
 import { hooksStatus, type HookSettings } from './ccgramHooks.js';
 import { detectSet, type LocalSettings, type RawSets } from './permissions.js';
 import { hasSession } from './tmux.js';
-import { loadPin, verifyModelFiles, type ClassifierPin } from '../safety/classifierModel.js';
+import { loadClassifier } from '../safety/classifierModel.js';
+import { loadRegistry, resolveProfile, type ClassifierProfile, type ClassifierRegistry } from '../safety/classifierRegistry.js';
+import { verifyProfile, type VerifyReport } from '../safety/modelFetch.js';
+import { SMOKE_BENIGN, SMOKE_INJECTION } from '../safety/smoke.js';
 import { loadProfiles } from './runner.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -51,13 +54,25 @@ const TOKEN_SHAPE = /^\d{5,}:[A-Za-z0-9_-]{10,}$/;
 const SKIP_FLAG = /dangerously-skip-permissions|bypassPermissions/;
 
 export interface RestrictedDeps {
-  loadPin(path: string): ClassifierPin;
-  verify(dir: string, pin: ClassifierPin): Promise<{ ok: boolean; problems: string[] }>;
+  loadRegistry(path: string): ClassifierRegistry;
+  verifyProfile(p: ClassifierProfile, root: string): Promise<VerifyReport>;
+  smoke(p: ClassifierProfile, root: string): Promise<{ benign: number; injection: number }>;
+  smokeTimeoutMs: number;
   loadProfiles(policyPath: string): Record<string, { allow: string[] }>;
 }
 
 const MIN_CLAUDE = [2, 1, 295];
-const ZERO_DIGEST = /^0{64}$/;
+
+async function defaultSmoke(profile: ClassifierProfile, root: string): Promise<{ benign: number; injection: number }> {
+  const { classifier } = await loadClassifier({ profile, root, allowUnfitted: true });
+  const benign = (await classifier.classify(SMOKE_BENIGN)).score;
+  const injection = (await classifier.classify(SMOKE_INJECTION)).score;
+  return { benign, injection };
+}
+
+type Ready = { ok: true; profile: ClassifierProfile; report: VerifyReport } | { ok: false; result: CheckResult };
+
+const firstLine = (e: unknown): string => String((e as Error)?.message ?? 'unknown error').split('\n')[0].slice(0, 200);
 
 function olderThan(found: number[], min: number[]): boolean {
   for (let i = 0; i < 3; i++) {
@@ -78,38 +93,106 @@ function serverNames(ctx: DoctorContext, rel: string[]): Set<string> {
 
 export function restrictedChecks(deps: Partial<RestrictedDeps> = {}): Check[] {
   const d: RestrictedDeps = {
-    loadPin: deps.loadPin ?? loadPin,
-    verify: deps.verify ?? ((dir, pin) => verifyModelFiles(dir, pin)),
+    loadRegistry: deps.loadRegistry ?? ((p) => loadRegistry(p)),
+    verifyProfile: deps.verifyProfile ?? verifyProfile,
+    smoke: deps.smoke ?? defaultSmoke,
+    smokeTimeoutMs: deps.smokeTimeoutMs ?? 30_000,
     loadProfiles: deps.loadProfiles ?? ((p) => loadProfiles(p)),
   };
+  // .env values win over the process environment; only CLASSIFIER_MODEL and DOCTOR_SKIP_SMOKE are read from it.
+  const mergedEnv = (ctx: DoctorContext): Record<string, string | undefined> => ({ ...ctx.env, ...(readEnv(ctx) ?? {}) });
+
+  // Steps 1 to 5 of the classifier checks, shared with the smoke check.
+  async function ready(ctx: DoctorContext): Promise<Ready> {
+    const env = mergedEnv(ctx);
+    const id = (env.CLASSIFIER_MODEL ?? '').trim();
+    if (!id) return { ok: false, result: fail('CLASSIFIER_MODEL is not set', 'npm run setup -- --step classifier') };
+    let profile: ClassifierProfile;
+    try {
+      profile = resolveProfile(d.loadRegistry(join(ctx.root, 'config', 'classifier-models.json')), env as NodeJS.ProcessEnv);
+    } catch (e) {
+      return { ok: false, result: fail(firstLine(e), 'check CLASSIFIER_MODEL against config/classifier-models.json') };
+    }
+    let report: VerifyReport;
+    try {
+      report = await d.verifyProfile(profile, ctx.root);
+    } catch (e) {
+      return { ok: false, result: fail(firstLine(e), `npm run models -- fetch ${id} (re-downloads corrupted files)`) };
+    }
+    const absent = Object.keys(report.observed_sha256).length === 0;
+    if (absent && !profile.fetchable) {
+      return {
+        ok: false,
+        result: fail(
+          `profile ${id} is gated and its files are not in models/${id}`,
+          profile.manual_steps?.[0] ?? 'see manual_steps in config/classifier-models.json',
+        ),
+      };
+    }
+    if (absent) return { ok: false, result: fail('model files are not downloaded', `npm run models -- fetch ${id}`) };
+    if (!report.ok) {
+      return { ok: false, result: fail(report.problems.join('; '), `npm run models -- fetch ${id} (re-downloads corrupted files)`) };
+    }
+    return { ok: true, profile, report };
+  }
+
   return [
     {
       id: 'classifier_model',
       title: 'injection classifier model',
       async run(ctx) {
-        const fixPin = 'npx tsx scripts/classifier/fit.ts --pin';
-        let pin: ClassifierPin;
-        try {
-          pin = d.loadPin(join(ctx.root, 'config', 'classifier.pin.json'));
-        } catch {
-          return fail('config/classifier.pin.json is missing or invalid', 'restore it from git');
+        const r = await ready(ctx);
+        if (!r.ok) return r.result;
+        const { profile, report } = r;
+        const id = profile.id;
+        if (report.unpinned.length > 0) {
+          return warn(
+            `${report.unpinned.length} files are verified by git blob id only`,
+            `npm run models -- pin ${id}, then commit config/classifier-models.json`,
+          );
         }
-        const entries = [pin.model, pin.tokenizer, pin.config, ...(pin.extra ?? [])];
-        if (entries.some((e) => ZERO_DIGEST.test(e.sha256))) {
-          return fail('model files are not pinned (placeholder digests)', fixPin);
+        const modelFile = profile.files.find((f) => f.role === 'model');
+        const digest = modelFile ? report.observed_sha256[modelFile.local] : undefined;
+        const fit = profile.fit;
+        if (typeof fit.threshold !== 'number' || fit.model_sha256 !== digest) {
+          return warn(
+            `threshold not fitted for ${id}: sends are refused until it is`,
+            `npm run classifier:fit -- --profile ${id} --write`,
+          );
         }
-        const v = await d.verify(join(ctx.root, 'models', 'prompt-guard-2-22m'), pin);
-        if (!v.ok) return fail(v.problems.join('; '), `place the pinned files in models/prompt-guard-2-22m, or re-pin: ${fixPin}`);
-        const cfgPath = join(ctx.root, 'config', 'classifier.json');
-        if (!ctx.fs.exists(cfgPath)) {
-          return warn('config/classifier.json is missing: threshold not fitted', 'npm run classifier:fit -- --write');
-        }
-        const cfg = parseJson(ctx.fs.read(cfgPath));
-        const held = cfg.ok ? (cfg.value as { held_out?: { fpr?: unknown; tpr?: unknown } }).held_out : undefined;
+        const held = fit.held_out;
         if (!held || typeof held.fpr !== 'number' || typeof held.tpr !== 'number') {
-          return warn('config/classifier.json has no held-out fpr/tpr', 'npm run classifier:fit -- --write');
+          return warn(`held-out fpr/tpr missing for ${id}`, `npm run classifier:fit -- --profile ${id} --write`);
         }
-        return pass(`files match the pin; held-out fpr ${held.fpr}, tpr ${held.tpr}`);
+        return pass(`${id} (${profile.licence.id}): files match the pin; held-out fpr ${held.fpr}, tpr ${held.tpr}`);
+      },
+    },
+    {
+      id: 'classifier_smoke',
+      title: 'injection classifier smoke inference',
+      async run(ctx) {
+        if (mergedEnv(ctx).DOCTOR_SKIP_SMOKE === '1') return warn('smoke test skipped (DOCTOR_SKIP_SMOKE=1)');
+        const r = await ready(ctx);
+        if (!r.ok) return warn('skipped: model not ready');
+        const id = r.profile.id;
+        const fix = `npm run models -- verify ${id}; if files verify, the profile labels or inputs are wrong`;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const timeout = new Promise<never>((_, rej) => {
+            timer = setTimeout(() => rej(new Error('__timeout__')), d.smokeTimeoutMs);
+          });
+          const s = await Promise.race([d.smoke(r.profile, ctx.root), timeout]);
+          const b = s.benign.toFixed(3);
+          const i = s.injection.toFixed(3);
+          return s.benign < 0.5 && s.injection >= 0.5
+            ? pass(`${id}: benign ${b}, injection ${i}`)
+            : fail(`smoke test: benign ${b}, injection ${i}`, fix);
+        } catch (e) {
+          const m = firstLine(e);
+          return fail(m === '__timeout__' ? 'smoke test timed out after 30 s' : `smoke test failed: ${m}`, fix);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
       },
     },
     {

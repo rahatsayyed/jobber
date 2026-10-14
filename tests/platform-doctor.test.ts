@@ -292,27 +292,28 @@ describe('web check', () => {
 });
 
 describe('restricted-run checks', () => {
-  const Z = '0'.repeat(64);
-  const pinOf = (sha: string) => ({
-    model: { file: 'model.onnx', sha256: sha },
-    tokenizer: { file: 'tokenizer.json', sha256: sha },
-    config: { file: 'config.json', sha256: sha },
-    extra: [],
-    malicious_index: 1,
-    source: 's',
-  });
+  const D = 'd'.repeat(64);
+  const prof = {
+    id: 'pg2',
+    fetchable: true,
+    licence: { id: 'MIT' },
+    files: [{ local: 'model.onnx', role: 'model' }],
+    fit: { threshold: 0.4, model_sha256: D, held_out: { tpr: 0.91, fpr: 0.004, n: 100 } },
+  };
+  const okReport = { ok: true, problems: [], observed_sha256: { 'model.onnx': D }, unpinned: [] };
   const HOOK = '/p/.claude/hooks/tool-allowlist.cjs';
   const base = (): Files => ({
     [HOOK]: { text: '//' },
-    '/p/config/classifier.json': { text: JSON.stringify({ held_out: { tpr: 0.91, fpr: 0.004, n: 100 } }) },
+    '/p/.env': { text: 'CLASSIFIER_MODEL=pg2\n' },
     '/p/.mcp.json': { text: JSON.stringify({ mcpServers: { db: {} } }) },
     '/p/config/runner/mcp.platform.json': { text: JSON.stringify({ mcpServers: { naukri: {} } }) },
   });
   const profiles = (allow: string[]) => ({ outreach_wake: { allow } }) as any;
   const mk = (over: Record<string, unknown> = {}) =>
     restrictedChecks({
-      loadPin: () => pinOf('a'.repeat(64)) as any,
-      verify: async () => ({ ok: true, problems: [] }),
+      loadRegistry: () => ({ version: 1, default_profile: 'pg2', profiles: { pg2: prof } }) as any,
+      verifyProfile: async () => okReport as any,
+      smoke: async () => ({ benign: 0.01, injection: 0.99 }),
       loadProfiles: () => profiles(['mcp__db__get_funnel', 'mcp__naukri__naukri_open']),
       ...over,
     } as any);
@@ -325,20 +326,23 @@ describe('restricted-run checks', () => {
     return Object.fromEntries(out.map((r) => [r.id, r.result]));
   };
 
-  it('classifier_model: fails on zero digests with the pin hint', async () => {
-    const r = await run(mk({ loadPin: () => pinOf(Z) }), base());
+  it('classifier_model: fails when CLASSIFIER_MODEL is not set', async () => {
+    const f = base();
+    delete f['/p/.env'];
+    const r = await run(mk(), f);
     expect(r.classifier_model.status).toBe('fail');
-    expect(r.classifier_model.fix).toContain('fit.ts --pin');
+    expect(r.classifier_model.fix).toContain('--step classifier');
   });
   it('classifier_model: fails naming the file on a problem', async () => {
-    const r = await run(mk({ verify: async () => ({ ok: false, problems: ['sha256 mismatch: model.onnx'] }) }), base());
+    const bad = { ...okReport, ok: false, problems: ['model.onnx: sha256 mismatch'] };
+    const r = await run(mk({ verifyProfile: async () => bad }), base());
     expect(r.classifier_model.status).toBe('fail');
     expect(r.classifier_model.detail).toContain('model.onnx');
   });
-  it('classifier_model: warns without config/classifier.json, passes with fpr and tpr', async () => {
-    const f = base();
-    delete f['/p/config/classifier.json'];
-    expect((await run(mk(), f)).classifier_model.status).toBe('warn');
+  it('classifier_model: warns when not fitted, passes with fpr and tpr', async () => {
+    const unfitted = { ...prof, fit: { threshold: null } };
+    const w = mk({ loadRegistry: () => ({ version: 1, default_profile: 'pg2', profiles: { pg2: unfitted } }) });
+    expect((await run(w, base())).classifier_model.status).toBe('warn');
     const ok = (await run(mk(), base())).classifier_model;
     expect(ok.status).toBe('pass');
     expect(ok.detail).toContain('0.004');
