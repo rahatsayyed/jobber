@@ -213,3 +213,74 @@ describe('serial and lifecycle', () => {
     expect(existsSync(lockPath)).toBe(false);
   });
 });
+
+describe('fix round 1', () => {
+  const open = (s: ReturnType<typeof setup>) => s.rt.open('https://www.linkedin.com/in/jane-doe/');
+
+  it('aborts when the element at the index changes between read and click', async () => {
+    const site = profileSite();
+    let reads = 0;
+    const shifting = { get text() { reads++; return reads <= 1 ? 'More' : 'Connect'; } } as { text: string };
+    site.pages['/in/jane-doe/'].elements![CLICKABLE_SELECTOR] = [shifting];
+    const s = setup(site);
+    await open(s);
+    const r = await s.rt.click('More');
+    expect(r).toMatchObject({ ok: false, code: 'target_changed' });
+    expect(s.log.some((l) => l.startsWith('click:'))).toBe(false);
+  });
+
+  it('refuses harmless text whose aria-label is Send, no click', async () => {
+    const site = profileSite();
+    site.pages['/in/jane-doe/'].elements![CLICKABLE_SELECTOR] = [{ text: 'Go', attrs: { 'aria-label': 'Send invitation' } }];
+    const s = setup(site);
+    await open(s);
+    expect(await s.rt.click('Go')).toMatchObject({ ok: false, code: 'typed_tool_only' });
+    expect(s.log.some((l) => l.startsWith('click:'))).toBe(false);
+  });
+
+  it('refuses a zero-width obfuscated Send', () => {
+    expect(isRefusedControl('Se\u200bnd', '')).toBe(true);
+  });
+
+  it('a halt closes the browser without saving, releases the lock, keeps the session file', async () => {
+    const s = setup(profileSite());
+    const before = readFileSync(sessionPath);
+    await s.rt.open('https://www.linkedin.com/checkpoint/challenge');
+    expect(s.launcher.browsers[0].closed).toBe(true);
+    expect(s.launcher.storageStateCalls).toBe(0);
+    expect(existsSync(lockPath)).toBe(false);
+    expect(readFileSync(sessionPath).equals(before)).toBe(true);
+    const log0 = s.log.length;
+    expect(await s.rt.type('x')).toMatchObject({ code: 'halted' });
+    expect(await s.rt.snapshot()).toBeNull();
+    expect(await s.rt.screenshot()).toMatchObject({ ok: false });
+    await s.rt.scroll('down');
+    expect(s.log.length).toBe(log0);
+  });
+
+  it('navigating off LinkedIn goes back and reports left_linkedin_host', async () => {
+    const site = profileSite();
+    site.pages['/in/jane-doe/'].elements![CLICKABLE_SELECTOR] = [{ text: 'Website', navigateTo: 'https://example.com/x' }];
+    site.popup = true;
+    const s = setup(site);
+    await open(s);
+    const r = await s.rt.click('Website');
+    expect(r).toMatchObject({ ok: false, code: 'left_linkedin_host' });
+    expect(s.log).toContain('goBack');
+    expect(s.log).toContain('popup_closed');
+  });
+
+  it('idle close without li_at leaves the session file identical', async () => {
+    vi.useFakeTimers();
+    const site = profileSite();
+    site.state = { cookies: [] };
+    const s = setup(site, { idleMs: 20 });
+    const before = readFileSync(sessionPath);
+    const p = open(s);
+    await vi.advanceTimersByTimeAsync(0);
+    await p;
+    await vi.advanceTimersByTimeAsync(50);
+    expect(s.launcher.browsers[0].closed).toBe(true);
+    expect(readFileSync(sessionPath).equals(before)).toBe(true);
+  });
+});

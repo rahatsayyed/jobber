@@ -45,10 +45,13 @@ const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const REFUSED_RE = new RegExp(`(?<![\\p{L}\\p{N}])(?:${REFUSED_WORDS.map(esc).join('|')})(?![\\p{L}\\p{N}])`, 'iu');
 const INVITE_ARIA_RE = /^Invite .* to connect$/i;
 
+const clean = (s: string) => s.normalize('NFKC').replace(/[\p{Cf}\u200b-\u200f\u2060\ufeff]/gu, '');
 const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
 
 /** True when a control's visible text or aria-label names an irreversible action. */
-export function isRefusedControl(text: string, aria: string): boolean {
+export function isRefusedControl(rawText: string, rawAria: string): boolean {
+  const text = clean(rawText);
+  const aria = clean(rawAria);
   return REFUSED_RE.test(text) || REFUSED_RE.test(aria) || INVITE_ARIA_RE.test(aria.trim()) || INVITE_ARIA_RE.test(text.trim());
 }
 
@@ -94,24 +97,27 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
   function touch(): void {
     if (!session) return;
     if (session.idle) clearTimeout(session.idle);
-    session.idle = setTimeout(() => { void closeSession(); }, idleMs);
+    session.idle = setTimeout(() => { void serial(() => closeSession()); }, idleMs);
     session.idle.unref?.();
   }
 
-  async function closeSession(): Promise<boolean> {
+  async function closeSession(save = true): Promise<boolean> {
     const s = session;
     if (!s) return false;
     session = null;
     process.off('beforeExit', onExit);
     if (s.idle) clearTimeout(s.idle);
-    try {
-      const state = await s.context.storageState();
-      try { saveStateAtomic(sessionPath, state); } catch { /* logged out or unwritable: leave the file alone */ }
-    } catch { /* ignore */ }
+    if (save) {
+      try {
+        const state = await s.context.storageState();
+        try { saveStateAtomic(sessionPath, state); } catch { /* logged out or unwritable: leave the file alone */ }
+      } catch { /* ignore */ }
+    }
     await s.browser.close().catch(() => undefined);
     s.lock.release();
     return true;
   }
+  let pendingClose: Promise<unknown> = Promise.resolve();
   const onExit = () => { void closeSession(); };
 
   const rawSnapshot = async (): Promise<RawSnapshot | null> => {
@@ -121,7 +127,11 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
 
   function afterNavigation(snap: RawSnapshot): BlockKind | null {
     const kind = detectBlock(snap);
-    if (kind) haltPlatform(deps.db, 'linkedin', `${kind}: ${pathOnly(snap.url)}`, now());
+    if (kind) {
+      haltPlatform(deps.db, 'linkedin', `${kind}: ${pathOnly(snap.url)}`, now());
+      // A flagged session must never overwrite the good session file: close without saving.
+      pendingClose = closeSession(false);
+    }
     return kind;
   }
 
@@ -131,7 +141,7 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
   /** Re-snapshot after an action; a block halts and is reported as `halted`. */
   async function finish(code: string, extra?: { reason?: string }): Promise<ActionResult> {
     const snap = await rawSnapshot();
-    if (snap && afterNavigation(snap)) return { ok: false, code: 'halted', reason: halted() ?? 'block page' };
+    if (snap && afterNavigation(snap)) { await pendingClose; return { ok: false, code: 'halted', reason: halted() ?? 'block page' }; }
     return { ok: true, code, ...(extra?.reason ? { reason: extra.reason } : {}), ...(snap ? { state: stateText(snap) } : {}) };
   }
 
@@ -165,7 +175,7 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
       await settle(page);
       const snap = await rawSnapshot();
       if (!snap) { await closeSession(); return { ok: false, code: 'failed', reason: 'no snapshot' }; }
-      if (afterNavigation(snap)) return { ok: false, code: 'halted', reason: halted() ?? 'block page' };
+      if (afterNavigation(snap)) { await pendingClose; return { ok: false, code: 'halted', reason: halted() ?? 'block page' }; }
       return { ok: true, snapshot: snap };
     } catch (e) {
       if (session) await closeSession();
@@ -175,8 +185,8 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
   }
 
   async function click(text: string): Promise<ActionResult> {
-    if (!session) return { ok: false, code: 'no_session', reason: 'call linkedin_open first' };
     if (halted()) return haltedResult();
+    if (!session) return { ok: false, code: 'no_session', reason: 'call linkedin_open first' };
     touch();
     const typedOnly: ActionResult = { ok: false, code: 'typed_tool_only', reason: TYPED_TOOL_ONLY_REASON };
     if (isRefusedControl(text, '')) return typedOnly;
@@ -195,9 +205,24 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
     if (pick.kind === 'ambiguous') return { ok: false, code: 'ambiguous', reason: `"${text.slice(0, 40)}" matches several controls; nothing clicked` };
     const c = pick.c;
     if (isRefusedControl(c.text, c.aria)) return typedOnly;
+    // Re-read the SAME resolved handle right before clicking: the SPA may have shifted indices.
+    const target = page.locator(CLICKABLE_SELECTOR).nth(c.i);
+    const again = await target
+      .evaluateAll((els) =>
+        els.map((el) => ({
+          text: String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+          aria: String((el.getAttribute && el.getAttribute('aria-label')) || '').trim().slice(0, 160),
+        })),
+      )
+      .catch(() => [] as Array<{ text: string; aria: string }>);
+    const now1 = again[0];
+    if (!now1 || now1.text !== c.text || now1.aria !== c.aria) {
+      return { ok: false, code: 'target_changed', reason: 'page changed under the click; nothing clicked' };
+    }
+    if (isRefusedControl(now1.text, now1.aria)) return typedOnly;
     const popupP = context.waitForEvent('page', { timeout: 1200 }).catch(() => null);
     try {
-      await page.locator(CLICKABLE_SELECTOR).nth(c.i).click({ timeout: 8000 });
+      await target.click({ timeout: 8000 });
     } catch (e) {
       return { ok: false, code: 'failed', reason: `click failed: ${((e as Error).message ?? '').slice(0, 100)}` };
     }
@@ -214,8 +239,8 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
   }
 
   async function type(text: string, opts: { submit?: boolean } = {}): Promise<ActionResult> {
-    if (!session) return { ok: false, code: 'no_session', reason: 'call linkedin_open first' };
     if (halted()) return haltedResult();
+    if (!session) return { ok: false, code: 'no_session', reason: 'call linkedin_open first' };
     touch();
     const refuse: ActionResult = { ok: false, code: 'typed_tool_only', reason: TYPED_TOOL_ONLY_REASON };
     if (text.length > MAX_TYPE_CHARS) return { ok: false, code: 'too_long', reason: `max ${MAX_TYPE_CHARS} characters` };
@@ -228,7 +253,7 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
       ...dialogs.flatMap((d) => [`${d} textarea`, `${d} [contenteditable="true"]`, `${d} [contenteditable]`]),
     ];
     for (const sel of forbidden) {
-      if ((await page.locator(sel).count().catch(() => 0)) > 0) return refuse;
+      if ((await page.locator(sel).count().catch(() => 1)) > 0) return refuse;
     }
     const search = page.locator(SEARCH_INPUT_SELECTOR);
     if ((await search.count().catch(() => 0)) === 0) return { ok: false, code: 'no_match', reason: 'no search box on this page' };

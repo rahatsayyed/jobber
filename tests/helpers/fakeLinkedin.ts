@@ -2,13 +2,14 @@
 import { SNAPSHOT_SRC } from '../../src/linkedin/snapshot.js';
 import type { LiBrowser, LiContext, LiLauncher, LiLocator, LiPage, RawSnapshot } from '../../src/linkedin/types.js';
 
-export interface FakeElement { text: string; box?: { x: number; y: number; height: number }; attrs?: Record<string, string>; onClick?: () => void; visible?: boolean }
+export interface FakeElement { text: string; box?: { x: number; y: number; height: number }; attrs?: Record<string, string>; onClick?: () => void; visible?: boolean; navigateTo?: string }
 export interface FakeSite {
   pages: Record<string, Partial<RawSnapshot> & { title?: string; elements?: Record<string, FakeElement[]> }>; // key = URL path
   onGoto?: (url: string) => void;
   state?: unknown; // returned by context.storageState()
   gotoFails?: boolean;
   launchFails?: string;
+  popup?: boolean;
 }
 export type FakeLauncher = LiLauncher & { closed: boolean; launches: number; browsers: Array<{ closed: boolean }>; storageStateCalls: number };
 
@@ -37,12 +38,13 @@ export function makeFakeLauncher(site: FakeSite, log: string[]): FakeLauncher {
         if (!el) throw new Error('no element');
         log.push(`click:${sel}:${el.text}`);
         el.onClick?.();
+        if (el.navigateTo) current = el.navigateTo;
       },
       fill: async () => { log.push(`fill:${sel}`); },
       textContent: async () => elementsFor(sel)[idx]?.text ?? null,
       waitFor: async () => {},
       evaluateAll: async <T>(fn: (els: any[]) => T) =>
-        fn(elementsFor(sel).map((e) => ({
+        fn((all ? elementsFor(sel) : elementsFor(sel).slice(idx, idx + 1)).map((e) => ({
           innerText: e.text, textContent: e.text,
           getAttribute: (n: string) => e.attrs?.[n] ?? null,
           offsetWidth: e.visible === false ? 0 : 10, offsetHeight: e.visible === false ? 0 : 10,
@@ -75,7 +77,10 @@ export function makeFakeLauncher(site: FakeSite, log: string[]): FakeLauncher {
     const context: LiContext = {
       newPage: async () => page,
       storageState: async () => { launcher.storageStateCalls++; return site.state ?? { cookies: [] }; },
-      waitForEvent: async () => { throw new Error('no popup'); },
+      waitForEvent: async () => {
+        if (!site.popup) throw new Error('no popup');
+        return { close: async () => { log.push('popup_closed'); } } as unknown as LiPage;
+      },
     };
     const browser: LiBrowser = {
       newContext: async () => context,
