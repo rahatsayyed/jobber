@@ -49,7 +49,9 @@ function sanitize(s: string): string {
  * neither order can hide a phrase. Returns capped text, or blocked with empty text.
  */
 export function gateField(s: string, max: number): { text: string; blocked: boolean; flags: string[] } {
-  const g1 = gateInput(s.replace(new RegExp("[\\u0080-\\u009f\\u2028\\u2029]", "g"), " "), { maxChars: max });
+  // NEL, LS and PS are line breaks (so a leading `system:` role prefix still matches); other C1 controls become spaces.
+  const pre = s.replace(new RegExp("[\\u0085\\u2028\\u2029]", "g"), "\n").replace(new RegExp("[\\u0080-\\u009f]", "g"), " ");
+  const g1 = gateInput(pre, { maxChars: max });
   const norm = sanitize(g1.text);
   const g2 = gateInput(norm, { maxChars: max });
   const flags = [...g1.flags, ...g2.flags];

@@ -14,8 +14,6 @@ export function validateNoteLength(note: string): { ok: boolean; length: number 
   return { ok: length > 0 && length <= MAX_NOTE_LENGTH, length };
 }
 
-// LinkedIn people-search / profile DOM selectors. See git history / .superpowers/sdd/task-6
-
 /**
  * Pure: extracts the profile owner's name from `page.title()` (e.g. "Tanvi Gaharwar |
  * LinkedIn" -> "Tanvi Gaharwar") — confirmed reliable where `<h1>` is not. Exported for

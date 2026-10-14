@@ -41,7 +41,12 @@ const REFUSED_WORDS = [
   'send', 'send now', 'send invitation', 'connect', 'invite', 'message', 'accept', 'ignore', 'withdraw',
   'remove connection', 'remove', 'post', 'follow', 'unfollow', 'block', 'report', 'sign out', 'delete',
   'apply', 'easy apply', 'submit',
+  'like', 'unlike', 'react', 'reaction', 'repost', 'endorse', 'recommend', 'comment', 'reply', 'share',
+  'send message', 'log out', 'logout', 'sign in', 'join', 'subscribe', 'save', 'vote', 'mute', 'hide', 'boost',
 ];
+/** Fixed, code-authored failure text: Playwright error text is never put in a result (injection channel). */
+const logErr = (where: string, e: unknown) =>
+  console.error(`[linkedin] ${where}: ${String((e as Error)?.message ?? e).slice(0, 160)}`);
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const REFUSED_RE = new RegExp(`(?<![\\p{L}\\p{N}])(?:${REFUSED_WORDS.map(esc).join('|')})(?![\\p{L}\\p{N}])`, 'iu');
 const INVITE_ARIA_RE = /^Invite .* to connect$/i;
@@ -56,7 +61,7 @@ export function isRefusedControl(rawText: string, rawAria: string): boolean {
   return REFUSED_RE.test(text) || REFUSED_RE.test(aria) || INVITE_ARIA_RE.test(aria.trim()) || INVITE_ARIA_RE.test(text.trim());
 }
 
-interface Candidate { i: number; text: string; aria: string }
+interface Candidate { i: number; text: string; aria: string; fullText?: string; fullAria?: string }
 type Pick = { kind: 'one'; c: Candidate } | { kind: 'ambiguous' } | { kind: 'none' };
 
 export function pickCandidate(cands: Candidate[], query: string): Pick {
@@ -164,7 +169,8 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
       browser = await launchRealChrome({ launcher: deps.launcher });
     } catch (e) {
       lock.handle.release();
-      return { ok: false, code: 'chrome_unavailable', reason: (e as Error).message.slice(0, 160) };
+      logErr('launch', e);
+      return { ok: false, code: 'chrome_unavailable', reason: 'could not launch Chrome' };
     }
     try {
       const context = await browser.newContext({ ...LINKEDIN_CONTEXT_OPTIONS, storageState: sessionPath });
@@ -177,11 +183,16 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
       const snap = await rawSnapshot();
       if (!snap) { await closeSession(); return { ok: false, code: 'failed', reason: 'no snapshot' }; }
       if (afterNavigation(snap)) { await pendingClose; return { ok: false, code: 'halted', reason: halted() ?? 'block page' }; }
+      if (!isLinkedInUrl(page.url()) || isBlockedPath(page.url()).blocked) {
+        await closeSession(false);
+        return { ok: false, code: 'blocked_path', reason: 'page redirected to a blocked or off-site URL' };
+      }
       return { ok: true, snapshot: snap };
     } catch (e) {
       if (session) await closeSession();
       else { await browser.close().catch(() => undefined); lock.handle.release(); }
-      return { ok: false, code: 'failed', reason: `open failed: ${((e as Error).message ?? '').slice(0, 120)}` };
+      logErr('open', e);
+      return { ok: false, code: 'failed', reason: 'open failed' };
     }
   }
 
@@ -197,6 +208,8 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
         i,
         text: String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
         aria: String((el.getAttribute && el.getAttribute('aria-label')) || '').trim().slice(0, 160),
+        fullText: String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim(),
+        fullAria: String((el.getAttribute && el.getAttribute('aria-label')) || '').trim(),
         visible: !!(el.offsetWidth || el.offsetHeight || (el.getClientRects && el.getClientRects().length)),
       })),
     );
@@ -205,7 +218,8 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
     if (pick.kind === 'none') return { ok: false, code: 'no_match', reason: `no visible control matches "${text.slice(0, 40)}"` };
     if (pick.kind === 'ambiguous') return { ok: false, code: 'ambiguous', reason: `"${text.slice(0, 40)}" matches several controls; nothing clicked` };
     const c = pick.c;
-    if (isRefusedControl(c.text, c.aria)) return typedOnly;
+    // Refusal runs on the FULL label; truncation is for display and matching only.
+    if (isRefusedControl(c.fullText ?? c.text, c.fullAria ?? c.aria)) return typedOnly;
     // Re-read the SAME resolved handle right before clicking: the SPA may have shifted indices.
     // The re-read and the click use the same locator; the residual window is bounded by CLICK_TIMEOUT_MS.
     const target = page.locator(CLICKABLE_SELECTOR).nth(c.i);
@@ -214,14 +228,16 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
         els.map((el) => ({
           text: String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
           aria: String((el.getAttribute && el.getAttribute('aria-label')) || '').trim().slice(0, 160),
+          fullText: String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim(),
+          fullAria: String((el.getAttribute && el.getAttribute('aria-label')) || '').trim(),
         })),
       )
-      .catch(() => [] as Array<{ text: string; aria: string }>);
+      .catch(() => [] as Array<{ text: string; aria: string; fullText: string; fullAria: string }>);
     const now1 = again[0];
     if (!now1 || now1.text !== c.text || now1.aria !== c.aria) {
       return { ok: false, code: 'target_changed', reason: 'page changed under the click; nothing clicked' };
     }
-    if (isRefusedControl(now1.text, now1.aria)) return typedOnly;
+    if (isRefusedControl(now1.fullText, now1.fullAria)) return typedOnly;
     const popupP = context.waitForEvent('page', { timeout: 1200 }).catch(() => null);
     try {
       await target.click({ timeout: CLICK_TIMEOUT_MS });
@@ -229,16 +245,19 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
       if (/timeout/i.test((e as Error).name + ' ' + ((e as Error).message ?? ''))) {
         return { ok: false, code: 'click_timeout', reason: 'click did not become actionable in time; not retried' };
       }
-      return { ok: false, code: 'failed', reason: `click failed: ${((e as Error).message ?? '').slice(0, 100)}` };
+      logErr('click', e);
+      return { ok: false, code: 'failed', reason: 'click failed' };
     }
     const popup = (await popupP) as { close?: () => Promise<void> } | null;
     if (popup) await popup.close?.().catch(() => undefined);
     await settle(page);
-    if (!isLinkedInUrl(page.url())) {
+    const offHost = !isLinkedInUrl(page.url());
+    if (offHost || isBlockedPath(page.url()).blocked) {
+      const leftCode = offHost ? 'left_linkedin_host' : 'left_blocked_path';
       await page.goBack({ timeout: 10000, waitUntil: 'domcontentloaded' }).catch(() => undefined);
       await settle(page);
-      const r = await finish('left_linkedin_host');
-      return { ...r, ok: false, code: r.code === 'halted' ? 'halted' : 'left_linkedin_host', reason: r.reason ?? 'navigated off LinkedIn, went back' };
+      const r = await finish(leftCode);
+      return { ...r, ok: false, code: r.code === 'halted' ? 'halted' : leftCode, reason: r.reason ?? 'navigated off LinkedIn or to a blocked path, went back' };
     }
     return finish('clicked');
   }
@@ -266,7 +285,8 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
       await search.first().fill(text, { timeout: 8000 });
       if (opts.submit) await page.keyboard.press('Enter');
     } catch (e) {
-      return { ok: false, code: 'failed', reason: `type failed: ${((e as Error).message ?? '').slice(0, 100)}` };
+      logErr('type', e);
+      return { ok: false, code: 'failed', reason: 'type failed' };
     }
     await settle(page);
     return finish('typed');
@@ -297,7 +317,8 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
         try {
           return { ok: true as const, base64: (await session.page.screenshot({ type: 'png' })).toString('base64') };
         } catch (e) {
-          return { ok: false as const, reason: ((e as Error).message ?? '').slice(0, 100) };
+          logErr('screenshot', e);
+          return { ok: false as const, reason: 'screenshot failed' };
         }
       }),
     close: () => serial(() => closeSession()),

@@ -85,7 +85,7 @@ export function preSendGuard(i: GuardInput): GuardResult {
   if (i.action === 'invite') {
     if (!validateNoteLength(text).ok) return refuse('note_too_long', 'note is over 300 characters');
   } else if (text.length > MAX_MESSAGE_CHARS) {
-    return refuse('note_too_long', `message is over ${MAX_MESSAGE_CHARS} characters`);
+    return refuse('message_too_long', `message is over ${MAX_MESSAGE_CHARS} characters`);
   }
 
   // Style gate runs on the raw draft BEFORE normalization and the fact gate.
@@ -105,6 +105,12 @@ export function preSendGuard(i: GuardInput): GuardResult {
   }
   if (fact.verdict === 'block') return refuse('fact_gate_block', 'fact gate blocked the text');
   const normalized = fact.normalized_text;
+  // Normalization can lengthen the text: re-check the same limits on what will actually be typed.
+  if (i.action === 'invite') {
+    if (!validateNoteLength(normalized).ok) return refuse('note_too_long', 'note is over 300 characters');
+  } else if (normalized.length > MAX_MESSAGE_CHARS) {
+    return refuse('message_too_long', `message is over ${MAX_MESSAGE_CHARS} characters`);
+  }
 
   const g = gateOutbound(normalized, {
     recipientKey: person.profile_key,

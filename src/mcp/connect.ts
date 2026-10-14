@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { chromium, type Page, type Response } from 'playwright';
+import { chromium, type Page } from 'playwright';
 import BetterSqlite3 from 'better-sqlite3';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';

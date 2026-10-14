@@ -59,13 +59,14 @@ function setup(o: Opts = {}) {
     [SELECTORS.nameHeadings]: [{ text: 'Jane Example', box: { x: 100, y: 100, height: 30 } }],
   };
   let eventsAtSend = -1;
+  const dlg: Els = {};
   const openDialog = () => {
-    els[SELECTORS.noteDialogContainer] = [{ text: o.dialogText ?? 'Add a note to your invitation to Jane Example? Personalize it.' }];
-    els[SELECTORS.addNoteButton] = [{
+    els[SELECTORS.noteDialogContainer] = [{ text: o.dialogText ?? 'Add a note to your invitation to Jane Example? Personalize it.', children: dlg }];
+    dlg[SELECTORS.addNoteButton] = [{
       text: 'Add a note',
-      onClick: () => { if (!o.noNote) els[SELECTORS.noteTextarea] = [{ text: '' }]; },
+      onClick: () => { if (!o.noNote) dlg[SELECTORS.noteTextarea] = [{ text: '' }]; },
     }];
-    els[SELECTORS.sendButton] = [{
+    dlg[SELECTORS.sendButton] = [{
       text: 'Send',
       onClick: () => {
         eventsAtSend = (db.prepare("SELECT COUNT(*) c FROM rate_events WHERE key='linkedin_invite'").get() as { c: number }).c;
@@ -94,7 +95,7 @@ function setup(o: Opts = {}) {
     rt, db, now: () => NOW, cfg: loadLinkedinConfig(env), env,
     factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
   };
-  return { deps, log, db, els, launcher, site, eventsAtSend: () => eventsAtSend };
+  return { deps, log, db, els, dlg, launcher, site, eventsAtSend: () => eventsAtSend };
 }
 
 const send = (deps: ToolDeps, over: Partial<Parameters<typeof connectSend>[0]> = {}) =>
@@ -276,7 +277,7 @@ describe('connectSend', () => {
     const open0 = t.els[SELECTORS.directConnectButton][0].onClick!;
     t.els[SELECTORS.directConnectButton][0].onClick = () => {
       open0();
-      const sb = t.els[SELECTORS.sendButton][0];
+      const sb = t.dlg[SELECTORS.sendButton][0];
       const orig = sb.onClick!;
       sb.onClick = () => { orig(); t.site.redirects = { [P]: 'https://www.linkedin.com/checkpoint/challenge/abc' }; };
     };
@@ -327,6 +328,17 @@ describe('connectSend', () => {
     };
     const r = await send(t.deps);
     expect(r.status).toBe('unconfirmed');
+  });
+
+  it('a page-level Send button outside the dialog is never clicked', async () => {
+    const t = setup({ noNote: true });
+    t.els[SELECTORS.sendButton] = [{ text: 'Send', onClick: () => t.log.push('PAGE_SEND') }];
+    t.els[SELECTORS.noteTextarea] = [{ text: '' }];
+    const r = await send(t.deps);
+    expect(r).toMatchObject({ status: 'failed', code: 'note_field_missing' });
+    expect(t.log).not.toContain('PAGE_SEND');
+    expect(sendClicks(t.log)).toEqual([]);
+    expect(events(t.db)).toBe(0);
   });
 
   it('Send clicked, no confirmation -> unconfirmed, event kept, repeat is never re-sent', async () => {

@@ -143,6 +143,23 @@ describe('acceptInvite', () => {
     expect((t.db.prepare('SELECT COUNT(*) c FROM touches').get() as { c: number }).c).toBe(0);
   });
 
+  it('paused or closed known contact is refused with contact_paused and no click', async () => {
+    const pauses: Array<(db: ReturnType<typeof openDb>) => void> = [
+      (db) => { db.prepare('INSERT OR IGNORE INTO contact_state (person_id) SELECT id FROM people').run(); db.prepare("UPDATE contact_state SET paused_reason = 'manual'").run(); },
+      (db) => { db.prepare('INSERT OR IGNORE INTO contact_state (person_id) SELECT id FROM people').run(); db.prepare("UPDATE contact_state SET stage = 'closed'").run(); },
+      (db) => { db.prepare('INSERT OR IGNORE INTO contact_state (person_id) SELECT id FROM people').run(); db.prepare("UPDATE contact_state SET stage = 'replied_negative'").run(); },
+      (db) => { db.prepare('INSERT OR IGNORE INTO contact_state (person_id) SELECT id FROM people').run(); db.prepare("UPDATE contact_state SET stage = 'cooldown'").run(); },
+    ];
+    for (const p of pauses) {
+      const t = setup();
+      p(t.db);
+      const r = await accept(t.deps);
+      expect(r).toMatchObject({ status: 'refused', code: 'contact_paused' });
+      expect(clicks(t.log)).toEqual([]);
+      expect(counter(t.db)).toBe(0);
+    }
+  });
+
   it('unknown sender refused with unknown_senders and no click', async () => {
     const t = setup({ known: false });
     const r = await accept(t.deps);

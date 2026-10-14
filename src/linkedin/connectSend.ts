@@ -179,9 +179,11 @@ export async function connectSend(
       }
 
       // Step 9: add the note; never send without it.
-      const area = page.locator(SELECTORS.noteTextarea);
+      // Everything below is scoped to the verified invite dialog, never the page.
+      const dialog = dlg.first();
+      const area = dialog.locator(SELECTORS.noteTextarea);
       if ((await area.count()) === 0) {
-        const add = page.locator(SELECTORS.addNoteButton);
+        const add = dialog.locator(SELECTORS.addNoteButton);
         if ((await add.count()) > 0) {
           await add.first().click({ timeout: CLICK_TIMEOUT_MS });
           await area.first().waitFor({ state: 'visible', timeout: stepTimeout }).catch(() => undefined);
@@ -192,7 +194,7 @@ export async function connectSend(
         return fail('note_field_missing', 'note field not found');
       }
       await area.first().fill(text, { timeout: stepTimeout });
-      const send = page.locator(SELECTORS.sendButton);
+      const send = dialog.locator(SELECTORS.sendButton);
       if ((await send.count()) === 0) {
         await close();
         return fail('send_button_missing', 'Send button not found');

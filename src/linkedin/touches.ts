@@ -72,6 +72,17 @@ export function reserveTouch(
         .get(a.personId, same?.id ?? -1) as { id: number } | undefined;
       if (other) return { ok: false, reason: 'duplicate_kind', touchId: other.id };
     }
+    if (a.kind !== 'connect') {
+      // Message kinds share one family: a retry with different wording after an unresolved
+      // (sending/unconfirmed) message must never double-send. A SENT message does not block.
+      const open = db
+        .prepare(
+          `SELECT id FROM touches WHERE person_id = ? AND kind != 'connect' AND id != ?
+           AND status IN ('sending','unconfirmed') LIMIT 1`,
+        )
+        .get(a.personId, same?.id ?? -1) as { id: number } | undefined;
+      if (open) return { ok: false, reason: 'in_progress', touchId: open.id };
+    }
     if (same) {
       // failed/refused: reuse the row for a retry (key is UNIQUE); created_at is kept
       db.prepare(`UPDATE touches SET status = 'sending', body = ?, sent_at = NULL WHERE id = ?`).run(a.body, same.id);

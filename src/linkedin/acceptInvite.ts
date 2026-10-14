@@ -5,6 +5,7 @@ import { checkAndIncrement } from '../lib/rateLimit.js';
 import { haltReason } from '../outreach/limits.js';
 import { SELECTORS } from './selectors.js';
 import { gateField, MAX_FIELD_CHARS } from './state.js';
+import { companyPaused } from '../outreach/people.js';
 import { personByProfileKey } from './touches.js';
 import { refusal, type ToolDeps, type TypedResult } from './toolDeps.js';
 import { SNAPSHOT_SRC } from './snapshot.js';
@@ -48,6 +49,14 @@ export async function acceptInvite(
   const slug = extractProfileSlug(url);
   if (!slug) return refusal('refused', 'bad_url', 'profile slug not found');
   const person = personByProfileKey(db, profileKeyOf(url));
+  if (
+    person &&
+    (person.paused_reason !== null ||
+      ['replied_negative', 'closed', 'cooldown'].includes(person.stage) ||
+      companyPaused(db, 'linkedin', person.company_key))
+  ) {
+    return refusal('refused', 'contact_paused', 'contact or company is paused');
+  }
   const dryRun = effectiveDryRun(cfg, a.dry_run);
   let clickIssued = false;
 

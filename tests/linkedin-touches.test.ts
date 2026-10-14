@@ -39,6 +39,23 @@ describe('touch ledger', () => {
     const k = idempotencyKey('followup', profileKeyOf(URL1), 'two');
     expect(reserveTouch(db, args('two', { kind: 'followup', key: k })).ok).toBe(true);
   });
+  it('a differently worded message after an unconfirmed or sending message is in_progress', () => {
+    const m = (text: string, kind: string, over: Record<string, unknown> = {}) =>
+      args(text, { kind, key: idempotencyKey(kind, profileKeyOf(URL1), text), ...over });
+    const r1 = reserveTouch(db, m('first wording', 'rapport'));
+    expect(r1.ok).toBe(true);
+    // still 'sending': another wording and another message kind are both blocked
+    expect(reserveTouch(db, m('second wording', 'rapport'))).toMatchObject({ ok: false, reason: 'in_progress' });
+    expect(reserveTouch(db, m('other kind', 'followup'))).toMatchObject({ ok: false, reason: 'in_progress' });
+    // unconfirmed keeps blocking
+    db.prepare("UPDATE touches SET status = 'unconfirmed' WHERE id = ?").run((r1 as any).touchId);
+    expect(reserveTouch(db, m('third wording', 'role_ask'))).toMatchObject({ ok: false, reason: 'in_progress' });
+    // a dry run is never blocked
+    expect(reserveTouch(db, m('dry wording', 'rapport', { dryRun: true })).ok).toBe(true);
+    // once it is SENT, a followup is allowed again
+    db.prepare("UPDATE touches SET status = 'sent' WHERE id = ?").run((r1 as any).touchId);
+    expect(reserveTouch(db, m('after sent', 'followup')).ok).toBe(true);
+  });
   it('dry run twice ok and never blocks real', () => {
     const a = reserveTouch(db, args('hi', { dryRun: true }));
     const b = reserveTouch(db, args('hi', { dryRun: true }));
