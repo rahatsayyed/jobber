@@ -17,7 +17,7 @@ export const defaultRun: Run = (cmd, args, opts) =>
 const NAME_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 
 export function assertName(name: string): void {
-  if (!NAME_RE.test(name) || name.startsWith('-')) throw new Error(`invalid tmux name: ${JSON.stringify(name)}`);
+  if (!NAME_RE.test(name) || name.startsWith('-') || name.includes('.')) throw new Error(`invalid tmux name: ${JSON.stringify(name)}`);
 }
 
 export interface TmuxWindow {
@@ -29,7 +29,7 @@ export interface TmuxWindow {
 
 export async function hasSession(run: Run, session: string): Promise<boolean> {
   assertName(session);
-  return (await run('tmux', ['has-session', '-t', session])).code === 0;
+  return (await run('tmux', ['has-session', '-t', `=${session}`])).code === 0;
 }
 
 export async function listWindows(run: Run, session: string): Promise<TmuxWindow[]> {
@@ -37,7 +37,7 @@ export async function listWindows(run: Run, session: string): Promise<TmuxWindow
   const r = await run('tmux', [
     'list-windows',
     '-t',
-    session,
+    `=${session}`,
     '-F',
     '#{window_index}|#{window_name}|#{window_active}|#{pane_current_command}',
   ]);
@@ -54,14 +54,17 @@ export async function listWindows(run: Run, session: string): Promise<TmuxWindow
 export async function ensureSession(run: Run, session: string, cwd: string): Promise<boolean> {
   assertName(session);
   if (await hasSession(run, session)) return false;
-  await run('tmux', ['new-session', '-d', '-s', session, '-c', cwd]);
+  const r = await run('tmux', ['new-session', '-d', '-s', session, '-c', cwd]);
+  if (r.code !== 0) throw new Error(`failed to create tmux session ${session}`);
   return true;
 }
 
 export async function capture(run: Run, session: string, window: string, lines = 40): Promise<string> {
   assertName(session);
   assertName(window);
-  const n = Math.max(1, Math.min(500, Math.floor(lines)));
-  const r = await run('tmux', ['capture-pane', '-p', '-t', `${session}:${window}`, '-S', `-${n}`]);
+  if (!Number.isInteger(lines) || lines < 1 || lines > 500) {
+    throw new Error(`invalid capture line count: ${String(lines)}`);
+  }
+  const r = await run('tmux', ['capture-pane', '-p', '-t', `=${session}:=${window}`, '-S', `-${lines}`]);
   return r.stdout;
 }

@@ -15,7 +15,8 @@ function fakeRun(responses: Record<string, { stdout?: string; code?: number }> =
 describe('assertName', () => {
   it('accepts normal names and rejects metacharacters and option-like values', () => {
     expect(() => assertName('ccgram-daemon')).not.toThrow();
-    for (const bad of ['', '-t', 'a b', 'a;b', 'a$(x)', 'a:b', 'x'.repeat(65)]) {
+    expect(() => assertName('hunt_1')).not.toThrow();
+    for (const bad of ['', '-t', 'a b', 'a;b', 'a$(x)', 'a:b', 'x'.repeat(65), 'a.b', '.', '..']) {
       expect(() => assertName(bad)).toThrow();
     }
   });
@@ -50,10 +51,32 @@ describe('tmux helper', () => {
     expect(present.calls).toHaveLength(1);
   });
 
-  it('capture clamps the line count and targets session:window', async () => {
+  it('capture uses exact-match targets and a valid line count', async () => {
     const { run, calls } = fakeRun({ 'capture-pane': { stdout: 'hello' } });
-    expect(await capture(run, 'ccgram', 'hunt', 100000)).toBe('hello');
-    expect(calls[0].args).toEqual(['capture-pane', '-p', '-t', 'ccgram:hunt', '-S', '-500']);
+    expect(await capture(run, 'ccgram', 'hunt', 500)).toBe('hello');
+    expect(calls[0].args).toEqual(['capture-pane', '-p', '-t', '=ccgram:=hunt', '-S', '-500']);
+  });
+
+  it('capture rejects invalid line counts without running', async () => {
+    const { run, calls } = fakeRun();
+    for (const bad of [NaN, 0, -1, 1.5, 501]) {
+      await expect(capture(run, 's', 'w', bad)).rejects.toThrow();
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it('uses exact-match session targets', async () => {
+    const a = fakeRun();
+    await hasSession(a.run, 'ccgram');
+    expect(a.calls[0].args).toEqual(['has-session', '-t', '=ccgram']);
+    const b = fakeRun();
+    await listWindows(b.run, 'ccgram');
+    expect(b.calls[0].args.slice(0, 3)).toEqual(['list-windows', '-t', '=ccgram']);
+  });
+
+  it('ensureSession throws when creation fails', async () => {
+    const f = fakeRun({ 'has-session': { code: 1 }, 'new-session': { code: 1 } });
+    await expect(ensureSession(f.run, 'sess', 'work')).rejects.toThrow('sess');
   });
 
   it('rejects bad names before running anything', async () => {
