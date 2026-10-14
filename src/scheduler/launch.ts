@@ -114,6 +114,7 @@ export function buildRunnerArgv(p: {
     // Emitted last so nothing earlier can override them.
     `JOBBER_RUN_ID=${p.runId}`,
     `JOBBER_DRY_RUN=${p.dryRun ? '1' : '0'}`,
+    `SCHEDULER_DRY_RUN=${p.dryRun ? 'true' : 'false'}`,
     'npx',
     'tsx',
     'scripts/run-claude.ts',

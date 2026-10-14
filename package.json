@@ -36,6 +36,7 @@
     "eval:judge": "tsx scripts/eval/judge.ts",
     "report": "tsx scripts/funnel-report.ts",
     "jobber:control": "tsx scripts/jobber-control.ts",
+    "scheduler": "tsx scripts/scheduler.ts",
     "setup": "tsx scripts/setup.ts"
   },
   "dependencies": {
