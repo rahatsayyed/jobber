@@ -4,14 +4,28 @@ import { execFile } from 'node:child_process';
 export type Run = (
   cmd: string,
   args: string[],
-  opts?: { cwd?: string },
+  opts?: { cwd?: string; input?: string; env?: Record<string, string> },
 ) => Promise<{ stdout: string; code: number }>;
 
 export const defaultRun: Run = (cmd, args, opts) =>
   new Promise((resolve) => {
-    execFile(cmd, args, { cwd: opts?.cwd, timeout: 10_000, maxBuffer: 1_000_000 }, (err, stdout) => {
-      resolve({ stdout: String(stdout ?? ''), code: err ? 1 : 0 });
-    });
+    const child = execFile(
+      cmd,
+      args,
+      {
+        cwd: opts?.cwd,
+        env: opts?.env ? { ...process.env, ...opts.env } : undefined,
+        timeout: 10_000,
+        maxBuffer: 1_000_000,
+      },
+      (err, stdout) => {
+        resolve({ stdout: String(stdout ?? ''), code: err ? 1 : 0 });
+      },
+    );
+    if (opts?.input !== undefined) {
+      child.stdin?.on('error', () => {});
+      child.stdin?.end(opts.input);
+    }
   });
 
 const NAME_RE = /^[A-Za-z0-9_.-]{1,64}$/;

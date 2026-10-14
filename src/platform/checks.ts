@@ -5,6 +5,8 @@ import { parseEnv } from './envFile.js';
 import { hooksStatus, type HookSettings } from './ccgramHooks.js';
 import { detectSet, type LocalSettings, type RawSets } from './permissions.js';
 import { hasSession } from './tmux.js';
+import { loadPin, verifyModelFiles, type ClassifierPin } from '../safety/classifierModel.js';
+import { loadProfiles } from './runner.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
 const warn = (detail: string, fix?: string): CheckResult => ({ status: 'warn', detail, fix });
@@ -47,6 +49,112 @@ function parseJson(text: string): { ok: true; value: unknown } | { ok: false } {
 
 const TOKEN_SHAPE = /^\d{5,}:[A-Za-z0-9_-]{10,}$/;
 const SKIP_FLAG = /dangerously-skip-permissions|bypassPermissions/;
+
+export interface RestrictedDeps {
+  loadPin(path: string): ClassifierPin;
+  verify(dir: string, pin: ClassifierPin): Promise<{ ok: boolean; problems: string[] }>;
+  loadProfiles(policyPath: string): Record<string, { allow: string[] }>;
+}
+
+const MIN_CLAUDE = [2, 1, 295];
+const ZERO_DIGEST = /^0{64}$/;
+
+function olderThan(found: number[], min: number[]): boolean {
+  for (let i = 0; i < 3; i++) {
+    if (found[i] !== min[i]) return found[i] < min[i];
+  }
+  return false;
+}
+
+function serverNames(ctx: DoctorContext, rel: string[]): Set<string> {
+  const p = join(ctx.root, ...rel);
+  const names = new Set<string>();
+  if (!ctx.fs.exists(p)) return names;
+  const parsed = parseJson(ctx.fs.read(p));
+  const servers = parsed.ok ? (parsed.value as { mcpServers?: Record<string, unknown> }).mcpServers : undefined;
+  for (const k of Object.keys(servers ?? {})) names.add(k);
+  return names;
+}
+
+export function restrictedChecks(deps: Partial<RestrictedDeps> = {}): Check[] {
+  const d: RestrictedDeps = {
+    loadPin: deps.loadPin ?? loadPin,
+    verify: deps.verify ?? ((dir, pin) => verifyModelFiles(dir, pin)),
+    loadProfiles: deps.loadProfiles ?? ((p) => loadProfiles(p)),
+  };
+  return [
+    {
+      id: 'classifier_model',
+      title: 'injection classifier model',
+      async run(ctx) {
+        const fixPin = 'npx tsx scripts/classifier/fit.ts --pin';
+        let pin: ClassifierPin;
+        try {
+          pin = d.loadPin(join(ctx.root, 'config', 'classifier.pin.json'));
+        } catch {
+          return fail('config/classifier.pin.json is missing or invalid', 'restore it from git');
+        }
+        const entries = [pin.model, pin.tokenizer, pin.config, ...(pin.extra ?? [])];
+        if (entries.some((e) => ZERO_DIGEST.test(e.sha256))) {
+          return fail('model files are not pinned (placeholder digests)', fixPin);
+        }
+        const v = await d.verify(join(ctx.root, 'models', 'prompt-guard-2-22m'), pin);
+        if (!v.ok) return fail(v.problems.join('; '), `place the pinned files in models/prompt-guard-2-22m, or re-pin: ${fixPin}`);
+        const cfgPath = join(ctx.root, 'config', 'classifier.json');
+        if (!ctx.fs.exists(cfgPath)) {
+          return warn('config/classifier.json is missing: threshold not fitted', 'npm run classifier:fit -- --write');
+        }
+        const cfg = parseJson(ctx.fs.read(cfgPath));
+        const held = cfg.ok ? (cfg.value as { held_out?: { fpr?: unknown; tpr?: unknown } }).held_out : undefined;
+        if (!held || typeof held.fpr !== 'number' || typeof held.tpr !== 'number') {
+          return warn('config/classifier.json has no held-out fpr/tpr', 'npm run classifier:fit -- --write');
+        }
+        return pass(`files match the pin; held-out fpr ${held.fpr}, tpr ${held.tpr}`);
+      },
+    },
+    {
+      id: 'run_profiles',
+      title: 'run profiles',
+      async run(ctx) {
+        let profiles: Record<string, { allow: string[] }>;
+        try {
+          profiles = d.loadProfiles(join(ctx.root, 'config', 'run-profiles.json'));
+        } catch (e) {
+          const msg = String((e as Error)?.message ?? 'unknown error').split('\n')[0];
+          return fail(msg, 'fix config/run-profiles.json');
+        }
+        const wake = profiles.outreach_wake;
+        if (!wake) return fail('profile outreach_wake is missing', 'restore config/run-profiles.json from git');
+        const known = new Set([...serverNames(ctx, ['.mcp.json']), ...serverNames(ctx, ['config', 'runner', 'mcp.platform.json'])]);
+        const unknown = [...new Set(wake.allow.map((t) => t.split('__')[1] ?? ''))].filter((s) => !known.has(s));
+        return unknown.length
+          ? warn(`outreach_wake allows tools of unconfigured server(s): ${unknown.join(', ')}`, 'add the server to config/runner/mcp.platform.json or drop the tool')
+          : pass(`${Object.keys(profiles).length} profile(s) valid`);
+      },
+    },
+    {
+      id: 'restricted_hook',
+      title: 'restricted-run tool allowlist hook',
+      async run(ctx) {
+        const hook = join(ctx.root, '.claude', 'hooks', 'tool-allowlist.cjs');
+        if (!ctx.fs.exists(hook)) return fail('.claude/hooks/tool-allowlist.cjs is missing', 'restore it from git');
+        const event = JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'true' } });
+        const r = await ctx.run('node', [hook, 'outreach_wake'], { cwd: ctx.root, input: event, env: { HOOK_NO_LOG: '1' } });
+        if (!/"deny"/.test(r.stdout)) {
+          return fail('the hook did not deny a Bash event under outreach_wake', 'check .claude/hooks/tool-allowlist.cjs and config/run-profiles.json');
+        }
+        const v = await ctx.run('claude', ['--version']);
+        const m = /(\d+)\.(\d+)\.(\d+)/.exec(v.stdout);
+        const hint = 'upgrade Claude Code to 2.1.295 or later (hook onFailure: block)';
+        if (v.code !== 0 || !m) return warn('Claude Code version could not be read', hint);
+        if (olderThan([Number(m[1]), Number(m[2]), Number(m[3])], MIN_CLAUDE)) {
+          return warn(`Claude Code ${m[0]} is older than 2.1.295`, hint);
+        }
+        return pass(`hook denies Bash; Claude Code ${m[0]}`);
+      },
+    },
+  ];
+}
 
 export const ccgramChecks: Check[] = [
   {

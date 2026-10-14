@@ -1,7 +1,7 @@
 // tests/platform-doctor.test.ts
 import { describe, it, expect } from 'vitest';
 import { exitCode, formatReport, runChecks, type DoctorContext } from '../src/platform/doctor.js';
-import { ccgramChecks } from '../src/platform/checks.js';
+import { ccgramChecks, restrictedChecks } from '../src/platform/checks.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { applySet } from '../src/platform/permissions.js';
 import { mergeHooks } from '../src/platform/ccgramHooks.js';
@@ -288,5 +288,77 @@ describe('web check', () => {
     const ok = await runWeb(`WEB_TOKEN=${'z'.repeat(30)}\n`);
     expect(ok.status).toBe('pass');
     expect(JSON.stringify(ok)).not.toContain('zzzz');
+  });
+});
+
+describe('restricted-run checks', () => {
+  const Z = '0'.repeat(64);
+  const pinOf = (sha: string) => ({
+    model: { file: 'model.onnx', sha256: sha },
+    tokenizer: { file: 'tokenizer.json', sha256: sha },
+    config: { file: 'config.json', sha256: sha },
+    extra: [],
+    malicious_index: 1,
+    source: 's',
+  });
+  const HOOK = '/p/.claude/hooks/tool-allowlist.cjs';
+  const base = (): Files => ({
+    [HOOK]: { text: '//' },
+    '/p/config/classifier.json': { text: JSON.stringify({ held_out: { tpr: 0.91, fpr: 0.004, n: 100 } }) },
+    '/p/.mcp.json': { text: JSON.stringify({ mcpServers: { db: {} } }) },
+    '/p/config/runner/mcp.platform.json': { text: JSON.stringify({ mcpServers: { naukri: {} } }) },
+  });
+  const profiles = (allow: string[]) => ({ outreach_wake: { allow } }) as any;
+  const mk = (over: Record<string, unknown> = {}) =>
+    restrictedChecks({
+      loadPin: () => pinOf('a'.repeat(64)) as any,
+      verify: async () => ({ ok: true, problems: [] }),
+      loadProfiles: () => profiles(['mcp__db__get_funnel', 'mcp__naukri__naukri_open']),
+      ...over,
+    } as any);
+  const DENY = '{"hookSpecificOutput":{"permissionDecision":"deny"}}';
+  const runner = (claudeOut: string, hookOut: string) => async (cmd: string) =>
+    cmd === 'claude' ? { stdout: claudeOut, code: 0 } : { stdout: hookOut, code: 0 };
+  const run = async (checks: ReturnType<typeof restrictedChecks>, files: Files, rn = runner('2.1.300 (Claude Code)', DENY)) => {
+    const ctx = { ...ctxWith(files), run: rn } as DoctorContext;
+    const out = await runChecks(checks, ctx);
+    return Object.fromEntries(out.map((r) => [r.id, r.result]));
+  };
+
+  it('classifier_model: fails on zero digests with the pin hint', async () => {
+    const r = await run(mk({ loadPin: () => pinOf(Z) }), base());
+    expect(r.classifier_model.status).toBe('fail');
+    expect(r.classifier_model.fix).toContain('fit.ts --pin');
+  });
+  it('classifier_model: fails naming the file on a problem', async () => {
+    const r = await run(mk({ verify: async () => ({ ok: false, problems: ['sha256 mismatch: model.onnx'] }) }), base());
+    expect(r.classifier_model.status).toBe('fail');
+    expect(r.classifier_model.detail).toContain('model.onnx');
+  });
+  it('classifier_model: warns without config/classifier.json, passes with fpr and tpr', async () => {
+    const f = base();
+    delete f['/p/config/classifier.json'];
+    expect((await run(mk(), f)).classifier_model.status).toBe('warn');
+    const ok = (await run(mk(), base())).classifier_model;
+    expect(ok.status).toBe('pass');
+    expect(ok.detail).toContain('0.004');
+    expect(ok.detail).toContain('0.91');
+  });
+  it('run_profiles: fail on throw, warn on unknown server, pass otherwise', async () => {
+    const t = await run(mk({ loadProfiles: () => { throw new Error('bad profile x'); } }), base());
+    expect(t.run_profiles.status).toBe('fail');
+    expect(t.run_profiles.detail).toContain('bad profile x');
+    const w = await run(mk({ loadProfiles: () => profiles(['mcp__ghost__do']) }), base());
+    expect(w.run_profiles.status).toBe('warn');
+    expect((await run(mk(), base())).run_profiles.status).toBe('pass');
+  });
+  it('restricted_hook: fails when missing or not denying, warns on old or unparseable claude', async () => {
+    const f = base();
+    delete f[HOOK];
+    expect((await run(mk(), f)).restricted_hook.status).toBe('fail');
+    expect((await run(mk(), base(), runner('2.1.300', ''))).restricted_hook.status).toBe('fail');
+    expect((await run(mk(), base(), runner('claude 2.1.100', DENY))).restricted_hook.status).toBe('warn');
+    expect((await run(mk(), base(), runner('weird', DENY))).restricted_hook.status).toBe('warn');
+    expect((await run(mk(), base())).restricted_hook.status).toBe('pass');
   });
 });

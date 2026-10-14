@@ -1,7 +1,7 @@
 // scripts/doctor.ts
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ccgramChecks } from '../src/platform/checks.js';
+import { ccgramChecks, restrictedChecks } from '../src/platform/checks.js';
 import { exitCode, formatReport, runChecks, type DoctorContext } from '../src/platform/doctor.js';
 import { defaultRun } from '../src/platform/tmux.js';
 
@@ -17,6 +17,6 @@ const ctx: DoctorContext = {
   },
 };
 
-const results = await runChecks(ccgramChecks, ctx);
+const results = await runChecks([...ccgramChecks, ...restrictedChecks()], ctx);
 console.log(formatReport(results));
 process.exit(exitCode(results));
