@@ -92,7 +92,7 @@ describe('visibleText', () => {
     const deep = '<div>'.repeat(300) + 'TOODEEP' + '</div>'.repeat(300) + '<p>after</p>';
     const t = vt(deep);
     expect(t).not.toContain('TOODEEP');
-    expect(t).toContain('after');
+    expect(t).not.toContain('after'); // sticky cap: everything after the cap stays hidden
     const evil = '<'.repeat(5000) + 'a'.repeat(5000);
     expect(() => vt(evil)).not.toThrow();
   });
@@ -107,5 +107,28 @@ describe('visibleText', () => {
     expect(vt(fx('checkpoint.html'))).toContain('CAPTCHA');
     expect(vt(fx('invitations.html'))).toContain('Ignore');
     expect(vt(fx('profile-not-connected.html'))).not.toContain('LinkedIn'); // title lives in head
+  });
+  describe('fix round 1', () => {
+    it('lowercase offset misalignment (U+0130, U+00DF) does not leak raw-text or hidden tags', () => {
+      for (const pre of ['\u0130'.repeat(10), '\u00df'.repeat(10), '\u0130\u00df'.repeat(5)]) {
+        const t = vt(pre + '<script>LEAK</script><template>LEAK2</template>ok');
+        expect(t).not.toContain('LEAK');
+        expect(t).toContain('ok');
+      }
+    });
+    it('stray end tags cannot unwind the depth cap', () => {
+      const t = vt('<div>'.repeat(201) + '<div style="display:none">' + '</b>'.repeat(3) + 'LEAK');
+      expect(t).not.toContain('LEAK');
+    });
+    it.each([
+      ['display:/**/none'], ['dis/**/play:none'], ['display:none;display:foo'], ['display:\\6e one'],
+      ['visibility:hid\\den'], ['opacity:0;opacity:bogus'],
+      ['color:rgba(0,0,0,0)'], ['color: hsla(10, 20%, 30%, 0.0)'], ['color:rgba(1,2,3,0)'],
+    ])('style hides (fix round): %s', (style) => {
+      expect(isHiddenByAttrs('p', { style })).toBe(true);
+    });
+    it('rgba with nonzero alpha stays visible', () => {
+      expect(isHiddenByAttrs('p', { style: 'color:rgba(0,0,0,0.5)' })).toBe(false);
+    });
   });
 });

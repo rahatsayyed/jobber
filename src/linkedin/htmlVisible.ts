@@ -79,15 +79,15 @@ export function parseHtml(html: string): HtmlNode {
   const root = mk('#root', {}, false);
   try {
     const s = (html ?? '').length > MAX_INPUT ? html.slice(0, MAX_INPUT) : html ?? '';
-    const lower = s.toLowerCase();
+    const lower = s.replace(/[A-Z]/g, (c) => c.toLowerCase()); // ASCII-only: keeps offsets aligned with s
     const n = s.length;
     const stack: HtmlNode[] = [root];
-    let overflow = 0; // open non-void tags beyond the depth cap (not pushed)
+    let capped = false; // sticky: once the depth cap is hit, everything after is hidden (fail closed)
     const top = () => stack[stack.length - 1];
     const addText = (t: string) => {
       if (!t) return;
       const p = top();
-      p.children.push({ tag: '#text', attrs: {}, text: decode(t), children: [], hidden: p.hidden || overflow > 0 });
+      p.children.push({ tag: '#text', attrs: {}, text: decode(t), children: [], hidden: p.hidden || capped });
     };
     let i = 0;
     while (i < n) {
@@ -113,7 +113,7 @@ export function parseHtml(html: string): HtmlNode {
         const end = s.indexOf('>', j);
         i = end < 0 ? n : end + 1;
         if (VOID.has(name)) continue;
-        if (overflow > 0) { overflow--; continue; }
+        if (capped) continue;
         for (let k = stack.length - 1; k > 0; k--) {
           if (stack[k].tag === name) { stack.length = k; break; }
         }
@@ -126,7 +126,8 @@ export function parseHtml(html: string): HtmlNode {
       const [attrs, next] = parseAttrs(s, j);
       i = next;
       const parent = top();
-      const atCap = stack.length > MAX_DEPTH || overflow > 0;
+      if (stack.length > MAX_DEPTH) capped = true;
+      const atCap = capped;
       const node = mk(tag, attrs, parent.hidden || atCap || isHiddenByAttrs(tag, attrs));
       parent.children.push(node);
       if (VOID.has(tag)) continue;
@@ -140,8 +141,7 @@ export function parseHtml(html: string): HtmlNode {
         }
         continue;
       }
-      if (atCap) overflow++;
-      else stack.push(node);
+      if (!atCap) stack.push(node);
     }
   } catch {
     // tolerant: return what we have
@@ -149,16 +149,36 @@ export function parseHtml(html: string): HtmlNode {
   return root;
 }
 
-function parseStyle(style: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const decl of style.split(';')) {
+function stripCssComments(s: string): string {
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    const a = s.indexOf('/*', i);
+    if (a < 0) { out += s.slice(i); break; }
+    out += s.slice(i, a);
+    const b = s.indexOf('*/', a + 2);
+    if (b < 0) break;
+    i = b + 2;
+  }
+  return out;
+}
+
+const ESCAPE_SENSITIVE = new Set(['display', 'visibility', 'opacity', 'font-size', 'color', 'position', 'overflow', 'clip', 'clip-path']);
+
+/** All declarations per property, in order (a later invalid value would not override in a browser, so none is trusted to win). */
+function parseStyle(style: string): { decls: Record<string, string[]>; escaped: boolean } {
+  const decls: Record<string, string[]> = {};
+  let escaped = false;
+  for (const decl of stripCssComments(style).split(';')) {
     const c = decl.indexOf(':');
     if (c < 0) continue;
     const k = decl.slice(0, c).trim().toLowerCase();
     const v = decl.slice(c + 1).replace(/!important/gi, '').trim().toLowerCase();
-    if (k) out[k] = v;
+    if (!k) continue;
+    if ((k.includes('\\') || v.includes('\\')) && (ESCAPE_SENSITIVE.has(k) || k.includes('\\'))) escaped = true;
+    (decls[k] ??= []).push(v);
   }
-  return out;
+  return { decls, escaped };
 }
 
 function num(v: string): { n: number; unit: string } | null {
@@ -219,6 +239,7 @@ function styleHides(st: Record<string, string>): boolean {
   const color = st['color'];
   if (color !== undefined) {
     if (color === 'transparent') return true;
+    if (/^(?:rgba|hsla)\([^)]*,0(?:\.0+)?%?\)$/.test(color.replace(/\s+/g, ''))) return true;
     const bg = st['background-color'] ?? st['background'];
     if (bg !== undefined) {
       const nc = normColor(color);
@@ -236,7 +257,16 @@ export function isHiddenByAttrs(tag: string, attrs: Record<string, string>): boo
   if ((attrs['aria-hidden'] ?? '').trim().toLowerCase() === 'true') return true;
   if (t === 'input' && (attrs['type'] ?? '').trim().toLowerCase() === 'hidden') return true;
   const style = attrs['style'];
-  if (style) return styleHides(parseStyle(style));
+  if (!style) return false;
+  const { decls, escaped } = parseStyle(style);
+  if (escaped) return true; // CSS escapes in a hiding-relevant declaration: fail closed
+  let max = 1;
+  for (const k in decls) max = Math.max(max, decls[k].length);
+  for (let i = 0; i < max; i++) {
+    const st: Record<string, string> = {};
+    for (const k in decls) st[k] = decls[k][Math.min(i, decls[k].length - 1)];
+    if (styleHides(st)) return true;
+  }
   return false;
 }
 
@@ -259,6 +289,7 @@ export function visibleText(node: HtmlNode): string {
     .join('\n');
 }
 
+/** Returns matching nodes INCLUDING hidden ones; callers must filter on `.hidden` (ancestor hiding is already folded in). */
 export function findAll(node: HtmlNode, pred: (n: HtmlNode) => boolean): HtmlNode[] {
   const out: HtmlNode[] = [];
   const walk = (nd: HtmlNode) => {
