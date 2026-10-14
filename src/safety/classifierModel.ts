@@ -19,25 +19,36 @@ export interface ClassifierPin {
   model: PinEntry;
   tokenizer: PinEntry;
   config: PinEntry;
+  // fit.ts --pin (Task 4) must pin every file the tokenizer reads into `extra`.
+  extra?: PinEntry[];
   malicious_index: number;
   source: string;
 }
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const SAFE_FILE = /^[A-Za-z0-9_.-]{1,100}$/;
+const safeFile = (f: string): boolean => SAFE_FILE.test(f) && f !== '.' && f !== '..';
 
 export function loadPin(path: string): ClassifierPin {
   const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<ClassifierPin>;
   const entry = (e: unknown): boolean =>
     !!e &&
     typeof (e as PinEntry).file === 'string' &&
-    SAFE_FILE.test((e as PinEntry).file) &&
+    safeFile((e as PinEntry).file) &&
     typeof (e as PinEntry).sha256 === 'string' &&
     HEX64.test((e as PinEntry).sha256);
-  if (!entry(raw.model) || !entry(raw.tokenizer) || !entry(raw.config) || !Number.isInteger(raw.malicious_index)) {
+  const extra = raw.extra === undefined ? [] : raw.extra;
+  if (
+    !entry(raw.model) ||
+    !entry(raw.tokenizer) ||
+    !entry(raw.config) ||
+    !Array.isArray(extra) ||
+    !extra.every(entry) ||
+    (raw.malicious_index !== 0 && raw.malicious_index !== 1)
+  ) {
     throw new Error(`${path} is not a valid classifier pin`);
   }
-  return raw as ClassifierPin;
+  return { ...(raw as ClassifierPin), extra };
 }
 
 export function sha256File(file: string): Promise<string> {
@@ -56,7 +67,7 @@ export async function verifyModelFiles(
   hash: (file: string) => Promise<string> = sha256File,
 ): Promise<{ ok: boolean; problems: string[] }> {
   const problems: string[] = [];
-  for (const e of [pin.model, pin.tokenizer, pin.config]) {
+  for (const e of [pin.model, pin.tokenizer, pin.config, ...(pin.extra ?? [])]) {
     const p = join(dir, e.file);
     if (!existsSync(p)) {
       problems.push(`missing file: ${e.file}`);
@@ -102,16 +113,33 @@ const defaultDeps: AdapterDeps = {
     tf.env.allowRemoteModels = false;
     tf.env.localModelPath = '/';
     const tok = await tf.AutoTokenizer.from_pretrained(dir);
-    const cls = tok.model?.vocab ? tok.cls_token_id : tok.cls_token_id;
+    const clsId = Number(tok.cls_token_id ?? tok.model?.tokens_to_ids?.get('[CLS]'));
+    const sepId = Number(tok.sep_token_id ?? tok.model?.tokens_to_ids?.get('[SEP]'));
+    for (const [n, v] of [['cls', clsId], ['sep', sepId]] as const) {
+      if (!Number.isInteger(v) || v < 0) throw new Error(`classifier tokenizer: cannot resolve ${n} token id`);
+    }
     return {
-      clsId: Number(cls ?? tok.model.tokens_to_ids.get('[CLS]')),
-      sepId: Number(tok.sep_token_id ?? tok.model.tokens_to_ids.get('[SEP]')),
+      clsId,
+      sepId,
       encode(text: string): number[] {
         return Array.from(tok.encode(text, { add_special_tokens: false }) as number[]);
       },
     };
   },
 };
+
+function validateConfig(c: ClassifierConfig): void {
+  const int = (v: number, lo: number, hi: number): boolean => Number.isInteger(v) && v >= lo && v <= hi;
+  const ok =
+    Number.isFinite(c.threshold) &&
+    c.threshold >= 0 &&
+    c.threshold <= 1 &&
+    int(c.windowTokens, 2, 510) &&
+    int(c.stride, 0, Number.MAX_SAFE_INTEGER) &&
+    c.stride < c.windowTokens &&
+    int(c.maxChunks, 1, 64);
+  if (!ok) throw new Error('classifier config invalid');
+}
 
 export interface LoadedClassifier {
   classifier: InjectionClassifier;
@@ -129,7 +157,11 @@ export async function loadClassifier(
 
   let config: ClassifierConfig = { ...DEFAULT_CLASSIFIER_CONFIG, maliciousIndex: pin.malicious_index };
   const cfgPath = opts.configPath ?? 'config/classifier.json';
-  if (existsSync(cfgPath)) config = { ...config, ...(JSON.parse(readFileSync(cfgPath, 'utf8')) as Partial<ClassifierConfig>) };
+  if (existsSync(cfgPath)) {
+    const { maliciousIndex: _ignored, ...fileCfg } = JSON.parse(readFileSync(cfgPath, 'utf8')) as Partial<ClassifierConfig>;
+    config = { ...config, ...fileCfg };
+  }
+  validateConfig(config);
 
   const deps = opts.deps ?? defaultDeps;
   const session = await deps.createSession(join(dir, pin.model.file));
@@ -153,11 +185,15 @@ export async function loadClassifier(
 }
 
 let singleton: Promise<InjectionClassifier> | null = null;
-export function getClassifier(): Promise<InjectionClassifier> {
+export function _resetClassifierForTests(): void {
+  singleton = null;
+}
+export function getClassifier(load: () => Promise<LoadedClassifier> = loadClassifier): Promise<InjectionClassifier> {
   if (!singleton) {
-    singleton = loadClassifier().then((l) => l.classifier);
-    singleton.catch(() => {
-      singleton = null; // never cache a failure; a later call retries
+    const p = load().then((l) => l.classifier);
+    singleton = p;
+    p.catch(() => {
+      if (singleton === p) singleton = null; // never cache a failure; a later call retries
     });
   }
   return singleton;
