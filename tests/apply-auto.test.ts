@@ -131,4 +131,10 @@ describe('apply tool dry run seam', () => {
     expect(got[0].platform).toBe('lever');
     expect(JSON.parse(got[0].payload)).toEqual({ job_id: 'j2', apply_url: 'https://jobs.lever.co/acme/1' });
   });
+
+  it('records the apply_url as origin + pathname only (no query, hash or userinfo)', async () => {
+    await handleApplyAuto({ apply_url: 'https://user:pw@jobs.lever.co/acme/1?token=abc#frag', job_id: 'j3' });
+    const got = rows();
+    expect(JSON.parse(got[0].payload)).toEqual({ job_id: 'j3', apply_url: 'https://jobs.lever.co/acme/1' });
+  });
 });

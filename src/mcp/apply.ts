@@ -7,6 +7,16 @@ import { routeApplyAuto } from './applyAutoRouter.js';
 import { isDryRun, recordDryRun } from '../safety/dryRun.js';
 import { openDb } from '../db.js';
 
+/** origin + pathname only: no query, hash or userinfo reaches the dry-run record. */
+export function safeApplyUrl(raw: string): string {
+  try {
+    const u = new URL(raw);
+    return `${u.origin}${u.pathname}`;
+  } catch {
+    return '[unparseable url]';
+  }
+}
+
 /**
  * Dry-run seam: checked at the top of every apply tool, before any browser, counter or file use.
  * Returns the dry_run result (after recording a dry_run_actions row) or null when live.
@@ -18,7 +28,7 @@ export function dryRunApply(
 ): { status: 'dry_run'; platform: string; job_id: string; id: number } | null {
   if (!isDryRun(env)) return null;
   const payload: Record<string, unknown> = { job_id: args.job_id };
-  if (args.apply_url !== undefined) payload.apply_url = args.apply_url;
+  if (args.apply_url !== undefined) payload.apply_url = safeApplyUrl(args.apply_url);
   const db = openDb();
   const rec = recordDryRun(db, { runId: null, action: 'apply', platform, payload }, new Date(), env);
   return { status: 'dry_run', platform, job_id: args.job_id, id: rec.id };
