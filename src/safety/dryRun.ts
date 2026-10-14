@@ -28,8 +28,18 @@ export function recordDryRun(
   const runId = env.JOBBER_RUN_ID ?? rec.runId ?? null;
   let raw: string;
   try { raw = JSON.stringify(rec.payload ?? {}) ?? '{}'; } catch { raw = '{"unserializable":true}'; }
-  const clamped = raw.slice(0, PAYLOAD_MAX);
-  const payload = redactSecrets(clamped, secretValuesFromEnv(env));
+  const secrets: string[] = [];
+  for (const s of secretValuesFromEnv(env)) {
+    secrets.push(s);
+    const esc = JSON.stringify(s).slice(1, -1);
+    if (esc !== s) secrets.push(esc);
+  }
+  // Redact the full string first, then clamp, so a secret straddling the cut is never stored.
+  let payload = redactSecrets(raw, secrets).slice(0, PAYLOAD_MAX);
+  const open = payload.lastIndexOf('[redacted');
+  if (open !== -1 && payload.indexOf(']', open) === -1) payload = payload.slice(0, open);
+  else if (/\[r(e(d(a(c(t(e(d)?)?)?)?)?)?)?$/.test(payload)) payload = payload.replace(/\[r[a-z]*$/, '');
+  if (payload.endsWith('[')) payload = payload.slice(0, -1);
   const info = db.prepare(
     'INSERT INTO dry_run_actions (run_id, action, platform, person_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)',
   ).run(runId, rec.action, rec.platform, rec.personId ?? null, payload, now.toISOString());

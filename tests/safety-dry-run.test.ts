@@ -72,6 +72,26 @@ describe('dry run recorder', () => {
     expect(row.payload).not.toContain(secret);
   });
 
+  it('redacts a secret straddling the clamp boundary', () => {
+    const db = openDb(':memory:');
+    const secret = 'ZXCVBNMASDFGHJKL';
+    const pad = 'x'.repeat(3980);
+    recordDryRun(db, { runId: null, action: 'a', platform: 'p', payload: { pad, s: secret } }, T, { MY_SECRET_KEY: secret });
+    const row = db.prepare('SELECT payload FROM dry_run_actions').get() as { payload: string };
+    expect(row.payload.length).toBeLessThanOrEqual(4000);
+    for (let i = 4; i <= secret.length; i++) expect(row.payload).not.toContain(secret.slice(0, i));
+    expect(row.payload).not.toMatch(/\[r[a-z]*$/);
+  });
+
+  it('redacts JSON-escaped forms of secrets', () => {
+    const db = openDb(':memory:');
+    const secret = 'pa"ss\\wörd-1234';
+    recordDryRun(db, { runId: null, action: 'a', platform: 'p', payload: { s: secret } }, T, { MY_PASSWORD: secret });
+    const row = db.prepare('SELECT payload FROM dry_run_actions').get() as { payload: string };
+    expect(row.payload).not.toContain('wörd-1234');
+    expect(row.payload).not.toContain(JSON.stringify(secret).slice(1, -1));
+  });
+
   it('clamps limit to 1..500', () => {
     const db = openDb(':memory:');
     for (let i = 0; i < 3; i++) recordDryRun(db, { runId: null, action: 'a', platform: 'p', payload: { i } }, T, {});
