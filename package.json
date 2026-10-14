@@ -11,6 +11,7 @@
     "doctor": "tsx scripts/doctor.ts",
     "classifier:fit": "tsx scripts/classifier/fit.ts",
     "classifier:bench": "tsx scripts/classifier/bench.ts",
+    "models": "tsx scripts/models.ts",
     "status": "tsx scripts/status.ts",
     "web": "tsx scripts/web.ts",
     "permissions": "tsx scripts/permissions.ts",
