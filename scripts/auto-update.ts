@@ -67,7 +67,8 @@ function status(env: NodeJS.ProcessEnv): number {
   console.log(`last good commit: ${st.last_good_commit ?? 'none'}`);
   console.log(`next run: ${st.next_run_at ?? 'unscheduled'}`);
   const r = st.last_result;
-  console.log(r ? `last result: ${r.outcome} at ${r.at}${r.reason ? ` (${r.reason})` : ''}` : 'last result: none');
+  console.log(r ? `last result: ${r.outcome} at ${r.at}${r.reason ? ` (${sanitizeLine(r.reason, 200)})` : ''}` : 'last result: none');
+  if (r?.step) console.log(`last step: ${sanitizeLine(r.step, 60)}`);
   if (st.in_progress) console.log(`in progress: ${st.in_progress.from.slice(0, 12)}..${st.in_progress.to.slice(0, 12)} since ${st.in_progress.started_at}`);
   if (cfg.problems.length > 0) console.log(`config problems: ${cfg.problems.join('; ')}`);
   return 0;

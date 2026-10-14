@@ -121,7 +121,8 @@ async function main(): Promise<number> {
   }
 
   const at = now();
-  const next: BackupState = recordBackupResult(state, result, at);
+  // re-read right before writing so a concurrent restore --drill (last_drill_at) is not overwritten
+  const next: BackupState = recordBackupResult(readBackupState(nodeStateFs, root), result, at);
   if (tick) next.next_run_at = pickRunTime(at, Math.random, quiet).toISOString();
   try {
     writeBackupState(nodeStateFs, root, next);

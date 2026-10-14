@@ -47,6 +47,9 @@ const HINTS: Record<string, string> = {
   'detached-head': 'check out the update branch',
   'wrong-branch': 'switch to the configured update branch',
   'lock-held': 'another run is active; it will retry on the next tick',
+  'in-progress-marker':
+    'a previous update did not finish: verify the checkout with `git status` and `git log -1`, then see the stuck-update steps in docs/backup-and-restore.md',
+  'head-changed': 'HEAD moved while the update was being prepared; it will retry on the next tick',
 };
 
 const TITLES: Record<Outcome, string> = {
@@ -74,7 +77,9 @@ export function formatNotification(r: {
     if (hint) lines.push(`fix: ${hint}`);
   } else if (r.reason) {
     lines.push(`reason: ${sanitizeLine(r.reason, 200)}`);
-    if (r.outcome === 'error') lines.push('fix: see the update log, then retry or update by hand');
+    if (r.outcome === 'error') {
+      lines.push('fix: run `npm run auto-update -- --status` (step and reason are kept in .update/state.json), then retry or update by hand');
+    }
   }
   if (r.step) lines.push(`step: ${sanitizeLine(r.step, 60)}`);
   if (r.commits.length > 0) {

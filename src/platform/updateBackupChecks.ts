@@ -185,7 +185,7 @@ export function updateBackupChecks(): Check[] {
 
         if (!cfg.configured) {
           if (fails.length === 0) {
-            return warn('no backup configured: set BACKUP_DIR and BACKUP_AGE_RECIPIENT', 'see the backup section of the README');
+            return warn('no backup configured: set BACKUP_DIR and BACKUP_AGE_RECIPIENT', 'see docs/backup-and-restore.md');
           }
           return fail(fails.join('; '), fix);
         }
@@ -238,6 +238,9 @@ export function updateBackupChecks(): Check[] {
         }
         if (age === null) return warn('no backup recorded yet', 'run npm run backup');
         if (age > 36 * HOUR) return warn(`last backup is ${hours(age)} old`, 'check the scheduler and BACKUP_ENABLED');
+        if (st.last_error?.startsWith('partial:')) {
+          return warn(`last backup ${hours(age)} ago, but a destination copy failed (partial)`, 'run npm run backup -- --status and check the destination');
+        }
         return pass(`last backup ${hours(age)} ago`);
       },
     },

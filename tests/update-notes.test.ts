@@ -59,6 +59,17 @@ describe('formatNotification', () => {
     expect(t).toContain(reason);
     expect(t).toContain(hint);
   });
+  it('in-progress-marker and head-changed have hints, and error points to --status', () => {
+    const a = formatNotification({ ...base, outcome: 'skipped', to: null, reason: 'in-progress-marker' });
+    expect(a).toContain('fix: a previous update did not finish');
+    expect(a).toContain('docs/backup-and-restore.md');
+    const h = formatNotification({ ...base, outcome: 'skipped', to: null, reason: 'head-changed' });
+    expect(h).toContain('fix: ');
+    expect(h).toContain('HEAD moved');
+    const e = formatNotification({ ...base, outcome: 'error', reason: 'x', step: 'merge' });
+    expect(e).toContain('npm run auto-update -- --status');
+    expect(e).not.toContain('update log');
+  });
   it('other skip reasons and error get hints', () => {
     for (const r of ['disabled', 'unconfigured', 'no-upstream', 'detached-head', 'wrong-branch', 'lock-held']) {
       const t = formatNotification({ ...base, outcome: 'skipped', to: null, reason: r });

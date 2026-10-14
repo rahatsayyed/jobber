@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocalDirDestination, RcloneDestination } from '../src/backup/destination.js';
 import type { Exec } from '../src/lib/exec.js';
 
@@ -225,5 +225,54 @@ describe('LocalDirDestination atomic put', () => {
     await expect(new LocalDirDestination(other).put(src, 'bad')).rejects.toThrow(/invalid backup name/);
     await expect(new LocalDirDestination(other).put(path.join(tmp, 'missing'), NAME)).rejects.toThrow();
     expect(fs.existsSync(other)).toBe(false);
+  });
+
+  describe('without hard links', () => {
+    afterEach(() => vi.restoreAllMocks());
+    const failLink = (code: string) =>
+      vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+        throw Object.assign(new Error('nolink'), { code });
+      });
+
+    it.each(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV'])('falls back to an exclusive copy on %s', async (code) => {
+      const src = path.join(tmp, 's.bin');
+      fs.writeFileSync(src, 'payload');
+      const dir = path.join(tmp, 'bk');
+      failLink(code);
+      await new LocalDirDestination(dir).put(src, NAME);
+      expect(fs.readdirSync(dir)).toEqual([NAME]);
+      expect(fs.readFileSync(path.join(dir, NAME), 'utf8')).toBe('payload');
+      expect(fs.statSync(path.join(dir, NAME)).mode & 0o777).toBe(0o600);
+    });
+
+    it('does not overwrite a name that appears before the fallback copy', async () => {
+      const src = path.join(tmp, 's.bin');
+      fs.writeFileSync(src, 'new');
+      const dir = path.join(tmp, 'bk');
+      fs.mkdirSync(dir, { mode: 0o700 });
+      const real = fs.lstatSync.bind(fs);
+      let hits = 0;
+      // the pre-check sees nothing, then a racer creates the name before the fallback re-check
+      vi.spyOn(fs, 'lstatSync').mockImplementation(((p: fs.PathLike, o?: unknown) => {
+        if (String(p) === path.join(dir, NAME) && hits++ === 0) {
+          fs.writeFileSync(path.join(dir, NAME), 'old');
+          throw Object.assign(new Error('nope'), { code: 'ENOENT' });
+        }
+        return real(p, o as never);
+      }) as typeof fs.lstatSync);
+      failLink('EPERM');
+      await expect(new LocalDirDestination(dir).put(src, NAME)).rejects.toThrow(/already exists/);
+      expect(fs.readFileSync(path.join(dir, NAME), 'utf8')).toBe('old');
+      expect(fs.readdirSync(dir)).toEqual([NAME]);
+    });
+
+    it('still reports other link errors and cleans the temp', async () => {
+      const src = path.join(tmp, 's.bin');
+      fs.writeFileSync(src, 'x');
+      const dir = path.join(tmp, 'bk');
+      failLink('EIO');
+      await expect(new LocalDirDestination(dir).put(src, NAME)).rejects.toThrow('nolink');
+      expect(fs.readdirSync(dir)).toEqual([]);
+    });
   });
 });

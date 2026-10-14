@@ -15,6 +15,7 @@ export interface BackupDestination {
 }
 
 const SIDECAR = '.sha256';
+const NO_LINK_CODES = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV']);
 
 function isArchiveName(name: string): boolean {
   return BACKUP_NAME_RE.test(name);
@@ -101,8 +102,19 @@ export class LocalDirDestination implements BackupDestination {
       try {
         fs.linkSync(tmp, target);
       } catch (e) {
-        if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`backup already exists: ${name}`);
-        throw e;
+        const code = (e as NodeJS.ErrnoException).code;
+        if (code === 'EEXIST') throw new Error(`backup already exists: ${name}`);
+        if (!NO_LINK_CODES.has(code ?? '')) throw e;
+        // no hard links here (exFAT, FAT, some SMB): exclusive copy, no atomic-link guarantee
+        if (lstatOrNull(target)) throw new Error(`backup already exists: ${name}`);
+        try {
+          fs.copyFileSync(tmp, target, fs.constants.COPYFILE_EXCL);
+        } catch (ce) {
+          if ((ce as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`backup already exists: ${name}`);
+          try { fs.unlinkSync(target); } catch { /* nothing partial to remove */ }
+          throw ce;
+        }
+        try { fs.chmodSync(target, 0o600); } catch { /* filesystem without modes */ }
       }
     } finally {
       try { fs.unlinkSync(tmp); } catch { /* already gone */ }

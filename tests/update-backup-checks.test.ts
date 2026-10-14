@@ -248,6 +248,19 @@ describe('backup-freshness and backup-drill', () => {
     expect(r.result.status).toBe('fail');
     expect(JSON.stringify(r.result)).not.toContain(MARK);
   });
+  it('warns on a partial result even when the primary succeeded recently, without the label text', async () => {
+    const r = await one('backup-freshness', {
+      files: backupState({ last_backup_at: '2026-10-14T00:00:00Z', last_error: `partial: rclone:${MARK} failed` }),
+    });
+    expect(r.result.status).toBe('warn');
+    expect(r.result.detail).toContain('partial');
+    expect(JSON.stringify(r.result)).not.toContain(MARK);
+  });
+  it('config fix text points to the runbook, not the README', async () => {
+    const r = await one('backup-config');
+    expect(r.result.fix).toContain('docs/backup-and-restore.md');
+    expect(r.result.fix).not.toContain('README');
+  });
   it('drill: pass within 90 days, warn never or older', async () => {
     expect((await one('backup-drill', { files: backupState({ last_drill_at: '2026-09-01T00:00:00Z' }) })).result.status).toBe('pass');
     expect((await one('backup-drill')).result.status).toBe('warn');
