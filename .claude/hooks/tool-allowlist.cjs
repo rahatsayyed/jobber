@@ -10,17 +10,20 @@ const path = require('path');
 
 const DEFAULT_ROOT = path.resolve(__dirname, '..', '..');
 const SECRET_ARG_RES = [
-  /\.env\b/i,
-  /\bsecrets\//i,
-  /\buser-data\//i,
+  /\.env/i,
+  /secrets[\\/]/i,
+  /user-data[\\/]/i,
   /data\.sqlite/i,
   /id_rsa/i,
-  /(^|[\s"'=])~\//,
-  /(^|[\s"'=])\/(etc|root|home|users|tmp|var)\//i,
+  /~[\\/]/,
+  /\/(etc|root|home|users|tmp|var)\//i,
 ];
-const BAD_BASENAME = /^\.env|secret|state\.json$|\.sqlite$/i;
+const BAD_BASENAME = /^\.env|secret|state\.json$|\.sqlite/i;
+const BAD_SEGMENT = /^(secrets|user-data|\.git|node_modules)$/i;
 const AGENT_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 const TOOL_NAME = /^[A-Za-z0-9_-]+$/;
+const MAX_DEPTH = 8;
+const MAX_STRINGS = 5000;
 
 function agentTools(agentType, root) {
   if (typeof agentType !== 'string' || !AGENT_NAME.test(agentType)) return null;
@@ -41,21 +44,34 @@ function agentTools(agentType, root) {
     .filter(Boolean);
 }
 
-function* strings(v, depth) {
-  if (depth > 8) return;
-  if (typeof v === 'string') yield v;
-  else if (Array.isArray(v)) for (const x of v) yield* strings(x, depth + 1);
-  else if (v && typeof v === 'object') for (const x of Object.values(v)) yield* strings(x, depth + 1);
+/** Collects every string in v. Throws on nesting deeper than MAX_DEPTH or more than MAX_STRINGS strings. */
+function collectStrings(v) {
+  const out = [];
+  const walk = (x, depth) => {
+    if (depth > MAX_DEPTH) throw new Error('depth');
+    if (typeof x === 'string') {
+      out.push(x);
+      if (out.length > MAX_STRINGS) throw new Error('count');
+    } else if (Array.isArray(x)) {
+      for (const y of x) walk(y, depth + 1);
+    } else if (x && typeof x === 'object') {
+      for (const y of Object.values(x)) walk(y, depth + 1);
+    }
+  };
+  walk(v, 0);
+  return out;
 }
 
 function validEntries(list) {
   return (
     Array.isArray(list) &&
     list.every((e) => typeof e === 'string' && TOOL_NAME.test(e) && !e.includes('*')) &&
-    // a bare mcp__server entry (no tool part) is a whole-server wildcard
-    list.every((e) => !/^mcp__[A-Za-z0-9-]+$/.test(e))
+    // an mcp__ entry must be mcp__<server>__<tool>; a bare mcp__server is a whole-server wildcard
+    list.every((e) => !e.startsWith('mcp__') || /^mcp__.+?__[A-Za-z0-9_-]+$/.test(e))
   );
 }
+
+const nonEmptyString = (v) => typeof v === 'string' && v !== '';
 
 function decide(event, profile, opts) {
   const root = (opts && opts.root) || DEFAULT_ROOT;
@@ -71,7 +87,12 @@ function decide(event, profile, opts) {
     const name = event.tool_name;
     let allowed = new Set([...allowList, ...builtins]);
 
-    if (event.agent_id || event.agent_type) {
+    const hasId = 'agent_id' in event;
+    const hasType = 'agent_type' in event;
+    if (hasId || hasType) {
+      if ((hasId && !nonEmptyString(event.agent_id)) || (hasType && !nonEmptyString(event.agent_type))) {
+        return deny('malformed agent fields');
+      }
       const tools = agentTools(event.agent_type, root);
       if (!tools) return deny('subagent type has no definition file');
       allowed = new Set(tools.filter((t) => allowed.has(t)));
@@ -84,23 +105,39 @@ function decide(event, profile, opts) {
       const fp = input.file_path || input.path;
       if (typeof fp !== 'string' || fp === '') return deny('path rule: no path');
       if (!Array.isArray(rule.prefixes) || rule.prefixes.length === 0) return deny('path rule: no prefixes');
+      let realRoot = root;
+      try {
+        realRoot = fs.realpathSync(root);
+      } catch {
+        /* keep the lexical root */
+      }
       let resolved = path.resolve(root, fp);
       try {
         resolved = fs.realpathSync(resolved);
       } catch {
         /* a not-yet-existing file keeps its lexical path */
       }
+      const under = (b) => resolved === b || resolved.startsWith(b.endsWith(path.sep) ? b : b + path.sep);
       const ok = rule.prefixes.some((p) => {
         if (typeof p !== 'string') return false;
-        const base = path.join(root, p);
-        return resolved === base || resolved.startsWith(base.endsWith(path.sep) ? base : base + path.sep);
+        return under(path.join(root, p)) || under(path.join(realRoot, p));
       });
       if (!ok) return deny('path outside allowed prefixes');
       if (BAD_BASENAME.test(path.basename(resolved))) return deny('path rule: sensitive file name');
+      let rel = path.relative(realRoot, resolved);
+      if (rel.startsWith('..')) rel = path.relative(root, resolved);
+      const segs = rel.split(path.sep).slice(0, -1);
+      if (segs.some((s) => BAD_SEGMENT.test(s) || /^\.env/i.test(s))) return deny('path rule: sensitive directory');
     }
 
     if (Array.isArray(profile.screen_args) && profile.screen_args.includes(name)) {
-      for (const s of strings(event.tool_input, 0)) {
+      let strs;
+      try {
+        strs = collectStrings(event.tool_input);
+      } catch {
+        return deny('tool_input too deeply nested or too large to screen');
+      }
+      for (const s of strs) {
         if (SECRET_ARG_RES.some((re) => re.test(s))) return deny('secret-shaped path in tool arguments');
       }
     }
@@ -110,12 +147,19 @@ function decide(event, profile, opts) {
   }
 }
 
-function emitDeny(reason) {
-  process.stdout.write(
-    JSON.stringify({
-      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Blocked by run policy: ${reason}` },
-    }),
-  );
+function denyJson(reason) {
+  return JSON.stringify({
+    hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Blocked by run policy: ${reason}` },
+  });
+}
+
+/** Writes the deny JSON and exits 0 only once the write has flushed (a pipe may be async). */
+function emitDenyAndExit(reason) {
+  try {
+    process.stdout.write(denyJson(reason), () => process.exit(0));
+  } catch {
+    process.exit(0);
+  }
 }
 
 function logDenial(profileName, event, reason) {
@@ -160,22 +204,20 @@ function main() {
     }
     if (!result.allow) {
       logDenial(profileName, event, result.reason);
-      emitDeny(result.reason);
+      emitDenyAndExit(result.reason);
+    } else {
+      process.exit(0);
     }
-    process.exit(0);
   });
 }
 
 module.exports = { decide, agentTools };
 if (require.main === module) {
+  process.on('uncaughtException', () => emitDenyAndExit('hook crashed (fail closed)'));
+  process.stdin.on('error', () => emitDenyAndExit('stdin error (fail closed)'));
   try {
     main();
   } catch {
-    try {
-      emitDeny('hook crashed (fail closed)');
-    } catch {
-      process.exit(2);
-    }
-    process.exit(0);
+    emitDenyAndExit('hook crashed (fail closed)');
   }
 }

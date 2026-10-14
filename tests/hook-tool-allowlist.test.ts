@@ -92,6 +92,99 @@ describe('policy hygiene', () => {
   });
 });
 
+describe('fix round 1', () => {
+  const nest = (depth: number, leaf: unknown) => {
+    let v: unknown = leaf;
+    for (let i = 0; i < depth; i++) v = { a: v };
+    return v as object;
+  };
+  it('1: denies deeply nested and oversized input for a screened tool', () => {
+    const t = 'mcp__naukri__naukri_type';
+    expect(call(t, nest(13, 'secrets/x.json')).allow).toBe(false);
+    expect(call(t, nest(3, 'hello')).allow).toBe(true);
+    expect(call(t, { l: Array.from({ length: 5001 }, () => 'x') }).allow).toBe(false);
+    expect(call('mcp__db__get_funnel', nest(13, 'x')).allow).toBe(true); // unscreened
+  });
+  it('2: rejects bare server entries with underscores, keeps valid ones', () => {
+    const d = (allow: string[]) =>
+      hook.decide({ tool_name: 'Skill' }, { allow, builtin_tools: ['Skill'] }, { root: ROOT }).allow;
+    expect(d(['mcp__my_server'])).toBe(false);
+    expect(d(['mcp__db__'])).toBe(false);
+    expect(d(['mcp__job-fetch__board_status'])).toBe(true);
+    expect(d(['mcp__claude_ai_Linear__list_issues'])).toBe(true);
+  });
+  it('3: unanchored secret patterns', () => {
+    const t = 'mcp__naukri__naukri_type';
+    for (const s of ['file:///etc/pw', 'x:/etc/pw', 'a/Users/x', '.envrc', 'a.env_prod', 'mysecrets/k', 'secrets\\k', 'x/tmp/y', 'x/var/y'])
+      expect(call(t, { s }).allow, s).toBe(false);
+    for (const s of ['See you at 4 pm', 'I can start 1/2 next month'])
+      expect(call(t, { s }).allow, s).toBe(true);
+    expect(call('mcp__db__get_funnel', { note: 'uses .env files' }).allow).toBe(true);
+  });
+  it('4: sensitive directory segments and sqlite sidecars', () => {
+    const p = { ...profile, path_rules: { Read: { prefixes: ['config/', 'debug/'] } } };
+    const r = (fp: string) => hook.decide({ tool_name: 'Read', tool_input: { file_path: fp } }, p, { root: ROOT }).allow;
+    expect(r('config/secrets/a.json')).toBe(false);
+    expect(r('config/user-data/a.json')).toBe(false);
+    expect(r('config/node_modules/a.json')).toBe(false);
+    expect(r('config/.git/HEAD')).toBe(false);
+    expect(r('config/.envdir/a.json')).toBe(false);
+    for (const n of ['data.sqlite-wal', 'data.sqlite-shm', 'data.sqlite-journal', 'data.sqlite3'])
+      expect(r('config/' + n)).toBe(false);
+    expect(r('config/target-regions.json')).toBe(true);
+  });
+  it('5: works when the root is reached through a symlink', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const real = fs.mkdtempSync(path.join(os.tmpdir(), 'allow-real-'));
+    const link = real + '-link';
+    try {
+      fs.mkdirSync(path.join(real, 'config'));
+      fs.writeFileSync(path.join(real, 'config', 'a.json'), '{}');
+      fs.symlinkSync(real, link);
+      const r = (root: string, fp: string) =>
+        hook.decide({ tool_name: 'Read', tool_input: { file_path: fp } }, profile, { root }).allow;
+      expect(r(link, 'config/a.json')).toBe(true);
+      expect(r(real, 'config/a.json')).toBe(true);
+      expect(r(link, 'config/missing.json')).toBe(true);
+      expect(r(link, '../x')).toBe(false);
+    } finally {
+      fs.rmSync(link, { force: true });
+      fs.rmSync(real, { recursive: true, force: true });
+    }
+  });
+  it('7: malformed agent fields are denied', () => {
+    for (const extra of [{ agent_type: '' }, { agent_id: '' }, { agent_type: 5 }, { agent_id: 'a', agent_type: '' }, { agent_id: null }]) {
+      expect(call('Skill', {}, extra).allow, JSON.stringify(extra)).toBe(false);
+    }
+    expect(call('mcp__resume__get_base_resume', {}, { agent_id: 'a1', agent_type: 'matcher' }).allow).toBe(true);
+  });
+});
+
+describe('CLI', () => {
+  it('6: deny JSON is fully delivered over a pipe (large reason path) and exit is 0', () => {
+    const r = spawnSync('node', ['.claude/hooks/tool-allowlist.cjs', 'outreach_wake'], {
+      input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'x'.repeat(200000) } }),
+      encoding: 'utf8',
+      cwd: ROOT,
+      env: { ...process.env, HOOK_NO_LOG: '1' },
+    });
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision).toBe('deny');
+  });
+  it('6: empty stdin denies', () => {
+    const r = spawnSync('node', ['.claude/hooks/tool-allowlist.cjs', 'outreach_wake'], {
+      input: '',
+      encoding: 'utf8',
+      cwd: ROOT,
+      env: { ...process.env, HOOK_NO_LOG: '1' },
+    });
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision).toBe('deny');
+  });
+});
+
 describe('CLI', () => {
   const run = (args: string[], event: unknown) =>
     spawnSync('node', ['.claude/hooks/tool-allowlist.cjs', ...args], {
