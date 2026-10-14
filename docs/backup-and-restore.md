@@ -54,6 +54,14 @@ npm run backup -- --status    # last backup age and result
 A crash can leave plaintext staging directories at `.backups/.staging-*`. Delete them by
 hand after a crash; the next run also sweeps leftovers older than 24 hours.
 
+`backup --tick` runs inline under the scheduler hook timeout `SCHEDULER_HOOK_TIMEOUT_SEC`
+(default 120 s, max 3600). For a large database raise it: a timed-out run leaves its staging
+directory until the 24 hour sweep and is retried 60 minutes later.
+
+A `BACKUP_DIR` on exFAT, FAT or another filesystem without hard links works, but the archive is
+then written by an exclusive copy instead of an atomic link, so a crash mid-copy can leave a
+partial file under the final name; the checksum sidecar and `restore` verification catch it.
+
 ## 4. Restore, and the restore drill
 
 Verify only (decrypts, checks the manifest and database integrity, prints table counts, changes
@@ -87,6 +95,9 @@ Warnings for `--apply`:
 - It moves existing files aside and rolls back on failure, but it cannot stop a Claude session
   that holds the database open from writing into the restored file. Stop all sessions and the
   scheduler first.
+- A backup contains `config/ccgram.pin.json` and `.claude/settings.local.json` (plus the
+  managed settings file), so `--apply` writes the pin and the permission set from the backup
+  (the old files are moved aside). Review both after a restore.
 - Restoring a stale database can make already-sent outreach look unsent, which risks duplicate
   sends. After any restore run `/checkreplies` and compare the Gmail Sent folder with
   `outreach_queue` before the next hunt.
@@ -103,6 +114,9 @@ Off by default (`AUTO_UPDATE=false`). Before enabling:
   keys, set `AUTO_UPDATE_SIGNERS_FILE`, and confirm upstream really signs
   (`git log --show-signature -3`). If it does not, the owner needs a signed upstream or must
   consciously set `AUTO_UPDATE_REQUIRE_SIGNED=false` (doctor warns). Git 2.34 or newer is needed.
+- For SSH-signed upstream commits the owner must run `git config gpg.format ssh` in the
+  checkout: the updater only passes `gpg.ssh.allowedSignersFile`, so without it every commit
+  reads as unsigned and all updates are skipped.
 
 Behaviour to know:
 
@@ -125,6 +139,29 @@ npm run auto-update -- --dry-run   # print the plan (range, changed paths, skip 
 npm run auto-update -- --now       # apply now, watch the Telegram notice
 npm run auto-update -- --status    # last result and last good commit
 ```
+
+### Stuck update / rollback_failed
+
+How to tell: doctor's `auto-update: state` check FAILs, and
+`npm run auto-update -- --status` shows an `in progress:` line or `last result: rollback_failed`.
+Updates stay skipped (`in-progress-marker`) until you clear this by hand.
+
+What to check:
+
+- `git status` and `git log -1`: is the checkout clean and on a sane commit?
+- Compare `git log -1` with `last good commit` from `--status` (`last_good_commit` in
+  `.update/state.json`).
+- The pre-update database snapshot `.update/pre-update-<sha>.sqlite` is the recovery copy if the
+  database looks wrong.
+
+How to recover:
+
+1. Reset the checkout to the last good commit by hand (`git reset --hard <last_good_commit>`
+   after confirming it is the one you want).
+2. `npm ci`.
+3. `npm run doctor` and fix what it reports.
+4. Once the checkout is verified, delete `.update/state.json` to remove the `in_progress` field.
+   The next tick then evaluates updates again.
 
 ## 6. Scheduler hand-off
 
