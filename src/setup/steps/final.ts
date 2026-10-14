@@ -1,0 +1,46 @@
+// src/setup/steps/final.ts
+// Step 11: full doctor run and the owner-only next commands. Always 'done'; warnings are listed,
+// and the runner's exit code reflects failed steps.
+import path from 'node:path';
+import { ccgramChecks, restrictedChecks } from '../../platform/checks.js';
+import { looseDbFiles, setupChecks } from '../../platform/checksSetup.js';
+import { formatReport, runChecks } from '../../platform/doctor.js';
+import type { SetupStep } from '../runner.js';
+
+export const finalStep: SetupStep = {
+  id: 'final',
+  title: 'Final doctor run',
+  checkIds: [],
+  always: true,
+  async run(ctx) {
+    const { io } = ctx;
+    // The database is created world-readable by default; offer to fix it before the report.
+    // Only modes are touched: the database itself is never opened or read.
+    const loose = looseDbFiles(ctx.doctor);
+    if (loose.length > 0 && (await io.confirm('Make data.sqlite owner-only (chmod 600)?', true))) {
+      for (const f of loose) {
+        try {
+          ctx.fs.chmod(f, 0o600);
+        } catch {
+          io.say(`Could not change the mode of ${path.basename(f)}; run: chmod 600 ${path.basename(f)}`);
+        }
+      }
+    }
+    const results = await runChecks([...ccgramChecks, ...restrictedChecks(), ...setupChecks], ctx.doctor);
+    io.say(formatReport(results));
+
+    const open = results.filter((r) => r.result.status === 'warn' || r.result.status === 'skip');
+    if (open.length > 0) {
+      io.say('Still open:');
+      for (const r of open) io.say(`  ${r.result.status}: ${r.id}: ${r.result.detail}`);
+    }
+    if (results.some((r) => r.result.status === 'fail')) {
+      io.say('Some checks failed: fix them and run npm run setup again, or npm run doctor.');
+    }
+    io.say('Next, yourself:');
+    io.say('  1. bash scripts/ccgram/start.sh');
+    io.say('  2. Send /health from Telegram');
+    io.say('  3. Run the first supervised /runhunt and read the outputs');
+    return 'done';
+  },
+};

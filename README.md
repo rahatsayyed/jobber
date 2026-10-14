@@ -1,464 +1,199 @@
 # Jobber
 
-An autonomous job-hunting agent that discovers relevant job postings, matches them against your resume, tailors the resume for each match, finds verified company contacts, and sends humanized cold-outreach emails — all within strict safety limits.
+## What Jobber is
 
-**Phase 1 (Complete):** cold-email discovery + outreach  
-**Phase 2 (Substantially complete):** LinkedIn Easy Apply (burner) + external ATS apply + LinkedIn connection requests — implemented, unit-tested, and live-tested; see `docs/phase2-known-issues.md` for open items before treating it as fully production-proven  
-**Phase 3 (Planned):** email + LinkedIn reply automation + capped posting
+Jobber is an autonomous job-hunting agent. It discovers new job postings, scores each one against your base resume, tailors the resume for good matches, finds a verified contact at the hiring company, drafts a cold outreach email, and sends it. It also applies through LinkedIn Easy Apply and external ATS forms and sends LinkedIn connection requests. It sends real email and takes real LinkedIn actions on your own accounts, always inside daily caps that the code enforces.
+
+**Phase 1 (complete):** cold-email discovery and outreach.
+**Phase 2 (substantially complete):** LinkedIn Easy Apply (burner account), external ATS apply and LinkedIn connection requests (main account). See [Phase 2 known issues](docs/phase2-known-issues.md) before treating it as fully production-proven.
+**Phase 3 (in progress):** reply detection, follow-ups and the funnel report.
 
 ---
 
-## Quick Start
+## Prerequisites
 
-### Prerequisites
+- **Node 20+** (matches `engines` in `package.json`).
+- **Git**.
+- **Claude Code CLI** (`claude`), logged in. Every stage runs through it.
+- **Google Chrome**: needed for Naukri headless search and for capturing LinkedIn and Naukri sessions.
+- **tmux** and **ccgram** (installed with `uv` and Python): needed only for Telegram sessions. The exact ccgram version is pinned in `config/ccgram.pin.json`; the start script refuses to run on any other version.
 
-- **Node 20+** (or use `nvm use` if available)
-- **Playwright/Chromium** (for rendering PDFs and scraping)
-- **Claude Code CLI** (or `npm install -g @anthropic-ai/claude`)
-- **Git**
-- One of: **Grok/xAI credits** (via CCR, recommended for now) **or** **OpenRouter funded account** (parked, needs ~$5 one-time credit)
+---
 
-### 1. Clone and install
+## Quick start
 
 ```bash
-git clone https://github.com/rahatsayyed/Jobber.git
-cd Jobber
 npm install
-npx playwright install --with-deps chromium
+npm run setup
+npm run doctor
 ```
 
-### 2. Configure environment
+- `npm install` installs dependencies.
+- `npm run setup` is a guided wizard that writes `.env`, captures accounts and sessions, converts your resume, and chooses limits and a permission set. It needs a real terminal and exits with code 2 when stdin is not a TTY (a pipe or CI).
+- `npm run doctor` checks the result. Each check reports ok, warn, fail or skipped (for pieces that a later plan installs).
 
-Copy `.env.example` to `.env` (gitignored) and fill in your API keys:
+Setup is resumable and safe to rerun: a step whose checks already pass skips itself, and it never overwrites an existing resume, answers file or `.env` value without a confirm and a backup. Useful flags: `npm run setup -- --list` (print step ids), `npm run setup -- --step <id>` (run one step), `npm run setup -- --redo` (run steps again even when they pass).
+
+---
+
+## What setup does
+
+In this order:
+
+- `prereqs`: checks Node, tmux, Chrome, the browser binaries (patchright and Playwright) and the pinned ccgram version, and prints a fix for anything missing.
+- `claude`: checks that the Claude Code CLI is installed and logged in, and tells you how to log in if it is not.
+- `telegram`: walks you through creating a bot with @BotFather, tells you to enable Topics and turn Group Privacy off, stores the bot token in `.env` (never echoed), records your numeric Telegram ID in `ALLOWED_USERS` (a comma-separated list of numeric IDs; each extra ID needs an explicit extra confirmation), and sends a test message.
+- `gmail`: guides you through creating a Desktop OAuth client in your own Google Cloud project, then runs the consent screen so the send token stays on this machine.
+- `sessions`: opens a browser so you log in once to the burner LinkedIn account (applying), the main LinkedIn account (connection requests) and Naukri; the saved sessions live in `secrets/`.
+- `resume`: has a model transcribe your resume text into `user-data/resume.json`, rejects any number that is not in your source text, and writes nothing until you confirm.
+- `profile`: asks for roles, locations, remote preference, salary floors and targets, notice period and work authorization, and writes `user-data/profile.json`, the application answers file and the language list.
+- `limits`: shows every daily cap, quiet hour and pacing value with its default and an explanation, and writes the ones you choose to `.env`.
+- `access`: asks which permission set sessions may use (default `read_only`), applies it and installs the ccgram hooks into `.claude/settings.local.json`.
+- `classifier`: downloads the prompt-injection classifier model (about 750 MB) only after you consent, then verifies its files. The default model is English-only; see [classifier models](docs/classifier-models.md) for licences, limitations and how to switch. The smoke test is skipped while the files are only pinned by a weaker hash.
+- `dashboard`: sets up sign-in with one allowed Google account through an OAuth client from your own Google Cloud project; no password or token is created and the client secret is stored only in `.env`. The sign-in part is skipped until plan 7C (the dashboard) is installed.
+- `final`: runs the doctor once more, lists anything still open and prints the next steps.
+
+---
+
+## Where your data lives
+
+| Location | Holds | Notes |
+|---|---|---|
+| `user-data/` | resume, application answers, languages, profile, fact-gate allow-lists | mode 700, git-ignored; start from the synthetic `user-data.example/` with `npm run user-data -- init` |
+| `.env` | settings, limits and tokens | mode 600, git-ignored; copy `.env.example` if you skip the wizard |
+| `secrets/` | Gmail OAuth files, LinkedIn and Naukri session files | git-ignored |
+| `data.sqlite` | jobs, scores, outreach queue, outcomes, counters | git-ignored |
+
+None of it is committed (a pre-commit guard blocks these names; enable it with `git config core.hooksPath .githooks`). None of it is sent to a model beyond what a single stage needs for its job.
+
+---
+
+## Permission sets
+
+Sessions run with an allow-list of tool names taken from one set in `config/permission-sets.json`. The set is the ceiling for what a session may do.
+
+- `read_only`: the default. Look at stats, drafts and status; nothing is sent, applied or changed.
+- `outreach_send`: `read_only` plus the tools that fetch jobs, queue outreach, and send email, connection requests and applications (still bound by the daily caps).
+- `full`: `outreach_send` plus whole MCP servers, every tool they expose. Only for someone who has read the tool list.
+
+Change it with `npm run setup -- --step access`. No session ever runs with skip-permissions.
+
+---
+
+## Starting and stopping sessions
 
 ```bash
-cp .env.example .env
-# Edit .env with:
-# - ADZUNA_APP_ID, ADZUNA_APP_KEY (free)
-# - SERPER_API_KEY (2,500 free, then $1/1k)
-# - HUNTER_API_KEY (optional, capped 50/mo, off by default)
-# - TELEGRAM_BOT_TOKEN (if using Telegram channel)
+bash scripts/ccgram/start.sh    # start the Telegram bridge (ccgram) in its own tmux session
+bash scripts/ccgram/stop.sh     # stop the bridge; Claude windows it created keep running
 ```
 
-See `docs/model-auth-setup.md` for the full model/provider setup (Grok via CCR or OpenRouter).
+- The Telegram topic bound to the manager session lists, reads, starts and stops the named windows in `config/manager-windows.json` (`hunt` and `followups`). The `manager` window and the bridge are protected and cannot be stopped from Telegram. The manager never types into another window and never runs outreach itself. See [the manager skill](.claude/skills/manager/SKILL.md).
+- A headless, cron-friendly hunt runs with `./run-hunt.sh "run the hunt"`. It uses the restricted launcher `scripts/run-claude.sh`, profile `hunt` in `config/run-profiles.json`: the tool list comes from the `outreach_send` set, and permission checks are never skipped.
+- The older route, a single `claude --channels plugin:telegram@claude-plugins-official` session, is documented in `CLAUDE.md`; the ccgram route above is the one setup configures.
+- To route Claude Code through another Anthropic-compatible provider (for example the Claude Code Router), see [model auth setup](docs/model-auth-setup.md). If a `.env.ccr` file exists, the launcher reads it. It is optional.
 
-### 3. (First time only) Set up model access
+---
 
-Choose one of two providers:
+## Status commands
 
-**Option A: Grok/xAI via Claude Code Router (currently working)**
+- `npm run doctor`: environment and configuration checks.
+- `npm run status -- limits`, `npm run status -- working`, `npm run status -- health`: today's caps and usage, the queue and halts, and platform health. The same three are the `/limits`, `/working` and `/health` Telegram commands (see [slash commands](docs/telegram-slash-commands.md)).
+- `npm run report`: a self-contained HTML funnel report under `reports/`.
+- `npm run web`: the local status page, described in the next section.
 
-```bash
-# 1. Install CCR locally (not globally — macOS permissions issue)
-npm install @musistudio/claude-code-router@2
+Commands you can send from Telegram (or type in a CLI session):
 
-# 2. Create ~/.claude-code-router/config.json (see docs/model-auth-setup.md for full example)
-mkdir -p ~/.claude-code-router
-cat > ~/.claude-code-router/config.json <<'EOF'
-{
-  "LOG": false,
-  "HOST": "127.0.0.1",
-  "PORT": 3456,
-  "Providers": [
-    {
-      "name": "xai",
-      "api_base_url": "https://api.x.ai/v1/chat/completions",
-      "api_key": "xai-YOUR-KEY-HERE",
-      "models": ["grok-4.3"]
-    }
-  ],
-  "Router": {
-    "default": "xai,grok-4.3",
-    "background": "xai,grok-4.3",
-    "think": "xai,grok-4.3",
-    "longContext": "xai,grok-4.3",
-    "webSearch": "xai,grok-4.3"
-  }
-}
-EOF
+- `/runhunt`: run the full pipeline (discover, match, contacts, drafts, send).
+- `/status`: funnel, reply and interview rates.
+- `/followups`: check replies, then draft follow-ups for your approval.
+- `/checkreplies`: detect replies in Gmail and propose outcomes.
+- `/apply #N`: apply to one matched job.
+- `/limits`, `/working`, `/health`: caps and usage, queue and halts, platform health.
 
-# 3. Create .env.ccr (gitignored override)
-cat > .env.ccr <<'EOF'
-ANTHROPIC_BASE_URL=http://127.0.0.1:3456
-ANTHROPIC_AUTH_TOKEN=dummy
-ANTHROPIC_DEFAULT_SONNET_MODEL=grok-4.3
-ANTHROPIC_DEFAULT_HAIKU_MODEL=grok-4.3
-ANTHROPIC_DEFAULT_OPUS_MODEL=grok-4.3
-EOF
+---
+
+## Status web page
+
+Start it with `npm run web` (sign-in is Google OIDC: set the `WEB_OIDC_*` keys and `DASHBOARD_ALLOWED_EMAIL` in `.env`, or run `npm run dashboard -- allow <email>`; see `.env.example`; `npm run doctor` shows the dashboard checks). It prints `http://127.0.0.1:<port>`.
+
+- The send box types into a live Claude session. Keep the permission set at `read_only` unless you need more.
+- Text typed in the chat box also answers any pending permission or confirmation prompt in the Claude window, so only enable it for an account you trust and keep the permission set `read_only`.
+- The page listens on localhost only. From another machine use an SSH tunnel (`ssh -L 8787:127.0.0.1:8787 host`); never open the port.
+- Exposure options and login recovery: [docs/dashboard-exposure.md](docs/dashboard-exposure.md).
+
+---
+
+## The hunt pipeline
+
+"Run hunt" dispatches one subagent per stage and sees only each stage's compact result:
+
+1. **Discover** (`discoverer`): new jobs from Adzuna, Remotive, RemoteOK, Naukri, company boards and LinkedIn.
+2. **Match** (`matcher`): scores each job against your base resume; code vetoes (location, language, deal-breakers, legitimacy) then apply.
+3. **Filter**: jobs below `MATCH_THRESHOLD` (default 60) are skipped.
+4. **Find contacts** (`contact-finder`): a verified email and up to two LinkedIn profiles per job.
+5. **Prepare** (`outreach-preparer`): tailors the resume, drafts the email and connect notes, reviews and fact-checks them, then queues them.
+6. **Execute** (`sender`): sends email, connection requests and applies from the queue, within the daily caps.
+7. **Report**: counts and flags to Telegram, or to the terminal when Telegram is not active.
+
+Tune the basics in the Preferences block of `CLAUDE.md` and the limits in `.env`:
+
 ```
-
-**Option B: OpenRouter/DeepSeek (parked — needs funding, but direct, no proxy needed)**
-
-```bash
-# Put in .env or .env.openrouter:
-ANTHROPIC_BASE_URL=https://openrouter.ai/api
-ANTHROPIC_AUTH_TOKEN=sk-or-...
-ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek/deepseek-v4-flash
-ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek/deepseek-v4-flash:free
-ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek/deepseek-v4-pro
-```
-
-### 4. (First time only) Set up Gmail
-
-```bash
-# See docs/gmail-mcp-setup.md for detailed steps
-# The MCP is already in .mcp.json; just run the OAuth flow once:
-npx -y @gongrzhe/server-gmail-autoauth-mcp auth
-```
-
-### 5. Verify setup
-
-```bash
-# Start CCR if using Grok (stays running in background)
-./node_modules/.bin/ccr start
-
-# Load env and test Claude Code can reach the model
-set -a && source .env && source .env.ccr && set +a
-claude -p "say hello" --mcp-config ./.mcp.json
-# Should see a response from Grok
-
-# Check MCP tools are available
-claude -p "list your available MCP tools" --mcp-config ./.mcp.json --strict-mcp-config
-# Should list: job-fetch, resume, contacts, gmail
-```
-
-### 6. Development setup (git hooks and personal data)
-
-```bash
-# Enable the pre-commit guard (blocks secrets, databases and user data files by name)
-git config core.hooksPath .githooks
-
-# Create your local user-data/ folder from the synthetic templates
-npm run user-data -- init
+MATCH_THRESHOLD=60        # min score to pursue a job
+SEND_LIMIT_PER_RUN=1      # max real emails per day (a daily counter, not per invocation)
 ```
 
 ---
 
-## Running the Hunt (Phase 1)
+## Safety model
 
-### Option A: Interactive (Telegram channel — recommended for ongoing use)
-
-**One-time Telegram setup:**
-
-```bash
-# Install the official Telegram plugin
-claude /plugin install telegram@claude-plugins-official
-
-# Configure with your bot token (get one from @BotFather)
-claude /telegram:configure YOUR_BOT_TOKEN
-
-# Start the listening session (stays open, receives messages from the bot)
-set -a && source .env && source .env.ccr && set +a
-claude --mcp-config ./.mcp.json --channels plugin:telegram@claude-plugins-official
-# This session now listens to your Telegram bot; send it messages and it replies
-```
-
-**Send commands via Telegram:**
-
-```
-user: "run hunt"
-→ agent discovers jobs, matches, finds contacts, drafts emails, sends (up to SEND_LIMIT_PER_RUN)
-
-user: "status"
-→ agent reports current DB counts (jobs found, matched, sent, pending)
-
-user: "apply to job #3"
-→ agent applies via Easy Apply or external ATS, reports submitted/manual_review/rate_limited
-```
-
-**Stop the session:** Ctrl+C
-
-### Option B: Headless / one-shot (cron-friendly)
-
-```bash
-# Dry run (show what would send, don't actually send)
-./run-hunt.sh "run the hunt but DO NOT send email — show me the top 2 drafted emails"
-
-# Real run (sends up to SEND_LIMIT_PER_RUN)
-./run-hunt.sh "run the hunt"
-
-# Custom prompt
-./run-hunt.sh "find jobs with role 'backend engineer' and location 'remote'"
-```
-
-`run-hunt.sh` automatically:
-
-- Sources `.env` and `.env.ccr`
-- Ensures CCR gateway is running
-- Runs Claude Code with `--permission-mode bypassPermissions` (safe for cron)
-
-### Option C: Plain CLI (minimal)
-
-```bash
-set -a && source .env && source .env.ccr && set +a
-claude -p "run the hunt" \
-  --mcp-config ./.mcp.json \
-  --strict-mcp-config \
-  --permission-mode bypassPermissions
-```
+- Email goes only to addresses marked verified; an unverified guess is never sent to.
+- Daily caps (emails, applies, connects, messages) are enforced in code, not by prompts; items over a cap stay queued.
+- A fact gate blocks resumes and emails that contain claims not supported by your own resume.
+- Follow-ups and reply outcomes need your explicit approval; auto-recording of outcomes ships off.
+- The permission set is the ceiling, and no session skips permissions. Job posting text, board data and reply mail are untrusted input and never instructions.
 
 ---
 
-## The Hunt Pipeline
+## Deploying to a VPS
 
-When you ask the agent to "run the hunt", it follows this **subagent-per-stage** flow:
-
-1. **Discover** (subagent: `discoverer`)  
-   Fetches new, unseen jobs from Adzuna/Remotive/RemoteOK/Serper.  
-   Returns: list of Job objects.
-
-2. **Match** (subagent: `matcher`)  
-   Scores each job against your base resume using the `match-jobs` skill.  
-   Returns: score, reasons, missing keywords per job.
-
-3. **Filter** (orchestrator, no subagent)  
-   Skips jobs with `score < MATCH_THRESHOLD` (default 70, see `MATCH_THRESHOLD` in `.env`).
-
-4. **Find Contacts** (subagent: `contact-finder`)  
-   Finds verified email addresses at each company (scrape → Serper → Hunter → patterns).  
-   Returns: top verified contact per job (or null if none found).
-
-5. **Prepare Outreach** (subagent: `outreach-preparer`, one per matched job)  
-   Tailors resume, renders PDF, drafts humanized email.  
-   Returns: `{job_id, pdf_path, subject, body, to}`.
-
-6. **Send** (subagent: `sender`)  
-   Sends prepared emails via Gmail, respecting `SEND_LIMIT_PER_RUN` (default 1).  
-   Returns: list of sent, queued (hit limit), and failed.
-
-7. **Report** (orchestrator)  
-   Posts summary to Telegram (if active) or prints to stdout:
-   ```
-   ✅ Discovered 10 new jobs
-   ✅ Matched 3 (score ≥ 70)
-   ✅ Sent 1 email (limit reached)
-   ⚠️  1 job needs manual contact (no verified email found)
-   ```
-
-See `CLAUDE.md` for the full orchestration spec.
-
----
-
-## Configuring the Agent
-
-**Easy tuning (edit these in `CLAUDE.md` Preferences block):**
-
-```
-Role: "full stack developer / react"
-Location: "india"
-Remote OK: yes
-MATCH_THRESHOLD: 70      (jobs scoring below this are skipped)
-SEND_LIMIT_PER_RUN: 1    (max emails sent per run; rest queued)
-```
-
-**Advanced tuning (in `.env`):**
-
-```
-MATCH_THRESHOLD=70              # min job score to contact
-SEND_LIMIT_PER_RUN=1            # max emails per run
-HUNTER_ENABLED=false            # enable Hunter.io (last-resort contact finder)
-HUNTER_MONTHLY_CAP=50           # hard cap on Hunter credits/month
-```
-
----
-
-## Deploying to VPS (for cron + always-on Telegram)
-
-### 1. Provision a VPS
-
-Recommended: **Hetzner CX22** (~€4/mo, Ubuntu 24.04)
+Provision any small Ubuntu host, install Node 20+, git, tmux, Chrome, the Claude Code CLI and ccgram, then:
 
 ```bash
-# On the VPS:
-sudo apt update && sudo apt install -y nodejs npm git chromium-browser
-
-# Install Claude Code CLI
-npm install -g @anthropic-ai/claude
-
-# Clone the repo
-git clone <repo> ~/Jobber
-cd ~/Jobber
-npm install
-```
-
-### 2. Copy secrets
-
-```bash
-# On your Mac:
-scp .env root@vps-ip:~/Jobber/.env
-scp .env.ccr root@vps-ip:~/Jobber/.env.ccr
-
-# On the VPS, configure CCR (same as local setup):
-mkdir -p ~/.claude-code-router
-# ... create config.json with your xAI key
-```
-
-### 3. Test parity
-
-```bash
-# On the VPS:
-./run-hunt.sh "run the hunt but DO NOT send — show me what you'd send"
-# Confirm it works the same as locally
-```
-
-### 4. Set up Telegram channel (always-on)
-
-```bash
-# On the VPS, in a new tmux/screen session or systemd service:
-set -a && source ~/jobber/.env && source ~/jobber/.env.ccr && set +a
+git clone <your-repo-url> ~/jobber
 cd ~/jobber
-claude --mcp-config ./.mcp.json --channels plugin:telegram@claude-plugins-official
-# Session stays open; Telegram messages reach it instantly
+npm install
+npm run setup        # run it in a real terminal (ssh -t or tmux)
+bash scripts/ccgram/start.sh
 ```
 
-Or as a **systemd service** (`~/jobber.service`):
+Capture the LinkedIn and Naukri sessions on a machine with a display, or run the `sessions` step over a forwarded display; `secrets/` is never committed, so copy only what you need. For scheduled runs add a crontab line such as:
 
-```ini
-[Unit]
-Description=Jobber Telegram Channel
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/root/jobber
-EnvironmentFile=/root/jobber/.env
-EnvironmentFile=/root/jobber/.env.ccr
-ExecStart=/usr/local/bin/claude --mcp-config ./.mcp.json --channels plugin:telegram@claude-plugins-official
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
 ```
-
-Enable: `sudo systemctl enable --now jobber`
-
-### 5. Set up cron for scheduled runs
-
-```bash
-# Add to crontab (crontab -e):
-0 9 * * * cd /root/jobber && ./run-hunt.sh "run the hunt" 2>&1 >> hunt.log
-
-# Every day at 9 AM, discover + match + send (up to limit)
-# Logs go to hunt.log; summaries post to Telegram if the channel is active
+0 9 * * * cd ~/jobber && ./run-hunt.sh "run the hunt" >> hunt.log 2>&1
 ```
 
 ---
 
 ## Troubleshooting
 
-### "Invalid message role" error with xAI
-
-You're pointing Claude Code directly at `https://api.x.ai` without the CCR proxy. **Fix:** use `.env.ccr` (see setup step 3 above).
-
-### "402 Insufficient credits" from OpenRouter
-
-Your OpenRouter account hasn't been funded with a one-time ~$5 credit. **Fix:** go to https://openrouter.ai/settings/credits and add credit, or switch to Grok (Option A).
-
-### "Gmail MCP fails" / "not authorized"
-
-OAuth flow didn't complete or token expired. **Fix:** run `npx -y @gongrzhe/server-gmail-autoauth-mcp auth` again, or fall back to app-password (see Gmail setup).
-
-### Jobs discovered but no matches
-
-Your resume might not have keywords the jobs are looking for. **Fix:** check recent matches via `claude -p "show me the top 3 jobs that almost matched, with their scores and missing keywords"`, then adjust `MATCH_THRESHOLD` down to see borderline fits, or add missing skills to your resume.
-
-### CCR says "Not Running" but it's actually running
-
-Known quirk in CCR v2's status command. **Verify:** `curl http://127.0.0.1:3456/v1/messages -X POST ...` or just try a `claude` call.
-
-### Playwright PDF rendering fails
-
-Chromium might not be installed or available. **Fix:** `npx playwright install --with-deps chromium`.
+- **xAI "Invalid message role", OpenRouter 402 or Claude Code Router problems:** see [model auth setup](docs/model-auth-setup.md).
+- **Anything looks wrong:** `npm run doctor` names the failing check and the fix.
+- **Gmail not authorized:** rerun `npm run setup -- --step gmail` (see [Gmail setup](docs/gmail-mcp-setup.md)).
+- **LinkedIn or Naukri session expired:** rerun `npm run setup -- --step sessions` (see [LinkedIn sessions](docs/linkedin-sessions-setup.md) and [Naukri session](docs/naukri-session-setup.md)).
+- **Playwright PDF rendering fails:** `npx playwright install --with-deps chromium`.
+- **Jobs found but no matches:** lower `MATCH_THRESHOLD` temporarily or add missing skills to `user-data/resume.json`.
 
 ---
 
-## Structure
+## Links
 
-```
-jobber/
-├─ CLAUDE.md                 # Agent orchestration + Phase 1 full spec
-├─ .env.example              # Documented template (committed)
-├─ .env (gitignored)         # Real secrets
-├─ .env.ccr (gitignored)     # CCR/Grok override
-├─ .mcp.json                 # MCP server registration
-├─ run-hunt.sh               # Headless runner script
-├─ package.json
-├─ src/
-│   ├─ db.ts                 # SQLite module
-│   ├─ sources/              # Adzuna, Remotive, RemoteOK, Serper normalizers
-│   ├─ lib/                  # Email scrape, patterns, verify, Hunter
-│   └─ mcp/                  # MCP server definitions (job-fetch, resume, contacts, email)
-├─ .claude/
-│   ├─ agents/               # Subagent definitions (discoverer, matcher, etc.)
-│   └─ skills/               # match-jobs, draft-outreach, the-humanizer
-├─ renderer/                 # Copied from personal/resume (Handlebars → Playwright → PDF)
-├─ user-data/resume.json         # Your base resume
-├─ data.sqlite (gitignored)  # State: discovered jobs, contacts, outreach log
-├─ tests/                    # vitest suite
-└─ docs/
-    ├─ model-auth-setup.md       # Full provider routing + CCR setup
-    ├─ gmail-mcp-setup.md        # Gmail OAuth walkthrough
-    └─ superpowers/
-        ├─ specs/                 # Phase 1/2/3 design docs
-        └─ plans/                 # Phase 1/2/3 implementation plans
-```
-
----
-
-## Status web page
-
-Start it with `npm run web` (needs `WEB_TOKEN` of at least 24 characters in `.env`; see `.env.example`). It prints `http://127.0.0.1:<port>`.
-
-- The send box types into a live Claude session. Keep the permission set at `read_only` unless you need more.
-- Text typed in the chat box also answers any pending permission or confirmation prompt in the Claude window, so only enable it with a token you trust and keep the permission set `read_only`.
-- The page listens on localhost only. From another machine use an SSH tunnel (`ssh -L 8787:127.0.0.1:8787 host`); never open the port.
-
-## Next Steps
-
-**Phase 1 (now):** smoke test locally, then deploy to VPS + Telegram + cron.
-
-**Phase 2 (substantially complete):** LinkedIn Easy Apply (burner), external ATS apply, LinkedIn connect-with-notes (main account, human-approved).  
-See `docs/superpowers/specs/2026-07-07-jobapplier-phase2-design.md`, the Phase 2 plan, and `docs/phase2-known-issues.md` for open items (external-apply not yet live-tested; connect_send's final click needs re-verification on a fresh day).
-
-**Phase 3 (planned):** reply detection/drafting, capped LinkedIn posting.  
-See `docs/superpowers/specs/2026-07-07-jobapplier-phase3-design.md` and the Phase 3 plan.
-
----
-
-## Commands (via Telegram or CLI)
-
-| Command             | What it does                                                   |
-| ------------------- | -------------------------------------------------------------- |
-| `run hunt`          | Full pipeline: discover → match → contact → draft → send.      |
-| `status`            | Show current DB counts (jobs/contacts/sent) — no side effects. |
-| `apply to job #3`   | Apply to one matched job (Easy Apply or external ATS).         |
-| `apply all`         | Apply to all of today's matched jobs.                          |
-| `connect <company>` | Draft + (with your approval) send a LinkedIn connect request.  |
-| `check replies`     | Phase 3 not yet.                                               |
-
----
-
-## Safety
-
-- **Verified emails only:** the agent NEVER sends to an unverified email address, even a "pretty good guess." Hunter.io and SMTP checks are mandatory before send.
-- **Send cap:** `SEND_LIMIT_PER_RUN` is enforced in the `sender` subagent only, so no stage can overshoot it.
-- **Cold email (Phase 1) + gated LinkedIn actions (Phase 2):** the Phase 1 hunt pipeline is cold-email only. LinkedIn Easy Apply, external ATS apply, and LinkedIn connection requests are Phase 2 — connection requests always require your explicit approval before sending (see `docs/phase2-known-issues.md` for current limitations).
-- **Fail-safe:** if a tool errors, the agent logs it and continues with the next job instead of crashing.
-
----
-
-## Support
-
-- Full orchestration spec: `CLAUDE.md`
-- Phase 1 design: `docs/superpowers/specs/2026-07-06-jobapplier-phase1-design.md`
-- Model/provider setup: `docs/model-auth-setup.md`
-- Gmail MCP setup: `docs/gmail-mcp-setup.md`
-- Phase 2/3 outlines: `docs/superpowers/specs/2026-07-07-jobapplier-phase{2,3}-design.md`
-- Phase 2 known issues / live-test findings: `docs/phase2-known-issues.md`
-- LinkedIn session setup (burner + main accounts): `docs/linkedin-sessions-setup.md`
-
----
-
-**Questions?** Check `CLAUDE.md` first — it has the full agent spec. Then the design/plan docs in `docs/superpowers/`.
+- [CLAUDE.md](CLAUDE.md): full orchestration spec and safety rules.
+- [Platform, sessions, dashboard and setup requirements](docs/superpowers/specs/2026-10-14-platform-sessions-dashboard-setup-requirements.md)
+- [Plans](docs/superpowers/plans/) and [design specs](docs/superpowers/specs/)
+- [Phase 2 known issues](docs/phase2-known-issues.md)
+- [Model auth setup](docs/model-auth-setup.md)
+- [Gmail setup](docs/gmail-mcp-setup.md)
+- [LinkedIn sessions setup](docs/linkedin-sessions-setup.md)
+- [Naukri session setup](docs/naukri-session-setup.md)
+- [Classifier models](docs/classifier-models.md)
+- [Telegram slash commands](docs/telegram-slash-commands.md)

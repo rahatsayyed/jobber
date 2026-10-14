@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "roles": ["example developer"],
+  "locations": ["Example City"],
+  "remote_ok": true,
+  "remote_anywhere": false,
+  "salary": {
+    "USD": { "floor": 1000, "target": 2000 }
+  },
+  "notice_period_days": 30,
+  "work_authorization": { "india": true, "other": "unknown" },
+  "languages": ["English"]
+}

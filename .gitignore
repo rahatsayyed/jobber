@@ -24,3 +24,4 @@ scripts/eval/fixtures/baseline/
 .claude/settings.local.managed.json
 .claude/settings.local.json.*
 models/
+.dashboard/

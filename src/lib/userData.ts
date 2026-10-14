@@ -7,6 +7,7 @@ export const USER_FILES = [
   'easy-apply-answers.json',
   'fact-gate.json',
   'languages.json',
+  'profile.json',
 ] as const;
 export type UserFile = (typeof USER_FILES)[number];
 
@@ -32,6 +33,7 @@ export const LEGACY_PATHS: Record<UserFile, string[]> = {
   'easy-apply-answers.json': ['config/easy-apply-answers.json'],
   'fact-gate.json': ['config/fact-gate.json'],
   'languages.json': ['config/languages.json'],
+  'profile.json': [],
 };
 
 export interface CopyOp {

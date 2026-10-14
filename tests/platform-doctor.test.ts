@@ -1,6 +1,6 @@
 // tests/platform-doctor.test.ts
 import { describe, it, expect } from 'vitest';
-import { exitCode, formatReport, runChecks, type DoctorContext } from '../src/platform/doctor.js';
+import { exitCode, formatReport, runChecks, skip, type DoctorContext } from '../src/platform/doctor.js';
 import { ccgramChecks, restrictedChecks } from '../src/platform/checks.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { applySet } from '../src/platform/permissions.js';
@@ -270,49 +270,138 @@ describe('ccgram checks', () => {
   });
 });
 
-describe('web check', () => {
-  const runWeb = async (extra: string, env: NodeJS.ProcessEnv = {}) => {
+describe('web and dashboard-login checks', () => {
+  const OIDC =
+    'WEB_OIDC_CLIENT_ID=cid\nWEB_OIDC_CLIENT_SECRET=SUPER-SECRET-OIDC\nWEB_OIDC_REDIRECT_URI=http://127.0.0.1:8787/auth/callback\n';
+  type Acct = { email: string; pinned: boolean } | null;
+  const run = async (
+    extra: string,
+    o: { acct?: Acct; env?: NodeJS.ProcessEnv; dirMode?: number; dbMode?: number; set?: 'read_only' | 'full'; noOidc?: boolean } = {},
+  ) => {
     const files = goodFiles();
-    files['/p/.env'] = { text: GOOD_ENV + extra, mode: 0o600 };
-    return (await byId(ctxWith(files, { env })))['web'];
+    files['/p/.env'] = { text: GOOD_ENV + (o.noOidc ? '' : OIDC) + extra, mode: 0o600 };
+    files['/p/.dashboard'] = { text: '', mode: o.dirMode ?? 0o700 };
+    files['/p/.dashboard/auth.sqlite'] = { text: '', mode: o.dbMode ?? 0o600 };
+    if (o.set === 'full') {
+      files['/p/.claude/settings.local.json'] = {
+        text: JSON.stringify(mergeHooks(applySet({}, sets, 'full'), '/py/python')),
+      };
+    }
+    const ctx = ctxWith(files, { env: o.env });
+    ctx.authAccount = () => (o.acct === undefined ? { email: 'owner@example.com', pinned: true } : o.acct);
+    const r = await byId(ctx);
+    return { web: r['web'], login: r['dashboard-login'] };
   };
-  it('process env wins over .env in both directions', async () => {
-    expect((await runWeb('WEB_TOKEN=short\n', { WEB_TOKEN: 'y'.repeat(30) })).status).toBe('pass');
-    expect((await runWeb(`WEB_TOKEN=${'y'.repeat(30)}\n`, { WEB_TOKEN: 'short' })).status).toBe('fail');
+  const OWNER = 'DASHBOARD_ALLOWED_EMAIL=owner@example.com\n';
+
+  it('passes with a pinned account and a good config', async () => {
+    const r = await run(OWNER);
+    expect(r.web.status).toBe('pass');
+    expect(r.login.status).toBe('pass');
   });
-  it('passes when unset, fails when short, passes when long, never prints the token', async () => {
-    expect((await runWeb('')).status).toBe('pass');
-    const short = await runWeb('WEB_TOKEN=shortsecret\n');
-    expect(short.status).toBe('fail');
-    expect(JSON.stringify(short)).not.toContain('shortsecret');
-    const ok = await runWeb(`WEB_TOKEN=${'z'.repeat(30)}\n`);
-    expect(ok.status).toBe('pass');
-    expect(JSON.stringify(ok)).not.toContain('zzzz');
+  it('fails when the dashboard directory or auth file has group or world bits', async () => {
+    expect((await run(OWNER, { dirMode: 0o755 })).login.status).toBe('fail');
+    expect((await run(OWNER, { dbMode: 0o644 })).login.status).toBe('fail');
+    expect((await run(OWNER, { dbMode: 0o640 })).login.status).toBe('fail');
+  });
+  it('bare WEB_AUTH_DB name: root dir mode is ignored, file mode still checked', async () => {
+    const mk = (fileMode: number) => {
+      const files = goodFiles();
+      files['/p/.env'] = { text: GOOD_ENV + OIDC + OWNER + 'WEB_AUTH_DB=auth.sqlite\n', mode: 0o600 };
+      files['/p'] = { text: '', mode: 0o755 };
+      files['/p/auth.sqlite'] = { text: '', mode: fileMode };
+      const ctx = ctxWith(files);
+      ctx.authAccount = () => ({ email: 'owner@example.com', pinned: true });
+      return byId(ctx);
+    };
+    expect((await mk(0o600))['dashboard-login'].status).toBe('pass');
+    expect((await mk(0o644))['dashboard-login'].status).toBe('fail');
+  });
+  it('warns when no account is stored', async () => {
+    const r = (await run('', { acct: null })).login;
+    expect(r.status).toBe('warn');
+    expect(r.fix ?? r.detail).toContain('npm run dashboard -- allow <email>');
+  });
+  it('warns when the account has no pinned sub', async () => {
+    const r = (await run(OWNER, { acct: { email: 'owner@example.com', pinned: false } })).login;
+    expect(r.status).toBe('warn');
+    expect(r.detail + (r.fix ?? '')).toContain('first sign-in pins');
+  });
+  it('warns when the stored email differs from DASHBOARD_ALLOWED_EMAIL', async () => {
+    const r = (await run('DASHBOARD_ALLOWED_EMAIL=someone-else@example.org\n')).login;
+    expect(r.status).toBe('warn');
+    expect(JSON.stringify(r)).not.toContain('someone-else');
+    expect(JSON.stringify(r)).not.toContain('owner@');
+  });
+  it('fails on a missing OIDC key or a redirect URI that breaks the scheme rule', async () => {
+    expect((await run(OWNER, { noOidc: true })).login.status).toBe('fail');
+    const files = goodFiles();
+    files['/p/.env'] = {
+      text: GOOD_ENV + 'WEB_OIDC_CLIENT_ID=c\nWEB_OIDC_CLIENT_SECRET=s\nWEB_OIDC_REDIRECT_URI=http://example.com/auth/callback\n',
+    };
+    const ctx = ctxWith(files);
+    ctx.authAccount = () => ({ email: 'owner@example.com', pinned: true });
+    expect((await byId(ctx))['dashboard-login'].status).toBe('fail');
+  });
+  it('fails on an https redirect URI without WEB_TRUST_PROXY=true', async () => {
+    const files = goodFiles();
+    files['/p/.env'] = {
+      text: GOOD_ENV + 'WEB_ALLOWED_HOSTS=dash.example.com\nWEB_OIDC_CLIENT_ID=c\nWEB_OIDC_CLIENT_SECRET=s\nWEB_OIDC_REDIRECT_URI=https://dash.example.com/auth/callback\n',
+    };
+    const ctx = ctxWith(files);
+    ctx.authAccount = () => ({ email: 'owner@example.com', pinned: true });
+    expect((await byId(ctx))['dashboard-login'].status).toBe('fail');
+  });
+  it('warns on non-loopback bind, proxy trust without hosts, and chat without read_only', async () => {
+    expect((await run(OWNER + 'WEB_BIND=192.168.1.5\nWEB_ALLOW_REMOTE_BIND=true\n')).login.status).toBe('warn');
+    expect((await run(OWNER + 'WEB_TRUST_PROXY=true\n')).login.status).toBe('warn');
+    expect((await run(OWNER + 'WEB_CHAT_ENABLED=true\n', { set: 'full' })).login.status).toBe('warn');
+    expect((await run(OWNER + 'WEB_CHAT_ENABLED=true\n', { set: 'read_only' })).login.status).toBe('pass');
+  });
+  it('web check fails on invalid port or bind, passes otherwise; process env wins', async () => {
+    expect((await run(OWNER + 'WEB_PORT=80\n')).web.status).toBe('fail');
+    expect((await run(OWNER + 'WEB_PORT=80\n', { env: { WEB_PORT: '8787' } })).web.status).toBe('pass');
+    expect((await run(OWNER + 'WEB_BIND=10.0.0.5\n')).web.status).toBe('fail');
+  });
+  it('never prints a secret, the sub or the email', async () => {
+    const cases = [
+      await run(OWNER, { dbMode: 0o644 }),
+      await run('', { acct: null }),
+      await run('DASHBOARD_ALLOWED_EMAIL=other@example.org\nWEB_TRUST_PROXY=true\n'),
+      await run(OWNER, { noOidc: true }),
+    ];
+    for (const c of cases) {
+      const text = JSON.stringify(c);
+      expect(text).not.toContain('SUPER-SECRET-OIDC');
+      expect(text).not.toContain('owner@example.com');
+      expect(text).not.toContain('other@example.org');
+    }
   });
 });
 
 describe('restricted-run checks', () => {
-  const Z = '0'.repeat(64);
-  const pinOf = (sha: string) => ({
-    model: { file: 'model.onnx', sha256: sha },
-    tokenizer: { file: 'tokenizer.json', sha256: sha },
-    config: { file: 'config.json', sha256: sha },
-    extra: [],
-    malicious_index: 1,
-    source: 's',
-  });
+  const D = 'd'.repeat(64);
+  const prof = {
+    id: 'pg2',
+    fetchable: true,
+    licence: { id: 'MIT' },
+    files: [{ local: 'model.onnx', role: 'model' }],
+    fit: { threshold: 0.4, model_sha256: D, held_out: { tpr: 0.91, fpr: 0.004, n: 100 } },
+  };
+  const okReport = { ok: true, problems: [], observed_sha256: { 'model.onnx': D }, unpinned: [] };
   const HOOK = '/p/.claude/hooks/tool-allowlist.cjs';
   const base = (): Files => ({
     [HOOK]: { text: '//' },
-    '/p/config/classifier.json': { text: JSON.stringify({ held_out: { tpr: 0.91, fpr: 0.004, n: 100 } }) },
+    '/p/.env': { text: 'CLASSIFIER_MODEL=pg2\n' },
     '/p/.mcp.json': { text: JSON.stringify({ mcpServers: { db: {} } }) },
     '/p/config/runner/mcp.platform.json': { text: JSON.stringify({ mcpServers: { naukri: {} } }) },
   });
   const profiles = (allow: string[]) => ({ outreach_wake: { allow } }) as any;
   const mk = (over: Record<string, unknown> = {}) =>
     restrictedChecks({
-      loadPin: () => pinOf('a'.repeat(64)) as any,
-      verify: async () => ({ ok: true, problems: [] }),
+      loadRegistry: () => ({ version: 1, default_profile: 'pg2', profiles: { pg2: prof } }) as any,
+      verifyProfile: async () => okReport as any,
+      smoke: async () => ({ benign: 0.01, injection: 0.99 }),
       loadProfiles: () => profiles(['mcp__db__get_funnel', 'mcp__naukri__naukri_open']),
       ...over,
     } as any);
@@ -325,20 +414,23 @@ describe('restricted-run checks', () => {
     return Object.fromEntries(out.map((r) => [r.id, r.result]));
   };
 
-  it('classifier_model: fails on zero digests with the pin hint', async () => {
-    const r = await run(mk({ loadPin: () => pinOf(Z) }), base());
+  it('classifier_model: fails when CLASSIFIER_MODEL is not set', async () => {
+    const f = base();
+    delete f['/p/.env'];
+    const r = await run(mk(), f);
     expect(r.classifier_model.status).toBe('fail');
-    expect(r.classifier_model.fix).toContain('fit.ts --pin');
+    expect(r.classifier_model.fix).toContain('docs/classifier-models.md section 4');
   });
   it('classifier_model: fails naming the file on a problem', async () => {
-    const r = await run(mk({ verify: async () => ({ ok: false, problems: ['sha256 mismatch: model.onnx'] }) }), base());
+    const bad = { ...okReport, ok: false, problems: ['model.onnx: sha256 mismatch'] };
+    const r = await run(mk({ verifyProfile: async () => bad }), base());
     expect(r.classifier_model.status).toBe('fail');
     expect(r.classifier_model.detail).toContain('model.onnx');
   });
-  it('classifier_model: warns without config/classifier.json, passes with fpr and tpr', async () => {
-    const f = base();
-    delete f['/p/config/classifier.json'];
-    expect((await run(mk(), f)).classifier_model.status).toBe('warn');
+  it('classifier_model: warns when not fitted, passes with fpr and tpr', async () => {
+    const unfitted = { ...prof, fit: { threshold: null } };
+    const w = mk({ loadRegistry: () => ({ version: 1, default_profile: 'pg2', profiles: { pg2: unfitted } }) });
+    expect((await run(w, base())).classifier_model.status).toBe('warn');
     const ok = (await run(mk(), base())).classifier_model;
     expect(ok.status).toBe('pass');
     expect(ok.detail).toContain('0.004');
@@ -360,5 +452,25 @@ describe('restricted-run checks', () => {
     expect((await run(mk(), base(), runner('claude 2.1.100', DENY))).restricted_hook.status).toBe('warn');
     expect((await run(mk(), base(), runner('weird', DENY))).restricted_hook.status).toBe('warn');
     expect((await run(mk(), base())).restricted_hook.status).toBe('pass');
+  });
+});
+
+describe('doctor skip status', () => {
+  const o = (status: 'pass' | 'warn' | 'fail' | 'skip', fix?: string) => ({
+    id: 'x',
+    title: 'T',
+    result: { status, detail: 'd', fix },
+  });
+  it('exitCode is 0 with only pass, warn and skip', () => {
+    expect(exitCode([o('pass'), o('warn'), o('skip')])).toBe(0);
+    expect(exitCode([o('skip'), o('fail')])).toBe(1);
+  });
+  it('formatReport renders SKIP and keeps the fix line', () => {
+    const text = formatReport([o('skip', 'install it')]);
+    expect(text).toContain('SKIP  T: d');
+    expect(text).toContain('fix: install it');
+  });
+  it('skip helper builds a skip result', () => {
+    expect(skip('later', 'do x')).toEqual({ status: 'skip', detail: 'later', fix: 'do x' });
   });
 });

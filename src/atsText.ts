@@ -5,7 +5,7 @@
 // Cf: soft hyphen, zero-width chars, bidi controls, word joiners, BOM, ... Plus invisible non-Cf characters: combining grapheme
 // joiner U+034F, Hangul fillers U+115F/1160/3164/FFA0, braille blank U+2800, Mongolian vowel separator U+180E, Khmer inherent
 // vowels U+17B4/17B5, and the variation selectors U+FE00-FE0F and U+E0100-E01EF.
-const FORMAT_CHARS = /[\p{Cf}͏ᅟᅠㅤﾠ⠀᠎឴឵︀-️\u{E0100}-\u{E01EF}]/gu;
+export const FORMAT_CHARS = /[\p{Cf}͏ᅟᅠㅤﾠ⠀᠎឴឵︀-️\u{E0100}-\u{E01EF}]/gu;
 
 /** ATS-safe text: some importers drop non-ASCII dashes in date ranges (ai-job-search verify_pdf origin story).
  *  Invisible format characters are stripped so "Kuber​netes" cannot slip past the fact gate and render as "Kubernetes". */

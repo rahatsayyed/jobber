@@ -1,0 +1,8 @@
+{
+  "session": "ccgram",
+  "protected": ["manager", "ccgram-daemon"],
+  "windows": {
+    "hunt": { "argv": ["bash", "scripts/ccgram/claude-session.sh"], "description": "Claude session for a hunt run (no prompt is preloaded)" },
+    "followups": { "argv": ["bash", "scripts/ccgram/claude-session.sh"], "description": "Claude session for follow-up review" }
+  }
+}
