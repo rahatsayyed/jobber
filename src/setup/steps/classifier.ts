@@ -4,7 +4,7 @@
 // state. Never reads a token variable; gated or owner-supplied profiles are never fetched.
 import path from 'node:path';
 import { loadClassifier } from '../../safety/classifierModel.js';
-import { loadRegistry, type ClassifierProfile, type ClassifierRegistry } from '../../safety/classifierRegistry.js';
+import { isFullyPinned, loadRegistry, type ClassifierProfile, type ClassifierRegistry } from '../../safety/classifierRegistry.js';
 import { defaultFetchDeps, fetchProfile, GatedProfileError, verifyProfile, type FetchDeps } from '../../safety/modelFetch.js';
 import { SMOKE_BENIGN, SMOKE_INJECTION } from '../../safety/smoke.js';
 import { updateEnvText, writeEnvFile } from '../envWriter.js';
@@ -79,6 +79,7 @@ export function createClassifierStep(deps: ClassifierStepDeps = {}): SetupStep {
     checkIds: ['classifier_model', 'classifier_smoke'],
     async run(ctx) {
       const { io, root } = ctx;
+      let blobOnly = false;
       const registryPath = deps.registryPath ?? path.join(root, 'config', 'classifier-models.json');
       let reg: ClassifierRegistry;
       try {
@@ -140,6 +141,7 @@ export function createClassifierStep(deps: ClassifierStepDeps = {}): SetupStep {
         }
         const v = await verifyProfile(p, root);
         if (!v.ok) throw new Error(`model files do not verify: ${v.problems.join('; ')}`);
+        if (v.unpinned.length > 0 || !isFullyPinned(p)) blobOnly = true;
         if (v.unpinned.length > 0) {
           io.say(
             `${v.unpinned.length} file(s) are verified only by git blob id (${Object.keys(v.observed_sha256).length} sha256 values observed). Record them yourself with: npm run models -- pin ${p.id} (review the registry diff first).`,
@@ -147,17 +149,23 @@ export function createClassifierStep(deps: ClassifierStepDeps = {}): SetupStep {
         }
       }
 
-      const smoke = deps.smoke ?? defaultSmoke;
-      let s: { benign: number; injection: number };
-      try {
-        s = await smoke(p, root);
-      } catch (e) {
-        io.say(`smoke test could not run: ${oneLine(e)}`);
-        throw e;
-      }
-      io.say(`smoke: benign ${s.benign.toFixed(3)}, injection ${s.injection.toFixed(3)}`);
-      if (!(s.benign < 0.5 && s.injection >= 0.5)) {
-        throw new Error(`smoke test failed: benign ${s.benign.toFixed(3)}, injection ${s.injection.toFixed(3)}`);
+      if (blobOnly) {
+        io.say(
+          `smoke test skipped: files are verified by git blob id only; run npm run models -- pin ${p.id} then npm run doctor`,
+        );
+      } else {
+        const smoke = deps.smoke ?? defaultSmoke;
+        let s: { benign: number; injection: number };
+        try {
+          s = await smoke(p, root);
+        } catch (e) {
+          io.say(`smoke test could not run: ${oneLine(e)}`);
+          throw e;
+        }
+        io.say(`smoke: benign ${s.benign.toFixed(3)}, injection ${s.injection.toFixed(3)}`);
+        if (!(s.benign < 0.5 && s.injection >= 0.5)) {
+          throw new Error(`smoke test failed: benign ${s.benign.toFixed(3)}, injection ${s.injection.toFixed(3)}`);
+        }
       }
 
       writeEnv(ctx, p.id);

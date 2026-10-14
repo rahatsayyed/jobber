@@ -300,6 +300,35 @@ describe('fetchable profile', () => {
   });
 });
 
+describe('blob-pinned (not fully sha256-pinned) fetchable profile', () => {
+  it('skips the smoke, still writes CLASSIFIER_MODEL, prints the pin hint and returns done', async () => {
+    const reg = JSON.parse(JSON.stringify(REGISTRY));
+    const tok = reg.profiles['tiny-open'].files.find((f: { role: string }) => f.role === 'tokenizer');
+    tok.sha256 = null;
+    tok.git_blob_sha1 = createHash('sha1')
+      .update(Buffer.concat([Buffer.from(`blob ${BYTES['tokenizer.json'].length}\0`), BYTES['tokenizer.json']]))
+      .digest('hex');
+    const { ctx, sio, root } = setup([{ choose: '' }, { confirm: true }]);
+    writeFileSync(path.join(root, 'config', 'classifier-models.json'), JSON.stringify(reg));
+    let smokeCalls = 0;
+    const step = createClassifierStep({
+      fetchDeps: fakeFetch().deps,
+      smoke: async () => {
+        smokeCalls++;
+        return { benign: 0.9, injection: 0.1 };
+      },
+    });
+    expect(await step.run(ctx)).toBe('done');
+    expect(smokeCalls).toBe(0);
+    const t = sio.transcript.join('\n');
+    expect(t).toContain(
+      'smoke test skipped: files are verified by git blob id only; run npm run models -- pin tiny-open then npm run doctor',
+    );
+    expect(t).toContain('npm run classifier:fit -- --profile tiny-open --write');
+    expect(envText(root)).toContain('CLASSIFIER_MODEL=tiny-open');
+  });
+});
+
 describe('gated / owner-supplied profile', () => {
   it('prints manual steps, never fetches, returns skipped when files are absent', async () => {
     const { ctx, sio, root } = setup([{ choose: 'tiny-gated' }, { pause: true }]);
