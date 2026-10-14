@@ -100,7 +100,7 @@ export function updateBackupChecks(): Check[] {
         if (state.in_progress) {
           const age = ageMs(state.in_progress.started_at, now(ctx));
           if (age === null || age > HOUR) {
-            return fail(`${head}, an update has been in progress for over 60 minutes`, 'check the auto-update log; the runner may have died');
+            return fail(`${head}, an update has been in progress for over 60 minutes`, 'run `npm run auto-update -- --status`, then follow the stuck-update steps in docs/backup-and-restore.md');
           }
         }
         const last = state.last_result;

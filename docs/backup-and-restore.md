@@ -60,7 +60,9 @@ directory until the 24 hour sweep and is retried 60 minutes later.
 
 A `BACKUP_DIR` on exFAT, FAT or another filesystem without hard links works, but the archive is
 then written by an exclusive copy instead of an atomic link, so a crash mid-copy can leave a
-partial file under the final name; the checksum sidecar and `restore` verification catch it.
+partial file under the final name. `restore` fails on a truncated archive because decryption
+and authentication do not complete; the `.sha256` sidecar is only for a manual `sha256sum -c`
+comparison. A partial file still appears in listings and counts toward retention.
 
 ## 4. Restore, and the restore drill
 
@@ -149,19 +151,27 @@ Updates stay skipped (`in-progress-marker`) until you clear this by hand.
 What to check:
 
 - `git status` and `git log -1`: is the checkout clean and on a sane commit?
-- Compare `git log -1` with `last good commit` from `--status` (`last_good_commit` in
-  `.update/state.json`).
+- Note the `from` sha of the `in progress:` line from `--status` (`in_progress.from` in
+  `.update/state.json`): the commit the update started from. `last good commit`
+  (`last_good_commit`) is only a comparison; it can be older than `from`, or `none`.
+- After the first following tick `last result` may be overwritten by
+  `skipped (in-progress-marker)`, so the `in progress:` line is the reliable signal. The original
+  `rollback_failed` step is in `history` of `.update/state.json`.
+- The doctor `auto-update: state` FAIL appears for `rollback_failed` or an in-progress marker
+  older than 60 minutes.
 - The pre-update database snapshot `.update/pre-update-<sha>.sqlite` is the recovery copy if the
   database looks wrong.
 
 How to recover:
 
-1. Reset the checkout to the last good commit by hand (`git reset --hard <last_good_commit>`
-   after confirming it is the one you want).
+1. Reset the checkout by hand to the `from` sha of the `in progress:` line
+   (`git reset --hard <from>`), the commit the update started from. Do not reset to
+   `last_good_commit`: it can be older and would discard a manual merge.
 2. `npm ci`.
 3. `npm run doctor` and fix what it reports.
 4. Once the checkout is verified, delete `.update/state.json` to remove the `in_progress` field.
-   The next tick then evaluates updates again.
+   The next tick then evaluates updates again. Deleting `.update/state.json` also drops
+   `last_good_commit` and `history`.
 
 ## 6. Scheduler hand-off
 
