@@ -22,3 +22,4 @@ scripts/eval/fixtures/baseline/
 .ccgram/
 .claude/settings.local.json
 .claude/settings.local.managed.json
+.claude/settings.local.json.*
