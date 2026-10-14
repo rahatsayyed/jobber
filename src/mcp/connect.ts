@@ -10,6 +10,49 @@ import { openDb, saveConnection } from '../db.js';
 import { dbPath } from '../dbPath.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
 import { resolveControlWithFallback, type FallbackDeps } from '../lib/domFallback.js';
+import {
+  MAX_NOTE_LENGTH,
+  validateNoteLength,
+  extractExpectedNameFromTitle,
+  pickNearestToNameIndex,
+  extractDialogRecipientName,
+  namesPlausiblyMatch,
+  verifyRecipientName,
+  extractProfileSlug,
+  verifyProfileUrl,
+  isLikelySendInvitationResponse,
+  pickButtonShapedIndex,
+  extractAboutText,
+  type Point,
+} from '../linkedin/verify.js';
+import { SELECTORS } from '../linkedin/selectors.js';
+
+// One source of truth: the pure helpers live in src/linkedin/verify.ts and selectors.ts;
+// re-exported here so existing importers (tests/connect.test.ts) keep working.
+export {
+  MAX_NOTE_LENGTH,
+  validateNoteLength,
+  extractExpectedNameFromTitle,
+  pickNearestToNameIndex,
+  extractDialogRecipientName,
+  namesPlausiblyMatch,
+  verifyRecipientName,
+  extractProfileSlug,
+  verifyProfileUrl,
+  isLikelySendInvitationResponse,
+  pickButtonShapedIndex,
+  extractAboutText,
+  SELECTORS,
+};
+export type { Point };
+
+const DEPRECATED_REASON =
+  'deprecated: use the linkedin MCP (linkedin_connect_send / linkedin_send_message)';
+
+/** Kill switch, read at call time so tests and operators can flip it without a reload. */
+function legacyConnectDisabled(): boolean {
+  return process.env.LEGACY_CONNECT_DISABLED === 'true';
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../..');
@@ -26,9 +69,6 @@ const DEFAULT_MAX_MESSAGES_PER_DAY = 10;
 // live-verified to work end-to-end for this file's selectors; a shorter viewport was found
 // to hide the connect dialog's Send button below the fold.
 export const BROWSER_VIEWPORT = { width: 1440, height: 2400 };
-
-/** LinkedIn's hard cap on connection-request note length. */
-export const MAX_NOTE_LENGTH = 300;
 
 // Debug screenshots for connectSend(), gitignored — opt-in aid for diagnosing a suspected
 // false-positive 'sent' result (see docs/phase2-known-issues.md).
@@ -182,151 +222,6 @@ async function findAndClickControl(
   return escalateClick(page, intent, fallback, candidateSelector);
 }
 
-/**
- * Pure: enforce LinkedIn's 300-character connection-note cap. Returns `ok: false` for
- * empty notes too — an empty note is never a valid, ready-to-send connect note.
- */
-export function validateNoteLength(note: string): { ok: boolean; length: number } {
-  const length = note.length;
-  return { ok: length > 0 && length <= MAX_NOTE_LENGTH, length };
-}
-
-// LinkedIn people-search / profile DOM selectors. See git history / .superpowers/sdd/task-6
-// -connect-fix-report.md for the live-inspection notes behind each of these.
-export const SELECTORS = {
-  resultCard: 'div[role="listitem"]',
-  profileLink: 'a[href*="/in/"]',
-  // Filtered further by pickButtonShapedIndex (below) to isolate the real profile-header
-  // "More" button from small post "…more" text toggles that also match this selector.
-  moreButton: 'main button:has-text("More")',
-  // Scoped to [role="menu"] so it never matches unrelated sidebar "Invite X to connect" links.
-  // `:text-is()` (exact, whitespace-normalized match) — NOT `:has-text()`. INCIDENT
-  // 2026-08-28: `:has-text("Connect")` is a substring match, and a real already-connected
-  // profile's More menu has a "Remove connection" item — "connection" contains "connect" as a
-  // substring, so the old selector clicked "Remove connection" instead of finding no match.
-  // The recipient-name verification gate caught it before the real "Remove connection" button
-  // (the resulting dialog's copy doesn't match the "invitation to <Name>" pattern), so nothing
-  // was actually removed, but the selector itself was wrong independent of that safety net.
-  connectMenuItem: '[role="menu"] [role="menuitem"]:text-is("Connect")',
-  // INCIDENT 2026-08-28: LinkedIn now renders "Add a note" as an <a>, not a <button>, on the
-  // intermediate "Add a note to your invitation?" screen (confirmed live on
-  // linkedin.com/in/example-person-3) — a button-only selector silently matched nothing, so the
-  // click was skipped and the code correctly refused rather than send without a note.
-  addNoteButton:
-    'button[aria-label*="add a note" i], button:has-text("Add a note"), a:has-text("Add a note")',
-  noteTextarea: '#custom-message, textarea[name="message"]',
-  // The Send button's accessible name ("Send invitation") lives only in its aria-label, not
-  // its visible text ("Send") — hence the aria-label-based alternatives.
-  sendButton:
-    'button[aria-label="Send invitation" i], button[aria-label^="Send " i], button:has-text("Send now")',
-  // Once a request is recorded, LinkedIn shows a "Pending" `<a>` (not a `<button>`) in place
-  // of "+ Follow". Multiple matches can exist on one page (e.g. a duplicate sticky-nav copy)
-  // — disambiguated by proximity to the profile's own name, see pickNearestLocator below.
-  pendingButton: 'a[aria-label^="Pending" i]',
-  // Some profiles show "Connect" directly at the top level instead of hiding it behind
-  // "More" — an `<a>`, not a `<button>`. Can also match more than once on a real page (e.g.
-  // a real profile was confirmed to render this twice — once in a sticky nav element with no
-  // section ancestor, once in the actual profile card ~143px below the name) — disambiguated
-  // by proximity, not a DOM-ancestor guess (two different ancestor-based guesses have each
-  // failed on a different real profile). See pickNearestLocator below.
-  directConnectButton: 'a[aria-label^="Invite " i][aria-label$=" to connect" i]',
-  // LinkedIn shows a "Message" control in the profile header ONLY for an existing 1st-degree
-  // connection (in place of "Connect"/"Follow") — used to detect "already connected" before
-  // connectSend attempts a Connect click that could never succeed. Live-confirmed 2026-08-28
-  // (linkedin.com/in/example-person-2): the REAL header button has NO aria-label at all — its
-  // accessible name is the visible text "Message" only. `:text-is("Message")` (exact) found
-  // ZERO matches live despite the button's textContent being exactly "Message" (likely
-  // unsupported/behaves differently in this project's pinned Playwright version) —
-  // `:has-text("Message")` (substring, case-insensitive) DID match it live, at the cost of
-  // also matching sidebar "More profiles for you" decoy links and unrelated feed posts that
-  // merely mention "message" — same tradeoff directConnectButton already accepts, resolved the
-  // same way: pickNearestLocator's 2D-proximity check picks the real near-the-name match
-  // regardless of how many far-away decoys also matched.
-  messageButton: 'main a:has-text("Message"), main button:has-text("Message")',
-  // The "Manage notifications about <Name>" bell — live-confirmed 2026-08-28 present ONLY on a
-  // real 1st-degree connection's profile (linkedin.com/in/example-person-2) and absent entirely
-  // on a real not-connected profile (linkedin.com/in/example-person, 2nd-degree). Used by
-  // checkConnectionStatus as the primary "already connected" signal — more reliable than
-  // Message-button presence, which some Premium/InMail-enabled non-connections also show.
-  bellButton: 'a[aria-label^="Manage notifications about " i]',
-  // The message-compose box that opens after clicking messageButton. Not live-verified —
-  // LinkedIn's real messaging UI uses a contenteditable div, not a plain textarea/input.
-  messageComposeTextarea:
-    'div.msg-form__contenteditable[contenteditable="true"], [aria-label*="message" i][contenteditable="true"], textarea[name="message"]',
-  // The Send button inside the message compose box. Not live-verified.
-  messageSendButton: 'button.msg-form__send-button, button[type="submit"]:has-text("Send")',
-  // LinkedIn doesn't consistently render the profile's own name in one heading tag (a real
-  // profile was confirmed to have ZERO `<h1>` anywhere, with the name in an `<h2>` instead)
-  // — search both. Used only to locate the name's position for proximity-based picks.
-  nameHeadings: 'main h1, main h2',
-  // The "Add a note?" / "Personalize your invitation to <Name>" dialog container, used only
-  // to extract the stated recipient name for verification against the expected name.
-  // `:visible` (a Playwright selector extension, not standard CSS) excludes hidden/decoy
-  // dialog elements that may share this role elsewhere on the page — INCIDENT 2026-07-17
-  // (#2): `.first()` on an unfiltered match is a plausible way to silently grab the wrong
-  // one, the same class of bug as directConnectButton's.
-  // INCIDENT 2026-08-28: `[role="dialog"]`/`[role="alertdialog"]` alone silently matched
-  // NOTHING live (confirmed on linkedin.com/in/example-person and linkedin.com/in/example-person-3 —
-  // the dialog visibly rendered, per debug screenshots, but recipient-name verification always
-  // failed with "could not verify"). Root cause: LinkedIn now renders this as a native HTML
-  // `<dialog>` element with no explicit `role` attribute — CSS attribute selectors don't know
-  // about `<dialog>`'s IMPLICIT ARIA dialog role, so `[role="dialog"]` never matches it. The
-  // `dialog` tag selector is added first to catch this directly.
-  noteDialogContainer: 'dialog:visible, [role="dialog"]:visible, [role="alertdialog"]:visible',
-} as const;
-
-/**
- * Pure: extracts the profile owner's name from `page.title()` (e.g. "Tanvi Gaharwar |
- * LinkedIn" -> "Tanvi Gaharwar") — confirmed reliable where `<h1>` is not. Exported for
- * unit testing.
- */
-export function extractExpectedNameFromTitle(title: string): string {
-  const idx = title.indexOf(' | ');
-  return (idx === -1 ? title : title.slice(0, idx)).trim();
-}
-
-export interface Point {
-  x: number;
-  y: number;
-}
-
-// Max plausible 2D distance (px) between the profile's own name and a real header action
-// button. INCIDENT 2026-07-17 (#3): confirmed-working real header buttons sit ~130-145px
-// below the name in the same X column; sidebar-suggestion-card decoys sit ~800-900px away
-// (mostly in X, a different column entirely). 300px is a generous margin above the real
-// case and well under the decoy distance — a candidate farther than this is rejected as
-// implausible rather than accepted just for being the only/closest match available.
-const MAX_PLAUSIBLE_CANDIDATE_DISTANCE_PX = 300;
-
-/**
- * Pure: given the profile name element's position and each selector-match candidate's
- * position, picks the index of the candidate closest by full 2D (Euclidean) distance — the
- * real profile-card element, not a duplicate/decoy elsewhere on the page. Y-only distance is
- * NOT enough (INCIDENT #2: a sidebar card can share the header's Y while sitting in a
- * different X column). Returns -1 if there are no candidates, OR if the single nearest one
- * is farther than `maxDistancePx` — an implausibly distant "nearest" match (e.g. the only
- * candidate on the page is a sidebar decoy, INCIDENT #3) must be rejected, not accepted just
- * for being the closest available. Exported for unit testing.
- */
-export function pickNearestToNameIndex(
-  namePoint: Point,
-  candidates: Point[],
-  maxDistancePx: number = MAX_PLAUSIBLE_CANDIDATE_DISTANCE_PX
-): number {
-  if (candidates.length === 0) return -1;
-  const distanceSq = (p: Point) => (p.x - namePoint.x) ** 2 + (p.y - namePoint.y) ** 2;
-  let bestIndex = 0;
-  let bestDistance = distanceSq(candidates[0]);
-  for (let i = 1; i < candidates.length; i++) {
-    const distance = distanceSq(candidates[i]);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestIndex = i;
-    }
-  }
-  return Math.sqrt(bestDistance) <= maxDistancePx ? bestIndex : -1;
-}
-
 /** Position of the heading whose text matches `expectedName`, or null if none found. */
 async function getProfileNamePoint(page: Pick<Page, 'locator'>, expectedName: string): Promise<Point | null> {
   if (!expectedName) return null;
@@ -363,77 +258,6 @@ async function pickNearestLocator(page: Pick<Page, 'locator'>, selector: string,
   );
   const index = pickNearestToNameIndex(namePoint, candidates);
   return candidatesLocator.nth(index === -1 ? count : index);
-}
-
-
-/**
- * Pure: extracts the recipient name from LinkedIn's "...invitation to <Name>" dialog copy.
- * Bounded by the first sentence terminator (`.`/`?`/`!`), a newline, " by adding a note", or
- * end-of-string — NOT by end-of-string alone, since a real dialog variant (the pre-note
- * "Add a note to your invitation?" screen) has a full paragraph of trailing copy after the
- * name, which previously made this return '' and silently fail-closed on a legitimate send.
- * Exported for unit testing.
- */
-export function extractDialogRecipientName(dialogText: string): string {
-  const match = dialogText.match(/invitation to\s+(.+?)(?:\s+by adding a note\b|[.?!]|\n|$)/i);
-  return match ? match[1].trim() : '';
-}
-
-/**
- * Pure: case-insensitive first-name comparison, tolerating LinkedIn's "first name + last
- * initial" dialog abbreviation (e.g. "Vaishali S." for "Vaishali Sharma").
- */
-export function namesPlausiblyMatch(expectedName: string, recipientName: string): boolean {
-  const firstWord = (s: string) => s.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
-  const expectedFirst = firstWord(expectedName);
-  const recipientFirst = firstWord(recipientName);
-  if (!expectedFirst || !recipientFirst) return false;
-  return (
-    expectedFirst === recipientFirst ||
-    expectedFirst.startsWith(recipientFirst) ||
-    recipientFirst.startsWith(expectedFirst)
-  );
-}
-
-/**
- * Pure: the mandatory recipient-name verification gate. FAIL-CLOSED: if either name can't be
- * extracted, this BLOCKS (does not proceed) — INCIDENT 2026-07-17 (#2) showed the previous
- * "unverifiable, so allow" leniency let a real wrong-recipient send through silently when
- * extraction came back empty. Only an actual, extracted, matching pair is considered safe.
- */
-export function verifyRecipientName(
-  expectedName: string,
-  dialogText: string
-): { ok: boolean; recipientName: string } {
-  const recipientName = extractDialogRecipientName(dialogText);
-  if (!expectedName || !recipientName) {
-    return { ok: false, recipientName };
-  }
-  return { ok: namesPlausiblyMatch(expectedName, recipientName), recipientName };
-}
-
-/**
- * Pure: extracts the `/in/<slug>` segment from a LinkedIn profile URL, lowercased. Returns
- * '' if no such segment is found. Exported for unit testing.
- */
-export function extractProfileSlug(url: string): string {
-  const match = url.match(/\/in\/([^/?#]+)/i);
-  return match ? match[1].toLowerCase() : '';
-}
-
-/**
- * Pure: independent, text-free safety net — verifies the browser is still on the originally
- * requested profile right before the note is filled / Send is clicked, comparing slugs (not
- * exact URL equality) to tolerate redirects/query params. FAIL-CLOSED: an unparseable slug on
- * either side blocks, same rationale as verifyRecipientName above.
- */
-export function verifyProfileUrl(
-  expectedUrl: string,
-  actualUrl: string
-): { ok: boolean; expectedSlug: string; actualSlug: string } {
-  const expectedSlug = extractProfileSlug(expectedUrl);
-  const actualSlug = extractProfileSlug(actualUrl);
-  return { ok: Boolean(expectedSlug) && expectedSlug === actualSlug, expectedSlug, actualSlug };
 }
 
 // Bounded, non-throwing waits below: `Locator.click()` only auto-waits for the clicked
@@ -479,19 +303,6 @@ const PROFILE_HEADER_SETTLE_TIMEOUT_MS = 8000;
 // than reload+poll when it fires.
 const NETWORK_CONFIRMATION_TIMEOUT_MS = 12000;
 
-// Best-effort heuristic, NOT verified against a real captured request (no live browser
-// access): a POST to a "voyager"-style path mentioning invitation/connect/relationship, 2xx.
-export function isLikelySendInvitationResponse(response: Response): boolean {
-  const url = response.url().toLowerCase();
-  const isLikelyPath = url.includes('voyager') && /invitation|connect|relationship/.test(url);
-  return (
-    isLikelyPath &&
-    response.request().method() === 'POST' &&
-    response.status() >= 200 &&
-    response.status() < 300
-  );
-}
-
 async function waitForNoteDialogTransition(page: Pick<Page, 'locator'>): Promise<void> {
   const anySelector = [SELECTORS.noteTextarea, SELECTORS.sendButton].join(', ');
   await page
@@ -499,16 +310,6 @@ async function waitForNoteDialogTransition(page: Pick<Page, 'locator'>): Promise
     .first()
     .waitFor({ state: 'visible', timeout: NOTE_TRANSITION_TIMEOUT_MS })
     .catch(() => {});
-}
-
-/**
- * Pure: given the bounding-box heights of every `SELECTORS.moreButton` match, picks the
- * index of the first button-shaped one (height >= minHeightPx) — the real profile-header
- * "More" action, as opposed to small "…more" show-more-text toggles. Returns -1 if none
- * qualify. Exported for unit testing without a live Playwright page.
- */
-export function pickButtonShapedIndex(boxes: Array<{ height: number }>, minHeightPx = 40): number {
-  return boxes.findIndex((box) => box.height >= minHeightPx);
 }
 
 /**
@@ -531,18 +332,6 @@ export function extractNameAndHeadline(
       : '';
 
   return { name, headline };
-}
-
-/**
- * Pure: strips the leading "About" heading text from the About section's raw textContent.
- * LinkedIn's DOM has no separator between the heading and the body — e.g. the real textContent
- * reads "AboutBlockchain enthousiast Cardano developer" (live-confirmed 2026-08-29, see
- * scrapeAboutText). Returns null for empty/heading-only content. Exported for unit testing
- * without a live page.
- */
-export function extractAboutText(rawSectionText: string): string | null {
-  const stripped = rawSectionText.replace(/^about\s*/i, '').trim();
-  return stripped || null;
 }
 
 /**
@@ -702,6 +491,7 @@ export async function connectSend(
   }: { profile_url: string; note: string; job_id?: string; company?: string },
   deps: ConnectDeps = {}
 ): Promise<ConnectSendResult> {
+  if (legacyConnectDisabled()) return { status: 'failed', reason: DEPRECATED_REASON };
   const database = deps.db ?? db;
   const browserLauncher = deps.chromium ?? chromium;
   const maxPerDay =
@@ -977,6 +767,7 @@ export async function sendLinkedinMessage(
   { profile_url, message, job_id, company }: { profile_url: string; message: string; job_id?: string; company?: string },
   deps: ConnectDeps = {}
 ): Promise<SendLinkedinMessageResult> {
+  if (legacyConnectDisabled()) return { status: 'failed', reason: DEPRECATED_REASON };
   const database = deps.db ?? db;
   const browserLauncher = deps.chromium ?? chromium;
   const maxPerDay =
@@ -1151,6 +942,7 @@ server.registerTool(
   'find_linkedin_profile',
   {
     description:
+      'DEPRECATED (plan 6C): superseded by the linkedin MCP (linkedin_open / linkedin_state); still supported until plan 6D. ' +
       'Searches LinkedIn people-search for a contact at the given company (recruiter/hiring-manager ' +
       'style roles by default, or a role_hint), using the MAIN LinkedIn account session. Returns up to ' +
       'the top 3 candidate profiles. Gated by a daily linkedin_search rate limit. Read-only — never ' +
@@ -1170,6 +962,7 @@ server.registerTool(
   'check_connection_status',
   {
     description:
+      'DEPRECATED (plan 6C): superseded by the linkedin MCP (linkedin_open / linkedin_state); still supported until plan 6D. ' +
       'Read-only: checks whether profile_url is already a 1st-degree LinkedIn connection, using the ' +
       'MAIN LinkedIn account session. Call this BEFORE drafting anything — the result decides which ' +
       "skill to draft with (draft-connect-note if 'not_connected', draft-linkedin-message if " +
@@ -1192,6 +985,7 @@ server.registerTool(
   'connect_send',
   {
     description:
+      'DEPRECATED (plan 6C): use linkedin_connect_send on the linkedin MCP. ' +
       'Sends a LinkedIn connection request with a note, using the MAIN LinkedIn account session. ' +
       'This performs the real action immediately when called — it does NOT wait for approval itself. ' +
       'The orchestrating agent (CLAUDE.md) must only call this AFTER an explicit human "send" reply ' +
@@ -1221,6 +1015,7 @@ server.registerTool(
   'send_linkedin_message',
   {
     description:
+      'DEPRECATED (plan 6C): use linkedin_send_message on the linkedin MCP. ' +
       'Sends a LinkedIn direct message to a profile that is ALREADY a 1st-degree connection, using ' +
       'the MAIN LinkedIn account session — call this only for a profile check_connection_status has ' +
       "already confirmed is 'connected'. Performs the real action immediately when called; the " +
@@ -1249,6 +1044,7 @@ server.registerTool(
   'record_connection_status',
   {
     description:
+      'DEPRECATED (plan 6C): superseded by the linkedin MCP (linkedin_open / linkedin_state); still supported until plan 6D. ' +
       "Records a connection draft's status as 'drafted' or 'skipped' in the database. Pure " +
       "bookkeeping write — no Playwright, no rate-limit gating. Use this after posting a drafted " +
       "connection note to Telegram (status='drafted'), or when the user declines to approve it " +
