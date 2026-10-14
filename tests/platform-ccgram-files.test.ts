@@ -60,6 +60,19 @@ describe('ccgram runner files', () => {
     expect(session).toMatch(/exec claude "\$@"/);
   });
 
+  it('claude-session.sh refuses permission-skipping arguments and variables before the exec', () => {
+    const exec = session.indexOf('exec claude "$@"');
+    const guard = session.indexOf('for arg in "$@"');
+    expect(guard).toBeGreaterThan(0);
+    expect(guard).toBeLessThan(exec);
+    expect(session).toContain('*skip-permissions*|*bypasspermissions*');
+    expect(session).toMatch(/nocasematch/);
+    expect(session.indexOf('IS_SANDBOX')).toBeGreaterThan(0);
+    expect(session.indexOf('IS_SANDBOX')).toBeLessThan(exec);
+    expect(session.indexOf('compgen -v CLAUDE_CODE_')).toBeGreaterThan(0);
+    expect(session.indexOf('compgen -v CLAUDE_CODE_')).toBeLessThan(exec);
+  });
+
   it('run.sh env -i passes exactly the allowed variables', () => {
     const m = run.match(/exec env -i((?:[ \t]*\\?\n?[ \t]*[A-Z_]+="[^"]*")+)/);
     expect(m).not.toBeNull();

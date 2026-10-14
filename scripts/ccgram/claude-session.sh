@@ -33,4 +33,28 @@ if [ -f "$ENV_FILE" ]; then
     export "$k=$v"
   done < "$ENV_FILE"
 fi
+# Choke point: refuse any request to skip or bypass permissions. Messages are fixed and never
+# echo argument or variable values.
+shopt -s nocasematch
+for arg in "$@"; do
+  case "$arg" in
+    *skip-permissions*|*bypasspermissions*)
+      echo "claude-session: refusing to start Claude with a permission-skipping argument" >&2
+      exit 1
+      ;;
+  esac
+done
+if [ -n "${IS_SANDBOX:-}" ]; then
+  echo "claude-session: refusing to start Claude with IS_SANDBOX set" >&2
+  exit 1
+fi
+while IFS= read -r name; do
+  case "$name" in
+    *SKIP*|*BYPASS*)
+      echo "claude-session: refusing to start Claude with a permission-skipping CLAUDE_CODE_ variable set" >&2
+      exit 1
+      ;;
+  esac
+done < <(compgen -v CLAUDE_CODE_ || true)
+shopt -u nocasematch
 exec claude "$@"
