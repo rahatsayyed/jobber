@@ -8,6 +8,7 @@ import { openDb } from '../src/db.js';
 import { dbPath } from '../src/dbPath.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { defaultRun } from '../src/platform/tmux.js';
+import { redactPane } from '../src/platform/redact.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
 import { ceilings } from '../src/outreach/limits.js';
@@ -24,7 +25,9 @@ const projectRoot = resolve(process.cwd());
 const root = join(projectRoot, '.jobber');
 const stopFile = join(root, 'STOP');
 
-function loadEnv(): NodeJS.ProcessEnv {
+const safe = (v: unknown): string => redactPane(String(v ?? '')).replace(/\s+/g, ' ').slice(0, 200);
+
+function loadEnv():NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   const f = join(projectRoot, '.env');
   if (existsSync(f)) {
@@ -44,8 +47,8 @@ function status(env: NodeJS.ProcessEnv): void {
   const ctl = readControl(db, controlDefaults(env, stopFile));
   console.log(`next wake: ${getState(db, 'next_wake_at') ?? 'not set'}`);
   console.log(`usage backoff until: ${getState(db, 'usage_backoff_until') ?? 'none'}`);
-  console.log(`kill: ${ctl.killed ? `ON (${ctl.killReason})` : 'off'}`);
-  for (const [p, r] of Object.entries(ctl.halted)) if (r) console.log(`halted ${p}: ${r}`);
+  console.log(`kill: ${ctl.killed ? `ON (${safe(ctl.killReason)})` : 'off'}`);
+  for (const [p, r] of Object.entries(ctl.halted)) if (r) console.log(`halted ${p}: ${safe(r)}`);
   let open = 0;
   try {
     open = (db.prepare('SELECT count(*) AS n FROM escalations WHERE resolved_at IS NULL').get() as { n: number }).n;
@@ -55,7 +58,7 @@ function status(env: NodeJS.ProcessEnv): void {
   console.log(`open escalations: ${open}`);
   console.log('last runs:');
   for (const r of listRuns(db, 10)) {
-    console.log(`  ${r.planned_at} ${r.id} ${r.status}${r.stop_reason ? ` (${r.stop_reason})` : ''} dry=${r.dry_run}`);
+    console.log(`  ${r.planned_at} ${r.id} ${r.status}${r.stop_reason ? ` (${safe(r.stop_reason)})` : ''} dry=${r.dry_run}`);
   }
   db.close();
 }
@@ -84,8 +87,9 @@ async function main(): Promise<void> {
   if (args.has('--status')) return status(env);
   if (args.has('--dry-run-plan')) return dryRunPlan(env);
   if (!args.has('--daemon') && !args.has('--once')) {
-    console.log('usage: scheduler --daemon | --once | --status | --dry-run-plan');
-    process.exitCode = 2;
+    console.log('usage: scheduler --daemon | --once | --status | --dry-run-plan | --help');
+    console.log('note: environment and .env changes are read once at start; restart the daemon to apply them.');
+    process.exitCode = args.has('--help') ? 0 : 2;
     return;
   }
   const db = openDb();
@@ -112,23 +116,23 @@ async function main(): Promise<void> {
     newRunId: () => randomBytes(8).toString('hex'),
     session: env.SCHEDULER_TMUX_SESSION || undefined,
   };
-  if (args.has('--once')) {
-    const r = await wakeOnce(deps, { force: true });
-    console.log(`run ${r.runId}: ${r.status}${r.reason ? ` (${r.reason})` : ''}; next wake ${r.nextWakeAt}`);
-    db.close();
-    return;
-  }
   const stop = { stopped: false };
   const halt = (): void => {
     stop.stopped = true;
   };
   process.on('SIGINT', halt);
   process.on('SIGTERM', halt);
+  if (args.has('--once')) {
+    const r = await wakeOnce(deps, { force: true, abort: () => stop.stopped });
+    console.log(`run ${r.runId}: ${r.status}${r.reason ? ` (${safe(r.reason)})` : ''}; next wake ${r.nextWakeAt}`);
+    db.close();
+    return;
+  }
   await daemonLoop(deps, stop);
   db.close();
 }
 
 main().catch((e) => {
-  console.error(`scheduler error: ${e instanceof Error ? e.message : 'unknown'}`);
+  console.error(`scheduler error: ${safe(e instanceof Error ? e.message : 'unknown')}`);
   process.exitCode = 1;
 });

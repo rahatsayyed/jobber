@@ -2,7 +2,7 @@
 // Wake driver: one planned wake (control, lock, plan, launch, poll, budget, finish) and the daemon loop.
 import { readFileSync } from 'node:fs';
 import type BetterSqlite3 from 'better-sqlite3';
-import { acquireLock, type LockDeps, type LockHandle } from '../platform/lock.js';
+import { acquireLock, peekLock, type LockDeps, type LockHandle } from '../platform/lock.js';
 import { redactPane } from '../platform/redact.js';
 import { isDryRun } from '../safety/dryRun.js';
 import type { OutreachConfig } from '../outreach/config.js';
@@ -111,7 +111,27 @@ function stopMap(r: StopReason): { status: RunStatus; reason: string } {
   return { status: 'budget_exceeded', reason: r };
 }
 
-async function inner(d: DriverDeps, opts: { force?: boolean }): Promise<WakeResult> {
+function handleFor(runId: string, session: string, window?: string | null): LaunchHandle {
+  return { runId, session, window: window || `wake-${runId}`, logPath: '', exitPath: '', promptPath: '' };
+}
+
+// Kill through the launcher; a throw is a failed kill: warn and record the window so the next wake refuses to launch.
+async function killChecked(d: DriverDeps, h: LaunchHandle, runId: string): Promise<boolean> {
+  try {
+    await d.launcher.kill(h);
+    return true;
+  } catch (e) {
+    try {
+      setState(d.db, 'unkilled_window', JSON.stringify({ runId: h.runId, session: h.session }), d.now());
+    } catch {
+      // ignore
+    }
+    await say(d, { level: 'warn', title: 'kill failed, window may still be running', detail: safeMsg(e), runId });
+    return false;
+  }
+}
+
+async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boolean }): Promise<WakeResult> {
   const pacing = pacingFromConfig(d.cfg, d.tuning);
   const runId = d.newRunId();
   const dry = wakeIsDry(d.env);
@@ -138,6 +158,16 @@ async function inner(d: DriverDeps, opts: { force?: boolean }): Promise<WakeResu
       logSkipped(reason, detail);
     } catch (e) {
       await say(d, { level: 'warn', title: 'scheduler skipped row not written', detail: safeMsg(e), runId });
+    }
+    if (reason === 'killed') {
+      // a kill skip never redraws or overwrites a stored future next_wake_at
+      try {
+        const v = getState(d.db, 'next_wake_at');
+        if (v && Date.parse(v) > d.now().getTime()) return { runId, status: 'skipped', reason, nextWakeAt: v };
+      } catch {
+        // fall through to an in-memory draw
+      }
+      return { runId, status: 'skipped', reason, nextWakeAt: nextWake(d.now(), d.rng, pacing).toISOString() };
     }
     return { runId, status: 'skipped', reason, nextWakeAt: drawNext() };
   };
@@ -169,6 +199,20 @@ async function inner(d: DriverDeps, opts: { force?: boolean }): Promise<WakeResu
     return await skip('control_error', safeMsg(e));
   }
 
+  // a window we failed to kill earlier blocks launching until a retried kill succeeds
+  try {
+    const raw = getState(d.db, 'unkilled_window');
+    if (raw) {
+      const u = JSON.parse(raw) as { runId?: unknown; session?: unknown };
+      if (typeof u.runId !== 'string' || typeof u.session !== 'string') throw new Error('bad unkilled_window state');
+      await d.launcher.kill(handleFor(u.runId, u.session));
+      setState(d.db, 'unkilled_window', '', d.now());
+    }
+  } catch (e) {
+    await say(d, { level: 'warn', title: 'kill failed, window may still be running', detail: safeMsg(e), runId });
+    return await skip('unkilled_window');
+  }
+
   // usage backoff
   try {
     const until = getState(d.db, 'usage_backoff_until');
@@ -192,6 +236,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean }): Promise<WakeResu
   let stopReason: string | null = null;
   let exitCode: number | null = null;
   let started = false;
+  let launchTried = false;
   let inboxPlanned = false;
   let handle: LaunchHandle | null = null;
   let tracker: BudgetTracker | null = null;
@@ -231,6 +276,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean }): Promise<WakeResu
     const prompt = buildWakePrompt({
       runId, dryRun: dry, burst: decision.burst, tasks: decision.tasks, budget, allowed: control.allowed, now: startAt,
     });
+    launchTried = true;
     handle = await d.launcher.start({
       runId, dryRun: dry, prompt,
       session: d.session ?? DEFAULT_SESSION,
@@ -241,12 +287,9 @@ async function inner(d: DriverDeps, opts: { force?: boolean }): Promise<WakeResu
     });
     const h = handle;
     const pollMs = d.pollMs ?? DEFAULT_POLL_MS;
+    let killFailed = false;
     const kill = async (): Promise<void> => {
-      try {
-        await d.launcher.kill(h);
-      } catch {
-        // best effort
-      }
+      if (!(await killChecked(d, h, runId))) killFailed = true;
     };
     for (;;) {
       const r = await d.launcher.poll(h);
@@ -282,6 +325,12 @@ async function inner(d: DriverDeps, opts: { force?: boolean }): Promise<WakeResu
         if (status === 'failed') stopReason = `exit ${r.exitCode}`;
         break;
       }
+      if (opts.abort?.()) {
+        await kill();
+        status = 'killed';
+        stopReason = 'shutdown';
+        break;
+      }
       let ctl: ControlState | null = null;
       try {
         ctl = readControl(d.db, controlDeps(d));
@@ -302,15 +351,14 @@ async function inner(d: DriverDeps, opts: { force?: boolean }): Promise<WakeResu
       }
       await d.sleep(pollMs);
     }
+    if (killFailed) stopReason = 'kill_failed';
   } catch (e) {
     status = 'failed';
     stopReason = `error: ${safeMsg(e)}`;
-    if (handle) {
-      try {
-        await d.launcher.kill(handle);
-      } catch {
-        // ignore
-      }
+    if (launchTried) {
+      // the window may exist even when start() threw: kill it by its deterministic name
+      const ok = await killChecked(d, handle ?? handleFor(runId, d.session ?? DEFAULT_SESSION), runId);
+      if (!ok) stopReason = 'kill_failed';
     }
   } finally {
     // (6) always: finish the row, release the lock, draw the next wake
@@ -351,11 +399,16 @@ async function inner(d: DriverDeps, opts: { force?: boolean }): Promise<WakeResu
   return { runId, status, reason: stopReason ?? undefined, nextWakeAt };
 }
 
-export async function wakeOnce(d: DriverDeps, opts: { force?: boolean } = {}): Promise<WakeResult> {
+export async function wakeOnce(
+  d: DriverDeps,
+  opts: { force?: boolean; abort?: () => boolean } = {},
+): Promise<WakeResult> {
   const r = await inner(d, opts);
-  if (d.afterWake) {
+  const killedResult = r.status === 'killed' || (r.status === 'skipped' && r.reason === 'killed');
+  if (d.afterWake && !killedResult) {
     try {
-      await d.afterWake(r); // the run lock is already released here
+      // The run lock is already released here: a hook that does work must take the `run` lock itself.
+      await d.afterWake(r);
     } catch (e) {
       await say(d, { level: 'warn', title: 'scheduler after-wake hook failed', detail: safeMsg(e), runId: r.runId });
     }
@@ -391,7 +444,24 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     }
   };
   try {
-    markOrphans(d.db, d.now());
+    // Orphans from a previous daemon: kill their windows BEFORE marking them crashed, unless a live
+    // run lock shows another process owns a run right now (then leave its rows untouched).
+    if (peekLock(d.lockRoot, 'run', d.lockDeps) === null) {
+      let rows: { id: string; window: string | null }[] = [];
+      try {
+        rows = d.db
+          .prepare("SELECT id, window FROM scheduler_runs WHERE status IN ('running', 'planned')")
+          .all() as { id: string; window: string | null }[];
+      } catch {
+        rows = [];
+      }
+      for (const r of rows) {
+        await killChecked(d, handleFor(r.id, d.session ?? DEFAULT_SESSION, r.window), r.id);
+      }
+      markOrphans(d.db, d.now());
+    } else {
+      await say(d, { level: 'warn', title: 'run lock is live at daemon start, leaving running rows untouched' });
+    }
     let next: Date | null = null;
     try {
       const v = getState(d.db, 'next_wake_at');
@@ -428,7 +498,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
         if (!present) stopSeen = false;
       }
       if (!woke || stop.stopped) break;
-      const r = await wakeOnce(deps);
+      const r = await wakeOnce(deps, { abort: () => stop.stopped });
       next = new Date(r.nextWakeAt);
     }
   } finally {

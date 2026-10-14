@@ -33,7 +33,7 @@ interface Step { out?: string; exited?: boolean; code?: number }
 class FakeLauncher implements Launcher {
   starts: LaunchPlan[] = [];
   kills = 0;
-  constructor(private steps: Step[] = [{ exited: true, code: 0 }], private throwOnStart = false) {}
+  constructor(public steps: Step[] = [{ exited: true, code: 0 }], private throwOnStart = false) {}
   async start(plan: LaunchPlan): Promise<LaunchHandle> {
     if (this.throwOnStart) throw new Error('boom launcher failure\n    at stack frame');
     this.starts.push(plan);
@@ -43,8 +43,12 @@ class FakeLauncher implements Launcher {
     const s = this.steps.length > 1 ? (this.steps.shift() as Step) : this.steps[0];
     return { exited: !!s.exited, exitCode: s.exited ? (s.code ?? 0) : null, newOutput: s.out ?? '' };
   }
-  async kill(): Promise<void> {
+  killed: string[] = [];
+  killFails = false;
+  async kill(h?: LaunchHandle): Promise<void> {
     this.kills++;
+    if (h) this.killed.push(h.window);
+    if (this.killFails) throw new Error('tmux gone');
   }
 }
 
@@ -253,6 +257,46 @@ describe('wakeOnce', () => {
     expect((await wakeOnce(s.d)).status).toBe('failed');
   });
 
+  it('kill failure warns, records the window and blocks the next wake until a retry succeeds', async () => {
+    const s = setup({ launcher: new FakeLauncher([{ out: '' }]), stopExists: undefined });
+    let polls = 0;
+    s.launcher.killFails = true;
+    const r = await wakeOnce(s.d, { abort: () => polls++ >= 1 });
+    expect(r.status).toBe('killed');
+    expect(r.reason).toBe('kill_failed');
+    expect(s.notices.some((n) => /kill failed/.test(n.title))).toBe(true);
+    expect(getState(s.db, 'unkilled_window')).toBeTruthy();
+    const again = await wakeOnce(s.d);
+    expect(again.status).toBe('skipped');
+    expect(again.reason).toBe('unkilled_window');
+    expect(s.launcher.starts).toHaveLength(1);
+    s.launcher.killFails = false;
+    s.launcher.steps = [{ exited: true, code: 0 }];
+    const third = await wakeOnce(s.d);
+    expect(third.status).toBe('ok');
+    expect(s.launcher.starts).toHaveLength(2);
+  });
+
+  it('start failure attempts a kill by the deterministic window name', async () => {
+    const s = setup({ launcher: new FakeLauncher([], true) });
+    const r = await wakeOnce(s.d);
+    expect(r.status).toBe('failed');
+    expect(s.launcher.killed).toEqual([`wake-${r.runId}`]);
+  });
+
+  it('a killed skip keeps a stored future next_wake_at and skips afterWake', async () => {
+    const s = setup({ stopExists: () => true });
+    const future = new Date(NOON_IST.getTime() + 25 * 60000).toISOString();
+    setState(s.db, 'next_wake_at', future, NOON_IST);
+    let hooks = 0;
+    s.d.afterWake = async () => void hooks++;
+    const r = await wakeOnce(s.d);
+    expect(r.reason).toBe('killed');
+    expect(r.nextWakeAt).toBe(future);
+    expect(getState(s.db, 'next_wake_at')).toBe(future);
+    expect(hooks).toBe(0);
+  });
+
   it('afterWake hook runs after the lock is released and its errors are swallowed', async () => {
     const s = setup();
     let lockedDuringHook: boolean | null = null;
@@ -297,6 +341,40 @@ describe('daemonLoop', () => {
     startRun(s.db, { id: 'orphan0001', at: NOON_IST, trigger: 'scheduled', dryRun: true, burst: 1, tasks: [], status: 'running' });
     await daemonLoop(s.d, { stopped: true });
     expect(listRuns(s.db).find((r) => r.id === 'orphan0001')?.status).toBe('crashed');
+  });
+
+  it('kills orphan windows before marking rows crashed', async () => {
+    const s = setup();
+    startRun(s.db, { id: 'orphan0002', at: NOON_IST, trigger: 'scheduled', dryRun: true, burst: 1, tasks: [], status: 'running' });
+    await daemonLoop(s.d, { stopped: true });
+    expect(s.launcher.killed).toContain('wake-orphan0002');
+    expect(listRuns(s.db).find((r) => r.id === 'orphan0002')?.status).toBe('crashed');
+  });
+
+  it('leaves running rows untouched while another process holds the run lock', async () => {
+    const s = setup();
+    startRun(s.db, { id: 'live00001', at: NOON_IST, trigger: 'scheduled', dryRun: true, burst: 1, tasks: [], status: 'running' });
+    const held = acquireLock(s.d.lockRoot, 'run', 'other');
+    await daemonLoop(s.d, { stopped: true });
+    expect(s.launcher.killed).toHaveLength(0);
+    expect(listRuns(s.db).find((r) => r.id === 'live00001')?.status).toBe('running');
+    held?.release();
+  });
+
+  it('a shutdown signal during a run kills the window and finishes the row', async () => {
+    const s = setup({ launcher: new FakeLauncher([{ out: '' }]) });
+    let polls = 0;
+    const orig = s.launcher.poll.bind(s.launcher);
+    s.launcher.poll = async () => {
+      polls++;
+      return orig();
+    };
+    const r = await wakeOnce(s.d, { abort: () => polls >= 2 });
+    expect(r.status).toBe('killed');
+    expect(r.reason).toBe('shutdown');
+    expect(s.launcher.kills).toBe(1);
+    expect(peekLock(s.d.lockRoot, 'run')).toBeNull();
+    expect(listRuns(s.db)[0].status).toBe('killed');
   });
 
   it('a second daemon refuses and exits with a notice', async () => {
