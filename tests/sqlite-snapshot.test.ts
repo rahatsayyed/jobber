@@ -1,6 +1,6 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import BetterSqlite3 from 'better-sqlite3';
-import { mkdtempSync, statSync, existsSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, statSync, existsSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { snapshotDb, checkSnapshot } from '../src/lib/sqliteSnapshot.js';
@@ -41,12 +41,24 @@ describe('snapshotDb', () => {
     const s = new BetterSqlite3(src);
     s.exec('CREATE TABLE t (id INTEGER)');
     s.close();
-    const dest = join(dir, 'sub', 'd.sqlite');
-    await expect(snapshotDb(src, dest)).rejects.toThrow();
+    const dest = join(dir, 'd.sqlite');
+    const spy = vi.spyOn(BetterSqlite3.prototype, 'backup').mockImplementationOnce(async (d: string) => {
+      writeFileSync(d, 'partial');
+      throw new Error('backup failed midway');
+    });
+    await expect(snapshotDb(src, dest)).rejects.toThrow(/midway/);
+    spy.mockRestore();
     expect(existsSync(dest)).toBe(false);
-    mkdirSync(join(dir, 'sub'));
     await snapshotDb(src, dest);
     expect(checkSnapshot(dest).ok).toBe(true);
+  });
+  it('keeps a pre-existing destination when refusing to overwrite', async () => {
+    const dir = tmp();
+    const src = join(dir, 's.sqlite'); new BetterSqlite3(src).close();
+    const dest = join(dir, 'keep.sqlite');
+    writeFileSync(dest, 'precious');
+    await expect(snapshotDb(src, dest)).rejects.toThrow(/exists/);
+    expect(readFileSync(dest, 'utf8')).toBe('precious');
   });
   it('checkSnapshot reports not ok for a non-database file', () => {
     const dir = tmp();
