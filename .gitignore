@@ -25,3 +25,4 @@ scripts/eval/fixtures/baseline/
 .claude/settings.local.json.*
 models/
 .dashboard/
+.jobber/
