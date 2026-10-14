@@ -87,6 +87,21 @@ function downscaleSrc(b64: string): string {
   })()`;
 }
 
+export type ErrorKind = 'timeout' | 'navigation' | 'browser' | 'session' | 'unknown';
+export function errorKind(text: string): ErrorKind {
+  if (/timeout|timed out/i.test(text)) return 'timeout';
+  if (/net::|navigat|goto|ERR_/i.test(text)) return 'navigation';
+  if (/browser|chrome|target (page|closed)|context|launch/i.test(text)) return 'browser';
+  if (/session|lock|storage ?state|cookie/i.test(text)) return 'session';
+  return 'unknown';
+}
+
+const lifecycles = new WeakMap<object, { close(): Promise<void> }>();
+/** Close the runtime only if one was ever created; never opens the DB or a runtime just to shut down. */
+export async function shutdownHandlers(handlers: object): Promise<void> {
+  await lifecycles.get(handlers)?.close();
+}
+
 export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler> {
   const env = deps.env ?? process.env;
   const now = deps.now ?? (() => new Date());
@@ -97,6 +112,18 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
   let styleCfg = deps.styleCfg;
   const getDb = () => (db ??= openDb(dbPath()));
   const getRt = () => (rt ??= createRuntime({ db: getDb(), env, idleMs: cfg.idleMs, settleMs: cfg.settleMs }));
+  let styleNoteShown = false;
+  const getStyle = () => {
+    if (!styleCfg) {
+      const r = loadStyleConfigSafe('config/ai-tells.json');
+      styleCfg = r.cfg;
+      if (r.note && !styleNoteShown) {
+        styleNoteShown = true;
+        console.error(`[linkedin] style config: ${String(r.note).slice(0, 200)}`);
+      }
+    }
+    return styleCfg;
+  };
   const factCheck: FactCheck =
     deps.factCheck ??
     ((t, c) => {
@@ -105,15 +132,18 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
     });
   const toolDeps = (): ToolDeps => ({
     rt: getRt(), db: getDb(), now, cfg, env, factCheck,
-    styleCfg: (styleCfg ??= loadStyleConfigSafe('config/ai-tells.json').cfg),
+    styleCfg: getStyle(),
   });
   const json = (v: unknown) => JSON.stringify(v);
   const safe = (fn: Handler): Handler => async (args) => {
     try {
       return await fn(args ?? {});
     } catch (e) {
-      const msg = String((e as Error)?.message ?? 'error').split('\n')[0].slice(0, 120);
-      return json({ status: 'failed', code: 'error', reason: msg });
+      const err = e as Error;
+      const text = `${err?.name ?? ''} ${err?.message ?? ''}`;
+      /* The real message goes to stderr only (never model-visible); the result carries a fixed kind. */
+      console.error(`[linkedin] handler error: ${text.replace(/\s+/g, ' ').slice(0, 200)}`);
+      return json({ status: 'failed', code: 'error', kind: errorKind(text) });
     }
   };
   const actionText = (r: { ok: boolean; code: string; reason?: string; state?: string }) =>
@@ -125,7 +155,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
     return formatState(snap, { halted, dryRun: cfg.dryRun }).text;
   };
 
-  return {
+  const handlers: Record<ToolName, Handler> = {
     linkedin_open: safe(async ({ url: u }) => {
       const r = await getRt().open(u);
       if (!r.ok) return json({ ok: false, code: r.code, reason: r.reason });
@@ -147,7 +177,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
       if (typeof small !== 'string' || !small) return json({ ok: false, code: 'failed', reason: 'could not downscale screenshot' });
       return { __image: small };
     }),
-    linkedin_close: safe(async () => ((await getRt().close()) ? 'closed' : 'no open session')),
+    linkedin_close: safe(async () => (rt && (await rt.close()) ? 'closed' : 'no open session')),
     linkedin_limits: safe(async () => {
       const d = getDb();
       const c = ceilings(d, loadOutreachConfig(env), now());
@@ -169,6 +199,12 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
     linkedin_send_message: safe(async (a) => json(await sendMessage(a, toolDeps()))),
     linkedin_accept_invite: safe(async (a) => json(await acceptInvite(a, toolDeps()))),
   };
+  lifecycles.set(handlers, {
+    close: async () => {
+      if (rt) await rt.close();
+    },
+  });
+  return handlers;
 }
 
 const DESCRIPTIONS: Record<ToolName, string> = {
@@ -177,7 +213,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   linkedin_click: 'Clicks a visible non-irreversible control by text. Send, connect, accept, message, follow and similar controls are refused: use the typed tools. ' + UNTRUSTED,
   linkedin_type: 'Types up to 200 chars into the page search box only (never a compose box). ' + UNTRUSTED,
   linkedin_scroll: 'Scrolls the page and returns the compact state. ' + UNTRUSTED,
-  linkedin_screenshot: 'EMERGENCY fallback: PNG of the viewport, at most 900px wide. Refused while LinkedIn is halted. Costs many tokens; prefer linkedin_state. ' + UNTRUSTED,
+  linkedin_screenshot: 'EMERGENCY fallback: PNG of the viewport, at most 900px wide (full_page is accepted but ignored). Refused while LinkedIn is halted. Costs many tokens; prefer linkedin_state. ' + UNTRUSTED,
   linkedin_close: 'Closes the LinkedIn session, saves session state and releases the lock.',
   linkedin_limits: 'Read-only: halt reason, weekly invite and message ceilings, daily accept counter, dry_run flag and session validity (booleans and reasons only).',
   linkedin_check_connection_status: 'TYPED, read-only: opens a profile and reports connected, not_connected, pending or failed. ' + UNTRUSTED,
@@ -207,8 +243,13 @@ export function buildServer(handlers: Record<ToolName, Handler>): McpServer {
 async function main() {
   const handlers = buildHandlers();
   const server = buildServer(handlers);
+  let stopping = false;
   const shutdown = () => {
-    void handlers.linkedin_close({}).catch(() => undefined).finally(() => process.exit(0));
+    if (stopping) return;
+    stopping = true;
+    const t = setTimeout(() => process.exit(0), 3000);
+    t.unref?.();
+    void shutdownHandlers(handlers).catch(() => undefined).finally(() => process.exit(0));
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);

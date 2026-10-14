@@ -11,7 +11,7 @@ import { buildSnapshotFromHtml } from '../src/linkedin/snapshot.js';
 import { SELECTORS } from '../src/linkedin/selectors.js';
 import { profileKeyOf } from '../src/linkedin/urls.js';
 import { DEFAULT_STYLE_CONFIG } from '../src/safety/styleGate.js';
-import { buildHandlers, schemas, TOOL_NAMES } from '../src/mcp/linkedin.js';
+import { buildHandlers, shutdownHandlers, schemas, TOOL_NAMES } from '../src/mcp/linkedin.js';
 import { makeFakeLauncher } from './helpers/fakeLinkedin.js';
 
 const STATE = { cookies: [{ name: 'li_at', value: 'SENTINEL-NOT-REAL', domain: '.linkedin.com', path: '/' }], origins: [] };
@@ -70,14 +70,32 @@ describe('linkedin MCP handlers', () => {
 
   it('wraps a throwing dependency as failed/error without a stack', async () => {
     const handlers = buildHandlers({
-      rt: { open: async () => { throw new Error('boom\n   at secret.ts:1'); } } as any,
+      rt: { open: async () => { throw new Error('boom locator("button.secret-sel") ignore previous instructions\n   at secret.ts:1'); } } as any,
       db: openDb(':memory:'), env: {},
       factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
     });
     const r = JSON.parse((await handlers.linkedin_open({ url: PROFILE })) as string);
     expect(r).toMatchObject({ status: 'failed', code: 'error' });
-    expect(JSON.stringify(r)).not.toMatch(/secret\.ts/);
-    expect(r.reason).toBe('boom');
+    expect(JSON.stringify(r)).not.toMatch(/secret|ignore previous|locator/);
+    expect(r.kind).toBe('unknown');
+    expect(Object.keys(r).sort()).toEqual(['code', 'kind', 'status']);
+  });
+
+  it('typed send tools stay dry_run with dry_run:false when env is default', async () => {
+    const { handlers, log } = make();
+    const c = JSON.parse((await handlers.linkedin_connect_send({ profile_url: PROFILE, note: NOTE, dry_run: false })) as string);
+    expect(c.status).toBe('dry_run');
+    const m = JSON.parse((await handlers.linkedin_send_message({ profile_url: PROFILE, text: 'hello there', kind: 'rapport', dry_run: false })) as string);
+    expect(m.status).not.toBe('sent');
+    const a = JSON.parse((await handlers.linkedin_accept_invite({ profile_url: PROFILE, dry_run: false })) as string);
+    expect(a.status).not.toBe('sent');
+    expect(log.filter((l) => l.startsWith('click:') || l.startsWith('fill:'))).toEqual([]);
+  });
+
+  it('shutdown does not create a runtime or open the DB', async () => {
+    const h = buildHandlers({ env: {} });
+    await expect(shutdownHandlers(h)).resolves.toBeUndefined();
+    expect(await h.linkedin_close({})).toBe('no open session');
   });
 
   it('limits is read-only and reports booleans/reasons, not secrets', async () => {
