@@ -306,6 +306,8 @@ describe('default runClaude spawn', () => {
     expect(c.args[c.args.indexOf('--tools') + 1]).toBe('');
     expect(c.args).toContain('--strict-mcp-config');
     expect(c.args[c.args.indexOf('--setting-sources') + 1]).toBe('user');
+    expect(c.args).toContain('--no-session-persistence');
+    expect(c.args).toContain('--disable-slash-commands');
     expect(c.args[c.args.indexOf('--permission-mode') + 1]).toBe('dontAsk');
     expect(c.args).toContain('--max-turns');
     expect(c.args.join(' ')).not.toContain('alex@roe.dev');

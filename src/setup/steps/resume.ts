@@ -22,14 +22,40 @@ function inside(root: string, p: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-/** The resolved path must be inside the user's home or the project root. */
-export function checkPath(raw: string, home: string, root: string): string | null {
-  const p = raw.trim();
+// What a user typed or dragged into the terminal: surrounding quotes stripped, backslash-space
+// unescaped, a leading ~ expanded to home. Pure string work; nothing is read.
+export function normalizeUserPath(raw: string, home: string): string {
+  let p = raw.trim();
+  if (p.length >= 2 && (p[0] === '"' || p[0] === "'") && p.endsWith(p[0])) p = p.slice(1, -1).trim();
+  p = p.split('\\ ').join(' ');
+  if (p === '~') return home;
+  if (p.startsWith('~/')) return path.join(home, p.slice(2));
+  return p;
+}
+
+// Secrets and local data of this project are never a resume source (the text goes to Claude).
+function isProjectSecret(resolved: string, root: string, dataDir: string): boolean {
+  const r = path.resolve(root);
+  const base = path.basename(resolved);
+  if (path.dirname(resolved) === r && (base.startsWith('.env') || base.startsWith('data.sqlite'))) return true;
+  return (
+    inside(path.join(r, 'secrets'), resolved) ||
+    inside(path.join(r, 'user-data'), resolved) ||
+    inside(path.resolve(dataDir), resolved)
+  );
+}
+
+// The normalized path must be inside the user's home or the project root, and not a secret.
+export function checkPath(raw: string, home: string, root: string, dataDir?: string): string | null {
+  const p = normalizeUserPath(raw, home);
   if (!p) return 'Enter a file path';
   if (isDocx(p)) return DOCX_MESSAGE;
   const resolved = path.resolve(p);
   if (!inside(path.resolve(home), resolved) && !inside(path.resolve(root), resolved)) {
     return 'The file must be inside your home folder or the project folder';
+  }
+  if (isProjectSecret(resolved, root, dataDir ?? path.join(root, 'user-data'))) {
+    return "That file holds this project's secrets or data and cannot be used as a resume source";
   }
   return null;
 }
@@ -51,7 +77,8 @@ export const CLAUDE_TIMEOUT_MS = 120_000;
 export const CLAUDE_MAX_BYTES = 1_000_000;
 const ENV_ALLOW = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'USER', 'TMPDIR'];
 
-/** No tools, no MCP servers, user settings only (no project settings or hooks), no prompts. */
+/** No tools, no MCP servers, user settings only (no project settings), no skills, no prompts,
+ *  and no transcript written to disk. User-level hooks still load (--bare needs an API key). */
 export function claudeArgs(prompt: string): string[] {
   return [
     '-p', prompt,
@@ -61,6 +88,8 @@ export function claudeArgs(prompt: string): string[] {
     '--tools', '',
     '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
     '--setting-sources', 'user',
+    '--no-session-persistence',
+    '--disable-slash-commands',
   ];
 }
 
@@ -173,8 +202,8 @@ export function makeResumeStep(
         'Give the path to your resume (.pdf, .txt or .md). It stays on this machine except for one call to your own Claude.',
       );
       for (;;) {
-        const raw = await io.ask('Resume file path', { validate: (v) => checkPath(v, home, ctx.root) });
-        const result = await convertResume(path.resolve(raw.trim()), deps, keys, shape);
+        const raw = await io.ask('Resume file path', { validate: (v) => checkPath(v, home, ctx.root, dir) });
+        const result = await convertResume(path.resolve(normalizeUserPath(raw, home)), deps, keys, shape);
         if (!result.ok) {
           io.say(`Could not convert: ${result.problem}`);
         } else {
