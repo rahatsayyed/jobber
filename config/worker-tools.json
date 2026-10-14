@@ -1,0 +1,42 @@
+{
+  "due-followups": [
+    "Skill",
+    "mcp__outreach__list_due_touches",
+    "mcp__outreach__escalate",
+    "mcp__linkedin__linkedin_send_message",
+    "mcp__naukri__naukri_send_message"
+  ],
+  "new-outreach": [
+    "Skill",
+    "mcp__outreach__next_contacts",
+    "mcp__outreach__escalate",
+    "mcp__linkedin__linkedin_open",
+    "mcp__linkedin__linkedin_state",
+    "mcp__linkedin__linkedin_check_connection_status",
+    "mcp__linkedin__linkedin_connect_send",
+    "mcp__linkedin__linkedin_send_message",
+    "mcp__naukri__naukri_send_message",
+    "mcp__db__list_queued_outreach",
+    "mcp__db__update_outreach_status"
+  ],
+  "inbox-recruiter-replies": [
+    "Skill",
+    "mcp__linkedin__linkedin_open",
+    "mcp__linkedin__linkedin_state",
+    "mcp__linkedin__linkedin_scroll",
+    "mcp__linkedin__linkedin_click",
+    "mcp__linkedin__linkedin_send_message",
+    "mcp__naukri__naukri_inbox",
+    "mcp__naukri__naukri_read_thread",
+    "mcp__naukri__naukri_send_message",
+    "mcp__outreach__record_inbound",
+    "mcp__outreach__escalate"
+  ],
+  "naukri-search": [
+    "mcp__naukri__naukri_search",
+    "mcp__naukri__naukri_open",
+    "mcp__naukri__naukri_state",
+    "mcp__db__list_jobs",
+    "mcp__outreach__escalate"
+  ]
+}

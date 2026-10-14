@@ -34,12 +34,27 @@ describe('shipped profiles', () => {
 
   it('covers every tool the pipeline agents declare in the hunt profile', () => {
     const missing: string[] = [];
-    for (const f of readdirSync('.claude/agents').filter((x) => x.endsWith('.md') && x !== 'hook-probe.md')) {
+    // The four scheduler workers run under the wake profile; the next test covers them.
+    const WORKERS = ['due-followups.md', 'new-outreach.md', 'inbox-recruiter-replies.md', 'naukri-search.md'];
+    for (const f of readdirSync('.claude/agents').filter((x) => x.endsWith('.md') && x !== 'hook-probe.md' && !WORKERS.includes(x))) {
       const fm = /^---\n([\s\S]*?)\n---/.exec(readFileSync(`.claude/agents/${f}`, 'utf8'))?.[1] ?? '';
       const tools = (fm.split('\n').find((l) => l.startsWith('tools:')) ?? '').replace('tools:', '').split(',').map((s) => s.trim()).filter(Boolean);
       for (const t of tools) {
         if (t.startsWith('mcp__') && !hunt.allow.includes(t)) missing.push(`${f}: ${t}`);
         if (!t.startsWith('mcp__') && !hunt.builtin_tools.includes(t)) missing.push(`${f}: ${t}`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('covers every tool the scheduler workers declare in the wake profile', () => {
+    const missing: string[] = [];
+    for (const f of ['due-followups', 'new-outreach', 'inbox-recruiter-replies', 'naukri-search']) {
+      const fm = /^---\n([\s\S]*?)\n---/.exec(readFileSync(`.claude/agents/${f}.md`, 'utf8'))?.[1] ?? '';
+      const tools = (fm.split('\n').find((l) => l.startsWith('tools:')) ?? '').replace('tools:', '').split(',').map((s) => s.trim()).filter(Boolean);
+      for (const t of tools) {
+        if (t.startsWith('mcp__') && !wake.allow.includes(t)) missing.push(`${f}: ${t}`);
+        if (!t.startsWith('mcp__') && !wake.builtin_tools.includes(t)) missing.push(`${f}: ${t}`);
       }
     }
     expect(missing).toEqual([]);
