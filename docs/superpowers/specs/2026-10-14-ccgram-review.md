@@ -67,3 +67,12 @@ voice_callbacks.py, shell_prompt_orchestrator.py, shell_capture.py, shell_contex
 Failed condition: `/upgrade` could not be shown to be keepable off. In the files read it is registered unconditionally, has no disabling flag, runs `uv tool upgrade ccgram` immediately for any allowlisted user (which may bypass a loose pin; an exact pin may neutralize that, unverified), and does not confirm. Secondary gaps: no global allowlist gate (per-handler checks only, several handlers not read), and mode/YOLO keys reachable from the toolbar. The allowlist check is present in every handler that was read, and YOLO is not on by default for Claude. Owner decision needed: patch or fork and pin a commit with upgrade removed, switch to ccbot or the official plugin, or accept the risk explicitly. The pin file was not created.
 
 A PASS verdict is not evaluable from the files read. STOP is the conservative outcome per the briefing, which the owner may overrule after reading the review.
+
+## Branding
+
+Question: where do the start greeting and the bot's visible name come from, and can env or config change them? Method: web-only read of v4.16.0 source via a summarizing fetch tool (excerpts and line numbers approximate).
+
+- Registration: `handlers/registry.py` lines ~127-135 add `CommandHandler("start", private_start_greeting, filters=... & filters.User(user_id=config.allowed_users))`, only when a group id is set. `private_start_greeting` is imported from `.dashboard_command` (line ~32). A separate `CommandSpec("start", new_command)` exists at line ~97 for group use.
+- Greeting text: `handlers/dashboard_command.py`, `private_start_greeting`, lines ~81-85. Hard-coded inline string literal: "You're ready to use the dashboard. Run the dashboard command in a bound forum topic and ccgram will send its private dashboard button here." It names "ccgram". It does not come from a constant, `config` or an env var.
+- Bot visible name: not defined in the files read; no name setting found. Name, about and description are BotFather fields on the bot itself (see docs/telegram-branding.md). Not verified: main.py, bootstrap.py and the group-topic `new_command` handler text were not read, so other user-facing strings naming ccgram may exist.
+- Conclusion: greeting is hard-coded; changing it needs a source patch (private fork) or acceptance.
