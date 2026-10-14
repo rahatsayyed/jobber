@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Agent|Task",
+        "hooks": [
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/hook-probe.cjs\"", "timeout": 10, "onFailure": "block" }
+        ]
+      },
+      {
+        "matcher": "Read|Write|Edit|NotebookEdit|Bash",
+        "hooks": [
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-outside-project.cjs\"", "timeout": 10, "onFailure": "block" }
+        ]
+      }
+    ]
+  }
+}
