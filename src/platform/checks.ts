@@ -1,5 +1,5 @@
 // src/platform/checks.ts
-import { dirname, isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Check, CheckResult, DoctorContext } from './doctor.js';
 import { parseEnv } from './envFile.js';
 import { hooksStatus, type HookSettings } from './ccgramHooks.js';
@@ -443,7 +443,9 @@ export const ccgramChecks: Check[] = [
       if (!configured) return pass('dashboard login is not configured (off)');
 
       const fails: string[] = [];
-      for (const [label, path] of [['directory', dirPath], ['auth file', authPath]] as const) {
+      const targets: (readonly [string, string])[] = [['auth file', authPath]];
+      if (resolve(dirPath) !== resolve(ctx.root)) targets.unshift(['directory', dirPath]); // bare name: the repo root is not ours to police
+      for (const [label, path] of targets) {
         const mode = ctx.fs.exists(path) ? ctx.fs.mode(path) : null;
         if (mode !== null && (mode & 0o077) !== 0) fails.push(`dashboard ${label} is accessible to group or others`);
       }

@@ -304,6 +304,19 @@ describe('web and dashboard-login checks', () => {
     expect((await run(OWNER, { dbMode: 0o644 })).login.status).toBe('fail');
     expect((await run(OWNER, { dbMode: 0o640 })).login.status).toBe('fail');
   });
+  it('bare WEB_AUTH_DB name: root dir mode is ignored, file mode still checked', async () => {
+    const mk = (fileMode: number) => {
+      const files = goodFiles();
+      files['/p/.env'] = { text: GOOD_ENV + OIDC + OWNER + 'WEB_AUTH_DB=auth.sqlite\n', mode: 0o600 };
+      files['/p'] = { text: '', mode: 0o755 };
+      files['/p/auth.sqlite'] = { text: '', mode: fileMode };
+      const ctx = ctxWith(files);
+      ctx.authAccount = () => ({ email: 'owner@example.com', pinned: true });
+      return byId(ctx);
+    };
+    expect((await mk(0o600))['dashboard-login'].status).toBe('pass');
+    expect((await mk(0o644))['dashboard-login'].status).toBe('fail');
+  });
   it('warns when no account is stored', async () => {
     const r = (await run('', { acct: null })).login;
     expect(r.status).toBe('warn');
