@@ -51,9 +51,9 @@ const RESUME = {
 const TEMPLATE = { ...RESUME, name: 'Jane Doe', email: 'jane@example.com' };
 
 describe('exports', () => {
-  it('setupChecks combines both halves, account half empty for now', () => {
-    expect(setupAccountChecks).toEqual([]);
-    expect(setupChecks.length).toBe(setupToolingChecks.length);
+  it('setupChecks combines both halves', () => {
+    expect(setupAccountChecks.length).toBeGreaterThan(0);
+    expect(setupChecks.length).toBe(setupToolingChecks.length + setupAccountChecks.length);
   });
   it('does not define a classifier-model placeholder', () => {
     expect(setupChecks.some((c) => c.id === 'classifier-model')).toBe(false);
@@ -403,4 +403,128 @@ describe('no secret leaks', () => {
       for (const s of SECRETS) expect(blob, c.id).not.toContain(s);
     }
   });
+});
+
+// ---- accounts, sessions, placeholders ----
+async function acct(id: string, ctx: DoctorContext): Promise<CheckResult> {
+  const c = setupAccountChecks.find((x) => x.id === id);
+  if (!c) throw new Error(`no check ${id}`);
+  return c.run(ctx);
+}
+type FetchFn = NonNullable<DoctorContext['fetch']>;
+
+describe('telegram-api', () => {
+  const env = { TELEGRAM_BOT_TOKEN: '123456:SECRET' };
+  it('skips offline', async () => {
+    expect((await acct('telegram-api', makeCtx({ env }))).status).toBe('skip');
+  });
+  it('passes with the username and never shows the token', async () => {
+    const urls: string[] = [];
+    const fetch: FetchFn = async (u) => {
+      urls.push(u);
+      return { ok: true, status: 200, json: async () => ({ ok: true, result: { username: 'jobber_bot' } }) };
+    };
+    const r = await acct('telegram-api', { ...makeCtx({ env }), fetch });
+    expect(r.status).toBe('pass');
+    expect(r.detail).toBe('bot @jobber_bot');
+    expect(urls[0]).toBe('https://api.telegram.org/bot123456:SECRET/getMe');
+    expect(JSON.stringify(r)).not.toContain('SECRET');
+  });
+  it('fails on ok:false, non-ok and a throw without leaking the token', async () => {
+    const mk = (f: FetchFn) => acct('telegram-api', { ...makeCtx({ env }), fetch: f });
+    const a = await mk(async () => ({ ok: true, status: 200, json: async () => ({ ok: false }) }));
+    const b = await mk(async () => ({ ok: false, status: 401, json: async () => ({}) }));
+    const c = await mk(async () => {
+      throw new Error('failed https://api.telegram.org/bot123456:SECRET/getMe');
+    });
+    for (const r of [a, b, c]) {
+      expect(r.status).toBe('fail');
+      expect(r.fix).toBe('check TELEGRAM_BOT_TOKEN in .env');
+      expect(JSON.stringify(r)).not.toContain('SECRET');
+    }
+  });
+  it('fails without a token', async () => {
+    const fetch: FetchFn = async () => ({ ok: true, status: 200, json: async () => ({}) });
+    expect((await acct('telegram-api', { ...makeCtx(), fetch })).status).toBe('fail');
+  });
+});
+
+describe('gmail-oauth', () => {
+  it('fails when the keys file is missing', async () => {
+    const r = await acct('gmail-oauth', makeCtx());
+    expect(r.status).toBe('fail');
+    expect(r.fix).toContain('put your Google OAuth client JSON there');
+  });
+  it('warns when credentials lack refresh_token, never echoing values', async () => {
+    const r = await acct('gmail-oauth', makeCtx({
+      files: {
+        '/proj/secrets/gcp-oauth.keys.json': { text: '{"installed":{"client_secret":"TOPSECRET"}}' },
+        '/proj/secrets/gmail-credentials.json': { text: '{"access_token":"TOPSECRET"}' },
+      },
+    }));
+    expect(r.status).toBe('warn');
+    expect(r.fix).toContain('auth');
+    expect(JSON.stringify(r)).not.toContain('TOPSECRET');
+  });
+  it('passes with a refresh_token key and honours env paths', async () => {
+    const r = await acct('gmail-oauth', makeCtx({
+      env: { GMAIL_OAUTH_PATH: 'k.json', GMAIL_CREDENTIALS_PATH: '/abs/c.json' },
+      files: { '/proj/k.json': { text: '{}' }, '/abs/c.json': { text: '{"refresh_token":"x"}' } },
+    }));
+    expect(r.status).toBe('pass');
+  });
+});
+
+describe('sessions', () => {
+  const now = () => new Date('2026-10-14T00:00:00Z');
+  const past = Math.floor(new Date('2026-01-01T00:00:00Z').getTime() / 1000);
+  const future = Math.floor(new Date('2027-01-01T00:00:00Z').getTime() / 1000);
+  const st = (cookies: unknown) => JSON.stringify({ cookies });
+  const B = '/proj/secrets/linkedin-burner-state.json';
+  const M = '/proj/secrets/linkedin-main-state.json';
+  const N = '/proj/secrets/naukri-state.json';
+  const good: F = {
+    [B]: { text: st([{ name: 'li_at', value: 'V', expires: future }]) },
+    [M]: { text: st([{ name: 'li_at', value: 'V', expires: future }]) },
+    [N]: { text: st([{ name: 'nauk_at', value: 'V', expires: future }]) },
+  };
+  const go = (files: F) => acct('sessions', { ...makeCtx({ files }), now });
+  it('passes when all three are healthy', async () => {
+    expect((await go(good)).status).toBe('pass');
+  });
+  it('warns on missing files with commands', async () => {
+    const r = await go({});
+    expect(r.status).toBe('warn');
+    expect(r.fix).toContain('save-linkedin-session.ts burner');
+    expect(r.fix).toContain('save-linkedin-session.ts main');
+    expect(r.fix).toContain('save-naukri-session.ts');
+  });
+  it('fails on loose mode, empty cookies and expiry without showing values', async () => {
+    expect((await go({ ...good, [N]: { text: good[N].text, mode: 0o644 } })).status).toBe('fail');
+    expect((await go({ ...good, [M]: { text: st([]) } })).status).toBe('fail');
+    const e = await go({ ...good, [B]: { text: st([{ name: 'li_at', value: 'V', expires: past }]) } });
+    expect(e.status).toBe('fail');
+    expect(e.detail).toContain('expired');
+    const n = await go({ ...good, [N]: { text: st([{ name: 'nauk_at', value: 'V', expires: past }]) } });
+    expect(n.status).toBe('fail');
+    expect(JSON.stringify(n)).not.toContain('"V"');
+  });
+});
+
+describe('placeholders', () => {
+  const want: Record<string, string> = {
+    'mcp-connect': 'skipped: needs a live launch, run the owner checklist in plan 7B',
+    'sessions-live': 'skipped: headless login check is owner-run (plan 7B owner checklist)',
+    'dashboard-login': 'skipped until installed (plan 7C)',
+    'backup-configured': 'skipped until installed (plan 7D)',
+    'auto-update': 'skipped until installed (plan 7D)',
+    'last-update': 'skipped until installed (plan 7D)',
+  };
+  for (const [id, detail] of Object.entries(want)) {
+    it(id, async () => {
+      const r = await acct(id, makeCtx());
+      expect(r.status).toBe('skip');
+      expect(r.detail).toBe(detail);
+    });
+  }
 });

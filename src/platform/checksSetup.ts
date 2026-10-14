@@ -390,7 +390,123 @@ export const setupToolingChecks: Check[] = [
   },
 ];
 
-// Filled in by the account and session checks task.
-export const setupAccountChecks: Check[] = [];
+function envValue(ctx: DoctorContext, key: string): string {
+  const v = ctx.env[key] ?? dotEnv(ctx)[key];
+  return v ? v.trim() : '';
+}
+
+function resolvePath(ctx: DoctorContext, key: string, fallback: string): string {
+  const v = envValue(ctx, key) || fallback;
+  return isAbsolute(v) ? v : join(ctx.root, v);
+}
+
+const SESSIONS = [
+  { label: 'LinkedIn burner', file: 'linkedin-burner-state.json', cookie: 'li_at', exact: true, cmd: 'npx tsx scripts/save-linkedin-session.ts burner' },
+  { label: 'LinkedIn main', file: 'linkedin-main-state.json', cookie: 'li_at', exact: true, cmd: 'npx tsx scripts/save-linkedin-session.ts main' },
+  { label: 'Naukri', file: 'naukri-state.json', cookie: 'nauk', exact: false, cmd: 'npx tsx scripts/save-naukri-session.ts' },
+] as const;
+
+const placeholder = (id: string, title: string, detail: string): Check => ({
+  id,
+  title,
+  async run() {
+    return skip(detail);
+  },
+});
+
+export const setupAccountChecks: Check[] = [
+  {
+    id: 'telegram-api',
+    title: 'Telegram bot token works',
+    async run(ctx) {
+      if (!ctx.fetch) return skip('offline');
+      const token = envValue(ctx, 'TELEGRAM_BOT_TOKEN');
+      const fix = 'check TELEGRAM_BOT_TOKEN in .env';
+      if (!token) return fail('TELEGRAM_BOT_TOKEN is not set', fix);
+      try {
+        const res = await ctx.fetch(`https://api.telegram.org/bot${token}/getMe`);
+        if (!res.ok) return fail(`Telegram answered HTTP ${res.status}`, fix);
+        const body = (await res.json()) as { ok?: unknown; result?: { username?: unknown } };
+        if (body.ok !== true) return fail('Telegram rejected the token', fix);
+        const name = typeof body.result?.username === 'string' ? body.result.username : '';
+        return pass(name ? `bot @${name}` : 'bot reachable');
+      } catch {
+        // The error message can contain the request URL, and so the token: never copied.
+        return fail('could not reach Telegram', fix);
+      }
+    },
+  },
+  {
+    id: 'gmail-oauth',
+    title: 'Gmail OAuth files present',
+    async run(ctx) {
+      const keys = resolvePath(ctx, 'GMAIL_OAUTH_PATH', './secrets/gcp-oauth.keys.json');
+      const creds = resolvePath(ctx, 'GMAIL_CREDENTIALS_PATH', './secrets/gmail-credentials.json');
+      if (!ctx.fs.exists(keys)) {
+        return fail('OAuth client keys file is missing', `put your Google OAuth client JSON there: ${relative(ctx.root, keys) || keys}`);
+      }
+      const c = readJson(ctx, creds);
+      if (!c.ok || !isObj(c.value) || !('refresh_token' in c.value)) {
+        return warn('credentials file is missing or has no refresh token', 'run the auth command for the gmail server');
+      }
+      return pass('client keys present, credentials hold a refresh token');
+    },
+  },
+  {
+    id: 'sessions',
+    title: 'LinkedIn and Naukri sessions captured',
+    async run(ctx) {
+      const nowSec = (ctx.now ? ctx.now() : new Date()).getTime() / 1000;
+      const dir = join(ctx.root, 'secrets');
+      const missing: string[] = [];
+      const bad: string[] = [];
+      const ok: string[] = [];
+      for (const s of SESSIONS) {
+        const path = join(dir, s.file);
+        if (!ctx.fs.exists(path)) {
+          missing.push(s.label);
+          continue;
+        }
+        const mode = ctx.fs.mode(path);
+        if (mode !== null && (mode & 0o077) !== 0) {
+          bad.push(`${s.label}: mode ${(mode & 0o777).toString(8)}, expected 600`);
+          continue;
+        }
+        const r = readJson(ctx, path);
+        const cookies = r.ok && isObj(r.value) && Array.isArray(r.value.cookies) ? r.value.cookies.filter(isObj) : [];
+        if (cookies.length === 0) {
+          bad.push(`${s.label}: no cookies`);
+          continue;
+        }
+        // Only names and expiry are inspected; values are never read into output.
+        const auth = cookies.filter((c) => {
+          const n = typeof c.name === 'string' ? c.name : '';
+          return s.exact ? n === s.cookie : n.includes(s.cookie);
+        });
+        const expired =
+          auth.length > 0 && auth.every((c) => typeof c.expires === 'number' && c.expires > 0 && c.expires < nowSec);
+        if (expired) {
+          bad.push(`${s.label}: session expired`);
+          continue;
+        }
+        ok.push(s.label);
+      }
+      const fixes = SESSIONS.filter((s) => missing.includes(s.label) || bad.some((b) => b.startsWith(s.label))).map((s) => s.cmd);
+      const fix = fixes.length ? fixes.join('; ') : undefined;
+      if (bad.length) {
+        const rest = missing.length ? `; missing: ${missing.join(', ')}` : '';
+        return fail(bad.join('; ') + rest, fix);
+      }
+      if (missing.length) return warn(`not captured: ${missing.join(', ')}${ok.length ? `; ok: ${ok.join(', ')}` : ''}`, fix);
+      return pass(`${ok.join(', ')} look valid`);
+    },
+  },
+  placeholder('mcp-connect', 'MCP servers connect', 'skipped: needs a live launch, run the owner checklist in plan 7B'),
+  placeholder('sessions-live', 'sessions log in headless', 'skipped: headless login check is owner-run (plan 7B owner checklist)'),
+  placeholder('dashboard-login', 'dashboard sign-in', 'skipped until installed (plan 7C)'),
+  placeholder('backup-configured', 'backup configured', 'skipped until installed (plan 7D)'),
+  placeholder('auto-update', 'auto-update configured', 'skipped until installed (plan 7D)'),
+  placeholder('last-update', 'last update recent', 'skipped until installed (plan 7D)'),
+];
 
 export const setupChecks: Check[] = [...setupToolingChecks, ...setupAccountChecks];
