@@ -1,0 +1,381 @@
+// tests/platform-checks-setup.test.ts
+import { describe, it, expect } from 'vitest';
+import { setupToolingChecks, setupAccountChecks, setupChecks } from '../src/platform/checksSetup.js';
+import type { CheckResult, DoctorContext } from '../src/platform/doctor.js';
+
+interface F {
+  [path: string]: { text?: string; mode?: number };
+}
+interface Opts {
+  files?: F;
+  env?: NodeJS.ProcessEnv;
+  run?: DoctorContext['run'];
+  sqliteTables?: DoctorContext['sqliteTables'];
+}
+
+// Fake root is the string below; no real filesystem is touched.
+const R = '/proj';
+
+function makeCtx(o: Opts = {}): DoctorContext {
+  const files = o.files ?? {};
+  return {
+    root: R,
+    env: o.env ?? {},
+    run: o.run ?? (async () => ({ stdout: '', code: 1 })),
+    fs: {
+      exists: (p) => p in files || Object.keys(files).some((k) => k.startsWith(p + '/')),
+      read: (p) => {
+        if (!(p in files) || files[p].text === undefined) throw new Error('ENOENT');
+        return files[p].text as string;
+      },
+      mode: (p) => (p in files ? (files[p].mode ?? 0o600) : null),
+      list: (p) =>
+        Object.keys(files)
+          .filter((k) => k.startsWith(p + '/') && !k.slice(p.length + 1).includes('/'))
+          .map((k) => k.slice(p.length + 1)),
+    },
+    sqliteTables: o.sqliteTables,
+  };
+}
+
+async function one(id: string, ctx: DoctorContext): Promise<CheckResult> {
+  const c = setupToolingChecks.find((x) => x.id === id);
+  if (!c) throw new Error(`no check ${id}`);
+  return c.run(ctx);
+}
+
+const RESUME = {
+  name: 'Real Person', jobTitle: 'Dev', email: 'real@mail.test', phone: '1', summary: 's',
+  experience: [], education: [], skills: [],
+};
+const TEMPLATE = { ...RESUME, name: 'Jane Doe', email: 'jane@example.com' };
+
+describe('exports', () => {
+  it('setupChecks combines both halves, account half empty for now', () => {
+    expect(setupAccountChecks).toEqual([]);
+    expect(setupChecks.length).toBe(setupToolingChecks.length);
+  });
+  it('does not define a classifier-model placeholder', () => {
+    expect(setupChecks.some((c) => c.id === 'classifier-model')).toBe(false);
+  });
+});
+
+describe('node-version', () => {
+  const run = (v: string): DoctorContext['run'] => async () => ({ stdout: v + '\n', code: 0 });
+  it('fails on v18', async () => {
+    expect((await one('node-version', makeCtx({ run: run('v18.0.0') }))).status).toBe('fail');
+  });
+  it('passes on v22', async () => {
+    expect((await one('node-version', makeCtx({ run: run('v22.1.0') }))).status).toBe('pass');
+  });
+});
+
+describe('claude-cli and claude-login', () => {
+  it('cli fails when claude is not runnable', async () => {
+    expect((await one('claude-cli', makeCtx())).status).toBe('fail');
+  });
+  it('cli passes with a version', async () => {
+    const r = await one('claude-cli', makeCtx({ run: async () => ({ stdout: '2.1.0 (Claude Code)', code: 0 }) }));
+    expect(r.status).toBe('pass');
+  });
+  it('login uses claude auth status exit code and never echoes output', async () => {
+    const calls: string[][] = [];
+    const ok = await one('claude-login', makeCtx({
+      run: async (c, a) => {
+        calls.push([c, ...a]);
+        return { stdout: 'secret-ish output', code: 0 };
+      },
+    }));
+    expect(ok.status).toBe('pass');
+    expect(calls[0]).toEqual(['claude', 'auth', 'status']);
+    expect(JSON.stringify(ok)).not.toContain('secret-ish');
+    const bad = await one('claude-login', makeCtx({ run: async () => ({ stdout: '', code: 1 }) }));
+    expect(bad.status).toBe('fail');
+    expect(bad.fix).toContain('claude auth login');
+  });
+});
+
+describe('sqlite-file', () => {
+  it('warns when missing', async () => {
+    expect((await one('sqlite-file', makeCtx())).status).toBe('warn');
+  });
+  it('fails on mode 644 with chmod fix', async () => {
+    const r = await one('sqlite-file', makeCtx({ files: { [`${R}/data.sqlite`]: { mode: 0o644 } } }));
+    expect(r.status).toBe('fail');
+    expect(r.fix).toContain('chmod 600');
+  });
+  it('passes on 600', async () => {
+    const r = await one('sqlite-file', makeCtx({ files: { [`${R}/data.sqlite`]: { mode: 0o600 } } }));
+    expect(r.status).toBe('pass');
+  });
+  it('fails inside a served directory', async () => {
+    const r = await one('sqlite-file', makeCtx({
+      env: { JOBAPPLIER_DB: 'user-data/x.sqlite' },
+      files: { [`${R}/user-data/x.sqlite`]: { mode: 0o600 } },
+    }));
+    expect(r.status).toBe('fail');
+  });
+  it('honours JOBAPPLIER_DB from .env', async () => {
+    const r = await one('sqlite-file', makeCtx({
+      files: { [`${R}/.env`]: { text: 'JOBAPPLIER_DB=/elsewhere/d.sqlite\n' }, '/elsewhere/d.sqlite': { mode: 0o600 } },
+    }));
+    expect(r.status).toBe('pass');
+  });
+});
+
+describe('sqlite-migrations', () => {
+  const files = { [`${R}/data.sqlite`]: { mode: 0o600 } };
+  it('skips without sqliteTables', async () => {
+    expect((await one('sqlite-migrations', makeCtx({ files }))).status).toBe('skip');
+  });
+  it('fails on missing tables', async () => {
+    const r = await one('sqlite-migrations', makeCtx({ files, sqliteTables: () => ['jobs'] }));
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain('outreach_queue');
+    expect(r.fix).toContain('npm run status -- json');
+  });
+  it('passes with all tables', async () => {
+    const r = await one('sqlite-migrations', makeCtx({
+      files, sqliteTables: () => ['jobs', 'outreach_queue', 'daily_counters', 'rate_events'],
+    }));
+    expect(r.status).toBe('pass');
+  });
+});
+
+describe('env-limits', () => {
+  const env = (t: string) => makeCtx({ files: { [`${R}/.env`]: { text: t } } });
+  it('passes with unset keys', async () => {
+    expect((await one('env-limits', env('FOO=1\n'))).status).toBe('pass');
+  });
+  it('fails naming key and range, never the text', async () => {
+    const r = await one('env-limits', env('MATCH_THRESHOLD=500\n'));
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain('MATCH_THRESHOLD');
+    expect(r.detail).toContain('0..100');
+    expect(r.detail).not.toContain('500');
+  });
+  it('empty direct-reader key fails', async () => {
+    const r = await one('env-limits', env('SEND_LIMIT_PER_RUN=\n'));
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain('SEND_LIMIT_PER_RUN');
+  });
+  it('inline comment on a direct-reader key fails without echoing the comment', async () => {
+    const r = await one('env-limits', env('MAX_APPLIES_PER_DAY=5   # my secret note\n'));
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain('MAX_APPLIES_PER_DAY');
+    expect(r.detail).not.toContain('secret note');
+  });
+  it('quoted value is read like the loaders do', async () => {
+    expect((await one('env-limits', env('MATCH_THRESHOLD="60"\n'))).status).toBe('pass');
+  });
+  it('pair violation fails', async () => {
+    const r = await one('env-limits', env('PACING_MIN_BURST=9\nPACING_MAX_BURST=2\n'));
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain('PACING_MIN_BURST');
+  });
+});
+
+describe('env-inline-comments', () => {
+  it('passes when none', async () => {
+    const r = await one('env-inline-comments', makeCtx({ files: { [`${R}/.env`]: { text: 'A=1\n# c\n' } } }));
+    expect(r.status).toBe('pass');
+  });
+  it('warns listing key names only', async () => {
+    const r = await one('env-inline-comments', makeCtx({
+      files: { [`${R}/.env`]: { text: 'MATCH_THRESHOLD=60   # note-text\nQ="a # b"\n' } },
+    }));
+    expect(r.status).toBe('warn');
+    expect(r.detail).toContain('MATCH_THRESHOLD');
+    expect(r.detail).not.toContain('note-text');
+    expect(r.detail).not.toMatch(/\bQ\b/);
+    expect(r.fix).toBe('npm run setup -- --step limits');
+  });
+});
+
+describe('config-files', () => {
+  const sets = JSON.stringify({
+    read_only: { allow: ['mcp__db__get_funnel'] },
+    outreach_send: { extends: 'read_only', allow: ['mcp__gmail__send_email'] },
+    full: { extends: 'outreach_send', allow: ['mcp__gmail'] },
+  });
+  const good: F = {
+    [`${R}/config/target-regions.json`]: { text: JSON.stringify({ home: ['India'], targets: [] }) },
+    [`${R}/config/portals.json`]: { text: JSON.stringify({ tracked_companies: [] }) },
+    [`${R}/config/permission-sets.json`]: { text: sets },
+  };
+  it('passes', async () => {
+    expect((await one('config-files', makeCtx({ files: good }))).status).toBe('pass');
+  });
+  it('invalid JSON fails naming the file only', async () => {
+    const r = await one('config-files', makeCtx({
+      files: { ...good, [`${R}/config/portals.json`]: { text: '{ secret-garbage' } },
+    }));
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain('portals.json');
+    expect(r.detail).not.toContain('secret-garbage');
+  });
+  it('wrong shape fails', async () => {
+    const r = await one('config-files', makeCtx({
+      files: { ...good, [`${R}/config/target-regions.json`]: { text: '{"home":"x"}' } },
+    }));
+    expect(r.status).toBe('fail');
+  });
+});
+
+describe('user-data-private', () => {
+  const good: F = {
+    [`${R}/user-data`]: { mode: 0o700 },
+    [`${R}/user-data/resume.json`]: { text: '{}', mode: 0o600 },
+    [`${R}/.gitignore`]: { text: 'user-data/\nsecrets/\n' },
+  };
+  it('passes', async () => {
+    expect((await one('user-data-private', makeCtx({ files: good }))).status).toBe('pass');
+  });
+  it('fails on loose dir mode', async () => {
+    const r = await one('user-data-private', makeCtx({ files: { ...good, [`${R}/user-data`]: { mode: 0o755 } } }));
+    expect(r.status).toBe('fail');
+    expect(r.fix).toContain('chmod 700');
+  });
+  it('fails on loose file mode', async () => {
+    const r = await one('user-data-private', makeCtx({
+      files: { ...good, [`${R}/user-data/resume.json`]: { text: '{}', mode: 0o644 } },
+    }));
+    expect(r.status).toBe('fail');
+  });
+  it('fails when gitignore lacks secrets/', async () => {
+    const r = await one('user-data-private', makeCtx({ files: { ...good, [`${R}/.gitignore`]: { text: 'user-data/\n' } } }));
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain('secrets/');
+  });
+});
+
+describe('resume-valid', () => {
+  const tpl = { [`${R}/user-data.example/resume.json`]: { text: JSON.stringify(TEMPLATE) } };
+  const mine = (v: unknown) => ({ ...tpl, [`${R}/user-data/resume.json`]: { text: typeof v === 'string' ? v : JSON.stringify(v) } });
+  it('passes a real resume', async () => {
+    expect((await one('resume-valid', makeCtx({ files: mine(RESUME) }))).status).toBe('pass');
+  });
+  it('warns on the template', async () => {
+    const r = await one('resume-valid', makeCtx({ files: mine(TEMPLATE) }));
+    expect(r.status).toBe('warn');
+    expect(r.detail).toContain('still the template');
+  });
+  it('warns on an example.com email', async () => {
+    const r = await one('resume-valid', makeCtx({ files: mine({ ...RESUME, email: 'a@example.com' }) }));
+    expect(r.status).toBe('warn');
+  });
+  it('fails on missing keys', async () => {
+    expect((await one('resume-valid', makeCtx({ files: mine('{"name":"x"}') }))).status).toBe('fail');
+  });
+  it('fails when absent', async () => {
+    expect((await one('resume-valid', makeCtx({ files: tpl }))).status).toBe('fail');
+  });
+});
+
+describe('languages-confirmed and profile-valid', () => {
+  const lang = (c: boolean) =>
+    makeCtx({ files: { [`${R}/user-data/languages.json`]: { text: JSON.stringify({ confirmed: c, declared: [] }) } } });
+  const prof = (v: unknown) =>
+    makeCtx({ files: { [`${R}/user-data/profile.json`]: { text: JSON.stringify(v) } } });
+  it('languages warn when unconfirmed', async () => {
+    expect((await one('languages-confirmed', lang(false))).status).toBe('warn');
+  });
+  it('languages pass when confirmed', async () => {
+    expect((await one('languages-confirmed', lang(true))).status).toBe('pass');
+  });
+  it('profile missing warns', async () => {
+    expect((await one('profile-valid', makeCtx())).status).toBe('warn');
+  });
+  it('profile with bad floor fails', async () => {
+    expect((await one('profile-valid', prof({ salary_floors: { INR: 'lots' } }))).status).toBe('fail');
+  });
+  it('profile with negative floor fails', async () => {
+    expect((await one('profile-valid', prof({ salary_floors: { INR: -5 } }))).status).toBe('fail');
+  });
+  it('profile with numeric floor passes', async () => {
+    expect((await one('profile-valid', prof({ salary_floors: { INR: 1500000 } }))).status).toBe('pass');
+  });
+});
+
+describe('mcp-config and blocking-hooks', () => {
+  it('mcp-config fails when a server file is missing', async () => {
+    const mcp = {
+      mcpServers: {
+        db: { command: 'npx', args: ['tsx', 'src/mcp/db.ts'] },
+        gmail: { command: 'npx', args: ['-y', 'pkg'] },
+      },
+    };
+    const f: F = { [`${R}/.mcp.json`]: { text: JSON.stringify(mcp) } };
+    expect((await one('mcp-config', makeCtx({ files: f }))).status).toBe('fail');
+    f[`${R}/src/mcp/db.ts`] = { text: '' };
+    expect((await one('mcp-config', makeCtx({ files: f }))).status).toBe('pass');
+  });
+  it('blocking-hooks needs PreToolUse and script files', async () => {
+    const st = {
+      hooks: {
+        PreToolUse: [
+          { matcher: 'Bash', hooks: [{ type: 'command', command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/block.cjs"' }] },
+        ],
+      },
+    };
+    const f: F = { [`${R}/.claude/settings.json`]: { text: JSON.stringify(st) } };
+    expect((await one('blocking-hooks', makeCtx({ files: f }))).status).toBe('fail');
+    f[`${R}/.claude/hooks/block.cjs`] = { text: '' };
+    expect((await one('blocking-hooks', makeCtx({ files: f }))).status).toBe('pass');
+    const none: F = { [`${R}/.claude/settings.json`]: { text: '{}' } };
+    expect((await one('blocking-hooks', makeCtx({ files: none }))).status).toBe('fail');
+  });
+});
+
+describe('chrome and browser-binaries', () => {
+  it('chrome warns when absent', async () => {
+    expect((await one('chrome', makeCtx())).status).toBe('warn');
+  });
+  it('chrome passes on macOS path', async () => {
+    const r = await one('chrome', makeCtx({ files: { '/Applications/Google Chrome.app': {} } }));
+    expect(r.status).toBe('pass');
+  });
+  it('browser-binaries fails without packages', async () => {
+    const r = await one('browser-binaries', makeCtx());
+    expect(r.status).toBe('fail');
+    expect(r.fix).toContain('npm ci');
+  });
+  it('browser-binaries warns when chromium binary missing', async () => {
+    const r = await one('browser-binaries', makeCtx({
+      files: { [`${R}/node_modules/patchright`]: {}, [`${R}/node_modules/playwright`]: {} },
+    }));
+    expect(r.status).toBe('warn');
+    expect(r.fix).toContain('npx playwright install chromium');
+  });
+});
+
+describe('no secret leaks', () => {
+  it('no detail or fix contains planted secrets', async () => {
+    const SECRETS = ['sk-planted-secret', '123456:AAAAAAAAAAAAAAAA'];
+    const ctx = makeCtx({
+      files: {
+        [`${R}/.env`]: {
+          text:
+            'ANTHROPIC_AUTH_TOKEN=sk-planted-secret\nTELEGRAM_BOT_TOKEN=123456:AAAAAAAAAAAAAAAA\n' +
+            'MATCH_THRESHOLD=sk-planted-secret\nSEND_LIMIT_PER_RUN=1 # 123456:AAAAAAAAAAAAAAAA\n' +
+            'JOBAPPLIER_DB=sk-planted-secret\n',
+          mode: 0o644,
+        },
+        [`${R}/data.sqlite`]: { mode: 0o644 },
+        [`${R}/user-data/resume.json`]: { text: 'sk-planted-secret' },
+        [`${R}/user-data/profile.json`]: { text: 'sk-planted-secret' },
+        [`${R}/user-data/languages.json`]: { text: 'sk-planted-secret' },
+        [`${R}/config/portals.json`]: { text: 'sk-planted-secret' },
+        [`${R}/.mcp.json`]: { text: 'sk-planted-secret' },
+        [`${R}/.claude/settings.json`]: { text: 'sk-planted-secret' },
+      },
+      run: async () => ({ stdout: 'sk-planted-secret 123456:AAAAAAAAAAAAAAAA', code: 1 }),
+      sqliteTables: () => [],
+    });
+    for (const c of setupChecks) {
+      const r = await c.run(ctx);
+      const blob = `${r.detail}\n${r.fix ?? ''}`;
+      for (const s of SECRETS) expect(blob, c.id).not.toContain(s);
+    }
+  });
+});
