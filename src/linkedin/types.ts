@@ -36,6 +36,7 @@ export interface RawSnapshot {
 export interface LiLocator {
   count(): Promise<number>;
   first(): LiLocator;
+  locator(selector: string): LiLocator;
   nth(i: number): LiLocator;
   click(opts?: { timeout?: number; force?: boolean }): Promise<void>;
   fill(text: string, opts?: { timeout?: number }): Promise<void>;

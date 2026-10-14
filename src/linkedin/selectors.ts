@@ -89,4 +89,9 @@ export const SELECTORS = {
   // NEW in plan 6C, UNVERIFIED LIVE: header of the open message overlay, used to read the
   // recipient name shown there. Fail closed when it does not match.
   messageOverlayHeader: '.msg-overlay-conversation-bubble header, [class*="msg-overlay"] header',
+  // NEW in plan 6C, UNVERIFIED LIVE (owner canary confirms): the OPENED conversation overlay only.
+  // The messaging dock/list bubble (msg-overlay-list-bubble) and minimized bubbles must not match.
+  conversationBubble: '.msg-overlay-conversation-bubble',
+  conversationBubbleHeader: 'header h2',
+  conversationBubbleMessages: '.msg-s-message-list li',
 } as const;

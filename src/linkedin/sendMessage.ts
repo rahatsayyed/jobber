@@ -167,28 +167,31 @@ export async function sendMessage(
         }
       }
       await msgBtn.click({ timeout: CLICK_TIMEOUT_MS });
-      const composeAll = page.locator(SELECTORS.messageComposeTextarea);
-      await composeAll.first().waitFor({ state: 'visible', timeout: stepTimeout }).catch(() => undefined);
+      // Everything is anchored on ONE visible conversation bubble (not the dock, not minimized ones).
+      const bubbleAll = page.locator(SELECTORS.conversationBubble);
+      await bubbleAll.first().waitFor({ state: 'visible', timeout: stepTimeout }).catch(() => undefined);
       const ov = await check();
       if ('result' in ov) return ov.result;
       if (!verifyProfileUrl(a.profile_url, page.url()).ok) {
         await close();
         return fail('profile_url_mismatch', 'browser left the requested profile');
       }
-      // Exactly one visible conversation overlay and one visible compose box, else ambiguous.
-      const visHeaders = await visibleIndexes(page.locator(SELECTORS.messageOverlayHeader));
-      const visCompose = await visibleIndexes(composeAll);
-      if (visHeaders.length > 1 || visCompose.length > 1) {
+      const visBubbles = await visibleIndexes(bubbleAll);
+      if (visBubbles.length === 0) {
         await close();
-        return refuse('overlay_ambiguous', 'more than one message overlay is visible');
+        return fail('overlay_not_open', 'message overlay did not open');
       }
-      if (visCompose.length === 0) {
+      if (visBubbles.length > 1) {
         await close();
-        return fail('compose_not_found', 'message compose box not found');
+        return refuse('overlay_ambiguous', 'more than one conversation overlay is visible');
       }
-      const compose = composeAll.nth(visCompose[0]);
-      const header = (ov.snap.messageHeaderName ?? '').trim();
-      if (!header) {
+      const bubble = bubbleAll.nth(visBubbles[0]);
+      const headers = bubble.locator(SELECTORS.conversationBubbleHeader);
+      const visHdr = await visibleIndexes(headers);
+      const header = visHdr.length > 0
+        ? ((await headers.nth(visHdr[0]).textContent({ timeout: stepTimeout }).catch(() => null)) ?? '').trim()
+        : '';
+      if (!header || gateField(header, MAX_FIELD_CHARS.name).blocked) {
         await close();
         return refuse('overlay_name_unverified', 'could not read the message overlay recipient name');
       }
@@ -196,24 +199,29 @@ export async function sendMessage(
         await close();
         return refuse('recipient_mismatch', 'message overlay addresses a different person');
       }
-      // Tie the compose box to the overlay whose header matched (real DOM only: closest() exists).
-      const owner = await compose.evaluateAll((els) => els.map((el) => {
-        if (typeof el.closest !== 'function') return { known: false, name: '' };
-        const c = el.closest('[class*="msg-overlay"]');
-        const h = c ? c.querySelector('header h2') : null;
-        return { known: true, name: h ? String(h.textContent || '').trim() : '' };
-      }));
-      const o0 = owner[0];
-      if (o0 && o0.known && !(o0.name && namesPlausiblyMatch(person.name ?? '', o0.name))) {
+      const composeAll = bubble.locator(SELECTORS.messageComposeTextarea);
+      const visCompose = await visibleIndexes(composeAll);
+      if (visCompose.length === 0) {
         await close();
-        return refuse('overlay_ambiguous', 'compose box is not inside the verified overlay');
+        return fail('compose_missing', 'message compose box not found in the verified overlay');
       }
-      const baseMe = [...ov.snap.messages].reverse().find((m) => m.from === 'me');
-      const baseMeText = baseMe ? norm(baseMe.text) : '';
+      const compose = composeAll.nth(visCompose[0]);
+      const items = bubble.locator(SELECTORS.conversationBubbleMessages);
+      const lastMe = async (): Promise<string> => {
+        try {
+          const rows = await items.evaluateAll((els) => els.map((el) => ({
+            me: Boolean(el.classList && el.classList.contains('me')),
+            text: String(el.innerText || el.textContent || ''),
+          })));
+          const m = [...rows].reverse().find((r) => r.me);
+          return m ? norm(m.text) : '';
+        } catch { return ''; }
+      };
+      const baseMeText = await lastMe();
 
       const clearBox = async () => { await compose.fill('', { timeout: stepTimeout }).catch(() => undefined); };
       await compose.fill(text, { timeout: stepTimeout });
-      const sendAll = page.locator(SELECTORS.messageSendButton);
+      const sendAll = bubble.locator(SELECTORS.messageSendButton);
       const sendVis = await visibleIndexes(sendAll);
       const send = sendAll.nth(sendVis[0] ?? 0);
       if (sendVis.length === 0) {
@@ -252,9 +260,8 @@ export async function sendMessage(
       const after = await check();
       if ('result' in after) return after.result;
       if (state === 'text') return unconfirmed('Send clicked but the compose box did not clear; verify manually');
-      const mine = [...after.snap.messages].reverse().find((m) => m.from === 'me');
       const sent = norm(text);
-      const mineText = mine ? norm(mine.text) : '';
+      const mineText = await lastMe();
       const echo = mineText !== '' && mineText !== baseMeText &&
         (mineText === sent || (mineText.length >= 40 && sent.startsWith(mineText)));
       // A detached compose node is not proof of a clear: only the echo confirms then.

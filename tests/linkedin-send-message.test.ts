@@ -41,6 +41,10 @@ interface Opts {
   stuck?: boolean;             // compose box never clears
   noCompose?: boolean;
   twoOverlays?: boolean;
+  hiddenJane?: boolean;
+  composeElsewhere?: boolean;
+  pageSend?: boolean;
+  noBubble?: boolean;
   noSend?: boolean;
   echoText?: string;
   noNetwork?: boolean;
@@ -61,25 +65,48 @@ function setup(o: Opts = {}) {
   const els: Record<string, FakeElement[]> = {};
   if (!o.noNamePoint) els[SELECTORS.nameHeadings] = [{ text: 'Jane Example', box: { x: 100, y: 100, height: 30 } }];
   let eventsAtSend = -1;
+  const state: { msgs: FakeElement[] } = { msgs: [] };
   const def: any = { ...base, ...(o.bodyText ? { bodyText: o.bodyText } : {}), elements: els };
   els[SELECTORS.messageButton] = [{
     text: 'Message', box: { x: 100, y: 240, height: 40 }, ...(o.ariaLabel ? { attrs: { 'aria-label': o.ariaLabel } } : {}),
     onClick: () => {
-      def.messageHeaderName = o.header === undefined ? 'Jane Example' : o.header;
-      def.messages = [{ from: 'them', text: 'Hi, thanks for connecting.' }];
-      if (!o.noCompose) els[SELECTORS.messageComposeTextarea] = [{ text: o.stuck ? 'stuck text' : '' }];
-      if (o.twoOverlays) {
-        els[SELECTORS.messageOverlayHeader] = [{ text: 'Jane Example' }, { text: 'Bob Other' }];
-        els[SELECTORS.messageComposeTextarea] = [{ text: '', visible: false }, { text: '' }];
-      }
-      if (!o.noSend) els[SELECTORS.messageSendButton] = [{
+      const msgs: FakeElement[] = [{ text: 'Hi, thanks for connecting.', attrs: { class: 'them' } }];
+      state.msgs = msgs;
+      const sendEl: FakeElement = {
         text: 'Send',
         onClick: () => {
           eventsAtSend = (db.prepare("SELECT COUNT(*) c FROM rate_events WHERE key='linkedin_message'").get() as { c: number }).c;
-          if (o.echo !== false) def.messages = [...def.messages, { from: 'me', text: o.echoText ?? MSG }];
+          if (o.echo !== false) msgs.push({ text: o.echoText ?? MSG, attrs: { class: 'me' } });
         },
         ...(o.blockAfterSend ? { navigateTo: 'https://www.linkedin.com/checkpoint/challenge/abc' } : {}),
-      }];
+      };
+      const children = (name: string | null, withCompose: boolean): Record<string, FakeElement[]> => ({
+        ...(name ? { [SELECTORS.conversationBubbleHeader]: [{ text: name }] } : {}),
+        ...(withCompose ? { [SELECTORS.messageComposeTextarea]: [{ text: o.stuck ? 'stuck text' : '' }] } : {}),
+        ...(!o.noSend ? { [SELECTORS.messageSendButton]: [sendEl] } : {}),
+        [SELECTORS.conversationBubbleMessages]: msgs,
+      });
+      const header = o.header === undefined ? 'Jane Example' : o.header;
+      els['.msg-overlay-list-bubble'] = [{ text: 'Messaging' }];
+      if (o.pageSend) els[SELECTORS.messageSendButton] = [{ text: 'PageSend' }];
+      if (o.twoOverlays) {
+        els[SELECTORS.conversationBubble] = [
+          { text: 'jane', children: children('Jane Example', true) },
+          { text: 'bob', children: children('Bob Other', true) },
+        ];
+      } else if (o.hiddenJane) {
+        els[SELECTORS.conversationBubble] = [
+          { text: 'jane', visible: false, children: children('Jane Example', true) },
+          { text: 'bob', children: children('Bob Other', true) },
+        ];
+      } else if (o.composeElsewhere) {
+        els[SELECTORS.conversationBubble] = [
+          { text: 'jane', children: children('Jane Example', false) },
+          { text: 'bob', visible: false, children: children('Bob Other', true) },
+        ];
+      } else if (!o.noBubble) {
+        els[SELECTORS.conversationBubble] = [{ text: 'bubble', children: children(header, !o.noCompose) }];
+      }
     },
   }];
   const site: FakeSite = { pages: { [P]: def }, noResponse: o.noNetwork ?? false, ...o.site };
@@ -96,7 +123,7 @@ function setup(o: Opts = {}) {
     rt, db, now: () => NOW, cfg: loadLinkedinConfig(env), env,
     factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
   };
-  return { deps, log, db, els, def, eventsAtSend: () => eventsAtSend };
+  return { deps, log, db, els, def, state, eventsAtSend: () => eventsAtSend };
 }
 
 const send = (deps: ToolDeps, over: Partial<Parameters<typeof sendMessage>[0]> = {}) =>
@@ -160,7 +187,7 @@ describe('sendMessage', () => {
   it('compose box never appears -> failed, no Send click', async () => {
     const t = setup({ noCompose: true });
     const r = await send(t.deps);
-    expect(r.status).toBe('failed');
+    expect(r).toMatchObject({ status: 'failed', code: 'compose_missing' });
     expect(sendClicks(t.log)).toEqual([]);
     expect(events(t.db)).toBe(0);
   });
@@ -278,7 +305,47 @@ describe('sendMessage', () => {
   it('echo identical to the pre-send last me message is not a confirmation', async () => {
     const t = setup({ noNetwork: true });
     const orig = t.els[SELECTORS.messageButton][0].onClick!;
-    t.els[SELECTORS.messageButton][0].onClick = () => { orig(); t.def.messages = [{ from: 'me', text: MSG }]; };
+    t.els[SELECTORS.messageButton][0].onClick = () => { orig(); t.state.msgs.push({ text: MSG, attrs: { class: 'me' } }); };
     expect((await send(t.deps)).status).toBe('unconfirmed');
+  });
+
+  it('dock present plus one conversation bubble: happy path works', async () => {
+    const t = setup();
+    expect((await send(t.deps)).status).toBe('sent');
+    expect(t.els['.msg-overlay-list-bubble']).toBeDefined();
+  });
+
+  it('Jane bubble hidden, only Bob visible -> refused recipient_mismatch, nothing typed', async () => {
+    const t = setup({ hiddenJane: true });
+    const r = await send(t.deps);
+    expect(r).toMatchObject({ status: 'refused', code: 'recipient_mismatch' });
+    expect(t.log.filter((l) => l.startsWith('fill:'))).toEqual([]);
+  });
+
+  it('compose exists only in a different bubble -> failed/compose_missing, no fill', async () => {
+    const t = setup({ composeElsewhere: true });
+    const r = await send(t.deps);
+    expect(r).toMatchObject({ status: 'failed', code: 'compose_missing' });
+    expect(t.log.filter((l) => l.startsWith('fill:'))).toEqual([]);
+    expect(events(t.db)).toBe(0);
+  });
+
+  it('no conversation bubble opens -> failed/overlay_not_open', async () => {
+    const t = setup({ noBubble: true });
+    const r = await send(t.deps);
+    expect(r).toMatchObject({ status: 'failed', code: 'overlay_not_open' });
+  });
+
+  it('Send is scoped to the bubble: a page-level Send outside it is never clicked', async () => {
+    const t = setup({ pageSend: true });
+    expect((await send(t.deps)).status).toBe('sent');
+    expect(t.log.some((l) => l.includes(':PageSend'))).toBe(false);
+  });
+
+  it('page-level Send exists but the bubble has none -> send_button_missing, PageSend not clicked', async () => {
+    const t = setup({ pageSend: true, noSend: true });
+    const r = await send(t.deps);
+    expect(r).toMatchObject({ status: 'failed', code: 'send_button_missing' });
+    expect(t.log.some((l) => l.includes(':PageSend'))).toBe(false);
   });
 });

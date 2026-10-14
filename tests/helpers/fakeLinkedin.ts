@@ -2,7 +2,7 @@
 import { SNAPSHOT_SRC } from '../../src/linkedin/snapshot.js';
 import type { LiBrowser, LiContext, LiLauncher, LiLocator, LiPage, RawSnapshot } from '../../src/linkedin/types.js';
 
-export interface FakeElement { text: string; box?: { x: number; y: number; height: number }; attrs?: Record<string, string>; onClick?: () => void; visible?: boolean; navigateTo?: string }
+export interface FakeElement { text: string; box?: { x: number; y: number; height: number }; attrs?: Record<string, string>; onClick?: () => void; visible?: boolean; navigateTo?: string; children?: Record<string, FakeElement[]> }
 export interface FakeSite {
   pages: Record<string, Partial<RawSnapshot> & { title?: string; elements?: Record<string, FakeElement[]> }>; // key = URL path
   onGoto?: (url: string) => void;
@@ -31,13 +31,15 @@ export function makeFakeLauncher(site: FakeSite, log: string[]): FakeLauncher {
     let current = 'about:blank';
     const pathOf = (u: string) => { try { return new URL(u).pathname; } catch { return u; } };
     const pageDef = () => site.pages[pathOf(current)] ?? {};
-    const elementsFor = (sel: string): FakeElement[] => pageDef().elements?.[sel] ?? [];
-    const loc = (sel: string, idx = 0, all = false): LiLocator => ({
-      count: async () => (all ? elementsFor(sel).length : elementsFor(sel).length > idx ? 1 : 0),
-      first: () => loc(sel, 0),
-      nth: (i: number) => loc(sel, i),
+    const elementsFor = (sel: string, src?: Src): FakeElement[] => (src ? src()?.[sel] : pageDef().elements?.[sel]) ?? [];
+    type Src = (() => Record<string, FakeElement[]> | undefined) | undefined;
+    const loc = (sel: string, idx = 0, all = false, src?: Src): LiLocator => ({
+      count: async () => (all ? elementsFor(sel, src).length : elementsFor(sel, src).length > idx ? 1 : 0),
+      first: () => loc(sel, 0, false, src),
+      locator: (child: string) => loc(child, 0, true, () => elementsFor(sel, src)[idx]?.children),
+      nth: (i: number) => loc(sel, i, false, src),
       click: async () => {
-        const el = elementsFor(sel)[idx];
+        const el = elementsFor(sel, src)[idx];
         if (!el) throw new Error('no element');
         if (site.clickTimeout) { log.push(`click_attempt:${el.text}`); throw new Error('Timeout 2000ms exceeded'); }
         log.push(`click:${sel}:${el.text}`);
@@ -45,15 +47,16 @@ export function makeFakeLauncher(site: FakeSite, log: string[]): FakeLauncher {
         if (el.navigateTo) current = el.navigateTo;
       },
       fill: async () => { log.push(`fill:${sel}`); },
-      textContent: async () => elementsFor(sel)[idx]?.text ?? null,
+      textContent: async () => elementsFor(sel, src)[idx]?.text ?? null,
       waitFor: async () => {
-        const n = elementsFor(sel).length;
+        const n = elementsFor(sel, src).length;
         if (all ? n === 0 : n <= idx) throw new Error('waitFor timeout');
       },
       evaluateAll: async <T>(fn: (els: any[]) => T) =>
-        fn((all ? elementsFor(sel) : elementsFor(sel).slice(idx, idx + 1)).map((e) => ({
+        fn((all ? elementsFor(sel, src) : elementsFor(sel, src).slice(idx, idx + 1)).map((e) => ({
           innerText: e.text, textContent: e.text,
           getAttribute: (n: string) => e.attrs?.[n] ?? null,
+          classList: { contains: (c: string) => String(e.attrs?.class ?? '').split(/\s+/).includes(c) },
           getBoundingClientRect: () => ({ x: e.box?.x ?? 0, y: e.box?.y ?? 0, height: e.box?.height ?? 0, width: 10 }),
           offsetWidth: e.visible === false ? 0 : 10, offsetHeight: e.visible === false ? 0 : 10,
           getClientRects: () => (e.visible === false ? [] : [{}]),
