@@ -1,0 +1,80 @@
+// src/safety/inputGate.ts
+export interface InputGateResult {
+  text: string;
+  flags: string[];
+  blocked: boolean;
+}
+
+const DEFAULT_MAX_CHARS = 6000;
+
+// Soft hyphen, CGJ, Arabic letter mark, Hangul fillers, Khmer vowels, Mongolian
+// vowel separator, zero-width and bidi controls, word joiner and invisible
+// operators, Hangul filler, variation selectors, BOM.
+const FORMAT_CHARS =
+  /[­͏؜ᅟᅠ឴឵᠎​-‏‪-‮⁠-⁤⁦-⁩ㅤ︀-️﻿]/g;
+const FORMAT_CHARS_TEST = new RegExp(FORMAT_CHARS.source);
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
+const HTML_COMMENT_TEST = /<!--[\s\S]*?-->/;
+const INSTRUCTION_TAG = /<\/?\s*(system|assistant|developer|instructions?|tool_?call|function_?call)\b[^>]*>/i;
+const ROLE_PREFIX = /^\s*(system|assistant|developer)\s*:/im;
+
+const OVERRIDE_PHRASES: RegExp[] = [
+  /ignore (all |any |the )?(previous|prior|above|earlier) (instructions?|prompts?|messages?)/i,
+  /disregard (the |all |any )?(system|previous|prior) (prompt|instructions?)/i,
+  /\byou are now\b/i,
+  /\bnew instructions?\s*:/i,
+  /do not (tell|inform|alert) the (user|owner|operator)/i,
+  /\b(reveal|print|repeat|show) (your|the) (system )?prompt\b/i,
+];
+
+const SECRET_NOUNS =
+  '(\\.env|env(?:ironment)? (?:file|variables?|vars?)|api[-_ ]?keys?|secrets?|passwords?|credentials?|(?:access|auth|api|session) tokens?|private keys?|ssh keys?|cookies?|storage[-_ ]?state)';
+
+const EXFIL_PHRASES: RegExp[] = [
+  new RegExp(
+    `\\b(send|email|mail|post|upload|share|forward|exfiltrate|leak|reveal|print|output|show)\\b[^.\\n]{0,60}\\b${SECRET_NOUNS}`,
+    'i',
+  ),
+  /\b(cat|read|open|print|type)\b[^.\n]{0,30}(\.env\b|~\/|\/etc\/|\bsecrets\/)/i,
+  /\bsecrets\/[\w.-]*\.json\b/i,
+];
+
+export function gateInput(raw: string, opts: { maxChars?: number } = {}): InputGateResult {
+  const maxChars = opts.maxChars ?? DEFAULT_MAX_CHARS;
+  const flags: string[] = [];
+  let text = raw;
+
+  if (HTML_COMMENT_TEST.test(text)) {
+    flags.push('html_comment');
+    text = text.replace(HTML_COMMENT, '');
+  }
+
+  if (FORMAT_CHARS_TEST.test(text)) {
+    flags.push('hidden_chars');
+    text = text.replace(FORMAT_CHARS, '');
+  }
+
+  let blocked = false;
+  if (INSTRUCTION_TAG.test(text)) {
+    flags.push('instruction_tag');
+    blocked = true;
+  }
+  if (ROLE_PREFIX.test(text)) {
+    flags.push('role_prefix');
+    blocked = true;
+  }
+  if (OVERRIDE_PHRASES.some((re) => re.test(text))) {
+    flags.push('override_phrase');
+    blocked = true;
+  }
+  if (EXFIL_PHRASES.some((re) => re.test(text))) {
+    flags.push('exfiltration');
+    blocked = true;
+  }
+
+  if (text.length > maxChars) {
+    flags.push('truncated');
+    text = text.slice(0, maxChars);
+  }
+  return { text, flags, blocked };
+}
