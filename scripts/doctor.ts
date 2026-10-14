@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { ccgramChecks, restrictedChecks } from '../src/platform/checks.js';
 import { setupChecks } from '../src/platform/checksSetup.js';
 import { schedulerChecks } from '../src/platform/checksScheduler.js';
+import { updateBackupChecks } from '../src/platform/updateBackupChecks.js';
 import { exitCode, formatJson, formatReport, runChecks, type DoctorContext } from '../src/platform/doctor.js';
 import { linkedinBrowserChecks } from '../src/linkedin/chromeCheck.js';
 import { defaultRun } from '../src/platform/tmux.js';
@@ -64,7 +65,7 @@ const ctx: DoctorContext = {
 };
 
 const results = await runChecks(
-  [...ccgramChecks, ...restrictedChecks(), ...setupChecks, ...linkedinBrowserChecks(), ...schedulerChecks()],
+  [...ccgramChecks, ...restrictedChecks(), ...setupChecks, ...linkedinBrowserChecks(), ...schedulerChecks(), ...updateBackupChecks()],
   ctx,
 );
 console.log(process.argv.includes('--json') ? formatJson(results) : formatReport(results));
