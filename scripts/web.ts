@@ -1,15 +1,16 @@
 // scripts/web.ts
-// Minimal runner for the dashboard server (Task 12 replaces this with the full env validation and doctor checks).
+// Dashboard runner: thin wiring. All validation lives in src/web/env.ts (pure, unit-tested).
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { defaultRun, assertClaudePane, sendText } from '../src/platform/tmux.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { secretValuesFromEnv } from '../src/safety/outputGate.js';
-import { parseWebEnv } from '../src/web/env.js';
+import { validateRunnerConfig } from '../src/web/env.js';
 import { redactSecrets, startWebServer } from '../src/web/server.js';
-import { openAuthStore } from '../src/dash/authStore.js';
+import { openAuthStore, getAllowedAccount } from '../src/dash/authStore.js';
+import { allowAccount } from '../src/dash/account.js';
 import { createOidc } from '../src/dash/oidc.js';
 import { openReadOnlyDb } from '../src/dash/readDb.js';
 
@@ -29,48 +30,86 @@ async function main(): Promise<number> {
   const env: Record<string, string | undefined> = { ...fileEnv, ...process.env };
   const secrets = secretValuesFromEnv(env as NodeJS.ProcessEnv);
   maskLiterals = secrets;
-  const parsed = parseWebEnv(env);
-  if (!parsed.ok) {
-    console.error(`web: ${parsed.error}`);
+
+  // Pass 1 without the account requirement: configuration problems are reported before any file is created.
+  const early = validateRunnerConfig(env, { accountStored: true });
+  if (!early.ok) {
+    for (const e of early.errors) console.error(`web: ${e.message}`);
     return 1;
   }
-  const { port, session, window } = parsed.config;
-  const issuer = env.WEB_OIDC_ISSUER || 'https://accounts.google.com';
-  const clientId = env.WEB_OIDC_CLIENT_ID ?? '';
-  const clientSecret = env.WEB_OIDC_CLIENT_SECRET ?? '';
-  const redirectUri = env.WEB_OIDC_REDIRECT_URI ?? '';
-  if (!clientId || !clientSecret || !redirectUri) {
-    console.error('web: WEB_OIDC_CLIENT_ID, WEB_OIDC_CLIENT_SECRET and WEB_OIDC_REDIRECT_URI are required');
-    return 1;
-  }
-  const reauthMaxAgeSec = Number(env.WEB_REAUTH_MAX_AGE_SEC ?? '300') || 300;
-  const reauthPrompt = env.WEB_OIDC_REAUTH_PROMPT === 'login' ? 'login' : 'select_account';
+  const cfg = early.config;
+
+  const authPath = isAbsolute(cfg.authDb) ? cfg.authDb : join(process.cwd(), cfg.authDb);
+  let auth;
   try {
-    const oidc = createOidc(
-      { issuer, clientId, clientSecret, redirectUri, reauthPrompt, maxAgeSec: reauthMaxAgeSec },
-      { fetch, now: () => new Date(), random: (n) => randomBytes(n) },
-    );
+    auth = openAuthStore(authPath);
+  } catch (e) {
+    console.error(`web: could not open the auth store: ${e instanceof Error ? e.message.split('\n')[0] : 'error'}`);
+    return 1;
+  }
+  let stored = getAllowedAccount(auth) !== null;
+  const full = validateRunnerConfig(env, { accountStored: stored });
+  if (!full.ok) {
+    for (const e of full.errors) console.error(`web: ${e.message}`);
+    return 1;
+  }
+  if (!stored && cfg.allowedEmail) {
+    const r = allowAccount(auth, cfg.allowedEmail, new Date());
+    if (!r.ok) {
+      console.error('web: DASHBOARD_ALLOWED_EMAIL is not a valid email address');
+      return 1;
+    }
+    stored = true;
+    console.error('web: allowed account created from DASHBOARD_ALLOWED_EMAIL (the first sign-in pins it)');
+  }
+
+  let data;
+  try {
+    data = openReadOnlyDb();
+  } catch {
+    console.error('web: the data database is missing or cannot be opened read-only; run the hunt once or check JOBAPPLIER_DB');
+    return 1;
+  }
+
+  const oidc = createOidc(
+    {
+      issuer: cfg.issuer,
+      clientId: cfg.clientId,
+      clientSecret: cfg.clientSecret,
+      redirectUri: cfg.redirectUri,
+      reauthPrompt: cfg.reauthPrompt,
+      maxAgeSec: cfg.reauthMaxAgeSec,
+    },
+    { fetch, now: () => new Date(), random: (n) => randomBytes(n) },
+  );
+  try {
+    await oidc.discover();
+  } catch {
+    console.error('web: warning: OIDC discovery failed at start; it will be retried on the first login');
+  }
+
+  try {
     await startWebServer({
-      port,
-      bind: '127.0.0.1',
-      allowRemoteBind: false,
-      allowedHosts: [],
-      trustProxy: false,
-      auth: openAuthStore(env.WEB_AUTH_DB || '.dashboard/auth.sqlite'),
+      port: cfg.port,
+      bind: cfg.bind,
+      allowRemoteBind: cfg.allowRemoteBind,
+      allowedHosts: cfg.allowedHosts,
+      trustProxy: cfg.trustProxy,
+      auth,
       oidc,
-      oidcCfg: { redirectUri, reauthMaxAgeSec },
-      data: openReadOnlyDb(),
+      oidcCfg: { redirectUri: cfg.redirectUri, reauthMaxAgeSec: cfg.reauthMaxAgeSec },
+      data,
       cfg: loadOutreachConfig(),
       run: defaultRun,
-      sessionsToShow: [session],
-      secrets: [...secrets, clientSecret].filter(Boolean),
+      sessionsToShow: [cfg.session],
+      secrets: [...secrets, cfg.clientSecret].filter(Boolean),
       chat: {
-        enabled: false,
-        session,
-        window,
+        enabled: cfg.chatEnabled,
+        session: cfg.session,
+        window: cfg.window,
         send: async (text) => {
-          await assertClaudePane(defaultRun, session, window);
-          await sendText(defaultRun, session, window, text);
+          await assertClaudePane(defaultRun, cfg.session, cfg.window);
+          await sendText(defaultRun, cfg.session, cfg.window, text);
         },
       },
     });
@@ -78,7 +117,7 @@ async function main(): Promise<number> {
     console.error(`web: could not start: ${e instanceof Error ? e.message.split('\n')[0] : 'error'}`);
     return 1;
   }
-  console.log(`http://127.0.0.1:${port}`);
+  console.log(`http://${cfg.bind}:${cfg.port}`);
   return -1; // keep running
 }
 

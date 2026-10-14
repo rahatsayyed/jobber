@@ -17,6 +17,8 @@ export interface DoctorContext {
     mode(path: string): number | null;
     list?(path: string): string[];
   };
+  // Offline read of the dashboard allowed-account row (email and whether a sub is pinned). Optional.
+  authAccount?(path: string): { email: string; pinned: boolean } | null;
 }
 export interface Check {
   id: string;

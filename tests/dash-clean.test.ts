@@ -11,9 +11,9 @@ describe('cleanText', () => {
     expect(cleanText('a\n\n\n\n\nb', 100)).toBe('a\n\nb');
   });
   it('redacts secret shapes and web-token lines', () => {
-    const out = cleanText('key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789\nWEB_TOKEN=abc\nok', 500);
+    const out = cleanText('key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789\nWEB_CLIENT_SECRET=abc\nok', 500);
     expect(out).not.toContain('abcdefghijklmnopqrstuvwxyz0123456789');
-    expect(out).not.toContain('WEB_TOKEN');
+    expect(out).not.toContain('WEB_CLIENT_SECRET');
     expect(out).toContain('ok');
   });
   it('truncates with ellipsis', () => {

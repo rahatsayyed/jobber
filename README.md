@@ -409,10 +409,10 @@ jobber/
 
 ## Status web page
 
-Start it with `npm run web` (needs `WEB_TOKEN` of at least 24 characters in `.env`; see `.env.example`). It prints `http://127.0.0.1:<port>`.
+Start it with `npm run web` (sign-in is Google OIDC: set the `WEB_OIDC_*` keys and `DASHBOARD_ALLOWED_EMAIL` in `.env`, or run `npm run dashboard -- allow <email>`; see `.env.example`; `npm run doctor` shows the dashboard checks). It prints `http://127.0.0.1:<port>`.
 
 - The send box types into a live Claude session. Keep the permission set at `read_only` unless you need more.
-- Text typed in the chat box also answers any pending permission or confirmation prompt in the Claude window, so only enable it with a token you trust and keep the permission set `read_only`.
+- Text typed in the chat box also answers any pending permission or confirmation prompt in the Claude window, so only enable it for an account you trust and keep the permission set `read_only`.
 - The page listens on localhost only. From another machine use an SSH tunnel (`ssh -L 8787:127.0.0.1:8787 host`); never open the port.
 
 ## Next Steps
