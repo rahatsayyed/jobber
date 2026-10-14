@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "profiles": {
+    "outreach_wake": {
+      "description": "Scheduled LinkedIn/Naukri wake: platform and db tools only, no secrets in env.",
+      "mcp_config": "config/runner/mcp.platform.json",
+      "builtin_tools": ["Skill", "Agent", "Task"],
+      "allow": [
+        "mcp__naukri__naukri_open", "mcp__naukri__naukri_state", "mcp__naukri__naukri_click",
+        "mcp__naukri__naukri_type", "mcp__naukri__naukri_close", "mcp__naukri__naukri_screenshot",
+        "mcp__db__list_queued_outreach", "mcp__db__get_funnel", "mcp__db__get_outreach_stats", "mcp__db__get_job_stats"
+      ],
+      "screen_args": ["mcp__naukri__naukri_type"],
+      "env_mode": "allowlist",
+      "env_keys": ["TZ", "QUIET_HOURS_START", "QUIET_HOURS_END", "COMPANY_CONTACT_LIMIT", "SPECULATIVE_COMPANY_LIMIT"],
+      "env_prefixes": ["PACING_", "COOLDOWN_", "CADENCE_", "LINKEDIN_MAX_", "NAUKRI_MAX_", "CLASSIFIER_"],
+      "max_turns": 40
+    },
+    "hunt": {
+      "description": "The existing hunt pipeline, without bypassPermissions.",
+      "mcp_config": ".mcp.json",
+      "builtin_tools": ["Skill", "Agent", "Task", "Read"],
+      "allow_from_permission_set": "outreach_send",
+      "path_rules": { "Read": { "prefixes": ["config/"] } },
+      "screen_args": ["mcp__gmail__send_email", "mcp__connect__connect_send", "mcp__connect__send_linkedin_message"],
+      "env_mode": "dotenv_all",
+      "env_files": [".env", ".env.ccr"],
+      "max_turns": 200
+    }
+  }
+}
