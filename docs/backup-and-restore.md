@@ -8,10 +8,15 @@ scheduler calls them. Settings live in `.env` (shipped defaults in `.env.example
 Each backup is one `age`-encrypted archive containing:
 
 - a consistent snapshot of `data.sqlite` (an online SQLite backup, never a raw file copy),
-- `user-data/` and `config/` (resume, answers, languages, fact gate, portals, regions, profiles).
+- `user-data/` and `config/` (resume, answers, languages, fact gate, portals, regions, profiles);
+  `config/` is top-level `*.json` files only,
+- `.claude/settings.local.json` and `.claude/settings.local.managed.json`.
 
-Secrets are excluded by default (decision D8): `secrets/` holds the Gmail OAuth token, the
-LinkedIn and Naukri browser sessions and `.env`. A backup that can be read with the age key
+Never archived, wherever they sit: `*.pdf` at any depth (so PDFs under `user-data/` are not
+backed up), `*.bak`, and SQLite WAL and journal files.
+
+Secrets are excluded by default (decision D8): `secrets/` holds the Gmail OAuth token and the
+LinkedIn and Naukri browser sessions, and `.env` is a separate path that is also excluded. A backup that can be read with the age key
 alone would otherwise also hold every credential, so a leaked archive plus a leaked key would
 hand over the accounts. What this means in practice: after a restore you sign in again
 (Gmail auth, LinkedIn and Naukri session scripts) and re-create `.env`. Set
@@ -64,8 +69,18 @@ Apply (replaces the database and config; needs the lock and a typed confirmation
 npm run restore -- <BACKUP_DIR>/<archive>.age --identity ~/jobber-backup.key --apply --confirm "RESTORE <name>"
 ```
 
-**Restore drill:** run the verify-only command above before you rely on the backups, after any
-change to the scope, and every 90 days. Confirm the table counts and the "integrity ok" line.
+`<name>` is the archive file name including `.age`.
+
+**Restore drill:**
+
+```
+npm run restore -- <BACKUP_DIR>/<archive>.age --identity ~/jobber-backup.key --drill
+```
+
+Only `--drill` records `last_drill_at`, which doctor's backup-drill check reads; a verify-only
+run without `--drill` does not satisfy doctor. The drill also reports live tables that are
+missing from the backup. Run it before you rely on the backups, after any change to the scope,
+and every 90 days. Confirm the table counts and the "integrity ok" line.
 
 Warnings for `--apply`:
 
@@ -91,14 +106,15 @@ Off by default (`AUTO_UPDATE=false`). Before enabling:
 
 Behaviour to know:
 
-- Only fast-forwards are applied. Diverged history, a held lock or an unsigned commit means
-  skip and notify.
+- Only fast-forwards are applied. Diverged history or an unsigned commit means skip and
+  notify. A `--tick` that finds the lock held returns skipped without notifying; only
+  `--now` and `--dry-run` notify about it.
 - Untracked files in the checkout count as a dirty tree, so the update is skipped. Clean or
   ignore them.
 - Changes touching reserved paths (`AUTO_UPDATE_REVIEW_PATHS`, by default `.claude/settings.json`,
   `.claude/hooks/`, `.githooks/`, `config/ccgram.pin.json`, `scripts/ccgram/`) force a manual
   review: the update is not applied.
-- Any failed step (install, migration check, doctor, tests) rolls the code back to the previous
+- Any failed step (merge, install, migrate-copy, doctor, tests, permissions fingerprint) rolls the code back to the previous
   commit. The database is not rolled back: migrations are additive so old code runs on a migrated
   database, and the pre-update snapshot in `.update/` is the manual recovery.
 - The updater never restarts anything. Restart Claude sessions and MCP servers after an applied
@@ -121,12 +137,17 @@ to it. After each wake that was not killed and is outside quiet hours, throttled
 
 Details:
 
-- The two env flags are the only switches. The hook gives the child only `PATH`, `HOME`, `TZ`,
-  `AUTO_UPDATE` and `BACKUP_ENABLED`; the scripts read `.env` themselves.
-- The hook timeout is `SCHEDULER_HOOK_TIMEOUT_SEC` (default 120). Because an update can take
-  longer, the auto-update tick hands a due apply to a detached child and returns.
-- Both jobs take the shared lock `<project>/.jobber/run.lock`, the same one wakes hold, so an
-  update or backup never overlaps a running wake. A tick that cannot get the lock does nothing.
+- The two env flags are the only switches. A hook also runs only if `scripts/auto-update.ts`
+  or `scripts/backup.ts` and the matching `package.json` script exist. The hook gives the child
+  only `PATH`, `HOME`, `TZ`, `AUTO_UPDATE` and `BACKUP_ENABLED`; the scripts read `.env` themselves.
+- The hook timeout is `SCHEDULER_HOOK_TIMEOUT_SEC` (default 120, clamped to 30..3600) and the
+  throttle is `HOOK_MIN_INTERVAL_MIN` (default 60, range 1..1440); an out-of-range value falls
+  back to the default. Because an update can take longer than the timeout, the auto-update tick
+  hands a due apply to a detached child and returns.
+- Only the auto-update apply and `restore --apply` take the shared lock
+  `<project>/.jobber/run.lock`, the same one wakes hold, so they never overlap a running wake.
+  The backup does not take the lock: it is safe with live writers because it uses the SQLite
+  online backup.
 - A tick that is not due is cheap and each job keeps its own state file.
 - A failing tick raises a `scheduler <id> tick failed` warning and never stops the scheduler.
 
