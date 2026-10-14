@@ -5,7 +5,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Snapshot } from '../status/snapshot.js';
-import { SECRET_SHAPES } from '../safety/outputGate.js';
+import { redactSecrets } from '../safety/redact.js';
 import { validateSendText } from '../platform/tmux.js';
 import { renderPage } from './page.js';
 
@@ -34,52 +34,8 @@ const LOCK_FAILS = 5;
 const LOCK_WINDOW_MS = 10 * 60 * 1000;
 const SEND_GAP_MS = 2000;
 const PANE_LINES = 40;
-const REDACTED = '[redacted]';
 
-/** Replace secret shapes (shared with the outbound gate) and any WEB_TOKEN line; `extra` literals are also masked. */
-export function redactSecrets(text: string, extra: string[] = [], opts: { tokenLines?: boolean } = {}): string {
-  // Matching runs over the whole text with line breaks removed, so a secret wrapped across lines is still found.
-  const map: number[] = []; // stripped index -> original index
-  let stripped = '';
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '\n' || text[i] === '\r') continue;
-    map.push(i);
-    stripped += text[i];
-  }
-  const ranges: [number, number][] = []; // original [start, endExclusive)
-  const add = (s: number, e: number) => ranges.push([map[s], map[e - 1] + 1]);
-  for (const re of SECRET_SHAPES) {
-    const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
-    for (const m of stripped.matchAll(g)) if (m[0].length > 0) add(m.index, m.index + m[0].length);
-    // also per line: joining lines can destroy a word boundary that a secret needs at its start
-    let off = 0;
-    for (const line of text.split('\n')) {
-      for (const m of line.matchAll(g)) {
-        if (m[0].length > 0) ranges.push([off + m.index, off + m.index + m[0].length]);
-      }
-      off += line.length + 1;
-    }
-  }
-  for (const lit of extra) {
-    if (lit.length < 8) continue;
-    for (let i = stripped.indexOf(lit); i >= 0; i = stripped.indexOf(lit, i + lit.length)) add(i, i + lit.length);
-  }
-  ranges.sort((x, y) => x[0] - y[0]);
-  let out = '';
-  let pos = 0;
-  for (const [s, e] of ranges) {
-    if (e <= pos) continue;
-    const start = Math.max(s, pos);
-    out += text.slice(pos, start) + REDACTED;
-    out += text.slice(start, e).replace(/[^\n]/g, ''); // keep line breaks so the line count is stable
-    pos = e;
-  }
-  out += text.slice(pos);
-  return out
-    .split('\n')
-    .map((l) => (opts.tokenLines !== false && l.includes('WEB_TOKEN') ? REDACTED : l))
-    .join('\n');
-}
+export { redactSecrets };
 
 const sha = (s: string): Buffer => createHash('sha256').update(s).digest();
 
