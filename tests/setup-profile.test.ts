@@ -223,13 +223,26 @@ describe('profileStep fix round 1', () => {
   it('prompts for phone and url when creating the answers file, no placeholders written', async () => {
     const s = script();
     s.splice(10, 1); // template sponsorship already matches
-    s.splice(11, 0, { ask: '+91 90000 00000' }, { ask: 'https://www.linkedin.com/in/someone-else' });
+    s.splice(
+      11, 0,
+      { ask: '+91 90000 00000' },
+      { ask: 'https://www.linkedin.com/in/someone-else' },
+      { ask: '12' },
+      { ask: 'abc' }, // not yes/no: re-asked
+      { ask: 'no' },
+      { ask: 'Yes' },
+    );
     const t = setup(s, { [TPL]: JSON.stringify(TEMPLATE), ...langFile });
     await profileStep.run(t.ctx);
     const out = t.store.get(`${D}/easy-apply-answers.json`) ?? '';
     const a = JSON.parse(out);
     expect(a.phone).toBe('+91 90000 00000');
     expect(a.linkedin_profile_url).toBe('https://www.linkedin.com/in/someone-else');
+    // verified answers, not the template's placeholders; salary unset because none was typed
+    expect(a.years_experience).toBe(12);
+    expect(a.willing_to_relocate).toBe(false);
+    expect(a.authorized_to_work).toBe(true);
+    expect('expected_salary' in a).toBe(false);
     expect(out).not.toContain('0000000000');
     expect(out).not.toContain('example-person');
     t.sio.assertDone();
@@ -238,12 +251,26 @@ describe('profileStep fix round 1', () => {
   it('writes empty strings when left blank and re-asks a bad url', async () => {
     const s = script();
     s.splice(10, 1);
-    s.splice(11, 0, { ask: '' }, { ask: 'linkedin.com/in/x' }, { ask: '' });
+    s.splice(11, 0, { ask: '' }, { ask: 'linkedin.com/in/x' }, { ask: '' }, { ask: '0' }, { ask: 'y' }, { ask: 'n' });
     const t = setup(s, { [TPL]: JSON.stringify(TEMPLATE), ...langFile });
     await profileStep.run(t.ctx);
     const a = JSON.parse(t.store.get(`${D}/easy-apply-answers.json`) ?? '');
     expect(a.phone).toBe('');
     expect(a.linkedin_profile_url).toBe('');
+    expect(a.years_experience).toBe(0);
+  });
+
+  it('keeps a typed expected salary and rejects a non-integer year count', async () => {
+    const s = script();
+    s.splice(10, 1);
+    s[10] = { ask: '18 LPA' }; // expected salary
+    s.splice(11, 0, { ask: '' }, { ask: '' }, { ask: '3.5' }, { ask: '4' }, { ask: 'n' }, { ask: 'n' });
+    const t = setup(s, { [TPL]: JSON.stringify(TEMPLATE), ...langFile });
+    await profileStep.run(t.ctx);
+    const a = JSON.parse(t.store.get(`${D}/easy-apply-answers.json`) ?? '');
+    expect(a.expected_salary).toBe('18 LPA');
+    expect(a.years_experience).toBe(4);
+    t.sio.assertDone();
   });
 
   it('never prompts for phone or url when the answers file exists', async () => {

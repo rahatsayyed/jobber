@@ -204,6 +204,33 @@ export const profileStep: SetupStep = {
                 : 'Use https://www.linkedin.com/in/<name> or leave blank',
           })
         ).trim();
+        // The template's years, relocation, work-authorization and salary values are
+        // placeholders that real applications would submit: ask for the real ones, and leave
+        // the salary unset (an unset key makes apply.linkedin return needs_answer).
+        const yesNo = (v: string): string | null =>
+          /^(y|yes|n|no)$/i.test(v.trim()) ? null : 'Answer yes or no';
+        next.years_experience = Number(
+          await io.ask('Years of relevant work experience (whole number, used on application forms)', {
+            validate: (v) =>
+              /^\d{1,2}$/.test(v.trim()) ? null : 'Enter a whole number of years, 0 or more',
+          }),
+        );
+        next.willing_to_relocate = /^y/i.test(
+          (await io.ask('Willing to relocate for a role? (yes/no)', { validate: yesNo })).trim(),
+        );
+        next.authorized_to_work = /^y/i.test(
+          (
+            await io.ask('Authorized to work in the job country without sponsorship, as forms ask? (yes/no)', {
+              validate: yesNo,
+            })
+          ).trim(),
+        );
+        if (exp === '') delete next.expected_salary;
+        io.say(
+          exp === ''
+            ? 'Expected salary left unset: an application that asks for it will stop and ask you.'
+            : 'Expected salary saved as you typed it.',
+        );
       }
     } else {
       io.say('No easy-apply-answers.json or template found: skipping the application answers file.');
