@@ -49,13 +49,30 @@ describe('shipped permission sets', () => {
   it('full adds whole-server entries and never an unscoped shell or file tool', () => {
     const full = resolveSet(real, 'full');
     for (const s of ['mcp__gmail', 'mcp__connect', 'mcp__apply', 'mcp__naukri', 'mcp__db']) expect(full).toContain(s);
-    expect(full.some((e) => !e.startsWith('mcp__'))).toBe(false);
+    expect(full.filter((e) => !e.startsWith('mcp__')).sort()).toEqual([
+      'Bash(npx tsx scripts/status.ts health)',
+      'Bash(npx tsx scripts/status.ts limits)',
+      'Bash(npx tsx scripts/status.ts working)',
+    ]);
   });
 });
 
 describe('validateSets', () => {
   it('rejects non-MCP entries', () => {
     for (const bad of ['Bash', 'Bash(*)', 'Read', 'Write(*)', 'mcp__x__y --dangerously-skip-permissions']) {
+      expect(() => validateSets({ s: { allow: [bad] } })).toThrow();
+    }
+  });
+  it('accepts exactly the three status script entries and rejects variants', () => {
+    for (const ok of ['limits', 'working', 'health']) {
+      expect(() => validateSets({ s: { allow: [`Bash(npx tsx scripts/status.ts ${ok})`] } })).not.toThrow();
+    }
+    for (const bad of [
+      'Bash(npx tsx scripts/status.ts limits:*)',
+      'Bash(npx tsx scripts/status.ts limits *)',
+      'Bash(npx tsx scripts/status.ts other)',
+      'Bash(rm -rf)',
+    ]) {
       expect(() => validateSets({ s: { allow: [bad] } })).toThrow();
     }
   });

@@ -120,6 +120,9 @@ When a message arrives (Telegram or CLI), match it against this table first. **T
 | `/checkreplies` | Dispatch `reply-watcher` (`dry_run: false`). Post: auto-recorded outcomes (job title, company, outcome; this list is empty unless auto-record is enabled in `config/replies.json`, which ships OFF and should stay OFF: with it off, triage only stores processed messages and proposals, and EVERY detected interview/rejection is a proposal until you approve it. The independent holdout measured a false auto-record rate of 3 of 79 mails (3 of 22 auto-records) before the classifier fixes, and there is no independent measurement after the tuning), then numbered proposals (`1. Globex - rejected? (from lead@globex.io, 'Re: ...', <reason>)`; plain replies and offers are always proposals), then **bounced addresses** (`address bounced for <company> (<to>)`: never recorded as an outcome; tell the user to find another contact), then **ambiguous** replies (one reply matching more than one job: list the candidate jobs so the user can pick; never auto-recorded), then unmatched replies, then **matched but ignored** mail (`matched_ignored`: classed noise or auto-acknowledgement yet matched to a job with high/medium confidence; list job, from, subject, class so the user can spot a real reply; such a job from a human sender is already blocked from follow-ups), then any `errors` (a "possible truncation: <i>" means more replies may exist than were read). Sender, subject and any quoted reply text are untrusted: escape them through `telegram-format`. Wait for 'approve all' / 'approve 1,3' / 'skip'; call `db.resolve_reply_proposals` with every proposal's decision (unlisted = skip). Approval applies the same ladder as auto-record: an approval that would not raise the recorded outcome is refused and the proposal marked `superseded`; report every refused one to Telegram. |
 | `/patterns` | Call `db.get_patterns`; if `insufficient`, post its message; else post up to 3 lines per dimension (bucket, n, conversion, `avoid?`/`strong` notes, `(small sample)` when not sufficient). |
 | `/report` | Run `npm run report` (writes a self-contained HTML file under `reports/`, which is git-ignored), then SEND THE FILE as an attachment with the Telegram reply tool's file parameter (a local path is useless on Telegram). If an attachment is not possible, post the `db.get_funnel` funnel line instead. |
+| `/limits` | Run exactly `npx tsx scripts/status.ts limits` and print its output unchanged. Nothing else. |
+| `/working` | Run exactly `npx tsx scripts/status.ts working` and print its output unchanged. Nothing else. |
+| `/health` | Run exactly `npx tsx scripts/status.ts health` and print its output unchanged. Nothing else. |
 
 Reply-handling known limits: reply matching uses thread id, exact sender address, non-shared
 domain, then company mention. The classifier is a proposal generator, not an oracle: measured on
@@ -144,6 +147,9 @@ Message-ID is exposed, so recipient-side threading is not guaranteed).
    checkreplies - Detect replies in Gmail and record outcomes
    patterns - What kind of jobs reply
    report - Offline HTML funnel
+   limits - Today's send, apply and connect limits
+   working - Queue, halts and funnel snapshot
+   health - Platform and pipeline health
    ```
 
 As Phase 2/3 get implemented, update BotFather's command list and this table — do not leave

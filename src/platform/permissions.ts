@@ -13,13 +13,20 @@ export interface LocalSettings {
 
 const MCP_ENTRY = /^mcp__[A-Za-z0-9_-]+(__[A-Za-z0-9_-]+)?$/;
 
+/* The only non-MCP entries allowed: three read-only status script calls, matched literally. */
+const STATUS_BASH_ENTRIES = new Set(
+  ['limits', 'working', 'health'].map((sub) => `Bash(npx tsx scripts/status.ts ${sub})`),
+);
+
 export function validateSets(sets: RawSets): void {
   for (const [name, set] of Object.entries(sets)) {
     if (!set || !Array.isArray(set.allow) || set.allow.some((e) => typeof e !== 'string')) {
       throw new Error(`permission set ${name}: allow must be an array of strings`);
     }
     for (const entry of set.allow) {
-      if (!MCP_ENTRY.test(entry)) throw new Error(`permission set ${name}: entry is not an MCP tool name: ${entry}`);
+      if (!MCP_ENTRY.test(entry) && !STATUS_BASH_ENTRIES.has(entry)) {
+        throw new Error(`permission set ${name}: entry is not an MCP tool name or an allowed status command: ${entry}`);
+      }
     }
   }
 }
