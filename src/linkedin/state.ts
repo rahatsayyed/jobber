@@ -18,7 +18,9 @@ const RESTRICTION_RE = /(your account (has been|is) (temporarily )?(restricted|l
 export function detectBlock(raw: RawSnapshot): BlockKind | null {
   const kind = classifyUrl(raw.url);
   if (kind === 'checkpoint') return 'checkpoint';
-  const hay = [raw.title, ...raw.notices, raw.dialogText ?? '', raw.bodyText].join('\n');
+  // bodyText only when short (real block pages are near-empty) or the page is not a normal LinkedIn page.
+  const scanBody = raw.bodyText.length < 1500 || kind === 'other' || kind === 'login';
+  const hay = [raw.title, ...raw.notices, raw.dialogText ?? '', scanBody ? raw.bodyText : ''].join('\n');
   if (CAPTCHA_RE.test(hay)) return 'captcha';
   if (RESTRICTION_RE.test(hay)) return 'restriction';
   if (kind === 'login' || raw.hasPasswordInput) return 'session_expired';
@@ -52,7 +54,8 @@ export function formatState(raw: RawSnapshot, ctx: { halted: string | null; dryR
   // Gate one free-text field; returns sanitized, capped text or the blocked marker.
   const field = (s: string | null | undefined, max: number): string => {
     if (!s) return '';
-    const g = gateInput(s, { maxChars: max });
+    // Normalize whitespace and control chars BEFORE gating so split phrases cannot bypass it.
+    const g = gateInput(sanitize(s), { maxChars: max });
     for (const f of g.flags) inputFlags.add(f);
     if (g.blocked) {
       injection = true;
@@ -72,7 +75,7 @@ export function formatState(raw: RawSnapshot, ctx: { halted: string | null; dryR
   if (title) body.push(`title: ${title}`);
   const p = raw.profile;
   if (p) {
-    body.push(`profile: ${field(p.name, MAX_FIELD_CHARS.name)} (${p.degree ?? 'degree unknown'})`);
+    body.push(`profile: ${field(p.name, MAX_FIELD_CHARS.name)} (${p.degree === '1st' || p.degree === '2nd' || p.degree === '3rd' ? p.degree : 'degree unknown'})`);
     if (p.headline) body.push(`headline: ${field(p.headline, MAX_FIELD_CHARS.headline)}`);
     if (p.location) body.push(`location: ${field(p.location, MAX_FIELD_CHARS.location)}`);
     body.push(`actions: ${p.actions.slice(0, 8).map((a) => `[${field(a, 30)}]`).join(' ')} pending=${p.pending} bell=${p.hasBell} message_button=${p.hasMessageButton}`);
@@ -81,13 +84,13 @@ export function formatState(raw: RawSnapshot, ctx: { halted: string | null; dryR
   if (raw.results.length) {
     body.push('results:');
     raw.results.slice(0, 12).forEach((r, i) => {
-      body.push(`  ${i + 1}. ${field(r.name, MAX_FIELD_CHARS.name)} | ${field(r.headline, MAX_FIELD_CHARS.headline)} | ${sanitize(trimUrl(r.href))}`);
+      body.push(`  ${i + 1}. ${field(r.name, MAX_FIELD_CHARS.name)} | ${field(r.headline, MAX_FIELD_CHARS.headline)} | ${field(trimUrl(r.href), 120)}`);
     });
   }
   if (raw.invitations.length) {
     body.push('invitations:');
     raw.invitations.slice(0, 20).forEach((v) => {
-      body.push(`  #${v.index} ${field(v.name, MAX_FIELD_CHARS.name)} | ${field(v.headline, MAX_FIELD_CHARS.headline)} | ${sanitize(trimUrl(v.href))}`);
+      body.push(`  #${v.index} ${field(v.name, MAX_FIELD_CHARS.name)} | ${field(v.headline, MAX_FIELD_CHARS.headline)} | ${field(trimUrl(v.href), 120)}`);
     });
   }
   if (raw.messageHeaderName) body.push(`message_header: ${field(raw.messageHeaderName, MAX_FIELD_CHARS.name)}`);
@@ -108,8 +111,8 @@ export function formatState(raw: RawSnapshot, ctx: { halted: string | null; dryR
     injection_suspected: injection,
   };
 
-  const header = `page_kind=${flags.page_kind} halted=${sanitize(flags.halted ?? 'none')} dry_run=${flags.dry_run} login_required=${flags.login_required} block=${flags.block ?? 'none'} injection_suspected=${flags.injection_suspected}`;
-  const extra = (ctx.extra ?? []).map((e) => sanitize(e));
+  const header = `page_kind=${flags.page_kind} halted=${sanitize(flags.halted ?? 'none').slice(0, 200)} dry_run=${flags.dry_run} login_required=${flags.login_required} block=${flags.block ?? 'none'} injection_suspected=${flags.injection_suspected}`;
+  const extra = (ctx.extra ?? []).map((e) => sanitize(e).slice(0, 200));
   const head = [header, ...extra, `NOTE: ${UNTRUSTED_NOTE}`, '<<<PAGE_TEXT'].join('\n') + '\n';
   const tail = '\nPAGE_TEXT>>>';
   let inner = body.join('\n');
