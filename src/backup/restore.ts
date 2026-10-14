@@ -4,7 +4,7 @@ import {
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { Exec } from '../lib/exec.js';
 import { pipeExec } from '../lib/exec.js';
 import type { SnapshotCheck } from '../lib/sqliteSnapshot.js';
@@ -13,7 +13,9 @@ import { parseManifest, verifyFiles, type Manifest } from './manifest.js';
 import type { BackupState } from './state.js';
 
 export type RestoreKind = 'file' | 'dir' | 'symlink' | 'other';
-export interface WalkEntry { rel: string; kind: RestoreKind; nlink: number }
+export interface WalkEntry { rel: string; kind: RestoreKind; nlink: number; size: number }
+
+export const MAX_EXTRACTED_BYTES = 2 * 1024 * 1024 * 1024;
 
 export interface RestoreFs {
   mkdtemp(prefix: string): string;
@@ -53,6 +55,11 @@ export interface VerifyReport {
 }
 
 const clean = (s: string): string => s.replace(/[\x00-\x1f\x7f]/g, '?');
+/** For printing archive-derived text: control characters replaced and length capped. */
+export function safeText(s: unknown, max = 200): string {
+  const t = clean(String(s));
+  return t.length > max ? `${t.slice(0, max)}...` : t;
+}
 const isAppleDouble = (rel: string): boolean => basename(rel).startsWith('._');
 const stripDot = (rel: string): string => rel.replace(/^(\.\/)+/, '');
 
@@ -77,6 +84,7 @@ async function verifyInto(
   }
 
   const files: string[] = [];
+  let total = 0;
   for (const e of fs.walk(outDir)) {
     const rel = stripDot(e.rel);
     if (rel === '' || rel === '.') continue;
@@ -89,8 +97,10 @@ async function verifyInto(
     else if (e.kind === 'file') {
       if (e.nlink > 1) problem(`archive contains a hardlink: ${clean(rel)}`);
       files.push(rel);
+      total += e.size;
     }
   }
+  if (total > MAX_EXTRACTED_BYTES) problem('extracted size exceeds the allowed maximum');
   if (report.problems.length > 0) return report;
 
   const manifestPath = join(outDir, 'manifest.json');
@@ -201,10 +211,12 @@ export async function applyRestore(
   const lock = await deps.lock.acquire();
   if (lock === null) throw new Error('the run lock is held; stop the running session first; nothing was changed');
 
-  const tmp = fs.mkdtemp(join(tmpdir(), 'jobber-restore-'));
+  let tmp: string | null = null;
   const moved: { from: string; to: string }[] = [];
   const touched: string[] = [];
+  const createdDirs: string[] = [];
   try {
+    tmp = fs.mkdtemp(join(tmpdir(), 'jobber-restore-'));
     const report = await verifyInto(deps, a, tmp);
     if (!report.ok || report.manifest === null) {
       throw new Error(`archive failed verification (${report.problems.length} problem(s)); nothing was changed`);
@@ -243,22 +255,42 @@ export async function applyRestore(
       for (const item of plan) {
         if (item.action === 'skip-secret') continue;
         if (item.moveAsideTo !== null) moveAside(item.target, item.moveAsideTo);
+        const missing: string[] = [];
+        for (let d = dirname(item.target); d.startsWith(root + sep) && !fs.exists(d); d = dirname(d)) missing.unshift(d);
+        for (const d of missing) if (!createdDirs.includes(d)) createdDirs.push(d);
+        try {
+          fs.copy(join(tmp, item.archivePath), item.target);
+        } catch (e) {
+          // the target was absent before this copy, so anything there is our partial file
+          try { fs.rmrf(item.target); } catch { /* caught by the rollback report below if it matters */ }
+          throw e;
+        }
         touched.push(item.target);
-        fs.copy(join(tmp, item.archivePath), item.target);
         fs.mode(item.target, 0o600);
       }
     } catch (e) {
+      const stuck: string[] = [];
       for (const t of [...touched].reverse()) {
-        try { fs.rmrf(t); } catch { /* best effort */ }
+        try { fs.rmrf(t); } catch { stuck.push(`could not remove restored file ${relative(root, t)}`); }
       }
       for (const m of [...moved].reverse()) {
-        try { fs.move(m.to, m.from); } catch { /* best effort */ }
+        try { fs.move(m.to, m.from); } catch {
+          stuck.push(`move ${relative(root, m.to)} back to ${relative(root, m.from)} manually`);
+        }
+      }
+      for (const d of [...createdDirs].reverse()) {
+        try {
+          if (fs.exists(d) && fs.list(d).length === 0) fs.rmrf(d);
+        } catch { /* a leftover empty directory is harmless */ }
+      }
+      if (stuck.length > 0) {
+        throw new Error(`restore failed and the rollback is incomplete: ${stuck.join('; ')}`);
       }
       throw e;
     }
     return { moved: moved.map((m) => m.to), restored: touched };
   } finally {
-    try { fs.rmrf(tmp); } catch { /* best effort */ }
+    if (tmp !== null) { try { fs.rmrf(tmp); } catch { /* best effort */ } }
     try { await lock.release(); } catch { /* best effort */ }
   }
 }
@@ -310,7 +342,7 @@ export const nodeRestoreFs: RestoreFs = {
         const childRel = rel === '' ? name : `${rel}/${name}`;
         const st = lstatSync(childAbs);
         const kind: RestoreKind = st.isSymbolicLink() ? 'symlink' : st.isFile() ? 'file' : st.isDirectory() ? 'dir' : 'other';
-        out.push({ rel: childRel, kind, nlink: st.nlink });
+        out.push({ rel: childRel, kind, nlink: st.nlink, size: st.size });
         if (kind === 'dir') rec(childAbs, childRel);
       }
     };

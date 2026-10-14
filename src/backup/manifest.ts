@@ -33,10 +33,16 @@ export function parseManifest(text: string): Manifest {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('manifest is not an object');
   const m = raw as Record<string, unknown>;
   if (m.version !== 1) throw new Error('unsupported manifest version');
-  if (typeof m.created_at !== 'string' || Number.isNaN(Date.parse(m.created_at))) {
+  if (
+    typeof m.created_at !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(m.created_at) ||
+    Number.isNaN(Date.parse(m.created_at))
+  ) {
     throw new Error('manifest created_at is invalid');
   }
-  if (m.commit !== null && typeof m.commit !== 'string') throw new Error('manifest commit is invalid');
+  if (m.commit !== null && (typeof m.commit !== 'string' || !/^[0-9a-f]{7,64}$/.test(m.commit))) {
+    throw new Error('manifest commit is invalid');
+  }
   if (typeof m.includes_secrets !== 'boolean') throw new Error('manifest includes_secrets is invalid');
   if (!Array.isArray(m.files)) throw new Error('manifest files is invalid');
   const seen = new Set<string>();

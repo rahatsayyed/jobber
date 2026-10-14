@@ -2,10 +2,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import BetterSqlite3 from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  applyRestore, drill, nodeRestoreFs, planRestore, verifyArchive, type RestoreDeps, type RestoreFs,
+  applyRestore, drill, MAX_EXTRACTED_BYTES, nodeRestoreFs, planRestore, safeText, verifyArchive, type RestoreDeps, type RestoreFs,
 } from '../src/backup/restore.js';
 import { emptyBackupState, type BackupState } from '../src/backup/state.js';
 import { checkSnapshot } from '../src/lib/sqliteSnapshot.js';
@@ -80,7 +81,8 @@ function snapshotTree(dir: string): Record<string, string> {
     for (const n of fs.readdirSync(d)) {
       const p = path.join(d, n);
       const st = fs.lstatSync(p);
-      if (st.isDirectory()) rec(p);
+      if (st.isSymbolicLink()) out[path.relative(dir, p)] = `link:${fs.readlinkSync(p)}`;
+      else if (st.isDirectory()) { out[`${path.relative(dir, p)}/`] = 'dir'; rec(p); }
       else out[path.relative(dir, p)] = `${(st.mode & 0o777).toString(8)}:${fs.readFileSync(p).toString('base64')}`;
     }
   };
@@ -165,6 +167,55 @@ describe('verifyArchive', () => {
   });
 });
 
+describe('verifyArchive hardening', () => {
+  it('rejects a hardlink member', async () => {
+    const d = deps({
+      unpack: vi.fn(async ({ outDir }) => {
+        fs.cpSync(staged, outDir, { recursive: true });
+        fs.linkSync(path.join(outDir, '.env'), path.join(outDir, 'linked'));
+      }),
+    });
+    const r = await verifyArchive(d, { archivePath: archive, identityPath: identity });
+    expect(r.ok).toBe(false);
+    expect(r.problems.join('\n')).toContain('hardlink');
+  });
+
+  it('rejects a special file member', async () => {
+    const d = deps({
+      unpack: vi.fn(async ({ outDir }) => {
+        fs.cpSync(staged, outDir, { recursive: true });
+        execFileSync('mkfifo', [path.join(outDir, 'pipe')]);
+      }),
+    });
+    const r = await verifyArchive(d, { archivePath: archive, identityPath: identity });
+    expect(r.ok).toBe(false);
+    expect(r.problems.join('\n')).toContain('special file');
+  });
+
+  it('tolerates a ./ prefix on member names', async () => {
+    const d = deps({}, { walk: (dir) => nodeRestoreFs.walk(dir).map((e) => ({ ...e, rel: `./${e.rel}` })) });
+    const r = await verifyArchive(d, { archivePath: archive, identityPath: identity });
+    expect(r.problems).toEqual([]);
+  });
+
+  it('flags an archive over the extracted size cap', async () => {
+    const d = deps({}, { walk: (dir) => nodeRestoreFs.walk(dir).map((e) => ({ ...e, size: MAX_EXTRACTED_BYTES })) });
+    const r = await verifyArchive(d, { archivePath: archive, identityPath: identity });
+    expect(r.problems).toContain('extracted size exceeds the allowed maximum');
+  });
+
+  it('rejects escape sequences in the manifest and cleans printed text', async () => {
+    const m = JSON.parse(fs.readFileSync(path.join(staged, 'manifest.json'), 'utf8'));
+    m.commit = 'abc\u001b[2J';
+    fs.writeFileSync(path.join(staged, 'manifest.json'), JSON.stringify(m));
+    const r = await verifyArchive(deps(), { archivePath: archive, identityPath: identity });
+    expect(r.ok).toBe(false);
+    expect(r.manifest).toBeNull();
+    expect(safeText('a\u001b[31mb\nc')).toBe('a?[31mb?c');
+    expect(safeText('x'.repeat(500)).length).toBeLessThan(210);
+  });
+});
+
 describe('planRestore', () => {
   it('marks replace, create and skip-secret', () => {
     const m = JSON.parse(fs.readFileSync(path.join(staged, 'manifest.json'), 'utf8'));
@@ -246,12 +297,70 @@ describe('applyRestore', () => {
     let n = 0;
     const d = deps({}, {
       copy: (s, t) => {
-        if (++n === 2) throw new Error('disk full');
+        if (++n === 4) {
+          fs.mkdirSync(path.dirname(t), { recursive: true });
+          throw new Error('copy failed');
+        }
         nodeRestoreFs.copy(s, t);
       },
     });
-    await expect(applyRestore(d, { ...args(), withSecrets: true })).rejects.toThrow(/disk full/);
+    await expect(applyRestore(d, { ...args(), withSecrets: true })).rejects.toThrow(/copy failed/);
     expect(snapshotTree(root)).toEqual(before);
+  });
+
+  it('releases the lock and removes a 0700 temp dir after a midway failure', async () => {
+    const lock = lockPort();
+    let tmp = '';
+    let mode = 0;
+    const d = deps({ lock }, {
+      mkdtemp: (pre) => {
+        tmp = nodeRestoreFs.mkdtemp(pre);
+        mode = fs.statSync(tmp).mode & 0o777;
+        return tmp;
+      },
+      copy: () => { throw new Error('copy failed'); },
+    });
+    await expect(applyRestore(d, args())).rejects.toThrow(/copy failed/);
+    expect(mode).toBe(0o700);
+    expect(fs.existsSync(tmp)).toBe(false);
+    expect(lock.released).toBe(1);
+  });
+
+  it('names every target and move-aside path when the rollback fails', async () => {
+    let n = 0;
+    const d = deps({}, {
+      copy: (s, t) => {
+        if (++n === 2) throw new Error('copy failed');
+        nodeRestoreFs.copy(s, t);
+      },
+      move: (src, dest) => {
+        if (src.includes('.pre-restore-') && dest.endsWith(`${path.sep}data.sqlite`)) throw new Error('perm');
+        nodeRestoreFs.move(src, dest);
+      },
+    });
+    const err = await applyRestore(d, args()).then(() => null, (e: Error) => e);
+    expect(err?.message).toMatch(/rollback is incomplete/);
+    expect(err?.message).toContain('data.sqlite.pre-restore-20261015T031500Z back to data.sqlite');
+    expect(err?.message).not.toContain(root);
+  });
+
+  it('refuses a symlinked parent directory and a move-aside name collision before any move', async () => {
+    const elsewhere = path.join(work, 'elsewhere');
+    fs.mkdirSync(elsewhere);
+    fs.writeFileSync(path.join(elsewhere, 'resume.json'), 'outside');
+    fs.rmSync(path.join(root, 'user-data'), { recursive: true });
+    fs.symlinkSync(elsewhere, path.join(root, 'user-data'));
+    const before = snapshotTree(root);
+    await expect(applyRestore(deps(), args())).rejects.toThrow(/unsafe directory/);
+    expect(snapshotTree(root)).toEqual(before);
+    expect(fs.readFileSync(path.join(elsewhere, 'resume.json'), 'utf8')).toBe('outside');
+    fs.rmSync(path.join(root, 'user-data'));
+    fs.mkdirSync(path.join(root, 'user-data'));
+    fs.writeFileSync(path.join(root, 'user-data', 'resume.json'), 'old');
+    fs.writeFileSync(path.join(root, 'data.sqlite.pre-restore-20261015T031500Z'), 'taken');
+    const before2 = snapshotTree(root);
+    await expect(applyRestore(deps(), args())).rejects.toThrow(/already exists/);
+    expect(snapshotTree(root)).toEqual(before2);
   });
 
   it('rejects a manifest path with .. before any copy', async () => {

@@ -74,7 +74,7 @@ function deps(over: Partial<CreateDeps> = {}, fsOver: Partial<CreateFs> = {}) {
       fs.writeFileSync(outPath, 'CIPHERTEXT');
     }),
     destinations: [dest('local')],
-    commit: async () => 'abc123',
+    commit: async () => 'abc1234',
     ...over,
   };
   return { d, seen, fsPort, exec };
@@ -148,7 +148,7 @@ describe('createBackup', () => {
     });
     await createBackup(d, cfg(), { planOnly: false });
     const m = JSON.parse(manifestText);
-    expect(m.commit).toBe('abc123');
+    expect(m.commit).toBe('abc1234');
     expect(m.db.tables).toEqual({ jobs: 3 });
     expect(m.files.find((f: { path: string }) => f.path === 'data.sqlite').sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(manifestText).not.toContain(RECIPIENT);

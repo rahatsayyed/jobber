@@ -33,6 +33,9 @@ describe('manifest', () => {
     expect(() => parseManifest(withFile({ path: 'a', sha256: H, bytes: -1 }))).toThrow();
     expect(() => parseManifest(withFile({ path: 'a', sha256: H, bytes: 1.5 }))).toThrow();
     expect(() => parseManifest(JSON.stringify({ ...base(), created_at: 'nope' }))).toThrow();
+    expect(() => parseManifest(JSON.stringify({ ...base(), created_at: '2026-10-15T00:00:00Z\u001b[31m' }))).toThrow();
+    expect(() => parseManifest(JSON.stringify({ ...base(), commit: 'abc\u001b[2J' }))).toThrow();
+    expect(() => parseManifest(JSON.stringify({ ...base(), commit: 'abc123' }))).toThrow();
   });
   it('rejects duplicate paths and bad table names', () => {
     const f = { path: 'a', sha256: H, bytes: 1 };
