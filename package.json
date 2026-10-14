@@ -9,7 +9,6 @@
   "scripts": {
     "test": "vitest run",
     "doctor": "tsx scripts/doctor.ts",
-    "setup": "tsx scripts/setup.ts",
     "classifier:fit": "tsx scripts/classifier/fit.ts",
     "classifier:bench": "tsx scripts/classifier/bench.ts",
     "models": "tsx scripts/models.ts",
@@ -31,7 +30,8 @@
     "eval:gen": "tsx scripts/eval/generate.ts",
     "eval:metrics": "tsx scripts/eval/metrics.ts",
     "eval:judge": "tsx scripts/eval/judge.ts",
-    "report": "tsx scripts/funnel-report.ts"
+    "report": "tsx scripts/funnel-report.ts",
+    "setup": "tsx scripts/setup.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "4.3.0",
