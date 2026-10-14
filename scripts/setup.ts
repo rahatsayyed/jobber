@@ -18,7 +18,7 @@ import type { DoctorContext } from '../src/platform/doctor.js';
 import { defaultRun } from '../src/platform/tmux.js';
 import { userDataDir } from '../src/lib/userData.js';
 import { nodeEnvFs } from '../src/setup/envWriter.js';
-import { NO_TTY_MESSAGE, USAGE, childEnv, ensureEnvFile, needTty, parseArgs } from '../src/setup/cli.js';
+import { NO_TTY_MESSAGE, USAGE, childEnv, ensureEnvFile, needTty, parseArgs, spawnSuspended } from '../src/setup/cli.js';
 import { redactingIO, ttyIO } from '../src/setup/io.js';
 import { runSetup, type SetupContext, type SetupFs } from '../src/setup/runner.js';
 import { loadState } from '../src/setup/state.js';
@@ -64,11 +64,15 @@ function spawnInteractive(
   argv: string[],
   opts?: { env?: Record<string, string> },
 ): Promise<number> {
-  return new Promise((done) => {
-    const child = spawn(cmd, argv, { cwd: root, env: childEnv(env, opts?.env), stdio: 'inherit' });
-    child.on('error', () => done(127));
-    child.on('close', (code) => done(code ?? 1));
-  });
+  return spawnSuspended(
+    tty,
+    () =>
+      new Promise<number>((done) => {
+        const child = spawn(cmd, argv, { cwd: root, env: childEnv(env, opts?.env), stdio: 'inherit' });
+        child.on('error', () => done(127));
+        child.on('close', (code) => done(code ?? 1));
+      }),
+  );
 }
 
 // The Telegram token is in the URL path: never log the URL, and replace any thrown error.

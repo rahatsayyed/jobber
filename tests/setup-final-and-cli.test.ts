@@ -242,10 +242,33 @@ describe('cli helpers', () => {
   });
   it('childEnv keeps the allowlist and drops secrets', () => {
     const e = childEnv(
-      { PATH: '/bin', HTTPS_PROXY: 'p', TELEGRAM_BOT_TOKEN: 'x', GMAIL_CLIENT_SECRET: 'y' },
+      {
+        PATH: '/bin',
+        HTTPS_PROXY: 'p',
+        XAUTHORITY: '/x',
+        XDG_CONFIG_HOME: '/c',
+        XDG_DATA_HOME: '/d',
+        XDG_CACHE_HOME: '/k',
+        XDG_SESSION_TYPE: 'x11',
+        DBUS_SESSION_BUS_ADDRESS: 'unix:path=/b',
+        PLAYWRIGHT_BROWSERS_PATH: '/pw',
+        TELEGRAM_BOT_TOKEN: 'x',
+        GMAIL_CLIENT_SECRET: 'y',
+      },
       { EXTRA: '1' },
     );
-    expect(e).toEqual({ PATH: '/bin', HTTPS_PROXY: 'p', EXTRA: '1' });
+    expect(e).toEqual({
+      PATH: '/bin',
+      HTTPS_PROXY: 'p',
+      XAUTHORITY: '/x',
+      XDG_CONFIG_HOME: '/c',
+      XDG_DATA_HOME: '/d',
+      XDG_CACHE_HOME: '/k',
+      XDG_SESSION_TYPE: 'x11',
+      DBUS_SESSION_BUS_ADDRESS: 'unix:path=/b',
+      PLAYWRIGHT_BROWSERS_PATH: '/pw',
+      EXTRA: '1',
+    });
   });
   it('ensureEnvFile creates .env mode 600 and never creates directories', () => {
     const fs = memFs({ 'p/.env.example': 'A=1\n' });

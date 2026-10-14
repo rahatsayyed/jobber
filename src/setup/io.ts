@@ -202,7 +202,15 @@ export function ttyIO(
   input: NodeJS.ReadableStream,
   output: NodeJS.WritableStream,
   opts?: { terminal?: boolean },
-): SetupIO & { close(): void; history(): readonly string[] } {
+): SetupIO & {
+  close(): void;
+  history(): readonly string[];
+  // Release the terminal to a child process: close readline (drops raw mode) and discard
+  // buffered lines. Call resume() once the child has exited.
+  suspend(): void;
+  // Take the terminal back: flush type-ahead typed while suspended, re-attach readline.
+  resume(): void;
+} {
   let muted = false;
   const sink = new Writable({
     write(chunk, _enc, cb) {
@@ -212,21 +220,40 @@ export function ttyIO(
   });
   const isTty = opts?.terminal ?? (input as { isTTY?: boolean }).isTTY === true;
   // historySize 0: a secret must never enter readline's history; empty prompt: no stale "> ".
-  const rl = createInterface({ input, output: sink, terminal: isTty, historySize: 0 });
-  rl.setPrompt('');
-
   const lines: string[] = [];
   const waiters: { resolve: (l: string) => void; reject: (e: Error) => void }[] = [];
   let closed = false;
-  rl.on('line', (l) => {
-    const w = waiters.shift();
-    if (w) w.resolve(l);
-    else lines.push(l);
-  });
-  rl.on('close', () => {
-    closed = true;
-    for (const w of waiters.splice(0)) w.reject(new Error('Input closed before an answer was given'));
-  });
+  let suspended = false;
+
+  function attach(): ReturnType<typeof createInterface> {
+    const r = createInterface({ input, output: sink, terminal: isTty, historySize: 0 });
+    r.setPrompt('');
+    r.on('line', (l) => {
+      if (suspended) return;
+      const w = waiters.shift();
+      if (w) w.resolve(l);
+      else lines.push(l);
+    });
+    r.on('close', () => {
+      if (suspended) return;
+      closed = true;
+      for (const w of waiters.splice(0)) w.reject(new Error('Input closed before an answer was given'));
+    });
+    return r;
+  }
+  let rl = attach();
+
+  function drainInput(): void {
+    const r = (input as { read?: () => unknown }).read;
+    if (typeof r !== 'function') return;
+    try {
+      while (r.call(input) !== null) {
+        // discard type-ahead
+      }
+    } catch {
+      // best effort
+    }
+  }
 
   function readLine(): Promise<string> {
     const queued = lines.shift();
@@ -269,6 +296,20 @@ export function ttyIO(
 
   return {
     close: () => rl.close(),
+    suspend() {
+      if (suspended || closed) return;
+      suspended = true;
+      lines.length = 0;
+      rl.close(); // pauses the input and leaves raw mode
+      (input as { setRawMode?: (m: boolean) => void }).setRawMode?.(false);
+    },
+    resume() {
+      if (!suspended) return;
+      lines.length = 0;
+      drainInput();
+      rl = attach();
+      suspended = false;
+    },
     history: () => ((rl as unknown as { history?: string[] }).history ?? []),
     say: (l) => write(`${l}\n`),
     ask: (prompt, opts) => loop(prompt, false, opts?.validate, opts?.default),

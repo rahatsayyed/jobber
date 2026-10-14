@@ -36,7 +36,9 @@ export function needTty(stdinTTY: boolean | undefined, stdoutTTY: boolean | unde
 
 const CHILD_ENV_KEYS = [
   'PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'USER', 'TMPDIR', 'SHELL',
-  'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR',
+  'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'XAUTHORITY',
+  'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_SESSION_TYPE',
+  'DBUS_SESSION_BUS_ADDRESS', 'PLAYWRIGHT_BROWSERS_PATH',
   'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
   'SSL_CERT_FILE', 'NODE_EXTRA_CA_CERTS',
 ];
@@ -63,7 +65,22 @@ export function ensureEnvFile(
   return true;
 }
 
-export const USAGE = `Usage: npm run setup -- [--step <id>] [--redo] [--list] [--help]
+// Runs a child that shares the terminal: the IO is released first and taken back afterwards
+// (also when the spawn throws), so the wizard's readline never races the child for stdin and
+// type-ahead typed during the child never answers a later prompt.
+export async function spawnSuspended<T>(
+  io: { suspend(): void; resume(): void },
+  run: () => Promise<T>,
+): Promise<T> {
+  io.suspend();
+  try {
+    return await run();
+  } finally {
+    io.resume();
+  }
+}
+
+export const USAGE =`Usage: npm run setup -- [--step <id>] [--redo] [--list] [--help]
   --step <id>  run only that step
   --redo       run steps even when their checks already pass
   --list       print the step ids and exit
