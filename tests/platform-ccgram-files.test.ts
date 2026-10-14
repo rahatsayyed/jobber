@@ -70,6 +70,16 @@ describe('ccgram runner files', () => {
     expect(run).toMatch(/\n  ccgram\n?$/);
   });
 
+  it('claude-session.sh skips process-altering and readonly variable names', () => {
+    const names = [
+      'PATH', 'HOME', 'SHELL', 'IFS', 'ENV', 'BASH_ENV', 'BASH_*', 'LD_*', 'DYLD_*', 'CCGRAM_*',
+      'NODE_OPTIONS', 'PYTHON*', 'PS4', 'PROMPT_COMMAND', 'UID', 'EUID', 'PPID', 'BASHOPTS', 'SHELLOPTS',
+    ];
+    const caseLines = session.split('\n').filter((l) => /\) continue ;;/.test(l));
+    const denied = caseLines.flatMap((l) => l.trim().replace(/\) continue ;;$/, '').split('|'));
+    for (const n of names) expect(denied).toContain(n);
+  });
+
   it('uses exact tmux targets and validates the session name', () => {
     expect(start).toMatch(/has-session -t "=\$SESSION"/);
     expect(stop).toMatch(/has-session -t "=\$SESSION"/);

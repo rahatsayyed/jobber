@@ -22,6 +22,8 @@ if [ -f "$ENV_FILE" ]; then
     v="${line#*=}"
     case "$k" in
       TELEGRAM_BOT_TOKEN|ALLOWED_USERS) continue ;;
+      PATH|HOME|SHELL|IFS|ENV|BASH_ENV|BASH_*|LD_*|DYLD_*|CCGRAM_*|NODE_OPTIONS|PYTHON*|PS4|PROMPT_COMMAND) continue ;;
+      UID|EUID|PPID|BASHOPTS|SHELLOPTS) continue ;;
     esac
     if [[ "$v" =~ ^\"(.*)\"$ ]]; then
       v="${BASH_REMATCH[1]}"
