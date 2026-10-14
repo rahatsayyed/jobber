@@ -1,25 +1,37 @@
 // Thin CLI over src/scheduler/control.ts. Never prints env values.
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { openDb } from '../src/db.js';
-import { haltPlatform, clearHalt } from '../src/outreach/limits.js';
-import { readControl, setStop, clearStop, defaultDeps, DEFAULT_STOP_FILE } from '../src/scheduler/control.js';
+import {
+  readControl,
+  applyStop,
+  applyResume,
+  defaultDeps,
+  projectRootFromScriptDir,
+  stopFileForRoot,
+} from '../src/scheduler/control.js';
 
-const HALT_TARGETS = ['all', 'linkedin', 'naukri'];
+// Resolved from the script location, not the cwd, so it is the same file scripts/scheduler.ts watches.
+const STOP_FILE = stopFileForRoot(projectRootFromScriptDir(dirname(fileURLToPath(import.meta.url))));
 
 function main(): void {
   const [cmd, ...rest] = process.argv.slice(2);
   const db = openDb();
   try {
     const now = new Date();
-    const deps = defaultDeps(process.env, DEFAULT_STOP_FILE);
+    const deps = defaultDeps(process.env, STOP_FILE);
     if (cmd === 'stop') {
       const reason = rest.join(' ').trim() || 'manual stop';
-      setStop(DEFAULT_STOP_FILE, reason, now);
-      for (const p of HALT_TARGETS) haltPlatform(db, p, reason, now);
-      console.log(`stopped: ${reason}`);
+      const r = applyStop(db, STOP_FILE, reason, now);
+      console.log(`stopped: ${r.reason}`);
+      for (const [p, why] of Object.entries(r.kept)) console.log(`kept existing ${p} halt: ${why}`);
     } else if (cmd === 'resume') {
-      const had = clearStop(DEFAULT_STOP_FILE);
-      for (const p of HALT_TARGETS) clearHalt(db, p, now);
-      console.log(`resumed (STOP file ${had ? 'removed' : 'was not present'}; halts cleared)`);
+      const r = applyResume(db, STOP_FILE, now);
+      console.log(
+        `resumed (STOP file ${r.stopFileRemoved ? 'removed' : 'was not present'}; ` +
+          `cleared halts: ${r.cleared.join(', ') || 'none'})`,
+      );
+      for (const [p, why] of Object.entries(r.remaining)) console.log(`still halted ${p}: ${why}`);
       if (process.env.JOBBER_KILL === '1') console.log('note: JOBBER_KILL=1 is still set in this environment');
     } else if (cmd === 'status') {
       const s = readControl(db, deps);

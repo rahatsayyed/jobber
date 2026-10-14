@@ -1,8 +1,9 @@
 // src/scheduler/control.ts
 // Kill switch and halt-flag control state. Fails closed: any unreadable source means killed.
 import { writeFileSync, mkdirSync, rmSync, statSync, readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type BetterSqlite3 from 'better-sqlite3';
+import { haltPlatform, clearHalt } from '../outreach/limits.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -109,6 +110,66 @@ export function setStop(
 ): void {
   mkdirSync(dirname(stopFile), { recursive: true });
   write(stopFile, `${trunc(reason.replace(/\s+/g, ' ').trim())}\n${now.toISOString()}\n`);
+}
+
+/** Fixed prefix on every halt reason and STOP reason the CLI writes; resume clears only these. */
+export const STOP_PREFIX = 'jobber-control stop: ';
+export const HALT_TARGETS = ['all', 'linkedin', 'naukri'] as const;
+
+/** The STOP file path for a project root (the scheduler daemon uses the same one). */
+export function stopFileForRoot(projectRoot: string): string {
+  return join(projectRoot, '.jobber', 'STOP');
+}
+
+/** Project root derived from the directory of a script that lives in <root>/scripts. */
+export function projectRootFromScriptDir(scriptDir: string): string {
+  return resolve(scriptDir, '..');
+}
+
+export interface StopResult {
+  reason: string;
+  /** Halts that were already active and kept untouched, by target. */
+  kept: Record<string, string>;
+  /** Halts this call wrote. */
+  written: string[];
+}
+
+export function applyStop(db: Db, stopFile: string, reason: string, now: Date): StopResult {
+  const full = `${STOP_PREFIX}${reason}`;
+  setStop(stopFile, full, now);
+  const kept: Record<string, string> = {};
+  const written: string[] = [];
+  for (const p of HALT_TARGETS) {
+    const existing = activeHalt(db, p);
+    if (existing !== null) kept[p] = existing;
+    else {
+      haltPlatform(db, p, trunc(full), now);
+      written.push(p);
+    }
+  }
+  return { reason: full, kept, written };
+}
+
+export interface ResumeResult {
+  stopFileRemoved: boolean;
+  cleared: string[];
+  /** Active halts left in place (not written by the CLI), by target. */
+  remaining: Record<string, string>;
+}
+
+export function applyResume(db: Db, stopFile: string, now: Date): ResumeResult {
+  const stopFileRemoved = clearStop(stopFile);
+  const cleared: string[] = [];
+  const remaining: Record<string, string> = {};
+  for (const p of HALT_TARGETS) {
+    const reason = activeHalt(db, p);
+    if (reason === null) continue;
+    if (reason.startsWith(STOP_PREFIX)) {
+      clearHalt(db, p, now);
+      cleared.push(p);
+    } else remaining[p] = reason;
+  }
+  return { stopFileRemoved, cleared, remaining };
 }
 
 /** true if a file was removed, false if it was absent (ENOENT); other errors are rethrown. */
