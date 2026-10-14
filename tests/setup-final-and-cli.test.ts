@@ -1,0 +1,207 @@
+// tests/setup-final-and-cli.test.ts
+import { describe, expect, it } from 'vitest';
+import type { DoctorContext } from '../src/platform/doctor.js';
+import { needTty, parseArgs } from '../src/setup/cli.js';
+import { redactingIO, scriptedIO, type ScriptItem } from '../src/setup/io.js';
+import { runSetup, type SetupContext, type SetupFs, type SetupStep } from '../src/setup/runner.js';
+import { loadState } from '../src/setup/state.js';
+import { dashboardStep, redirectUriProblem } from '../src/setup/steps/dashboard.js';
+import { finalStep } from '../src/setup/steps/final.js';
+import { ALL_STEPS } from '../src/setup/steps/index.js';
+
+function memFs(seed: Record<string, string> = {}) {
+  const files = new Map<string, string>(Object.entries(seed));
+  const modes = new Map<string, number>();
+  const fs: SetupFs & { files: Map<string, string>; modes: Map<string, number> } = {
+    files,
+    modes,
+    exists: (p) => files.has(p),
+    read: (p) => {
+      const v = files.get(p);
+      if (v === undefined) throw new Error('ENOENT');
+      return v;
+    },
+    write: (p, d, m) => {
+      files.set(p, d);
+      modes.set(p, m);
+    },
+    rename: (a, b) => {
+      files.set(b, files.get(a) ?? '');
+      modes.set(b, modes.get(a) ?? 0o644);
+      files.delete(a);
+      modes.delete(a);
+    },
+    chmod: (p, m) => void modes.set(p, m),
+    remove: (p) => void files.delete(p),
+    mkdirp: () => undefined,
+    copy: () => undefined,
+    list: () => [],
+  };
+  return fs;
+}
+
+const CANARY = 'GOCSPX-canary-secret-value-123';
+const ENV_TEXT = 'WEB_TOKEN=\nWEB_PORT=8787\n# keep me\nUNRELATED=1\n';
+
+function makeCtx(script: ScriptItem[], seed: Record<string, string> = {}) {
+  const fs = memFs({ 'proj/.env': ENV_TEXT, ...seed });
+  const sio = scriptedIO(script);
+  const io = redactingIO(sio);
+  const spawns: { cmd: string; args: string[]; opts?: unknown }[] = [];
+  const ctx: SetupContext = {
+    io,
+    root: 'proj',
+    env: {},
+    fs,
+    run: (async () => ({ stdout: '', stderr: '', code: 0 })) as unknown as SetupContext['run'],
+    spawnInteractive: async (cmd, args, opts) => {
+      spawns.push({ cmd, args, opts });
+      return 0;
+    },
+    fetch: async () => ({ ok: true, status: 200, json: async () => ({}) }),
+    now: () => new Date('2026-10-14T00:00:00Z'),
+    doctor: { root: 'proj', env: {}, run: (async () => ({ stdout: '', code: 0 })) as never, fs: { exists: () => false, read: () => '', mode: () => null } } as DoctorContext,
+    state: loadState('proj/user-data/.setup-state.json', fs),
+    statePath: 'proj/user-data/.setup-state.json',
+    envPath: 'proj/.env',
+  };
+  return { ctx, sio, fs, spawns };
+}
+
+const WITH_DASH = { 'proj/scripts/dashboard.ts': '// stub' };
+
+describe('dashboardStep', () => {
+  it('is skipped when scripts/dashboard.ts is absent, after writing local settings', async () => {
+    const { ctx, sio, fs } = makeCtx([]);
+    expect(await dashboardStep.run(ctx)).toBe('skipped');
+    expect(sio.transcript.join('\n')).toContain('skipped until installed (plan 7C)');
+    const env = fs.files.get('proj/.env') ?? '';
+    expect(env).toContain('WEB_TMUX_SESSION=ccgram');
+    expect(env).toContain('WEB_PORT=8787');
+    expect(env).not.toMatch(/^WEB_TOKEN=.+/m);
+    expect(env).toContain('# keep me');
+  });
+
+  it('declining the confirm writes no OIDC keys and spawns nothing', async () => {
+    const { ctx, fs, spawns } = makeCtx([{ confirm: false }], WITH_DASH);
+    expect(await dashboardStep.run(ctx)).toBe('skipped');
+    expect(fs.files.get('proj/.env')).not.toContain('WEB_OIDC');
+    expect(spawns).toHaveLength(0);
+  });
+
+  it('accepting writes the keys at mode 600 and hides the secret everywhere', async () => {
+    const { ctx, sio, fs, spawns } = makeCtx(
+      [
+        { confirm: true },
+        { ask: 'my-client-id.apps.example' },
+        { secret: CANARY },
+        { ask: 'Owner@Example.com' },
+        { ask: '' },
+      ],
+      WITH_DASH,
+    );
+    expect(await dashboardStep.run(ctx)).toBe('done');
+    const env = fs.files.get('proj/.env') ?? '';
+    expect(env).toContain('WEB_OIDC_CLIENT_ID=my-client-id.apps.example');
+    expect(env).toContain(`WEB_OIDC_CLIENT_SECRET=${CANARY}`);
+    expect(env).toContain('DASHBOARD_ALLOWED_EMAIL=owner@example.com');
+    expect(env).toContain('WEB_OIDC_REDIRECT_URI=http://127.0.0.1:8787/auth/callback');
+    expect(env).toContain('WEB_OIDC_ISSUER=https://accounts.google.com');
+    expect(env).not.toMatch(/^WEB_TOKEN=.+/m);
+    expect(fs.modes.get('proj/.env')).toBe(0o600);
+    for (const [p, m] of fs.modes) if (p.includes('.bak-')) expect(m).toBe(0o600);
+    expect([...fs.files.keys()].some((p) => p.includes('.bak-'))).toBe(true);
+
+    expect(spawns).toEqual([
+      { cmd: 'npx', args: ['tsx', 'scripts/dashboard.ts', 'allow', 'owner@example.com'], opts: undefined },
+    ]);
+    expect(JSON.stringify(spawns)).not.toContain(CANARY);
+    expect(sio.transcript.join('\n')).not.toContain(CANARY);
+    expect(JSON.stringify(ctx.state)).not.toContain(CANARY);
+    sio.assertDone();
+  });
+
+  it('re-prompts on a bad email and on a bad redirect URI', async () => {
+    const { ctx, sio } = makeCtx(
+      [
+        { confirm: true },
+        { ask: 'cid' },
+        { secret: CANARY },
+        { ask: 'not-an-email' },
+        { ask: 'a@b.co' },
+        { ask: 'ftp://127.0.0.1:8787/auth/callback' },
+        { ask: 'http://example.com:8787/auth/callback' },
+        { ask: 'https://dash.example.com/other' },
+        { ask: 'https://dash.example.com/auth/callback' },
+      ],
+      WITH_DASH,
+    );
+    expect(await dashboardStep.run(ctx)).toBe('done');
+    expect(sio.transcript.filter((l) => l.startsWith('invalid:')).length).toBe(4);
+    sio.assertDone();
+  });
+
+  it('redirect URI rule', () => {
+    expect(redirectUriProblem('https://x.example/auth/callback')).toBeNull();
+    expect(redirectUriProblem('http://localhost:3000/auth/callback')).toBeNull();
+    expect(redirectUriProblem('http://127.0.0.1/auth/callback')).not.toBeNull();
+    expect(redirectUriProblem('http://127.0.0.1:1/auth/callback?x=1')).not.toBeNull();
+  });
+});
+
+describe('finalStep', () => {
+  it('prints a report and the three next commands, returns done, no secret', async () => {
+    const { ctx, sio } = makeCtx([]);
+    expect(await finalStep.run(ctx)).toBe('done');
+    const out = sio.transcript.join('\n');
+    expect(out).toContain('bash scripts/ccgram/start.sh');
+    expect(out).toContain('/health');
+    expect(out).toContain('/runhunt');
+    expect(out).not.toContain(CANARY);
+  });
+});
+
+describe('ALL_STEPS and runner wiring', () => {
+  it('has the documented order', () => {
+    expect(ALL_STEPS.map((s) => s.id)).toEqual([
+      'prereqs', 'claude', 'telegram', 'gmail', 'sessions', 'resume', 'profile', 'limits', 'access', 'dashboard', 'final',
+    ]);
+  });
+
+  it('runs stubs in order and --step runs only one', async () => {
+    const order: string[] = [];
+    const stub = (id: string): SetupStep => ({
+      id,
+      title: id,
+      checkIds: [],
+      run: async () => {
+        order.push(id);
+        return 'done';
+      },
+    });
+    const steps = ['a', 'b', 'c'].map(stub);
+    const a = makeCtx([]);
+    expect(await runSetup(steps, a.ctx, { checks: [] })).toBe(0);
+    expect(order).toEqual(['a', 'b', 'c']);
+    order.length = 0;
+    const b = makeCtx([]);
+    expect(await runSetup(steps, b.ctx, { only: 'b', checks: [] })).toBe(0);
+    expect(order).toEqual(['b']);
+  });
+});
+
+describe('cli helpers', () => {
+  it('parseArgs', () => {
+    expect(parseArgs([])).toEqual({ redo: false, list: false, help: false });
+    expect(parseArgs(['--step', 'limits', '--redo'])).toMatchObject({ step: 'limits', redo: true });
+    expect(parseArgs(['--list']).list).toBe(true);
+    expect(parseArgs(['--help']).help).toBe(true);
+    expect(parseArgs(['--step']).error).toBeDefined();
+    expect(parseArgs(['--bogus']).error).toBeDefined();
+  });
+  it('needTty', () => {
+    expect(needTty(true)).toBe(false);
+    expect(needTty(false)).toBe(true);
+    expect(needTty(undefined)).toBe(true);
+  });
+});

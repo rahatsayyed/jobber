@@ -9,6 +9,7 @@
   "scripts": {
     "test": "vitest run",
     "doctor": "tsx scripts/doctor.ts",
+    "setup": "tsx scripts/setup.ts",
     "classifier:fit": "tsx scripts/classifier/fit.ts",
     "classifier:bench": "tsx scripts/classifier/bench.ts",
     "models": "tsx scripts/models.ts",
