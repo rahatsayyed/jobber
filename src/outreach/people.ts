@@ -19,8 +19,21 @@ export function normalizeCompany(name: string): string {
 }
 
 export function normalizeProfileKey(url: string): string {
-  const u = new URL(url);
-  return (u.hostname.replace(/^www\./, '') + u.pathname).toLowerCase().replace(/\/+$/, '');
+  const raw = String(url ?? '').trim();
+  try {
+    const u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
+    let host = u.hostname.toLowerCase().replace(/^www\./, '');
+    if (host === 'linkedin.com' || host.endsWith('.linkedin.com')) host = 'linkedin.com';
+    let path = u.pathname;
+    try {
+      path = decodeURIComponent(path);
+    } catch {
+      /* keep raw path */
+    }
+    return (host + path.toLowerCase()).replace(/\/+$/, '');
+  } catch {
+    return raw.toLowerCase().split(/[?#]/)[0].replace(/\/+$/, '');
+  }
 }
 
 export interface PersonInput {
@@ -105,7 +118,8 @@ export function selectContacts(
   const pool = [...candidates];
 
   const take = (pred: (c: Candidate) => boolean): boolean => {
-    const i = pool.findIndex(pred);
+    let i = pool.findIndex((c) => c.connected && pred(c));
+    if (i < 0) i = pool.findIndex(pred);
     if (i < 0) return false;
     picked.push(pool.splice(i, 1)[0]);
     room--;
@@ -113,17 +127,14 @@ export function selectContacts(
   };
   const have = (cat: Category): number => active[cat] + picked.filter((p) => p.category === cat).length;
 
-  while (room > 0 && take((c) => c.connected)) {
-    /* already-connected people first */
-  }
+  // Mix minimums take precedence; within a category connected people go first.
   for (const cat of ['recruiter', 'hiring_manager', 'peer'] as const) {
     while (room > 0 && have(cat) < MIN_MIX[cat] && take((c) => c.category === cat)) {
       /* fill the mix */
     }
   }
-  while (room > 0 && pool.length > 0) {
-    picked.push(pool.shift() as Candidate);
-    room--;
+  while (room > 0 && take(() => true)) {
+    /* remaining room, connected preferred */
   }
-  return picked;
+  return [...picked.filter((c) => c.connected), ...picked.filter((c) => !c.connected)];
 }

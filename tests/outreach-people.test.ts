@@ -35,6 +35,19 @@ describe('upsertPerson and counts', () => {
       category,
     });
 
+  it('normalizes scheme-less, subdomain, encoded and garbage urls without throwing', () => {
+    const want = 'linkedin.com/in/some-person';
+    for (const u of [
+      'linkedin.com/in/Some-Person',
+      'https://uk.linkedin.com/in/some-person/',
+      'https://m.linkedin.com/in/Some-Person?x=1#f',
+      'https://in.linkedin.com/in/some%2Dperson',
+    ])
+      expect(normalizeProfileKey(u)).toBe(want);
+    expect(() => normalizeProfileKey('http://[bad')).not.toThrow();
+    expect(() => normalizeProfileKey('')).not.toThrow();
+  });
+
   it('is idempotent per profile and creates contact_state', () => {
     const db = openDb(':memory:');
     const a = add(db, 1, 'Acme', 'peer');
@@ -73,6 +86,18 @@ describe('selectContacts', () => {
     connected,
   });
   const none = { recruiter: 0, hiring_manager: 0, peer: 0, connection: 0 };
+
+  it('keeps the mix at the limit with many connected peers, connected first', () => {
+    const pool = [c(1, 'peer', true), c(2, 'peer', true), c(3, 'peer', true), c(4, 'peer', true), c(5, 'recruiter'), c(6, 'hiring_manager')];
+    const out = selectContacts(pool, none, 5, 0);
+    const cats = out.map((x) => x.category);
+    expect(out).toHaveLength(5);
+    expect(cats).toContain('recruiter');
+    expect(cats).toContain('hiring_manager');
+    expect(cats.filter((x) => x === 'peer').length).toBeGreaterThanOrEqual(2);
+    const flags = out.map((x) => x.connected);
+    expect(flags).toEqual([...flags].sort((a, b) => Number(b) - Number(a)));
+  });
 
   it('returns nothing when the company is full', () => {
     expect(selectContacts([c(1, 'peer')], none, 5, 5)).toEqual([]);
