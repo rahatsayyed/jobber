@@ -4,7 +4,6 @@ import { z } from 'zod';
 import { chromium as patchrightChromium } from 'patchright';
 import type BetterSqlite3 from 'better-sqlite3';
 import { existsSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb, saveApplication } from '../db.js';
@@ -18,7 +17,7 @@ import { checkStyle, loadStyleConfigSafe } from '../safety/styleGate.js';
 import { checkTextWithNormalized } from '../resumeFacts.js';
 import { getBaseResume } from '../resume.js';
 import { loadOutreachConfig, type OutreachConfig } from '../outreach/config.js';
-import { haltReason, tryConsume, ceilings } from '../outreach/limits.js';
+import { haltReason, tryConsume } from '../outreach/limits.js';
 import type { TouchKind } from '../outreach/cadence.js';
 import { parseSearchCards, parseInbox, type RawSearchCard, type RawThread } from '../naukri/parse.js';
 import { classifyInbound } from '../naukri/inbound.js';
@@ -463,17 +462,17 @@ export function naukriClick({ text }: { text: string }, deps: NaukriDeps = {}): 
         const max = deps.maxAppliesPerDay ?? Number(process.env.MAX_APPLIES_PER_DAY ?? DEFAULT_MAX_APPLIES_PER_DAY);
         const cfg = deps.cfg ?? loadOutreachConfig(env);
         const now = (deps.now ?? (() => new Date()))();
-        // Peek both counters first so a refusal consumes neither.
-        const legacy = database
-          .prepare("SELECT count FROM daily_counters WHERE day = date('now') AND key = ?")
-          .get(APPLY_COUNTER_KEY) as { count: number } | undefined;
-        const legacyOk = (legacy?.count ?? 0) < max;
-        const newOk = ceilings(database, cfg, now).naukri_apply.ok;
-        if (!legacyOk || !newOk || !checkAndIncrement(database, APPLY_COUNTER_KEY, max)) {
-          return stateTextWith(deps, [`click: rate_limited, daily apply limit (${max}) reached, Apply NOT clicked`]);
-        }
+        // Consume naukri_apply first; if the legacy counter then refuses, remove the event just
+        // recorded so a refusal leaves BOTH counters unconsumed.
         if (!tryConsume(database, 'naukri_apply', cfg, now)) {
           return stateTextWith(deps, ['click: rate_limited, naukri_apply ceiling reached, Apply NOT clicked']);
+        }
+        const ev = database
+          .prepare("SELECT MAX(id) AS id FROM rate_events WHERE key = 'naukri_apply'")
+          .get() as { id: number | null };
+        if (!checkAndIncrement(database, APPLY_COUNTER_KEY, max)) {
+          if (ev.id !== null) database.prepare('DELETE FROM rate_events WHERE id = ?').run(ev.id);
+          return stateTextWith(deps, [`click: rate_limited, daily apply limit (${max}) reached, Apply NOT clicked`]);
         }
         session.countedJobs.add(key);
       }
@@ -715,10 +714,23 @@ export function threadRefFromRaw(href: string | undefined, id?: string): string 
   }
   if (!basis && typeof id === 'string') basis = id;
   const cleaned = sanitizeRef(basis);
-  if (cleaned && THREAD_REF_RE.test(cleaned)) return cleaned;
-  const seed = `${href ?? ''}|${id ?? ''}`;
-  if (seed === '|') return null;
-  return `h_${createHash('sha256').update(seed).digest('hex').slice(0, 24)}`;
+  // A lossy ref (characters replaced, or nothing usable) could not be opened again later: unaddressable.
+  if (cleaned && cleaned === basis && THREAD_REF_RE.test(cleaned)) return cleaned;
+  return null;
+}
+
+/** Deterministic page-timestamp age in days. Valid ISO/date or "today"/"yesterday"/"N days ago"; future or unparseable => null. */
+export function pageAgeDays(at: string | undefined, nowMs: number): number | null {
+  if (!at || typeof at !== 'string') return null;
+  const s = at.trim().toLowerCase();
+  if (s === 'today') return 0;
+  if (s === 'yesterday') return 1;
+  const m = /^(\d{1,3})\s+days?\s+ago$/.exec(s);
+  if (m) return Number(m[1]);
+  if (!/^\d{4}-\d{2}-\d{2}/.test(s)) return null;
+  const t = Date.parse(at);
+  if (!Number.isFinite(t) || t > nowMs) return null;
+  return (nowMs - t) / 86400000;
 }
 
 function threadUrl(ref: string): string {
@@ -807,11 +819,15 @@ export function naukriInbox({ unread_only }: { unread_only?: boolean } = {}, dep
     const refused = await loadPage('https://www.naukri.com/mnjuser/inbox', deps);
     if (refused) return refused;
     const rows: RawThread[] = [];
+    let skipped = 0;
     try {
       const raw = ((await session!.page.evaluate(INBOX_SRC)) as Array<Record<string, any>>) ?? [];
       for (const r of Array.isArray(raw) ? raw : []) {
         const ref = threadRefFromRaw(r?.href, r?.id);
-        if (!ref) continue;
+        if (!ref) {
+          skipped++;
+          continue;
+        }
         rows.push({
           threadRef: ref,
           sender: String(r.sender ?? ''),
@@ -832,7 +848,7 @@ export function naukriInbox({ unread_only }: { unread_only?: boolean } = {}, dep
         `- ref=${t.threadRef} unread=${t.unread} from="${clip(t.sender, 60)}" company="${clip(t.company ?? '', 60)}"` +
         `${t.at ? ` at=${clip(t.at, 30)}` : ''}${suspects.has(t.threadRef) ? ' injection_suspect=true' : ''} preview="${clip(t.preview, 220)}"`
     );
-    return untrustedBlock(`status=ok count=${threads.length}`, lines);
+    return untrustedBlock(`status=ok count=${threads.length} skipped_unaddressable=${skipped}`, lines);
   });
 }
 
@@ -891,16 +907,16 @@ export function naukriReadThread({ thread_ref }: { thread_ref: string }, deps: N
           .get(personId, last.created_at);
         opts.alreadyRepliedThisThread = hit !== undefined;
       }
-      const stamp = lastInboundAt ? Date.parse(lastInboundAt) : NaN;
-      const basis = Number.isFinite(stamp) ? stamp : last ? Date.parse(last.created_at) : NaN;
-      if (Number.isFinite(basis)) {
-        const now = (deps.now ?? (() => new Date()))().getTime();
-        opts.threadAgeDays = Math.max(0, (now - basis) / 86400000);
-      }
     } catch {
       /* unknown => omitted */
     }
-    const verdict = classifyInbound(lastInboundRaw, opts);
+    // Age comes ONLY from a parsed page timestamp (never the DB record time); unknown => omitted.
+    const age = pageAgeDays(lastInboundAt, (deps.now ?? (() => new Date()))().getTime());
+    if (age !== null) opts.threadAgeDays = age;
+    const verdict: { klass: string; escalate: boolean; mayAutoReply: boolean; reasons: string[] } =
+      lastInboundRaw.trim().length === 0
+        ? { klass: 'unknown', escalate: true, mayAutoReply: false, reasons: ['no_inbound_text'] }
+        : classifyInbound(lastInboundRaw, opts);
     const lines = msgs.map((m) => {
       const g = gatedText(m.text, MAX_THREAD_TEXT);
       return `- ${m.from === 'me' ? 'ME' : 'THEM'}${m.at ? ` [${clip(String(m.at), 30)}]` : ''}${g.suspect ? ' [injection_suspect]' : ''}: ${g.text}`;

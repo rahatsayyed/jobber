@@ -37,7 +37,7 @@ function snap(over: Partial<RawSnapshot> = {}): RawSnapshot {
   };
 }
 
-function harness(opts: { loggedOut?: boolean } = {}) {
+function harness(opts: { loggedOut?: boolean; thread?: unknown } = {}) {
   const gotos: string[] = [];
   const typed: string[] = [];
   const clicks: string[] = [];
@@ -51,7 +51,7 @@ function harness(opts: { loggedOut?: boolean } = {}) {
       evaluated.push(src);
       if (src === SEARCH_SRC) return fx('search-cards.json');
       if (src === INBOX_SRC) return fx('inbox-rows.json');
-      if (src === THREAD_SRC) return fx('thread-page.json');
+      if (src === THREAD_SRC) return opts.thread ?? fx('thread-page.json');
       if (src.includes('data-nk-i')) return [{ i: 1, text: 'Apply', native: true, company: false }];
       const url = gotos[gotos.length - 1] ?? JOB_URL;
       return opts.loggedOut ? snap({ url: 'https://www.naukri.com/nlogin/login' }) : snap({ url });
@@ -161,13 +161,21 @@ describe('inbox', () => {
     const out = await naukriInbox({ unread_only: true }, d);
     expect(out).toContain('count=1');
   });
+
+  it('drops unaddressable refs and counts them', async () => {
+    const h = harness();
+    const d = await opened(h);
+    const out = await naukriInbox({}, d);
+    expect(out).toContain('count=1 skipped_unaddressable=1');
+    expect(out).not.toContain('ref=h_');
+  });
 });
 
 describe('thread refs', () => {
   it('derives only allowed charsets and rejects others on input', async () => {
     const r = threadRefFromRaw('https://www.naukri.com/mnjuser/inbox?threadId=zzz%22%20onfocus%3D');
-    expect(r).not.toBeNull();
-    expect(THREAD_REF_RE.test(r!)).toBe(true);
+    expect(r).toBeNull(); // lossy sanitization: unaddressable
+    expect(threadRefFromRaw('https://www.naukri.com/mnjuser/inbox?threadId=ok_1-2')).toBe('ok_1-2');
     expect(THREAD_REF_RE.test('a b')).toBe(false);
     const h = harness();
     const d = await opened(h);
@@ -189,6 +197,35 @@ describe('read_thread', () => {
     expect(out).toContain('may_auto_reply=false');
     expect(out).toContain('[injection_suspect]');
     expect(out).toContain('person_id=null');
+  });
+
+  it('escalates with no_inbound_text for zero messages or only own messages, keeping person_id', async () => {
+    for (const messages of [[], [{ from: 'me', text: 'Hi Pat', at: '2026-10-10' }]]) {
+      const h = harness({ thread: { recipient: 'Pat Recruiter', company: 'Acme Labs', messages } });
+      const d = await opened(h);
+      const pid = upsertPerson(d.db, { platform: 'naukri', profileKey: 'naukri:pat', name: 'Pat Recruiter', company: 'Acme Labs', category: 'recruiter' });
+      setState(d.db, `naukri_thread_${pid}`, 'abc123', new Date());
+      const out = await naukriReadThread({ thread_ref: 'abc123' }, d);
+      expect(out).toContain(`person_id=${pid}`);
+      expect(out).toContain('escalate=true may_auto_reply=false reasons=no_inbound_text');
+      await shutdownNaukri();
+    }
+  });
+
+  it('unknown thread age never allows an auto reply', async () => {
+    const thread = { recipient: 'Pat', company: 'Acme', messages: [{ from: 'them', text: 'Hi, are you interested in a role at our company?', at: 'Sometime last week' }] };
+    const h = harness({ thread });
+    const d = await opened(h);
+    const out = await naukriReadThread({ thread_ref: 'abc123' }, d);
+    expect(out).toContain('may_auto_reply=false');
+    const h2 = harness({ thread: { ...thread, messages: [{ ...thread.messages[0], at: 'yesterday' }] } });
+    await shutdownNaukri();
+    const d2 = await opened(h2);
+    const pid = upsertPerson(d2.db, { platform: 'naukri', profileKey: 'naukri:pat', name: 'Pat', company: 'Acme', category: 'recruiter' });
+    setState(d2.db, `naukri_thread_${pid}`, 'abc123', new Date());
+    d2.db.prepare("INSERT INTO inbound_messages (platform, thread_ref, person_id, text_hash, klass, escalated, created_at) VALUES ('naukri','abc123',?,?,?,0,?)").run(pid, 'h', 'reply', '2026-10-13T00:00:00Z');
+    const out2 = await naukriReadThread({ thread_ref: 'abc123' }, d2);
+    expect(out2).toContain('may_auto_reply=true');
   });
 
   it('returns person_id only when the thread maps to a person', async () => {
@@ -254,6 +291,26 @@ describe('apply click gating', () => {
     expect(out).toContain('halted');
     expect(h.clicks).toEqual([]);
     expect(counters(d)).toEqual({ legacy: undefined, events: 0 });
+  });
+
+  it('legacy counter exhausted: naukri_apply event is not left behind', async () => {
+    const h = harness();
+    const d = await opened(h, { maxAppliesPerDay: 0 });
+    const out = await naukriClick({ text: 'Apply' }, d);
+    expect(out).toContain('rate_limited');
+    expect(h.clicks).toEqual([]);
+    expect(counters(d).events).toBe(0);
+  });
+
+  it('naukri_apply ceiling exhausted: legacy counter is not spent', async () => {
+    const h = harness();
+    const d = await opened(h, { cfg: { ...loadOutreachConfig({}), naukriMaxAppliesPerDay: 0 } });
+    const out = await naukriClick({ text: 'Apply' }, d);
+    expect(out).toContain('rate_limited');
+    expect(h.clicks).toEqual([]);
+    const row = d.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply'").get();
+    expect(row === undefined || row.count === 0).toBe(true);
+    expect(counters(d).events).toBe(0);
   });
 
   it('consumes both counters on a live apply', async () => {
