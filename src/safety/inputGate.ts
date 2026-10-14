@@ -101,3 +101,50 @@ export function gateInput(raw: string, opts: { maxChars?: number } = {}): InputG
   }
   return { text, flags, blocked };
 }
+
+// ---- plan 6B: optional local classifier (additive; gateInput above is unchanged) ----
+
+export interface ClassifierPort {
+  classify(text: string): Promise<{ malicious: boolean; score: number; truncated: boolean }>;
+}
+
+export interface InputGateAsyncOptions {
+  maxChars?: number;
+  classifier?: ClassifierPort | (() => Promise<ClassifierPort>);
+  requireClassifier?: boolean;
+}
+
+export interface InputGateAsyncResult extends InputGateResult {
+  classifier?: { score: number; malicious: boolean; truncated: boolean };
+}
+
+export async function gateInputAsync(raw: string, opts: InputGateAsyncOptions = {}): Promise<InputGateAsyncResult> {
+  const base = gateInput(raw, { maxChars: opts.maxChars });
+  const result: InputGateAsyncResult = { ...base, flags: [...base.flags] };
+  if (base.blocked) return result;
+
+  if (opts.classifier === undefined) {
+    if (opts.requireClassifier) {
+      result.flags.push('classifier_unavailable');
+      result.blocked = true;
+    } else {
+      result.flags.push('classifier_skipped');
+    }
+    return result;
+  }
+
+  try {
+    const port = typeof opts.classifier === 'function' ? await opts.classifier() : opts.classifier;
+    const v = await port.classify(result.text);
+    result.classifier = { score: v.score, malicious: v.malicious, truncated: v.truncated };
+    if (v.truncated) result.flags.push('classifier_truncated');
+    if (v.malicious) {
+      result.flags.push('classifier_injection');
+      result.blocked = true;
+    }
+  } catch {
+    result.flags.push('classifier_unavailable');
+    if (opts.requireClassifier) result.blocked = true;
+  }
+  return result;
+}
