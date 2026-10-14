@@ -56,7 +56,7 @@ describe('tmux helper', () => {
   it('capture uses exact-match targets and a valid line count', async () => {
     const { run, calls } = fakeRun({ 'capture-pane': { stdout: 'hello' } });
     expect(await capture(run, 'ccgram', 'hunt', 500)).toBe('hello');
-    expect(calls[0].args).toEqual(['capture-pane', '-p', '-t', '=ccgram:=hunt', '-S', '-500']);
+    expect(calls[0].args).toEqual(['capture-pane', '-p', '-J', '-t', '=ccgram:=hunt', '-S', '-500']);
   });
 
   it('capture rejects invalid line counts without running', async () => {

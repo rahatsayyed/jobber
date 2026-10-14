@@ -65,7 +65,7 @@ export async function capture(run: Run, session: string, window: string, lines =
   if (!Number.isInteger(lines) || lines < 1 || lines > 500) {
     throw new Error(`invalid capture line count: ${String(lines)}`);
   }
-  const r = await run('tmux', ['capture-pane', '-p', '-t', `=${session}:=${window}`, '-S', `-${lines}`]);
+  const r = await run('tmux', ['capture-pane', '-p', '-J', '-t', `=${session}:=${window}`, '-S', `-${lines}`]);
   return r.stdout;
 }
 

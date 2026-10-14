@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { createWebServer, redactSecrets, type WebDeps } from '../src/web/server.js';
+import net from 'node:net';
+import { createWebServer, startWebServer, redactSecrets, type WebDeps } from '../src/web/server.js';
 import { renderPage } from '../src/web/page.js';
 import type { Snapshot } from '../src/status/snapshot.js';
 
@@ -216,7 +217,7 @@ describe('web server', () => {
     expect((await s.sendJson(cookie, '/limits')).status).toBe(429);
     expect(s.send).toHaveBeenCalledTimes(1);
     s.advance(2001);
-    expect((await s.sendJson(cookie, '/health now')).status).toBe(200);
+    expect((await s.sendJson(cookie, '/health')).status).toBe(200);
     expect(s.send).toHaveBeenCalledTimes(2);
   });
 
@@ -298,6 +299,86 @@ describe('web server', () => {
     expect((await s.call('PUT', '/api/status', { headers: { cookie } })).status).toBe(405);
     expect((await s.call('GET', '/api/send', { headers: { cookie } })).status).toBe(405);
     expect((await s.call('GET', '/login')).status).toBe(405);
+  });
+});
+
+describe('fix round 1', () => {
+  it('slash commands take no arguments', async () => {
+    const s = await start();
+    const cookie = await s.login();
+    expect((await s.sendJson(cookie, '/limits /exit')).status).toBe(400);
+    expect(s.send).not.toHaveBeenCalled();
+  });
+
+  it('wrong token returns an html 401 with a link back', async () => {
+    const s = await start();
+    const r = await s.call('POST', '/login', s.form('nope'));
+    expect(r.status).toBe(401);
+    expect(String(r.headers['content-type'])).toContain('text/html');
+    expect(r.body).toContain('href="/"');
+    expect(r.body).not.toContain('<script');
+    expect(String(r.headers['content-security-policy'])).toContain("default-src 'none'");
+  });
+
+  it('parallel login burst cannot exceed the lockout', async () => {
+    const s = await start();
+    const rs = await Promise.all(Array.from({ length: 12 }, () => s.call('POST', '/login', s.form(TOKEN + 'x'))));
+    expect(rs.filter((r) => r.status === 401).length).toBeLessThanOrEqual(5);
+    expect(rs.some((r) => r.status === 429)).toBe(true);
+    expect((await s.call('POST', '/login', s.form(TOKEN))).status).toBe(429);
+  });
+
+  it('sessions expire after 12h', async () => {
+    const s = await start();
+    const cookie = await s.login();
+    s.advance(12 * 3600 * 1000 - 1);
+    expect((await s.call('GET', '/api/status', { headers: { cookie } })).status).toBe(200);
+    s.advance(2);
+    expect((await s.call('GET', '/api/status', { headers: { cookie } })).status).toBe(401);
+  });
+
+  it('extra secrets option and wrapped secrets are redacted in the pane', async () => {
+    const wrapped = 'abc sk-ant-api03-AAAAAAAAAAAAAAAA\nBBBBBBBBBBBBBBBBBBBB end';
+    const s = await start({ capture: async () => wrapped + '\nthe value hunter2hunter2 here', secrets: ['hunter2hunter2'] });
+    const cookie = await s.login();
+    const text = JSON.parse((await s.call('GET', '/api/pane', { headers: { cookie } })).body).text as string;
+    expect(text).not.toContain('AAAAAAAA');
+    expect(text).not.toContain('BBBBBBBB');
+    expect(text).not.toContain('hunter2');
+    expect(text).toContain('abc [redacted]');
+    expect(text).toContain(' end');
+  });
+
+  it('redactSecrets handles a long secret split across two lines', () => {
+    const out = redactSecrets('x sk-abcdefghijklmnop\nqrstuvwxyz0123 y');
+    expect(out).not.toContain('qrstuv');
+    expect(out).not.toContain('abcdefgh');
+  });
+
+  it('startWebServer listens on 127.0.0.1 only', async () => {
+    const server = await startWebServer({
+      token: TOKEN,
+      port: 0,
+      getSnapshot: async () => snap(),
+      capture: async () => '',
+      send: async () => {},
+    });
+    open.push(server);
+    expect((server.address() as AddressInfo).address).toBe('127.0.0.1');
+  });
+
+  it('clientError responses carry the security headers', async () => {
+    const s = await start();
+    const raw = await new Promise<string>((resolve, reject) => {
+      const c = net.connect(s.port, '127.0.0.1', () => c.write('GARBAGE\r\n\r\n'));
+      let buf = '';
+      c.on('data', (d) => (buf += d));
+      c.on('close', () => resolve(buf));
+      c.on('error', reject);
+    });
+    expect(raw).toContain('400');
+    expect(raw.toLowerCase()).toContain('content-security-policy');
+    expect(raw.toLowerCase()).toContain('x-content-type-options: nosniff');
   });
 });
 

@@ -109,6 +109,15 @@ describe('gateOutbound', () => {
   });
 });
 
+describe('anthropic key shape', () => {
+  it('blocks sk-ant keys that contain hyphens', () => {
+    const t = 'key sk-ant-api03-AbCdEfGhIjKlMnOpQrStUv_wxyz end';
+    expect(gateOutbound(t, { recipientKey: 'a', expectedRecipientKey: 'a', factVerdict: 'pass' }).reasons).toContain(
+      'secret_shaped',
+    );
+  });
+});
+
 describe('secretValuesFromEnv', () => {
   it('returns long values of secret-looking keys only', () => {
     const vals = secretValuesFromEnv({

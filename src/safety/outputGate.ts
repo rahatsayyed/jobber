@@ -41,6 +41,7 @@ const PATH_RES: RegExp[] = [
 ];
 export const SECRET_SHAPES: RegExp[] = [
   /\bsk-[A-Za-z0-9]{16,200}/,
+  /\bsk-ant-[A-Za-z0-9_-]{20,200}/,
   /\bAKIA[0-9A-Z]{16}\b/,
   /\bghp_[A-Za-z0-9]{20,200}/,
   /\bxox[baprs]-[A-Za-z0-9-]{10,200}/,

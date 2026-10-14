@@ -16,6 +16,7 @@ export interface WebDeps {
   capture: () => Promise<string>; // pane text
   send: (text: string) => Promise<void>; // calls sendText
   now?: () => number;
+  secrets?: string[]; // extra literal secret values to mask in the pane (token is always included)
 }
 
 export const STATUS_COMMANDS = ['limits', 'working', 'health', 'status'] as const;
@@ -23,6 +24,12 @@ export const STATUS_COMMANDS = ['limits', 'working', 'health', 'status'] as cons
 const COOKIE = 'jobber_session';
 const MAX_BODY = 4096;
 const MAX_SESSIONS = 10;
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const csp = (nonce: string): string =>
+  `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`;
+const LOGIN_FAIL_HTML =
+  '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+  '<title>Jobber</title></head><body style="font-family:system-ui,sans-serif;margin:16px"><p>Invalid token.</p><p><a href="/">Back to sign in</a></p></body></html>';
 const LOCK_FAILS = 5;
 const LOCK_WINDOW_MS = 10 * 60 * 1000;
 const SEND_GAP_MS = 2000;
@@ -31,17 +38,46 @@ const REDACTED = '[redacted]';
 
 /** Replace secret shapes (shared with the outbound gate) and any WEB_TOKEN line; `extra` literals are also masked. */
 export function redactSecrets(text: string, extra: string[] = []): string {
-  const res = SECRET_SHAPES.map((re) => new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g'));
-  const literals = extra.filter((v) => v.length >= 8);
-  return text
+  // Matching runs over the whole text with line breaks removed, so a secret wrapped across lines is still found.
+  const map: number[] = []; // stripped index -> original index
+  let stripped = '';
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\n' || text[i] === '\r') continue;
+    map.push(i);
+    stripped += text[i];
+  }
+  const ranges: [number, number][] = []; // original [start, endExclusive)
+  const add = (s: number, e: number) => ranges.push([map[s], map[e - 1] + 1]);
+  for (const re of SECRET_SHAPES) {
+    const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+    for (const m of stripped.matchAll(g)) if (m[0].length > 0) add(m.index, m.index + m[0].length);
+    // also per line: joining lines can destroy a word boundary that a secret needs at its start
+    let off = 0;
+    for (const line of text.split('\n')) {
+      for (const m of line.matchAll(g)) {
+        if (m[0].length > 0) ranges.push([off + m.index, off + m.index + m[0].length]);
+      }
+      off += line.length + 1;
+    }
+  }
+  for (const lit of extra) {
+    if (lit.length < 8) continue;
+    for (let i = stripped.indexOf(lit); i >= 0; i = stripped.indexOf(lit, i + lit.length)) add(i, i + lit.length);
+  }
+  ranges.sort((x, y) => x[0] - y[0]);
+  let out = '';
+  let pos = 0;
+  for (const [s, e] of ranges) {
+    if (e <= pos) continue;
+    const start = Math.max(s, pos);
+    out += text.slice(pos, start) + REDACTED;
+    out += text.slice(start, e).replace(/[^\n]/g, ''); // keep line breaks so the line count is stable
+    pos = e;
+  }
+  out += text.slice(pos);
+  return out
     .split('\n')
-    .map((line) => {
-      if (line.includes('WEB_TOKEN')) return REDACTED;
-      let out = line;
-      for (const lit of literals) out = out.split(lit).join(REDACTED);
-      for (const re of res) out = out.replace(re, REDACTED);
-      return out;
-    })
+    .map((l) => (l.includes('WEB_TOKEN') ? REDACTED : l))
     .join('\n');
 }
 
@@ -82,7 +118,7 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 export function createWebServer(deps: WebDeps): http.Server {
   const now = deps.now ?? Date.now;
   const tokenDigest = sha(deps.token);
-  const sessions: Buffer[] = []; // sha256 of session ids, oldest first
+  const sessions: { d: Buffer; at: number }[] = []; // sha256 of session ids, oldest first
   let failures: number[] = [];
   let lastSend = -Infinity;
   let server: http.Server;
@@ -98,8 +134,10 @@ export function createWebServer(deps: WebDeps): http.Server {
       const value = part.slice(i + 1).trim();
       if (!/^[0-9a-f]{64}$/.test(value)) continue;
       const d = sha(value);
+      const tn = now();
+      for (let k = sessions.length - 1; k >= 0; k--) if (tn - sessions[k].at >= SESSION_TTL_MS) sessions.splice(k, 1);
       let hit = false;
-      for (const s of sessions) if (timingSafeEqual(s, d)) hit = true; // scan all, no early exit
+      for (const s of sessions) if (timingSafeEqual(s.d, d)) hit = true; // scan all, no early exit
       if (hit) return true;
     }
     return false;
@@ -115,7 +153,7 @@ export function createWebServer(deps: WebDeps): http.Server {
   ): void {
     res.writeHead(status, {
       'Content-Type': type,
-      'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
+      'Content-Security-Policy': csp(nonce),
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'no-store',
       'Referrer-Policy': 'no-referrer',
@@ -158,6 +196,7 @@ export function createWebServer(deps: WebDeps): http.Server {
       const t = now();
       failures = failures.filter((x) => t - x < LOCK_WINDOW_MS);
       if (failures.length >= LOCK_FAILS) return json(429, { error: 'too many attempts' });
+      failures.push(t); // count the attempt before awaiting the body; cleared on success
       if (!/^application\/x-www-form-urlencoded\s*(;|$)/i.test(req.headers['content-type'] ?? '')) {
         return json(415, { error: 'unsupported media type' });
       }
@@ -169,12 +208,11 @@ export function createWebServer(deps: WebDeps): http.Server {
       }
       const given = new URLSearchParams(body).get('token') ?? '';
       if (!timingSafeEqual(sha(given), tokenDigest)) {
-        failures.push(t);
-        return json(401, { error: 'invalid token' });
+        return respond(res, nonce, 401, LOGIN_FAIL_HTML, 'text/html; charset=utf-8');
       }
       failures = [];
       const sid = randomBytes(32).toString('hex');
-      sessions.push(sha(sid));
+      sessions.push({ d: sha(sid), at: t });
       while (sessions.length > MAX_SESSIONS) sessions.shift();
       respond(res, nonce, 303, '', 'text/plain; charset=utf-8', {
         Location: '/',
@@ -198,7 +236,7 @@ export function createWebServer(deps: WebDeps): http.Server {
       try {
         const raw = await deps.capture();
         const last = raw.split('\n').slice(-PANE_LINES).join('\n');
-        json(200, { text: redactSecrets(last, [deps.token]) });
+        json(200, { text: redactSecrets(last, [deps.token, ...(deps.secrets ?? [])]) });
       } catch {
         json(500, { error: 'pane unavailable' });
       }
@@ -233,7 +271,8 @@ export function createWebServer(deps: WebDeps): http.Server {
       }
       const trimmed = text.trimStart();
       if (trimmed.startsWith('/')) {
-        const word = trimmed.slice(1).split(/\s/)[0];
+        // exact bare command only, no arguments
+        const word = text.trim().slice(1);
         if (!(STATUS_COMMANDS as readonly string[]).includes(word)) return json(400, { error: 'command not allowed' });
       }
       lastSend = t; // claim the slot before awaiting so concurrent sends cannot both pass
@@ -251,18 +290,35 @@ export function createWebServer(deps: WebDeps): http.Server {
   server = http.createServer((req, res) => {
     handle(req, res).catch(() => {
       if (!res.headersSent) {
-        res.writeHead(500, {
-          'Content-Type': 'application/json',
-          'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
-          'X-Content-Type-Options': 'nosniff',
-          'Cache-Control': 'no-store',
-          'Referrer-Policy': 'no-referrer',
-        });
+        respond(res, randomBytes(16).toString('hex'), 500, '{"error":"internal"}', 'application/json; charset=utf-8');
+      } else {
+        res.end();
       }
-      res.end('{"error":"internal"}');
     });
+  });
+  server.on('clientError', (_err, socket) => {
+    if (!socket.writable) return;
+    const body = '{"error":"bad request"}';
+    socket.end(
+      'HTTP/1.1 400 Bad Request\r\nContent-Type: application/json; charset=utf-8\r\n' +
+        `Content-Security-Policy: ${csp(randomBytes(16).toString('hex'))}\r\n` +
+        'X-Content-Type-Options: nosniff\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\n' +
+        `Connection: close\r\nContent-Length: ${body.length}\r\n\r\n${body}`,
+    );
   });
   server.headersTimeout = 10_000;
   server.requestTimeout = 15_000;
   return server;
+}
+
+/** Create the server and listen on loopback only. */
+export function startWebServer(deps: WebDeps): Promise<http.Server> {
+  const server = createWebServer(deps);
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(deps.port, '127.0.0.1', () => {
+      server.off('error', reject);
+      resolve(server);
+    });
+  });
 }
