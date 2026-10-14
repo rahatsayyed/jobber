@@ -17,6 +17,8 @@ export interface RunProfile {
   env_prefixes?: string[];
   env_files?: string[];
   max_turns: number;
+  // 'json' (default) or 'stream-json' (needed by the scheduler budget tracker).
+  output_format?: 'json' | 'stream-json';
 }
 
 export type ResolvedProfile = RunProfile & { allow: string[]; name?: string };
@@ -112,6 +114,9 @@ export function loadProfiles(
     if (!Number.isInteger(p.max_turns) || p.max_turns < 1 || p.max_turns > 1000) {
       throw new Error(`profile ${name}: max_turns must be an integer between 1 and 1000`);
     }
+    if (p.output_format !== undefined && p.output_format !== 'json' && p.output_format !== 'stream-json') {
+      throw new Error(`profile ${name}: output_format must be json or stream-json`);
+    }
     if (p.env_mode !== 'allowlist' && p.env_mode !== 'dotenv_all') {
       throw new Error(`profile ${name}: env_mode must be allowlist or dotenv_all`);
     }
@@ -127,7 +132,8 @@ export function buildClaudeArgs(name: string, p: ResolvedProfile, paths: { setti
   void name;
   const args = [
     '-p',
-    '--output-format', 'json',
+    '--output-format', p.output_format === 'stream-json' ? 'stream-json' : 'json',
+    ...(p.output_format === 'stream-json' ? ['--verbose'] : []),
     '--permission-mode', 'dontAsk',
     '--permission-prompts', 'none',
     '--strict-mcp-config', '--mcp-config', p.mcp_config,

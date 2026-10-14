@@ -23,8 +23,13 @@
         "mcp__naukri__naukri_send_message", "mcp__linkedin__linkedin_open"
       ],
       "env_mode": "allowlist",
-      "env_keys": ["TZ", "QUIET_HOURS_START", "QUIET_HOURS_END", "COMPANY_CONTACT_LIMIT", "SPECULATIVE_COMPANY_LIMIT"],
+      "env_keys": [
+        "TZ", "QUIET_HOURS_START", "QUIET_HOURS_END", "COMPANY_CONTACT_LIMIT", "SPECULATIVE_COMPANY_LIMIT",
+        "JOBBER_RUN_ID", "JOBBER_DRY_RUN", "SCHEDULER_DRY_RUN", "LINKEDIN_DRY_RUN",
+        "LINKEDIN_ALLOWED_URLS", "LINKEDIN_ALLOWED_EMAILS", "LINKEDIN_IDLE_MS", "LINKEDIN_ACCEPT_UNKNOWN"
+      ],
       "env_prefixes": ["PACING_", "COOLDOWN_", "CADENCE_", "LINKEDIN_MAX_", "NAUKRI_MAX_", "CLASSIFIER_"],
+      "output_format": "stream-json",
       "max_turns": 40
     },
     "hunt": {
