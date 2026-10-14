@@ -10,6 +10,7 @@
     "test": "vitest run",
     "doctor": "tsx scripts/doctor.ts",
     "permissions": "tsx scripts/permissions.ts",
+    "ccgram-hooks": "tsx scripts/ccgram-hooks.ts",
     "user-data": "tsx scripts/user-data.ts",
     "build": "tsc -p .",
     "mcp:job-fetch": "tsx src/mcp/job-fetch.ts",
