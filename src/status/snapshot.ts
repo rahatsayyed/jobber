@@ -1,0 +1,106 @@
+// src/status/snapshot.ts
+import type BetterSqlite3 from 'better-sqlite3';
+import { funnelStats } from '../funnel.js';
+import type { OutreachConfig } from '../outreach/config.js';
+import { ceilings, type CeilingStatus, type LimitKey } from '../outreach/limits.js';
+
+export interface Snapshot {
+  generatedAt: string;
+  ceilings: Record<LimitKey, CeilingStatus>;
+  dailyCounters: { key: string; count: number }[];
+  halts: { platform: string; reason: string; setAt: string }[];
+  queue: { status: string; count: number }[];
+  funnel: { discovered: number; matched: number; contacted: number; replied: number; interview: number; offer: number };
+  lastSend: { kind: string; at: string } | null;
+}
+
+/** Run one read section; a missing table (or any read error) yields the fallback instead of throwing. */
+function section<T>(fn: () => T, fallback: T): T {
+  try {
+    return fn();
+  } catch {
+    return fallback;
+  }
+}
+
+/** SQLite `datetime('now')` strings have no zone and are UTC; ISO strings pass through. */
+function toIso(s: string): string {
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(s) || s.includes('T') ? s : `${s.replace(' ', 'T')}Z`);
+  return Number.isNaN(d.getTime()) ? s : d.toISOString();
+}
+
+export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, now: Date): Snapshot {
+  const zeroCeilings = Object.fromEntries(
+    (['linkedin_invite', 'linkedin_message', 'naukri_apply', 'naukri_message'] as LimitKey[]).map((k) => [
+      k,
+      { used: 0, limit: 0, ok: true },
+    ]),
+  ) as Record<LimitKey, CeilingStatus>;
+  const day = now.toISOString().slice(0, 10);
+
+  const dailyCounters = section(
+    () =>
+      db
+        .prepare('SELECT key, count FROM daily_counters WHERE day = ? ORDER BY key')
+        .all(day) as { key: string; count: number }[],
+    [],
+  );
+
+  const halts = section(
+    () =>
+      (
+        db
+          .prepare('SELECT platform, reason, set_at FROM halt_flags WHERE cleared_at IS NULL ORDER BY platform')
+          .all() as { platform: string; reason: string; set_at: string }[]
+      ).map((r) => ({ platform: r.platform, reason: r.reason, setAt: r.set_at })),
+    [],
+  );
+
+  const queue = section(
+    () =>
+      db
+        .prepare('SELECT coalesce(status, \'unknown\') AS status, COUNT(*) AS count FROM outreach_queue GROUP BY status ORDER BY status')
+        .all() as { status: string; count: number }[],
+    [],
+  );
+
+  const funnel = section(
+    () => {
+      const f = funnelStats(db);
+      return {
+        discovered: f.discovered,
+        matched: f.matched,
+        contacted: f.contacted,
+        replied: f.replied,
+        interview: f.interview,
+        offer: f.offer,
+      };
+    },
+    { discovered: 0, matched: 0, contacted: 0, replied: 0, interview: 0, offer: 0 },
+  );
+
+  const candidates: { kind: string; at: string }[] = [];
+  section(() => {
+    const r = db
+      .prepare("SELECT kind, sent_at AS at FROM touches WHERE status = 'sent' AND sent_at IS NOT NULL ORDER BY sent_at DESC LIMIT 1")
+      .get() as { kind: string; at: string } | undefined;
+    if (r) candidates.push({ kind: r.kind, at: toIso(r.at) });
+  }, undefined);
+  section(() => {
+    const r = db
+      .prepare('SELECT MAX(email_sent_at) AS at FROM outreach_queue WHERE email_sent_at IS NOT NULL')
+      .get() as { at: string | null };
+    if (r.at) candidates.push({ kind: 'email', at: toIso(r.at) });
+  }, undefined);
+  candidates.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+
+  return {
+    generatedAt: now.toISOString(),
+    ceilings: section(() => ceilings(db, cfg, now), zeroCeilings),
+    dailyCounters,
+    halts,
+    queue,
+    funnel,
+    lastSend: candidates[0] ?? null,
+  };
+}
