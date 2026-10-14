@@ -37,7 +37,8 @@ function getDb(deps: OutreachDeps): Db {
 }
 const nowOf = (deps: OutreachDeps): Date => (deps.now ? deps.now() : new Date());
 
-const PLATFORM = z.enum(['linkedin', 'naukri']);
+const THREAD_REF = /^[A-Za-z0-9_:./-]{1,120}$/;
+const PLATFORM =z.enum(['linkedin', 'naukri']);
 const KLASS = z.enum(['recruiter_inquiry', 'reply', 'rejection', 'interview', 'noise', 'injection_suspect']);
 
 export function handleListDueTouches(deps: OutreachDeps, a: { platform?: Platform; limit?: number }) {
@@ -104,9 +105,9 @@ export function buildServer(deps: OutreachDeps = {}): McpServer {
       description: 'Record an inbound message by thread_ref + text_hash (deduped). Never pass message text.',
       inputSchema: {
         platform: PLATFORM,
-        thread_ref: z.string().min(1).max(300),
+        thread_ref: z.string().regex(THREAD_REF),
         person_id: z.number().int().optional(),
-        text_hash: z.string().min(1).max(128),
+        text_hash: z.string().regex(/^[0-9a-f]{16,128}$/),
         klass: KLASS,
         escalated: z.boolean(),
       },
@@ -119,9 +120,9 @@ export function buildServer(deps: OutreachDeps = {}): McpServer {
       description: 'Escalate to the owner. detail is clamped to 200 chars and sanitized.',
       inputSchema: {
         run_id: z.string().max(100).optional(),
-        platform: z.string().min(1).max(40),
+        platform: z.enum(['linkedin', 'naukri', 'scheduler']),
         person_id: z.number().int().optional(),
-        thread_ref: z.string().max(300).optional(),
+        thread_ref: z.string().regex(THREAD_REF).optional(),
         reason: z.string().min(1).max(200),
         detail: z.string().max(5000).optional(),
       },

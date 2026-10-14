@@ -126,22 +126,49 @@ export function nextContactsForCompany(
 
 export type InboundClass = 'recruiter_inquiry' | 'reply' | 'rejection' | 'interview' | 'noise' | 'injection_suspect';
 
+const THREAD_RE = /^[A-Za-z0-9_:./-]{1,120}$/;
+const HASH_RE = /^[0-9a-f]{16,128}$/;
+const ESC_PLATFORMS = ['linkedin', 'naukri', 'scheduler'];
+const PAUSING: InboundClass[] = ['reply', 'interview', 'rejection'];
+
+function requirePerson(db: Db, personId: number | undefined): void {
+  if (personId === undefined || personId === null) return;
+  if (db.prepare('SELECT 1 AS hit FROM people WHERE id = ?').get(personId) === undefined) {
+    throw new Error(`unknown person_id ${personId}`);
+  }
+}
+
+function gateText(raw: string, max: number): { text: string; flags: string[]; blocked: boolean } {
+  const g = gateInput(String(raw).slice(0, max), { maxChars: max });
+  if (g.blocked) return { text: `[blocked: ${g.flags.join(',')}]`.slice(0, max), flags: g.flags, blocked: true };
+  return { text: g.text.slice(0, max), flags: g.flags, blocked: false };
+}
+
 export function recordInbound(
   db: Db,
   i: { platform: Platform; threadRef: string; personId?: number; textHash: string; klass: InboundClass; escalated: boolean },
   now: Date,
 ): { id: number; duplicate: boolean } {
-  const res = db
-    .prepare(
-      `INSERT OR IGNORE INTO inbound_messages (platform, thread_ref, person_id, text_hash, klass, escalated, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(i.platform, i.threadRef, i.personId ?? null, i.textHash, i.klass, i.escalated ? 1 : 0, now.toISOString());
-  if (res.changes > 0) return { id: Number(res.lastInsertRowid), duplicate: false };
-  const row = db
-    .prepare('SELECT id FROM inbound_messages WHERE platform = ? AND thread_ref = ? AND text_hash = ?')
-    .get(i.platform, i.threadRef, i.textHash) as { id: number };
-  return { id: row.id, duplicate: true };
+  if (!THREAD_RE.test(String(i.threadRef))) throw new Error('invalid thread_ref');
+  if (!HASH_RE.test(String(i.textHash))) throw new Error('invalid text_hash');
+  requirePerson(db, i.personId);
+  const tx = db.transaction(() => {
+    const res = db
+      .prepare(
+        `INSERT OR IGNORE INTO inbound_messages (platform, thread_ref, person_id, text_hash, klass, escalated, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(i.platform, i.threadRef, i.personId ?? null, i.textHash, i.klass, i.escalated ? 1 : 0, now.toISOString());
+    if (res.changes > 0) {
+      if (i.personId !== undefined && PAUSING.includes(i.klass)) pausePersonOnReply(db, i.personId, now);
+      return { id: Number(res.lastInsertRowid), duplicate: false };
+    }
+    const row = db
+      .prepare('SELECT id FROM inbound_messages WHERE platform = ? AND thread_ref = ? AND text_hash = ?')
+      .get(i.platform, i.threadRef, i.textHash) as { id: number };
+    return { id: row.id, duplicate: true };
+  });
+  return tx();
 }
 
 export function addEscalation(
@@ -149,13 +176,15 @@ export function addEscalation(
   e: { runId: string | null; platform: string; personId?: number; threadRef?: string; reason: string; detail?: string },
   now: Date,
 ): number {
+  if (!ESC_PLATFORMS.includes(e.platform)) throw new Error('invalid platform');
+  if (e.threadRef !== undefined && !THREAD_RE.test(e.threadRef)) throw new Error('invalid thread_ref');
+  requirePerson(db, e.personId);
+  let reason = gateText(e.reason ?? '', 200).text;
   let detail: string | null = null;
-  let reason = String(e.reason ?? '').slice(0, 200);
   if (e.detail !== undefined && e.detail !== null) {
-    const clamped = String(e.detail).slice(0, MAX_DETAIL_CHARS);
-    const g = gateInput(clamped, { maxChars: MAX_DETAIL_CHARS });
-    detail = g.text.slice(0, MAX_DETAIL_CHARS);
-    if (g.flags.length) reason = `${reason} [input flags: ${g.flags.join(',')}]`.slice(0, 300);
+    const d = gateText(e.detail, MAX_DETAIL_CHARS);
+    detail = d.text;
+    if (d.flags.length) reason = `${reason} [input flags: ${d.flags.join(',')}]`.slice(0, 300);
   }
   const res = db
     .prepare(
