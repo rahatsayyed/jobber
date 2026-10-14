@@ -1,6 +1,6 @@
 // tests/platform-doctor.test.ts
 import { describe, it, expect } from 'vitest';
-import { exitCode, formatReport, runChecks, type DoctorContext } from '../src/platform/doctor.js';
+import { exitCode, formatReport, runChecks, skip, type DoctorContext } from '../src/platform/doctor.js';
 import { ccgramChecks, restrictedChecks } from '../src/platform/checks.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { applySet } from '../src/platform/permissions.js';
@@ -364,5 +364,25 @@ describe('restricted-run checks', () => {
     expect((await run(mk(), base(), runner('claude 2.1.100', DENY))).restricted_hook.status).toBe('warn');
     expect((await run(mk(), base(), runner('weird', DENY))).restricted_hook.status).toBe('warn');
     expect((await run(mk(), base())).restricted_hook.status).toBe('pass');
+  });
+});
+
+describe('doctor skip status', () => {
+  const o = (status: 'pass' | 'warn' | 'fail' | 'skip', fix?: string) => ({
+    id: 'x',
+    title: 'T',
+    result: { status, detail: 'd', fix },
+  });
+  it('exitCode is 0 with only pass, warn and skip', () => {
+    expect(exitCode([o('pass'), o('warn'), o('skip')])).toBe(0);
+    expect(exitCode([o('skip'), o('fail')])).toBe(1);
+  });
+  it('formatReport renders SKIP and keeps the fix line', () => {
+    const text = formatReport([o('skip', 'install it')]);
+    expect(text).toContain('SKIP  T: d');
+    expect(text).toContain('fix: install it');
+  });
+  it('skip helper builds a skip result', () => {
+    expect(skip('later', 'do x')).toEqual({ status: 'skip', detail: 'later', fix: 'do x' });
   });
 });
