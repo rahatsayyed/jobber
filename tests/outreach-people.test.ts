@@ -135,3 +135,37 @@ describe('selectContacts', () => {
     expect(out).toHaveLength(1);
   });
 });
+
+describe('upsertPerson conflict handling', () => {
+  const base = { platform: 'linkedin', profileKey: 'linkedin.com/in/x', company: 'Acme', category: 'peer' as const };
+  const row = (db: ReturnType<typeof openDb>, id: number) =>
+    db.prepare('SELECT name, headline, category FROM people WHERE id = ?').get(id) as {
+      name: string | null;
+      headline: string | null;
+      category: string;
+    };
+
+  it('keeps an existing name and headline when the new input has none', () => {
+    const db = openDb(':memory:');
+    const id = upsertPerson(db, { ...base, name: 'Ada', headline: 'Eng' });
+    upsertPerson(db, base);
+    expect(row(db, id)).toMatchObject({ name: 'Ada', headline: 'Eng' });
+    upsertPerson(db, { ...base, name: 'Ada L', headline: 'Staff' });
+    expect(row(db, id)).toMatchObject({ name: 'Ada L', headline: 'Staff' });
+  });
+
+  it('takes the new category while stage is new', () => {
+    const db = openDb(':memory:');
+    const id = upsertPerson(db, base);
+    upsertPerson(db, { ...base, category: 'recruiter' });
+    expect(row(db, id).category).toBe('recruiter');
+  });
+
+  it('keeps the category once the stage is past new', () => {
+    const db = openDb(':memory:');
+    const id = upsertPerson(db, base);
+    db.prepare("UPDATE contact_state SET stage = 'active' WHERE person_id = ?").run(id);
+    upsertPerson(db, { ...base, category: 'recruiter' });
+    expect(row(db, id).category).toBe('peer');
+  });
+});

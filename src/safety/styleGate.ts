@@ -124,6 +124,9 @@ export function loadStyleConfigSafe(path: string): { cfg: StyleConfig; note: str
     bad.push('max_words');
     Object.assign(maxWords, d.max_words);
   }
+  for (const [k, v] of Object.entries(d.max_words)) {
+    if (maxWords[k] === undefined) maxWords[k] = v;
+  }
   const cfg: StyleConfig = {
     banned_phrases: phrases,
     forbid_em_dash: bool('forbid_em_dash'),
@@ -212,8 +215,9 @@ export function checkStyle(text: string, kind: string, cfg: StyleConfig): { ok: 
   if (cfg.forbid_markdown && hasMarkdown(body)) hits.push({ rule: 'markdown', detail: 'markdown formatting found' });
 
   const rawCap = cfg.max_words[kind];
-  const cap = rawCap === undefined ? undefined : validLimit(rawCap) ? rawCap : DEFAULT_STYLE_CONFIG.max_words[kind];
-  if (cap !== undefined && !truncated) {
+  const strictest = Math.min(...Object.values(DEFAULT_STYLE_CONFIG.max_words));
+  const cap = validLimit(rawCap) ? rawCap : DEFAULT_STYLE_CONFIG.max_words[kind] ?? strictest;
+  if (!truncated) {
     const words = countWords(body);
     if (words > cap) hits.push({ rule: 'too_long', detail: `${words} words, cap ${cap}` });
   }

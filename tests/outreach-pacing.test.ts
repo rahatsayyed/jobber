@@ -111,3 +111,20 @@ describe('nextWake', () => {
     expect(hourIst).toBeGreaterThanOrEqual(7);
   });
 });
+
+describe('nextWake never lands in quiet hours', () => {
+  const windows = [
+    { quietStartHour: 0, quietEndHour: 23 },
+    { quietStartHour: 22, quietEndHour: 6 },
+  ];
+  for (const w of windows) {
+    it(`window ${w.quietStartHour}-${w.quietEndHour}`, () => {
+      const wide = { ...cfg, ...w };
+      const rng = mulberry32(42);
+      for (let i = 0; i < 500; i++) {
+        const now = new Date(Date.UTC(2026, 9, 14, 0, 0, 0) + Math.floor(rng() * 48) * 3600000);
+        expect(inQuietHours(nextWake(now, rng, wide), wide)).toBe(false);
+      }
+    });
+  }
+});

@@ -73,7 +73,13 @@ function quietEnd(at: Date, cfg: PacingConfig): Date {
 export function nextWake(now: Date, rng: Rng, cfg: PacingConfig): Date {
   let t = new Date(now.getTime() + drawWaitMs(rng, cfg));
   if (inQuietHours(t, cfg)) {
-    t = new Date(quietEnd(t, cfg).getTime() + Math.round(uniform(rng, 0, 90) * 60000));
+    let end = quietEnd(t, cfg);
+    t = new Date(end.getTime() + Math.round(uniform(rng, 0, 90) * 60000));
+    for (let i = 0; i < 3 && inQuietHours(t, cfg); i++) {
+      end = quietEnd(t, cfg);
+      t = new Date(end.getTime() + Math.round(uniform(rng, 0, 90) * 60000));
+    }
+    if (inQuietHours(t, cfg)) t = quietEnd(t, cfg);
   }
   return t;
 }

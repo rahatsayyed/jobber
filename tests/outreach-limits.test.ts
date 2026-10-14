@@ -75,3 +75,14 @@ describe('halt flags', () => {
     expect(haltReason(db, 'linkedin')).toBeNull();
   });
 });
+
+describe('tryConsume concurrency safety', () => {
+  it('db has a busy timeout and tryConsume still enforces the ceiling under an immediate transaction', () => {
+    const db = openDb(':memory:');
+    expect(db.pragma('busy_timeout', { simple: true })).toBe(5000);
+    const cfg = { ...loadOutreachConfig({}), linkedinMaxInvitesPerWeek: 3 };
+    const results = Array.from({ length: 6 }, () => tryConsume(db, 'linkedin_invite', cfg, NOW));
+    expect(results.filter(Boolean)).toHaveLength(3);
+    expect(countSince(db, 'linkedin_invite', new Date(NOW.getTime() - WEEK))).toBe(3);
+  });
+});

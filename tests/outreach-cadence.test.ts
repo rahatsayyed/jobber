@@ -103,3 +103,15 @@ describe('planNextTouch with custom gaps', () => {
     expect(planNextTouch(s, D(1), [1, 1, 1, 1, 1])).toEqual({ kind: 'rapport', dueAt: D(2) });
   });
 });
+
+describe('planNextTouch gap guard', () => {
+  it('falls back to the default gap for short, NaN, zero or negative entries', () => {
+    const snap = base({ connected: true, connectedAt: D(0), connectSentAt: D(0), messages: [{ kind: 'rapport', sentAt: D(2) }] });
+    const expected = planNextTouch(snap, D(30))!.dueAt.getTime();
+    for (const gaps of [[], [3], [3, Number.NaN], [3, 0], [3, -2], [3, Infinity]]) {
+      const p = planNextTouch(snap, D(30), gaps)!;
+      expect(Number.isNaN(p.dueAt.getTime())).toBe(false);
+      expect(p.dueAt.getTime()).toBe(expected);
+    }
+  });
+});

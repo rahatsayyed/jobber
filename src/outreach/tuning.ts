@@ -1,4 +1,6 @@
 // src/outreach/tuning.ts
+import { COOLDOWN_DAYS, GAPS_DAYS } from './cadence.js';
+
 export interface Tuning {
   minBurst: number;
   maxBurst: number;
@@ -19,8 +21,8 @@ export const TUNING_DEFAULTS: Tuning = {
   minWaitMin: 8,
   maxWaitMin: 40,
   jitter: 0.25,
-  cooldownDays: { ignored: 75, not_now: 75, explicit_stop: 120 },
-  cadenceGapsDays: [3, 4, 5, 7, 10],
+  cooldownDays: { ...COOLDOWN_DAYS },
+  cadenceGapsDays: [...GAPS_DAYS],
 };
 
 function int(value: string | undefined, fallback: number, min: number, max: number): number {

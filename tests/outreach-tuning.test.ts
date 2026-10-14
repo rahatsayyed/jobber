@@ -58,3 +58,11 @@ describe('loadTuning', () => {
     expect(loadTuning({ CADENCE_GAPS_DAYS: '1.5,2,3,4,5' }).cadenceGapsDays).toEqual([3, 4, 5, 7, 10]);
   });
 });
+
+import { COOLDOWN_DAYS, GAPS_DAYS } from '../src/outreach/cadence.js';
+describe('single source of truth with cadence', () => {
+  it('tuning defaults equal the cadence constants', () => {
+    expect(TUNING_DEFAULTS.cadenceGapsDays).toEqual([...GAPS_DAYS]);
+    expect(TUNING_DEFAULTS.cooldownDays).toEqual(COOLDOWN_DAYS);
+  });
+});

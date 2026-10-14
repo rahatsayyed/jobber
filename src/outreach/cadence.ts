@@ -68,7 +68,9 @@ export function planNextTouch(
   else anchor = s.messages[n - 1].sentAt;
   if (!anchor) return { kind: seq[0], dueAt: now };
 
-  let due = new Date(anchor.getTime() + gaps[n] * DAY_MS);
+  const g = gaps[n];
+  const gapDays = typeof g === 'number' && Number.isFinite(g) && g > 0 ? g : GAPS_DAYS[n];
+  let due = new Date(anchor.getTime() + gapDays * DAY_MS);
   if (n === 0 && s.connectedAt) {
     const earliest = new Date(s.connectedAt.getTime() + DAY_MS);
     if (earliest > due) due = earliest;

@@ -50,8 +50,10 @@ export function upsertPerson(db: Db, p: PersonInput): number {
     `INSERT INTO people (platform, profile_key, name, headline, company, company_key, category)
      VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(platform, profile_key) DO UPDATE SET
-       name = excluded.name, headline = excluded.headline, company = excluded.company,
-       company_key = excluded.company_key, category = excluded.category`,
+       name = COALESCE(excluded.name, name), headline = COALESCE(excluded.headline, headline),
+       company = excluded.company, company_key = excluded.company_key,
+       category = CASE WHEN COALESCE((SELECT stage FROM contact_state WHERE person_id = people.id), 'new') = 'new'
+                       THEN excluded.category ELSE people.category END`,
   ).run(p.platform, p.profileKey, p.name ?? null, p.headline ?? null, p.company, normalizeCompany(p.company), p.category);
   const row = db
     .prepare('SELECT id FROM people WHERE platform = ? AND profile_key = ?')

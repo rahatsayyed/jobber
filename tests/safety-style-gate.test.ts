@@ -61,7 +61,7 @@ describe('checkStyle', () => {
     const long = Array.from({ length: 80 }, () => 'word').join(' ');
     expect(rules(long, 'connect')).toContain('too_long');
     expect(rules(long, 'role_ask')).toEqual([]);
-    expect(rules(long, 'unknown_kind')).toEqual([]);
+    expect(rules(long, 'unknown_kind')).toContain('too_long');
   });
 
   it('respects a config that turns a rule off', () => {
@@ -119,5 +119,24 @@ describe('config sanitizing', () => {
     const c: StyleConfig = { ...cfg, max_words: { connect: NaN } };
     const long = Array.from({ length: 80 }, () => 'word').join(' ');
     expect(checkStyle(long, 'connect', c).hits.map((h) => h.rule)).toContain('too_long');
+  });
+});
+
+describe('unknown kinds and missing caps fail closed', () => {
+  const long = Array.from({ length: 80 }, () => 'word').join(' ');
+  it('applies the strictest default cap to an unknown kind', () => {
+    const r = checkStyle(long, 'mystery_kind', cfg);
+    expect(r.hits.map((h) => h.rule)).toContain('too_long');
+  });
+  it('applies the default cap when a kind is missing from a custom max_words', () => {
+    const c: StyleConfig = { ...cfg, max_words: {} };
+    expect(checkStyle(long, 'followup', c).hits.map((h) => h.rule)).toContain('too_long');
+  });
+  it('loadStyleConfigSafe backfills missing max_words keys', () => {
+    const p = join(mkdtempSync(join(tmpdir(), 'style-')), 'c.json');
+    writeFileSync(p, JSON.stringify({ ...DEFAULT_STYLE_CONFIG, max_words: { connect: 40 } }));
+    const { cfg: out } = loadStyleConfigSafe(p);
+    expect(out.max_words.connect).toBe(40);
+    expect(out.max_words.followup).toBe(DEFAULT_STYLE_CONFIG.max_words.followup);
   });
 });

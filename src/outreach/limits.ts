@@ -63,7 +63,7 @@ export function tryConsume(db: Db, key: LimitKey, cfg: OutreachConfig, now: Date
     recordEvent(db, key, now);
     return true;
   });
-  return run();
+  return run.immediate();
 }
 
 export function haltPlatform(db: Db, platform: string, reason: string, at: Date): void {

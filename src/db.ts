@@ -13,6 +13,7 @@ export const atsCoverageSchema = z.number().int().min(0).max(100).nullable().opt
 
 export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   const db = new BetterSqlite3(path);
+  db.pragma('busy_timeout = 5000');
 
   // Create tables if they don't exist
   db.exec(`
