@@ -11,6 +11,7 @@ export interface FakeSite {
   launchFails?: string;
   popup?: boolean;
   clickTimeout?: boolean;
+  redirects?: Record<string, string>; // requested path -> final URL
 }
 export type FakeLauncher = LiLauncher & { closed: boolean; launches: number; browsers: Array<{ closed: boolean }>; storageStateCalls: number };
 
@@ -57,7 +58,7 @@ export function makeFakeLauncher(site: FakeSite, log: string[]): FakeLauncher {
       goto: async (url: string) => {
         log.push(`goto:${pathOf(url)}`);
         if (site.gotoFails) throw new Error('net');
-        current = url; site.onGoto?.(url);
+        current = site.redirects?.[pathOf(url)] ?? url; site.onGoto?.(url);
       },
       url: () => current,
       title: async () => pageDef().title ?? '',

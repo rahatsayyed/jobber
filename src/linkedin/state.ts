@@ -43,6 +43,21 @@ function sanitize(s: string): string {
   return s.replace(/[<>]{3,}/g, ' ').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Two-pass gate for one untrusted free-text field: gate strips invisibles (NEL, LS, PS and C1
+ * controls become spaces first), whitespace is collapsed, then the result is gated again, so
+ * neither order can hide a phrase. Returns capped text, or blocked with empty text.
+ */
+export function gateField(s: string, max: number): { text: string; blocked: boolean; flags: string[] } {
+  const g1 = gateInput(s.replace(new RegExp("[\\u0080-\\u009f\\u2028\\u2029]", "g"), " "), { maxChars: max });
+  const norm = sanitize(g1.text);
+  const g2 = gateInput(norm, { maxChars: max });
+  const flags = [...g1.flags, ...g2.flags];
+  if (g1.blocked || g2.blocked) return { text: '', blocked: true, flags };
+  const t = sanitize(g2.text);
+  return { text: t.length > max ? t.slice(0, max - 1) + '…' : t, blocked: false, flags };
+}
+
 function trimUrl(url: string): string {
   const noQuery = url.split(/[?#]/)[0];
   return noQuery.length > 110 ? noQuery.slice(0, 40) + '…' + noQuery.slice(-50) : noQuery;
@@ -54,18 +69,13 @@ export function formatState(raw: RawSnapshot, ctx: { halted: string | null; dryR
   // Gate one free-text field; returns sanitized, capped text or the blocked marker.
   const field = (s: string | null | undefined, max: number): string => {
     if (!s) return '';
-    // Two passes: gate strips invisibles (NEL, LS, PS and C1 controls become spaces first), then
-    // whitespace is collapsed and the result is gated again, so neither order can hide a phrase.
-    const g1 = gateInput(s.replace(/[\u0080-\u009f\u2028\u2029]/g, ' '), { maxChars: max });
-    const norm = sanitize(g1.text);
-    const g2 = gateInput(norm, { maxChars: max });
-    for (const f of [...g1.flags, ...g2.flags]) inputFlags.add(f);
-    if (g1.blocked || g2.blocked) {
+    const g = gateField(s, max);
+    for (const f of g.flags) inputFlags.add(f);
+    if (g.blocked) {
       injection = true;
       return '[blocked: injection suspected]';
     }
-    const t = sanitize(g2.text);
-    return t.length > max ? t.slice(0, max - 1) + '…' : t;
+    return g.text;
   };
 
   const block = detectBlock(raw);
