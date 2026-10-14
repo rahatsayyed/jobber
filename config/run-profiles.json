@@ -6,8 +6,8 @@
       "mcp_config": "config/runner/mcp.platform.json",
       "builtin_tools": ["Skill", "Agent", "Task"],
       "allow": [
-        "mcp__naukri__naukri_open", "mcp__naukri__naukri_state", "mcp__naukri__naukri_click",
-        "mcp__naukri__naukri_type", "mcp__naukri__naukri_close", "mcp__naukri__naukri_screenshot",
+        "mcp__naukri__naukri_open", "mcp__naukri__naukri_state",
+        "mcp__naukri__naukri_close", "mcp__naukri__naukri_screenshot",
         "mcp__db__list_queued_outreach", "mcp__db__get_funnel", "mcp__db__get_outreach_stats", "mcp__db__get_job_stats",
         "mcp__outreach__list_due_touches", "mcp__outreach__next_contacts", "mcp__outreach__record_inbound",
         "mcp__outreach__escalate", "mcp__outreach__list_open_escalations",
@@ -18,7 +18,7 @@
         "mcp__naukri__naukri_send_message", "mcp__db__list_jobs", "mcp__db__update_outreach_status"
       ],
       "screen_args": [
-        "mcp__naukri__naukri_type", "mcp__outreach__escalate", "mcp__outreach__record_inbound",
+        "mcp__outreach__escalate", "mcp__outreach__record_inbound",
         "mcp__linkedin__linkedin_send_message", "mcp__linkedin__linkedin_connect_send",
         "mcp__naukri__naukri_send_message", "mcp__linkedin__linkedin_open"
       ],

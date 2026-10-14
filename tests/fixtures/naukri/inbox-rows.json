@@ -1,0 +1,7 @@
+[
+  {"href": "https://www.naukri.com/mnjuser/inbox?threadId=abc123", "id": "", "sender": "Pat Recruiter", "company": "Acme Labs",
+   "preview": "Hi, we have an opening for a React role. Are you interested in discussing the opportunity with our team? It pays well and the team is great and we would love to speak soon about the details of the position and what the day to day looks like for the engineers on this product. Please let us know.",
+   "unread": true, "at": "2026-10-13"},
+  {"href": "https://www.naukri.com/mnjuser/inbox?threadId=zzz%22%20onfocus%3D", "id": "", "sender": "Sam", "company": "Globex",
+   "preview": "Thanks for reaching out", "unread": false, "at": "2026-10-10"}
+]

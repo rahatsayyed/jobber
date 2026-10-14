@@ -3,14 +3,6 @@ import { readFileSync } from 'node:fs';
 
 const WORKERS = ['due-followups', 'new-outreach', 'inbox-recruiter-replies', 'naukri-search'] as const;
 
-// Tools Tasks 12 and 13 will register; remove from here as they land.
-const PLANNED_TOOLS = [
-  'mcp__naukri__naukri_search',
-  'mcp__naukri__naukri_inbox',
-  'mcp__naukri__naukri_read_thread',
-  'mcp__naukri__naukri_send_message',
-];
-
 const FORBIDDEN_EXACT = [
   'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Agent', 'Task',
   'mcp__db__record_outcome', 'mcp__db__raw_query',
@@ -93,10 +85,10 @@ describe('worker agents', () => {
           for (const p of FORBIDDEN_PREFIX) expect(t.startsWith(p)).toBe(false);
         }
       });
-      it('every tool is real or explicitly planned', () => {
+      it('every tool is registered', () => {
         for (const t of tools) {
           if (t === 'Skill') continue;
-          expect(real.has(t) || PLANNED_TOOLS.includes(t), t).toBe(true);
+          expect(real.has(t), t).toBe(true);
         }
       });
       it('matches config/worker-tools.json exactly', () => {

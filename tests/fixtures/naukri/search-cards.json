@@ -1,0 +1,7 @@
+[
+  {"title": "Senior React Developer", "company": "Acme Labs", "location": "Bengaluru", "salary": "18-25 LPA", "postedText": "2 days ago",
+   "href": "https://www.naukri.com/job-listings-senior-react-developer-acme-labs-bengaluru-3-to-6-years-101026000111"},
+  {"title": "Full Stack Engineer", "company": "Globex", "location": "Remote", "postedText": "Today",
+   "href": "https://www.naukri.com/job-listings-full-stack-engineer-globex-remote-2-to-5-years-101026000222"},
+  {"title": "Not a naukri link", "company": "Evil", "location": "x", "href": "https://evil.example.com/job-listings-x-101026000333"}
+]

@@ -118,7 +118,8 @@ function stateFile(): string {
 }
 
 function deps(h: ReturnType<typeof makeLauncher>, extra: Record<string, unknown> = {}) {
-  return { db: openDb(':memory:'), chromium: h.launcher, sessionStatePath: stateFile(), settleMs: 0, ...extra };
+  // SCHEDULER_DRY_RUN='false': the native Apply click now refuses in dry run (the default).
+  return { db: openDb(':memory:'), chromium: h.launcher, sessionStatePath: stateFile(), settleMs: 0, env: { SCHEDULER_DRY_RUN: 'false' } as NodeJS.ProcessEnv, ...extra };
 }
 
 afterEach(async () => {
