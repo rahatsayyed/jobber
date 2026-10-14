@@ -40,6 +40,12 @@ export function assertSafeArgs(args: string[], env: Record<string, string>): voi
     if (a === '--permission-mode' && !['dontAsk', 'default', 'plan'].includes(args[i + 1])) {
       throw new Error(`refusing permission mode: ${args[i + 1]}`);
     }
+    if (a.startsWith('--permission-mode=') && !['dontAsk', 'default', 'plan'].includes(a.slice('--permission-mode='.length))) {
+      throw new Error(`refusing permission mode: ${a}`);
+    }
+    if (a.toLowerCase().includes('bypass')) {
+      throw new Error(`refusing argument containing bypass: ${a}`);
+    }
   }
   if (env.IS_SANDBOX) throw new Error('refusing to start claude with IS_SANDBOX set');
   for (const k of Object.keys(env)) {
@@ -47,6 +53,12 @@ export function assertSafeArgs(args: string[], env: Record<string, string>): voi
       throw new Error(`refusing to start claude with ${k} set`);
     }
   }
+}
+
+const NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const BAD_PATH_RE = /["$`\n\r\\]/;
+function assertName(name: string): void {
+  if (typeof name !== 'string' || !NAME_RE.test(name)) throw new Error(`invalid profile name: ${JSON.stringify(name)}`);
 }
 
 function checkMcpEntries(name: string, entries: string[]): void {
@@ -70,6 +82,7 @@ export function loadProfiles(
   validateSets(sets);
   const out: Record<string, ResolvedProfile> = {};
   for (const [name, p] of Object.entries(policy.profiles)) {
+    assertName(name);
     const hasAllow = Array.isArray(p.allow);
     if (!hasAllow && !p.allow_from_permission_set) {
       throw new Error(`profile ${name}: needs allow or allow_from_permission_set`);
@@ -151,7 +164,9 @@ export function buildEnv(
   }
   for (const k of Object.keys(out)) if (isDroppedKey(k)) delete out[k];
   // Set last so nothing in base or dotenv can spoof the profile name.
-  if (p.name) out.JOBBER_RUN_PROFILE = p.name;
+  if (!p.name) throw new Error('buildEnv: profile has no name (use loadProfiles output)');
+  assertName(p.name);
+  out.JOBBER_RUN_PROFILE = p.name;
   return out;
 }
 
@@ -160,6 +175,10 @@ export function renderSettings(
   p: ResolvedProfile,
   paths: { hookPath: string; policyPath: string },
 ): object {
+  assertName(name);
+  for (const v of [paths.hookPath, paths.policyPath]) {
+    if (BAD_PATH_RE.test(v.replace(/^\$CLAUDE_PROJECT_DIR(?=\/)/, ''))) throw new Error('unsafe character in hook or policy path');
+  }
   return {
     permissions: { allow: [...p.allow, ...p.builtin_tools], deny: DANGEROUS_BUILTINS },
     hooks: {
@@ -182,6 +201,7 @@ export function renderSettings(
 }
 
 export function renderPolicy(name: string, p: ResolvedProfile): object {
+  assertName(name);
   const { allow_from_permission_set: _set, allow_extra: _extra, name: _n, ...rest } = p;
   void _set;
   void _extra;

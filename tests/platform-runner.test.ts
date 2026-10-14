@@ -77,6 +77,11 @@ describe('assertSafeArgs', () => {
     expect(() => assertSafeArgs(['--allow-dangerously-skip-permissions'], {})).toThrow();
     expect(() => assertSafeArgs([], { IS_SANDBOX: '1' })).toThrow();
   });
+  it('handles the = form', () => {
+    expect(() => assertSafeArgs(['--permission-mode=bypassPermissions'], {})).toThrow();
+    expect(() => assertSafeArgs(['--permission-mode=acceptEdits'], {})).toThrow();
+    expect(() => assertSafeArgs(['--permission-mode=dontAsk'], {})).not.toThrow();
+  });
 });
 
 describe('buildEnv', () => {
@@ -165,5 +170,25 @@ describe('loadProfiles validation', () => {
     const ok = loadProfiles(write('x', { ...base, allow_from_permission_set: 'outreach_send', allow_extra: ['mcp__db__get_funnel', 'mcp__x__y'] }), 'config/permission-sets.json');
     expect(ok.hunt.allow).toContain('mcp__x__y');
     expect(() => loadProfiles(write('xb', { ...base, allow_from_permission_set: 'outreach_send', allow_extra: ['mcp__*'] }), 'config/permission-sets.json')).toThrow();
+  });
+});
+
+describe('name validation', () => {
+  const paths = { hookPath: 'h.cjs', policyPath: 'p.json' };
+  it('rejects unsafe names and paths', () => {
+    expect(() => renderSettings('x; touch pwn', wake, paths)).toThrow();
+    expect(() => renderPolicy('x; touch pwn', wake)).toThrow();
+    expect(() => renderSettings('ok_name', wake, paths)).not.toThrow();
+    expect(() => renderPolicy('ok_name', wake)).not.toThrow();
+    expect(() => renderSettings('ok', wake, { hookPath: 'h', policyPath: 'a"b' })).toThrow();
+  });
+  it('loadProfiles rejects a bad name', () => {
+    writeFileSync('debug/runner-test/name.json', JSON.stringify({ version: 1, profiles: { 'x; touch pwn': { mcp_config: 'm', builtin_tools: [], allow: ['mcp__db__get_funnel'], env_mode: 'allowlist', env_keys: ['TZ'], max_turns: 1 } } }));
+    expect(() => loadProfiles('debug/runner-test/name.json', 'config/permission-sets.json')).toThrow();
+  });
+  it('buildEnv throws without a name', () => {
+    const { name: _n, ...noName } = wake;
+    void _n;
+    expect(() => buildEnv(noName as ResolvedProfile, {}, {})).toThrow();
   });
 });
