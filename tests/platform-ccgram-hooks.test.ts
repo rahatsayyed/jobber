@@ -6,6 +6,8 @@ import {
   CCGRAM_EVENTS,
   hookCommand,
   hooksStatus,
+  hooksStatusFromFile,
+  isCcgramHookCommand,
   installHooksToFile,
   mergeHooks,
   pythonFromShebang,
@@ -104,6 +106,82 @@ describe('resolveCcgramPython', () => {
     const deps = { which: () => '/opt/bin/ccgram', readFirstLine: () => `#!${PY}` };
     expect(resolveCcgramPython(deps)).toBe(PY);
     expect(resolveCcgramPython({ ...deps, which: () => null })).toBeNull();
+  });
+});
+
+describe('marker anchoring', () => {
+  const user = (command: string) => ({ hooks: { Stop: [{ hooks: [{ type: 'command', command }] }] } });
+
+  it('hookCommand always matches, including spaces, quotes and substitution characters', () => {
+    for (const p of [PY, '/a b/py', "/it's/py", "/a'b'c/py", '/x/$(touch pwn)/`id`/py', "'", 'a;b|c&d']) {
+      expect(isCcgramHookCommand(hookCommand(p))).toBe(true);
+    }
+  });
+
+  it('does not match commands that merely contain the text', () => {
+    for (const c of [
+      'echo ccgram.main hook',
+      "'/py' -m ccgram.main hook --extra",
+      "'/py' -m ccgram.main hook; rm -rf x",
+      'python -m ccgram.main hook',
+      "'/py' && echo 'x' -m ccgram.main hook",
+    ]) {
+      expect(isCcgramHookCommand(c)).toBe(false);
+    }
+  });
+
+  it('merge and remove preserve a user hook containing the marker text', () => {
+    const merged = mergeHooks(user('echo ccgram.main hook'), PY);
+    expect(merged.hooks?.Stop).toHaveLength(2);
+    expect(merged.hooks?.Stop?.some((g) => g.hooks.some((h) => h.command === 'echo ccgram.main hook'))).toBe(true);
+    const removed = removeHooks(merged);
+    expect(removed.hooks?.Stop).toHaveLength(1);
+    expect(removed.hooks?.Stop?.[0].hooks[0].command).toBe('echo ccgram.main hook');
+  });
+
+  it('a path with command substitution characters stays inert and is replaced on re-merge', () => {
+    const evil = '/x/$(touch pwn)/`id`/py';
+    const once = mergeHooks({}, evil);
+    expect(once.hooks?.Stop?.[0].hooks[0].command).toBe(`'${evil}' -m ccgram.main hook`);
+    const twice = mergeHooks(once, PY);
+    expect(twice.hooks?.Stop).toHaveLength(1);
+    expect(twice.hooks?.Stop?.[0].hooks[0].command).toBe(hookCommand(PY));
+  });
+});
+
+describe('no-op remove and read-only status', () => {
+  const dir = join(process.cwd(), '.superpowers', 'tmp-ccgram-hooks-noop-test');
+  const file = join(dir, 'settings.local.json');
+  beforeEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('removeHooks returns the input unchanged when nothing matched', () => {
+    const a = { permissions: { allow: ['x'] } };
+    const out = removeHooks(a);
+    expect(out).toBe(a);
+    expect('hooks' in out).toBe(false);
+    const b = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo u' }] }] } };
+    expect(removeHooks(b)).toEqual(b);
+  });
+
+  it('removeHooksFromFile skips the write and the .bak when nothing matched', () => {
+    const text = '{"permissions":{"allow":["x"]}}';
+    writeFileSync(file, text);
+    removeHooksFromFile(file);
+    expect(readFileSync(file, 'utf8')).toBe(text);
+    expect(readdirSync(dir)).toEqual(['settings.local.json']);
+  });
+
+  it('hooksStatusFromFile never creates .invalid.bak and throws a fixed message', () => {
+    writeFileSync(file, '{ not json');
+    expect(() => hooksStatusFromFile(file)).toThrow('settings file is not valid JSON');
+    writeFileSync(file, JSON.stringify({ hooks: [] }));
+    expect(() => hooksStatusFromFile(file)).toThrow('settings file has an invalid hooks shape');
+    expect(readdirSync(dir)).toEqual(['settings.local.json']);
+    expect(hooksStatusFromFile(join(dir, 'missing.json')).Stop).toBe(false);
   });
 });
 

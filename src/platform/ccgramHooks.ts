@@ -23,7 +23,15 @@ const ASYNC_EVENTS = new Set<string>([
   'TaskCompleted',
 ]);
 
-const CCGRAM_MARKER = /ccgram\.main hook\b/;
+const HOOK_SUFFIX = ' -m ccgram.main hook';
+// shellQuote output: one single-quoted string, embedded quotes written as '\''.
+const QUOTED_PATH = /^'(?:[^']|'\\'')*'$/;
+
+// True only for the exact shape hookCommand emits (quoted interpreter path + HOOK_SUFFIX, end of
+// string). Both halves come from the same constants, so emitter and matcher cannot drift.
+export function isCcgramHookCommand(command: string): boolean {
+  return command.endsWith(HOOK_SUFFIX) && QUOTED_PATH.test(command.slice(0, -HOOK_SUFFIX.length));
+}
 
 export interface HookEntry {
   type: string;
@@ -47,7 +55,7 @@ export function shellQuote(value: string): string {
 }
 
 export function hookCommand(pythonPath: string): string {
-  return `${shellQuote(pythonPath)} -m ccgram.main hook`;
+  return `${shellQuote(pythonPath)}${HOOK_SUFFIX}`;
 }
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
@@ -76,11 +84,12 @@ function assertShape(settings: HookSettings): void {
   if (problem) throw new Error(`settings: ${problem}`);
 }
 
-const isCcgramEntry = (h: HookEntry): boolean => typeof h.command === 'string' && CCGRAM_MARKER.test(h.command);
+const isCcgramEntry = (h: HookEntry): boolean => typeof h.command === 'string' && isCcgramHookCommand(h.command);
 
 export function removeHooks(settings: HookSettings): HookSettings {
   assertShape(settings);
   const hooks: Record<string, HookGroup[]> = {};
+  let changed = false;
   for (const [event, groups] of Object.entries(settings.hooks ?? {})) {
     const kept: HookGroup[] = [];
     for (const g of groups) {
@@ -88,11 +97,14 @@ export function removeHooks(settings: HookSettings): HookSettings {
         kept.push(g);
         continue;
       }
+      changed = true;
       const rest = g.hooks.filter((h) => !isCcgramEntry(h));
       if (rest.length > 0) kept.push({ ...g, hooks: rest });
     }
     if (kept.length > 0) hooks[event] = kept;
   }
+  // Nothing matched: return the input untouched (no `hooks: {}` or empty containers injected).
+  if (!changed) return settings;
   return { ...settings, hooks };
 }
 
@@ -163,9 +175,20 @@ export function installHooksToFile(path: string, pythonPath: string): void {
 export function removeHooksFromFile(path: string): void {
   if (!existsSync(path)) return;
   const current = readSettingsFile(path);
-  writeSettingsFile(path, removeHooks(current));
+  const next = removeHooks(current);
+  if (next === current) return; // nothing of ours in the file: no write, no .bak
+  writeSettingsFile(path, next);
 }
 
+// Read-only: never writes or copies anything, even for invalid input.
 export function hooksStatusFromFile(path: string): Record<string, boolean> {
-  return hooksStatus(readSettingsFile(path));
+  if (!existsSync(path)) return hooksStatus({});
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    throw new Error('settings file is not valid JSON');
+  }
+  if (hooksShapeProblem(parsed)) throw new Error('settings file has an invalid hooks shape');
+  return hooksStatus(parsed as HookSettings);
 }
