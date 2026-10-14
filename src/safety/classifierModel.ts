@@ -291,6 +291,10 @@ let singleton: Promise<InjectionClassifier> | null = null;
 export function _resetClassifierForTests(): void {
   singleton = null;
 }
+/**
+ * @deprecated Use getActiveClassifier from classifierSelect.ts (profile-driven, one model per
+ * process, refuses unfitted profiles outside dry runs). Kept for 6B tests and legacy callers.
+ */
 export function getClassifier(load: () => Promise<LoadedClassifier> = loadClassifier): Promise<InjectionClassifier> {
   if (!singleton) {
     const p = load().then((l) => l.classifier);
