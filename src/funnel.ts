@@ -16,7 +16,7 @@ export interface Funnel {
   benchmarks: typeof BENCHMARKS;
 }
 
-const CONTACTED = `
+export const CONTACTED = `
   SELECT job_id FROM outreach_queue WHERE email_status = 'sent' OR connect_status = 'sent'
   UNION SELECT job_id FROM applications WHERE status = 'submitted'
   UNION SELECT job_id FROM outreach WHERE status = 'sent'`;

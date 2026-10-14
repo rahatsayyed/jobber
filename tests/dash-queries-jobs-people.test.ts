@@ -4,6 +4,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { migrateOutreachTables } from '../src/outreach/schema.js';
 import { listJobs, jobCounts, jobDetail } from '../src/dash/queries/jobs.js';
+import { funnelStats } from '../src/funnel.js';
 import { listPeople, personThread } from '../src/dash/queries/people.js';
 
 let db: BetterSqlite3.Database;
@@ -26,6 +27,13 @@ describe('jobs queries', () => {
     expect(a.map((j) => j.id)).toEqual(['a']);
     expect(a[0].bucket).toEqual(expect.arrayContaining(['discovered', 'matched', 'applied', 'pending']));
     expect(listJobs(db, { bucket: 'failed', threshold: 60 }).items.map((j) => j.id)).toEqual(['d']);
+  });
+  it('matched agrees with funnelStats for an excluded but contacted job', () => {
+    job('a', { excluded_reason: 'vetoed' }); job('b', { excluded_reason: 'vetoed' }); job('c');
+    db.prepare("INSERT INTO outreach_queue (job_id, status, email_status) VALUES ('a','done','sent')").run();
+    expect(jobCounts(db, 60).matched).toBe(funnelStats(db, 60).matched);
+    expect(jobCounts(db, 60).matched).toBe(2);
+    expect(listJobs(db, { bucket: 'matched', threshold: 60 }).items.map((j) => j.id).sort()).toEqual(['a', 'c']);
   });
   it('q matches % literally', () => {
     job('a', { title: '100% Remote' }); job('b', { title: 'Plain' });

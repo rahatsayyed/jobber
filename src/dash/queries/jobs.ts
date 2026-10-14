@@ -4,6 +4,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { clampLimit, likePattern, tableExists, type Page } from '../readDb.js';
 import { cleanRow, cleanText } from '../clean.js';
+import { CONTACTED } from '../../funnel.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -52,7 +53,10 @@ function bucketExprs(db: Db): Exprs {
   const que = (cond: string) => `EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = j.id AND ${cond})`;
   const any = (parts: string[]) => (parts.length ? `(${parts.join(' OR ')})` : '0');
   return {
-    matched: '(j.score >= @threshold AND j.excluded_reason IS NULL)',
+    // Same as funnelStats (src/funnel.ts): an excluded job still counts once contacted. CONTACTED reads three tables.
+    matched: tableExists(db, 'outreach') && hasApps && hasQueue
+      ? `(j.score >= @threshold AND (j.excluded_reason IS NULL OR j.id IN (${CONTACTED})))`
+      : '(j.score >= @threshold AND j.excluded_reason IS NULL)',
     applied: hasApps ? app(`a.status = '${APPLICATION_SUBMITTED}'`) : '0',
     pending: any([
       ...(hasQueue ? [que(`q.status = '${QUEUE_PENDING}'`)] : []),
