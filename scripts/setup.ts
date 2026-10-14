@@ -11,7 +11,7 @@ import {
   statSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import Database from 'better-sqlite3';
+import { createRequire } from 'node:module';
 import { ccgramChecks, restrictedChecks } from '../src/platform/checks.js';
 import { setupChecks } from '../src/platform/checksSetup.js';
 import type { DoctorContext } from '../src/platform/doctor.js';
@@ -23,6 +23,12 @@ import { redactingIO, ttyIO } from '../src/setup/io.js';
 import { runSetup, type SetupContext, type SetupFs } from '../src/setup/runner.js';
 import { loadState } from '../src/setup/state.js';
 import { ALL_STEPS } from '../src/setup/steps/index.js';
+
+interface SqliteDb {
+  prepare(sql: string): { all(): unknown[] };
+  close(): void;
+}
+type SqliteCtor = new (path: string, opts: { readonly: boolean; fileMustExist: boolean }) => SqliteDb;
 
 const args = parseArgs(process.argv.slice(2));
 if (args.error) {
@@ -98,6 +104,8 @@ const doctor: DoctorContext = {
   fetch: realFetch,
   sqliteTables: (path) => {
     try {
+      // Loaded lazily: a native-module ABI mismatch must not stop the wizard or the doctor.
+      const Database = createRequire(import.meta.url)('better-sqlite3') as SqliteCtor;
       const db = new Database(path, { readonly: true, fileMustExist: true });
       try {
         const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {

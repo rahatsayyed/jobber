@@ -1,11 +1,17 @@
 // scripts/doctor.ts
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
-import Database from 'better-sqlite3';
+import { createRequire } from 'node:module';
 import { ccgramChecks, restrictedChecks } from '../src/platform/checks.js';
 import { setupChecks } from '../src/platform/checksSetup.js';
 import { exitCode, formatReport, runChecks, type DoctorContext } from '../src/platform/doctor.js';
 import { defaultRun } from '../src/platform/tmux.js';
+
+interface SqliteDb {
+  prepare(sql: string): { all(): unknown[] };
+  close(): void;
+}
+type SqliteCtor = new (path: string, opts: { readonly: boolean; fileMustExist: boolean }) => SqliteDb;
 
 const ctx: DoctorContext = {
   root: resolve(import.meta.dirname, '..'),
@@ -23,6 +29,8 @@ const ctx: DoctorContext = {
   },
   sqliteTables: (path) => {
     try {
+      // Loaded lazily: a native-module ABI mismatch must not stop the wizard or the doctor.
+      const Database = createRequire(import.meta.url)('better-sqlite3') as SqliteCtor;
       const db = new Database(path, { readonly: true, fileMustExist: true });
       try {
         const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[];
