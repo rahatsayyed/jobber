@@ -45,6 +45,13 @@ describe('authStore', () => {
     expect(pinSub(db, 's2', now)).toBe(false);
     expect(getAllowedAccount(db)?.sub).toBe('s1');
   });
+  it('pending login with a malformed expiry fails closed and is deleted', () => {
+    const { db } = fresh();
+    savePendingLogin(db, { stateHash: 'bad', nonce: 'n', verifier: 'v', reauth: false, sessionHash: null,
+      createdAt: now.toISOString(), expiresAt: 'garbage' });
+    expect(takePendingLogin(db, 'bad', now)).toBeNull();
+    expect((db.prepare('SELECT COUNT(*) AS n FROM pending_login').get() as { n: number }).n).toBe(0);
+  });
   it('pending login is single use and expiry deletes', () => {
     const { db } = fresh();
     const p = { stateHash: 'sh', nonce: 'n', verifier: 'v', reauth: true, sessionHash: null,

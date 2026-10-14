@@ -343,6 +343,15 @@ describe('web and dashboard-login checks', () => {
     ctx.authAccount = () => ({ email: 'owner@example.com', pinned: true });
     expect((await byId(ctx))['dashboard-login'].status).toBe('fail');
   });
+  it('fails on an https redirect URI without WEB_TRUST_PROXY=true', async () => {
+    const files = goodFiles();
+    files['/p/.env'] = {
+      text: GOOD_ENV + 'WEB_ALLOWED_HOSTS=dash.example.com\nWEB_OIDC_CLIENT_ID=c\nWEB_OIDC_CLIENT_SECRET=s\nWEB_OIDC_REDIRECT_URI=https://dash.example.com/auth/callback\n',
+    };
+    const ctx = ctxWith(files);
+    ctx.authAccount = () => ({ email: 'owner@example.com', pinned: true });
+    expect((await byId(ctx))['dashboard-login'].status).toBe('fail');
+  });
   it('warns on non-loopback bind, proxy trust without hosts, and chat without read_only', async () => {
     expect((await run(OWNER + 'WEB_BIND=192.168.1.5\nWEB_ALLOW_REMOTE_BIND=true\n')).login.status).toBe('warn');
     expect((await run(OWNER + 'WEB_TRUST_PROXY=true\n')).login.status).toBe('warn');

@@ -34,6 +34,13 @@ const HOST_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[
 
 const val = (env: RunnerEnv, k: string): string => (env[k] ?? '').trim();
 
+export const DEFAULT_AUTH_DB = '.dashboard/auth.sqlite';
+
+// The one place the auth store path (relative to the project root unless absolute) is resolved from a merged env.
+export function authDbPathFromEnv(env: RunnerEnv): string {
+  return val(env, 'WEB_AUTH_DB') || DEFAULT_AUTH_DB;
+}
+
 function validHostValue(raw: string): boolean {
   let host = raw;
   const m = /^(.*):(\d{1,5})$/.exec(raw);
@@ -92,7 +99,7 @@ export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: bool
   }
   const trustProxy = bool(env, 'WEB_TRUST_PROXY', errs);
   const chatEnabled = bool(env, 'WEB_CHAT_ENABLED', errs);
-  const authDb = val(env, 'WEB_AUTH_DB') || '.dashboard/auth.sqlite';
+  const authDb = authDbPathFromEnv(env);
 
   const session = val(env, 'WEB_TMUX_SESSION') || 'ccgram';
   const window = val(env, 'WEB_TMUX_WINDOW') || 'JobApplier';
@@ -122,6 +129,9 @@ export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: bool
       const loopbackOk = loopbackHttp && (u.port || '80') === String(port);
       const listed = allowedHosts.includes(host) || (allowedHosts.includes(u.hostname.toLowerCase()) && u.port === '');
       if (!loopbackOk && !listed) oidc('WEB_OIDC_REDIRECT_URI host is not in WEB_ALLOWED_HOSTS or the loopback listen address');
+      if (u.protocol === 'https:' && !trustProxy) {
+        oidc('WEB_OIDC_REDIRECT_URI is https: set WEB_TRUST_PROXY=true when running behind a TLS proxy (cookies must be Secure and the Origin check expects https)');
+      }
     }
   }
 

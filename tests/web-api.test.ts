@@ -345,6 +345,14 @@ describe('data routes', () => {
     expect((await hh.call('GET', '/api/pane', hdr)).status).toBe(400);
   });
 
+  it('sessions panel masks a literal secret echoed in a pane line', async () => {
+    const { h: hh, cookie } = await authed({ secrets: ['GOCSPX-literalsecret1234'] });
+    hh.paneText.value = 'echo GOCSPX-literalsecret1234 done';
+    const r = await hh.call('GET', '/api/sessions', { headers: { cookie } });
+    expect(r.status).toBe(200);
+    expect(r.body).not.toContain('GOCSPX-literalsecret1234');
+  });
+
   it('extra secret literals are masked in the pane and status', async () => {
     const { h: hh, cookie } = await authed({ secrets: ['planted-literal-9f3k'] });
     hh.paneText.value = 'before planted-literal-9f3k after';

@@ -1,6 +1,10 @@
 // scripts/dashboard.ts
 // Local owner CLI for the dashboard allowed account. No web equivalent.
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { parseEnv } from '../src/platform/envFile.js';
+import { authDbPathFromEnv } from '../src/web/env.js';
 import { pathToFileURL } from 'node:url';
 import { audit, getAllowedAccount, listAudit, openAuthStore } from '../src/dash/authStore.js';
 import { accountStatus, allowAccount, normaliseEmail } from '../src/dash/account.js';
@@ -43,7 +47,10 @@ function confirm(question: string): Promise<boolean> {
 export async function main(argv: string[]): Promise<number> {
   const p = parseArgs(argv);
   if (!p.ok) { console.error(p.error); return 1; }
-  const db = openAuthStore(process.env.WEB_AUTH_DB || '.dashboard/auth.sqlite');
+  const envFile = join(process.cwd(), '.env');
+  const fileEnv = existsSync(envFile) ? parseEnv(readFileSync(envFile, 'utf8')) : {};
+  const env: Record<string, string | undefined> = { ...fileEnv, ...process.env };
+  const db = openAuthStore(authDbPathFromEnv(env));
   try {
     const now = new Date();
     if (p.cmd === 'allow') {

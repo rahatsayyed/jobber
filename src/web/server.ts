@@ -339,7 +339,9 @@ export function createWebServer(deps: WebDeps): http.Server {
   add('GET', '/api/funnel', false, (c) => json(c.res, 200, funnelView(deps.data, threshold)));
 
   add('GET', '/api/sessions', false, async (c) => {
-    json(c.res, 200, { sessions: await sessionsPanel(deps.run, deps.sessionsToShow) });
+    const payload = { sessions: await sessionsPanel(deps.run, deps.sessionsToShow) };
+    c.res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    c.res.end(redact(JSON.stringify(payload)));
   });
   add('GET', '/api/pane', false, async (c) => {
     const window = q(c, 'window') ?? '';

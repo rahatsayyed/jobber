@@ -10,7 +10,7 @@ import { loadRegistry, resolveProfile, type ClassifierProfile, type ClassifierRe
 import { verifyProfile, type VerifyReport } from '../safety/modelFetch.js';
 import { SMOKE_BENIGN, SMOKE_INJECTION } from '../safety/smoke.js';
 import { loadProfiles } from './runner.js';
-import { isLoopbackBind, validateRunnerConfig } from '../web/env.js';
+import { authDbPathFromEnv, isLoopbackBind, validateRunnerConfig } from '../web/env.js';
 import { normaliseEmail } from '../dash/account.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -431,7 +431,7 @@ export const ccgramChecks: Check[] = [
     title: 'dashboard login',
     async run(ctx) {
       const env = mergedEnv(ctx);
-      const authRel = (env.WEB_AUTH_DB ?? '').trim() || '.dashboard/auth.sqlite';
+      const authRel = authDbPathFromEnv(env);
       const authPath = isAbsolute(authRel) ? authRel : join(ctx.root, authRel);
       const dirPath = dirname(authPath);
       const authExists = ctx.fs.exists(authPath);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateRunnerConfig, type RunnerEnv } from '../src/web/env.js';
+import { authDbPathFromEnv, validateRunnerConfig, type RunnerEnv } from '../src/web/env.js';
 
 const GOOD: RunnerEnv = {
   WEB_OIDC_CLIENT_ID: 'cid',
@@ -68,11 +68,28 @@ describe('validateRunnerConfig refusals', () => {
     expect(msgs({ ...GOOD, WEB_OIDC_REDIRECT_URI: 'http://localhost:8787/auth/callback' })).toEqual([]);
   });
   it('redirect host must be in the allowlist', () => {
-    const env = { ...GOOD, WEB_OIDC_REDIRECT_URI: 'https://dash.example.com/auth/callback' };
+    const env = { ...GOOD, WEB_OIDC_REDIRECT_URI: 'https://dash.example.com/auth/callback', WEB_TRUST_PROXY: 'true' };
     expect(msgs(env).join(' ')).toContain('WEB_ALLOWED_HOSTS');
     expect(msgs({ ...env, WEB_ALLOWED_HOSTS: 'dash.example.com' })).toEqual([]);
     // loopback redirect on a port that is not the listen port is not reachable
     expect(msgs({ ...GOOD, WEB_OIDC_REDIRECT_URI: 'http://127.0.0.1:9999/auth/callback' }).join(' ')).toContain('WEB_ALLOWED_HOSTS');
+  });
+  it('https redirect requires WEB_TRUST_PROXY=true', () => {
+    const env = { ...GOOD, WEB_OIDC_REDIRECT_URI: 'https://dash.example.com/auth/callback', WEB_ALLOWED_HOSTS: 'dash.example.com' };
+    const r = validateRunnerConfig(env, { accountStored: true });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      const e = r.errors.find((x) => x.message.includes('WEB_TRUST_PROXY'));
+      expect(e?.scope).toBe('oidc');
+    }
+    expect(msgs({ ...env, WEB_TRUST_PROXY: 'true' })).toEqual([]);
+    expect(msgs({ ...GOOD, WEB_OIDC_REDIRECT_URI: 'http://localhost:8787/auth/callback' })).toEqual([]);
+  });
+  it('authDbPathFromEnv resolves the shared default', () => {
+    expect(authDbPathFromEnv({})).toBe('.dashboard/auth.sqlite');
+    expect(authDbPathFromEnv({ WEB_AUTH_DB: '' })).toBe('.dashboard/auth.sqlite');
+    expect(authDbPathFromEnv({ WEB_AUTH_DB: '  ' })).toBe('.dashboard/auth.sqlite');
+    expect(authDbPathFromEnv({ WEB_AUTH_DB: '/x/a.sqlite' })).toBe('/x/a.sqlite');
   });
   it('host values are validated', () => {
     for (const h of ['bad host', 'a..b', 'x:99999', '-x.com', 'http://x.com', 'x.com/path']) {

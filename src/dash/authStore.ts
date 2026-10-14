@@ -106,7 +106,7 @@ export function takePendingLogin(db: AuthDb, stateHash: string, now: Date): Pend
     } | undefined;
     if (!r) return null;
     db.prepare('DELETE FROM pending_login WHERE state_hash = ?').run(stateHash);
-    if (Date.parse(r.expires_at) <= now.getTime()) return null;
+    if (!(Date.parse(r.expires_at) > now.getTime())) return null;
     return {
       stateHash: r.state_hash, nonce: r.nonce, verifier: r.verifier, reauth: r.reauth === 1,
       sessionHash: r.session_hash, createdAt: r.created_at, expiresAt: r.expires_at,
