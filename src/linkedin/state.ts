@@ -54,14 +54,17 @@ export function formatState(raw: RawSnapshot, ctx: { halted: string | null; dryR
   // Gate one free-text field; returns sanitized, capped text or the blocked marker.
   const field = (s: string | null | undefined, max: number): string => {
     if (!s) return '';
-    // Normalize whitespace and control chars BEFORE gating so split phrases cannot bypass it.
-    const g = gateInput(sanitize(s), { maxChars: max });
-    for (const f of g.flags) inputFlags.add(f);
-    if (g.blocked) {
+    // Two passes: gate strips invisibles (NEL, LS, PS and C1 controls become spaces first), then
+    // whitespace is collapsed and the result is gated again, so neither order can hide a phrase.
+    const g1 = gateInput(s.replace(/[\u0080-\u009f\u2028\u2029]/g, ' '), { maxChars: max });
+    const norm = sanitize(g1.text);
+    const g2 = gateInput(norm, { maxChars: max });
+    for (const f of [...g1.flags, ...g2.flags]) inputFlags.add(f);
+    if (g1.blocked || g2.blocked) {
       injection = true;
       return '[blocked: injection suspected]';
     }
-    const t = sanitize(g.text);
+    const t = sanitize(g2.text);
     return t.length > max ? t.slice(0, max - 1) + '…' : t;
   };
 
@@ -112,7 +115,8 @@ export function formatState(raw: RawSnapshot, ctx: { halted: string | null; dryR
   };
 
   const header = `page_kind=${flags.page_kind} halted=${sanitize(flags.halted ?? 'none').slice(0, 200)} dry_run=${flags.dry_run} login_required=${flags.login_required} block=${flags.block ?? 'none'} injection_suspected=${flags.injection_suspected}`;
-  const extra = (ctx.extra ?? []).map((e) => sanitize(e).slice(0, 200));
+  // At most 10 extra lines of 200 chars each (tool-authored) so total output stays bounded.
+  const extra = (ctx.extra ?? []).slice(0, 10).map((e) => sanitize(e).slice(0, 200));
   const head = [header, ...extra, `NOTE: ${UNTRUSTED_NOTE}`, '<<<PAGE_TEXT'].join('\n') + '\n';
   const tail = '\nPAGE_TEXT>>>';
   let inner = body.join('\n');
