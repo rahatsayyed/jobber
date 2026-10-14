@@ -23,25 +23,36 @@ export const defaultExec: Exec = (cmd, args, opts = {}) =>
         resolve({ stdout: stdout ?? '', stderr: stderr || String(e.message), code });
       },
     );
-    if (opts.input !== undefined) {
-      child.stdin?.on('error', () => undefined);
-      child.stdin?.end(opts.input);
-    }
+    child.stdin?.on('error', () => undefined);
+    child.stdin?.end(opts.input);
   });
 
 export function pipeExec(
   producer: { cmd: string; args: string[]; cwd?: string },
   consumer: { cmd: string; args: string[] },
+  opts: { timeoutMs?: number } = {},
 ): Promise<{ producerCode: number; consumerCode: number; stderr: string }> {
   return new Promise((resolve) => {
     let stderr = '';
     let producerCode: number | null = null;
     let consumerCode: number | null = null;
-    const done = () => {
-      if (producerCode !== null && consumerCode !== null) resolve({ producerCode, consumerCode, stderr });
-    };
+    let finished = false;
     const p = spawn(producer.cmd, producer.args, { cwd: producer.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     const c = spawn(consumer.cmd, consumer.args, { stdio: ['pipe', 'ignore', 'pipe'] });
+    const timer = setTimeout(() => {
+      stderr += 'pipeExec timed out';
+      p.kill('SIGKILL');
+      c.kill('SIGKILL');
+      if (producerCode === null) producerCode = 124;
+      if (consumerCode === null) consumerCode = 124;
+      done();
+    }, opts.timeoutMs ?? 120_000);
+    const done = () => {
+      if (finished || producerCode === null || consumerCode === null) return;
+      finished = true;
+      clearTimeout(timer);
+      resolve({ producerCode, consumerCode, stderr });
+    };
     p.stderr.on('data', (d) => { stderr += String(d); });
     c.stderr.on('data', (d) => { stderr += String(d); });
     c.stdin.on('error', () => undefined);
@@ -49,16 +60,23 @@ export function pipeExec(
     p.on('error', (e: NodeJS.ErrnoException) => {
       stderr += String(e.message);
       c.stdin.end();
-      producerCode = e.code === 'ENOENT' ? 127 : 1;
+      if (producerCode === null) producerCode = e.code === 'ENOENT' ? 127 : 1;
       done();
     });
     c.on('error', (e: NodeJS.ErrnoException) => {
       stderr += String(e.message);
       p.kill();
-      consumerCode = e.code === 'ENOENT' ? 127 : 1;
+      if (consumerCode === null) consumerCode = e.code === 'ENOENT' ? 127 : 1;
       done();
     });
-    p.on('close', (code) => { producerCode = code ?? 1; done(); });
-    c.on('close', (code) => { consumerCode = code ?? 1; done(); });
+    p.on('close', (code) => { if (producerCode === null) producerCode = code ?? 1; done(); });
+    c.on('close', (code) => {
+      if (consumerCode === null) consumerCode = code ?? 1;
+      if (producerCode === null) {
+        p.stdout.unpipe(c.stdin);
+        p.kill();
+      }
+      done();
+    });
   });
 }

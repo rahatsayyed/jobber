@@ -1,11 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import BetterSqlite3 from 'better-sqlite3';
-import { mkdtempSync, statSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, statSync, existsSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { snapshotDb, checkSnapshot } from '../src/lib/sqliteSnapshot.js';
 
-function tmp() { return mkdtempSync(join(tmpdir(), 'snap-')); }
+const dirs: string[] = [];
+function tmp() { const d = mkdtempSync(join(tmpdir(), 'snap-')); dirs.push(d); return d; }
+afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
 describe('snapshotDb', () => {
   it('copies a live WAL database consistently and with mode 600', async () => {
@@ -32,6 +34,19 @@ describe('snapshotDb', () => {
     await snapshotDb(src, join(dir, 'd.sqlite'));
     await expect(snapshotDb(src, join(dir, 'd.sqlite'))).rejects.toThrow(/exists/);
     expect(existsSync(join(dir, 'nope.sqlite'))).toBe(false);
+  });
+  it('a failed backup leaves no destination so a retry works', async () => {
+    const dir = tmp();
+    const src = join(dir, 's.sqlite');
+    const s = new BetterSqlite3(src);
+    s.exec('CREATE TABLE t (id INTEGER)');
+    s.close();
+    const dest = join(dir, 'sub', 'd.sqlite');
+    await expect(snapshotDb(src, dest)).rejects.toThrow();
+    expect(existsSync(dest)).toBe(false);
+    mkdirSync(join(dir, 'sub'));
+    await snapshotDb(src, dest);
+    expect(checkSnapshot(dest).ok).toBe(true);
   });
   it('checkSnapshot reports not ok for a non-database file', () => {
     const dir = tmp();

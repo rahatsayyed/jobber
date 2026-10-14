@@ -1,5 +1,5 @@
 import BetterSqlite3 from 'better-sqlite3';
-import { chmodSync, existsSync } from 'node:fs';
+import { chmodSync, existsSync, rmSync } from 'node:fs';
 
 export async function snapshotDb(srcPath: string, destPath: string): Promise<void> {
   if (!existsSync(srcPath)) throw new Error(`source database not found: ${srcPath}`);
@@ -13,8 +13,14 @@ export async function snapshotDb(srcPath: string, destPath: string): Promise<voi
     db = new BetterSqlite3(srcPath, { fileMustExist: true });
   }
   try {
-    await db.backup(destPath);
-    chmodSync(destPath, 0o600);
+    try {
+      await db.backup(destPath);
+      chmodSync(destPath, 0o600);
+    } catch (e) {
+      // dest did not exist when we started, so any file there is our partial copy
+      try { rmSync(destPath, { force: true }); } catch { /* ignore */ }
+      throw e;
+    }
   } finally {
     db.close();
   }
