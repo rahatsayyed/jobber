@@ -1,6 +1,6 @@
 // tests/platform-tmux.test.ts
 import { describe, it, expect } from 'vitest';
-import { assertClaudePane, assertName, capture, ensureSession, hasSession, listWindows, sendText, validateSendText, type Run } from '../src/platform/tmux.js';
+import { assertClaudePane, assertName, capture, ensureSession, hasSession, killWindow, listWindows, newWindow, windowExists, sendText, validateSendText, type Run } from '../src/platform/tmux.js';
 
 function fakeRun(responses: Record<string, { stdout?: string; code?: number }> = {}, callCodes: number[] = []) {
   const calls: { cmd: string; args: string[] }[] = [];
@@ -165,5 +165,36 @@ describe('assertClaudePane', () => {
     }
     await expect(assertClaudePane(list('claude'), 's', 'other')).rejects.toThrow('not found');
     await expect(assertClaudePane(fakeRun({ 'list-windows': { code: 1 } }).run, 's', 'hunt')).rejects.toThrow();
+  });
+});
+
+describe('window helpers', () => {
+  it('newWindow runs exact argv', async () => {
+    const { run, calls } = fakeRun();
+    await newWindow(run, 's', 'wake-abc', ['echo', 'hi there'], '/root');
+    expect(calls).toEqual([
+      { cmd: 'tmux', args: ['new-window', '-d', '-t', '=s:', '-n', 'wake-abc', '-c', '/root', '--', 'echo', 'hi there'] },
+    ]);
+  });
+  it('newWindow rejects bad names and newline/NUL argv before any call', async () => {
+    const { run, calls } = fakeRun();
+    await expect(newWindow(run, 's', '-t', ['a'], '/r')).rejects.toThrow();
+    await expect(newWindow(run, 'a b', 'w', ['a'], '/r')).rejects.toThrow();
+    await expect(newWindow(run, 's', 'w', ['a\nb'], '/r')).rejects.toThrow();
+    await expect(newWindow(run, 's', 'w', ['a\0b'], '/r')).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+  });
+  it('windowExists uses listWindows', async () => {
+    const run = fakeRun({ 'list-windows': { stdout: '0|wake-abc|1|sh\n' } }).run;
+    expect(await windowExists(run, 's', 'wake-abc')).toBe(true);
+    expect(await windowExists(run, 's', 'other')).toBe(false);
+  });
+  it('killWindow is a no-op for a missing window and kills an existing one', async () => {
+    const miss = fakeRun({ 'list-windows': { stdout: '' } });
+    await killWindow(miss.run, 's', 'w');
+    expect(miss.calls.map((c) => c.args[0])).toEqual(['list-windows']);
+    const hit = fakeRun({ 'list-windows': { stdout: '0|w|1|sh\n' } });
+    await killWindow(hit.run, 's', 'w');
+    expect(hit.calls[1].args).toEqual(['kill-window', '-t', '=s:=w']);
   });
 });

@@ -124,3 +124,35 @@ export async function sendText(run: Run, session: string, window: string, text: 
   const enter = await run('tmux', ['send-keys', '-t', target, 'Enter']);
   if (enter.code !== 0) throw new Error('tmux send-keys Enter failed');
 }
+
+function assertArgv(argv: string[]): void {
+  if (argv.length === 0) throw new Error('empty argv');
+  for (const a of argv) {
+    if (typeof a !== 'string' || a.includes('\n') || a.includes('\r') || a.includes('\0')) {
+      throw new Error('argv element contains newline or NUL');
+    }
+  }
+}
+
+/** Create a detached window running argv directly (tmux 3.2+ executes argv without a shell). */
+export async function newWindow(run: Run, session: string, window: string, argv: string[], cwd: string): Promise<void> {
+  assertName(session);
+  assertName(window);
+  assertArgv(argv);
+  const r = await run('tmux', ['new-window', '-d', '-t', `=${session}:`, '-n', window, '-c', cwd, '--', ...argv]);
+  if (r.code !== 0) throw new Error(`failed to create tmux window ${window}`);
+}
+
+export async function windowExists(run: Run, session: string, window: string): Promise<boolean> {
+  assertName(session);
+  assertName(window);
+  return (await listWindows(run, session)).some((w) => w.name === window);
+}
+
+/** Best-effort: a missing window is a no-op. */
+export async function killWindow(run: Run, session: string, window: string): Promise<void> {
+  assertName(session);
+  assertName(window);
+  if (!(await windowExists(run, session, window))) return;
+  await run('tmux', ['kill-window', '-t', `=${session}:=${window}`]);
+}
