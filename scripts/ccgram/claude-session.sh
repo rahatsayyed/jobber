@@ -33,6 +33,9 @@ if [ -f "$ENV_FILE" ]; then
     export "$k=$v"
   done < "$ENV_FILE"
 fi
+# ccgram hooks (Claude children) resolve their state dir from CCGRAM_DIR. The value comes from
+# this script, never from .env (CCGRAM_* keys in .env are skipped above).
+export CCGRAM_DIR="$ROOT/.ccgram"
 # Choke point: refuse any request to skip or bypass permissions. Messages are fixed and never
 # echo argument or variable values.
 shopt -s nocasematch

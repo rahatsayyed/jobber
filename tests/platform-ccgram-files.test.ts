@@ -73,6 +73,21 @@ describe('ccgram runner files', () => {
     expect(session.indexOf('compgen -v CLAUDE_CODE_')).toBeLessThan(exec);
   });
 
+  it('claude-session.sh exports CCGRAM_DIR from the project root after the env loop and before the guard and exec', () => {
+    const exp = 'export CCGRAM_DIR="$ROOT/.ccgram"';
+    const at = session.indexOf(exp);
+    expect(at).toBeGreaterThan(0);
+    expect(session.indexOf(exp, at + 1)).toBe(-1);
+    expect(at).toBeGreaterThan(session.indexOf('done < "$ENV_FILE"'));
+    expect(at).toBeLessThan(session.indexOf('for arg in "$@"'));
+    expect(at).toBeLessThan(session.indexOf('exec claude "$@"'));
+    // .env cannot override it: CCGRAM_* keys are skipped in the denylist.
+    expect(session).toMatch(/\|CCGRAM_\*\|/);
+    expect(session.indexOf('CCGRAM_*')).toBeLessThan(at);
+    // Only this one variable is exported by the script itself besides the env loop.
+    expect([...session.matchAll(/^export (\w+)=/gm)].map((m) => m[1])).toEqual(['CCGRAM_DIR']);
+  });
+
   it('run.sh env -i passes exactly the allowed variables', () => {
     const m = run.match(/exec env -i((?:[ \t]*\\?\n?[ \t]*[A-Z_]+="[^"]*")+)/);
     expect(m).not.toBeNull();
