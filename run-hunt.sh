@@ -5,11 +5,6 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-set -a
-source .env
-[ -f .env.ccr ] && source .env.ccr
-set +a
-
 # If using the CCR/Grok path, make sure the local gateway is up.
 if [ -f .env.ccr ]; then
   if ! nc -z 127.0.0.1 3456 2>/dev/null; then
@@ -18,8 +13,5 @@ if [ -f .env.ccr ]; then
   fi
 fi
 
-PROMPT="${1:-run the hunt}"
-exec claude -p "$PROMPT" \
-  --mcp-config ./.mcp.json \
-  --strict-mcp-config \
-  --permission-mode bypassPermissions
+# Restricted run profile "hunt": env files are parsed by the launcher, not sourced here.
+exec bash scripts/run-claude.sh hunt "${1:-run the hunt}"
