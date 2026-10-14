@@ -60,8 +60,41 @@ describe('touch ledger', () => {
     expect(personByProfileKey(db, profileKeyOf(URL1))?.paused_reason).toBe('replied');
   });
   it('sequential reserves of same key cannot both be ok', () => {
-    const a = db.transaction(() => reserveTouch(db, args('x')))();
-    const b = db.transaction(() => reserveTouch(db, args('x')))();
+    const a = reserveTouch(db, args('x'));
+    const b = reserveTouch(db, args('x'));
     expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
+  });
+  it('failed then reserve reuses row with sent_at null and original created_at', () => {
+    const r1 = reserveTouch(db, args('hi')) as any;
+    finishTouch(db, r1.touchId, 'failed', now);
+    const r2 = reserveTouch(db, args('hi', { now: new Date('2026-10-15T00:00:00Z') })) as any;
+    expect(r2).toMatchObject({ ok: true, touchId: r1.touchId });
+    const row = db.prepare('SELECT sent_at, created_at, status FROM touches WHERE id = ?').get(r1.touchId) as any;
+    expect(row.sent_at).toBeNull();
+    expect(row.status).toBe('sending');
+    expect(row.created_at).toBe(now.toISOString());
+  });
+  it('unconfirmed is in_progress', () => {
+    const r1 = reserveTouch(db, args('hi')) as any;
+    finishTouch(db, r1.touchId, 'unconfirmed', now);
+    expect(reserveTouch(db, args('hi'))).toMatchObject({ ok: false, reason: 'in_progress' });
+  });
+  it('retrying a failed connect after another connect was sent is duplicate_kind', () => {
+    const a = reserveTouch(db, args('A')) as any;
+    finishTouch(db, a.touchId, 'failed', now);
+    const b = reserveTouch(db, args('B')) as any;
+    expect(b.ok).toBe(true);
+    finishTouch(db, b.touchId, 'sent', now);
+    expect(reserveTouch(db, args('A'))).toMatchObject({ ok: false, reason: 'duplicate_kind' });
+    const row = db.prepare('SELECT status FROM touches WHERE id = ?').get(a.touchId) as any;
+    expect(row.status).toBe('failed');
+  });
+  it('finishTouch cannot downgrade sent', () => {
+    const r = reserveTouch(db, args('hi')) as any;
+    finishTouch(db, r.touchId, 'sent', now);
+    finishTouch(db, r.touchId, 'failed', new Date('2026-10-16T00:00:00Z'));
+    const row = db.prepare('SELECT status, sent_at FROM touches WHERE id = ?').get(r.touchId) as any;
+    expect(row.status).toBe('sent');
+    expect(row.sent_at).toBe(now.toISOString());
   });
 });

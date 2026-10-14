@@ -31,6 +31,11 @@ export type Reserve =
   | { ok: true; touchId: number }
   | { ok: false; reason: 'already_sent' | 'in_progress' | 'duplicate_kind'; touchId: number };
 
+/**
+ * Callers must record 'unconfirmed' (not 'failed') via finishTouch for any attempt that may have
+ * gone out (D9), since only failed/refused rows can be retried. Must NOT be called inside an outer
+ * transaction (it opens its own IMMEDIATE one).
+ */
 export function reserveTouch(
   db: Db,
   a: { personId: number; kind: string; jobId?: string | null; body: string; key: string; now: Date; dryRun: boolean },
@@ -57,19 +62,20 @@ export function reserveTouch(
       if (same.status === 'sending' || same.status === 'unconfirmed') {
         return { ok: false, reason: 'in_progress', touchId: same.id };
       }
-      // failed/refused: reuse the row for a retry (key is UNIQUE)
-      db.prepare(`UPDATE touches SET status = 'sending', body = ?, created_at = ?, sent_at = NULL WHERE id = ?`)
-        .run(a.body, at, same.id);
-      return { ok: true, touchId: same.id };
     }
     if (a.kind === 'connect') {
       const other = db
         .prepare(
-          `SELECT id FROM touches WHERE person_id = ? AND kind = 'connect'
+          `SELECT id FROM touches WHERE person_id = ? AND kind = 'connect' AND id != ?
            AND status IN ('sent','sending','unconfirmed') LIMIT 1`,
         )
-        .get(a.personId) as { id: number } | undefined;
+        .get(a.personId, same?.id ?? -1) as { id: number } | undefined;
       if (other) return { ok: false, reason: 'duplicate_kind', touchId: other.id };
+    }
+    if (same) {
+      // failed/refused: reuse the row for a retry (key is UNIQUE); created_at is kept
+      db.prepare(`UPDATE touches SET status = 'sending', body = ?, sent_at = NULL WHERE id = ?`).run(a.body, same.id);
+      return { ok: true, touchId: same.id };
     }
     const r = db
       .prepare(
@@ -82,8 +88,10 @@ export function reserveTouch(
   return run.immediate();
 }
 
+/** Only transitions a row currently 'sending'; any other row is left untouched (silent no-op, so
+ * 'sent' is never downgraded and dry_run rows stay dry_run). */
 export function finishTouch(db: Db, touchId: number, status: TouchStatus, now: Date): void {
-  db.prepare('UPDATE touches SET status = ?, sent_at = ? WHERE id = ?').run(
+  db.prepare("UPDATE touches SET status = ?, sent_at = ? WHERE id = ? AND status = 'sending'").run(
     status,
     status === 'sent' ? now.toISOString() : null,
     touchId,
