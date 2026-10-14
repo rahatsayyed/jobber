@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb } from '../src/db.js';
 import { haltPlatform, clearHalt } from '../src/outreach/limits.js';
-import { readControl, setStop, clearStop, type ControlDeps } from '../src/scheduler/control.js';
+import { readControl, setStop, clearStop, defaultDeps, type ControlDeps } from '../src/scheduler/control.js';
 
 const NOW = new Date('2026-10-15T10:00:00Z');
 let dir: string;
@@ -82,6 +82,65 @@ describe('readControl', () => {
     const s = readControl(db, deps());
     expect(s.killed).toBe(true);
     expect(s.readError).not.toBeNull();
+  });
+});
+
+describe('fail closed hardening', () => {
+  it('STOP exists but read throws: killed with readError', () => {
+    const s = readControl(db, deps({ exists: () => true, read: () => { throw new Error('EIO'); } }));
+    expect(s.killed).toBe(true);
+    expect(s.readError).toContain('STOP file unreadable');
+    expect(s.killReason).toContain('STOP file');
+  });
+
+  it('active halt row with empty reason still halts', () => {
+    db.prepare("INSERT INTO halt_flags (platform, reason, set_at, cleared_at) VALUES ('all', '', ?, NULL)").run(NOW.toISOString());
+    const s = readControl(db, deps());
+    expect(s.killed).toBe(true);
+    expect(s.killReason).toContain('halt flag set (no reason)');
+    db.prepare("INSERT INTO halt_flags (platform, reason, set_at, cleared_at) VALUES ('naukri', '', ?, NULL)").run(NOW.toISOString());
+    db.prepare("UPDATE halt_flags SET cleared_at = ? WHERE platform = 'all'").run(NOW.toISOString());
+    const t = readControl(db, deps());
+    expect(t.killed).toBe(false);
+    expect(t.halted.naukri).toBe('halt flag set (no reason)');
+    expect(t.allowed).toEqual(['linkedin']);
+  });
+
+  it('all plus platform halt together is killed', () => {
+    haltPlatform(db, 'all', 'big', NOW);
+    haltPlatform(db, 'linkedin', 'small', NOW);
+    const s = readControl(db, deps());
+    expect(s.killed).toBe(true);
+    expect(s.halted.linkedin).toBe('small');
+    expect(s.allowed).toEqual([]);
+  });
+
+  it('long reasons keep every key and the total stays within 200', () => {
+    const d = deps();
+    setStop(d.stopFile, 'z'.repeat(500), NOW);
+    haltPlatform(db, 'all', 'y'.repeat(500), NOW);
+    const s = readControl(db, { ...d, env: { JOBBER_KILL: '1' } });
+    expect(s.killReason!.length).toBeLessThanOrEqual(200);
+    expect(s.killReason).toContain('STOP file');
+    expect(s.killReason).toContain('JOBBER_KILL=1');
+    expect(s.killReason).toContain('halt all');
+  });
+
+  const unprivileged = typeof process.getuid === 'function' && process.getuid() !== 0;
+  it.skipIf(!unprivileged)('default exists on an unstattable path kills with readError; clearStop throws', () => {
+    const parent = join(dir, 'locked');
+    mkdirSync(join(parent, 'sub'), { recursive: true });
+    const f = join(parent, 'sub', 'STOP');
+    writeFileSync(f, 'x');
+    chmodSync(parent, 0o000);
+    try {
+      const s = readControl(db, defaultDeps({}, f));
+      expect(s.killed).toBe(true);
+      expect(s.readError).toContain('STOP file unreadable');
+      expect(() => clearStop(f)).toThrow();
+    } finally {
+      chmodSync(parent, 0o755);
+    }
   });
 });
 
