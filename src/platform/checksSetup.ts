@@ -9,6 +9,7 @@ import { parseEnv } from './envFile.js';
 import { validateSets, type RawSets } from './permissions.js';
 import { userDataDir } from '../lib/userData.js';
 import { LIMITS, validateLimit, validatePairs } from '../setup/limitsCatalog.js';
+import { validateProfile } from '../setup/profile.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
 const warn = (detail: string, fix?: string): CheckResult => ({ status: 'warn', detail, fix });
@@ -55,45 +56,12 @@ function dbFile(ctx: DoctorContext): string {
   return isAbsolute(p) ? p : join(ctx.root, p);
 }
 
-const isStrArr = (v: unknown): boolean => Array.isArray(v) && v.every((x) => typeof x === 'string');
-const posNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
-
 /**
  * Field paths (never values) that break the user-data/profile.json shape.
- * Task 11's src/setup/profile.ts validateProfile must stay in step with this function
- * (Task 11 will reuse it).
+ * Delegates to src/setup/profile.ts validateProfile, the single source of truth.
  */
 export function profileProblems(p: unknown): string[] {
-  if (!isObj(p)) return ['(root)'];
-  const bad: string[] = [];
-  if (p.version !== 1) bad.push('version');
-  if (!isStrArr(p.roles)) bad.push('roles');
-  if (!isStrArr(p.locations)) bad.push('locations');
-  if (typeof p.remote_ok !== 'boolean') bad.push('remote_ok');
-  if (typeof p.remote_anywhere !== 'boolean') bad.push('remote_anywhere');
-  if (!isObj(p.salary)) {
-    bad.push('salary');
-  } else {
-    for (const [cur, v] of Object.entries(p.salary)) {
-      if (!/^[A-Z]{3}$/.test(cur)) {
-        bad.push('salary.(currency key)');
-      } else if (!isObj(v) || !posNum(v.floor) || !posNum(v.target) || v.target < v.floor) {
-        bad.push(`salary.${cur}`);
-      }
-    }
-  }
-  if (!(typeof p.notice_period_days === 'number' && Number.isInteger(p.notice_period_days) && p.notice_period_days >= 0)) {
-    bad.push('notice_period_days');
-  }
-  const wa = p.work_authorization;
-  if (!isObj(wa)) {
-    bad.push('work_authorization');
-  } else {
-    if (typeof wa.india !== 'boolean') bad.push('work_authorization.india');
-    if (!['needs_sponsorship', 'authorized', 'unknown'].includes(wa.other as string)) bad.push('work_authorization.other');
-  }
-  if (p.languages !== undefined && !isStrArr(p.languages)) bad.push('languages');
-  return bad;
+  return validateProfile(p);
 }
 
 const SERVED = ['user-data', 'docs', 'renderer', 'reports', 'public'];

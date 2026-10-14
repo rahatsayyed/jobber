@@ -47,7 +47,11 @@ describe('planMigration', () => {
     ]);
   });
   it('covers every user file with at least one legacy path', () => {
-    for (const f of USER_FILES) expect(LEGACY_PATHS[f].length).toBeGreaterThan(0);
+    // profile.json is new with the setup wizard: it has no legacy location.
+    expect(LEGACY_PATHS['profile.json']).toEqual([]);
+    for (const f of USER_FILES.filter((x) => x !== 'profile.json')) {
+      expect(LEGACY_PATHS[f].length).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -56,6 +60,7 @@ describe('planInit', () => {
     const existing = new Set(['/p/user-data/resume.json']);
     const ops = planInit('/p', (f) => existing.has(f), {});
     expect(ops.map((o) => o.to.split('/').pop()).sort()).toEqual(USER_FILES.filter((f) => f !== 'resume.json').sort());
+    expect(ops.map((o) => o.to)).toContain('/p/user-data/profile.json');
     for (const op of ops) expect(op.from.startsWith('/p/user-data.example/')).toBe(true);
   });
 });
