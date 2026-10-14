@@ -107,6 +107,17 @@ describe('redactingIO', () => {
     expect(lines[0]).toBe('saved [hidden] ok');
   });
 
+  it('redacts the trimmed form of a whitespace-padded secret', async () => {
+    const { lines, inner } = capture();
+    inner.askSecret = async () => '  padded-secret-42 \n';
+    const io = redactingIO(inner);
+    await io.askSecret('Key?');
+    io.say('using padded-secret-42 now');
+    io.registerSecret('  other-pad-secret ');
+    io.say('and other-pad-secret');
+    expect(lines).toEqual(['using [hidden] now', 'and [hidden]']);
+  });
+
   it('honours extraSecrets', () => {
     const { lines, inner } = capture();
     const io = redactingIO(inner, () => ['from-env-value']);
@@ -209,6 +220,37 @@ describe('ttyIO', () => {
   it('gives up after repeated invalid answers', async () => {
     const t = make('a\nb\nc\nd\n');
     await expect(t.io.ask('q', { validate: () => 'no' })).rejects.toThrow('Too many invalid answers');
+  });
+
+  it('keeps secrets and typed lines out of readline history (terminal mode)', async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const io = ttyIO(input, output, { terminal: true });
+    input.write('hist-secret-77\n');
+    expect(await io.askSecret('Token?')).toBe('hist-secret-77');
+    input.write('plain\n');
+    await io.ask('Name?');
+    expect(io.history()).toEqual([]);
+    io.close();
+  });
+
+  it('a throwing validator surfaces a fixed message without the candidate', async () => {
+    const t = make('thrown-secret-5\nok\n');
+    const r = await t.io.askSecret('Key?', {
+      validate: (v) => {
+        if (v === 'ok') return null;
+        throw new Error(`boom ${v}`);
+      },
+    });
+    expect(r).toBe('ok');
+    expect(t.out).not.toContain('thrown-secret-5');
+    expect(t.out).toContain('Invalid value');
+  });
+
+  it('close() ends the interface so later asks reject', async () => {
+    const t = make('');
+    t.io.close();
+    await expect(t.io.ask('x')).rejects.toThrow(/input closed/i);
   });
 
   it('pause waits for one line', async () => {

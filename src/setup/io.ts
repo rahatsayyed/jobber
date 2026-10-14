@@ -44,7 +44,23 @@ function redactWith(text: string, secrets: Iterable<string>): string {
 }
 
 function stripValue(msg: string, value: string): string {
-  return value ? msg.split(value).join(HIDDEN) : msg;
+  let out = value ? msg.split(value).join(HIDDEN) : msg;
+  const t = value.trim();
+  if (t && t !== value) out = out.split(t).join(HIDDEN);
+  return out;
+}
+
+/** A validator that throws must not leak the candidate through the error text. */
+function safeValidate(
+  validate: ((v: string) => string | null) | undefined,
+  v: string,
+): string | null {
+  if (!validate) return null;
+  try {
+    return validate(v);
+  } catch {
+    return 'Invalid value';
+  }
 }
 
 /** Wraps an IO: say lines, prompts and re-prompt messages have registered secrets and
@@ -59,15 +75,15 @@ export function redactingIO(
   const wrapValidate =
     (validate: ((v: string) => string | null) | undefined, isSecret: boolean) =>
     (v: string): string | null => {
-      if (!validate) return null;
-      const msg = validate(v);
+      const msg = safeValidate(validate, v);
       if (msg === null) return null;
       // The candidate may not be registered yet; it must not survive in the message.
-      return redactWith(msg, isSecret ? [...all(), v] : all());
+      return redactWith(msg, isSecret ? [...all(), v, v.trim()] : all());
     };
   return {
     registerSecret(v: string) {
       if (v) registered.add(v);
+      if (v.trim()) registered.add(v.trim());
     },
     say: (line) => inner.say(red(line)),
     ask: (prompt, opts) =>
@@ -78,6 +94,7 @@ export function redactingIO(
         opts ? { ...opts, validate: wrapValidate(opts.validate, true) } : opts,
       );
       if (v) registered.add(v);
+      if (v.trim()) registered.add(v.trim());
       return v;
     },
     confirm: (prompt, d) => inner.confirm(red(prompt), d),
@@ -137,7 +154,7 @@ export function scriptedIO(script: ScriptItem[]): SetupIO & {
       const item = next(kind, prompt) as { ask?: string; secret?: string };
       const raw = (kind === 'ask' ? item.ask : item.secret) ?? '';
       const value = raw === '' && dflt !== undefined ? dflt : raw;
-      const msg = validate ? validate(value) : null;
+      const msg = safeValidate(validate, value);
       if (msg === null) return value;
       // The re-prompt message is recorded, but a secret candidate is stripped from it.
       transcript.push(`invalid: ${kind === 'secret' ? stripValue(msg, value) : msg}`);
@@ -181,7 +198,11 @@ export function scriptedIO(script: ScriptItem[]): SetupIO & {
 
 /** Real implementation on a readable and a writable stream using node:readline.
  *  askSecret mutes the readline echo and prints a newline after. Up to three re-prompts. */
-export function ttyIO(input: NodeJS.ReadableStream, output: NodeJS.WritableStream): SetupIO {
+export function ttyIO(
+  input: NodeJS.ReadableStream,
+  output: NodeJS.WritableStream,
+  opts?: { terminal?: boolean },
+): SetupIO & { close(): void; history(): readonly string[] } {
   let muted = false;
   const sink = new Writable({
     write(chunk, _enc, cb) {
@@ -189,8 +210,10 @@ export function ttyIO(input: NodeJS.ReadableStream, output: NodeJS.WritableStrea
       cb();
     },
   });
-  const isTty = (input as { isTTY?: boolean }).isTTY === true;
-  const rl = createInterface({ input, output: sink, terminal: isTty });
+  const isTty = opts?.terminal ?? (input as { isTTY?: boolean }).isTTY === true;
+  // historySize 0: a secret must never enter readline's history; empty prompt: no stale "> ".
+  const rl = createInterface({ input, output: sink, terminal: isTty, historySize: 0 });
+  rl.setPrompt('');
 
   const lines: string[] = [];
   const waiters: { resolve: (l: string) => void; reject: (e: Error) => void }[] = [];
@@ -237,7 +260,7 @@ export function ttyIO(input: NodeJS.ReadableStream, output: NodeJS.WritableStrea
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const raw = await line(shown, secret);
       const value = raw === '' && dflt !== undefined ? dflt : raw;
-      const msg = validate ? validate(value) : null;
+      const msg = safeValidate(validate, value);
       if (msg === null) return value;
       write(`${secret ? stripValue(msg, value) : msg}\n`);
     }
@@ -245,6 +268,8 @@ export function ttyIO(input: NodeJS.ReadableStream, output: NodeJS.WritableStrea
   }
 
   return {
+    close: () => rl.close(),
+    history: () => ((rl as unknown as { history?: string[] }).history ?? []),
     say: (l) => write(`${l}\n`),
     ask: (prompt, opts) => loop(prompt, false, opts?.validate, opts?.default),
     askSecret: (prompt, opts) => loop(prompt, true, opts?.validate, undefined),
