@@ -59,23 +59,31 @@ export function planWake(i: {
   const inboxDue = due.inboxLastCheckedMinAgo === null || due.inboxLastCheckedMinAgo >= knobs.inboxEveryMin;
   if (inboxDue) tasks.push({ worker: 'inbox-recruiter-replies', quota: INBOX_QUOTA, platforms: [...control.allowed] });
 
-  const followPlats = plats([
-    ['linkedin', ['linkedin_message']],
-    ['naukri', ['naukri_message']],
-  ]);
-  const outreachPlats = plats([
-    ['linkedin', ['linkedin_invite']],
-    ['naukri', ['naukri_message']],
-  ]);
+  const withWork = (ps: Platform[], by: Record<Platform, number>): Platform[] => ps.filter((p) => by[p] > 0);
+  const total = (ps: Platform[], by: Record<Platform, number>): number => ps.reduce((n, p) => n + by[p], 0);
+  const followPlats = withWork(
+    plats([
+      ['linkedin', ['linkedin_message']],
+      ['naukri', ['naukri_message']],
+    ]),
+    due.followupsDueByPlatform,
+  );
+  const outreachPlats = withWork(
+    plats([
+      ['linkedin', ['linkedin_invite']],
+      ['naukri', ['naukri_message']],
+    ]),
+    due.newOutreachReadyByPlatform,
+  );
   const searchPlats = plats([['naukri', ['naukri_apply']]]);
 
-  if (due.followupsDue > 0 && followPlats.length > 0 && remaining > 0) {
-    const q = Math.min(due.followupsDue, remaining);
+  if (followPlats.length > 0 && remaining > 0) {
+    const q = Math.min(total(followPlats, due.followupsDueByPlatform), remaining);
     tasks.push({ worker: 'due-followups', quota: q, platforms: followPlats });
     remaining -= q;
   }
-  if (due.newOutreachReady > 0 && outreachPlats.length > 0 && remaining > 0) {
-    const q = Math.min(due.newOutreachReady, remaining);
+  if (outreachPlats.length > 0 && remaining > 0) {
+    const q = Math.min(total(outreachPlats, due.newOutreachReadyByPlatform), remaining);
     tasks.push({ worker: 'new-outreach', quota: q, platforms: outreachPlats });
     remaining -= q;
   }
@@ -85,6 +93,10 @@ export function planWake(i: {
 
   if (tasks.length > 0) return { kind: 'run', burst, tasks };
 
-  const workExists = due.followupsDue > 0 || due.newOutreachReady > 0 || (searchDue && allowed.has('naukri'));
+  const allowedTotal = (by: Record<Platform, number>): number => control.allowed.reduce((n, p) => n + by[p], 0);
+  const workExists =
+    allowedTotal(due.followupsDueByPlatform) > 0 ||
+    allowedTotal(due.newOutreachReadyByPlatform) > 0 ||
+    (searchDue && allowed.has('naukri'));
   return { kind: 'skip', reason: workExists ? 'ceilings_exhausted' : 'nothing_due' };
 }

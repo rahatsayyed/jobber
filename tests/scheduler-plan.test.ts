@@ -28,9 +28,17 @@ const ceil = (bad: LimitKey[] = []): Record<LimitKey, CeilingStatus> => {
     keys.map((k) => [k, bad.includes(k) ? { used: 5, limit: 5, ok: false } : { used: 0, limit: 5, ok: true }]),
   ) as Record<LimitKey, CeilingStatus>;
 };
-const due = (o: Partial<DueCounts> = {}): DueCounts => ({
-  followupsDue: 0, newOutreachReady: 0, inboxLastCheckedMinAgo: 5, naukriSearchLastHoursAgo: 1, ...o,
-});
+const due = (o: Partial<DueCounts> = {}): DueCounts => {
+  const f = o.followupsDue ?? 0;
+  const n = o.newOutreachReady ?? 0;
+  return {
+    followupsDue: f * 2, newOutreachReady: n * 2,
+    followupsDueByPlatform: { linkedin: f, naukri: f },
+    newOutreachReadyByPlatform: { linkedin: n, naukri: n },
+    inboxLastCheckedMinAgo: 5, naukriSearchLastHoursAgo: 1,
+    ...o,
+  };
+};
 function counted(value: number) {
   let n = 0;
   const rng = () => { n++; return value; };
@@ -128,6 +136,25 @@ describe('planWake', () => {
     expect(run({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: 2 }) })).toBe(false);
     expect(run({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: 7 }), ceilings: ceil(['naukri_apply']) })).toBe(false);
   });
+  it('plans nothing when only a halted platform has work (I4, M1)', () => {
+    const { d } = plan({
+      control: ctl({ allowed: ['linkedin'], halted: { linkedin: null, naukri: 'x' } }),
+      due: due({ followupsDueByPlatform: { linkedin: 0, naukri: 5 }, followupsDue: 5 }),
+      ceilings: ceil(['linkedin_message', 'linkedin_invite']),
+    });
+    expect(d).toMatchObject({ kind: 'skip', reason: 'nothing_due' });
+  });
+  it('quota is sized only from the kept platform (I4)', () => {
+    const { d } = plan(
+      {
+        control: ctl({ allowed: ['linkedin'], halted: { linkedin: null, naukri: 'x' } }),
+        due: due({ followupsDueByPlatform: { linkedin: 1, naukri: 9 }, followupsDue: 10 }),
+      },
+      0.99,
+    );
+    if (d.kind !== 'run') throw new Error('expected run');
+    expect(d.tasks.find((t) => t.worker === 'due-followups')).toMatchObject({ quota: 1, platforms: ['linkedin'] });
+  });
   it('loadPlanKnobs defaults and overrides', () => {
     expect(loadPlanKnobs({})).toEqual({ inboxEveryMin: 60, naukriSearchEveryHours: 6 });
     expect(loadPlanKnobs({ INBOX_EVERY_MIN: '15', NAUKRI_SEARCH_EVERY_HOURS: 'x' } as NodeJS.ProcessEnv))
@@ -139,6 +166,7 @@ describe('countDue', () => {
   const day = 24 * 3600 * 1000;
   function seedPerson(db: ReturnType<typeof openDb>, key: string, o: {
     company?: string; stage?: string; paused?: string | null; cooldown?: string | null; connectAgoDays?: number | null;
+    accepted?: boolean;
   } = {}) {
     const id = upsertPerson(db, {
       platform: 'linkedin', profileKey: `linkedin.com/in/${key}`, company: o.company ?? `Co ${key}`, category: 'recruiter',
@@ -150,8 +178,52 @@ describe('countDue', () => {
         `INSERT INTO touches (person_id, kind, idempotency_key, status, sent_at) VALUES (?, 'connect', ?, 'sent', ?)`,
       ).run(id, `k-${key}`, new Date(NOW.getTime() - o.connectAgoDays * day).toISOString());
     }
+    if (o.accepted !== false && o.connectAgoDays !== null && o.connectAgoDays !== undefined) {
+      db.prepare("INSERT INTO connections (profile_url, status) VALUES (?, 'messaged')").run(`linkedin.com/in/${key}`);
+    }
     return id;
   }
+
+  it('does not treat a bare sent invite as acceptance (I1)', () => {
+    const db = openDb(':memory:');
+    seedPerson(db, 'invited', { connectAgoDays: 10, accepted: false });
+    expect(countDue(db, NOW, TUNING_DEFAULTS).followupsDue).toBe(0);
+  });
+
+  it('skips unparseable cooldown, cycle start and sent_at (I2)', () => {
+    const db = openDb(':memory:');
+    seedPerson(db, 'a', { connectAgoDays: 10, cooldown: 'garbage' });
+    const b = seedPerson(db, 'b', { connectAgoDays: 10 });
+    db.prepare("UPDATE contact_state SET cycle_started_at = 'nope' WHERE person_id = ?").run(b);
+    const c = seedPerson(db, 'c', { connectAgoDays: 10 });
+    db.prepare("INSERT INTO touches (person_id, kind, idempotency_key, status, sent_at) VALUES (?, 'role_ask', 'zz', 'sent', 'bad')").run(c);
+    expect(countDue(db, NOW, TUNING_DEFAULTS).followupsDue).toBe(0);
+  });
+
+  it('excludes people with an in-flight touch and dedups queued work (I3, I4)', () => {
+    const db = openDb(':memory:');
+    const a = seedPerson(db, 'a', { connectAgoDays: 10 });
+    seedPerson(db, 'b', { connectAgoDays: 10 });
+    db.prepare("INSERT INTO touches (person_id, kind, idempotency_key, status) VALUES (?, 'role_ask', 'q1', 'queued')").run(a);
+    db.prepare("INSERT INTO jobs (id, source, title, company, url) VALUES ('j1','t','T','C','u')").run();
+    db.prepare(
+      "INSERT INTO outreach_queue (job_id, connect_profile_url, connect_note, status) VALUES ('j1', 'linkedin.com/in/a', 'hi', 'queued')",
+    ).run();
+    const c = countDue(db, NOW, TUNING_DEFAULTS);
+    expect(c.followupsDue).toBe(1);
+    expect(c.followupsDueByPlatform).toEqual({ linkedin: 1, naukri: 0 });
+    expect(c.newOutreachReady).toBe(1);
+    expect(c.newOutreachReadyByPlatform).toEqual({ linkedin: 1, naukri: 0 });
+  });
+
+  it('treats an unparseable scheduler_state timestamp as ran just now (M4)', () => {
+    const db = openDb(':memory:');
+    setState(db, 'inbox_last_checked_at', 'garbage', NOW);
+    setState(db, 'naukri_search_last_at', 'garbage', NOW);
+    const c = countDue(db, NOW, TUNING_DEFAULTS);
+    expect(c.inboxLastCheckedMinAgo).toBe(0);
+    expect(c.naukriSearchLastHoursAgo).toBe(0);
+  });
 
   it('counts only due, unpaused, out-of-cooldown people', () => {
     const db = openDb(':memory:');
@@ -193,6 +265,8 @@ describe('countDue', () => {
 
   it('returns null ages when state is missing', () => {
     const c = countDue(openDb(':memory:'), NOW, TUNING_DEFAULTS);
-    expect(c).toEqual({ followupsDue: 0, newOutreachReady: 0, inboxLastCheckedMinAgo: null, naukriSearchLastHoursAgo: null });
+    expect(c.inboxLastCheckedMinAgo).toBeNull();
+    expect(c.naukriSearchLastHoursAgo).toBeNull();
+    expect(c.followupsDue + c.newOutreachReady).toBe(0);
   });
 });

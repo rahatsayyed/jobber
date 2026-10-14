@@ -13,6 +13,9 @@ function person(db: ReturnType<typeof openDb>, key: string, platform = 'linkedin
     .run(new Date(NOW.getTime() - 30 * day).toISOString(), id);
   return id;
 }
+function accept(db: ReturnType<typeof openDb>, key: string, platform = 'linkedin') {
+  db.prepare("INSERT INTO connections (profile_url, status) VALUES (?, 'messaged')").run(`${platform}/${key}`);
+}
 function touch(db: ReturnType<typeof openDb>, id: number, kind: string, agoDays: number, status = 'sent') {
   db.prepare('INSERT INTO touches (person_id, kind, idempotency_key, status, sent_at) VALUES (?,?,?,?,?)')
     .run(id, kind, `${id}-${kind}-${agoDays}-${status}`, status, new Date(NOW.getTime() - agoDays * day).toISOString());
@@ -23,6 +26,7 @@ describe('dueTouchesFor', () => {
     const db = openDb(':memory:');
     const a = person(db, 'a');
     touch(db, a, 'connect', 10);
+    accept(db, 'a');
     const r = dueTouchesFor(db, NOW, TUNING_DEFAULTS);
     expect(r).toHaveLength(1);
     expect(r[0]).toMatchObject({ person_id: a, kind: 'role_ask', platform: 'linkedin' });
@@ -40,9 +44,22 @@ describe('dueTouchesFor', () => {
     const db = openDb(':memory:');
     for (const [k, p] of [['a', 'linkedin'], ['b', 'linkedin'], ['c', 'naukri']] as const) {
       touch(db, person(db, k, p), 'connect', 10);
+      accept(db, k, p);
     }
     expect(dueTouchesFor(db, NOW, TUNING_DEFAULTS, { platform: 'naukri' })).toHaveLength(1);
     expect(dueTouchesFor(db, NOW, TUNING_DEFAULTS, { limit: 2 })).toHaveLength(2);
+  });
+  it('is not due on a bare sent invite without acceptance', () => {
+    const db = openDb(':memory:');
+    touch(db, person(db, 'a'), 'connect', 10);
+    expect(dueTouchesFor(db, NOW, TUNING_DEFAULTS)).toHaveLength(0);
+  });
+  it('a sent message proves acceptance', () => {
+    const db = openDb(':memory:');
+    const a = person(db, 'a');
+    touch(db, a, 'connect', 20);
+    touch(db, a, 'role_ask', 6);
+    expect(dueTouchesFor(db, NOW, TUNING_DEFAULTS)[0]).toMatchObject({ kind: 'followup' });
   });
   it('ignores touches from before the cycle start', () => {
     const db = openDb(':memory:');
