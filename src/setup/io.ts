@@ -1,0 +1,282 @@
+// src/setup/io.ts
+// Prompt IO for the setup wizard, injected everywhere so tests never touch a real terminal.
+// Secrets: askSecret never echoes, and a secret answer never reaches say(), a transcript, a
+// re-prompt message or an error string (the redacting wrapper and the loops below enforce it).
+import { createInterface } from 'node:readline';
+import { Writable } from 'node:stream';
+
+export interface ChoiceOption<T extends string> {
+  value: T;
+  label: string;
+}
+
+export interface SetupIO {
+  /** Normal output (always redacted when wrapped by redactingIO). */
+  say(line: string): void;
+  ask(
+    prompt: string,
+    opts?: { default?: string; validate?: (v: string) => string | null },
+  ): Promise<string>;
+  /** No echo; the value is auto-registered as a secret by redactingIO. */
+  askSecret(prompt: string, opts?: { validate?: (v: string) => string | null }): Promise<string>;
+  confirm(prompt: string, defaultYes?: boolean): Promise<boolean>;
+  choose<T extends string>(
+    prompt: string,
+    options: ChoiceOption<T>[],
+    defaultValue?: T,
+  ): Promise<T>;
+  /** "Press Enter when done". */
+  pause(prompt: string): Promise<void>;
+}
+
+const HIDDEN = '[hidden]';
+const TOKEN_RE = /\d{5,}:[A-Za-z0-9_-]{10,}/g;
+/** One initial attempt plus three re-prompts; the fourth failure throws. */
+const MAX_ATTEMPTS = 4;
+const TOO_MANY = 'Too many invalid answers';
+
+function redactWith(text: string, secrets: Iterable<string>): string {
+  let out = text.replace(TOKEN_RE, HIDDEN);
+  // Longest first so a secret that contains another one is replaced whole.
+  const list = [...secrets].filter((s) => s.length > 0).sort((a, b) => b.length - a.length);
+  for (const s of list) out = out.split(s).join(HIDDEN);
+  return out;
+}
+
+function stripValue(msg: string, value: string): string {
+  return value ? msg.split(value).join(HIDDEN) : msg;
+}
+
+/** Wraps an IO: say lines, prompts and re-prompt messages have registered secrets and
+ *  Telegram-token shapes replaced with [hidden]. */
+export function redactingIO(
+  inner: SetupIO,
+  extraSecrets?: () => string[],
+): SetupIO & { registerSecret(v: string): void } {
+  const registered = new Set<string>();
+  const all = (): string[] => [...registered, ...(extraSecrets ? extraSecrets() : [])];
+  const red = (s: string): string => redactWith(s, all());
+  const wrapValidate =
+    (validate: ((v: string) => string | null) | undefined, isSecret: boolean) =>
+    (v: string): string | null => {
+      if (!validate) return null;
+      const msg = validate(v);
+      if (msg === null) return null;
+      // The candidate may not be registered yet; it must not survive in the message.
+      return redactWith(msg, isSecret ? [...all(), v] : all());
+    };
+  return {
+    registerSecret(v: string) {
+      if (v) registered.add(v);
+    },
+    say: (line) => inner.say(red(line)),
+    ask: (prompt, opts) =>
+      inner.ask(red(prompt), opts ? { ...opts, validate: wrapValidate(opts.validate, false) } : opts),
+    async askSecret(prompt, opts) {
+      const v = await inner.askSecret(
+        red(prompt),
+        opts ? { ...opts, validate: wrapValidate(opts.validate, true) } : opts,
+      );
+      if (v) registered.add(v);
+      return v;
+    },
+    confirm: (prompt, d) => inner.confirm(red(prompt), d),
+    choose: (prompt, options, d) =>
+      inner.choose(
+        red(prompt),
+        options.map((o) => ({ value: o.value, label: red(o.label) })),
+        d,
+      ),
+    pause: (prompt) => inner.pause(red(prompt)),
+  };
+}
+
+export type ScriptItem =
+  | { ask?: string }
+  | { secret?: string }
+  | { confirm?: boolean }
+  | { choose?: string }
+  | { pause?: true };
+
+type ScriptKind = 'ask' | 'secret' | 'confirm' | 'choose' | 'pause';
+
+function kindOf(item: ScriptItem): ScriptKind {
+  for (const k of ['ask', 'secret', 'confirm', 'choose', 'pause'] as const) {
+    if (k in item) return k;
+  }
+  return 'ask';
+}
+
+/** Test double: answers are consumed in order. The transcript records say lines and prompts,
+ *  never an answer to a secret prompt. */
+export function scriptedIO(script: ScriptItem[]): SetupIO & {
+  transcript: string[];
+  assertDone(): void;
+} {
+  const queue = [...script];
+  const transcript: string[] = [];
+
+  function next(kind: ScriptKind, prompt: string): ScriptItem {
+    const item = queue.shift();
+    if (!item) throw new Error(`scriptedIO: no scripted answer left for ${kind} "${prompt}"`);
+    const got = kindOf(item);
+    if (got !== kind) {
+      throw new Error(`scriptedIO: unexpected ${kind} "${prompt}"; next scripted item is ${got}`);
+    }
+    return item;
+  }
+
+  async function loop(
+    kind: 'ask' | 'secret',
+    prompt: string,
+    validate: ((v: string) => string | null) | undefined,
+    dflt: string | undefined,
+  ): Promise<string> {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      transcript.push(`${kind}: ${prompt}`);
+      const item = next(kind, prompt) as { ask?: string; secret?: string };
+      const raw = (kind === 'ask' ? item.ask : item.secret) ?? '';
+      const value = raw === '' && dflt !== undefined ? dflt : raw;
+      const msg = validate ? validate(value) : null;
+      if (msg === null) return value;
+      // The re-prompt message is recorded, but a secret candidate is stripped from it.
+      transcript.push(`invalid: ${kind === 'secret' ? stripValue(msg, value) : msg}`);
+    }
+    throw new Error(TOO_MANY);
+  }
+
+  return {
+    transcript,
+    say: (line) => void transcript.push(`say: ${line}`),
+    ask: (prompt, opts) => loop('ask', prompt, opts?.validate, opts?.default),
+    askSecret: (prompt, opts) => loop('secret', prompt, opts?.validate, undefined),
+    async confirm(prompt, defaultYes = true) {
+      transcript.push(`confirm: ${prompt}`);
+      const item = next('confirm', prompt) as { confirm?: boolean };
+      return item.confirm ?? defaultYes;
+    },
+    async choose<T extends string>(prompt: string, options: ChoiceOption<T>[], defaultValue?: T) {
+      transcript.push(`choose: ${prompt}`);
+      const item = next('choose', prompt) as { choose?: string };
+      const v = item.choose === '' || item.choose === undefined ? defaultValue : item.choose;
+      const hit = options.find((o) => o.value === v);
+      if (!hit) {
+        throw new Error(
+          `scriptedIO: choose "${prompt}" answer is not one of [${options.map((o) => o.value).join(', ')}]`,
+        );
+      }
+      return hit.value;
+    },
+    async pause(prompt) {
+      transcript.push(`pause: ${prompt}`);
+      next('pause', prompt);
+    },
+    assertDone() {
+      if (queue.length > 0) {
+        throw new Error(`scriptedIO: ${queue.length} unused scripted answer(s) left`);
+      }
+    },
+  };
+}
+
+/** Real implementation on a readable and a writable stream using node:readline.
+ *  askSecret mutes the readline echo and prints a newline after. Up to three re-prompts. */
+export function ttyIO(input: NodeJS.ReadableStream, output: NodeJS.WritableStream): SetupIO {
+  let muted = false;
+  const sink = new Writable({
+    write(chunk, _enc, cb) {
+      if (!muted) output.write(chunk);
+      cb();
+    },
+  });
+  const isTty = (input as { isTTY?: boolean }).isTTY === true;
+  const rl = createInterface({ input, output: sink, terminal: isTty });
+
+  const lines: string[] = [];
+  const waiters: { resolve: (l: string) => void; reject: (e: Error) => void }[] = [];
+  let closed = false;
+  rl.on('line', (l) => {
+    const w = waiters.shift();
+    if (w) w.resolve(l);
+    else lines.push(l);
+  });
+  rl.on('close', () => {
+    closed = true;
+    for (const w of waiters.splice(0)) w.reject(new Error('Input closed before an answer was given'));
+  });
+
+  function readLine(): Promise<string> {
+    const queued = lines.shift();
+    if (queued !== undefined) return Promise.resolve(queued);
+    if (closed) return Promise.reject(new Error('Input closed before an answer was given'));
+    return new Promise((resolve, reject) => waiters.push({ resolve, reject }));
+  }
+
+  function write(s: string): void {
+    output.write(s);
+  }
+
+  async function line(prompt: string, secret: boolean): Promise<string> {
+    write(prompt);
+    muted = secret;
+    try {
+      return await readLine();
+    } finally {
+      muted = false;
+      if (secret) write('\n');
+    }
+  }
+
+  async function loop(
+    prompt: string,
+    secret: boolean,
+    validate: ((v: string) => string | null) | undefined,
+    dflt: string | undefined,
+  ): Promise<string> {
+    const shown = dflt ? `${prompt} [${dflt}] ` : `${prompt} `;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const raw = await line(shown, secret);
+      const value = raw === '' && dflt !== undefined ? dflt : raw;
+      const msg = validate ? validate(value) : null;
+      if (msg === null) return value;
+      write(`${secret ? stripValue(msg, value) : msg}\n`);
+    }
+    throw new Error(TOO_MANY);
+  }
+
+  return {
+    say: (l) => write(`${l}\n`),
+    ask: (prompt, opts) => loop(prompt, false, opts?.validate, opts?.default),
+    askSecret: (prompt, opts) => loop(prompt, true, opts?.validate, undefined),
+    async confirm(prompt, defaultYes = true) {
+      const hint = defaultYes ? '[Y/n]' : '[y/N]';
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        const a = (await line(`${prompt} ${hint} `, false)).trim().toLowerCase();
+        if (a === '') return defaultYes;
+        if (a === 'y' || a === 'yes') return true;
+        if (a === 'n' || a === 'no') return false;
+        write('Please answer y or n.\n');
+      }
+      throw new Error(TOO_MANY);
+    },
+    async choose<T extends string>(prompt: string, options: ChoiceOption<T>[], defaultValue?: T) {
+      write(`${prompt}\n`);
+      options.forEach((o, i) => write(`  ${i + 1}) ${o.label}\n`));
+      const dIdx = defaultValue ? options.findIndex((o) => o.value === defaultValue) : -1;
+      const hint = dIdx >= 0 ? ` [${dIdx + 1}]` : '';
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        const a = (await line(`Choose 1-${options.length}${hint}: `, false)).trim();
+        if (a === '' && dIdx >= 0) return options[dIdx].value;
+        const n = Number(a);
+        if (Number.isInteger(n) && n >= 1 && n <= options.length) return options[n - 1].value;
+        const byValue = options.find((o) => o.value === a);
+        if (byValue) return byValue.value;
+        write('Not a valid choice.\n');
+      }
+      throw new Error(TOO_MANY);
+    },
+    async pause(prompt) {
+      await line(`${prompt} `, false);
+    },
+  };
+}
