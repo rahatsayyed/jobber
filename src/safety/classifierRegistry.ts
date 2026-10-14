@@ -1,5 +1,5 @@
 // src/safety/classifierRegistry.ts
-import { readFileSync } from 'node:fs';
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { safeFile, type ClassifierPin, type PinEntry } from './classifierModel.js';
 
@@ -191,6 +191,26 @@ export function loadRegistry(path = 'config/classifier-models.json'): Classifier
   const problems = validateRegistry(raw);
   if (problems.length) throw new Error(`${path} is invalid: ${problems.join('; ')}`);
   return raw as ClassifierRegistry;
+}
+
+/** Replace only profiles[id].fit; validates the result and writes atomically (temp file + rename). */
+export function writeFit(path: string, id: string, fit: ProfileFit): void {
+  const raw = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+  const before = validateRegistry(raw);
+  if (before.length) throw new Error(`${path} is invalid: ${before.join('; ')}`);
+  const reg = raw as ClassifierRegistry;
+  if (!Object.prototype.hasOwnProperty.call(reg.profiles, id)) throw new Error(`unknown profile "${id}"`);
+  reg.profiles[id].fit = fit;
+  const problems = validateRegistry(reg);
+  if (problems.length) throw new Error(`refusing to write an invalid fit: ${problems.join('; ')}`);
+  const tmp = `${path}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(reg, null, 2) + '\n');
+    renameSync(tmp, path);
+  } catch (e) {
+    rmSync(tmp, { force: true });
+    throw e;
+  }
 }
 
 export function resolveProfile(reg: ClassifierRegistry, env: NodeJS.ProcessEnv): ClassifierProfile {
