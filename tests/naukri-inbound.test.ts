@@ -59,6 +59,12 @@ describe('classifyInbound classes', () => {
       expect(v.mayAutoReply).toBe(false);
     });
   }
+  it('truncated text escalates', () => {
+    const v = classifyInbound('Are you interested in a role? ' + 'a '.repeat(4000), OK);
+    expect(v.reasons).toContain('truncated');
+    expect(v.escalate).toBe(true);
+    expect(v.mayAutoReply).toBe(false);
+  });
   it('accented latin is not non-latin', () => {
     const v = classifyInbound('Hola José, are you interested in a role? Señor', OK);
     expect(v.reasons).not.toContain('unclassified_non_latin');

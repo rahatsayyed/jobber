@@ -48,6 +48,7 @@ export function classifyInbound(
   if (hasPhone(t)) reasons.push('phone_number');
   if (TZ.test(t) && (DATE_OR_TIME.test(t) || /\d/.test(t))) reasons.push('time_zone_schedule');
   if (NON_LATIN.test(t)) reasons.push('unclassified_non_latin');
+  if (gate.flags.includes('truncated')) reasons.push('truncated');
 
   let klass: InboundClass;
   if (REJECTION.test(t)) klass = 'rejection';

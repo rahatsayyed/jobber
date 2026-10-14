@@ -126,7 +126,9 @@ export async function naukriSendMessage(
       `SELECT thread_ref, klass, escalated, created_at FROM inbound_messages
         WHERE platform = 'naukri' AND person_id = ? ORDER BY created_at DESC, id DESC`,
     ).all(p.id) as { thread_ref: string; klass: string; escalated: number; created_at: string }[];
-    for (const r of inboundRows) known.add(r.thread_ref);
+    for (const r of inboundRows) {
+      if (r.klass === 'recruiter_inquiry' || r.klass === 'reply') known.add(r.thread_ref);
+    }
     if (!i.threadRef || !known.has(i.threadRef)) {
       return { status: 'blocked', reasons: ['unverified_thread'] };
     }
@@ -154,6 +156,8 @@ export async function naukriSendMessage(
     const st = d.style(text);
     if (!st.ok) return { status: 'blocked', reasons: ['style_gate', ...st.hits] };
     const ct = await d.checkText(text);
+    const stNorm = typeof ct.normalized === 'string' ? d.style(ct.normalized) : st;
+    if (!stNorm.ok) return { status: 'blocked', reasons: ['style_gate', ...stNorm.hits] };
     if (!ct.ok || ct.verdict === 'block') return { status: 'blocked', reasons: ['fact_gate_block'] };
     const normalized = ct.normalized;
     if (typeof normalized !== 'string' || normalized.trim().length === 0) {

@@ -101,7 +101,11 @@ describe('naukriSendMessage', () => {
   it('inbound thread is accepted without confirmed state', async () => {
     db.prepare("DELETE FROM scheduler_state WHERE key LIKE 'naukri_thread_%'").run();
     expect((await naukriSendMessage(deps(), input())).reasons).toEqual(['unverified_thread']);
-    inbound('noise', 1);
+    inbound('noise', 0);
+    expect((await naukriSendMessage(deps(), input())).reasons).toEqual(['unverified_thread']);
+    inbound('injection_suspect', 1);
+    expect((await naukriSendMessage(deps(), input())).reasons).toEqual(['unverified_thread']);
+    inbound('reply', 1);
     expect((await naukriSendMessage(deps(), input())).status).toBe('sent');
   });
   it('verifyThread mismatch blocks before typing; company mismatch too', async () => {
@@ -126,6 +130,14 @@ describe('naukriSendMessage', () => {
   it('style block', async () => {
     styleOk = false;
     const r = await naukriSendMessage(deps(), input());
+    expect(r.status).toBe('blocked');
+    expect(r.reasons[0]).toBe('style_gate');
+  });
+  it('style gate also runs on normalized text', async () => {
+    const r = await naukriSendMessage(deps({
+      style: (t) => ({ ok: !t.includes('NORM'), hits: ['x'] }),
+      checkText: async (t) => ({ ok: true, normalized: t + ' NORM', verdict: 'pass' }),
+    }), input());
     expect(r.status).toBe('blocked');
     expect(r.reasons[0]).toBe('style_gate');
   });
