@@ -108,9 +108,47 @@ describe('verifyIdToken', () => {
     const { fake, oidc } = await setup();
     const n = sec(T0);
     const notBefore = T0;
-    expect((await oidc.verifyIdToken(await fake.mint({ iat: n - 59, auth_time: n - 59 }), { nonce: 'nonce-1', notBefore })).sub).toBe('sub-1');
+    expect((await oidc.verifyIdToken(await fake.mint({ iat: n - 59, auth_time: n }), { nonce: 'nonce-1', notBefore })).sub).toBe('sub-1');
     expect(await code(oidc.verifyIdToken(await fake.mint({ iat: n - 61 }), { nonce: 'nonce-1', notBefore }))).toBe('claims');
     expect(await code(oidc.verifyIdToken(await fake.mint({ iat: n, auth_time: n - 3600 }), { nonce: 'nonce-1', notBefore }))).toBe('claims');
+  });
+});
+
+describe('hardening', () => {
+  it('requires exp', async () => {
+    const { fake, oidc } = await setup();
+    expect(await code(oidc.verifyIdToken(await fake.mint({}, { omit: ['exp'] }), { nonce: 'nonce-1' }))).toBe('claims');
+  });
+
+  it('auth_time floor is strict: notBefore minus 1 s fails, equal passes', async () => {
+    const { fake, oidc } = await setup();
+    const n = sec(T0);
+    expect(await code(oidc.verifyIdToken(await fake.mint({ iat: n, auth_time: n - 1 }), { nonce: 'nonce-1', notBefore: T0 }))).toBe('claims');
+    expect((await oidc.verifyIdToken(await fake.mint({ iat: n, auth_time: n }), { nonce: 'nonce-1', notBefore: T0 })).authTime).toBe(n);
+  });
+
+  it('rejects a mismatched azp even when aud is a string', async () => {
+    const { fake, oidc } = await setup();
+    expect(await code(oidc.verifyIdToken(await fake.mint({ azp: 'other' }), { nonce: 'nonce-1' }))).toBe('claims');
+    expect((await oidc.verifyIdToken(await fake.mint({ azp: 'client-123' }), { nonce: 'nonce-1' })).sub).toBe('sub-1');
+  });
+
+  it('requires an https issuer', async () => {
+    const { fake } = await setup();
+    const oidc = createOidc(
+      { issuer: 'http://accounts.fake.test', clientId: 'c', clientSecret: 's', redirectUri: 'https://x.test/cb', reauthPrompt: 'login', maxAgeSec: 0 },
+      { fetch: fake.fetch, now: () => T0, random: (n) => randomBytes(n) },
+    );
+    expect(await code(oidc.discover())).toBe('discovery');
+  });
+
+  it('drops the JWKS cache after 24 h even inside the unknown-kid throttle window', async () => {
+    const { fake, oidc, clock } = await setup();
+    await oidc.verifyIdToken(await fake.mint(), { nonce: 'nonce-1' });
+    expect(fake.hits.jwks).toBe(1);
+    clock.t += 25 * 3600_000;
+    await oidc.verifyIdToken(await fake.mint(), { nonce: 'nonce-1' });
+    expect(fake.hits.jwks).toBe(2);
   });
 });
 

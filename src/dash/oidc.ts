@@ -95,6 +95,7 @@ export function createOidc(cfg: OidcConfig, deps: OidcDeps) {
   let disc: Discovery | undefined;
   let discAt = 0;
   let jwks: JSONWebKeySet | undefined;
+  let jwksAt = 0;
   let lastRefetchAt = Number.NEGATIVE_INFINITY;
 
   const issuerHost = (() => {
@@ -139,6 +140,7 @@ export function createOidc(cfg: OidcConfig, deps: OidcDeps) {
   async function discover(): Promise<void> {
     const t = deps.now().getTime();
     if (disc && t - discAt < DISCOVERY_TTL_MS) return;
+    if (!endpointOk(cfg.issuer)) throw new OidcError('discovery', 'issuer must be https');
     const url = `${cfg.issuer.replace(/\/$/, '')}/.well-known/openid-configuration`;
     const { status, body } = await getJson(url, { method: 'GET' }, 'discovery');
     if (status !== 200 || !body || typeof body !== 'object') throw new OidcError('discovery', 'bad response');
@@ -167,13 +169,14 @@ export function createOidc(cfg: OidcConfig, deps: OidcDeps) {
     const keys = (body as { keys?: unknown } | null)?.keys;
     if (status !== 200 || !Array.isArray(keys)) throw new OidcError('signature', 'bad jwks');
     jwks = { keys: keys as JSONWebKeySet['keys'] };
+    jwksAt = deps.now().getTime();
     return jwks;
   }
 
   const hasKid = (set: JSONWebKeySet, kid: string) => set.keys.some((k) => k.kid === kid);
 
   async function keySetFor(kid: string | undefined): Promise<JSONWebKeySet> {
-    if (!jwks) await loadJwks();
+    if (!jwks || deps.now().getTime() - jwksAt >= DISCOVERY_TTL_MS) await loadJwks();
     if (kid === undefined || hasKid(jwks!, kid)) return jwks!;
     const t = deps.now().getTime();
     if (t - lastRefetchAt < JWKS_REFETCH_MIN_MS) return jwks!;
@@ -258,6 +261,7 @@ export function createOidc(cfg: OidcConfig, deps: OidcDeps) {
         audience: cfg.clientId,
         algorithms: ['RS256', 'ES256'],
         clockTolerance: TOLERANCE_SEC,
+        requiredClaims: ['exp', 'iat', 'sub'],
         currentDate: now,
       });
       payload = r.payload as Record<string, unknown>;
@@ -275,7 +279,7 @@ export function createOidc(cfg: OidcConfig, deps: OidcDeps) {
     const { sub, email } = payload;
     if (typeof email !== 'string' || email.length === 0) throw new OidcError('claims', 'email');
     if (typeof sub !== 'string' || sub.length === 0) throw new OidcError('claims', 'sub');
-    if (Array.isArray(payload.aud) && payload.azp !== cfg.clientId) throw new OidcError('claims', 'azp');
+    if ((Array.isArray(payload.aud) || payload.azp !== undefined) && payload.azp !== cfg.clientId) throw new OidcError('claims', 'azp');
 
     const nowSec = Math.floor(now.getTime() / 1000);
     const iat = payload.iat;
@@ -288,7 +292,7 @@ export function createOidc(cfg: OidcConfig, deps: OidcDeps) {
     if (expect.notBefore) {
       const floor = Math.floor(expect.notBefore.getTime() / 1000) - TOLERANCE_SEC;
       if (iat < floor) throw new OidcError('claims', 'iat before re-auth');
-      if (authTime !== undefined && authTime < floor) throw new OidcError('claims', 'auth_time before re-auth');
+      if (authTime !== undefined && authTime < Math.floor(expect.notBefore.getTime() / 1000)) throw new OidcError('claims', 'auth_time before re-auth');
     }
     return { sub, email, emailVerified: true, iat, ...(authTime !== undefined ? { authTime } : {}) };
   }
