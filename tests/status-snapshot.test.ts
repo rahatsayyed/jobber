@@ -19,6 +19,7 @@ describe('buildSnapshot', () => {
     expect(s.queue).toEqual([]);
     expect(s.funnel).toEqual({ discovered: 0, matched: 0, contacted: 0, replied: 0, interview: 0, offer: 0 });
     expect(s.lastSend).toBeNull();
+    expect(s.degraded).toEqual([]);
   });
 
   it('lists an active halt and hides a cleared one', () => {
@@ -62,7 +63,8 @@ describe('buildSnapshot', () => {
     const db = openDb(':memory:');
     for (const t of ['rate_events', 'halt_flags', 'touches', 'daily_counters', 'outreach_queue']) db.exec(`DROP TABLE ${t}`);
     const s = buildSnapshot(db, cfg, NOW);
-    expect(s.ceilings.naukri_apply.used).toBe(0);
+    expect(s.ceilings.naukri_apply).toEqual({ used: 0, limit: 0, ok: false });
+    expect(s.degraded).toEqual(expect.arrayContaining(['ceilings', 'halts', 'queue', 'dailyCounters']));
     expect(s.halts).toEqual([]);
     expect(s.queue).toEqual([]);
     expect(s.dailyCounters).toEqual([]);

@@ -12,15 +12,23 @@ export interface Snapshot {
   queue: { status: string; count: number }[];
   funnel: { discovered: number; matched: number; contacted: number; replied: number; interview: number; offer: number };
   lastSend: { kind: string; at: string } | null;
+  // Sections not readable because a table is missing; their values are fallbacks, not facts.
+  degraded: string[];
 }
 
-/** Run one read section; a missing table (or any read error) yields the fallback instead of throwing. */
-function section<T>(fn: () => T, fallback: T): T {
-  try {
-    return fn();
-  } catch {
-    return fallback;
-  }
+// Run one read section; a missing table yields the fallback and is recorded in `degraded`, any other error rethrows.
+function makeSection(degraded: string[]) {
+  return function section<T>(name: string, fn: () => T, fallback: T): T {
+    try {
+      return fn();
+    } catch (e) {
+      if (e instanceof Error && /no such table/i.test(e.message)) {
+        degraded.push(name);
+        return fallback;
+      }
+      throw e;
+    }
+  };
 }
 
 /** SQLite `datetime('now')` strings have no zone and are UTC; ISO strings pass through. */
@@ -30,15 +38,19 @@ function toIso(s: string): string {
 }
 
 export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, now: Date): Snapshot {
+  const degraded: string[] = [];
+  const section = makeSection(degraded);
+  // Fail-safe: if the counters cannot be read, report every ceiling as not ok rather than a fabricated safe state.
   const zeroCeilings = Object.fromEntries(
     (['linkedin_invite', 'linkedin_message', 'naukri_apply', 'naukri_message'] as LimitKey[]).map((k) => [
       k,
-      { used: 0, limit: 0, ok: true },
+      { used: 0, limit: 0, ok: false },
     ]),
   ) as Record<LimitKey, CeilingStatus>;
   const day = now.toISOString().slice(0, 10);
 
   const dailyCounters = section(
+    'dailyCounters',
     () =>
       db
         .prepare('SELECT key, count FROM daily_counters WHERE day = ? ORDER BY key')
@@ -47,6 +59,7 @@ export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, n
   );
 
   const halts = section(
+    'halts',
     () =>
       (
         db
@@ -57,6 +70,7 @@ export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, n
   );
 
   const queue = section(
+    'queue',
     () =>
       db
         .prepare('SELECT coalesce(status, \'unknown\') AS status, COUNT(*) AS count FROM outreach_queue GROUP BY status ORDER BY status')
@@ -65,6 +79,7 @@ export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, n
   );
 
   const funnel = section(
+    'funnel',
     () => {
       const f = funnelStats(db);
       return {
@@ -80,13 +95,13 @@ export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, n
   );
 
   const candidates: { kind: string; at: string }[] = [];
-  section(() => {
+  section('lastSend.touches', () => {
     const r = db
       .prepare("SELECT kind, sent_at AS at FROM touches WHERE status = 'sent' AND sent_at IS NOT NULL ORDER BY sent_at DESC LIMIT 1")
       .get() as { kind: string; at: string } | undefined;
     if (r) candidates.push({ kind: r.kind, at: toIso(r.at) });
   }, undefined);
-  section(() => {
+  section('lastSend.outreach_queue', () => {
     const r = db
       .prepare('SELECT MAX(email_sent_at) AS at FROM outreach_queue WHERE email_sent_at IS NOT NULL')
       .get() as { at: string | null };
@@ -96,11 +111,12 @@ export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, n
 
   return {
     generatedAt: now.toISOString(),
-    ceilings: section(() => ceilings(db, cfg, now), zeroCeilings),
+    ceilings: section('ceilings', () => ceilings(db, cfg, now), zeroCeilings),
     dailyCounters,
     halts,
     queue,
     funnel,
     lastSend: candidates[0] ?? null,
+    degraded,
   };
 }
