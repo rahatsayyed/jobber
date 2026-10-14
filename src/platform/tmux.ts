@@ -68,3 +68,17 @@ export async function capture(run: Run, session: string, window: string, lines =
   const r = await run('tmux', ['capture-pane', '-p', '-t', `=${session}:=${window}`, '-S', `-${lines}`]);
   return r.stdout;
 }
+
+export async function sendText(run: Run, session: string, window: string, text: string): Promise<void> {
+  assertName(session);
+  assertName(window);
+  if (text.trim().length === 0) throw new Error('empty text');
+  if (text.length > 2000) throw new Error('text too long');
+  if (/[\u0000-\u001f\u007f]/.test(text)) throw new Error('text contains control characters');
+  if (text.startsWith('!')) throw new Error('text must not start with !');
+  const target = `=${session}:=${window}`;
+  const lit = await run('tmux', ['send-keys', '-t', target, '-l', '--', text]);
+  if (lit.code !== 0) throw new Error('tmux send-keys failed');
+  const enter = await run('tmux', ['send-keys', '-t', target, 'Enter']);
+  if (enter.code !== 0) throw new Error('tmux send-keys Enter failed');
+}

@@ -1,11 +1,13 @@
 // tests/platform-tmux.test.ts
 import { describe, it, expect } from 'vitest';
-import { assertName, capture, ensureSession, hasSession, listWindows, type Run } from '../src/platform/tmux.js';
+import { assertName, capture, ensureSession, hasSession, listWindows, sendText, type Run } from '../src/platform/tmux.js';
 
-function fakeRun(responses: Record<string, { stdout?: string; code?: number }> = {}) {
+function fakeRun(responses: Record<string, { stdout?: string; code?: number }> = {}, callCodes: number[] = []) {
   const calls: { cmd: string; args: string[] }[] = [];
   const run: Run = async (cmd, args) => {
     calls.push({ cmd, args });
+    const idx = calls.length - 1;
+    if (callCodes[idx] !== undefined) return { stdout: '', code: callCodes[idx] };
     const r = responses[args[0]] ?? {};
     return { stdout: r.stdout ?? '', code: r.code ?? 0 };
   };
@@ -83,5 +85,51 @@ describe('tmux helper', () => {
     const { run, calls } = fakeRun();
     await expect(capture(run, 'ok', '-t', 10)).rejects.toThrow();
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('sendText', () => {
+  it('sends literal text then Enter with exact argv', async () => {
+    const { run, calls } = fakeRun();
+    await sendText(run, 'ccgram', 'hunt', 'hello world');
+    expect(calls).toEqual([
+      { cmd: 'tmux', args: ['send-keys', '-t', '=ccgram:=hunt', '-l', '--', 'hello world'] },
+      { cmd: 'tmux', args: ['send-keys', '-t', '=ccgram:=hunt', 'Enter'] },
+    ]);
+  });
+
+  it('passes shell metacharacters as one literal argv element', async () => {
+    for (const text of ['; rm -rf ~', '$(x)']) {
+      const { run, calls } = fakeRun();
+      await sendText(run, 's', 'w', text);
+      expect(calls[0].args).toEqual(['send-keys', '-t', '=s:=w', '-l', '--', text]);
+    }
+  });
+
+  it('rejects invalid text and names without running', async () => {
+    const { run, calls } = fakeRun();
+    for (const bad of ['', '   ', 'x'.repeat(2001), 'a\nb', 'a\x1bb', 'a\tb', '!ls']) {
+      await expect(sendText(run, 's', 'w', bad)).rejects.toThrow();
+    }
+    await expect(sendText(run, 'bad name', 'w', 'hi')).rejects.toThrow();
+    await expect(sendText(run, 's', '-t', 'hi')).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('accepts exactly 2000 characters', async () => {
+    const { run } = fakeRun();
+    await expect(sendText(run, 's', 'w', 'x'.repeat(2000))).resolves.toBeUndefined();
+  });
+
+  it('throws without sending Enter when the literal call fails', async () => {
+    const { run, calls } = fakeRun({}, [1]);
+    await expect(sendText(run, 's', 'w', 'hi')).rejects.toThrow();
+    expect(calls).toHaveLength(1);
+  });
+
+  it('throws when the Enter call fails', async () => {
+    const { run, calls } = fakeRun({}, [0, 1]);
+    await expect(sendText(run, 's', 'w', 'hi')).rejects.toThrow();
+    expect(calls).toHaveLength(2);
   });
 });
