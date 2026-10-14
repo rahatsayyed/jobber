@@ -27,7 +27,7 @@ export interface ClassifierPin {
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const SAFE_FILE = /^[A-Za-z0-9_.-]{1,100}$/;
-const safeFile = (f: string): boolean => SAFE_FILE.test(f) && f !== '.' && f !== '..';
+export const safeFile = (f: string): boolean => SAFE_FILE.test(f) && f !== '.' && f !== '..';
 
 export function loadPin(path: string): ClassifierPin {
   const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<ClassifierPin>;
