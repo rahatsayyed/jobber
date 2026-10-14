@@ -7,7 +7,8 @@ import { parseEnv } from './envFile.js';
 import { loadUpdateConfig } from '../update/config.js';
 import { readStateChecked, STATE_PATH, type StateFs } from '../update/state.js';
 import { loadBackupConfig } from '../backup/config.js';
-import { readBackupState } from '../backup/state.js';
+import { readBackupStateChecked } from '../backup/state.js';
+import { BACKUP_NAME_RE } from '../backup/retention.js';
 import { detectSet, resolveSet, SET_NAMES, type LocalSettings, type RawSets } from './permissions.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -45,15 +46,18 @@ const ageMs = (iso: string | null, at: Date): number | null => {
 };
 const hours = (ms: number): string => `${Math.floor(ms / HOUR)}h`;
 
-const IDENTITY_NAME = /^(?:.*\.key|jobber-backup.*|age-.*\.txt)$/;
+const IDENTITY_NAME = /^(?:[A-Za-z0-9._-]*\.key|jobber-backup[A-Za-z0-9._-]*\.(?:key|txt)|age-[A-Za-z0-9._-]*\.txt)$/;
+const safeName = (n: string): string => n.replace(/[\u0000-\u001f\u007f]/g, '?').slice(0, 80);
 
 function identityFiles(ctx: DoctorContext, dir: string, label: string): string[] {
   if (!ctx.fs.list) return [];
   const found: string[] = [];
   for (const name of ctx.fs.list(dir)) {
+    if (BACKUP_NAME_RE.test(name) || name.endsWith('.sha256') || name.endsWith('.age')) continue;
+    if (/\.(?:tar|gz|tgz|zip|sqlite)$/.test(name)) continue;
     if (!IDENTITY_NAME.test(name)) continue;
     try {
-      if (ctx.fs.read(join(dir, name)).slice(0, 16).startsWith('AGE-SECRET-KEY-')) found.push(`${label}${name}`);
+      if (ctx.fs.read(join(dir, name)).slice(0, 16).startsWith('AGE-SECRET-KEY-')) found.push(`${label}${safeName(name)}`);
     } catch {
       // unreadable or a directory: not reported
     }
@@ -225,7 +229,8 @@ export function updateBackupChecks(): Check[] {
       id: 'backup-freshness',
       title: 'backup: freshness',
       async run(ctx) {
-        const st = readBackupState(readFs(ctx), ctx.root);
+        const { state: st, corrupt } = readBackupStateChecked(readFs(ctx), ctx.root);
+        if (corrupt) return warn('backup state unreadable', 'inspect or remove .backups/state.json');
         const at = now(ctx);
         const age = ageMs(st.last_backup_at, at);
         if (st.last_error && (age === null || age > 7 * DAY)) {
@@ -240,7 +245,8 @@ export function updateBackupChecks(): Check[] {
       id: 'backup-drill',
       title: 'backup: restore drill',
       async run(ctx) {
-        const st = readBackupState(readFs(ctx), ctx.root);
+        const { state: st, corrupt } = readBackupStateChecked(readFs(ctx), ctx.root);
+        if (corrupt) return warn('backup state unreadable', 'inspect or remove .backups/state.json');
         const age = ageMs(st.last_drill_at, now(ctx));
         if (age === null) return warn('restore drill never run', 'run the restore drill');
         if (age > 90 * DAY) return warn(`last restore drill ${Math.floor(age / DAY)} days ago`, 'run the restore drill');

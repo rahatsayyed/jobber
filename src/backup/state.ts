@@ -19,21 +19,25 @@ export function emptyBackupState(): BackupState {
 const strOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 
 export function readBackupState(fs: StateFs, root: string): BackupState {
+  return readBackupStateChecked(fs, root).state;
+}
+
+export function readBackupStateChecked(fs: StateFs, root: string): { state: BackupState; corrupt: boolean } {
   const path = join(root, BACKUP_STATE_PATH);
-  if (!fs.exists(path)) return emptyBackupState();
+  if (!fs.exists(path)) return { state: emptyBackupState(), corrupt: false };
   try {
     const raw = JSON.parse(fs.read(path)) as Record<string, unknown>;
-    if (typeof raw !== 'object' || raw === null || raw.version !== 1) return emptyBackupState();
-    return {
+    if (typeof raw !== 'object' || raw === null || raw.version !== 1) throw new Error('bad shape');
+    return { corrupt: false, state: {
       version: 1,
       last_backup_at: strOrNull(raw.last_backup_at),
       last_backup_name: strOrNull(raw.last_backup_name),
       last_error: strOrNull(raw.last_error),
       last_drill_at: strOrNull(raw.last_drill_at),
       next_run_at: strOrNull(raw.next_run_at),
-    };
+    } };
   } catch {
-    return emptyBackupState();
+    return { state: emptyBackupState(), corrupt: true };
   }
 }
 

@@ -207,6 +207,32 @@ describe('backup-config', () => {
   });
 });
 
+describe('identity scan and state', () => {
+  it('does not read archives or sidecars in BACKUP_DIR, still reports identity files', async () => {
+    const reads: string[] = [];
+    const arch = '/backups/jobber-backup-20261014T050000Z.tar.gz.age';
+    const c = ctx({
+      ...goodBackup,
+      files: { [arch]: 'x', [arch + '.sha256']: 'y', '/backups/age-keys.txt': `AGE-SECRET-KEY-1${MARK}` },
+      dirs: { '/backups': ['jobber-backup-20261014T050000Z.tar.gz.age', 'jobber-backup-20261014T050000Z.tar.gz.age.sha256', 'age-keys.txt'] },
+    });
+    const orig = c.fs.read;
+    c.fs.read = (p) => { reads.push(p); return orig(p); };
+    const checks = updateBackupChecks().filter((x) => x.id === 'backup-config');
+    const r = (await runChecks(checks, c))[0];
+    expect(reads.filter((p) => p.includes('jobber-backup-'))).toEqual([]);
+    expect(r.result.status).toBe('warn');
+    expect(r.result.detail).toContain('BACKUP_DIR/age-keys.txt');
+    expect(r.result.detail).not.toContain('jobber-backup-2026');
+    expect(JSON.stringify(r.result)).not.toContain(MARK);
+  });
+  it('warns on corrupt backup state', async () => {
+    const f = { [join(ROOT, '.backups/state.json')]: '{nope' };
+    expect((await one('backup-freshness', { files: f })).result.detail).toContain('unreadable');
+    expect((await one('backup-drill', { files: f })).result.status).toBe('warn');
+  });
+});
+
 describe('backup-freshness and backup-drill', () => {
   it('passes under 36 hours', async () => {
     const r = await one('backup-freshness', { files: backupState({ last_backup_at: '2026-10-14T00:00:00Z' }) });
