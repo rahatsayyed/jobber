@@ -35,6 +35,7 @@ export class BudgetTracker {
   private chars = 0;
   private usageLimit = false;
   private buffer = '';
+  private tailChecked: string | null = null; // unterminated tail already evaluated by check()
   private overflow = false; // current partial line exceeded the cap and was dropped
   private lines: string[] = [];
   private lastNow: Date;
@@ -62,7 +63,8 @@ export class BudgetTracker {
         }
       }
       if (terminated) {
-        if (!this.overflow) this.processLine(this.buffer);
+        if (!this.overflow && this.buffer !== this.tailChecked) this.processLine(this.buffer);
+        this.tailChecked = null;
         this.buffer = '';
         this.overflow = false;
       }
@@ -73,15 +75,25 @@ export class BudgetTracker {
     if (line.length === 0) return;
     this.lines.push(line.slice(0, 300));
     if (this.lines.length > 5) this.lines.shift();
-    if (LIMIT_RE.test(line)) this.usageLimit = true;
     let obj: unknown;
     try {
       obj = JSON.parse(line);
     } catch {
+      // Raw CLI or stderr text, not stream-json: the only place a plain limit message is trusted.
+      if (LIMIT_RE.test(line)) this.usageLimit = true;
       return;
     }
-    if (!obj || typeof obj !== 'object') return;
-    const o = obj as { type?: unknown; is_error?: unknown; message?: { content?: unknown } };
+    if (!obj || typeof obj !== 'object') {
+      if (LIMIT_RE.test(line)) this.usageLimit = true;
+      return;
+    }
+    const o = obj as {
+      type?: unknown; is_error?: unknown; result?: unknown; error?: unknown; message?: { content?: unknown };
+    };
+    // Never scan assistant or user (tool_result) messages: tool output may say limit reached.
+    if (o.type === 'result' || o.type === 'system') {
+      for (const f of [o.result, o.error]) if (typeof f === 'string' && LIMIT_RE.test(f)) this.usageLimit = true;
+    }
     if (o.type === 'result' && o.is_error === true) this.usageLimit = true;
     if (o.type === 'assistant' && o.message && Array.isArray(o.message.content)) {
       for (const block of o.message.content) {
@@ -95,6 +107,10 @@ export class BudgetTracker {
   }
 
   check(now: Date): StopReason | null {
+    if (this.buffer.length > 0 && !this.overflow && this.buffer !== this.tailChecked) {
+      this.tailChecked = this.buffer;
+      this.processLine(this.buffer);
+    }
     if (this.usageLimit) return 'usage_limit';
     if (this.toolCalls > this.budget.maxToolCalls) return 'tool_calls';
     if (this.wallSecAt(now) > this.budget.maxWallSec) return 'wall_clock';

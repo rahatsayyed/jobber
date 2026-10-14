@@ -135,3 +135,47 @@ describe('loadBudget', () => {
     expect(loadBudget({ RUN_MAX_TOOL_CALLS: '10abc' }).maxToolCalls).toBe(60);
   });
 });
+
+describe('usage limit detection scope', () => {
+  const fresh = () => new BudgetTracker(big, t0);
+  it('ignores limit text inside tool_result (user) lines', () => {
+    const b = fresh();
+    b.feed(JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', content: 'daily limit reached' }] } }) + '\n', t0);
+    expect(b.check(t0)).toBeNull();
+  });
+  it('ignores limit text quoted by the assistant', () => {
+    const b = fresh();
+    b.feed(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'usage limit reached' }] } }) + '\n', t0);
+    expect(b.check(t0)).toBeNull();
+  });
+  it('detects a raw non-JSON line', () => {
+    const b = fresh();
+    b.feed('Claude usage limit reached\n', t0);
+    expect(b.check(t0)).toBe('usage_limit');
+  });
+  it('detects an is_error result and a result string', () => {
+    const a = fresh();
+    a.feed(JSON.stringify({ type: 'result', is_error: true }) + '\n', t0);
+    expect(a.check(t0)).toBe('usage_limit');
+    const b = fresh();
+    b.feed(JSON.stringify({ type: 'result', is_error: false, result: 'rate limit exceeded' }) + '\n', t0);
+    expect(b.check(t0)).toBe('usage_limit');
+  });
+  it('counting is unchanged', () => {
+    const b = fresh();
+    b.feed('x'.repeat(39) + '\n', t0);
+    expect(b.snapshot().tokensApprox).toBe(10);
+  });
+  it('evaluates an unterminated trailing line once', () => {
+    const b = fresh();
+    b.feed('Claude usage limit reached', t0);
+    expect(b.check(t0)).toBe('usage_limit');
+    const c = fresh();
+    c.feed(tool(1).trim(), t0);
+    c.check(t0);
+    c.check(t0);
+    expect(c.snapshot().toolCalls).toBe(1);
+    c.feed('\n', t0);
+    expect(c.snapshot().toolCalls).toBe(1);
+  });
+});
