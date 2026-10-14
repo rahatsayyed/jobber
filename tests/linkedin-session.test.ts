@@ -150,3 +150,51 @@ describe('fix round 1', () => {
     expect(existsSync(`${p}.tmp-${process.pid}`)).toBe(false);
   });
 });
+
+describe('fix round 2: takeover mutex', () => {
+  const alive = (p: number) => [111, 222, 333].includes(p);
+  const stale = JSON.stringify({ pid: 1, started: 'x' });
+  it('3-actor race: exactly one winner and the lock is present at every observation', () => {
+    const d = tmp();
+    const lp = path.join(d, 'l.lock');
+    writeFileSync(lp, stale);
+    const results: boolean[] = [];
+    const seen: boolean[] = [];
+    const a = acquireLock(lp, {
+      pid: 111, isAlive: alive,
+      beforeTakeover: () => {
+        const c = acquireLock(lp, { pid: 222, isAlive: alive });
+        results.push(c.ok); seen.push(existsSync(lp));
+        const dd = acquireLock(lp, { pid: 333, isAlive: alive });
+        results.push(dd.ok); seen.push(existsSync(lp));
+      },
+    });
+    results.push(a.ok); seen.push(existsSync(lp));
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(seen.every(Boolean)).toBe(true);
+    expect(JSON.parse(readFileSync(lp, 'utf8')).pid).toBe(222);
+    expect(readdirSync(d).sort()).toEqual(['l.lock']);
+  });
+  it('other acquirers are refused while a live takeover mutex is held', () => {
+    const d = tmp();
+    const lp = path.join(d, 'l.lock');
+    writeFileSync(lp, stale);
+    let inner: ReturnType<typeof acquireLock> | undefined;
+    const a = acquireLock(lp, {
+      pid: 111, isAlive: alive,
+      duringTakeover: () => { inner = acquireLock(lp, { pid: 222, isAlive: alive }); expect(existsSync(lp)).toBe(true); },
+    });
+    expect(inner).toMatchObject({ ok: false });
+    expect((inner as unknown as { reason: string }).reason).toContain('takeover');
+    expect(a.ok).toBe(true);
+    expect(readdirSync(d).sort()).toEqual(['l.lock']);
+  });
+  it('a stale takeover mutex (dead pid) is cleared', () => {
+    const d = tmp();
+    const lp = path.join(d, 'l.lock');
+    writeFileSync(lp, stale);
+    writeFileSync(`${lp}.takeover`, JSON.stringify({ pid: 999, started: 'x' }));
+    expect(acquireLock(lp, { pid: 111, isAlive: alive }).ok).toBe(true);
+    expect(readdirSync(d).sort()).toEqual(['l.lock']);
+  });
+});

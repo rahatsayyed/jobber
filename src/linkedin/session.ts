@@ -46,6 +46,7 @@ function pidAlive(pid: number): boolean {
 }
 
 const FRESH_LOCK_MS = 5000;
+const MUTEX_MAX_MS = 10000;
 
 function readHolder(lockPath: string): { pid?: number; raw: string | null; ageMs: number } {
   let raw: string | null = null;
@@ -64,7 +65,7 @@ function readHolder(lockPath: string): { pid?: number; raw: string | null; ageMs
 // so it never exists empty, and a stale lock is taken over by an atomic rename-away (one winner).
 export function acquireLock(
   lockPath: string,
-  opts: { pid?: number; isAlive?: (pid: number) => boolean; beforeTakeover?: () => void } = {},
+  opts: { pid?: number; isAlive?: (pid: number) => boolean; beforeTakeover?: () => void; duringTakeover?: () => void } = {},
 ): { ok: true; handle: LockHandle } | { ok: false; reason: string; holderPid?: number } {
   const pid = opts.pid ?? process.pid;
   const isAlive = opts.isAlive ?? pidAlive;
@@ -98,21 +99,35 @@ export function acquireLock(
       if (h.raw === null) continue; // vanished, retry publish
       if (h.pid !== undefined ? isAlive(h.pid) : h.ageMs < FRESH_LOCK_MS) return held(h.pid);
       opts.beforeTakeover?.();
-      const claimed = `${lockPath}.stale-${uniq}`;
-      try { renameSync(lockPath, claimed); } catch { continue; } // lost the race
-      let claimedRaw = '';
-      try { claimedRaw = readFileSync(claimed, 'utf8'); } catch { /* ignore */ }
-      if (claimedRaw !== h.raw) {
-        // we moved a different (possibly live) lock: put it back if we can and yield
-        let other: number | undefined;
-        try { other = (JSON.parse(claimedRaw) as { pid?: number }).pid; } catch { /* ignore */ }
-        if (other !== undefined && isAlive(other)) {
-          try { linkSync(claimed, lockPath); } catch { /* someone else published */ }
-          try { unlinkSync(claimed); } catch { /* ignore */ }
-          return held(other);
+      // Takeover of an existing lock is serialized behind a mutex file; only its holder may touch an
+      // existing lock file, and the lock is replaced by rename-over so it is never absent meanwhile.
+      const mutex = `${lockPath}.takeover`;
+      const mtmp = `${lockPath}.mtmp-${uniq}`;
+      writeFileSync(mtmp, JSON.stringify({ pid, started: new Date().toISOString() }), { mode: 0o600 });
+      let gotMutex = false;
+      try {
+        try { linkSync(mtmp, mutex); gotMutex = true; } catch (e) {
+          if ((e as NodeJS.ErrnoException).code !== 'EEXIST') return { ok: false, reason: 'lock_unavailable' };
         }
+        if (!gotMutex) {
+          const m = readHolder(mutex);
+          const mAlive = m.pid !== undefined ? isAlive(m.pid) && m.ageMs < MUTEX_MAX_MS : m.ageMs < FRESH_LOCK_MS;
+          if (m.raw !== null && mAlive) return { ok: false, reason: 'lock takeover in progress', holderPid: m.pid };
+          // stale mutex: move it away (one winner), then retry
+          const gone = `${mutex}.stale-${uniq}`;
+          try { renameSync(mutex, gone); unlinkSync(gone); } catch { /* lost the race */ }
+          continue;
+        }
+        opts.duringTakeover?.();
+        const cur = readHolder(lockPath);
+        if (cur.raw === null) continue; // vanished: retry the plain publish
+        if (cur.pid !== undefined ? isAlive(cur.pid) : cur.ageMs < FRESH_LOCK_MS) return held(cur.pid);
+        renameSync(tmp, lockPath); // atomic replace of the verified-stale lock
+        return { ok: true, handle };
+      } finally {
+        if (gotMutex) { try { unlinkSync(mutex); } catch { /* ignore */ } }
+        try { unlinkSync(mtmp); } catch { /* ignore */ }
       }
-      try { unlinkSync(claimed); } catch { /* ignore */ }
     }
     return { ok: false, reason: 'lock_unavailable' };
   } finally {
