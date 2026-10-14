@@ -64,6 +64,12 @@ export function exitCode(results: CheckOutcome[]): number {
 
 const ICON: Record<Status, string> = { pass: 'PASS', warn: 'WARN', fail: 'FAIL', skip: 'SKIP' };
 
+export function formatJson(results: CheckOutcome[]): string {
+  return JSON.stringify(
+    results.map((r) => ({ id: r.id, title: r.title, status: r.result.status, detail: r.result.detail })),
+  );
+}
+
 export function formatReport(results: CheckOutcome[]): string {
   return results
     .map((r) => {
