@@ -12,7 +12,7 @@ import { gateField, MAX_FIELD_CHARS } from './state.js';
 import { finishTouch, pauseContact, type TouchStatus } from './touches.js';
 import { refusal, type ToolDeps, type TypedResult } from './toolDeps.js';
 import { SNAPSHOT_SRC } from './snapshot.js';
-import type { RawSnapshot } from './types.js';
+import type { LiLocator, RawSnapshot } from './types.js';
 import { extractExpectedNameFromTitle, namesPlausiblyMatch, verifyProfileUrl } from './verify.js';
 
 export interface SendMessageOptions {
@@ -34,6 +34,17 @@ function isLikelySendMessageResponse(r: any): boolean {
   } catch { return false; }
 }
 
+const ALLOWED_KINDS = ['role_ask', 'rapport', 'referral_ask', 'followup', 'feedback'];
+
+// Indexes of matches that are actually visible (non-zero box).
+async function visibleIndexes(loc: LiLocator): Promise<number[]> {
+  const flags = await loc.evaluateAll((els) =>
+    els.map((el) => Boolean(el.offsetWidth || el.offsetHeight || (el.getClientRects && el.getClientRects().length))));
+  const out: number[] = [];
+  flags.forEach((f, i) => { if (f) out.push(i); });
+  return out;
+}
+
 export async function sendMessage(
   a: {
     profile_url: string; text: string; kind: Exclude<Kind, 'connect'>;
@@ -48,6 +59,9 @@ export async function sendMessage(
   const netTimeout = opts.networkConfirmationTimeoutMs ?? 12000;
   const stepTimeout = opts.stepTimeoutMs ?? 8000;
 
+  if (!ALLOWED_KINDS.includes(String(a.kind))) {
+    return refusal('refused', 'bad_kind', 'kind is not a message kind');
+  }
   const g = preSendGuard({
     db, now: now(), env, action: 'message', kind: a.kind, profileUrl: a.profile_url, text: a.text,
     jobId: a.job_id ?? null, company: a.company, factCheck: deps.factCheck, styleCfg: deps.styleCfg, cfg,
@@ -153,18 +167,26 @@ export async function sendMessage(
         }
       }
       await msgBtn.click({ timeout: CLICK_TIMEOUT_MS });
-      const compose = page.locator(SELECTORS.messageComposeTextarea);
-      await compose.first().waitFor({ state: 'visible', timeout: stepTimeout }).catch(() => undefined);
+      const composeAll = page.locator(SELECTORS.messageComposeTextarea);
+      await composeAll.first().waitFor({ state: 'visible', timeout: stepTimeout }).catch(() => undefined);
       const ov = await check();
       if ('result' in ov) return ov.result;
       if (!verifyProfileUrl(a.profile_url, page.url()).ok) {
         await close();
         return fail('profile_url_mismatch', 'browser left the requested profile');
       }
-      if ((await compose.count()) === 0) {
+      // Exactly one visible conversation overlay and one visible compose box, else ambiguous.
+      const visHeaders = await visibleIndexes(page.locator(SELECTORS.messageOverlayHeader));
+      const visCompose = await visibleIndexes(composeAll);
+      if (visHeaders.length > 1 || visCompose.length > 1) {
+        await close();
+        return refuse('overlay_ambiguous', 'more than one message overlay is visible');
+      }
+      if (visCompose.length === 0) {
         await close();
         return fail('compose_not_found', 'message compose box not found');
       }
+      const compose = composeAll.nth(visCompose[0]);
       const header = (ov.snap.messageHeaderName ?? '').trim();
       if (!header) {
         await close();
@@ -174,10 +196,28 @@ export async function sendMessage(
         await close();
         return refuse('recipient_mismatch', 'message overlay addresses a different person');
       }
+      // Tie the compose box to the overlay whose header matched (real DOM only: closest() exists).
+      const owner = await compose.evaluateAll((els) => els.map((el) => {
+        if (typeof el.closest !== 'function') return { known: false, name: '' };
+        const c = el.closest('[class*="msg-overlay"]');
+        const h = c ? c.querySelector('header h2') : null;
+        return { known: true, name: h ? String(h.textContent || '').trim() : '' };
+      }));
+      const o0 = owner[0];
+      if (o0 && o0.known && !(o0.name && namesPlausiblyMatch(person.name ?? '', o0.name))) {
+        await close();
+        return refuse('overlay_ambiguous', 'compose box is not inside the verified overlay');
+      }
+      const baseMe = [...ov.snap.messages].reverse().find((m) => m.from === 'me');
+      const baseMeText = baseMe ? norm(baseMe.text) : '';
 
-      await compose.first().fill(text, { timeout: stepTimeout });
-      const send = page.locator(SELECTORS.messageSendButton);
-      if ((await send.count()) === 0) {
+      const clearBox = async () => { await compose.fill('', { timeout: stepTimeout }).catch(() => undefined); };
+      await compose.fill(text, { timeout: stepTimeout });
+      const sendAll = page.locator(SELECTORS.messageSendButton);
+      const sendVis = await visibleIndexes(sendAll);
+      const send = sendAll.nth(sendVis[0] ?? 0);
+      if (sendVis.length === 0) {
+        await clearBox();
         await close();
         return fail('send_button_missing', 'Send button not found');
       }
@@ -185,6 +225,7 @@ export async function sendMessage(
       // Consume the ceiling immediately before the click, never earlier.
       const ocfg = loadOutreachConfig(env);
       if (!tryConsume(db, 'linkedin_message', ocfg, now())) {
+        await clearBox();
         await close();
         const c = ceilings(db, ocfg, now()).linkedin_message;
         return done('refused', {
@@ -196,24 +237,28 @@ export async function sendMessage(
         .waitForResponse((r) => isLikelySendMessageResponse(r), { timeout: netTimeout })
         .then(() => true, () => false);
       clickIssued = true;
-      await send.first().click({ timeout: CLICK_TIMEOUT_MS });
+      await send.click({ timeout: CLICK_TIMEOUT_MS });
 
       // Confirmation (D9): compose box cleared AND (echo as last 'me' message OR a 2xx POST).
       const deadline = Date.now() + clearTimeoutMs;
-      let cleared = false;
+      let state: 'text' | 'cleared' | 'detached' = 'text';
       do {
-        const still = await compose.first().textContent().then((t) => (t ?? '').trim().length > 0, () => true);
-        if (!still) { cleared = true; break; }
+        state = await compose.textContent({ timeout: Math.max(1, clearPoll) })
+          .then((t): 'text' | 'cleared' => ((t ?? '').trim().length > 0 ? 'text' : 'cleared'),
+            (): 'detached' => 'detached');
+        if (state !== 'text') break;
         await page.waitForTimeout(clearPoll).catch(() => undefined);
       } while (Date.now() < deadline);
       const after = await check();
       if ('result' in after) return after.result;
-      if (!cleared) return unconfirmed('Send clicked but the compose box did not clear; verify manually');
+      if (state === 'text') return unconfirmed('Send clicked but the compose box did not clear; verify manually');
       const mine = [...after.snap.messages].reverse().find((m) => m.from === 'me');
       const sent = norm(text);
       const mineText = mine ? norm(mine.text) : '';
-      const echo = mineText !== '' && (mineText === sent || (mineText.length >= 40 && sent.startsWith(mineText)));
-      if (!echo && !(await net)) {
+      const echo = mineText !== '' && mineText !== baseMeText &&
+        (mineText === sent || (mineText.length >= 40 && sent.startsWith(mineText)));
+      // A detached compose node is not proof of a clear: only the echo confirms then.
+      if (state === 'detached' ? !echo : (!echo && !(await net))) {
         return unconfirmed('compose cleared but no echo or network confirmation; verify manually');
       }
 

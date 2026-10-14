@@ -40,6 +40,9 @@ interface Opts {
   echo?: boolean;              // me message appears in overlay after Send
   stuck?: boolean;             // compose box never clears
   noCompose?: boolean;
+  twoOverlays?: boolean;
+  noSend?: boolean;
+  echoText?: string;
   noNetwork?: boolean;
   notConnected?: boolean;
   ariaLabel?: string;
@@ -65,11 +68,15 @@ function setup(o: Opts = {}) {
       def.messageHeaderName = o.header === undefined ? 'Jane Example' : o.header;
       def.messages = [{ from: 'them', text: 'Hi, thanks for connecting.' }];
       if (!o.noCompose) els[SELECTORS.messageComposeTextarea] = [{ text: o.stuck ? 'stuck text' : '' }];
-      els[SELECTORS.messageSendButton] = [{
+      if (o.twoOverlays) {
+        els[SELECTORS.messageOverlayHeader] = [{ text: 'Jane Example' }, { text: 'Bob Other' }];
+        els[SELECTORS.messageComposeTextarea] = [{ text: '', visible: false }, { text: '' }];
+      }
+      if (!o.noSend) els[SELECTORS.messageSendButton] = [{
         text: 'Send',
         onClick: () => {
           eventsAtSend = (db.prepare("SELECT COUNT(*) c FROM rate_events WHERE key='linkedin_message'").get() as { c: number }).c;
-          if (o.echo !== false) def.messages = [...def.messages, { from: 'me', text: MSG }];
+          if (o.echo !== false) def.messages = [...def.messages, { from: 'me', text: o.echoText ?? MSG }];
         },
         ...(o.blockAfterSend ? { navigateTo: 'https://www.linkedin.com/checkpoint/challenge/abc' } : {}),
       }];
@@ -222,5 +229,56 @@ describe('sendMessage', () => {
   it('Message control labelled with first name only is accepted', async () => {
     const t = setup({ ariaLabel: 'Message Jane' });
     expect((await send(t.deps)).status).toBe('sent');
+  });
+
+  it('two overlays (Jane collapsed first, Bob expanded) -> overlay_ambiguous, nothing typed or sent', async () => {
+    const t = setup({ twoOverlays: true });
+    const r = await send(t.deps);
+    expect(r).toMatchObject({ status: 'refused', code: 'overlay_ambiguous' });
+    expect(t.log.filter((l) => l.startsWith('fill:'))).toEqual([]);
+    expect(sendClicks(t.log)).toEqual([]);
+    expect(t.log).toContain('press:Escape');
+    expect(events(t.db)).toBe(0);
+  });
+
+  it('bad kind (connect, unknown) -> refused/bad_kind, no touch row, no page access', async () => {
+    const t = setup();
+    for (const kind of ['connect', 'bogus']) {
+      const r = await send(t.deps, { kind: kind as any });
+      expect(r).toMatchObject({ status: 'refused', code: 'bad_kind' });
+    }
+    expect(t.db.prepare('SELECT COUNT(*) c FROM touches').get()).toMatchObject({ c: 0 });
+    expect(t.log).toEqual([]);
+  });
+
+  it('rate_limited after fill clears the compose box and escapes', async () => {
+    const t = setup({ env: { LINKEDIN_MAX_MESSAGES_PER_WEEK: '1' } });
+    recordEvent(t.db, 'linkedin_message', NOW);
+    const r = await send(t.deps);
+    expect(r.status).toBe('rate_limited');
+    expect(t.log.filter((l) => l.startsWith('fill:'))).toHaveLength(2);
+    expect(t.log).toContain('press:Escape');
+    expect(sendClicks(t.log)).toEqual([]);
+  });
+
+  it('missing Send control clears the compose box, escapes, burns no quota', async () => {
+    const t = setup({ noSend: true });
+    const r = await send(t.deps);
+    expect(r).toMatchObject({ status: 'failed', code: 'send_button_missing' });
+    expect(t.log.filter((l) => l.startsWith('fill:'))).toHaveLength(2);
+    expect(t.log).toContain('press:Escape');
+    expect(events(t.db)).toBe(0);
+  });
+
+  it('cleared with a short (<40 char) truncated echo and no network -> unconfirmed', async () => {
+    const t = setup({ echoText: 'Hi Jane, thanks for connecting.', noNetwork: true });
+    expect((await send(t.deps)).status).toBe('unconfirmed');
+  });
+
+  it('echo identical to the pre-send last me message is not a confirmation', async () => {
+    const t = setup({ noNetwork: true });
+    const orig = t.els[SELECTORS.messageButton][0].onClick!;
+    t.els[SELECTORS.messageButton][0].onClick = () => { orig(); t.def.messages = [{ from: 'me', text: MSG }]; };
+    expect((await send(t.deps)).status).toBe('unconfirmed');
   });
 });

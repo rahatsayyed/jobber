@@ -39,7 +39,7 @@ export interface LiLocator {
   nth(i: number): LiLocator;
   click(opts?: { timeout?: number; force?: boolean }): Promise<void>;
   fill(text: string, opts?: { timeout?: number }): Promise<void>;
-  textContent(): Promise<string | null>;
+  textContent(opts?: { timeout?: number }): Promise<string | null>;
   waitFor(opts?: { state?: 'visible' | 'hidden'; timeout?: number }): Promise<void>;
   evaluateAll<T>(fn: (els: any[]) => T): Promise<T>;
 }
