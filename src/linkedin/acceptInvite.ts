@@ -24,7 +24,9 @@ export type AcceptResult = TypedResult & {
   unknown_senders?: UnknownSender[];
   input_flags?: string[];
   injection_suspected?: boolean;
+  db_write_failed?: boolean;
 };
+const EMPTY_STATE_RE = /\bno (pending |new )?invitations\b/i;
 
 const BLOCKED = '[blocked: injection suspected]';
 
@@ -46,6 +48,11 @@ export async function acceptInvite(
   const slug = extractProfileSlug(url);
   if (!slug) return refusal('refused', 'bad_url', 'profile slug not found');
   const person = personByProfileKey(db, profileKeyOf(url));
+  // Unknown sender and acceptUnknown off: refuse BEFORE any navigation. The sender can only be
+  // listed after a page load, so the list is empty here (documented trade-off).
+  if (!person && !cfg.acceptUnknown) {
+    return { ...refusal('refused', 'unknown_recipient', 'sender is not in people'), unknown_senders: [] };
+  }
   const dryRun = effectiveDryRun(cfg, a.dry_run);
   let clickIssued = false;
 
@@ -71,45 +78,30 @@ export async function acceptInvite(
       // Row resolution: exact slug on the DOM rows, never name-only.
       const rows = page.locator(INVITATION_ROW);
       const rowCount = await rows.count();
-      const slugOfRow = async (r: LiLocator): Promise<string> => {
+      // All distinct /in/ slugs in the row: exactly one is required (a mutual-connection link or a
+      // nested row makes attribution ambiguous).
+      const slugsOfRow = async (r: LiLocator): Promise<string[]> => {
         const hrefs = await r.locator(SELECTORS.profileLink).evaluateAll((els) =>
           els.map((e) => String(e.getAttribute('href') ?? '')));
-        return extractProfileSlug(hrefs[0] ?? '');
+        return [...new Set(hrefs.map((h) => extractProfileSlug(h)).filter(Boolean))];
       };
       const matches: number[] = [];
+      let multi = false;
       for (let i = 0; i < rowCount; i++) {
-        if ((await slugOfRow(rows.nth(i))) === slug) matches.push(i);
+        const ss = await slugsOfRow(rows.nth(i));
+        if (!ss.includes(slug)) continue;
+        if (ss.length > 1) multi = true;
+        matches.push(i);
       }
       const snapMatches = snap.invitations.filter((v) => extractProfileSlug(v.href) === slug);
-      if (matches.length > 1 || snapMatches.length > 1) {
+      if (multi || matches.length > 1 || snapMatches.length > 1) {
         return refusal('refused', 'invitation_ambiguous', 'more than one invitation matches this profile');
       }
       if (matches.length === 0) return refusal('failed', 'invitation_not_found', 'no invitation from this profile');
       const rowIndex = matches[0];
       const inv: RawInvitation | undefined = snapMatches[0];
 
-      // Recipient: known people only unless acceptUnknown.
-      if (!person && !cfg.acceptUnknown) {
-        const flags = new Set<string>();
-        let injection = false;
-        const gated = (s: string, max: number): string => {
-          const g = gateField(s, max);
-          for (const f of g.flags) flags.add(f);
-          if (g.blocked) { injection = true; return BLOCKED; }
-          return g.text;
-        };
-        const sender: UnknownSender = {
-          name: gated(inv?.name ?? '', MAX_FIELD_CHARS.name),
-          headline: gated(inv?.headline ?? '', MAX_FIELD_CHARS.headline),
-          path: `/in/${slug}`,
-        };
-        return {
-          ...refusal('refused', 'unknown_recipient', 'sender is not in people'),
-          unknown_senders: [sender],
-          input_flags: [...flags].sort(),
-          injection_suspected: injection,
-        };
-      }
+      // Recipient: unknown senders were refused before navigation unless acceptUnknown.
       if (person) {
         const rowName = inv?.name ?? '';
         if (!rowName.trim()) return refusal('failed', 'row_name_unreadable', 'could not read the invitation sender name');
@@ -145,7 +137,8 @@ export async function acceptInvite(
       const vi = vis.findIndex(Boolean);
       if (vi === -1) return refusal('failed', 'accept_control_missing', 'no visible Accept control in the invitation row');
       // The row must still be the same sender right before the click.
-      if ((await slugOfRow(row)) !== slug) {
+      const again = await slugsOfRow(row);
+      if (again.length !== 1 || again[0] !== slug) {
         return refusal('failed', 'invitation_not_found', 'invitation list changed before the click');
       }
 
@@ -153,40 +146,56 @@ export async function acceptInvite(
         return { status: 'rate_limited', code: 'rate_limited', reason: 'daily accept limit reached' };
       }
       clickIssued = true;
-      await accepts.nth(vi).click({ timeout: CLICK_TIMEOUT_MS });
-
-      // Confirm by fresh snapshot: row gone (on the invitation page) or an accepted/connected notice.
-      const deadline = Date.now() + confirmTimeout;
-      let confirmed = false;
-      let blocked = false;
-      do {
-        const s = await takeSnap();
-        if (s) {
-          if (rt.afterNavigation(s)) { blocked = true; break; }
-          const gone = classifyUrl(s.url) === 'invitations' &&
-            !s.invitations.some((v) => extractProfileSlug(v.href) === slug);
-          const noticed = s.notices.some((n) => /\b(accepted|connected)\b/i.test(n));
-          if (gone || noticed) { confirmed = true; break; }
-        }
-        await page.waitForTimeout(confirmPoll).catch(() => undefined);
-      } while (Date.now() < deadline);
-
-      if (blocked) {
-        return { status: 'unconfirmed', code: 'unconfirmed', reason: 'block page after Accept click; linkedin halted' };
-      }
-      if (!confirmed) {
-        return { status: 'unconfirmed', code: 'unconfirmed', reason: 'Accept clicked but not confirmed; verify manually' };
-      }
       try {
-        saveConnection(db, {
-          job_id: null, company: person?.company ?? null, profile_url: url,
-          headline: null, note: '', status: 'accepted', sent_at: now().toISOString(),
-        } as unknown as Parameters<typeof saveConnection>[1]);
-      } catch { /* legacy table only */ }
-      if (person) {
-        db.prepare("UPDATE contact_state SET stage='active' WHERE person_id=? AND stage='new'").run(person.id);
+        await accepts.nth(vi).click({ timeout: CLICK_TIMEOUT_MS });
+
+        // Confirm by fresh snapshot: row gone (on the invitation page) or an accepted/connected notice.
+        const nameLow = (inv?.name ?? '').trim().toLowerCase();
+        const deadline = Date.now() + confirmTimeout;
+        let confirmed = false;
+        let blocked = false;
+        do {
+          const s = await takeSnap();
+          if (s) {
+            if (rt.afterNavigation(s)) { blocked = true; break; }
+            const gone = classifyUrl(s.url) === 'invitations' &&
+              !s.invitations.some((v) => extractProfileSlug(v.href) === slug);
+            const noticed = s.notices.some((n) => {
+              const low = n.toLowerCase();
+              return /\b(accepted|connected)\b/i.test(n) && (low.includes(slug) || (nameLow !== '' && low.includes(nameLow)));
+            });
+            // Documented heuristic: an explicit empty-state text, or another invitation still listed.
+            const listOk = s.invitations.length > 0 || EMPTY_STATE_RE.test(s.bodyText);
+            if (noticed || (gone && listOk)) { confirmed = true; break; }
+          }
+          await page.waitForTimeout(confirmPoll).catch(() => undefined);
+        } while (Date.now() < deadline);
+
+        if (blocked) {
+          return { status: 'unconfirmed', code: 'unconfirmed', reason: 'block page after Accept click; linkedin halted' };
+        }
+        if (!confirmed) {
+          return { status: 'unconfirmed', code: 'unconfirmed', reason: 'Accept clicked but not confirmed; verify manually' };
+        }
+        let dbFailed = false;
+        try {
+          saveConnection(db, {
+            job_id: null, company: person?.company ?? null, profile_url: url,
+            headline: null, note: '', status: 'accepted', sent_at: now().toISOString(),
+          } as unknown as Parameters<typeof saveConnection>[1]);
+        } catch { dbFailed = true; }
+        if (person) {
+          try {
+            db.prepare("UPDATE contact_state SET stage='active' WHERE person_id=? AND stage='new'").run(person.id);
+          } catch { dbFailed = true; }
+        }
+        return { status: 'sent', code: 'accepted', ...(dbFailed ? { db_write_failed: true } : {}) };
+      } catch {
+        // click or confirmation threw: a block page must still halt the platform.
+        const s = await takeSnap();
+        if (s) rt.afterNavigation(s);
+        return { status: 'unconfirmed', code: 'unconfirmed', reason: 'error after Accept click; verify manually' };
       }
-      return { status: 'sent', code: 'accepted' };
     });
   } catch {
     return clickIssued
