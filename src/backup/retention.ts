@@ -54,9 +54,8 @@ export function planRetention(
   const nowMs = now.getTime();
   const dayCut = nowMs - policy.daily * 86_400_000;
   const weekCut = nowMs - policy.weekly * 7 * 86_400_000;
-  const monthCutDate = new Date(now.getTime());
-  monthCutDate.setUTCMonth(monthCutDate.getUTCMonth() - policy.monthly);
-  const monthCut = monthCutDate.getTime();
+  // first of the month (UTC) so day 31 cannot roll over; N calendar months including the current one
+  const monthCut = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - policy.monthly + 1, 1);
 
   const dBuckets = new Set<string>();
   const wBuckets = new Set<string>();

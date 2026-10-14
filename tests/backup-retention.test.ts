@@ -17,14 +17,20 @@ describe('backupName', () => {
 });
 
 describe('planRetention', () => {
-  it('keeps expected counts for 40 daily names with 7/4/6', () => {
+  it('keeps exactly the expected names for 40 daily backups with 7/4/6', () => {
     const names = Array.from({ length: 40 }, (_, i) => at(i));
     const { keep, remove } = planRetention(names, { daily: 7, weekly: 4, monthly: 6 }, now);
-    expect(keep.length + remove.length / 2).toBe(40);
-    for (let i = 0; i < 7; i++) expect(keep).toContain(at(i));
-    expect(keep.length).toBeGreaterThan(7);
-    expect(keep.length).toBeLessThan(20);
-    expect(remove).toContain(`${at(39)}.sha256`);
+    const idx = [0, 1, 2, 3, 4, 5, 6, 10, 14, 17, 24];
+    expect(keep).toEqual(idx.map((i) => at(i)));
+    const gone = names.filter((n) => !keep.includes(n));
+    expect(remove).toEqual(gone.flatMap((n) => [n, `${n}.sha256`]));
+  });
+
+  it('does not roll over when now is day 31', () => {
+    const n31 = new Date(Date.UTC(2026, 9, 31, 12, 0, 0));
+    const a = 'jobber-backup-20260930T031500Z.tar.gz.age';
+    const { keep } = planRetention([a, backupName(n31)], { daily: 0, weekly: 0, monthly: 2 }, n31);
+    expect(keep).toContain(a);
   });
 
   it('keeps all of 3 daily backups with 7/0/0', () => {

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -38,14 +39,29 @@ function lstatOrNull(p: string): fs.Stats | null {
   }
 }
 
-async function copyNew(src: string, dest: string): Promise<void> {
+function assertRegularSource(src: string): void {
+  if (typeof src !== 'string' || /\0/.test(src)) throw new Error('invalid local path');
   const st = lstatOrNull(src);
   if (!st) throw new Error('source file does not exist');
   if (st.isSymbolicLink() || !st.isFile()) throw new Error('source must be a regular file, not a symlink');
+}
+
+function cleanText(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/[\u0000-\u001f\u007f-\u009f\s]+/g, ' ').trim().slice(0, 300);
+}
+
+async function copyNew(src: string, dest: string, sync = false): Promise<void> {
+  assertRegularSource(src);
   const fd = fs.openSync(dest, 'wx', 0o600);
   try {
-    const out = fs.createWriteStream(dest, { fd, autoClose: true });
-    await pipeline(fs.createReadStream(src), out);
+    const out = fs.createWriteStream(dest, { fd, autoClose: false });
+    try {
+      await pipeline(fs.createReadStream(src), out);
+      if (sync) fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
   } catch (e) {
     try { fs.unlinkSync(dest); } catch { /* partial file already gone */ }
     throw e;
@@ -76,9 +92,21 @@ export class LocalDirDestination implements BackupDestination {
 
   async put(localPath: string, name: string): Promise<void> {
     const target = this.target(name);
+    assertRegularSource(localPath);
     this.ensureDir(true);
     if (lstatOrNull(target)) throw new Error(`backup already exists: ${name}`);
-    await copyNew(localPath, target);
+    const tmp = path.join(this.dir, `.tmp-${crypto.randomBytes(8).toString('hex')}`);
+    try {
+      await copyNew(localPath, tmp, true);
+      try {
+        fs.linkSync(tmp, target);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`backup already exists: ${name}`);
+        throw e;
+      }
+    } finally {
+      try { fs.unlinkSync(tmp); } catch { /* already gone */ }
+    }
   }
 
   async list(): Promise<string[]> {
@@ -129,21 +157,24 @@ export class RcloneDestination implements BackupDestination {
     return this.remote.endsWith(':') || this.remote.endsWith('/') ? `${this.remote}${name}` : `${this.remote}/${name}`;
   }
 
-  private async run(args: string[], timeoutMs = 600_000): Promise<string> {
+  private async run(args: string[], timeoutMs = 600_000, okCodes: number[] = []): Promise<string> {
     const r = await this.exec('rclone', args, { timeoutMs });
     if (r.code === 127) throw new Error('rclone is not installed or not on PATH; install rclone to use BACKUP_RCLONE_REMOTE');
-    if (r.code !== 0) throw new Error(`rclone ${args[0]} failed (exit ${r.code}): ${r.stderr.trim().slice(0, 300)}`);
-    return r.stdout;
+    if (r.code !== 0 && !okCodes.includes(r.code)) {
+      throw new Error(`rclone ${args[0]} failed (exit ${r.code}): ${cleanText(r.stderr)}`);
+    }
+    return r.code === 0 ? r.stdout : '';
   }
 
   private async listAll(): Promise<string[]> {
-    const out = await this.run(['lsf', '--', this.remote], 120_000);
+    // exit 3 = directory not found: a fresh remote folder is an empty listing
+    const out = await this.run(['lsf', '--', this.remote], 120_000, [3]);
     return out.split(/\r?\n/).map((l) => l.trim()).filter((l) => isAllowedName(l));
   }
 
   async put(localPath: string, name: string): Promise<void> {
     const dest = this.remoteFile(name);
-    if (/\0/.test(localPath)) throw new Error('invalid local path');
+    assertRegularSource(localPath);
     const present = await this.listAll();
     if (present.includes(name)) throw new Error(`backup already exists: ${name}`);
     await this.run(['copyto', '--', localPath, dest]);

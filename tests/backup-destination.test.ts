@@ -110,15 +110,19 @@ describe('RcloneDestination', () => {
   it('put checks lsf then runs copyto with argument arrays', async () => {
     const { exec, calls } = fakeExec((a) => (a[0] === 'lsf' ? { stdout: `${NAME2}\n` } : {}));
     const d = new RcloneDestination('gdrive:jobber', exec);
-    await d.put('/x/-weird file.bin', NAME);
+    const local = path.join(tmp, '-weird file.bin');
+    fs.writeFileSync(local, 'x');
+    await d.put(local, NAME);
     expect(calls[0]).toEqual({ cmd: 'rclone', args: ['lsf', '--', 'gdrive:jobber'] });
-    expect(calls[1]).toEqual({ cmd: 'rclone', args: ['copyto', '--', '/x/-weird file.bin', `gdrive:jobber/${NAME}`] });
+    expect(calls[1]).toEqual({ cmd: 'rclone', args: ['copyto', '--', local, `gdrive:jobber/${NAME}`] });
   });
 
   it('put refuses when the name is already present', async () => {
     const { exec, calls } = fakeExec(() => ({ stdout: `${NAME}\n` }));
     const d = new RcloneDestination('gdrive:jobber', exec);
-    await expect(d.put('/x/a', NAME)).rejects.toThrow(/already exists/);
+    const local = path.join(tmp, 'a.bin');
+    fs.writeFileSync(local, 'x');
+    await expect(d.put(local, NAME)).rejects.toThrow(/already exists/);
     expect(calls.every((c) => c.args[0] === 'lsf')).toBe(true);
   });
 
@@ -150,14 +154,76 @@ describe('RcloneDestination', () => {
     const { exec, calls } = fakeExec(() => ({}));
     const d = new RcloneDestination('r:dir', exec);
     await expect(d.remove('../x')).rejects.toThrow(/invalid backup name/);
-    await expect(d.put('/a', '-rf')).rejects.toThrow(/invalid backup name/);
+    await expect(d.put(path.join(tmp, 'a'), '-rf')).rejects.toThrow(/invalid backup name/);
     expect(calls).toHaveLength(0);
   });
 
   it('explains a missing rclone binary and surfaces other failures', async () => {
     const missing = fakeExec(() => ({ code: 127, stderr: 'ENOENT' }));
     await expect(new RcloneDestination('r:d', missing.exec).list()).rejects.toThrow(/install rclone/);
-    const bad = fakeExec(() => ({ code: 3, stderr: 'directory not found' }));
-    await expect(new RcloneDestination('r:d', bad.exec).list()).rejects.toThrow(/exit 3.*directory not found/);
+    const bad = fakeExec(() => ({ code: 5, stderr: 'temporary\u0007 error\nline' }));
+    const err = await new RcloneDestination('r:d', bad.exec).list().catch((e: Error) => e);
+    expect((err as Error).message).toMatch(/exit 5.*temporary error line/);
+    expect((err as Error).message).not.toMatch(/[\u0000-\u001f]/);
+  });
+
+  it('treats exit 3 on lsf as an empty listing so a fresh folder works', async () => {
+    const local = path.join(tmp, 'a.bin');
+    fs.writeFileSync(local, 'x');
+    const { exec, calls } = fakeExec((a) => (a[0] === 'lsf' ? { code: 3, stderr: 'directory not found' } : {}));
+    const d = new RcloneDestination('r:fresh', exec);
+    expect(await d.list()).toEqual([]);
+    await d.put(local, NAME);
+    expect(calls[calls.length - 1].args[0]).toBe('copyto');
+    await d.remove(NAME);
+  });
+
+  it('rejects a missing put source before running rclone', async () => {
+    const { exec, calls } = fakeExec(() => ({}));
+    const d = new RcloneDestination('r:d', exec);
+    await expect(d.put(path.join(tmp, 'nope'), NAME)).rejects.toThrow(/does not exist/);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('LocalDirDestination atomic put', () => {
+  it('leaves no temp when the final name exists', async () => {
+    const src = path.join(tmp, 's.bin');
+    fs.writeFileSync(src, 'x');
+    const dir = path.join(tmp, 'bk');
+    const d = new LocalDirDestination(dir);
+    await d.put(src, NAME);
+    await expect(d.put(src, NAME)).rejects.toThrow(/already exists/);
+    expect(fs.readdirSync(dir)).toEqual([NAME]);
+  });
+
+  it('leaves no final name and no temp when the copy fails', async () => {
+    const dir = path.join(tmp, 'bk');
+    const d = new LocalDirDestination(dir);
+    const srcDir = path.join(tmp, 'asdir');
+    fs.mkdirSync(srcDir);
+    await expect(d.put(srcDir, NAME)).rejects.toThrow();
+    expect(fs.existsSync(dir)).toBe(false);
+    fs.mkdirSync(dir, { mode: 0o700 });
+    const src = path.join(tmp, 'unreadable.bin');
+    fs.writeFileSync(src, 'x');
+    fs.chmodSync(src, 0o000);
+    if (process.getuid?.() !== 0) {
+      await expect(d.put(src, NAME)).rejects.toThrow();
+      expect(fs.readdirSync(dir)).toEqual([]);
+    }
+  });
+
+  it('list ignores temp files and put with a bad name creates no dir', async () => {
+    const dir = path.join(tmp, 'bk');
+    fs.mkdirSync(dir, { mode: 0o700 });
+    fs.writeFileSync(path.join(dir, '.tmp-abc'), 'x');
+    expect(await new LocalDirDestination(dir).list()).toEqual([]);
+    const other = path.join(tmp, 'never');
+    const src = path.join(tmp, 's.bin');
+    fs.writeFileSync(src, 'x');
+    await expect(new LocalDirDestination(other).put(src, 'bad')).rejects.toThrow(/invalid backup name/);
+    await expect(new LocalDirDestination(other).put(path.join(tmp, 'missing'), NAME)).rejects.toThrow();
+    expect(fs.existsSync(other)).toBe(false);
   });
 });

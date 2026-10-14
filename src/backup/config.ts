@@ -62,7 +62,7 @@ export function loadBackupConfig(env: NodeJS.ProcessEnv, root: string): BackupCo
   let rcloneRemote: string | null = null;
   const rawRemote = env.BACKUP_RCLONE_REMOTE?.trim();
   if (rawRemote) {
-    if (REMOTE_RE.test(rawRemote) && !rawRemote.includes('..')) rcloneRemote = rawRemote;
+    if (isValidRcloneRemote(rawRemote)) rcloneRemote = rawRemote;
     else problems.push('BACKUP_RCLONE_REMOTE must look like name:path');
   }
 
