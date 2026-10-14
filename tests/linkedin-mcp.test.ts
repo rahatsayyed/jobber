@@ -140,10 +140,10 @@ describe('registration and source hygiene', () => {
   it('.mcp.json has the linkedin entry and keeps the others', () => {
     const cfg = JSON.parse(read('.mcp.json')).mcpServers;
     expect(cfg.linkedin.args).toContain('src/mcp/linkedin.ts');
-    expect(Object.keys(cfg)).toEqual(expect.arrayContaining([
+    expect(Object.keys(cfg).sort()).toEqual([
       'job-fetch', 'resume', 'contacts', 'db', 'gates', 'gmail', 'apply', 'connect', 'discover', 'naukri',
-    ]));
-    expect(Object.keys(cfg)).toHaveLength(11);
+      'linkedin', 'outreach',
+    ].sort());
   });
 
   it('module has no process spawning, no direct browser import or launch', () => {
