@@ -252,3 +252,52 @@ describe('accessStep', () => {
     expect(readFileSync(path.join(t.root, '.gitignore'), 'utf8')).toBe('x\n');
   });
 });
+
+describe('gitignore matches the doctor rule exactly', () => {
+  for (const variant of ['.ccgram', '/.ccgram/', '/.env', '.claude/settings.local.json/']) {
+    it(`variant ${variant} gets the exact line appended and the real check passes`, async () => {
+      const t = setup(
+        [{ choose: 'read_only' }, { confirm: true }, { confirm: true }],
+        files({ '.gitignore': variant + '\n' }),
+        SHEBANG,
+      );
+      await accessStep.run(t.ctx);
+      const [gi] = await runChecks(checksById(['gitignore']), t.doctor);
+      expect(gi.result.status).toBe('pass');
+      const lines = readFileSync(path.join(t.root, '.gitignore'), 'utf8').split('\n');
+      for (const rule of ['.ccgram/', '.claude/settings.local.json', '.claude/settings.local.managed.json', '.env']) {
+        expect(lines).toContain(rule);
+      }
+      expect(lines[0]).toBe(variant); // existing line untouched
+    });
+  }
+
+  it('a rejected which is treated as not found with the exact fix', async () => {
+    const t = setup([{ choose: 'read_only' }], files(), SHEBANG);
+    t.ctx.run = (async () => {
+      throw new Error('ENOENT');
+    }) as unknown as SetupContext['run'];
+    expect(await accessStep.run(t.ctx)).toBe('skipped');
+    expect(t.sio.transcript.some((l) => l.includes('install the pinned ccgram first'))).toBe(true);
+  });
+});
+
+describe('limitsStep pre-existing pair conflict', () => {
+  it('safe mode re-prompts the pair instead of throwing; Enter on the low default is refused', async () => {
+    const t = setup(
+      [
+        { choose: 'safe' },
+        { ask: '' }, // MIN keeps 9 (unchanged, no raise confirm)
+        { ask: '' }, // MAX default 4 is below 9: refused, re-asked
+        { ask: '12' }, // MAX 12 is above the default 4: raise confirm next
+        { confirm: true },
+      ],
+      { '.env': 'PACING_MIN_BURST=9\n' },
+    );
+    await limitsStep.run(t.ctx);
+    const env = envOf(t.root);
+    expect(env.get('PACING_MIN_BURST')).toBe('9');
+    expect(env.get('PACING_MAX_BURST')).toBe('12');
+    t.sio.assertDone();
+  });
+});

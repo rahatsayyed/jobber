@@ -114,13 +114,13 @@ export const limitsStep: SetupStep = {
       chosen[spec.key] = effective(spec);
     }
 
-    async function review(spec: LimitSpec): Promise<void> {
+    async function review(spec: LimitSpec, extra?: (x: string) => string | null): Promise<void> {
       for (;;) {
         const startValue = chosen[spec.key];
         const v = (
           await io.ask(`${spec.key} (${spec.unit}): ${spec.what}`, {
             default: startValue,
-            validate: (x) => validateLimit(spec, x),
+            validate: (x) => validateLimit(spec, x) ?? (extra ? extra(x.trim()) : null),
           })
         ).trim();
         const raised =
@@ -139,23 +139,28 @@ export const limitsStep: SetupStep = {
         if (!(await io.confirm(`Review ${g.title}?`, false))) continue;
         for (const spec of LIMITS.filter((l) => l.group === g.id)) await review(spec);
       }
-      for (let round = 0; ; round++) {
-        const conflicts = validatePairs(chosen);
-        if (conflicts.length === 0) break;
-        if (round >= 5) throw new Error('limits still conflict: ' + conflicts.join('; '));
-        for (const c of conflicts) {
-          io.say(c);
-          const m = PAIR_MSG.exec(c);
-          if (!m) continue;
-          for (const key of [m[1], m[2]]) {
-            const spec = specFor(key);
-            if (spec) await review(spec);
-          }
+    }
+
+    // Pair conflicts (review answers or pre-existing .env values): the loaders would drop both
+    // values, so re-ask the pair; the upper value must not stay below the lower one, so Enter
+    // on a conflicting default is refused instead of burning rounds.
+    for (let round = 0; ; round++) {
+      const conflicts = validatePairs(chosen);
+      if (conflicts.length === 0) break;
+      if (round >= 5) throw new Error('limits still conflict: ' + conflicts.join('; '));
+      for (const c of conflicts) {
+        io.say(c);
+        const m = PAIR_MSG.exec(c);
+        if (!m) continue;
+        const lo = specFor(m[1]);
+        const hi = specFor(m[2]);
+        if (lo) await review(lo);
+        if (hi) {
+          await review(hi, (x) =>
+            Number(x) >= Number(chosen[m[1]]) ? null : `must be at least ${m[1]} (${chosen[m[1]]})`,
+          );
         }
       }
-    } else {
-      const conflicts = validatePairs(chosen);
-      if (conflicts.length > 0) throw new Error('limits conflict: ' + conflicts.join('; '));
     }
 
     // Missing keys get their value without touching existing ones; then everything that differs

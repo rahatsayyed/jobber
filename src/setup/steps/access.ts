@@ -1,6 +1,7 @@
 // src/setup/steps/access.ts
 // Step 9: permission set, ccgram hooks, .gitignore rules. The permission set is the ceiling for
 // every session; nothing here uses skip-permissions or bypassPermissions.
+import { statSync } from 'node:fs';
 import path from 'node:path';
 import { installHooksToFile, resolveCcgramPython } from '../../platform/ccgramHooks.js';
 import {
@@ -72,8 +73,13 @@ export const accessStep: SetupStep = {
     io.say(`Permission set applied: ${name}.`);
 
     let hooksSkipped = false;
-    const which = await ctx.run('which', ['ccgram']);
-    const exe = which.code === 0 ? which.stdout.trim() : '';
+    let exe = '';
+    try {
+      const which = await ctx.run('which', ['ccgram']);
+      exe = which.code === 0 ? which.stdout.trim() : '';
+    } catch {
+      exe = ''; // a rejected run (command missing) is the same as "not found"
+    }
     const python = resolveCcgramPython({
       which: () => (exe === '' ? null : exe),
       readFirstLine: (p) => {
@@ -102,9 +108,18 @@ export const accessStep: SetupStep = {
       if (!(await io.confirm(question, true))) return;
       const cur = ctx.fs.exists(giPath) ? ctx.fs.read(giPath) : '';
       const sep = cur === '' || cur.endsWith('\n') ? '' : '\n';
-      ctx.fs.write(giPath, cur + sep + rules.join('\n') + '\n', 0o644);
+      let mode = 0o644;
+      try {
+        mode = statSync(giPath).mode & 0o777;
+      } catch {
+        /* new file: default mode */
+      }
+      const tmp = `${giPath}.tmp-${process.pid}`;
+      ctx.fs.write(tmp, cur + sep + rules.join('\n') + '\n', mode);
+      ctx.fs.rename(tmp, giPath);
     };
-    await append(REQUIRED_IGNORES.filter((r) => !ignored(lines, r)), 'Append these to .gitignore?');
+    // Same rule as the doctor gitignore check: the exact line, no variants.
+    await append(REQUIRED_IGNORES.filter((r) => !lines.includes(r)), 'Append these to .gitignore?');
     await append(OPTIONAL_IGNORES.filter((r) => !ignored(lines, r)), 'Also keep these private by appending them to .gitignore?');
 
     io.say('Sessions never use skip-permissions. The permission set is the ceiling for what they may do.');
