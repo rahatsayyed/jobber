@@ -77,10 +77,10 @@ export const SNAPSHOT_SRC = String.raw`(function () {
       if (!isNaN(ti) && ti <= -200) return true;
       var own = hasOwnText(e);
       var cp = String(cs.clipPath || 'none').trim().toLowerCase();
-      if (own && cp !== 'none') return true;
+      if (cp !== 'none') return true;
       if (cp.indexOf('inset(100%') === 0) return true;
       var clp = String(cs.clip || 'auto').trim().toLowerCase();
-      if (own && clp !== 'auto') return true;
+      if (clp !== 'auto') return true;
       var r = e.getBoundingClientRect();
       if (!r) return true;
       if (tag !== 'HTML' && tag !== 'BODY' && (r.width <= 0 || r.height <= 0)) return true;

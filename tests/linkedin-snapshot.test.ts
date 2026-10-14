@@ -96,7 +96,7 @@ type Sty = Record<string, string>;
 const BASE: Sty = { display: 'block', visibility: 'visible', opacity: '1', fontSize: '16px', textIndent: '0px',
   color: 'rgb(0, 0, 0)', backgroundColor: 'rgba(0, 0, 0, 0)', overflow: 'visible', overflowX: 'visible', overflowY: 'visible',
   clipPath: 'none', clip: 'auto', webkitTextFillColor: 'rgb(0, 0, 0)' };
-function liveBodyText(style: Sty, text: string, rect = { width: 200, height: 20, right: 300, bottom: 40 }): string {
+function liveBodyText(style: Sty, text: string, rect = { width: 200, height: 20, right: 300, bottom: 40 }, nested = false): string {
   const mk = (tag: string, parent: any, st: Sty, r: any): any => ({
     tagName: tag, nodeType: 1, parentElement: parent, childNodes: [] as any[],
     hasAttribute: () => false, getAttribute: () => null, querySelectorAll: () => [],
@@ -104,7 +104,11 @@ function liveBodyText(style: Sty, text: string, rect = { width: 200, height: 20,
   });
   const body = mk('BODY', null, { ...BASE, backgroundColor: 'rgb(255, 255, 255)' }, { width: 1000, height: 800, right: 1000, bottom: 800 });
   const div = mk('DIV', body, { ...BASE, ...style }, rect);
-  div.childNodes.push({ nodeType: 3, nodeValue: text });
+  if (nested) {
+    const span = mk('SPAN', div, { ...BASE }, { width: 100, height: 20, right: 150, bottom: 40 });
+    span.childNodes.push({ nodeType: 3, nodeValue: text });
+    div.childNodes.push(span);
+  } else div.childNodes.push({ nodeType: 3, nodeValue: text });
   body.childNodes.push(div);
   const fakeDoc = { title: '', body, querySelector: () => null, querySelectorAll: () => [] };
   const run = new Function('document', 'window', 'location', 'getComputedStyle', 'return (' + SNAPSHOT_SRC + ')');
@@ -127,6 +131,12 @@ describe('SNAPSHOT_SRC leak paths (fake computed style)', () => {
     expect(liveBodyText({ webkitTextFillColor: 'rgba(0, 0, 0, 0)' }, 'fillleak')).not.toContain('fillleak');
     expect(liveBodyText({ webkitTextFillColor: 'rgb(255, 255, 255)' }, 'fillleak2')).not.toContain('fillleak2');
     expect(liveBodyText({ webkitTextFillColor: 'color(display-p3 1 0 0)' }, 'fillleak3')).not.toContain('fillleak3');
+  });
+  it('hides descendants of clipped wrappers even when the wrapper has no own text', () => {
+    const r = { width: 200, height: 20, right: 300, bottom: 40 };
+    expect(liveBodyText({ clipPath: 'inset(50%)' }, 'wrapleak', r, true)).not.toContain('wrapleak');
+    expect(liveBodyText({ clip: 'rect(1px, 1px, 1px, 1px)' }, 'wrapleak2', r, true)).not.toContain('wrapleak2');
+    expect(liveBodyText({}, 'wrapok', r, true)).toContain('wrapok');
   });
   it('hides text-indent of -200px or more negative', () => {
     expect(liveBodyText({ textIndent: '-200px' }, 'indleak')).not.toContain('indleak');
