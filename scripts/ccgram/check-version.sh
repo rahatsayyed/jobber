@@ -13,7 +13,7 @@ if ! command -v ccgram >/dev/null 2>&1; then
   echo "ccgram is not installed (pinned version $PIN). Install exactly that version, then retry." >&2
   exit 1
 fi
-INSTALLED="$(ccgram --version 2>&1 | head -n 1)"
+INSTALLED="$(ccgram --version 2>&1 | head -n 1 | awk '{print $NF}')"
 if [ "$INSTALLED" != "$PIN" ]; then
   echo "ccgram version mismatch: pinned '$PIN', installed '$INSTALLED'. Refusing to run." >&2
   exit 1

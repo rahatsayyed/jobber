@@ -16,8 +16,18 @@ get() {
 
 TOKEN="$(get TELEGRAM_BOT_TOKEN || true)"
 USERS="$(get ALLOWED_USERS || true)"
+TOKEN="${TOKEN%$'\r'}"
+USERS="${USERS%$'\r'}"
 if [ -z "$TOKEN" ] || [ -z "$USERS" ]; then
   echo "TELEGRAM_BOT_TOKEN and ALLOWED_USERS must both be set in $ENV_FILE" >&2
+  exit 1
+fi
+if [[ "$TOKEN" =~ [[:space:]] ]]; then
+  echo "TELEGRAM_BOT_TOKEN in $ENV_FILE is malformed (contains whitespace)." >&2
+  exit 1
+fi
+if [[ ! "$USERS" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+  echo "ALLOWED_USERS in $ENV_FILE must be comma-separated numeric user IDs." >&2
   exit 1
 fi
 

@@ -50,9 +50,46 @@ describe('ccgram runner files', () => {
     expect(check).toMatch(/not installed/);
   });
 
-  it('claude-session.sh loads the project env and execs claude with the passed arguments', () => {
-    expect(session).toMatch(/\. "\$ROOT\/\.env"/);
+  it('claude-session.sh parses the env line by line, never sources it, and withholds the bridge keys', () => {
+    expect(session).not.toMatch(/^\s*(source|\.)\s+/m);
+    expect(session).not.toMatch(/\beval\b/);
+    expect(session).toMatch(/while IFS= read -r line \|\| \[ -n "\$line" \]/);
+    expect(session).toMatch(/\^\[A-Za-z_\]\[A-Za-z0-9_\]\*=/);
+    expect(session).toMatch(/TELEGRAM_BOT_TOKEN\|ALLOWED_USERS\) continue/);
+    expect(session).toMatch(/export "\$k=\$v"/);
     expect(session).toMatch(/exec claude "\$@"/);
+  });
+
+  it('run.sh env -i passes exactly the allowed variables', () => {
+    const m = run.match(/exec env -i((?:[ \t]*\\?\n?[ \t]*[A-Z_]+="[^"]*")+)/);
+    expect(m).not.toBeNull();
+    const names = [...(m as RegExpMatchArray)[1].matchAll(/([A-Z_]+)=/g)].map((x) => x[1]).sort();
+    expect(names).toEqual(
+      ['ALLOWED_USERS', 'CCGRAM_CLAUDE_COMMAND', 'CCGRAM_DIR', 'HOME', 'PATH', 'TELEGRAM_BOT_TOKEN'].sort(),
+    );
+    expect(run).toMatch(/\n  ccgram\n?$/);
+  });
+
+  it('uses exact tmux targets and validates the session name', () => {
+    expect(start).toMatch(/has-session -t "=\$SESSION"/);
+    expect(stop).toMatch(/has-session -t "=\$SESSION"/);
+    expect(stop).toMatch(/kill-session -t "=\$SESSION"/);
+    for (const t of [start, stop]) {
+      expect(t).toContain('^[A-Za-z0-9_-]+$');
+      expect(t).not.toMatch(/-t "\$SESSION"/);
+    }
+  });
+
+  it('run.sh validates ALLOWED_USERS and the token without printing them', () => {
+    expect(run).toContain('^[0-9]+(,[0-9]+)*$');
+    expect(run).toMatch(/\[\[:space:\]\]/);
+    expect(run).toMatch(/\$\{TOKEN%\$'\\r'\}/);
+    expect(run).not.toMatch(/echo[^\n]*\$(TOKEN|USERS)/);
+    expect(run).toMatch(/chmod 700 "\$CCGRAM_HOME"/);
+  });
+
+  it('version check uses the last token of the first output line', () => {
+    expect(check).toMatch(/awk '\{print \$NF\}'/);
   });
 
   it('.env.example lists the ccgram keys with no real values and keeps optional features unset', () => {
