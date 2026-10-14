@@ -2,7 +2,7 @@
 // Starts a wake run in a detached tmux window via an sh wrapper around scripts/run-claude.ts.
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ensureSession, killWindow, newWindow, type Run } from '../platform/tmux.js';
+import { ensureSession, killWindow, newWindow, windowExists, type Run } from '../platform/tmux.js';
 
 export interface LaunchHandle {
   runId: string;
@@ -167,11 +167,20 @@ export function tmuxLauncher(run: Run, fsOps: FsOps = defaultFsOps): Launcher {
     },
 
     async kill(h) {
+      // A missing window is a silent no-op; a window that survives the kill call throws so the
+      // driver can record it and refuse to double-launch.
       try {
         await killWindow(run, h.session, h.window);
       } catch {
-        // best effort
+        // fall through to the existence check
       }
+      let still = false;
+      try {
+        still = await windowExists(run, h.session, h.window);
+      } catch {
+        still = false;
+      }
+      if (still) throw new Error(`window still running: ${h.window}`);
     },
   };
 }

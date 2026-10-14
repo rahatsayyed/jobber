@@ -9,7 +9,8 @@ import { inQuietHours, pacingFromConfig } from '../src/outreach/pacing.js';
 import { acquireLock, peekLock } from '../src/platform/lock.js';
 import { daemonLoop, wakeOnce, wakeIsDry, type DriverDeps, type WakeResult } from '../src/scheduler/driver.js';
 import { fileNotifier, type Notice } from '../src/scheduler/notify.js';
-import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
+import { tmuxLauncher, type FsOps, type LaunchHandle, type LaunchPlan, type Launcher, type PollResult } from '../src/scheduler/launch.js';
+import type { Run } from '../src/platform/tmux.js';
 import { getState, listRuns, setState, startRun } from '../src/scheduler/runLog.js';
 
 const NOON_IST = new Date('2026-10-15T08:00:00.000Z'); // 13:30 IST, outside quiet hours
@@ -275,6 +276,24 @@ describe('wakeOnce', () => {
     const third = await wakeOnce(s.d);
     expect(third.status).toBe('ok');
     expect(s.launcher.starts).toHaveLength(2);
+  });
+
+  it('real tmuxLauncher whose window survives a kill gives kill_failed and blocks the next wake', async () => {
+    const run: Run = async (_c, args) => ({
+      stdout: args[0] === 'list-windows' ? '0|wake-run00000001|1|sh\n' : '',
+      code: 0,
+    });
+    const fsOps: FsOps = {
+      writeFile: () => {}, mkdir: () => {}, exists: () => false, readText: () => '',
+      readFromOffset: (_p, off) => ({ data: Buffer.alloc(0), offset: off }),
+    };
+    const s = setup({ launcher: tmuxLauncher(run, fsOps) });
+    let polls = 0;
+    const r = await wakeOnce(s.d, { abort: () => polls++ >= 1 });
+    expect(r.status).toBe('killed');
+    expect(r.reason).toBe('kill_failed');
+    expect(getState(s.db, 'unkilled_window')).toBeTruthy();
+    expect((await wakeOnce(s.d)).reason).toBe('unkilled_window');
   });
 
   it('start failure attempts a kill by the deterministic window name', async () => {

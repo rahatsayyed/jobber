@@ -141,12 +141,35 @@ describe('tmuxLauncher', () => {
     expect((await l2.poll(h)).newOutput).toBe('€');
   });
 
-  it('kill uses the handle session (restart-safe) and kills an existing window', async () => {
-    const { run, calls } = fakeRun({}, { 'list-windows': '0|wake-abcd1234|1|sh\n' });
-    await tmuxLauncher(run, memFs().fs).kill({
-      runId: 'abcd1234', session: 'jobber', window: 'wake-abcd1234', logPath: '', exitPath: '', promptPath: '',
-    });
-    expect(calls[1].args).toEqual(['kill-window', '-t', '=jobber:=wake-abcd1234']);
+  const killHandle = {
+    runId: 'abcd1234', session: 'jobber', window: 'wake-abcd1234', logPath: '', exitPath: '', promptPath: '',
+  };
+  // stateful fake: the window is listed until kill-window runs (unless persist)
+  function killRun(persist: boolean) {
+    const calls: string[][] = [];
+    let alive = true;
+    const run: Run = async (_cmd, args) => {
+      calls.push(args);
+      if (args[0] === 'kill-window') {
+        if (!persist) alive = false;
+        return { stdout: '', code: persist ? 1 : 0 };
+      }
+      return { stdout: alive ? '0|wake-abcd1234|1|sh\n' : '', code: 0 };
+    };
+    return { run, calls };
+  }
+
+  it('kill uses the handle session (restart-safe) and resolves when the window is gone', async () => {
+    const { run, calls } = killRun(false);
+    await expect(tmuxLauncher(run, memFs().fs).kill(killHandle)).resolves.toBeUndefined();
+    expect(calls.find((a) => a[0] === 'kill-window')).toEqual(['kill-window', '-t', '=jobber:=wake-abcd1234']);
+  });
+
+  it('kill throws when the window persists after the kill call', async () => {
+    const { run } = killRun(true);
+    await expect(tmuxLauncher(run, memFs().fs).kill(killHandle)).rejects.toThrow(
+      'window still running: wake-abcd1234',
+    );
   });
 
   it('kill never throws on a missing window', async () => {
