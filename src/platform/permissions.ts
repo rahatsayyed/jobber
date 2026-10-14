@@ -1,5 +1,5 @@
 // src/platform/permissions.ts
-import { copyFileSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync,existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 
 export type SetName = 'read_only' | 'outreach_send' | 'full';
 export const SET_NAMES: SetName[] = ['read_only', 'outreach_send', 'full'];
@@ -15,6 +15,9 @@ const MCP_ENTRY = /^mcp__[A-Za-z0-9_-]+(__[A-Za-z0-9_-]+)?$/;
 
 export function validateSets(sets: RawSets): void {
   for (const [name, set] of Object.entries(sets)) {
+    if (!set || !Array.isArray(set.allow) || set.allow.some((e) => typeof e !== 'string')) {
+      throw new Error(`permission set ${name}: allow must be an array of strings`);
+    }
     for (const entry of set.allow) {
       if (!MCP_ENTRY.test(entry)) throw new Error(`permission set ${name}: entry is not an MCP tool name: ${entry}`);
     }
@@ -62,27 +65,82 @@ export function detectSet(settings: LocalSettings, sets: RawSets): SetName | 'cu
   return 'custom';
 }
 
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === 'object' && !Array.isArray(v);
+const isStringArray = (v: unknown): boolean => Array.isArray(v) && v.every((e) => typeof e === 'string');
+
+// Returns a description of the first shape problem, or null when safe to merge.
+function shapeProblem(v: unknown): string | null {
+  if (!isPlainObject(v)) return 'top level is not a JSON object';
+  if ('permissions' in v) {
+    const perms = v.permissions;
+    if (!isPlainObject(perms)) return 'permissions is not an object';
+    for (const k of ['allow', 'deny', 'ask']) {
+      if (k in perms && !isStringArray(perms[k])) return `permissions.${k} is not an array of strings`;
+    }
+  }
+  return null;
+}
+
+export function manifestPath(settingsPath: string): string {
+  return settingsPath.replace(/\.json$/, '') + '.managed.json';
+}
+
+function backupTarget(path: string, suffix: string): string {
+  const first = `${path}.${suffix}`;
+  return existsSync(first) ? `${path}.${Date.now()}.${suffix}` : first;
+}
+
+function writeSecure(path: string, text: string): void {
+  const tmp = `${path}.tmp`;
+  writeFileSync(tmp, text, { mode: 0o600 });
+  renameSync(tmp, path);
+  chmodSync(path, 0o600);
+}
+
+function readManifest(path: string): string[] | null {
+  if (!existsSync(path)) return null;
+  try {
+    const m: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    if (isPlainObject(m) && isStringArray(m.entries)) return m.entries as string[];
+  } catch {
+    // fall through to the warning
+  }
+  console.warn(`${path} is malformed; treating as no manifest (nothing will be removed)`);
+  return null;
+}
+
 export function applySetToFile(path: string, sets: RawSets, name: SetName): void {
   validateSets(sets);
+  const desired = resolveSet(sets, name);
   let current: LocalSettings = {};
+  let hadFile = false;
   if (existsSync(path)) {
+    hadFile = true;
     const text = readFileSync(path, 'utf8');
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
     } catch {
-      copyFileSync(path, `${path}.invalid.bak`);
-      throw new Error(`${path} is not valid JSON; refusing to overwrite it (copy kept at ${path}.invalid.bak)`);
+      copyFileSync(path, backupTarget(path, 'invalid.bak'));
+      throw new Error(`${path} is not valid JSON; refusing to overwrite it (copy kept as .invalid.bak)`);
     }
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      copyFileSync(path, `${path}.invalid.bak`);
-      throw new Error(`${path} is not a JSON object; refusing to overwrite it (copy kept at ${path}.invalid.bak)`);
+    const problem = shapeProblem(parsed);
+    if (problem) {
+      copyFileSync(path, backupTarget(path, 'invalid.bak'));
+      throw new Error(`${path}: ${problem}; refusing to overwrite it (copy kept as .invalid.bak)`);
     }
     current = parsed as LocalSettings;
-    copyFileSync(path, `${path}.bak`);
   }
-  const next = applySet(current, sets, name);
-  const tmp = `${path}.tmp`;
-  writeFileSync(tmp, JSON.stringify(next, null, 2) + '\n');
-  renameSync(tmp, path);
+  const mPath = manifestPath(path);
+  const old = new Set(readManifest(mPath) ?? []);
+  const kept = (current.permissions?.allow ?? []).filter((e) => !old.has(e));
+  const added = desired.filter((e) => !kept.includes(e));
+  const next: LocalSettings = {
+    ...current,
+    permissions: { ...current.permissions, allow: [...kept, ...added] },
+  };
+  if (hadFile) copyFileSync(path, backupTarget(path, 'bak'));
+  writeSecure(path, JSON.stringify(next, null, 2) + '\n');
+  writeSecure(mPath, JSON.stringify({ set: name, entries: added }, null, 2) + '\n');
 }

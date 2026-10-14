@@ -1,10 +1,11 @@
 // tests/platform-permissions.test.ts
 import { describe, it, expect, afterAll } from 'vitest';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   applySet,
   applySetToFile,
+  manifestPath,
   detectSet,
   resolveSet,
   validateSets,
@@ -117,5 +118,83 @@ describe('applySetToFile', () => {
     expect(() => applySetToFile(path, real, 'read_only')).toThrow();
     expect(readFileSync(path, 'utf8')).toBe('{ not json');
     expect(readFileSync(`${path}.invalid.bak`, 'utf8')).toBe('{ not json');
+  });
+});
+
+describe('manifest-based ownership, mode and shape validation', () => {
+  const mk = () => join(mkdtempSync(join(base, 'perm-')), 'settings.local.json');
+  const allowOf = (p: string): string[] => JSON.parse(readFileSync(p, 'utf8')).permissions.allow;
+
+  it('removes a stale entry dropped from a set definition', () => {
+    const p = mk();
+    applySetToFile(p, { read_only: { allow: ['mcp__a__x', 'mcp__a__send'] } }, 'read_only');
+    applySetToFile(p, { read_only: { allow: ['mcp__a__x'] } }, 'read_only');
+    expect(allowOf(p)).toEqual(['mcp__a__x']);
+  });
+
+  it('keeps a user-owned entry equal to a managed name across a switch', () => {
+    const p = mk();
+    writeFileSync(p, JSON.stringify({ permissions: { allow: ['mcp__gmail__send_email'] } }));
+    applySetToFile(p, real, 'outreach_send');
+    applySetToFile(p, real, 'read_only');
+    expect(allowOf(p)).toContain('mcp__gmail__send_email');
+    expect(JSON.parse(readFileSync(manifestPath(p), 'utf8')).entries).not.toContain('mcp__gmail__send_email');
+  });
+
+  it('full back to read_only removes only ours; deny and ask untouched', () => {
+    const p = mk();
+    writeFileSync(
+      p,
+      JSON.stringify({ permissions: { allow: ['Bash(ls)'], deny: ['Read(./.env)'], ask: ['Bash(git push *)'] } }),
+    );
+    applySetToFile(p, real, 'full');
+    applySetToFile(p, real, 'read_only');
+    const out = JSON.parse(readFileSync(p, 'utf8'));
+    expect(out.permissions.allow).toContain('Bash(ls)');
+    expect(out.permissions.allow).not.toContain('mcp__gmail');
+    expect(out.permissions.allow).not.toContain('mcp__gmail__send_email');
+    expect(out.permissions.deny).toEqual(['Read(./.env)']);
+    expect(out.permissions.ask).toEqual(['Bash(git push *)']);
+  });
+
+  it('writes settings and manifest with mode 0600', () => {
+    const p = mk();
+    applySetToFile(p, real, 'read_only');
+    expect(statSync(p).mode & 0o777).toBe(0o600);
+    expect(statSync(manifestPath(p)).mode & 0o777).toBe(0o600);
+  });
+
+  it('keeps the first .bak on a later apply', () => {
+    const p = mk();
+    writeFileSync(p, JSON.stringify({ model: 'orig' }));
+    applySetToFile(p, real, 'read_only');
+    applySetToFile(p, real, 'outreach_send');
+    expect(JSON.parse(readFileSync(`${p}.bak`, 'utf8'))).toEqual({ model: 'orig' });
+  });
+
+  it('refuses wrong shapes without overwriting', () => {
+    const bad = [
+      '{"permissions":[]}', '{"permissions":"x"}', '{"permissions":null}',
+      '{"permissions":{"allow":"x"}}', '{"permissions":{"allow":{}}}',
+      '{"permissions":{"deny":[1]}}', '[]', '"x"', 'null',
+    ];
+    for (const text of bad) {
+      const p = mk();
+      writeFileSync(p, text);
+      expect(() => applySetToFile(p, real, 'read_only')).toThrow();
+      expect(readFileSync(p, 'utf8')).toBe(text);
+      expect(readFileSync(`${p}.invalid.bak`, 'utf8')).toBe(text);
+    }
+  });
+
+  it('treats a malformed manifest as none and does not crash', () => {
+    const p = mk();
+    applySetToFile(p, real, 'read_only');
+    writeFileSync(manifestPath(p), '{ nope');
+    expect(() => applySetToFile(p, real, 'read_only')).not.toThrow();
+  });
+
+  it('validateSets rejects a non-array allow', () => {
+    expect(() => validateSets({ s: { allow: 'x' as unknown as string[] } })).toThrow(/array/);
   });
 });
