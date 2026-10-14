@@ -220,7 +220,7 @@ export const ccgramChecks: Check[] = [
     id: 'web',
     title: 'status web page token',
     async run(ctx) {
-      const token = (readEnv(ctx) ?? {}).WEB_TOKEN ?? ctx.env.WEB_TOKEN ?? '';
+      const token = ctx.env.WEB_TOKEN ?? (readEnv(ctx) ?? {}).WEB_TOKEN ?? ''; // process env over .env, like scripts/web.ts
       if (token === '') return pass('WEB_TOKEN is unset: web page is off');
       return token.length < 24
         ? fail('WEB_TOKEN is shorter than 24 characters', 'generate one with openssl rand -hex 24')

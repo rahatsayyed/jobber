@@ -271,11 +271,15 @@ describe('ccgram checks', () => {
 });
 
 describe('web check', () => {
-  const runWeb = async (extra: string) => {
+  const runWeb = async (extra: string, env: NodeJS.ProcessEnv = {}) => {
     const files = goodFiles();
     files['/p/.env'] = { text: GOOD_ENV + extra, mode: 0o600 };
-    return (await byId(ctxWith(files)))['web'];
+    return (await byId(ctxWith(files, { env })))['web'];
   };
+  it('process env wins over .env in both directions', async () => {
+    expect((await runWeb('WEB_TOKEN=short\n', { WEB_TOKEN: 'y'.repeat(30) })).status).toBe('pass');
+    expect((await runWeb(`WEB_TOKEN=${'y'.repeat(30)}\n`, { WEB_TOKEN: 'short' })).status).toBe('fail');
+  });
   it('passes when unset, fails when short, passes when long, never prints the token', async () => {
     expect((await runWeb('')).status).toBe('pass');
     const short = await runWeb('WEB_TOKEN=shortsecret\n');

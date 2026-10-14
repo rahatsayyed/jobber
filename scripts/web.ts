@@ -9,14 +9,21 @@ import { capture, defaultRun, sendText } from '../src/platform/tmux.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { secretValuesFromEnv } from '../src/safety/outputGate.js';
 import { parseWebEnv } from '../src/web/env.js';
-import { startWebServer } from '../src/web/server.js';
+import { redactSecrets, startWebServer } from '../src/web/server.js';
 
-process.on('unhandledRejection', () => {});
+let maskLiterals: string[] = [];
+process.on('unhandledRejection', (reason) => {
+  const first = reason instanceof Error ? (reason.message.split('\n')[0] ?? '') : 'non-error';
+  const line = redactSecrets(first.slice(0, 200), maskLiterals).slice(0, 200);
+  console.error(`web: unhandled rejection: ${line}`);
+});
 
 async function main(): Promise<number> {
   const envFile = join(process.cwd(), '.env');
   const fileEnv = existsSync(envFile) ? parseEnv(readFileSync(envFile, 'utf8')) : {};
+  // process env wins over the project .env (the doctor web check uses the same order)
   const env: Record<string, string | undefined> = { ...fileEnv, ...process.env };
+  maskLiterals = [env.WEB_TOKEN ?? '', ...secretValuesFromEnv(env as NodeJS.ProcessEnv)].filter(Boolean);
   const parsed = parseWebEnv(env);
   if (!parsed.ok) {
     console.error(`web: ${parsed.error}`);

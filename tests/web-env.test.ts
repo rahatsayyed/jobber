@@ -23,6 +23,10 @@ describe('parseWebEnv', () => {
     expect(parseWebEnv({ WEB_TOKEN: TOKEN, WEB_PORT: '1024' }).ok).toBe(true);
     expect(parseWebEnv({ WEB_TOKEN: TOKEN, WEB_PORT: '65535' }).ok).toBe(true);
   });
+  it('treats a whitespace-only WEB_PORT like empty: default 8787', () => {
+    const r = parseWebEnv({ WEB_TOKEN: TOKEN, WEB_PORT: '   ' });
+    expect(r.ok && r.config.port).toBe(8787);
+  });
   it('rejects invalid tmux names', () => {
     expect(parseWebEnv({ WEB_TOKEN: TOKEN, WEB_TMUX_SESSION: 'a b' }).ok).toBe(false);
     expect(parseWebEnv({ WEB_TOKEN: TOKEN, WEB_TMUX_WINDOW: '-x' }).ok).toBe(false);
