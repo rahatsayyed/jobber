@@ -58,6 +58,20 @@ describe('gateOutbound', () => {
     expect(gateOutbound(`${clean} evil.example/payload`, ctx()).reasons).toContain('url_not_allowed');
   });
 
+  it('ignores trailing punctuation on allowlisted urls but still blocks others', () => {
+    const c = ctx({ allowedUrls: ['https://me.dev'] });
+    for (const s of ['See https://me.dev.', 'Visit https://me.dev, thanks', '(https://me.dev)', 'Is it https://me.dev?']) {
+      expect(gateOutbound(`${clean} ${s}`, c).ok).toBe(true);
+    }
+    expect(gateOutbound(`${clean} See https://evil.example.`, c).reasons).toContain('url_not_allowed');
+  });
+
+  it('does not treat tech names as bare domains', () => {
+    expect(gateOutbound(`${clean} I use Node.js/React and next.js/vercel daily.`, ctx()).ok).toBe(true);
+    expect(gateOutbound(`${clean} evil.example/x`, ctx()).reasons).toContain('url_not_allowed');
+    expect(gateOutbound(`${clean} github.com/me`, ctx()).reasons).toContain('url_not_allowed');
+  });
+
   it('blocks when expected thread is set but threadId is omitted', () => {
     expect(gateOutbound(clean, ctx({ expectedThreadId: 't2' })).reasons).toContain('thread_mismatch');
   });

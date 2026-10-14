@@ -30,7 +30,7 @@ const URL_RES: RegExp[] = [
   /\b[a-z][a-z0-9+.-]{1,20}:\/\/[^\s)>\]]{0,2048}/gi,
   /\b(?:file|data|javascript|vbscript):[^\s)>\]]{0,2048}/gi,
   // bare domain.tld/path (not preceded by a scheme, userinfo or another host char)
-  /(?<![\w./@:-])(?:[a-z0-9-]{1,63}\.){1,5}[a-z]{2,24}\/[^\s)>\]]{0,2048}/gi,
+  /(?<![\w./@:-])(?:[a-z0-9-]{1,63}\.){1,5}(?!(?:js|ts|jsx|tsx|py|rb|json|md|vue)\/)[a-z]{2,24}\/[^\s)>\]]{0,2048}/gi,
 ];
 const EMAIL_RE = /[A-Z0-9._%+-]{1,64}@[A-Z0-9.-]{1,255}\.[A-Z]{2,24}/gi;
 const PATH_RES: RegExp[] = [
@@ -57,7 +57,20 @@ function parseUrl(raw: string): URL | null {
   }
 }
 
-function urlAllowed(raw: string, allowed: URL[]): boolean {
+/** Drop sentence punctuation and unbalanced closing brackets captured at the end of a match. */
+function stripTrailing(raw: string): string {
+  let s = raw;
+  for (let i = 0; i < 64 && s.length > 0; i++) {
+    const last = s[s.length - 1];
+    if (/[.,;:!?'"}]/.test(last)) s = s.slice(0, -1);
+    else if (last === ')' && !s.includes('(')) s = s.slice(0, -1);
+    else break;
+  }
+  return s;
+}
+
+function urlAllowed(rawIn: string, allowed: URL[]): boolean {
+  const raw = stripTrailing(rawIn);
   const u = parseUrl(raw);
   if (!u) return false;
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
