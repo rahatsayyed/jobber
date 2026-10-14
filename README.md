@@ -40,9 +40,9 @@ Setup is resumable and safe to rerun: a step whose checks already pass skips its
 
 In this order:
 
-- `prereqs`: checks Node, tmux, Chrome, the Claude CLI, ccgram and Git, and prints a fix for anything missing.
-- `claude`: checks that Claude Code is installed and logged in, and tells you how to log in if it is not.
-- `telegram`: walks you through creating a bot with @BotFather, stores the bot token in `.env` (never echoed), records your numeric Telegram ID as the only allowed user, and sends a test message.
+- `prereqs`: checks Node, tmux, Chrome, the browser binaries (patchright and Playwright) and the pinned ccgram version, and prints a fix for anything missing.
+- `claude`: checks that the Claude Code CLI is installed and logged in, and tells you how to log in if it is not.
+- `telegram`: walks you through creating a bot with @BotFather, tells you to enable Topics and turn Group Privacy off, stores the bot token in `.env` (never echoed), records your numeric Telegram ID in `ALLOWED_USERS` (a comma-separated list of numeric IDs; each extra ID needs an explicit extra confirmation), and sends a test message.
 - `gmail`: guides you through creating a Desktop OAuth client in your own Google Cloud project, then runs the consent screen so the send token stays on this machine.
 - `sessions`: opens a browser so you log in once to the burner LinkedIn account (applying), the main LinkedIn account (connection requests) and Naukri; the saved sessions live in `secrets/`.
 - `resume`: has a model transcribe your resume text into `user-data/resume.json`, rejects any number that is not in your source text, and writes nothing until you confirm.
@@ -89,7 +89,7 @@ bash scripts/ccgram/stop.sh     # stop the bridge; Claude windows it created kee
 
 - The Telegram topic bound to the manager session lists, reads, starts and stops the named windows in `config/manager-windows.json` (`hunt` and `followups`). The `manager` window and the bridge are protected and cannot be stopped from Telegram. The manager never types into another window and never runs outreach itself. See [the manager skill](.claude/skills/manager/SKILL.md).
 - A headless, cron-friendly hunt runs with `./run-hunt.sh "run the hunt"`. It uses the restricted launcher `scripts/run-claude.sh`, profile `hunt` in `config/run-profiles.json`: the tool list comes from the `outreach_send` set, and permission checks are never skipped.
-- The older route, a single `claude --channels plugin:telegram@claude-plugins-official` session, is described in `CLAUDE.md` and still works, but the ccgram route above is the one setup configures.
+- The older route, a single `claude --channels plugin:telegram@claude-plugins-official` session, is documented in `CLAUDE.md`; the ccgram route above is the one setup configures.
 - To route Claude Code through another Anthropic-compatible provider (for example the Claude Code Router), see [model auth setup](docs/model-auth-setup.md). If a `.env.ccr` file exists, the launcher reads it. It is optional.
 
 ---
@@ -100,6 +100,15 @@ bash scripts/ccgram/stop.sh     # stop the bridge; Claude windows it created kee
 - `npm run status -- limits`, `npm run status -- working`, `npm run status -- health`: today's caps and usage, the queue and halts, and platform health. The same three are the `/limits`, `/working` and `/health` Telegram commands (see [slash commands](docs/telegram-slash-commands.md)).
 - `npm run report`: a self-contained HTML funnel report under `reports/`.
 - `npm run web`: the local status page, described in the next section.
+
+Commands you can send from Telegram (or type in a CLI session):
+
+- `/runhunt`: run the full pipeline (discover, match, contacts, drafts, send).
+- `/status`: funnel, reply and interview rates.
+- `/followups`: check replies, then draft follow-ups for your approval.
+- `/checkreplies`: detect replies in Gmail and propose outcomes.
+- `/apply #N`: apply to one matched job.
+- `/limits`, `/working`, `/health`: caps and usage, queue and halts, platform health.
 
 ---
 
@@ -166,6 +175,7 @@ Capture the LinkedIn and Naukri sessions on a machine with a display, or run the
 
 ## Troubleshooting
 
+- **xAI "Invalid message role", OpenRouter 402 or Claude Code Router problems:** see [model auth setup](docs/model-auth-setup.md).
 - **Anything looks wrong:** `npm run doctor` names the failing check and the fix.
 - **Gmail not authorized:** rerun `npm run setup -- --step gmail` (see [Gmail setup](docs/gmail-mcp-setup.md)).
 - **LinkedIn or Naukri session expired:** rerun `npm run setup -- --step sessions` (see [LinkedIn sessions](docs/linkedin-sessions-setup.md) and [Naukri session](docs/naukri-session-setup.md)).

@@ -51,6 +51,26 @@ describe('README', () => {
     for (const f of files) expect(existsSync(resolve(root, f)), f).toBe(true);
   });
 
+  it('names only real repo files in code spans', () => {
+    const spans = [...readme.matchAll(/`([^`\s]+)`/g)].map((m) => m[1]);
+    for (const sp of spans) {
+      if (/[<>*{}|]/.test(sp)) continue;
+      if (/^(scripts|src|config|docs|\.claude)\/.*\.[A-Za-z]+$/.test(sp)) {
+        expect(existsSync(resolve(root, sp)), sp).toBe(true);
+      }
+    }
+    for (const m of readme.matchAll(/\.\/([A-Za-z0-9_.-]+\.sh)/g)) {
+      expect(existsSync(resolve(root, m[1])), m[1]).toBe(true);
+    }
+  });
+
+  it('uses only real step ids with --step', () => {
+    const ids = ALL_STEPS.map((s) => s.id);
+    const used = [...readme.matchAll(/--step ([a-z0-9-]+)/g)].map((m) => m[1]);
+    expect(used.length).toBeGreaterThan(0);
+    for (const u of used) expect(ids, u).toContain(u);
+  });
+
   it('lists exactly the setup step ids', () => {
     const ids = ALL_STEPS.map((s) => s.id);
     const body = section(/What setup does/i);
@@ -77,11 +97,10 @@ describe('README', () => {
     expect(readme).not.toMatch(/\d{5,}:[A-Za-z0-9_-]{10,}/);
     expect(readme).not.toMatch(/sk-[A-Za-z0-9_-]{10,}/);
     expect(readme).not.toMatch(/Bearer /);
-    for (const line of readme.split('\n')) {
-      const m = line.match(/^\s*[A-Z0-9_]*(TOKEN|SECRET|PASSWORD|API_KEY|APP_KEY)[A-Z0-9_]*=(.*)$/);
-      if (!m) continue;
+    const secretLine = /^[ \t]*[A-Z0-9_]*(TOKEN|SECRET|PASSWORD|API_KEY|APP_KEY)[A-Z0-9_]*=(.*)$/gm;
+    for (const m of readme.matchAll(secretLine)) {
       const v = m[2].trim();
-      expect(v === '' || /^(<.*>|YOUR|\.\.\.|changeme|xxx)/i.test(v), line).toBe(true);
+      expect(v === '' || /^(<.*>|YOUR|\.\.\.|changeme|xxx)/i.test(v), m[0]).toBe(true);
     }
   });
 
