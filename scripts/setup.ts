@@ -21,7 +21,10 @@ import { nodeEnvFs } from '../src/setup/envWriter.js';
 import { NO_TTY_MESSAGE, USAGE, childEnv, ensureEnvFile, needTty, parseArgs, spawnSuspended } from '../src/setup/cli.js';
 import { redactingIO, ttyIO } from '../src/setup/io.js';
 import { runSetup, type SetupContext, type SetupFs } from '../src/setup/runner.js';
-import { loadState } from '../src/setup/state.js';
+import { setupGuideChecks } from '../src/platform/checksGuide.js';
+import { runChecks } from '../src/platform/doctor.js';
+import { GUIDE_CHECK_IDS, formatStatus, offerGuide, runGuideOnly } from '../src/setup/guide.js';
+import { loadState, saveState } from '../src/setup/state.js';
 import { ALL_STEPS } from '../src/setup/steps/index.js';
 
 interface SqliteDb {
@@ -44,6 +47,17 @@ if (args.list) {
   for (const s of ALL_STEPS) console.log(s.id);
   process.exit(0);
 }
+if (args.status) {
+  const sroot = resolve(import.meta.dirname, '..');
+  const sp = join(userDataDir(process.env, sroot), '.setup-state.json');
+  console.log(
+    formatStatus(
+      ALL_STEPS.map((s) => s.id),
+      loadState(sp, { exists: (p) => existsSync(p), read: (p) => readFileSync(p, 'utf8') }),
+    ),
+  );
+  process.exit(0);
+}
 if (needTty(process.stdin.isTTY, process.stdout.isTTY)) {
   console.error(NO_TTY_MESSAGE);
   process.exit(2);
@@ -51,6 +65,18 @@ if (needTty(process.stdin.isTTY, process.stdout.isTTY)) {
 
 const root = resolve(import.meta.dirname, '..');
 const env = process.env;
+
+if (args.guideOnly) {
+  const c = await runGuideOnly(
+    (cmd, argv) =>
+      new Promise<number>((done) => {
+        const child = spawn(cmd, argv, { cwd: root, env: childEnv(env), stdio: 'inherit' });
+        child.on('error', () => done(127));
+        child.on('close', (code) => done(code ?? 1));
+      }),
+  );
+  process.exit(c);
+}
 
 const fs: SetupFs = {
   ...nodeEnvFs,
@@ -149,6 +175,26 @@ const ctx: SetupContext = {
 
 let code = 1;
 try {
+  if (args.redo) delete ctx.state.guide_offered;
+  if (args.step === undefined) {
+    const guideChecks = [...setupChecks, ...setupGuideChecks()].filter((c) => GUIDE_CHECK_IDS.includes(c.id));
+    await offerGuide({
+      io: ctx.io,
+      root,
+      run: defaultRun,
+      state: ctx.state,
+      noGuide: args.noGuide === true,
+      tty: true,
+      checks: () => runChecks(guideChecks, doctor),
+      save: () => {
+        try {
+          saveState(statePath, ctx.state, fs, now);
+        } catch {
+          ctx.io.say('warning: could not save setup state');
+        }
+      },
+    });
+  }
   code = await runSetup(ALL_STEPS, ctx, {
     only: args.step,
     redo: args.redo,

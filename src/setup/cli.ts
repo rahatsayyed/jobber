@@ -7,6 +7,9 @@ export interface SetupArgs {
   redo: boolean;
   list: boolean;
   help: boolean;
+  noGuide?: boolean;
+  guideOnly?: boolean;
+  status?: boolean;
   error?: string;
 }
 
@@ -16,6 +19,9 @@ export function parseArgs(argv: string[]): SetupArgs {
     const a = argv[i];
     if (a === '--redo') out.redo = true;
     else if (a === '--list') out.list = true;
+    else if (a === '--no-guide') out.noGuide = true;
+    else if (a === '--guide-only') out.guideOnly = true;
+    else if (a === '--status') out.status = true;
     else if (a === '--help' || a === '-h') out.help = true;
     else if (a === '--step') {
       const v = argv[i + 1];
@@ -25,6 +31,9 @@ export function parseArgs(argv: string[]): SetupArgs {
         i++;
       }
     } else out.error = `unknown argument: ${a}`;
+  }
+  if (out.guideOnly && out.noGuide && !out.error) {
+    out.error = '--guide-only and --no-guide cannot be used together';
   }
   return out;
 }
@@ -80,10 +89,13 @@ export async function spawnSuspended<T>(
   }
 }
 
-export const USAGE =`Usage: npm run setup -- [--step <id>] [--redo] [--list] [--help]
+export const USAGE =`Usage: npm run setup -- [--step <id>] [--redo] [--list] [--status] [--no-guide | --guide-only] [--help]
   --step <id>  run only that step
   --redo       run steps even when their checks already pass
   --list       print the step ids and exit
+  --status     print each step as done|skipped|pending with its time and exit
+  --no-guide   do not offer the guided setup session
+  --guide-only start only the guided setup session in this terminal
   --help       print this text
 The wizard needs an interactive terminal.`;
 

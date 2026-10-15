@@ -6,6 +6,7 @@ export interface SetupState {
   version: 1;
   steps: Record<string, { status: 'done' | 'skipped'; at: string }>;
   answers: Record<string, string | number | boolean>; // non-secret only
+  guide_offered?: boolean; // the guided session was offered (accepted or declined)
 }
 
 const SECRET_KEY_RE = /token|password|secret|key|cookie|client_secret|WEB_OIDC_CLIENT_SECRET/i;
@@ -42,6 +43,7 @@ export function loadState(
         }
       }
     }
+    if (o.guide_offered === true) state.guide_offered = true;
     return state;
   } catch {
     return emptyState();
