@@ -18,6 +18,7 @@ export interface ApplyResult {
 const MAX_VARIANTS = 3;
 const MAX_LANDMARKS = 40;
 const MAX_RUN_IDS = 5;
+const MAX_COUNT = 1_000_000; // clamp for obs, runs and counters
 const RUN_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 // A null or malformed run id counts as one anonymous run id.
 const ANON_RUN = 'norun';
@@ -35,6 +36,8 @@ function best(promoted: Variant[], obs: Observation): { v: Variant; score: numbe
 
 export function classify(file: LayoutFile, obs: Observation, cfg: LayoutConfig): Verdict {
   if (obs.nonDrift) return { class: obs.nonDrift };
+  // An observation for another platform is never compared against this file.
+  if (obs.platform !== file.platform) return { class: 'unknown', score: 0, missing: [], variant: null };
   const promoted = (file.kinds[obs.kind]?.variants ?? []).filter((v) => v.promoted);
   const b = best(promoted, obs);
   if (!b) return { class: 'unknown', score: 0, missing: [], variant: null };
@@ -51,9 +54,9 @@ export function classify(file: LayoutFile, obs: Observation, cfg: LayoutConfig):
 
 function noteRun(v: Variant, runId: string | null): void {
   const id = runId !== null && RUN_ID_RE.test(runId) ? runId : ANON_RUN;
-  if (!v.run_ids.includes(id)) v.runs += 1; // runs evicted from the 5-id list can recount; acceptable
+  if (!v.run_ids.includes(id)) v.runs = Math.min(v.runs + 1, MAX_COUNT); // runs evicted from the 5-id list can recount; acceptable
   v.run_ids = [...v.run_ids.filter((r) => r !== id), id].slice(-MAX_RUN_IDS);
-  v.obs += 1;
+  v.obs = Math.min(v.obs + 1, MAX_COUNT);
 }
 
 function sameSet(a: readonly string[], b: readonly string[]): boolean {
@@ -106,12 +109,11 @@ function learn(km: KindMemory, obs: Observation, now: string, runId: string | nu
     noteRun(cand, runId);
   } else {
     if (km.variants.length >= MAX_VARIANTS) {
+      // A promoted variant is never evicted at seed time. With 3 promoted variants stored nothing new
+      // can be learned until the owner resets the layout; drift counters still advance.
       const learning = km.variants.filter((v) => !v.promoted);
-      let drop: Variant | undefined;
-      if (learning.length > 0) drop = learning.reduce((a, b) => (b.first_seen < a.first_seen ? b : a));
-      // Full of promoted variants: only sustained drift may displace the least recently verified one.
-      else if (km.drift_streak >= cfg.driftEscalateN) { drop = oldest(km.variants); events.push('variant_replaced'); }
-      if (!drop) return;
+      if (learning.length === 0) return;
+      const drop = learning.reduce((a, b) => (b.first_seen < a.first_seen ? b : a));
       km.variants = km.variants.filter((v) => v !== drop);
     }
     const counts: Record<string, [number, number]> = {};
@@ -131,6 +133,12 @@ function learn(km: KindMemory, obs: Observation, now: string, runId: string | nu
     cand.last_verified = now;
     km.state = 'stable';
     events.push('promoted');
+    // Defensive: seeding already keeps the total within the cap, so this only trims if that changes.
+    while (km.variants.length > MAX_VARIANTS) {
+      const drop = oldest(km.variants.filter((v) => v !== cand));
+      if (drop.promoted) events.push('variant_replaced');
+      km.variants = km.variants.filter((v) => v !== drop);
+    }
   }
 }
 
@@ -142,7 +150,7 @@ export function applyObservation(
   if (obs.nonDrift) return { file: out, verdict: { class: obs.nonDrift }, events };
   const verdict = classify(out, obs, cfg);
   // Not a loaded app page: no variant, counter or streak changes.
-  if (verdict.class === 'unloaded') return { file: out, verdict, events };
+  if (verdict.class === 'unloaded' || obs.platform !== file.platform) return { file: out, verdict, events };
 
   const now = ctx.now.toISOString();
   const existed = obs.kind in out.kinds;
@@ -167,12 +175,12 @@ export function applyObservation(
     km.drift_streak = 0;
     km.drift_window_start = null;
     if (verdict.class === 'match') {
-      km.counters.match += 1;
+      km.counters.match = Math.min(km.counters.match + 1, MAX_COUNT);
       const v = km.variants.find((x) => x.id === verdict.variant);
       if (v) { v.last_verified = now; noteRun(v, ctx.runId); }
       km.state = 'stable';
     } else {
-      km.counters.partial += 1;
+      km.counters.partial = Math.min(km.counters.partial + 1, MAX_COUNT);
       if (km.state === 'drifted') km.state = 'stable';
     }
   } else if (verdict.class === 'drift') {
@@ -182,8 +190,8 @@ export function applyObservation(
       km.drift_window_start = null;
     }
     if (km.drift_window_start === null) km.drift_window_start = now;
-    km.counters.drift += 1;
-    km.drift_streak += 1;
+    km.counters.drift = Math.min(km.counters.drift + 1, MAX_COUNT);
+    km.drift_streak = Math.min(km.drift_streak + 1, MAX_COUNT);
     km.last_drift_at = now;
     km.state = 'drifted';
     // Escalate once per streak (on crossing); halt stays asserted while the streak is at or past the limit.

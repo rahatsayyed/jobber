@@ -176,23 +176,45 @@ describe('applyObservation: learning and promotion', () => {
       mk('new', ['action:follow', 'action:message', 'profile.pending', 'profile.bell'], '2026-10-14T00:00:00.000Z'),
     ]);
     const o = obs(['profile.name', 'profile.headline', 'profile.about', 'profile.degree']);
-    // Sustained drift (streak >= escalate N) is needed before a full file displaces a variant.
+    // With 3 promoted variants a drifting observation is never accumulated: no promoted variant is
+    // lost and variant_replaced is never emitted, however long the drift lasts (owner reset is the remedy).
     let f = f0;
     const events: string[] = [];
-    let last = run(f, o, T0, 'r1');
-    for (const id of ['r1', 'r2', 'r3', 'r4', 'r5']) {
-      last = run(f, o, T0, id);
+    for (const id of ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7']) {
+      const last = run(f, o, T0, id);
       f = last.file;
       events.push(...last.events);
-      if (id === 'r2') expect(f.kinds.profile.variants.map((v) => v.id)).toEqual(['old', 'mid', 'new']);
     }
-    expect(events).toContain('promoted');
-    expect(events).toContain('variant_replaced');
-    const ids = f.kinds.profile.variants.map((v) => v.id);
-    expect(ids).toHaveLength(3);
-    expect(ids).not.toContain('old');
-    expect(ids).toContain('mid');
-    expect(last.file.kinds.profile.variants.every((v) => v.promoted)).toBe(true);
+    expect(events).not.toContain('variant_replaced');
+    expect(events).not.toContain('promoted');
+    expect(f.kinds.profile.variants.map((v) => v.id)).toEqual(['old', 'mid', 'new']);
+    expect(f.kinds.profile.counters.drift).toBe(7);
+    expect(f.kinds.profile.drift_streak).toBe(7);
+  });
+
+  it('six null-runId observations never promote', () => {
+    let f = emptyLayout('linkedin', T0);
+    for (let i = 0; i < 6; i++) f = run(f, obs(FULL), T0, null).file;
+    expect(f.kinds.profile.variants[0]).toMatchObject({ promoted: false, obs: 6, runs: 1, run_ids: ['norun'] });
+  });
+
+  it('clamps obs, runs and counters so the result stays valid', () => {
+    const big = 1_000_000;
+    const f = fileWith([variant('v1', FULL, { obs: big, runs: big })], { counters: { match: big, partial: 0, drift: 0 } });
+    const r = run(f, obs(FULL), T0, 'fresh');
+    const v = r.file.kinds.profile.variants[0];
+    expect(v.obs).toBe(big);
+    expect(v.runs).toBe(big);
+    expect(r.file.kinds.profile.counters.match).toBe(big);
+  });
+
+  it('an observation for another platform is unknown and changes nothing', () => {
+    const f = fileWith([variant('v1', FULL)]);
+    const o = obs(FULL, { platform: 'naukri' });
+    expect(classify(f, o, cfg).class).toBe('unknown');
+    const r = run(f, o);
+    expect(r.verdict.class).toBe('unknown');
+    expect(JSON.stringify(r.file)).toBe(JSON.stringify(f));
   });
 
   it('does not seed beyond 3 variants when all are promoted', () => {
