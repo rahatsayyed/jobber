@@ -673,7 +673,20 @@ supervised learning run below.
 **Drift handling.** `LAYOUT_DRIFT_ESCALATE_N` drift observations within
 `LAYOUT_DRIFT_WINDOW_HOURS` write an owner info escalation; a platform halt (`layout_drift:*` in
 `halt_flags`) needs a streak of at least `LAYOUT_DRIFT_HALT_N` AND at least 2 distinct run ids.
-Only the owner clears it.
+Only the owner clears it. The halt itself is applied only when `LAYOUT_ENFORCE` is not `warn`: in
+`warn` mode the same event records the `layout_drift_halt` escalation (detail ends `mode=warn`)
+and a notification, but halts nothing. `npm run layout -- clear-halt <platform>` also resets the
+drift streak, window and run ids of the kind named in the `layout_drift:<kind>` reason (totals are
+kept), so the next dead page cannot re-halt at once, and it refuses when only the global `all`
+halt carries the reason. A LinkedIn `profile` URL whose snapshot has no extracted profile name
+("profile unavailable", `/in/x/recent-activity`) is `unloaded`, never drift and never learned.
+Naukri: `shell` and `unloaded` come from snapshot content (an empty snapshot at a known URL is
+`unloaded`, an Access Denied title or notice is `blocked`, a login wall or error page is not a
+shell); the `job` kind has no critical landmarks and stays `unknown`, only `thread` is learned
+(requires `chat.input`). `LAYOUT_*` is in the `outreach_wake` env allowlist (`env_prefixes` in
+`config/run-profiles.json`), so the MCP servers of a wake see it; `npm run status -- layout`, the
+layout CLI and the doctor read `LAYOUT_*` from `.env` through one helper
+(`src/layout/config.ts` `loadLayoutEnv`, nothing else is read).
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -689,7 +702,7 @@ Only the owner clears it.
 | `LAYOUT_MAX_BYTES` | `65536` | file size cap (floor 4096) |
 | `LAYOUT_RENDER_MAX_CHARS` | `1200` | cap on the memory text given to an operator |
 | `LAYOUT_UNLOADED_MAX_CHARS` | `80` | a page shorter than this is `unloaded` |
-| `LAYOUT_EXPLORE_BUDGET` | `6` | extra exploratory tool calls per kind per run |
+| `LAYOUT_EXPLORE_BUDGET` | `6` | parsed and range-checked (0..100) only; prompt-only, the operators' prompts state 6 and it is not enforced or injected |
 | `LAYOUT_DIR` | `.jobber/layout` | store directory, inside the project only |
 
 Invalid values fall back to the default and never throw.
