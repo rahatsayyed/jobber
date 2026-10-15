@@ -61,34 +61,54 @@ export async function runBootstrap(items: Item[], deps: ExecDeps, opts: ExecOpti
   const selected = opts.only ? items.filter((i) => opts.only!.includes(i.id)) : items;
 
   const runAction = async (a: Action): Promise<Step> => {
-    let argv = a.argv;
-    if (a.downloadsScript) {
-      // Second ask always happens, whatever --yes says; never piped to a shell.
-      const dir = deps.mkTempDir();
-      const dl = await deps.download(a.url ?? '', dir);
-      deps.say(`downloaded ${a.url} (${dl.bytes} bytes, sha256 ${dl.sha256})`);
-      deps.say(deps.fs.read(dl.path).split('\n').slice(0, 40).join('\n'));
-      if (!opts.interactive) return { kind: 'stop', outcome: 'needs_owner', note: 'script review needs a terminal' };
-      if (!(await deps.ask(`run the downloaded script ${dl.path}?`))) return { kind: 'stop', outcome: 'skipped', note: 'script declined' };
-      argv = a.argv.map((x) => (x === '{script}' ? dl.path : x));
-    } else if (a.needsSudo) {
-      deps.say(`needs sudo: sudo ${argv.join(' ')}`);
-      if (!opts.allowSudo) {
-        if (!opts.interactive) return { kind: 'stop', outcome: 'needs_owner', note: `needs sudo: run sudo ${argv.join(' ')}` };
-        if (!(await deps.ask('run with sudo?'))) return { kind: 'stop', outcome: 'skipped', note: 'sudo declined' };
-      }
-    } else {
-      deps.say(`action: ${a.summary}`);
-      if (!opts.yes) {
+    try {
+      let argv = a.argv;
+      if (a.downloadsScript) {
+        if (a.needsSudo) return { kind: 'stop', outcome: 'failed', note: `${a.id}: refusing to run a downloaded script with sudo` };
+        if (!a.url) return { kind: 'stop', outcome: 'failed', note: `${a.id}: downloaded script has no url` };
+        if (!opts.interactive) {
+          deps.say(`script install needs a terminal: ${a.url}`);
+          return { kind: 'stop', outcome: 'needs_owner', note: `script review needs a terminal (${a.url})` };
+        }
+        // The show-and-ask flow is the consent surface; the second ask happens whatever --yes says.
+        const dir = deps.mkTempDir();
+        const dl = await deps.download(a.url, dir);
+        deps.say(`downloaded ${a.url} (${dl.bytes} bytes, sha256 ${dl.sha256})`);
+        deps.say(deps.fs.read(dl.path).split('\n').slice(0, 40).join('\n'));
+        if (!(await deps.ask(`run the downloaded script ${dl.path}?`))) return { kind: 'stop', outcome: 'skipped', note: 'script declined' };
+        argv = a.argv.map((x) => (x === '{script}' ? dl.path : x));
+      } else if (a.needsSudo) {
+        deps.say(`needs sudo: sudo ${argv.join(' ')}`);
+        if (!(opts.yes && opts.allowSudo)) {
+          if (!opts.interactive) return { kind: 'stop', outcome: 'needs_owner', note: `needs sudo: run sudo ${argv.join(' ')}` };
+          if (!(await deps.ask('run with sudo?'))) return { kind: 'stop', outcome: 'skipped', note: 'sudo declined' };
+        }
+      } else if (!opts.yes) {
+        deps.say(`action: ${a.summary}`);
         if (!opts.interactive) return { kind: 'stop', outcome: 'skipped', note: 'needs --yes' };
         if (!(await deps.ask(`run: ${argv.join(' ')}?`))) return { kind: 'stop', outcome: 'skipped', note: 'declined' };
       }
+      const full = a.needsSudo ? ['sudo', ...argv] : argv;
+      deps.say(`running: ${full.join(' ')} (sudo: ${a.needsSudo ? 'yes' : 'no'}, network: ${a.network ? 'yes' : 'no'}${a.url ? `, url: ${a.url}` : ''})`);
+      const [cmd, ...args] = full;
+      const r = await deps.run(cmd!, args, a.cwd ? { cwd: a.cwd } : undefined);
+      if (r.code !== 0) return { kind: 'stop', outcome: 'failed', note: `${a.id} failed: ${lastLine(r.stdout)}` };
+      return { kind: 'done' };
+    } catch (e) {
+      return { kind: 'stop', outcome: 'failed', note: `${a.id} failed: ${lastLine(String((e as Error).message ?? e))}` };
     }
-    const full = a.needsSudo && !a.downloadsScript ? ['sudo', ...argv] : argv;
-    const [cmd, ...args] = full;
-    const r = await deps.run(cmd!, args, a.cwd ? { cwd: a.cwd } : undefined);
-    if (r.code !== 0) return { kind: 'stop', outcome: 'failed', note: `${a.id} failed: ${lastLine(r.stdout)}` };
-    return { kind: 'done' };
+  };
+
+  const depPresent = async (id: ItemId): Promise<boolean> => {
+    const d = byId.get(id);
+    if (d) return d.outcome === 'ok' || d.outcome === 'installed';
+    const it = items.find((i) => i.id === id);
+    if (!it) return true;
+    try {
+      return (await it.detect(deps)).present;
+    } catch {
+      return false;
+    }
   };
 
   for (const item of selected) {
@@ -114,8 +134,7 @@ export async function runBootstrap(items: Item[], deps: ExecDeps, opts: ExecOpti
     }
     const dep = DEPENDS[item.id];
     if (dep && !opts.planOnly) {
-      const d = byId.get(dep);
-      if (d && d.outcome !== 'ok' && d.outcome !== 'installed') {
+      if (!(await depPresent(dep))) {
         res('skipped', `waiting for ${dep}`);
         continue;
       }
@@ -163,7 +182,12 @@ export async function runBootstrap(items: Item[], deps: ExecDeps, opts: ExecOpti
         break;
       }
       ran = true;
-      cur = await item.detect(deps);
+      try {
+        cur = await item.detect(deps);
+      } catch (e) {
+        stop = { kind: 'stop', outcome: 'failed', note: `re-detect failed: ${lastLine(String((e as Error).message ?? e))}` };
+        break;
+      }
     }
     if (stop && stop.outcome === 'failed') {
       res('failed', stop.note);

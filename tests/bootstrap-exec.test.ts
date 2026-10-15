@@ -95,7 +95,82 @@ describe('executor consent table', () => {
     expect(r[0]!.outcome).toBe('needs_owner');
     expect(e2.calls).toHaveLength(0);
   });
-  it('sudo with --allow-sudo: runs with sudo argv[0], no prompt', async () => {
+  it('--allow-sudo without --yes still asks on TTY; needs_owner without', async () => {
+    const e = newEnv();
+    await runBootstrap([item('git', e, acts('git', { needsSudo: true }))], mk(e), O({ allowSudo: true }));
+    expect(e.asks).toHaveLength(1);
+    const e2 = newEnv();
+    const r = await runBootstrap([item('git', e2, acts('git', { needsSudo: true }))], mk(e2), O({ allowSudo: true, interactive: false }));
+    expect(r[0]!.outcome).toBe('needs_owner');
+    expect(e2.calls).toHaveLength(0);
+  });
+  it('prints argv, sudo and network before running on the --yes path', async () => {
+    const e = newEnv();
+    await runBootstrap([item('tmux', e, acts('tmux', { network: true, url: 'https://example.invalid/t' }))], mk(e), O({ yes: true }));
+    const said = e.said.join('\n');
+    expect(said).toContain('inst tmux');
+    expect(said).toContain('network: yes');
+    expect(said).toContain('https://example.invalid/t');
+  });
+  it('declined ask: nothing is run', async () => {
+    const e = newEnv();
+    const d = mk(e);
+    d.ask = async () => false;
+    const r = await runBootstrap([item('tmux', e, acts('tmux')), item('git', e, acts('git', { needsSudo: true }))], d, O());
+    expect(r.map((x) => x.outcome)).toEqual(['skipped', 'skipped']);
+    expect(e.calls).toHaveLength(0);
+  });
+  it('--yes on non-TTY with a downloadsScript: no download', async () => {
+    const e = newEnv();
+    const p = acts('uv', { downloadsScript: true, url: 'https://example.invalid/uv.sh', argv: ['sh', '{script}'] });
+    const r = await runBootstrap([item('uv', e, p)], mk(e), O({ yes: true, interactive: false }));
+    expect(e.downloads).toBe(0);
+    expect(r[0]!.outcome).toBe('needs_owner');
+  });
+  it('sudo plus downloadsScript is refused', async () => {
+    const e = newEnv();
+    const p = acts('uv', { downloadsScript: true, needsSudo: true, url: 'https://example.invalid/uv.sh', argv: ['sh', '{script}'] });
+    const r = await runBootstrap([item('uv', e, p)], mk(e), O({ yes: true, allowSudo: true }));
+    expect(r[0]!.outcome).toBe('failed');
+    expect(e.calls).toHaveLength(0);
+    expect(e.downloads).toBe(0);
+  });
+  it('a throwing run or download fails the item, not the run', async () => {
+    const e = newEnv();
+    const d = mk(e);
+    d.run = (async () => {
+      throw new Error('spawn exploded');
+    }) as ExecDeps['run'];
+    d.download = async () => {
+      throw new Error('net down');
+    };
+    const p = acts('uv', { downloadsScript: true, url: 'https://example.invalid/uv.sh', argv: ['sh', '{script}'] });
+    const r = await runBootstrap([item('tmux', e, acts('tmux')), item('uv', e, p), item('git', e, acts('git'))], d, O({ yes: true }));
+    expect(r.map((x) => x.outcome)).toEqual(['failed', 'failed', 'failed']);
+  });
+  it('--only, --skip-model, --with-optional without an install action', async () => {
+    const e = newEnv();
+    const r = await runBootstrap([item('git', e, acts('git')), item('tmux', e, acts('tmux'))], mk(e), O({ yes: true, only: ['tmux'] }));
+    expect(r.map((x) => x.id)).toEqual(['tmux']);
+    const m = await runBootstrap([item('classifier-model', e, acts('classifier-model'))], mk(e), O({ yes: true, skipModel: true }));
+    expect(m[0]!.outcome).toBe('skipped');
+    const a = item('age', e, { kind: 'owner', message: 'brew install age' }, { required: false, optionalKind: 'report_only' });
+    const w = await runBootstrap([a], mk(e), O({ yes: true, withOptional: true }));
+    expect(w[0]!.outcome).toBe('skipped');
+  });
+  it('dependency chains and unselected dependency re-detection', async () => {
+    const e = newEnv();
+    e.failCmd = 'inst';
+    const items = [item('node', e, acts('node')), item('npm-deps', e, acts('npm-deps')), item('renderer-deps', e, acts('renderer-deps'))];
+    const r = await runBootstrap(items, mk(e), O({ yes: true }));
+    expect(r.map((x) => x.outcome)).toEqual(['failed', 'skipped', 'skipped']);
+    expect(r[2]!.note).toBe('waiting for npm-deps');
+    const e2 = newEnv();
+    const r2 = await runBootstrap([item('node', e2, acts('node')), item('npm-deps', e2, acts('npm-deps'))], mk(e2), O({ yes: true, only: ['npm-deps'] }));
+    expect(r2[0]).toMatchObject({ outcome: 'skipped', note: 'waiting for node' });
+    expect(e2.calls).toHaveLength(0);
+  });
+  it('sudo with --yes --allow-sudo: runs with sudo argv[0], no prompt', async () => {
     const e = newEnv();
     await runBootstrap([item('git', e, acts('git', { needsSudo: true }))], mk(e), O({ yes: true, allowSudo: true, interactive: false }));
     expect(e.asks).toHaveLength(0);
