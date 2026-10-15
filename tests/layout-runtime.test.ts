@@ -52,7 +52,8 @@ describe('createLayoutObserver', () => {
     const o = mk('run-c');
     const v = o.observe(snap(), null);
     expect(v).toMatchObject({ class: 'match' });
-    expect(o.last()).toEqual({ kind: 'profile', verdict: v });
+    expect(o.last()).toMatchObject({ kind: 'profile', verdict: v });
+    expect(o.last()?.landmarks).toEqual(['action:connect', 'action:more', 'profile.degree', 'profile.headline', 'profile.name']);
     expect(existsSync(file())).toBe(true);
     const f = loadLayout(file(), 'linkedin', NOW).file;
     expect(f.kinds.profile.variants[0].promoted).toBe(true);

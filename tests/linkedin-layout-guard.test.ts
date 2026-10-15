@@ -10,6 +10,7 @@ import { loadLinkedinConfig } from '../src/linkedin/config.js';
 import { SELECTORS } from '../src/linkedin/selectors.js';
 import { profileKeyOf } from '../src/linkedin/urls.js';
 import { DEFAULT_STYLE_CONFIG } from '../src/safety/styleGate.js';
+import { personByProfileKey } from '../src/linkedin/touches.js';
 import { connectSend } from '../src/linkedin/connectSend.js';
 import { layoutPrecondition } from '../src/linkedin/layoutGuard.js';
 import { loadLayoutConfig } from '../src/layout/config.js';
@@ -48,17 +49,23 @@ describe('layoutPrecondition', () => {
     }
   });
 
-  it('enforce: partial passes only when the tool landmarks are not missing', () => {
+  it('enforce: partial passes only when every needed landmark is present in the observation', () => {
     const c = cfgOf('enforce');
     // connect_send needs profile.name and action:connect
-    expect(layoutPrecondition('connect_send', V('partial', ['profile.about', 'action:more']), c).ok).toBe(true);
-    expect(layoutPrecondition('connect_send', V('partial', ['action:connect']), c))
+    const all = ['profile.name', 'profile.headline', 'action:connect'];
+    expect(layoutPrecondition('connect_send', V('partial', ['profile.about', 'action:more']), c, all).ok).toBe(true);
+    // learned and now gone: drift
+    expect(layoutPrecondition('connect_send', V('partial', ['action:connect']), c, ['profile.name']))
       .toMatchObject({ ok: false, code: 'layout_drift' });
+    // never learned in the variant (not in verdict.missing) and absent now: unverified
+    expect(layoutPrecondition('connect_send', V('partial', ['profile.about']), c, ['profile.name']))
+      .toMatchObject({ ok: false, code: 'layout_unverified' });
+    // no observation landmarks to show presence: refuses
+    expect(layoutPrecondition('connect_send', V('partial'), c).ok).toBe(false);
     // send_message needs profile.name and profile.message_button
-    expect(layoutPrecondition('send_message', V('partial', ['action:connect']), c).ok).toBe(true);
-    expect(layoutPrecondition('send_message', V('partial', ['profile.message_button']), c).ok).toBe(false);
-    // accept_invite needs invitations.rows
-    expect(layoutPrecondition('accept_invite', V('partial', ['invitations.rows']), c).ok).toBe(false);
+    expect(layoutPrecondition('send_message', V('partial', ['action:connect']), c, ['profile.name', 'profile.message_button']).ok).toBe(true);
+    expect(layoutPrecondition('send_message', V('partial', ['profile.message_button']), c, ['profile.name']).ok).toBe(false);
+    expect(layoutPrecondition('accept_invite', V('partial', ['invitations.rows']), c, []).ok).toBe(false);
   });
 
   it('enforce: unloaded asks for a retry, blocked and logged_out are not layout refusals', () => {
@@ -97,7 +104,7 @@ describe('connectSend with a layout precondition', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  function setup(verdict: Verdict, enforce: string, personName = 'Jane Example') {
+  function setup(verdict: Verdict, enforce: string, personName = 'Jane Example', injection = false) {
     const log: string[] = [];
     const db = openDb(':memory:');
     upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(URL_), name: personName, company: 'Acme', category: 'recruiter' });
@@ -128,7 +135,9 @@ describe('connectSend with a layout precondition', () => {
     const deps: ToolDeps = {
       rt, db, now: () => new Date('2026-10-14T10:00:00Z'), cfg: loadLinkedinConfig(env), env,
       factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
-      screen: async (t) => ({ blocked: false, unscreened: false, text: t, flags: [], code: 'ok' as const }),
+      screen: async (t) => (injection
+        ? { blocked: true, unscreened: false, text: t, flags: [], code: 'injection_suspected' as const }
+        : { blocked: false, unscreened: false, text: t, flags: [], code: 'ok' as const }),
       layoutCfg: cfgOf(enforce),
     };
     return { deps, log, db };
@@ -161,6 +170,15 @@ describe('connectSend with a layout precondition', () => {
   it('enforce + drift + wrong recipient: recipient_mismatch is checked first too', async () => {
     const t = setup(V('drift'), 'enforce', 'Someone Else');
     expect(await send(t.deps)).toMatchObject({ code: 'recipient_mismatch' });
+  });
+
+  it('enforce + drift on an injection-suspect page still pauses the contact', async () => {
+    const t = setup(V('drift'), 'enforce', 'Jane Example', true);
+    const r = await send(t.deps);
+    expect(r).toMatchObject({ status: 'refused', code: 'injection_suspected' });
+    expect(personByProfileKey(t.db, profileKeyOf(URL_))?.paused_reason).toBe('injection_suspected');
+    expect(clicks(t.log)).toEqual([]);
+    expect(events(t.db)).toBe(0);
   });
 
   it('enforce + match sends', async () => {

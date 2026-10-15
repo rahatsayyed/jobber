@@ -11,7 +11,7 @@ import { applyObservation, type ApplyResult } from './classify.js';
 import { observeLinkedin } from './fingerprint.js';
 import { renderLayout } from './render.js';
 import { emptyLayout, loadLayout, saveLayout, withLayoutLock } from './store.js';
-import type { KindId, LayoutFile, Platform, Recipe, Verdict } from './types.js';
+import type { KindId, LandmarkId, LayoutFile, Platform, Recipe, Verdict } from './types.js';
 import { ACTION_LABELS } from './vocab.js';
 
 export type LayoutEventName = ApplyResult['events'][number];
@@ -19,7 +19,8 @@ export interface LayoutEvent { platform: Platform; kind: KindId; event: LayoutEv
 
 export interface LayoutObserver {
   observe(raw: RawSnapshot, block: BlockKind | null): Verdict;      // classify + learn + persist + events
-  last(): { kind: KindId; verdict: Verdict } | null;
+  /** `landmarks` is the observation's own landmark set (what is on the page now). */
+  last(): { kind: KindId; verdict: Verdict; landmarks?: LandmarkId[] } | null;
   recordOutcome(label: string, ok: boolean, action?: Recipe['action']): void;  // vocabulary label only
   render(): string;                                                // <= renderMaxChars
 }
@@ -58,7 +59,7 @@ export function createLayoutObserver(d: {
   const { platform, cfg } = d;
   const file = d.path ?? path.join(cfg.dir, `${platform}.json`);
   const labels = new Set<string>([...Object.values(ACTION_LABELS[platform] ?? {}), 'action:other']);
-  let lastSeen: { kind: KindId; verdict: Verdict } | null = null;
+  let lastSeen: { kind: KindId; verdict: Verdict; landmarks: LandmarkId[] } | null = null;
 
   const load = (): LayoutFile => {
     const r = loadLayout(file, platform, d.now(), cfg.maxBytes);
@@ -78,7 +79,7 @@ export function createLayoutObserver(d: {
         }
         return out;
       });
-      lastSeen = { kind: obs.kind, verdict: res.verdict };
+      lastSeen = { kind: obs.kind, verdict: res.verdict, landmarks: obs.landmarks };
       for (const event of res.events) {
         try { d.onEvent?.({ platform, kind: obs.kind, event }); } catch (e) { warn('onEvent', e); }
       }

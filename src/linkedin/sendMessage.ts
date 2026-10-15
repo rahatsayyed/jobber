@@ -128,9 +128,6 @@ export async function sendMessage(
       if (!p) return fail('no_profile', 'profile header not found');
       // 1st-degree requirement: LinkedIn shows Message to some non-connections.
       if (!p.hasBell) return refuse('not_connected', 'recipient is not a 1st-degree connection');
-      // Layout precondition: after the recipient and status guards, before any gate cost or ceiling.
-      const lay = layoutGate('send_message', deps);
-      if (!lay.ok) return refuse(lay.code, lay.reason);
       const fields: Array<[string, number]> = [
         [snap.title, MAX_FIELD_CHARS.headline], [p.name, MAX_FIELD_CHARS.name],
         [p.headline, MAX_FIELD_CHARS.headline], [p.location, MAX_FIELD_CHARS.location],
@@ -148,6 +145,10 @@ export async function sendMessage(
           return refuse('injection_suspected', 'profile text looks like an injection attempt');
         }
       }
+      // Layout precondition: after the injection gates (a drifted injection page still pauses the
+      // contact), before the output gate, any click and any ceiling.
+      const lay = layoutGate('send_message', deps);
+      if (!lay.ok) return refuse(lay.code, lay.reason);
       const og = gateOutbound(
         text,
         outputGateContext({

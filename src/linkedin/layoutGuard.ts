@@ -17,12 +17,15 @@ const UNKNOWN: Verdict = { class: 'unknown', score: 0, missing: [], variant: nul
 /**
  * `off`: always ok. `warn`: always ok, with a note unless the page matched. `enforce`: the
  * irreversible tools refuse on `drift` and on `unknown` (so enforcement only bites after a learning
- * run); `partial` passes only when none of the landmarks the tool needs is listed as missing (the
- * parts that were verified are the ones it uses); `unloaded` refuses with a retry hint;
+ * run); `partial` passes only when every landmark the tool needs is present in the current
+ * observation (`present`), else drift (needed part was learned and is gone) or unverified (never
+ * learned in this variant); `unloaded` refuses with a retry hint;
  * `blocked` and `logged_out` are not layout refusals (the existing halt and login codes win).
  * `check_connection_status` is read-only and never refuses. A null verdict counts as `unknown`.
  */
-export function layoutPrecondition(tool: LayoutTool, v: Verdict | null, cfg: LayoutConfig): LayoutDecision {
+export function layoutPrecondition(
+  tool: LayoutTool, v: Verdict | null, cfg: LayoutConfig, present?: readonly string[],
+): LayoutDecision {
   const verdict = v ?? UNKNOWN;
   const note = verdict.class === 'match' ? undefined : `layout=${verdict.class}`;
   const ok = (): LayoutDecision => (note ? { ok: true, note } : { ok: true });
@@ -34,9 +37,16 @@ export function layoutPrecondition(tool: LayoutTool, v: Verdict | null, cfg: Lay
       return ok();
     case 'partial': {
       const need = TOOL_REQUIRES[`linkedin_${tool}`]?.landmarks ?? [];
-      const missing = need.filter((l) => verdict.missing.includes(l));
-      if (missing.length === 0) return ok();
-      return { ok: false, status: 'refused', code: 'layout_drift', reason: `page layout lacks needed parts: ${missing.join(' ')}` };
+      // Every landmark the tool needs must be PRESENT in the current observation. Without the
+      // observation's landmark set nothing can be shown present, so that refuses too.
+      const absent = need.filter((l) => !present?.includes(l));
+      if (absent.length === 0) return ok();
+      // Learned and now gone is drift; never learned in this variant is unverified.
+      const gone = absent.some((l) => verdict.missing.includes(l));
+      return {
+        ok: false, status: 'refused', code: gone ? 'layout_drift' : 'layout_unverified',
+        reason: `page layout lacks needed parts: ${absent.join(' ')}`,
+      };
     }
     case 'drift':
       return { ok: false, status: 'refused', code: 'layout_drift', reason: 'page layout no longer matches the learned layout' };
@@ -61,7 +71,9 @@ export function currentVerdict(rt: Runtime, tool: LayoutTool | 'find_profiles'):
 /** Run the precondition for a typed tool against the current observation. */
 export function layoutGate(tool: LayoutTool, deps: ToolDeps): LayoutDecision {
   const cfg = deps.layoutCfg ?? loadLayoutConfig(deps.env);
-  return layoutPrecondition(tool, currentVerdict(deps.rt, tool), cfg);
+  const v = currentVerdict(deps.rt, tool);
+  const present = v ? deps.rt.layout?.last()?.landmarks : undefined;
+  return layoutPrecondition(tool, v, cfg, present);
 }
 
 /**

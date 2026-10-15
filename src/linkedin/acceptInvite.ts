@@ -145,9 +145,6 @@ export async function acceptInvite(
           return refusal('refused', 'recipient_mismatch', 'invitation sender name does not match the known person');
         }
       }
-      // Layout precondition: after the recipient guards, before any gate cost or counter.
-      const lay = layoutGate('accept_invite', deps);
-      if (!lay.ok) return refusal('refused', lay.code, lay.reason);
       // Injection gate over the sender fields, also for known senders and acceptUnknown.
       for (const [s, max] of [
         [inv?.name ?? '', MAX_FIELD_CHARS.name], [inv?.headline ?? '', MAX_FIELD_CHARS.headline],
@@ -166,6 +163,10 @@ export async function acceptInvite(
           return refusal('refused', 'injection_suspected', 'invitation text looks like an injection attempt');
         }
       }
+
+      // Layout precondition: after the injection gates, before dry run, any click and the counter.
+      const lay = layoutGate('accept_invite', deps);
+      if (!lay.ok) return refusal('refused', lay.code, lay.reason);
 
       if (dryRun) {
         return {

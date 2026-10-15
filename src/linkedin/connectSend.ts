@@ -91,9 +91,6 @@ export async function connectSend(
       if (!p) return fail('no_profile', 'profile header not found');
       if (p.hasBell) return refuse('already_connected', 'recipient is already a connection');
       if (p.pending) return refuse('already_pending', 'an invitation is already pending');
-      // Layout precondition: after the recipient and status guards, before any gate cost or ceiling.
-      const lay = layoutGate('connect_send', deps);
-      if (!lay.ok) return refuse(lay.code, lay.reason);
       // Step 5: injection gate over visible profile fields, then the page-dependent output gate.
       const fields: Array<[string, number]> = [
         [snap.title, MAX_FIELD_CHARS.headline], [p.name, MAX_FIELD_CHARS.name],
@@ -112,6 +109,10 @@ export async function connectSend(
           return refuse('injection_suspected', 'profile text looks like an injection attempt');
         }
       }
+      // Layout precondition: after the injection gates (a drifted injection page still pauses the
+      // contact), before the output gate, any click and any ceiling.
+      const lay = layoutGate('connect_send', deps);
+      if (!lay.ok) return refuse(lay.code, lay.reason);
       const og = gateOutbound(
         text,
         outputGateContext({
