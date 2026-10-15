@@ -126,9 +126,18 @@ describe('dashboardStep', () => {
     sio.assertDone();
   });
 
-  it('rerun with a token already set: reports rotate and is done', async () => {
+  it('generic token CLI failure: neutral message, skipped so the step resumes', async () => {
     const { ctx, sio } = makeCtx([{ confirm: true }], WITH_DASH);
     ctx.spawnInteractive = async () => 1;
+    expect(await dashboardStep.run(ctx)).toBe('skipped');
+    const out = sio.transcript.join('\n');
+    expect(out).toContain('did not finish (exit 1)');
+    expect(out).not.toContain('token already set');
+  });
+
+  it('rerun with a token already set (exit 3): reports rotate and is done', async () => {
+    const { ctx, sio } = makeCtx([{ confirm: true }], WITH_DASH);
+    ctx.spawnInteractive = async () => 3;
     expect(await dashboardStep.run(ctx)).toBe('done');
     expect(sio.transcript.join('\n')).toContain('token already set, use rotate');
   });

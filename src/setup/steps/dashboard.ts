@@ -98,9 +98,15 @@ export const dashboardStep: SetupStep = {
       writeKeys(ctx, { WEB_AUTH_MODE: 'token' }, true);
       // The child prints the URL straight to the terminal; the wizard never sees it.
       const code = await ctx.spawnInteractive('npx', ['tsx', 'scripts/dashboard.ts', 'token']);
-      if (code !== 0) {
+      if (code === 3) {
         io.say('token already set, use rotate: npm run dashboard -- rotate');
         return 'done';
+      }
+      if (code !== 0) {
+        io.say(
+          `The token command did not finish (exit ${code}). Run npm run dashboard -- token yourself in a terminal; rotate if a token already exists.`,
+        );
+        return 'skipped';
       }
       io.say('Open that URL once; the token is not stored. Lost it? npm run dashboard -- rotate');
       return 'done';

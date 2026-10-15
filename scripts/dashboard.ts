@@ -128,7 +128,7 @@ export async function main(argv: string[], io: CliIo = {}): Promise<number> {
         else { err('WEB_PORT must be an integer from 1024 to 65535'); return 1; }
       }
       const exists = tokenStatus(db).set;
-      if (p.cmd === 'token' && exists) { err('an access token already exists: use rotate to replace it'); return 1; }
+      if (p.cmd === 'token' && exists) { err('an access token already exists: use rotate to replace it'); return 3; }
       if (p.cmd === 'rotate') {
         if (!exists) { err('no access token yet: use token'); return 1; }
         const yes = await ask('Replace the access token and sign out every session? (y/N)');

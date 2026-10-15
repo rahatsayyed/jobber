@@ -65,7 +65,7 @@ describe('dashboard token / rotate / status', () => {
     const h = harness();
     await h.run(['token']);
     h.out.length = 0;
-    expect(await h.run(['token'])).toBe(1);
+    expect(await h.run(['token'])).toBe(3);
     expect(h.out).toEqual([]);
     expect(h.errs.join('\n')).toContain('rotate');
   });
