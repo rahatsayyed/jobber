@@ -7,7 +7,16 @@ import { setupToolingChecks } from '../src/platform/checksSetup.js';
 import type { DoctorContext } from '../src/platform/doctor.js';
 import { envEntries, envFileValue, updateEnvText } from '../src/setup/envWriter.js';
 
-const example = readFileSync(join(import.meta.dirname, '..', '.env.example'), 'utf8');
+const current = readFileSync(join(import.meta.dirname, '..', '.env.example'), 'utf8');
+// The shape older copies of .env.example had (inline comments after the value). Kept as a fixture
+// because an owner's existing .env may still carry it.
+const example = [
+  'ADZUNA_APP_ID=                   # developer.adzuna.com',
+  'SERPER_API_KEY=                  # serper.dev (dorks + contact search)',
+  'HUNTER_API_KEY=                  # hunter.io (LAST resort only)',
+  'HUNTER_MONTHLY_CAP=50            # hard cap on Hunter credits/month',
+  '',
+].join('\n');
 const KEYS = ['ADZUNA_APP_ID', 'SERPER_API_KEY', 'HUNTER_API_KEY'];
 
 function ctxWith(env: string): DoctorContext {
@@ -29,7 +38,13 @@ function ctxWith(env: string): DoctorContext {
 }
 
 describe('empty value plus comment', () => {
-  it('reads the .env.example shapes as empty values', () => {
+  it('the committed .env.example holds these keys as plain empty or default values', () => {
+    for (const k of KEYS) expect(envFileValue(current, k)).toBe('');
+    expect(envFileValue(current, 'HUNTER_MONTHLY_CAP')).toBe('50');
+    expect(envEntries(current).get('SERPER_API_KEY')?.inlineComment).toBe(false);
+  });
+
+  it('reads the legacy inline-comment shapes as empty values', () => {
     for (const k of KEYS) expect(envFileValue(example, k)).toBe('');
     expect(envFileValue(example, 'HUNTER_MONTHLY_CAP')).toBe('50');
     expect(envEntries(example).get('SERPER_API_KEY')?.inlineComment).toBe(true);

@@ -388,6 +388,13 @@
           "entered_in": "owner edits .env"
         },
         {
+          "name": "JOBBER_DRY_RUN",
+          "secret": false,
+          "purpose": "1 keeps the hunt in dry run and denies Gmail send",
+          "where": "CLAUDE.md, Outreach safety layers",
+          "entered_in": "owner edits .env"
+        },
+        {
           "name": "JOBBER_KILL",
           "secret": false,
           "purpose": "1 stops every wake",
@@ -552,6 +559,13 @@
         "classifier_wired"
       ],
       "keys": [
+        {
+          "name": "CLASSIFIER_MODEL",
+          "secret": false,
+          "purpose": "profile id of the one active injection classifier; live LinkedIn and Naukri calls fail closed without it",
+          "where": "docs/classifier-models.md, section 4",
+          "entered_in": "wizard"
+        },
         {
           "name": "SCHEDULER_NO_CLASSIFIER",
           "secret": false,
