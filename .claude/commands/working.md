@@ -7,4 +7,5 @@ Run exactly this one command and nothing else:
 
 `npx tsx scripts/status.ts working`
 
-Print its output unchanged. Do nothing else and take no other action.
+The command is `npm run status -- working` (same script). Print its output unchanged, including any
+halted state and kill switch line it reports. Do nothing else and take no other action.
