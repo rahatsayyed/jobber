@@ -156,6 +156,20 @@ function symlinkInPath(file: string): boolean {
   return false;
 }
 
+// Read-only validation of file text (owner CLI, doctor): never quarantines or writes anything.
+export function parseLayoutText(
+  text: string, platform: Platform, maxBytes: number = DEFAULT_MAX_BYTES,
+): { ok: true; data: LayoutFile } | { ok: false; why: string } {
+  if (Buffer.byteLength(text) > maxBytes) return { ok: false, why: 'oversize' };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return { ok: false, why: 'invalid json' };
+  }
+  return validate(raw, platform);
+}
+
 export function loadLayout(
   file: string, platform: Platform, now: Date, maxBytes: number = DEFAULT_MAX_BYTES,
 ): { file: LayoutFile; note: string | null } {

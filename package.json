@@ -20,6 +20,7 @@
     "classifier:bench": "tsx scripts/classifier/bench.ts",
     "models": "tsx scripts/models.ts",
     "status": "tsx scripts/status.ts",
+    "layout": "tsx scripts/layout.ts",
     "web": "tsx scripts/web.ts",
     "permissions": "tsx scripts/permissions.ts",
     "ccgram-hooks": "tsx scripts/ccgram-hooks.ts",
