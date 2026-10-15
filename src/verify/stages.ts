@@ -249,23 +249,24 @@ const llmHunt: Stage = {
     if (!ctx.llm) return skip('off unless --llm');
     // The hunt profile passes only the parsed .env values to the child (env_mode dotenv_all), so the forced
     // dry flags in ctx.env never reach it. Refuse unless the files themselves are dry.
+    // The launcher merges .env then .env.ccr (later wins), so check the merged values once.
+    const merged: Record<string, string> = {};
     for (const name of ['.env', '.env.ccr']) {
       const p = join(ctx.root, name);
-      let values: Record<string, string> = {};
       try {
         if (ctx.fs.exists(p)) {
           if (!ctx.fs.read) throw new Error('no reader');
-          values = parseEnv(ctx.fs.read(p));
+          Object.assign(merged, parseEnv(ctx.fs.read(p)));
         }
       } catch {
         return fail(`--llm refused: cannot read ${name}`, 'fix the file, then rerun');
       }
-      if (!isDryRun(values as NodeJS.ProcessEnv, { linkedin: true })) {
-        return fail(
-          '--llm refused: .env is not dry; set JOBBER_DRY_RUN=1, SCHEDULER_DRY_RUN=true and LINKEDIN_DRY_RUN=true in .env first',
-          'set JOBBER_DRY_RUN=1, SCHEDULER_DRY_RUN=true and LINKEDIN_DRY_RUN=true in .env first',
-        );
-      }
+    }
+    if (!isDryRun(merged as NodeJS.ProcessEnv, { linkedin: true })) {
+      return fail(
+        '--llm refused: .env is not dry; set JOBBER_DRY_RUN=1, SCHEDULER_DRY_RUN=true and LINKEDIN_DRY_RUN=true in .env first',
+        'set JOBBER_DRY_RUN=1, SCHEDULER_DRY_RUN=true and LINKEDIN_DRY_RUN=true in .env first',
+      );
     }
     const r = await ctx.run('./run-hunt.sh', ['run the hunt in dry mode: report only'], { cwd: ctx.root, env: runEnv(ctx) });
     if (r.code !== 0) return fail(`exit ${r.code}`, `exit code ${r.code}; see docs/operations`);

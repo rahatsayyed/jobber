@@ -35,7 +35,7 @@ export interface ExecDeps extends BootstrapDeps {
    * Runs a real install action with inherited stdio, no short timeout (the caller caps it) and no shell.
    * `run` (inherited from BootstrapDeps) is for detection only: it has a short timeout and a small buffer.
    */
-  exec(cmd: string, args: string[], opts: { cwd?: string }): Promise<{ code: number }>;
+  exec(cmd: string, args: string[], opts: { cwd?: string }): Promise<{ code: number; timedOut?: boolean }>;
 }
 
 const DEPENDS: Partial<Record<ItemId, ItemId>> = { ccgram: 'uv', 'npm-deps': 'node', 'renderer-deps': 'npm-deps' };
@@ -114,7 +114,7 @@ export async function runBootstrap(items: Item[], deps: ExecDeps, opts: ExecOpti
       const [cmd, ...args] = full;
       // Output is inherited by the child, so the note carries the exit code only.
       const r = await deps.exec(cmd!, args, a.cwd ? { cwd: a.cwd } : {});
-      if (r.code !== 0) return { kind: 'stop', outcome: 'failed', note: `${a.id} failed: exit ${r.code}; see output above` };
+      if (r.code !== 0) return { kind: 'stop', outcome: 'failed', note: r.timedOut ? `${a.id} failed: timed out after 30 minutes` : `${a.id} failed: exit ${r.code}; see output above` };
       return { kind: 'done' };
     } catch (e) {
       return { kind: 'stop', outcome: 'failed', note: `${a.id} failed: ${lastLine(String((e as Error).message ?? e))}` };

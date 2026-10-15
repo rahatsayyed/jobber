@@ -203,9 +203,20 @@ describe('llm-hunt', () => {
     expect(r.status).toBe('fail');
     expect(r.detail).toContain('--llm refused: .env is not dry');
     expect(ran).toBe(0);
-    const r2 = await S.llmHunt.run(mk({ llm: true, fs: withEnv({ '.env': DRY, '.env.ccr': 'SCHEDULER_DRY_RUN=false\nLINKEDIN_DRY_RUN=false\n' }), run }));
+    const r2 = await S.llmHunt.run(mk({ llm: true, fs: withEnv({ '.env': DRY, '.env.ccr': 'JOBBER_DRY_RUN=0\nSCHEDULER_DRY_RUN=false\nLINKEDIN_DRY_RUN=false\n' }), run }));
     expect(r2.status).toBe('fail');
     expect(ran).toBe(0);
+  });
+  it('checks the merged .env then .env.ccr (later wins)', async () => {
+    let ran = 0;
+    const run = async () => { ran++; return { stdout: 'x\nreport', code: 0 }; };
+    const a = 'JOBBER_DRY_RUN=1\nSCHEDULER_DRY_RUN=false\nLINKEDIN_DRY_RUN=false\n';
+    const r = await S.llmHunt.run(mk({ llm: true, fs: withEnv({ '.env': a, '.env.ccr': 'JOBBER_DRY_RUN=0\n' }), run }));
+    expect(r.status).toBe('fail');
+    expect(ran).toBe(0);
+    const ok = await S.llmHunt.run(mk({ llm: true, fs: withEnv({ '.env': 'SCHEDULER_DRY_RUN=false\nLINKEDIN_DRY_RUN=false\nJOBBER_DRY_RUN=0\n', '.env.ccr': 'JOBBER_DRY_RUN=1\n' }), run }));
+    expect(ok.status).toBe('pass');
+    expect(ran).toBe(1);
   });
 });
 

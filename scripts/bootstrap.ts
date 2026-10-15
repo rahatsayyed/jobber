@@ -175,10 +175,12 @@ export function modelProfileFromEnv(root: string, env: NodeJS.ProcessEnv = proce
 }
 
 // Spawns without a shell, stdio inherited, killed after capMs (default 30 minutes).
-export function spawnInherited(cmd: string, args: string[], cwd?: string, capMs = 30 * 60 * 1000): Promise<{ code: number }> {
+export function spawnInherited(cmd: string, args: string[], cwd?: string, capMs = 30 * 60 * 1000): Promise<{ code: number; timedOut?: boolean }> {
   return new Promise((res) => {
     const child = spawn(cmd, args, { ...(cwd ? { cwd } : {}), stdio: 'inherit' });
+    let timedOut = false;
     const t = setTimeout(() => {
+      timedOut = true;
       child.kill('SIGKILL');
     }, capMs);
     child.on('error', () => {
@@ -187,7 +189,7 @@ export function spawnInherited(cmd: string, args: string[], cwd?: string, capMs 
     });
     child.on('close', (code) => {
       clearTimeout(t);
-      res({ code: code ?? 1 });
+      res({ code: code ?? 1, ...(timedOut ? { timedOut: true } : {}) });
     });
   });
 }
