@@ -5,7 +5,14 @@
     "contacts": { "command": "npx", "args": ["tsx", "src/mcp/contacts.ts"] },
     "db": { "command": "npx", "args": ["tsx", "src/mcp/db.ts"] },
     "gates": { "command": "npx", "args": ["tsx", "src/mcp/gates.ts"] },
-    "gmail": { "command": "npx", "args": ["-y", "@gongrzhe/server-gmail-autoauth-mcp"] },
+    "gmail": {
+      "command": "npx",
+      "args": ["-y", "@gongrzhe/server-gmail-autoauth-mcp"],
+      "env": {
+        "GMAIL_OAUTH_PATH": "secrets/gcp-oauth.keys.json",
+        "GMAIL_CREDENTIALS_PATH": "secrets/gmail-credentials.json"
+      }
+    },
     "apply": { "command": "npx", "args": ["tsx", "src/mcp/apply.ts"] },
     "discover": { "command": "npx", "args": ["tsx", "src/mcp/discover.ts"] },
     "naukri": { "command": "npx", "args": ["tsx", "src/mcp/naukri.ts"] },
