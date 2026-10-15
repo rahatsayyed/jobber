@@ -41,6 +41,17 @@ describe('follow-up agents: autonomous wiring', () => {
     expect(sender.tools).toContain('mcp__db__approve_drafted_followups');
   });
 
+  it('legacy path: reply-check gate precedes the claim step, check_and_increment precedes claim', () => {
+    const gate = followupSection.indexOf('pre-send reply check not confirmed');
+    const step2 = followupSection.indexOf('2. **List and claim.**');
+    expect(gate).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(step2);
+    const step2Text = followupSection.slice(step2, followupSection.indexOf('3. **Send.**'));
+    const cai = step2Text.indexOf('Legacy mode');
+    expect(step2Text.indexOf('check_and_increment', cai)).toBeGreaterThan(-1);
+    expect(step2Text.indexOf('check_and_increment', cai)).toBeLessThan(step2Text.indexOf('claim_followup_for_send', cai));
+  });
+
   it('reply-watcher lists and calls record_reply_check after triage_replies, skipped in a dry run', () => {
     expect(watcher.tools).toContain('mcp__db__record_reply_check');
     const t = watcher.body.indexOf('db.triage_replies({messages, dry_run})');
