@@ -117,9 +117,12 @@ function stateFile(): string {
   return p;
 }
 
+// A benign classifier screen: these tests are about the tools, not the screen (see naukri-screen.test.ts).
+const benignScreen = async (t: string) => ({ blocked: false, unscreened: false, text: t, flags: [], code: 'ok' as const });
+
 function deps(h: ReturnType<typeof makeLauncher>, extra: Record<string, unknown> = {}) {
   // SCHEDULER_DRY_RUN='false': the native Apply click now refuses in dry run (the default).
-  return { db: openDb(':memory:'), chromium: h.launcher, sessionStatePath: stateFile(), settleMs: 0, env: { SCHEDULER_DRY_RUN: 'false' } as NodeJS.ProcessEnv, ...extra };
+  return { db: openDb(':memory:'), chromium: h.launcher, sessionStatePath: stateFile(), settleMs: 0, env: { SCHEDULER_DRY_RUN: 'false' } as NodeJS.ProcessEnv, screen: benignScreen, ...extra };
 }
 
 afterEach(async () => {

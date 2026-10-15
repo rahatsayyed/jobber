@@ -78,7 +78,9 @@ function deps(h: ReturnType<typeof harness>, extra: Record<string, unknown> = {}
   writeFileSync(p, '{"cookies":[],"origins":[]}');
   return {
     db: openDb(':memory:'), chromium: h.launcher, sessionStatePath: p, settleMs: 0,
-    env: LIVE, now: () => new Date('2026-10-14T10:00:00Z'), ...extra,
+    env: LIVE, now: () => new Date('2026-10-14T10:00:00Z'),
+    screen: async (t: string) => ({ blocked: false, unscreened: false, text: t, flags: [], code: 'ok' as const }),
+    ...extra,
   } as any;
 }
 

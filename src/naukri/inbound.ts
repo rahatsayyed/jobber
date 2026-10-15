@@ -1,5 +1,6 @@
 // Pure, English-oriented classifier for inbound Naukri messages. Escalation is the safe default.
 import { gateInput } from '../safety/inputGate.js';
+import type { ScreenPurpose, ScreenVerdict } from '../safety/screen.js';
 
 export type InboundClass = 'recruiter_inquiry' | 'reply' | 'rejection' | 'interview' | 'noise' | 'injection_suspect';
 export interface InboundVerdict { klass: InboundClass; escalate: boolean; reasons: string[]; mayAutoReply: boolean }
@@ -32,6 +33,32 @@ const REJECTION =
   /\b(unfortunately|regret to inform|not (?:be )?moving forward|not (?:been )?selected|position (?:has been|is) filled|decided to (?:move|proceed) with (?:other|another)|other candidates|not a (?:good )?fit)\b/i;
 const NOISE = /\b(unsubscribe|job alert|newsletter|jobs? (?:recommended|for you)|auto[- ]?(?:reply|generated)|do not reply|no-?reply)\b/i;
 const INQUIRY = /\b(interested|opportunit(?:y|ies)|opening|hiring|vacancy|role|position|profile|looking for)\b/i;
+
+/**
+ * Classifier-screened variant. Blocked or a live classifier error escalates as injection_suspect;
+ * an unscreened (dry) text is classified by the sync rules but never allowed to auto-reply.
+ */
+export async function classifyInboundScreened(
+  text: string,
+  opts: { alreadyRepliedThisThread?: boolean; threadAgeDays?: number },
+  screen: (t: string, p: ScreenPurpose) => Promise<ScreenVerdict>,
+): Promise<InboundVerdict> {
+  const raw = typeof text === 'string' ? text : '';
+  let v: ScreenVerdict;
+  try {
+    v = await screen(raw, 'read');
+  } catch {
+    return { klass: 'injection_suspect', escalate: true, reasons: ['classifier_unavailable'], mayAutoReply: false };
+  }
+  if (v.blocked) {
+    return { klass: 'injection_suspect', escalate: true, reasons: [v.code, ...v.flags], mayAutoReply: false };
+  }
+  const base = classifyInbound(raw, opts);
+  if (v.unscreened) {
+    return { ...base, reasons: [...base.reasons, 'unscreened'], mayAutoReply: false };
+  }
+  return base;
+}
 
 export function classifyInbound(
   text: string,

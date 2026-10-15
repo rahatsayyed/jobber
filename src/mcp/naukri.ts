@@ -20,7 +20,9 @@ import { loadOutreachConfig, type OutreachConfig } from '../outreach/config.js';
 import { haltReason, tryConsume } from '../outreach/limits.js';
 import type { TouchKind } from '../outreach/cadence.js';
 import { parseSearchCards, parseInbox, type RawSearchCard, type RawThread } from '../naukri/parse.js';
-import { classifyInbound } from '../naukri/inbound.js';
+import { classifyInboundScreened } from '../naukri/inbound.js';
+import { screenUntrusted, type ScreenPurpose, type ScreenVerdict } from '../safety/screen.js';
+import { gateField } from '../safety/fieldGate.js';
 import { naukriSendMessage, type PageDriver, type SendDeps } from '../naukri/actions.js';
 
 /**
@@ -99,6 +101,8 @@ export interface NaukriDeps {
   cfg?: OutreachConfig;
   checkText?: SendDeps['checkText'];
   style?: SendDeps['style'];
+  /** Injectable classifier screen. Default: screenUntrusted with the deps/process env. */
+  screen?: (t: string, p: ScreenPurpose) => Promise<ScreenVerdict>;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -201,6 +205,12 @@ function clip(s: string, n: number): string {
   return t.length > n ? t.slice(0, n - 1) + '…' : t;
 }
 
+/** Gate one page-derived field with the code gate, then cap it. Blocked text becomes a marker. */
+function pg(s: string, n: number): string {
+  const g = gateField(typeof s === 'string' ? s : '', n);
+  return g.blocked ? '[blocked]' : g.text;
+}
+
 function trimUrl(url: string): string {
   const noQuery = url.split(/[?#]/)[0];
   // Keep the head (host) and the tail (it carries the job id).
@@ -236,18 +246,18 @@ export interface StateFlags {
 /** Compact, capped text state. Page-derived text sits in one delimited block. */
 export function formatState(raw: RawSnapshot, flags: StateFlags): string {
   const body: string[] = [];
-  body.push(`title: ${clip(raw.title, 90)}`);
+  body.push(`title: ${pg(raw.title, 90)}`);
   body.push(`url: ${trimUrl(raw.url)}`);
-  if (raw.buttons.length) body.push(`buttons: ${raw.buttons.slice(0, 8).map((b) => `[${clip(b, 30)}]`).join(' ')}`);
-  if (raw.notices.length) body.push(`notices: ${raw.notices.slice(0, 3).map((n) => clip(n, 120)).join(' | ')}`);
+  if (raw.buttons.length) body.push(`buttons: ${raw.buttons.slice(0, 8).map((b) => `[${pg(b, 30)}]`).join(' ')}`);
+  if (raw.notices.length) body.push(`notices: ${raw.notices.slice(0, 3).map((n) => pg(n, 120)).join(' | ')}`);
   if (raw.chatbot.open) {
     body.push('chatbot:');
     for (const m of raw.chatbot.messages.slice(-4)) {
-      body.push(`  ${m.from === 'bot' ? 'BOT' : 'USER'}: ${clip(m.text, MAX_MESSAGE_CHARS)}`);
+      body.push(`  ${m.from === 'bot' ? 'BOT' : 'USER'}: ${pg(m.text, MAX_MESSAGE_CHARS)}`);
     }
-    body.push(`  input: ${raw.chatbot.placeholder === null ? '(none)' : `"${clip(raw.chatbot.placeholder, 50)}"`}${raw.chatbot.sendLabel ? ` send=[${clip(raw.chatbot.sendLabel, 20)}]` : ''}`);
+    body.push(`  input: ${raw.chatbot.placeholder === null ? '(none)' : `"${pg(raw.chatbot.placeholder, 50)}"`}${raw.chatbot.sendLabel ? ` send=[${pg(raw.chatbot.sendLabel, 20)}]` : ''}`);
     if (raw.chatbot.options.length) {
-      body.push(`  options: ${raw.chatbot.options.slice(0, 10).map((o) => `[${clip(o, 40)}]`).join(' ')}`);
+      body.push(`  options: ${raw.chatbot.options.slice(0, 10).map((o) => `[${pg(o, 40)}]`).join(' ')}`);
     }
   }
   const header =
@@ -283,7 +293,7 @@ export function pickCandidate(cands: Candidate[], query: string): Pick {
 }
 
 function candidateList(cands: Candidate[]): string {
-  const shown = cands.slice(0, MAX_CANDIDATES_LISTED).map((c) => `[${clip(c.text, 40)}]`).join(' ');
+  const shown = cands.slice(0, MAX_CANDIDATES_LISTED).map((c) => `[${pg(c.text, 40)}]`).join(' ');
   return `candidates: ${shown}${cands.length > MAX_CANDIDATES_LISTED ? ' …' : ''}`;
 }
 
@@ -367,6 +377,31 @@ function recordIfConfirmed(raw: RawSnapshot, deps: NaukriDeps): boolean | undefi
   return true;
 }
 
+function screenFn(deps: NaukriDeps): (t: string, p: ScreenPurpose) => Promise<ScreenVerdict> {
+  if (deps.screen) return deps.screen;
+  const env = deps.env ?? process.env;
+  return (t, p) => screenUntrusted(t, p, { env, dryRun: isDryRun(env) });
+}
+
+/**
+ * Screen page-derived output ('read'). Blocked (or a screen that throws) returns a code-only JSON
+ * with no page text; unscreened (dry run) adds a classifier=unscreened header line.
+ */
+async function emit(out: string, deps: NaukriDeps): Promise<string> {
+  let v: ScreenVerdict;
+  try {
+    v = await screenFn(deps)(out, 'read');
+  } catch {
+    return jsonOut({ status: 'blocked', code: 'classifier_unavailable' });
+  }
+  if (v.blocked) return jsonOut({ status: 'blocked', code: v.code });
+  if (v.unscreened) {
+    const nl = out.indexOf('\n');
+    return nl >= 0 ? `${out.slice(0, nl)}\nclassifier=unscreened${out.slice(nl)}` : `${out}\nclassifier=unscreened`;
+  }
+  return out;
+}
+
 async function stateText(deps: NaukriDeps, extra: string[] = []): Promise<string> {
   if (!session) return 'no open session: call naukri_open first';
   let raw: RawSnapshot;
@@ -383,7 +418,7 @@ async function stateText(deps: NaukriDeps, extra: string[] = []): Promise<string
     recorded,
     extra,
   };
-  return formatState(raw, flags);
+  return emit(formatState(raw, flags), deps);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -432,10 +467,10 @@ export function naukriClick({ text }: { text: string }, deps: NaukriDeps = {}): 
     const cands = ((await page.evaluate(CANDIDATES_SRC)) as Candidate[]) ?? [];
     const pick = pickCandidate(cands, text);
     if (pick.kind === 'none') {
-      return stateTextWith(deps, [`click: no visible control matches "${clip(text, 40)}"`, candidateList(cands)]);
+      return stateTextWith(deps, [`click: no visible control matches "${pg(text, 40)}"`, candidateList(cands)]);
     }
     if (pick.kind === 'ambiguous') {
-      return stateTextWith(deps, [`click: "${clip(text, 40)}" is ambiguous, nothing clicked`, candidateList(pick.candidates)]);
+      return stateTextWith(deps, [`click: "${pg(text, 40)}" is ambiguous, nothing clicked`, candidateList(pick.candidates)]);
     }
     const c = pick.candidate;
 
@@ -510,7 +545,7 @@ export function naukriClick({ text }: { text: string }, deps: NaukriDeps = {}): 
       await page.goBack({ timeout: 10000, waitUntil: 'domcontentloaded' }).catch(() => {});
       await settle(page, deps);
     }
-    extra.unshift(`clicked: [${clip(c.text, 40)}]`);
+    extra.unshift(`clicked: [${pg(c.text, 40)}]`);
     return stateText(deps, extra);
   });
 }
@@ -808,7 +843,7 @@ export function naukriSearch(
         `- job_id=${r.job_id} url=${trimUrl(r.url)} | ${clip(r.title, 100)} | ${clip(r.company, 80)} | ${clip(r.location, 60)}` +
         `${r.salary ? ` | ${clip(r.salary, 40)}` : ''}${r.posted ? ` | ${clip(r.posted, 40)}` : ''}`
     );
-    return untrustedBlock(`status=ok count=${results.length} search_url=${url}`, lines);
+    return emit(untrustedBlock(`status=ok count=${results.length} search_url=${url}`, lines), deps);
   });
 }
 
@@ -848,7 +883,7 @@ export function naukriInbox({ unread_only }: { unread_only?: boolean } = {}, dep
         `- ref=${t.threadRef} unread=${t.unread} from="${clip(t.sender, 60)}" company="${clip(t.company ?? '', 60)}"` +
         `${t.at ? ` at=${clip(t.at, 30)}` : ''}${suspects.has(t.threadRef) ? ' injection_suspect=true' : ''} preview="${clip(t.preview, 220)}"`
     );
-    return untrustedBlock(`status=ok count=${threads.length} skipped_unaddressable=${skipped}`, lines);
+    return emit(untrustedBlock(`status=ok count=${threads.length} skipped_unaddressable=${skipped}`, lines), deps);
   });
 }
 
@@ -916,7 +951,7 @@ export function naukriReadThread({ thread_ref }: { thread_ref: string }, deps: N
     const verdict: { klass: string; escalate: boolean; mayAutoReply: boolean; reasons: string[] } =
       lastInboundRaw.trim().length === 0
         ? { klass: 'unknown', escalate: true, mayAutoReply: false, reasons: ['no_inbound_text'] }
-        : classifyInbound(lastInboundRaw, opts);
+        : await classifyInboundScreened(lastInboundRaw, opts, screenFn(deps));
     const lines = msgs.map((m) => {
       const g = gatedText(m.text, MAX_THREAD_TEXT);
       return `- ${m.from === 'me' ? 'ME' : 'THEM'}${m.at ? ` [${clip(String(m.at), 30)}]` : ''}${g.suspect ? ' [injection_suspect]' : ''}: ${g.text}`;
@@ -925,14 +960,14 @@ export function naukriReadThread({ thread_ref }: { thread_ref: string }, deps: N
       `status=ok thread_ref=${thread_ref} person_id=${personId === null ? 'null' : personId}\n` +
       `verdict: klass=${verdict.klass} escalate=${verdict.escalate} may_auto_reply=${verdict.mayAutoReply} ` +
       `reasons=${verdict.reasons.map((r) => sanitize(r).slice(0, 40)).join(',') || 'none'}`;
-    return untrustedBlock(header, lines);
+    return emit(untrustedBlock(header, lines), deps);
   });
 }
 
 let styleCache: ReturnType<typeof loadStyleConfigSafe> | null = null;
 
 /** Real page driver on the persistent session: verify the header recipient, then type in the thread. */
-function makeDriver(deps: NaukriDeps): PageDriver {
+function makeDriver(deps: NaukriDeps, guard: { code: string | null } = { code: null }): PageDriver {
   const open = async (ref: string): Promise<RawThreadPage> => {
     if (!session) throw new Error('no open session');
     const page = session.page;
@@ -948,6 +983,18 @@ function makeDriver(deps: NaukriDeps): PageDriver {
   return {
     async verifyThread(ref) {
       const t = await open(ref);
+      // Send-path guard: the last inbound text is screened ('send') before anything is typed.
+      const inbound = [...(Array.isArray(t.messages) ? t.messages : [])].reverse().find((m) => m.from !== 'me');
+      let sv: ScreenVerdict;
+      try {
+        sv = await screenFn(deps)(typeof inbound?.text === 'string' ? inbound.text : '', 'send');
+      } catch {
+        sv = { blocked: true, unscreened: false, text: '', flags: [], code: 'classifier_unavailable' };
+      }
+      if (sv.blocked) {
+        guard.code = sv.code;
+        throw new Error('send_screen_blocked');
+      }
       return { recipient: t.recipient ?? null, company: t.company ?? null };
     },
     async sendInThread(ref, body) {
@@ -1000,6 +1047,7 @@ export function naukriSendMessageTool(
           return { ok: r.verdict !== 'block', normalized: r.normalized_text, verdict: r.verdict };
         });
       touch(deps);
+      const guard: { code: string | null } = { code: null };
       const res = await naukriSendMessage(
         {
           db: getDb(deps),
@@ -1007,12 +1055,13 @@ export function naukriSendMessageTool(
           now,
           env,
           runId: env.JOBBER_RUN_ID ?? null,
-          driver: makeDriver(deps),
+          driver: makeDriver(deps, guard),
           checkText,
           style,
         },
         { personId: i.person_id, threadRef: i.thread_ref, text: i.text, ...(i.job_id ? { jobId: i.job_id } : {}), kind: i.kind }
       );
+      if (guard.code !== null) return jsonOut({ status: 'refused', code: guard.code });
       return jsonOut(res);
     } catch (err) {
       return jsonOut({ status: 'failed', reasons: [`error: ${errReason(err, 'unknown')}`] });
