@@ -1,7 +1,7 @@
 # Layout memory
 
 Audience: owner
-Last verified against: <fill at merge>
+Last verified against: cc51247
 Source files: scripts/layout.ts, src/layout/summary.ts, src/layout/vocab.ts, src/layout/render.ts, src/layout/store.ts, src/layout/classify.ts, src/layout/types.ts, src/layout/config.ts, scripts/status.ts, .env.example
 
 Layout memory is a small file per platform that records what the LinkedIn and Naukri pages looked like the last times the code parsed them, so the scheduled operators can skip exploratory reads when a page matches and stop when a page has drifted. It is not HTML and nothing in it is written by the model: it holds only ids from a closed vocabulary (`src/layout/vocab.ts`: page kinds, landmark ids, count keys, action labels), integers, dates and run ids, so page text can never reach it. It is advisory on reads and, only in `enforce` mode, a precondition for the irreversible typed tools.

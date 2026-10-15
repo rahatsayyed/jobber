@@ -1,7 +1,7 @@
 # Owner docs index
 
 Audience: owner
-Last verified against: <fill at merge>
+Last verified against: cc51247
 Source files: docs/, README.md, CLAUDE.md, tests/docs-owner.test.ts
 
 This page lists every owner doc in `docs/`. Start with the ordered list, then use the topic list as a reference.

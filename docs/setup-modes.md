@@ -1,7 +1,7 @@
 # Setup modes and the bring-up commands
 
 Audience: owner
-Last verified against: <fill at merge>
+Last verified against: cc51247
 Source files: scripts/bootstrap.sh, scripts/bootstrap.ts, scripts/setup.ts, scripts/stack.ts, scripts/dry-run.ts, src/setup/cli.ts, src/setup/mode.ts, src/setup/guide.ts, src/setup/skips.ts, src/setup/state.ts, src/setup/runner.ts, src/setup/steps/index.ts, src/setup/steps/final.ts, src/bootstrap/exec.ts, src/bootstrap/catalog.ts, src/stack/up.ts, src/stack/down.ts, src/stack/mode.ts, src/verify/cli.ts, src/verify/stages.ts
 
 This page is the map of the owner path. It does not repeat the wizard's prompt wording: each

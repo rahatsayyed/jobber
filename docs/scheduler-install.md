@@ -1,7 +1,7 @@
 # Scheduler install (launchd and systemd)
 
 Audience: owner
-Last verified against: <fill at merge>
+Last verified against: cc51247
 Source files: scripts/scheduler-units.ts, src/scheduler/units.ts, scripts/scheduler.ts, src/scheduler/driver.ts, src/platform/checksScheduler.ts, src/stack/up.ts, src/stack/down.ts, src/stack/plan.ts, .env.example, package.json
 
 This page is for running the scheduler daemon as a service that starts at login and restarts

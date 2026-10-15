@@ -1,7 +1,7 @@
 # Start here: from clone to first supervised send
 
 Audience: owner
-Last verified against: <fill at merge>
+Last verified against: cc51247
 Source files: package.json, scripts/setup.ts, scripts/bootstrap.sh, scripts/stack.ts, scripts/dry-run.ts, scripts/dry-run-report.ts, scripts/linkedin-seed-person.ts, src/setup/steps/index.ts, src/setup/skips.ts, README.md
 
 This page is the ordered map. Each row points to the page that holds the detail; it does not

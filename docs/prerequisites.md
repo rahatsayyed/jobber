@@ -1,7 +1,7 @@
 # Prerequisites
 
 Audience: owner
-Last verified against: <fill at merge>
+Last verified against: cc51247
 Source files: package.json, config/ccgram.pin.json, config/update-known-failures.json, scripts/ccgram/start.sh, scripts/ccgram/check-version.sh, scripts/bootstrap.sh, scripts/bootstrap.ts, src/bootstrap/catalog.ts, src/platform/checks.ts, src/platform/checksSetup.ts, src/setup/steps/prereqs.ts, src/scheduler/units.ts, src/backup/create.ts, docs/backup-and-restore.md
 
 This page lists every tool Jobber needs on the machine, which feature it unlocks, how to verify it and what to do when it is missing. It is macOS first; Ubuntu (VPS) differences are marked. Windows is not covered.

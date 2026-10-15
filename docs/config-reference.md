@@ -1,7 +1,7 @@
 # Config reference
 
 Audience: owner
-Last verified against: <fill at merge>
+Last verified against: cc51247
 Source files: src/sources/boards/filters.ts, src/targetRegions.ts, src/vetoes.ts, src/replies.ts, src/discover/linkedin-jobs.ts, src/safety/styleGate.ts, src/lib/userData.ts, src/languageGate.ts, src/resumeFacts.ts, src/ats/learned.ts, src/platform/permissions.ts, scripts/permissions.ts, scripts/models.ts, scripts/check-portal.ts, scripts/user-data.ts, .env.example, src/setup/limitsCatalog.ts
 
 This page lists every file you may edit in `config/` and `user-data/`, what reads it, whether a restart is needed, and how to check an edit. It does not repeat safety rules or caps: those live in `CLAUDE.md` (sections "Safety" and "Outreach safety layers"). All example values below are synthetic.

@@ -1,7 +1,7 @@
 # Dashboard login
 
 Audience: owner
-Last verified against: <fill at merge>
+Last verified against: cc51247
 Source files: scripts/web.ts, scripts/dashboard.ts, src/web/server.ts, src/web/env.ts, src/dash/accessToken.ts, src/dash/account.ts, src/dash/authStore.ts, src/dash/desktopClient.ts, src/dash/oidc.ts, src/dash/sessions.ts, .env.example, docs/dashboard-exposure.md
 
 This page is how you sign in to the dashboard (`npm run web`) and what to do when you cannot.

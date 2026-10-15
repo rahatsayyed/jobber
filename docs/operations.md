@@ -1,7 +1,7 @@
 # Operations
 
 Audience: owner
-Last verified against: <fill at merge>
+Last verified against: cc51247
 Source files: scripts/jobber-control.ts, src/scheduler/control.ts, .claude/hooks/kill-switch.cjs, run-hunt.sh, scripts/linkedin-clear-halt.ts, scripts/layout.ts, src/safety/dryRun.ts, scripts/dry-run-report.ts, scripts/status.ts, src/status/render.ts, src/scheduler/plan.ts, src/scheduler/runLog.ts, src/scheduler/notify.ts, src/scheduler/launch.ts, scripts/stack.ts, src/stack/up.ts, src/stack/down.ts, src/verify/cli.ts, src/platform/checksSetup.ts, src/platform/checksLayout.ts, src/platform/checksScheduler.ts
 
 Day-to-day running of Jobber: stop it, resume it, read its state, find its files, fix common failures.

@@ -1,7 +1,7 @@
 # API keys and credentials
 
 Audience: owner
-Last verified against: <fill at merge>
+Last verified against: cc51247
 Source files: .env.example, src/setup/steps/apikeys.ts, src/setup/skips.ts, src/platform/checksApiKeys.ts, src/sources/adzuna.ts, src/mcp/contacts.ts, src/lib/hunter.ts, docs/gmail-mcp-setup.md, docs/telegram-bot-setup.md
 
 This page lists every key Jobber can use, what degrades without it, where it goes and how to

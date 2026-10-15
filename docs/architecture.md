@@ -1,7 +1,7 @@
 # Architecture
 
 Audience: owner
-Last verified against: <fill at merge>
+Last verified against: cc51247
 Source files: .mcp.json, src/mcp/, .claude/agents/, .claude/hooks/, .claude/settings.json, config/run-profiles.json, config/worker-tools.json, src/db.ts, src/scheduler/, src/outreach/limits.ts, src/safety/, src/layout/, src/web/, src/dash/, scripts/, run-hunt.sh
 
 This page is the map. It shows what runs where, which store holds what, and where to

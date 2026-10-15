@@ -1,7 +1,7 @@
 # Rollout: five phases from dry run to autonomous
 
 Audience: owner
-Last verified against: <fill at merge>
+Last verified against: cc51247
 Source files: CLAUDE.md, src/safety/dryRun.ts, src/stack/mode.ts, src/verify/cli.ts, scripts/dry-run.ts, scripts/stack.ts, scripts/jobber-control.ts, scripts/status.ts, scripts/layout.ts, scripts/linkedin-seed-person.ts, scripts/scheduler.ts, .env.example, docs/superpowers/plans/2026-10-14-6d-scheduler-agents-naukri.md, docs/superpowers/plans/2026-10-15-8a-wiring-and-legacy-removal.md, docs/backup-and-restore.md
 
 Each phase is gated on the one before. Do not skip ahead. Steps marked `[owner]` can only
