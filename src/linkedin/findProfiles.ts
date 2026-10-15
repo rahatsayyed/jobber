@@ -68,6 +68,9 @@ export async function findProfiles(a: FindProfilesArgs, deps: ToolDeps): Promise
     cands.push({ profile_url, name: name.text, headline: head.blocked ? '' : head.text });
   }
 
+  if (cands.length === 0) {
+    return { status: 'ok', code: 'no_candidates', candidates: [], ...(injection ? { injection_suspected: true } : {}) };
+  }
   const verdict = await deps.screen(cands.map((c) => `${c.name}\n${c.headline}`).join('\n'), 'read');
   if (verdict.blocked) return { status: 'failed', code: verdict.code, candidates: [], injection_suspected: true };
 

@@ -150,6 +150,8 @@ describe('renderSettings and renderPolicy', () => {
   it('expands the permission set into allow in the rendered policy', () => {
     const pol = renderPolicy('hunt', hunt) as any;
     expect(pol.profiles.hunt.allow).toContain('mcp__gmail__send_email');
+    expect(pol.profiles.hunt.allow).toContain('mcp__linkedin__linkedin_find_profiles');
+    expect(pol.profiles.hunt.allow.some((e: string) => e.startsWith('mcp__connect'))).toBe(false);
     expect(pol.profiles.hunt.allow_from_permission_set).toBeUndefined();
     expect(pol.profiles.hunt.allow.some((e: string) => e.startsWith('Bash'))).toBe(false);
   });

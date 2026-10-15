@@ -25,7 +25,7 @@ export function loadLinkedinConfig(env: NodeJS.ProcessEnv = process.env): Linked
   const idleN = idleRaw !== undefined && /^\d+$/.test(idleRaw.trim()) ? Number(idleRaw.trim()) : 600000;
   return {
     dryRun: isDryRun(env, { linkedin: true }),
-    maxSearchesPerDay: Number.isInteger(srN) && srN >= 0 && srN <= 1000 ? srN : 20,
+    maxSearchesPerDay: Number.isInteger(srN) && srN >= 0 && srN <= 100000 ? srN : 20,
     acceptUnknown: env.LINKEDIN_ACCEPT_UNKNOWN === 'true',
     maxAcceptsPerDay: Number.isInteger(accN) && accN >= 0 && accN <= 1000 ? accN : 30,
     allowedUrls: csv(env.LINKEDIN_ALLOWED_URLS),

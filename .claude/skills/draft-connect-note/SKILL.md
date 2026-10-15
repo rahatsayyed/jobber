@@ -11,19 +11,19 @@ Produce ONE final, ready-to-send LinkedIn connection-request note for a specific
 and target profile. LinkedIn hard-caps connection notes at **300 characters** (not words) —
 this is a real platform limit, not a style preference, and every step below must respect it.
 This skill runs a two-pass drafter/reviewer process, then a humanizer pass, before returning
-output. It never calls `connect.connect_send` itself — that only happens later, in the
+output. It never calls `linkedin_connect_send` itself — that only happens later, in the
 orchestration layer, after explicit human approval.
 
 ## Inputs
 
 1. `job` — object with fields `{id, title, company, url}` (at minimum `title` and `company`).
 2. `profile` — the target LinkedIn profile candidate, `{profile_url, name, headline}` (from
-   `connect.find_linkedin_profile`).
+   `linkedin_find_profiles`).
 3. `context` — a short summary (a sentence or two) of why this specific role/company is
    relevant to the candidate: e.g. the tailored-resume angle, or the specific job posting
    detail worth mentioning. Must be traceable to real facts (the job posting or base resume) —
    never invented.
-4. `profileContext` (optional) — `{about?: string}`, scraped by `connect.check_connection_status`
+4. `profileContext` (optional) — `{about?: string}`, scraped by `linkedin_check_connection_status`
    from the target's LinkedIn "About" section. When `about` has real content, reference ONE
    concrete detail from it (a technology, project, or focus area they mention) to make the note
    feel personal instead of generic. When `profileContext` is absent or `about` is empty, skip

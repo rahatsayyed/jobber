@@ -36,4 +36,4 @@ Warnings are never dropped: every `warn` finding from `render_resume` (`facts.wa
    - A dropped email or a skipped note simply has no fields on any row.
 8. **Return** only: `{"job_id": "<job.id>", "queued_rows": <n>, "ats_coverage": <n|null>, "gaps": <count>, "review": {"applied": <n>, "rejected": <n>}, "flags": [<short strings>]}`. Never return resume, email or note content.
 
-Do not call `gmail.send_email`, `connect.connect_send` or any `apply.*` tool; the `sender` stage reads the queue you wrote.
+Do not call `gmail.send_email`, `linkedin_connect_send` or any `apply.*` tool; the `sender` stage reads the queue you wrote.

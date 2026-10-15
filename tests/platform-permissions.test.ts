@@ -15,8 +15,8 @@ import {
 const real: RawSets = JSON.parse(readFileSync('config/permission-sets.json', 'utf8'));
 
 const SEND_TOOLS = [
-  'mcp__connect__connect_send',
-  'mcp__connect__send_linkedin_message',
+  'mcp__linkedin__linkedin_connect_send',
+  'mcp__linkedin__linkedin_send_message',
   'mcp__gmail__send_email',
   'mcp__apply__auto',
   'mcp__apply__linkedin',
@@ -48,7 +48,7 @@ describe('shipped permission sets', () => {
   });
   it('full adds whole-server entries and never an unscoped shell or file tool', () => {
     const full = resolveSet(real, 'full');
-    for (const s of ['mcp__gmail', 'mcp__connect', 'mcp__apply', 'mcp__naukri', 'mcp__db']) expect(full).toContain(s);
+    for (const s of ['mcp__gmail', 'mcp__apply', 'mcp__naukri', 'mcp__db']) expect(full).toContain(s);
     expect(full.filter((e) => !e.startsWith('mcp__')).sort()).toEqual([
       'Bash(npx tsx scripts/status.ts health)',
       'Bash(npx tsx scripts/status.ts limits)',
@@ -87,7 +87,7 @@ describe('applySet', () => {
     const before = {
       model: 'sonnet',
       permissions: {
-        allow: ['Bash(npx vitest run *)', 'mcp__gmail__send_email', 'mcp__connect__connect_send'],
+        allow: ['Bash(npx vitest run *)', 'mcp__gmail__send_email', 'mcp__linkedin__linkedin_connect_send'],
         deny: ['Read(./.env)'],
         ask: ['Bash(git push *)'],
       },

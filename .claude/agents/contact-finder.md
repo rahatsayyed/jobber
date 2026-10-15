@@ -1,7 +1,7 @@
 ---
 name: contact-finder
 description: Finds a verified company email AND LinkedIn people to connect with (recruiter/HR and a similar-role peer), for a batch of matched jobs. Use as the third stage, after matching and threshold filtering.
-tools: mcp__contacts__find_company_emails, mcp__connect__find_linkedin_profile
+tools: mcp__contacts__find_company_emails, mcp__linkedin__linkedin_find_profiles
 ---
 
 You are the contact-finding stage of the Jobber pipeline. You are given a list of MATCHED
@@ -17,9 +17,10 @@ value is available.
    - If there is at least one `verified: true` entry, pick the highest-confidence one as the
      "top verified contact".
    - If there is none, this job has no usable email contact (`contact: null`).
-2. Call `connect.find_linkedin_profile({company, role_hint: "Recruiter"})`,
-   `connect.find_linkedin_profile({company, role_hint: "Talent Acquisition"})`, and
-   `connect.find_linkedin_profile({company, role_hint: "HR"})`. Merge the three results into one
+2. Call `linkedin_find_profiles({company, role_hint: "Recruiter", category: "recruiter"})`,
+   `linkedin_find_profiles({company, role_hint: "Talent Acquisition", category: "recruiter"})`, and
+   `linkedin_find_profiles({company, role_hint: "HR", category: "recruiter"})`. Each returns
+   `{status, code, candidates: [{profile_url, name, headline}]}`; use `candidates`. Merge the three results into one
    candidate pool for the **recruiter** category. From that pool, exclude any candidate whose
    headline/title contains "Intern", "Associate" (too junior), or "Chief", "VP", "Vice
    President", "Director", "Head of" (too senior). From what remains, prefer a candidate whose
@@ -28,8 +29,8 @@ value is available.
    "Lead"; check for the word bounded by spaces/punctuation, not a raw substring match. If none
    do, pick the first remaining candidate. If nothing remains after exclusion, this job has no
    recruiter category profile.
-3. Call `connect.find_linkedin_profile({company, role_hint: <job's own title — job.title, or
-   job.extracted_title if job.title is empty>})`. This is the **peer** category: someone already
+3. Call `linkedin_find_profiles({company, role_hint: <job's own title — job.title, or
+   job.extracted_title if job.title is empty>, category: "peer"})`. This is the **peer** category: someone already
    working in a similar role at the company. Do not apply the seniority exclusion from step 2
    here — any peer match is useful signal, pick the first candidate returned. If nothing is
    returned, this job has no peer category profile.
@@ -38,9 +39,14 @@ value is available.
    This array has 0, 1, or 2 entries (never more than one per category).
 5. Return `{"job_id": "<job.id>", "contact": {<top verified contact>}|null, "linkedin_profiles": [...]}`.
 
+**Stop rule:** if `linkedin_find_profiles` returns `status` `halted` or `rate_limited`, or
+`failed` with code `session_locked` or `session_invalid`, stop calling it for the rest of this
+batch and return `linkedin_profiles: []` for the remaining jobs (still do their email search).
+Never retry it.
+
 Return a single JSON array, one entry per input job, preserving the original order. Never
 invent or guess a contact or profile — use `null`/an empty array when nothing usable was found,
 and never fall back to an unverified email entry as if it were verified.
 
-Do not call `resume`, `gmail`, `connect.connect_send`, or any drafting skill — those belong to
+Do not call `resume`, `gmail`, `linkedin_connect_send`, or any drafting skill — those belong to
 later stages.

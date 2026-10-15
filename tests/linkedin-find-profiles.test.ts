@@ -83,6 +83,21 @@ describe('findProfiles', () => {
     noActions(log);
   });
 
+  it('no surviving candidates -> ok no_candidates and the classifier screen is not called', async () => {
+    const empty = buildSnapshotFromHtml('<html><body><main></main></body></html>', SEARCH);
+    const { deps } = setup({ pages: { [SP]: empty } });
+    const screen = vi.fn(deps.screen);
+    const r = await findProfiles({ company: 'Acme', category: 'recruiter' }, { ...deps, screen });
+    expect(r).toMatchObject({ status: 'ok', code: 'no_candidates', candidates: [] });
+    expect(screen).not.toHaveBeenCalled();
+  });
+
+  it('MAX_LINKEDIN_SEARCHES_PER_DAY clamp matches the catalog max (100000), default 20', () => {
+    expect(loadLinkedinConfig({ MAX_LINKEDIN_SEARCHES_PER_DAY: '100000' }).maxSearchesPerDay).toBe(100000);
+    expect(loadLinkedinConfig({ MAX_LINKEDIN_SEARCHES_PER_DAY: '100001' }).maxSearchesPerDay).toBe(20);
+    expect(loadLinkedinConfig({}).maxSearchesPerDay).toBe(20);
+  });
+
   it('halted platform -> halted, runtime never launched', async () => {
     const { deps, db, launcher } = setup({ pages: { [SP]: snapOf('search-results.html') } });
     haltPlatform(db, 'linkedin', 'test', new Date('2026-10-14T10:00:00Z'));

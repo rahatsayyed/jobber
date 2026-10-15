@@ -1,6 +1,6 @@
 ---
 name: draft-linkedin-message
-description: Draft, critique-and-rewrite, then humanize a LinkedIn direct message for a specific job/company and an EXISTING 1st-degree connection; use whenever connect.connect_send returns status "already_connected" instead of draft-connect-note.
+description: Draft, critique-and-rewrite, then humanize a LinkedIn direct message for a specific job/company and an EXISTING 1st-degree connection; use whenever `linkedin_check_connection_status` returns `status: "connected"` instead of draft-connect-note.
 ---
 
 # draft-linkedin-message
@@ -10,18 +10,18 @@ description: Draft, critique-and-rewrite, then humanize a LinkedIn direct messag
 Produce ONE final, ready-to-send LinkedIn direct message for a specific job, company, and
 target profile who is **already a 1st-degree connection** — the counterpart to
 `draft-connect-note` for profiles that are not yet connected. This is a real DM sent via
-`connect.send_linkedin_message`, not a connection-request note: it has no LinkedIn-imposed
+`linkedin_send_message` (which requires a `kind`: role_ask, rapport, referral_ask, followup or feedback), not a connection-request note: it has no LinkedIn-imposed
 character cap and must read as a message to someone you already know, not as an invitation to
 connect. This skill runs a two-pass drafter/reviewer process, then a humanizer pass, before
-returning output. It never calls `connect.send_linkedin_message` itself — that only happens
+returning output. It never calls `linkedin_send_message` itself — that only happens
 later, in the orchestration layer, after explicit human approval, same as
 `draft-connect-note`.
 
 ## When to use this instead of draft-connect-note
 
-Only when `connect.connect_send` (or a prior check) returned `status: "already_connected"` for
+Only when `linkedin_check_connection_status` returned `status: "connected"` for
 this profile. If the profile is not yet a connection, use `draft-connect-note` and
-`connect.connect_send` instead — never draft a message for a profile you haven't verified is
+`linkedin_connect_send` instead — never draft a message for a profile you haven't verified is
 already connected.
 
 ## Inputs
@@ -32,7 +32,7 @@ already connected.
    relevant to the candidate right now — the tailored-resume angle, or a specific posting
    detail worth mentioning. Must be traceable to real facts (the job posting or base resume) —
    never invented.
-4. `profileContext` (optional) — `{about?: string}`, scraped by `connect.check_connection_status`
+4. `profileContext` (optional) — `{about?: string}`, scraped by `linkedin_check_connection_status`
    from the target's LinkedIn "About" section. When `about` has real content, reference ONE
    concrete detail from it to make the message feel personal instead of generic. When
    `profileContext` is absent or `about` is empty, skip this — never invent a detail about the

@@ -36,8 +36,6 @@ const SEND_TOOLS = [
   'mcp__apply__lever',
   'mcp__apply__workday',
   'mcp__apply__ashby',
-  'mcp__connect__connect_send',
-  'mcp__connect__send_linkedin_message',
   'mcp__linkedin__linkedin_connect_send',
   'mcp__linkedin__linkedin_send_message',
   'mcp__naukri__naukri_send_message',
@@ -126,7 +124,6 @@ describe('rendered settings and committed settings.json', () => {
 
   const COVERED = [
     ...SEND_TOOLS,
-    'mcp__connect__check_connection_status',
     'mcp__linkedin__linkedin_accept_invite',
     'mcp__naukri__naukri_click',
     'mcp__naukri__naukri_type',

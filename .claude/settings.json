@@ -10,7 +10,6 @@
       "mcp__n8n-mcp__n8n_get_workflow",
       "mcp__n8n-mcp__n8n_validate_workflow",
       "mcp__n8n-mcp__n8n_executions",
-      "mcp__connect__find_linkedin_profile",
       "mcp__n8n-mcp__get_node",
       "mcp__job-fetch__search_jobs",
       "mcp__n8n-mcp__n8n_list_workflows",
