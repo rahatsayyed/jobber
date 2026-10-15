@@ -25,7 +25,7 @@ enters or changes anything.
 
 1. Run `npm run doctor -- --json` and summarise the counts (pass, warn, fail, skip).
 2. Read `config/setup-guide.json` and walk its steps in file order: overview, prereqs, claude,
-   gmail, telegram, classifier, sessions, dashboard, access, limits, resume, profile, final.
+   telegram, gmail, apikeys, sessions, resume, profile, limits, access, classifier, dashboard, final.
 3. At the end run `npm run dry-run` and read its PASS or FAIL table.
 
 ## Per-step protocol

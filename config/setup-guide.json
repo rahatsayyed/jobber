@@ -2,14 +2,27 @@
   "version": 1,
   "steps": [
     {
-      "id": "overview", "title": "Overview of what gets set up", "owner_command": "npm run setup -- --list",
-      "doctor_checks": [], "keys": [],
+      "id": "overview",
+      "title": "Overview of what gets set up",
+      "owner_command": "npm run setup -- --list",
+      "doctor_checks": [],
+      "keys": [],
       "explain": "Jobber needs a few accounts and a few settings before it can run. This guide goes through them one at a time, names each setting and says what it is for, and never asks you for a value. You enter values yourself in the setup wizard or in your own editor.",
       "fixes": {}
     },
     {
-      "id": "prereqs", "title": "Machine prerequisites", "owner_command": "npm run setup -- --step prereqs",
-      "doctor_checks": ["bootstrap_complete", "node-version", "tmux", "chrome", "browser-binaries", "ccgram-version"], "keys": [],
+      "id": "prereqs",
+      "title": "Machine prerequisites",
+      "owner_command": "npm run setup -- --step prereqs",
+      "doctor_checks": [
+        "bootstrap_complete",
+        "node-version",
+        "tmux",
+        "chrome",
+        "browser-binaries",
+        "ccgram-version"
+      ],
+      "keys": [],
       "explain": "These are the programs Jobber runs on: Node.js, tmux, the Telegram bridge, and Chrome for the browser sessions. Missing ones are installed by the bootstrap script, which asks before it changes anything.",
       "fixes": {
         "bootstrap_complete": "Run bash scripts/bootstrap.sh in your own terminal and answer its questions.",
@@ -21,8 +34,14 @@
       }
     },
     {
-      "id": "claude", "title": "Claude Code login", "owner_command": "npm run setup -- --step claude",
-      "doctor_checks": ["claude-cli", "claude-login"], "keys": [],
+      "id": "claude",
+      "title": "Claude Code login",
+      "owner_command": "npm run setup -- --step claude",
+      "doctor_checks": [
+        "claude-cli",
+        "claude-login"
+      ],
+      "keys": [],
       "explain": "Jobber drives Claude Code with your own subscription, so the claude program must be installed and logged in. Logging in opens a browser page that only you can complete.",
       "fixes": {
         "claude-cli": "Install Claude Code, then start it once with the claude command.",
@@ -30,54 +49,190 @@
       }
     },
     {
-      "id": "gmail", "title": "Gmail sending", "owner_command": "npm run setup -- --step gmail",
-      "doctor_checks": ["gmail-oauth"],
-      "keys": [
-        { "name": "GMAIL_OAUTH_PATH", "secret": false, "purpose": "path of the Google OAuth client file", "where": "docs/gmail-mcp-setup.md, section One-time setup", "entered_in": "wizard" },
-        { "name": "GMAIL_CREDENTIALS_PATH", "secret": false, "purpose": "path where the Gmail login token is stored", "where": "docs/gmail-mcp-setup.md, section One-time setup", "entered_in": "wizard" },
-        { "name": "GMAIL_USER", "secret": false, "purpose": "legacy SMTP address, unused with the OAuth server", "where": "docs/gmail-mcp-setup.md", "entered_in": "owner edits .env" },
-        { "name": "GMAIL_APP_PASSWORD", "secret": true, "purpose": "legacy SMTP app password, unused with the OAuth server", "where": "docs/gmail-mcp-setup.md", "entered_in": "owner edits .env" }
+      "id": "telegram",
+      "title": "Telegram bot and bridge",
+      "owner_command": "npm run setup -- --step telegram",
+      "doctor_checks": [
+        "telegram-api",
+        "ccgram-env",
+        "daemon"
       ],
-      "explain": "Cold emails go out through your own Gmail using a Google OAuth client you create. The consent screen is a browser page only you can approve. The client file and the token live in secrets/ and never leave your machine.",
-      "fixes": { "gmail-oauth": "Follow docs/gmail-mcp-setup.md to create the OAuth client and approve consent, then run the wizard step again." }
-    },
-    {
-      "id": "telegram", "title": "Telegram bot and bridge", "owner_command": "npm run setup -- --step telegram",
-      "doctor_checks": ["telegram-api", "ccgram-env", "daemon"],
       "keys": [
-        { "name": "TELEGRAM_BOT_TOKEN", "secret": true, "purpose": "token of your own bot, from BotFather", "where": "docs/telegram-bot-setup.md", "entered_in": "wizard" },
-        { "name": "ALLOWED_USERS", "secret": false, "purpose": "numeric Telegram user ids allowed to talk to the bot", "where": "docs/telegram-bot-setup.md", "entered_in": "wizard" }
+        {
+          "name": "TELEGRAM_BOT_TOKEN",
+          "secret": true,
+          "purpose": "token of your own bot, from BotFather",
+          "where": "docs/telegram-bot-setup.md",
+          "entered_in": "wizard"
+        },
+        {
+          "name": "ALLOWED_USERS",
+          "secret": false,
+          "purpose": "numeric Telegram user ids allowed to talk to the bot",
+          "where": "docs/telegram-bot-setup.md",
+          "entered_in": "wizard"
+        }
       ],
       "explain": "Telegram is how Jobber reports to you and takes commands. You create the bot yourself in BotFather and turn on threaded mode. The wizard stores the bot token and your user id.",
       "fixes": {
         "telegram-api": "Create the bot with BotFather per docs/telegram-bot-setup.md and run the wizard step again.",
         "ccgram-env": "Run the wizard telegram step so the token and allowed user id are stored.",
         "daemon": "Start the bridge with bash scripts/ccgram/start.sh in your own terminal."
-      }
+      },
+      "skip": "Skippable (RECOMMENDED). If skipped: no phone control, no Telegram alerts, and no approved email follow-ups. Doctor shows telegram-api, ccgram-env and daemon as skipped."
     },
     {
-      "id": "classifier", "title": "Prompt-injection classifier model", "owner_command": "npm run setup -- --step classifier",
-      "doctor_checks": ["classifier_model", "classifier_smoke", "classifier_wired"],
-      "keys": [
-        { "name": "SCHEDULER_NO_CLASSIFIER", "secret": false, "purpose": "skips the classifier for dry runs only", "where": "docs/classifier-models.md", "entered_in": "owner edits .env" }
+      "id": "gmail",
+      "title": "Gmail sending",
+      "owner_command": "npm run setup -- --step gmail",
+      "doctor_checks": [
+        "gmail-oauth"
       ],
-      "explain": "Text from LinkedIn and Naukri is screened by a local model before the agent sees it. The model is downloaded once, pinned and fitted. Without it, live reads and sends are refused by design.",
+      "keys": [
+        {
+          "name": "GMAIL_OAUTH_PATH",
+          "secret": false,
+          "purpose": "path of the Google OAuth client file",
+          "where": "docs/gmail-mcp-setup.md, section One-time setup",
+          "entered_in": "wizard"
+        },
+        {
+          "name": "GMAIL_CREDENTIALS_PATH",
+          "secret": false,
+          "purpose": "path where the Gmail login token is stored",
+          "where": "docs/gmail-mcp-setup.md, section One-time setup",
+          "entered_in": "wizard"
+        },
+        {
+          "name": "GMAIL_USER",
+          "secret": false,
+          "purpose": "legacy SMTP address, unused with the OAuth server",
+          "where": "docs/gmail-mcp-setup.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "GMAIL_APP_PASSWORD",
+          "secret": true,
+          "purpose": "legacy SMTP app password, unused with the OAuth server",
+          "where": "docs/gmail-mcp-setup.md",
+          "entered_in": "owner edits .env"
+        }
+      ],
+      "explain": "Cold emails go out through your own Gmail using a Google OAuth client you create. The consent screen is a browser page only you can approve. The client file and the token live in secrets/ and never leave your machine.",
       "fixes": {
-        "classifier_model": "Fetch and pin the model with the wizard classifier step, see docs/classifier-models.md.",
-        "classifier_smoke": "Run npm run models -- verify, then repeat the wizard classifier step if it fails.",
-        "classifier_wired": "Restore the surfaces list in the code from git; this is a code problem, not a setting."
-      }
+        "gmail-oauth": "Follow docs/gmail-mcp-setup.md to create the OAuth client and approve consent, then run the wizard step again."
+      },
+      "skip": "Skippable (NEEDED FOR EMAIL OUTREACH). If skipped: no cold email, no email follow-ups, no reply watching; LinkedIn and Naukri outreach still run. Doctor shows gmail-oauth as skipped."
     },
     {
-      "id": "sessions", "title": "LinkedIn and Naukri sessions", "owner_command": "npm run setup -- --step sessions",
-      "doctor_checks": ["sessions", "linkedin.chrome-installed", "linkedin.patchright-importable"],
+      "id": "apikeys",
+      "title": "Optional API keys (Adzuna, Serper, Hunter)",
+      "owner_command": "npm run setup -- --step apikeys",
+      "doctor_checks": [
+        "api-keys"
+      ],
       "keys": [
-        { "name": "LINKEDIN_DRY_RUN", "secret": false, "purpose": "LinkedIn actions are only recorded unless exactly false", "where": "docs/linkedin-sessions-setup.md", "entered_in": "owner edits .env" },
-        { "name": "LINKEDIN_ACCEPT_UNKNOWN", "secret": false, "purpose": "whether invitations from unknown people may be accepted", "where": "docs/linkedin-sessions-setup.md", "entered_in": "owner edits .env" },
-        { "name": "LINKEDIN_MAX_ACCEPTS_PER_DAY", "secret": false, "purpose": "daily cap on accepted invitations", "where": "docs/linkedin-sessions-setup.md", "entered_in": "owner edits .env" },
-        { "name": "LINKEDIN_ALLOWED_URLS", "secret": false, "purpose": "URLs outbound text may contain", "where": "docs/linkedin-sessions-setup.md", "entered_in": "owner edits .env" },
-        { "name": "LINKEDIN_ALLOWED_EMAILS", "secret": false, "purpose": "emails outbound text may contain", "where": "docs/linkedin-sessions-setup.md", "entered_in": "owner edits .env" },
-        { "name": "LINKEDIN_IDLE_MS", "secret": false, "purpose": "idle time before the browser closes", "where": "docs/linkedin-sessions-setup.md", "entered_in": "owner edits .env" }
+        {
+          "name": "ADZUNA_APP_ID",
+          "secret": false,
+          "purpose": "Adzuna developer app id",
+          "where": "CLAUDE.md, Preferences",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "ADZUNA_APP_KEY",
+          "secret": true,
+          "purpose": "Adzuna developer key",
+          "where": "CLAUDE.md, Preferences",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "SERPER_API_KEY",
+          "secret": true,
+          "purpose": "Serper search key for contact lookup",
+          "where": "CLAUDE.md, Preferences",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "HUNTER_API_KEY",
+          "secret": true,
+          "purpose": "Hunter key, last-resort email lookup",
+          "where": "CLAUDE.md, Preferences",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "HUNTER_ENABLED",
+          "secret": false,
+          "purpose": "whether Hunter lookups are allowed",
+          "where": "CLAUDE.md, Preferences",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "HUNTER_MONTHLY_CAP",
+          "secret": false,
+          "purpose": "Hunter credits allowed per month",
+          "where": "CLAUDE.md, Preferences",
+          "entered_in": "owner edits .env"
+        }
+      ],
+      "explain": "Three optional services: Adzuna (a job source), Serper (contact search) and Hunter (last-resort email lookup, off unless you confirm). Each can be skipped and added later. Keys are typed hidden into the wizard and never shown. Skipping only records the choice.",
+      "fixes": {
+        "api-keys": "Run the wizard apikeys step to add the keys you want, or leave them unset; this is a warning only."
+      },
+      "skip": "Skippable per key (OPTIONAL). Adzuna off: one job source off. Serper off: fewer verified contacts. Hunter off: last-resort email lookup stays off. Doctor shows api-keys as skipped."
+    },
+    {
+      "id": "sessions",
+      "title": "LinkedIn and Naukri sessions",
+      "owner_command": "npm run setup -- --step sessions",
+      "doctor_checks": [
+        "sessions",
+        "linkedin.chrome-installed",
+        "linkedin.patchright-importable"
+      ],
+      "keys": [
+        {
+          "name": "LINKEDIN_DRY_RUN",
+          "secret": false,
+          "purpose": "LinkedIn actions are only recorded unless exactly false",
+          "where": "docs/linkedin-sessions-setup.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "LINKEDIN_ACCEPT_UNKNOWN",
+          "secret": false,
+          "purpose": "whether invitations from unknown people may be accepted",
+          "where": "docs/linkedin-sessions-setup.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "LINKEDIN_MAX_ACCEPTS_PER_DAY",
+          "secret": false,
+          "purpose": "daily cap on accepted invitations",
+          "where": "docs/linkedin-sessions-setup.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "LINKEDIN_ALLOWED_URLS",
+          "secret": false,
+          "purpose": "URLs outbound text may contain",
+          "where": "docs/linkedin-sessions-setup.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "LINKEDIN_ALLOWED_EMAILS",
+          "secret": false,
+          "purpose": "emails outbound text may contain",
+          "where": "docs/linkedin-sessions-setup.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "LINKEDIN_IDLE_MS",
+          "secret": false,
+          "purpose": "idle time before the browser closes",
+          "where": "docs/linkedin-sessions-setup.md",
+          "entered_in": "owner edits .env"
+        }
       ],
       "explain": "Jobber uses a saved browser login for the main LinkedIn account, a separate burner LinkedIn account for Easy Apply, and a Naukri login. You log in yourself in a browser window the scripts open; passwords and QR codes stay with you.",
       "fixes": {
@@ -87,83 +242,270 @@
       }
     },
     {
-      "id": "dashboard", "title": "Dashboard login", "owner_command": "npm run setup -- --step dashboard",
-      "doctor_checks": ["web", "dashboard-login"],
-      "keys": [
-        { "name": "WEB_AUTH_MODE", "secret": false, "purpose": "dashboard sign-in mode: token (default), google_desktop or oidc", "where": "docs/dashboard-exposure.md", "entered_in": "wizard" },
-        { "name": "WEB_GOOGLE_KEYS_PATH", "secret": false, "purpose": "keys file of the Gmail Desktop client, only for google_desktop sign-in", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
-        { "name": "WEB_GOOGLE_REDIRECT_SHAPE", "secret": false, "purpose": "callback or root address shape, only for google_desktop sign-in", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
-        { "name": "WEB_PORT","secret": false, "purpose": "local port of the dashboard", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
-        { "name": "WEB_TMUX_SESSION", "secret": false, "purpose": "tmux session the dashboard chat box would target", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
-        { "name": "WEB_TMUX_WINDOW", "secret": false, "purpose": "tmux window the dashboard chat box would target", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
-        { "name": "DASHBOARD_ALLOWED_EMAIL", "secret": false, "purpose": "the one Google account allowed to sign in", "where": "docs/dashboard-exposure.md", "entered_in": "wizard" },
-        { "name": "WEB_OIDC_ISSUER", "secret": false, "purpose": "OIDC issuer address", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
-        { "name": "WEB_OIDC_CLIENT_ID", "secret": false, "purpose": "Google OAuth client id of the dashboard", "where": "docs/dashboard-exposure.md", "entered_in": "wizard" },
-        { "name": "WEB_OIDC_CLIENT_SECRET", "secret": true, "purpose": "Google OAuth client secret of the dashboard", "where": "docs/dashboard-exposure.md", "entered_in": "wizard" },
-        { "name": "WEB_OIDC_REDIRECT_URI", "secret": false, "purpose": "sign-in callback address", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
-        { "name": "WEB_OIDC_REAUTH_PROMPT", "secret": false, "purpose": "how Google asks for re-authentication", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
-        { "name": "WEB_REAUTH_MAX_AGE_SEC", "secret": false, "purpose": "seconds a sign-in stays fresh", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
-        { "name": "WEB_AUTH_DB", "secret": false, "purpose": "path of the dashboard sign-in database", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
-        { "name": "WEB_BIND", "secret": false, "purpose": "listen address, loopback by default", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
-        { "name": "WEB_ALLOW_REMOTE_BIND", "secret": false, "purpose": "allows a non-loopback address on purpose", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
-        { "name": "WEB_ALLOWED_HOSTS", "secret": false, "purpose": "extra host names the dashboard accepts", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
-        { "name": "WEB_TRUST_PROXY", "secret": false, "purpose": "trust forwarded headers from a reverse proxy", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" }
+      "id": "resume",
+      "title": "Base resume",
+      "owner_command": "npm run setup -- --step resume",
+      "doctor_checks": [
+        "resume-valid"
       ],
-      "explain": "The dashboard is a local page for looking at the funnel. It listens on your own machine only, and sign-in is by default a one-time access token that is shown once and only its hash is stored. Google desktop sign-in or OIDC with one Google account you choose are options.",
+      "keys": [],
+      "explain": "The base resume is the one document every tailored resume starts from. It lives in user-data/ and you provide it through the wizard; this guide never reads it.",
       "fixes": {
-        "web": "Start the dashboard with npm run web in your own terminal, see docs/dashboard-exposure.md.",
-        "dashboard-login": "In token mode run npm run dashboard -- token in your own terminal to create the access token; in the other modes run the wizard dashboard step to set the allowed account; see docs/dashboard-exposure.md for login recovery."
+        "resume-valid": "Run the wizard resume step to provide or fix the base resume."
       }
     },
     {
-      "id": "access", "title": "Permission set and hooks", "owner_command": "npm run setup -- --step access",
-      "doctor_checks": ["permission-set", "project-hooks", "gitignore"],
-      "keys": [
-        { "name": "WEB_CHAT_ENABLED", "secret": false, "purpose": "turns on the dashboard chat box (keep off)", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" }
+      "id": "profile",
+      "title": "Profile, languages and job sources",
+      "owner_command": "npm run setup -- --step profile",
+      "doctor_checks": [
+        "profile-valid",
+        "languages-confirmed"
       ],
-      "explain": "A permission set decides what a Claude session may do. read_only sends nothing and is the safe default; keep it unless you have a reason. Changing the set is your own command, never the guide.",
+      "keys": [],
+      "explain": "The profile holds the answers used in applications and the languages you really speak. Languages stay a warning until you confirm them. This guide only explains the files; it never opens user-data/.",
       "fixes": {
-        "permission-set": "Check the current set with npm run permissions -- --status; keep read_only unless you decide otherwise in your own terminal.",
-        "project-hooks": "Restore .claude/settings.json from git; the safety hooks must be registered.",
-        "gitignore": "Restore .gitignore from git so secrets and user data stay untracked."
+        "profile-valid": "Run the wizard profile step and complete the questions.",
+        "languages-confirmed": "Review the languages in the wizard profile step and confirm them."
       }
     },
     {
-      "id": "limits", "title": "Limits, scheduler and automation", "owner_command": "npm run setup -- --step limits",
-      "doctor_checks": ["env-limits", "env-inline-comments", "scheduler-dry-run", "scheduler-stop-file", "auto-update-config", "backup-config"],
+      "id": "limits",
+      "title": "Limits, scheduler and automation",
+      "owner_command": "npm run setup -- --step limits",
+      "doctor_checks": [
+        "env-limits",
+        "env-inline-comments",
+        "scheduler-dry-run",
+        "scheduler-stop-file",
+        "auto-update-config",
+        "backup-config"
+      ],
       "keys": [
-        { "name": "MATCH_THRESHOLD", "secret": false, "purpose": "minimum score for a job to be pursued", "where": "src/setup/limitsCatalog.ts", "entered_in": "wizard" },
-        { "name": "SEND_LIMIT_PER_RUN", "secret": false, "purpose": "real emails per day", "where": "src/setup/limitsCatalog.ts", "entered_in": "wizard" },
-        { "name": "MAX_APPLIES_PER_DAY", "secret": false, "purpose": "Easy Apply submissions per day", "where": "src/setup/limitsCatalog.ts", "entered_in": "wizard" },
-        { "name": "MAX_LINKEDIN_SEARCHES_PER_DAY", "secret": false, "purpose": "LinkedIn people searches per day", "where": "src/setup/limitsCatalog.ts", "entered_in": "wizard" },
-        { "name": "FOLLOWUPS_AUTONOMOUS", "secret": false, "purpose": "whether email follow-ups are sent without approval", "where": "src/setup/limitsCatalog.ts", "entered_in": "owner edits .env" },
-        { "name": "FOLLOWUP_CHECK_MAX_AGE_MIN", "secret": false, "purpose": "maximum age of the reply check before a follow-up", "where": "src/setup/limitsCatalog.ts", "entered_in": "owner edits .env" },
-        { "name": "SCHEDULER_ENABLED", "secret": false, "purpose": "whether the scheduler daemon runs", "where": "src/setup/limitsCatalog.ts", "entered_in": "owner edits .env" },
-        { "name": "SCHEDULER_DRY_RUN", "secret": false, "purpose": "scheduler actions are only recorded unless exactly false", "where": "src/setup/limitsCatalog.ts", "entered_in": "owner edits .env" },
-        { "name": "SCHEDULER_TMUX_SESSION", "secret": false, "purpose": "tmux session of the wake windows", "where": "src/setup/limitsCatalog.ts", "entered_in": "owner edits .env" },
-        { "name": "RUN_MAX_TOOL_CALLS", "secret": false, "purpose": "tool call budget per wake", "where": "src/setup/limitsCatalog.ts", "entered_in": "owner edits .env" },
-        { "name": "RUN_MAX_WALL_SEC", "secret": false, "purpose": "time budget per wake", "where": "src/setup/limitsCatalog.ts", "entered_in": "owner edits .env" },
-        { "name": "RUN_MAX_TOKENS_APPROX", "secret": false, "purpose": "token budget per wake", "where": "src/setup/limitsCatalog.ts", "entered_in": "owner edits .env" },
-        { "name": "INBOX_EVERY_MIN", "secret": false, "purpose": "minutes between inbox sweeps", "where": "src/setup/limitsCatalog.ts", "entered_in": "owner edits .env" },
-        { "name": "NAUKRI_SEARCH_EVERY_HOURS", "secret": false, "purpose": "hours between Naukri searches", "where": "src/setup/limitsCatalog.ts", "entered_in": "owner edits .env" },
-        { "name": "USAGE_LIMIT_BACKOFF_MIN", "secret": false, "purpose": "pause after a subscription usage limit", "where": "src/setup/limitsCatalog.ts", "entered_in": "owner edits .env" },
-        { "name": "JOBBER_KILL", "secret": false, "purpose": "1 stops every wake", "where": "CLAUDE.md, Outreach safety layers", "entered_in": "owner edits .env" },
-        { "name": "JOBBER_NOTIFY_CMD", "secret": false, "purpose": "optional command run for owner notices", "where": "src/setup/limitsCatalog.ts", "entered_in": "owner edits .env" },
-        { "name": "AUTO_UPDATE", "secret": false, "purpose": "lets the scheduler run the update tick", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" },
-        { "name": "AUTO_UPDATE_REMOTE", "secret": false, "purpose": "git remote the update fetches from", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" },
-        { "name": "AUTO_UPDATE_BRANCH", "secret": false, "purpose": "branch the update fast-forwards to", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" },
-        { "name": "AUTO_UPDATE_TAG_PATTERN", "secret": false, "purpose": "optional tag glob for updates", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" },
-        { "name": "AUTO_UPDATE_REQUIRE_SIGNED", "secret": false, "purpose": "require signed commits for updates", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" },
-        { "name": "AUTO_UPDATE_SIGNERS_FILE", "secret": false, "purpose": "allowed signers file for update signatures", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" },
-        { "name": "AUTO_UPDATE_REVIEW_PATHS", "secret": false, "purpose": "paths that force a manual review", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" },
-        { "name": "BACKUP_ENABLED", "secret": false, "purpose": "lets the scheduler run the backup tick", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" },
-        { "name": "BACKUP_DIR", "secret": false, "purpose": "backup destination outside the project", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" },
-        { "name": "BACKUP_AGE_RECIPIENT", "secret": false, "purpose": "age public key backups are encrypted to", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" },
-        { "name": "BACKUP_INCLUDE_SECRETS", "secret": false, "purpose": "whether secrets/ is archived", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" },
-        { "name": "BACKUP_RCLONE_REMOTE", "secret": false, "purpose": "optional rclone mirror", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" },
-        { "name": "BACKUP_RETAIN_DAILY", "secret": false, "purpose": "daily archives kept", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" },
-        { "name": "BACKUP_RETAIN_WEEKLY", "secret": false, "purpose": "weekly archives kept", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" },
-        { "name": "BACKUP_RETAIN_MONTHLY", "secret": false, "purpose": "monthly archives kept", "where": "docs/backup-and-restore.md", "entered_in": "owner edits .env" }
+        {
+          "name": "MATCH_THRESHOLD",
+          "secret": false,
+          "purpose": "minimum score for a job to be pursued",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "wizard"
+        },
+        {
+          "name": "SEND_LIMIT_PER_RUN",
+          "secret": false,
+          "purpose": "real emails per day",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "wizard"
+        },
+        {
+          "name": "MAX_APPLIES_PER_DAY",
+          "secret": false,
+          "purpose": "Easy Apply submissions per day",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "wizard"
+        },
+        {
+          "name": "MAX_LINKEDIN_SEARCHES_PER_DAY",
+          "secret": false,
+          "purpose": "LinkedIn people searches per day",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "wizard"
+        },
+        {
+          "name": "FOLLOWUPS_AUTONOMOUS",
+          "secret": false,
+          "purpose": "whether email follow-ups are sent without approval",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "FOLLOWUP_CHECK_MAX_AGE_MIN",
+          "secret": false,
+          "purpose": "maximum age of the reply check before a follow-up",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "SCHEDULER_ENABLED",
+          "secret": false,
+          "purpose": "whether the scheduler daemon runs",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "SCHEDULER_DRY_RUN",
+          "secret": false,
+          "purpose": "scheduler actions are only recorded unless exactly false",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "SCHEDULER_TMUX_SESSION",
+          "secret": false,
+          "purpose": "tmux session of the wake windows",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "RUN_MAX_TOOL_CALLS",
+          "secret": false,
+          "purpose": "tool call budget per wake",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "RUN_MAX_WALL_SEC",
+          "secret": false,
+          "purpose": "time budget per wake",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "RUN_MAX_TOKENS_APPROX",
+          "secret": false,
+          "purpose": "token budget per wake",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "INBOX_EVERY_MIN",
+          "secret": false,
+          "purpose": "minutes between inbox sweeps",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "NAUKRI_SEARCH_EVERY_HOURS",
+          "secret": false,
+          "purpose": "hours between Naukri searches",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "USAGE_LIMIT_BACKOFF_MIN",
+          "secret": false,
+          "purpose": "pause after a subscription usage limit",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "JOBBER_KILL",
+          "secret": false,
+          "purpose": "1 stops every wake",
+          "where": "CLAUDE.md, Outreach safety layers",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "JOBBER_NOTIFY_CMD",
+          "secret": false,
+          "purpose": "optional command run for owner notices",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "AUTO_UPDATE",
+          "secret": false,
+          "purpose": "lets the scheduler run the update tick",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "AUTO_UPDATE_REMOTE",
+          "secret": false,
+          "purpose": "git remote the update fetches from",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "AUTO_UPDATE_BRANCH",
+          "secret": false,
+          "purpose": "branch the update fast-forwards to",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "AUTO_UPDATE_TAG_PATTERN",
+          "secret": false,
+          "purpose": "optional tag glob for updates",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "AUTO_UPDATE_REQUIRE_SIGNED",
+          "secret": false,
+          "purpose": "require signed commits for updates",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "AUTO_UPDATE_SIGNERS_FILE",
+          "secret": false,
+          "purpose": "allowed signers file for update signatures",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "AUTO_UPDATE_REVIEW_PATHS",
+          "secret": false,
+          "purpose": "paths that force a manual review",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "BACKUP_ENABLED",
+          "secret": false,
+          "purpose": "lets the scheduler run the backup tick",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "BACKUP_DIR",
+          "secret": false,
+          "purpose": "backup destination outside the project",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "BACKUP_AGE_RECIPIENT",
+          "secret": false,
+          "purpose": "age public key backups are encrypted to",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "BACKUP_INCLUDE_SECRETS",
+          "secret": false,
+          "purpose": "whether secrets/ is archived",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "BACKUP_RCLONE_REMOTE",
+          "secret": false,
+          "purpose": "optional rclone mirror",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "BACKUP_RETAIN_DAILY",
+          "secret": false,
+          "purpose": "daily archives kept",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "BACKUP_RETAIN_WEEKLY",
+          "secret": false,
+          "purpose": "weekly archives kept",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "BACKUP_RETAIN_MONTHLY",
+          "secret": false,
+          "purpose": "monthly archives kept",
+          "where": "docs/backup-and-restore.md",
+          "entered_in": "owner edits .env"
+        }
       ],
       "explain": "Limits keep sending slow and safe. Dry run is on by default and stays on until you turn it off yourself. Show today's numbers with npm run status -- limits; the catalog in src/setup/limitsCatalog.ts is the source, so no numbers are invented here.",
       "fixes": {
@@ -176,34 +518,209 @@
       }
     },
     {
-      "id": "resume", "title": "Base resume", "owner_command": "npm run setup -- --step resume",
-      "doctor_checks": ["resume-valid"], "keys": [],
-      "explain": "The base resume is the one document every tailored resume starts from. It lives in user-data/ and you provide it through the wizard; this guide never reads it.",
-      "fixes": { "resume-valid": "Run the wizard resume step to provide or fix the base resume." }
-    },
-    {
-      "id": "profile", "title": "Profile, languages and job sources", "owner_command": "npm run setup -- --step profile",
-      "doctor_checks": ["profile-valid", "languages-confirmed"],
-      "keys": [
-        { "name": "ADZUNA_APP_ID", "secret": false, "purpose": "Adzuna developer app id", "where": "CLAUDE.md, Preferences", "entered_in": "owner edits .env" },
-        { "name": "ADZUNA_APP_KEY", "secret": true, "purpose": "Adzuna developer key", "where": "CLAUDE.md, Preferences", "entered_in": "owner edits .env" },
-        { "name": "SERPER_API_KEY", "secret": true, "purpose": "Serper search key for contact lookup", "where": "CLAUDE.md, Preferences", "entered_in": "owner edits .env" },
-        { "name": "HUNTER_API_KEY", "secret": true, "purpose": "Hunter key, last-resort email lookup", "where": "CLAUDE.md, Preferences", "entered_in": "owner edits .env" },
-        { "name": "HUNTER_ENABLED", "secret": false, "purpose": "whether Hunter lookups are allowed", "where": "CLAUDE.md, Preferences", "entered_in": "owner edits .env" },
-        { "name": "HUNTER_MONTHLY_CAP", "secret": false, "purpose": "Hunter credits allowed per month", "where": "CLAUDE.md, Preferences", "entered_in": "owner edits .env" }
+      "id": "access",
+      "title": "Permission set and hooks",
+      "owner_command": "npm run setup -- --step access",
+      "doctor_checks": [
+        "permission-set",
+        "project-hooks",
+        "gitignore"
       ],
-      "explain": "The profile holds the answers used in applications and the languages you really speak. Languages stay a warning until you confirm them. This guide only explains the files; it never opens user-data/.",
+      "keys": [
+        {
+          "name": "WEB_CHAT_ENABLED",
+          "secret": false,
+          "purpose": "turns on the dashboard chat box (keep off)",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        }
+      ],
+      "explain": "A permission set decides what a Claude session may do. read_only sends nothing and is the safe default; keep it unless you have a reason. Changing the set is your own command, never the guide.",
       "fixes": {
-        "profile-valid": "Run the wizard profile step and complete the questions.",
-        "languages-confirmed": "Review the languages in the wizard profile step and confirm them."
+        "permission-set": "Check the current set with npm run permissions -- --status; keep read_only unless you decide otherwise in your own terminal.",
+        "project-hooks": "Restore .claude/settings.json from git; the safety hooks must be registered.",
+        "gitignore": "Restore .gitignore from git so secrets and user data stay untracked."
       }
     },
     {
-      "id": "final", "title": "Final check and dry run", "owner_command": "npm run doctor",
-      "doctor_checks": [], "keys": [],
+      "id": "classifier",
+      "title": "Prompt-injection classifier model",
+      "owner_command": "npm run setup -- --step classifier",
+      "doctor_checks": [
+        "classifier_model",
+        "classifier_smoke",
+        "classifier_wired"
+      ],
+      "keys": [
+        {
+          "name": "SCHEDULER_NO_CLASSIFIER",
+          "secret": false,
+          "purpose": "skips the classifier for dry runs only",
+          "where": "docs/classifier-models.md",
+          "entered_in": "owner edits .env"
+        }
+      ],
+      "explain": "Text from LinkedIn and Naukri is screened by a local model before the agent sees it. The model is downloaded once, pinned and fitted. Without it, live reads and sends are refused by design.",
+      "fixes": {
+        "classifier_model": "Fetch and pin the model with the wizard classifier step, see docs/classifier-models.md.",
+        "classifier_smoke": "Run npm run models -- verify, then repeat the wizard classifier step if it fails.",
+        "classifier_wired": "Restore the surfaces list in the code from git; this is a code problem, not a setting."
+      }
+    },
+    {
+      "id": "dashboard",
+      "title": "Dashboard login",
+      "owner_command": "npm run setup -- --step dashboard",
+      "doctor_checks": [
+        "web",
+        "dashboard-login"
+      ],
+      "keys": [
+        {
+          "name": "WEB_AUTH_MODE",
+          "secret": false,
+          "purpose": "dashboard sign-in mode: token (default), google_desktop or oidc",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "wizard"
+        },
+        {
+          "name": "WEB_GOOGLE_KEYS_PATH",
+          "secret": false,
+          "purpose": "keys file of the Gmail Desktop client, only for google_desktop sign-in",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "WEB_GOOGLE_REDIRECT_SHAPE",
+          "secret": false,
+          "purpose": "callback or root address shape, only for google_desktop sign-in",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "WEB_PORT",
+          "secret": false,
+          "purpose": "local port of the dashboard",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "WEB_TMUX_SESSION",
+          "secret": false,
+          "purpose": "tmux session the dashboard chat box would target",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "WEB_TMUX_WINDOW",
+          "secret": false,
+          "purpose": "tmux window the dashboard chat box would target",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "DASHBOARD_ALLOWED_EMAIL",
+          "secret": false,
+          "purpose": "the one Google account allowed to sign in",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "wizard"
+        },
+        {
+          "name": "WEB_OIDC_ISSUER",
+          "secret": false,
+          "purpose": "OIDC issuer address",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "WEB_OIDC_CLIENT_ID",
+          "secret": false,
+          "purpose": "Google OAuth client id of the dashboard",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "wizard"
+        },
+        {
+          "name": "WEB_OIDC_CLIENT_SECRET",
+          "secret": true,
+          "purpose": "Google OAuth client secret of the dashboard",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "wizard"
+        },
+        {
+          "name": "WEB_OIDC_REDIRECT_URI",
+          "secret": false,
+          "purpose": "sign-in callback address",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "WEB_OIDC_REAUTH_PROMPT",
+          "secret": false,
+          "purpose": "how Google asks for re-authentication",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "WEB_REAUTH_MAX_AGE_SEC",
+          "secret": false,
+          "purpose": "seconds a sign-in stays fresh",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "WEB_AUTH_DB",
+          "secret": false,
+          "purpose": "path of the dashboard sign-in database",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "WEB_BIND",
+          "secret": false,
+          "purpose": "listen address, loopback by default",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "WEB_ALLOW_REMOTE_BIND",
+          "secret": false,
+          "purpose": "allows a non-loopback address on purpose",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "WEB_ALLOWED_HOSTS",
+          "secret": false,
+          "purpose": "extra host names the dashboard accepts",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "WEB_TRUST_PROXY",
+          "secret": false,
+          "purpose": "trust forwarded headers from a reverse proxy",
+          "where": "docs/dashboard-exposure.md",
+          "entered_in": "owner edits .env"
+        }
+      ],
+      "explain": "The dashboard is a local page for looking at the funnel. It listens on your own machine only, and sign-in is by default a one-time access token that is shown once and only its hash is stored. Google desktop sign-in or OIDC with one Google account you choose are options.",
+      "fixes": {
+        "web": "Start the dashboard with npm run web in your own terminal, see docs/dashboard-exposure.md.",
+        "dashboard-login": "In token mode run npm run dashboard -- token in your own terminal to create the access token; in the other modes run the wizard dashboard step to set the allowed account; see docs/dashboard-exposure.md for login recovery."
+      },
+      "skip": "Skippable (RECOMMENDED). If skipped: no status page in a browser; the limits, working and health commands and npm run status still work. Doctor shows web and dashboard-login as skipped."
+    },
+    {
+      "id": "final",
+      "title": "Final check and dry run",
+      "owner_command": "npm run doctor",
+      "doctor_checks": [],
+      "keys": [],
       "explain": "The last stage reruns the doctor and then a dry run that reports PASS or FAIL per stage. Nothing is sent in a dry run. Going live is your own decision, made in your own terminal.",
       "fixes": {}
     }
   ],
-  "ignore_keys": ["ANTHROPIC_DEFAULT_OPUS_MODEL"]
+  "ignore_keys": [
+    "ANTHROPIC_DEFAULT_OPUS_MODEL"
+  ]
 }

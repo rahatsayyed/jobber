@@ -22,6 +22,18 @@ export const COACH_TEXT: Record<string, string[]> = {
     'The Google OAuth client JSON stays on this machine, in the secrets folder, and is never sent anywhere.',
     'The token file is created by the Google consent screen later in this step; you do not make it by hand.',
   ],
+  'apikeys.intro': [
+    'These keys are optional extras. Each one can be skipped and added later with npm run setup -- --step apikeys.',
+  ],
+  'apikeys.adzuna': [
+    'Adzuna is a job-search service. Sign up for a free developer account to get an app ID and an app key.',
+  ],
+  'apikeys.serper': [
+    'Serper lets the contact finder search Google for company contact pages. Each check uses one search credit.',
+  ],
+  'apikeys.hunter': [
+    'Hunter looks up emails as a last resort and spends monthly credits, so it stays off unless you turn it on.',
+  ],
   'dashboard.token': [
     'The dashboard token is a one-time sign-in link for the status page in your browser.',
     'The link is printed once, by a separate command, straight to your terminal; this wizard never sees it.',

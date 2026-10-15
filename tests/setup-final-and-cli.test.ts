@@ -165,7 +165,7 @@ describe('finalStep', () => {
 describe('ALL_STEPS and runner wiring', () => {
   it('has the documented order', () => {
     expect(ALL_STEPS.map((s) => s.id)).toEqual([
-      'prereqs', 'claude', 'telegram', 'gmail', 'sessions', 'resume', 'profile', 'limits', 'access', 'classifier', 'dashboard', 'final',
+      'prereqs', 'claude', 'telegram', 'gmail', 'apikeys', 'sessions', 'resume', 'profile', 'limits', 'access', 'classifier', 'dashboard', 'final',
     ]);
   });
 

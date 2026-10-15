@@ -11,6 +11,7 @@ import { updateBackupChecks } from '../src/platform/updateBackupChecks.js';
 import { layoutChecks } from '../src/platform/checksLayout.js';
 import { bootstrapChecks } from '../src/platform/checksBootstrap.js';
 import { setupGuideChecks, skillAllowedTools, expectedSkillTools } from '../src/platform/checksGuide.js';
+import { apiKeysChecks } from '../src/platform/checksApiKeys.js';
 import { linkedinBrowserChecks } from '../src/linkedin/chromeCheck.js';
 import { formatJson, formatReport, runChecks, type Check, type DoctorContext } from '../src/platform/doctor.js';
 import { ALL_STEPS } from '../src/setup/steps/index.js';
@@ -27,6 +28,7 @@ const ALL_CHECKS: Check[] = [
   ...updateBackupChecks(),
   ...bootstrapChecks(),
   ...setupGuideChecks(),
+  ...apiKeysChecks,
 ];
 
 interface Guide {
@@ -46,12 +48,25 @@ const guide = JSON.parse(readFileSync(join(ROOT, 'config/setup-guide.json'), 'ut
 
 const SECRET_NAME = /(^|_)(KEY|SECRET|TOKEN|PASS|PASSWORD|COOKIE)(_|$)/;
 const SECRET_ALLOW = new Set<string>([]);
-const ORDER = ['overview', 'prereqs', 'claude', 'gmail', 'telegram', 'classifier', 'sessions', 'dashboard', 'access', 'limits', 'resume', 'profile', 'final'];
+const ORDER = ['overview', 'prereqs', 'claude', 'telegram', 'gmail', 'apikeys', 'sessions', 'resume', 'profile', 'limits', 'access', 'classifier', 'dashboard', 'final'];
 
 describe('config/setup-guide.json', () => {
   it('has version 1 and the required step order', () => {
     expect(guide.version).toBe(1);
     expect(guide.steps.map((s) => s.id)).toEqual(ORDER);
+  });
+
+  it('step order equals ALL_STEPS order and apikeys owns the key entries', () => {
+    expect(guide.steps.slice(1).map((s) => s.id)).toEqual(ALL_STEPS.map((s) => s.id));
+    const ak = guide.steps.find((s) => s.id === 'apikeys');
+    expect(ak?.keys.map((k) => k.name)).toEqual(
+      expect.arrayContaining(['ADZUNA_APP_ID', 'ADZUNA_APP_KEY', 'SERPER_API_KEY', 'HUNTER_API_KEY', 'HUNTER_ENABLED']),
+    );
+    expect(guide.steps.find((s) => s.id === 'profile')?.keys).toEqual([]);
+    for (const id of ['telegram', 'dashboard', 'gmail', 'apikeys']) {
+      const s = guide.steps.find((x) => x.id === id) as unknown as { skip?: string };
+      expect(typeof s.skip, id).toBe('string');
+    }
   });
 
   it('every step id is a wizard step or overview', () => {

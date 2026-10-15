@@ -2,6 +2,7 @@
 // The wizard's step order.
 import type { SetupStep } from '../runner.js';
 import { accessStep } from './access.js';
+import { apikeysStep } from './apikeys.js';
 import { claudeStep } from './claude.js';
 import { classifierStep } from './classifier.js';
 import { dashboardStep } from './dashboard.js';
@@ -19,6 +20,7 @@ export const ALL_STEPS: SetupStep[] = [
   claudeStep,
   telegramStep,
   gmailStep,
+  apikeysStep,
   sessionsStep,
   resumeStep,
   profileStep,
