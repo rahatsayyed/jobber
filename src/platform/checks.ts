@@ -44,6 +44,16 @@ function readPin(ctx: DoctorContext): Pin {
   return { ok: true, version: pin.version, installed: typeof pin.installed === 'boolean' ? pin.installed : undefined };
 }
 
+/** argv for installing the pinned ccgram; the doctor hint and the bootstrap action share it. */
+export function ccgramInstallArgv(pin: { version: string }): string[] {
+  return ['uv', 'tool', 'install', '--python', '3.14', `ccgram==${pin.version}`];
+}
+
+/** The printed doctor hint for a missing or mismatched ccgram. */
+export function ccgramInstallHint(pin: { version: string }): string {
+  return `uv tool install --python 3.14 "ccgram==${pin.version}"`;
+}
+
 function lastToken(text: string): string {
   const parts = (text.split('\n')[0] ?? '').trim().split(/\s+/);
   return parts[parts.length - 1] ?? '';
@@ -327,7 +337,7 @@ export const ccgramChecks: Check[] = [
     async run(ctx) {
       const pin = readPin(ctx);
       if (!pin.ok) return fail(pin.problem, 'restore config/ccgram.pin.json from git');
-      const hint = `uv tool install --python 3.14 "ccgram==${pin.version}"`;
+      const hint = ccgramInstallHint(pin);
       const r = await ctx.run('ccgram', ['--version']);
       if (r.code !== 0) return fail('ccgram is not installed', hint);
       const installed = lastToken(r.stdout);
