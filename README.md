@@ -196,4 +196,6 @@ Capture the LinkedIn and Naukri sessions on a machine with a display, or run the
 - [LinkedIn sessions setup](docs/linkedin-sessions-setup.md)
 - [Naukri session setup](docs/naukri-session-setup.md)
 - [Classifier models](docs/classifier-models.md)
+- [Telegram bot setup](docs/telegram-bot-setup.md)
 - [Telegram slash commands](docs/telegram-slash-commands.md)
+- [Telegram bot branding](docs/telegram-branding.md)
