@@ -23,26 +23,95 @@
         "project archived upstream, no fixes expected",
         "vendor metrics are on the vendor's own prompt mix, not on job postings"
       ],
-      "languages": ["en"],
-      "files": [
-        { "remote": "onnx/model.onnx", "local": "model.onnx", "role": "model", "size": 738563188, "sha256": "f0ea7f239f765aedbde7c9e163a7cb38a79c5b8853d3f76db5152172047b228c", "git_blob_sha1": "2d9532d6b214243ff14dfc0e2664e0d2667d75b5" },
-        { "remote": "onnx/tokenizer.json", "local": "tokenizer.json", "role": "tokenizer", "size": 8648886, "sha256": null, "git_blob_sha1": "00c50710453478105265c838bfb3bad69b410891" },
-        { "remote": "onnx/spm.model", "local": "spm.model", "role": "extra", "size": 2464616, "sha256": "c679fbf93643d19aab7ee10c0b99e460bdbc02fedf34b92b05af343b4af586fd", "git_blob_sha1": "b1b95e5b0fef33623979511f423eaeee465c46f0" },
-        { "remote": "onnx/config.json", "local": "config.json", "role": "config", "size": 1014, "sha256": null, "git_blob_sha1": "3366690a064655366dd7dd57f9b3cf1e8ba8e78f" },
-        { "remote": "onnx/tokenizer_config.json", "local": "tokenizer_config.json", "role": "extra", "size": 1392, "sha256": null, "git_blob_sha1": "7a76cf2e0d2a72e3baf09096c657dc5d977b04ec" },
-        { "remote": "onnx/special_tokens_map.json", "local": "special_tokens_map.json", "role": "extra", "size": 970, "sha256": null, "git_blob_sha1": "83fb22de184abab1b193b1f6001e3015e865e50b" },
-        { "remote": "onnx/added_tokens.json", "local": "added_tokens.json", "role": "extra", "size": 23, "sha256": null, "git_blob_sha1": "8ee2b3623dc526b123cde0aaa401755b82299af2" },
-        { "remote": "LICENSE", "local": "LICENSE", "role": "licence", "size": 10172, "sha256": null, "git_blob_sha1": "2bb9ad240fa04c8cf706a4901c4807878e90c2dc" }
+      "languages": [
+        "en"
       ],
-      "labels": { "0": "SAFE", "1": "INJECTION" },
+      "files": [
+        {
+          "remote": "onnx/model.onnx",
+          "local": "model.onnx",
+          "role": "model",
+          "size": 738563188,
+          "sha256": "f0ea7f239f765aedbde7c9e163a7cb38a79c5b8853d3f76db5152172047b228c",
+          "git_blob_sha1": "2d9532d6b214243ff14dfc0e2664e0d2667d75b5"
+        },
+        {
+          "remote": "onnx/tokenizer.json",
+          "local": "tokenizer.json",
+          "role": "tokenizer",
+          "size": 8648886,
+          "sha256": "752fe5f0d5678ad563e1bd2ecc1ddf7a3ba7e2024d0ac1dba1a72975e26dff2f",
+          "git_blob_sha1": "00c50710453478105265c838bfb3bad69b410891"
+        },
+        {
+          "remote": "onnx/spm.model",
+          "local": "spm.model",
+          "role": "extra",
+          "size": 2464616,
+          "sha256": "c679fbf93643d19aab7ee10c0b99e460bdbc02fedf34b92b05af343b4af586fd",
+          "git_blob_sha1": "b1b95e5b0fef33623979511f423eaeee465c46f0"
+        },
+        {
+          "remote": "onnx/config.json",
+          "local": "config.json",
+          "role": "config",
+          "size": 1014,
+          "sha256": "3093743035223c46b1497a72e939e56fa0a50afbd7bafbf7eb8aad060b8d23f8",
+          "git_blob_sha1": "3366690a064655366dd7dd57f9b3cf1e8ba8e78f"
+        },
+        {
+          "remote": "onnx/tokenizer_config.json",
+          "local": "tokenizer_config.json",
+          "role": "extra",
+          "size": 1392,
+          "sha256": "77d3dd1a9c30397a06545251ed9274bd92e4a85feb98497eeed50c920f962274",
+          "git_blob_sha1": "7a76cf2e0d2a72e3baf09096c657dc5d977b04ec"
+        },
+        {
+          "remote": "onnx/special_tokens_map.json",
+          "local": "special_tokens_map.json",
+          "role": "extra",
+          "size": 970,
+          "sha256": "b2f1b2f15f29a6b6d9d6ea4eca1675d2c231a71477f151d48f79cc83a625ba21",
+          "git_blob_sha1": "83fb22de184abab1b193b1f6001e3015e865e50b"
+        },
+        {
+          "remote": "onnx/added_tokens.json",
+          "local": "added_tokens.json",
+          "role": "extra",
+          "size": 23,
+          "sha256": "dc046d04c9b0ada7ae6f1dc89c465801799acdf0c9a6aab8c15a1b2d5ca4e91f",
+          "git_blob_sha1": "8ee2b3623dc526b123cde0aaa401755b82299af2"
+        },
+        {
+          "remote": "LICENSE",
+          "local": "LICENSE",
+          "role": "licence",
+          "size": 10172,
+          "sha256": "59899c6091b540582ed617e8eeaac4919dc985ccfc35459ee9752b699be5205b",
+          "git_blob_sha1": "2bb9ad240fa04c8cf706a4901c4807878e90c2dc"
+        }
+      ],
+      "labels": {
+        "0": "SAFE",
+        "1": "INJECTION"
+      },
       "malicious_label": "INJECTION",
       "max_tokens": 512,
       "stride": 64,
       "max_chunks": 16,
-      "special_tokens": { "cls": "[CLS]", "sep": "[SEP]" },
-      "inputs": ["input_ids", "attention_mask"],
+      "special_tokens": {
+        "cls": "[CLS]",
+        "sep": "[SEP]"
+      },
+      "inputs": [
+        "input_ids",
+        "attention_mask"
+      ],
       "output": "logits",
-      "fit": { "threshold": null }
+      "fit": {
+        "threshold": null
+      }
     },
     "llama-prompt-guard-2-22m": {
       "id": "llama-prompt-guard-2-22m",
@@ -70,21 +139,62 @@
         "gated, manual approval",
         "multilingual quality lower for the 22M model than the 86M"
       ],
-      "languages": ["en", "fr", "de", "hi", "it", "pt", "es", "th"],
-      "files": [
-        { "remote": "model.onnx", "local": "model.onnx", "role": "model", "size": 0, "sha256": null, "git_blob_sha1": null },
-        { "remote": "tokenizer.json", "local": "tokenizer.json", "role": "tokenizer", "size": 0, "sha256": null, "git_blob_sha1": null },
-        { "remote": "config.json", "local": "config.json", "role": "config", "size": 0, "sha256": null, "git_blob_sha1": null }
+      "languages": [
+        "en",
+        "fr",
+        "de",
+        "hi",
+        "it",
+        "pt",
+        "es",
+        "th"
       ],
-      "labels": { "0": "benign", "1": "malicious" },
+      "files": [
+        {
+          "remote": "model.onnx",
+          "local": "model.onnx",
+          "role": "model",
+          "size": 0,
+          "sha256": null,
+          "git_blob_sha1": null
+        },
+        {
+          "remote": "tokenizer.json",
+          "local": "tokenizer.json",
+          "role": "tokenizer",
+          "size": 0,
+          "sha256": null,
+          "git_blob_sha1": null
+        },
+        {
+          "remote": "config.json",
+          "local": "config.json",
+          "role": "config",
+          "size": 0,
+          "sha256": null,
+          "git_blob_sha1": null
+        }
+      ],
+      "labels": {
+        "0": "benign",
+        "1": "malicious"
+      },
       "malicious_label": "malicious",
       "max_tokens": 512,
       "stride": 64,
       "max_chunks": 16,
-      "special_tokens": { "cls": "[CLS]", "sep": "[SEP]" },
-      "inputs": ["input_ids", "attention_mask"],
+      "special_tokens": {
+        "cls": "[CLS]",
+        "sep": "[SEP]"
+      },
+      "inputs": [
+        "input_ids",
+        "attention_mask"
+      ],
       "output": "logits",
-      "fit": { "threshold": null }
+      "fit": {
+        "threshold": null
+      }
     }
   }
 }
