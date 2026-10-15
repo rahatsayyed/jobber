@@ -85,7 +85,7 @@ describe('dashboardStep', () => {
   const TOKEN_RE = /#token=|[A-Za-z0-9_-]{43}/;
 
   it('token path: one confirm, no ask, spawns the token CLI, no token anywhere', async () => {
-    const { ctx, sio, fs, spawns } = makeCtx([{ confirm: true }], WITH_DASH);
+    const { ctx, sio, fs, spawns } = makeCtx([{ choose: 'now' }, { confirm: true }], WITH_DASH);
     expect(await dashboardStep.run(ctx)).toBe('done');
     expect(fs.files.get('proj/.env')).toMatch(/^WEB_AUTH_MODE=token$/m);
     expect(spawns).toEqual([{ cmd: 'npx', args: ['tsx', 'scripts/dashboard.ts', 'token'], opts: undefined }]);
@@ -105,14 +105,14 @@ describe('dashboardStep', () => {
   });
 
   it('declining token and Google spawns nothing', async () => {
-    const { ctx, spawns } = makeCtx([{ confirm: false }, { confirm: false }], WITH_DASH);
+    const { ctx, spawns } = makeCtx([{ choose: 'now' }, { confirm: false }, { confirm: false }], WITH_DASH);
     expect(await dashboardStep.run(ctx)).toBe('skipped');
     expect(spawns).toHaveLength(0);
   });
 
   it('google path: asks only for the email', async () => {
     const { ctx, sio, fs, spawns } = makeCtx(
-      [{ confirm: false }, { confirm: true }, { ask: 'Owner@Example.com' }],
+      [{ choose: 'now' }, { confirm: false }, { confirm: true }, { ask: 'Owner@Example.com' }],
       WITH_DASH,
     );
     expect(await dashboardStep.run(ctx)).toBe('done');
@@ -127,7 +127,7 @@ describe('dashboardStep', () => {
   });
 
   it('generic token CLI failure: neutral message, skipped so the step resumes', async () => {
-    const { ctx, sio } = makeCtx([{ confirm: true }], WITH_DASH);
+    const { ctx, sio } = makeCtx([{ choose: 'now' }, { confirm: true }], WITH_DASH);
     ctx.spawnInteractive = async () => 1;
     expect(await dashboardStep.run(ctx)).toBe('skipped');
     const out = sio.transcript.join('\n');
@@ -136,7 +136,7 @@ describe('dashboardStep', () => {
   });
 
   it('rerun with a token already set (exit 3): reports rotate and is done', async () => {
-    const { ctx, sio } = makeCtx([{ confirm: true }], WITH_DASH);
+    const { ctx, sio } = makeCtx([{ choose: 'now' }, { confirm: true }], WITH_DASH);
     ctx.spawnInteractive = async () => 3;
     expect(await dashboardStep.run(ctx)).toBe('done');
     expect(sio.transcript.join('\n')).toContain('token already set, use rotate');

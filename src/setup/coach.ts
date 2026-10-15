@@ -18,6 +18,15 @@ export const COACH_TEXT: Record<string, string[]> = {
   'generic.skip_note': [
     'Skipping is safe: it only records the choice. You can run this step again any time.',
   ],
+  'gmail.where': [
+    'The Google OAuth client JSON stays on this machine, in the secrets folder, and is never sent anywhere.',
+    'The token file is created by the Google consent screen later in this step; you do not make it by hand.',
+  ],
+  'dashboard.token': [
+    'The dashboard token is a one-time sign-in link for the status page in your browser.',
+    'The link is printed once, by a separate command, straight to your terminal; this wizard never sees it.',
+    'Nothing is stored except a hash of the token. Lost it? Rotate it with npm run dashboard -- rotate.',
+  ],
   'telegram.intro': [
     'Telegram is how you control Jobber from your phone: start a hunt, ask for status, get alerts.',
     'The bot token is a password. Anyone who has it can control your bot, so never share it.',

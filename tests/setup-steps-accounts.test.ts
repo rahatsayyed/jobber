@@ -11,6 +11,8 @@ const SECRET_RE = /secrets\/.*-state\.json$|gmail-credentials\.json$|gcp-oauth\.
 const GOOD_STATE = JSON.stringify({ cookies: [{ name: 'li_at', value: 'x', expires: -1 }] });
 const NAUKRI_STATE = JSON.stringify({ cookies: [{ name: 'nauk_at', value: 'x', expires: -1 }] });
 
+const PRE: ScriptItem[] = [{ choose: 'now' }, { confirm: true }, { confirm: true }, { confirm: true }];
+
 interface Spawn {
   cmd: string;
   args: string[];
@@ -77,8 +79,8 @@ function setup(script: ScriptItem[], files: Record<string, string> = {}, envFile
 describe('gmailStep', () => {
   it('spawns the auth helper with exact argv and only the two GMAIL env keys', async () => {
     const t = setup(
-      [{ pause: true }, { confirm: true }],
-      { 'proj/secrets/gcp-oauth.keys.json': '{}', 'proj/secrets/gmail-credentials.json': '{}' },
+      [...PRE, { confirm: true }],
+      { 'proj/secrets/gcp-oauth.keys.json': '{}', 'proj/secrets/gmail-credentials.json': '{"refresh_token":"r"}' },
       'TELEGRAM_BOT_TOKEN=1234567890:AAExampleTokenValue_abcdef\n',
     );
     expect(await gmailStep.run(t.ctx)).toBe('done');
@@ -106,7 +108,7 @@ describe('gmailStep', () => {
 
   it('honours GMAIL_* paths from .env', async () => {
     const t = setup(
-      [{ pause: true }, { confirm: true }],
+      [...PRE, { confirm: true }],
       {},
       'GMAIL_OAUTH_PATH=/abs/keys.json   # c\nGMAIL_CREDENTIALS_PATH=./other/creds.json\n',
     );
@@ -118,7 +120,7 @@ describe('gmailStep', () => {
   });
 
   it('does not spawn when the user declines the consent screen', async () => {
-    const t = setup([{ pause: true }, { confirm: false }]);
+    const t = setup([...PRE, { confirm: false }]);
     expect(await gmailStep.run(t.ctx)).toBe('done');
     expect(t.spawns).toEqual([]);
   });

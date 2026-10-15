@@ -5,6 +5,8 @@
 import path from 'node:path';
 import { envFileValue, updateEnvText, writeEnvFile } from '../envWriter.js';
 import type { SetupContext, SetupStep } from '../runner.js';
+import { offerSkip, say } from '../coach.js';
+import { SKIP_SPECS } from '../skips.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const CALLBACK_PATH = '/auth/callback';
@@ -40,6 +42,35 @@ export function redirectUriProblem(raw: string): string | null {
   return bad;
 }
 
+function localSettings(ctx: SetupContext): void {
+  const { io, root } = ctx;
+  writeKeys(
+    ctx,
+    { WEB_PORT: '8787', WEB_TMUX_SESSION: 'ccgram', WEB_TMUX_WINDOW: 'JobApplier' },
+    true,
+  );
+  io.say('Local web settings are in .env (WEB_PORT, WEB_TMUX_SESSION, WEB_TMUX_WINDOW).');
+
+  const windowsPath = path.join(root, 'config', 'manager-windows.json');
+  if (ctx.fs.exists(windowsPath)) {
+    try {
+      const raw: unknown = JSON.parse(ctx.fs.read(windowsPath));
+      const list = Array.isArray(raw)
+        ? raw
+        : typeof raw === 'object' && raw !== null && Array.isArray((raw as { windows?: unknown }).windows)
+          ? (raw as { windows: unknown[] }).windows
+          : [];
+      const names = list
+        .map((w) => (typeof w === 'string' ? w : (w as { name?: unknown } | null)?.name))
+        .filter((n): n is string => typeof n === 'string');
+      if (names.length > 0) io.say(`tmux windows the manager knows: ${names.join(', ')}`);
+    } catch {
+      /* optional hint only */
+    }
+  }
+  io.say('Start the tmux layout yourself with: bash scripts/ccgram/start.sh');
+}
+
 export const dashboardStep: SetupStep = {
   id: 'dashboard',
   title: 'Dashboard hand-off',
@@ -48,34 +79,8 @@ export const dashboardStep: SetupStep = {
   async run(ctx) {
     const { io, root } = ctx;
 
-    // Local settings first.
-    writeKeys(
-      ctx,
-      { WEB_PORT: '8787', WEB_TMUX_SESSION: 'ccgram', WEB_TMUX_WINDOW: 'JobApplier' },
-      true,
-    );
-    io.say('Local web settings are in .env (WEB_PORT, WEB_TMUX_SESSION, WEB_TMUX_WINDOW).');
-
-    const windowsPath = path.join(root, 'config', 'manager-windows.json');
-    if (ctx.fs.exists(windowsPath)) {
-      try {
-        const raw: unknown = JSON.parse(ctx.fs.read(windowsPath));
-        const list = Array.isArray(raw)
-          ? raw
-          : typeof raw === 'object' && raw !== null && Array.isArray((raw as { windows?: unknown }).windows)
-            ? (raw as { windows: unknown[] }).windows
-            : [];
-        const names = list
-          .map((w) => (typeof w === 'string' ? w : (w as { name?: unknown } | null)?.name))
-          .filter((n): n is string => typeof n === 'string');
-        if (names.length > 0) io.say(`tmux windows the manager knows: ${names.join(', ')}`);
-      } catch {
-        /* optional hint only */
-      }
-    }
-    io.say('Start the tmux layout yourself with: bash scripts/ccgram/start.sh');
-
     if (!ctx.fs.exists(path.join(root, 'scripts', 'dashboard.ts'))) {
+      localSettings(ctx);
       io.say('skipped until installed (plan 7C)');
       return 'skipped';
     }
@@ -89,10 +94,18 @@ export const dashboardStep: SetupStep = {
       envFileValue(envText, 'WEB_OIDC_CLIENT_ID').trim() !== '' &&
       envFileValue(envText, 'WEB_OIDC_CLIENT_SECRET').trim() !== ''
     ) {
+      localSettings(ctx);
       if (mode !== 'oidc') writeKeys(ctx, { WEB_AUTH_MODE: 'oidc' }, false);
       io.say('Your OIDC sign-in is kept (WEB_AUTH_MODE=oidc).');
       return 'done';
     }
+
+    // A skip leaves .env untouched: the local settings are written only after this offer.
+    const spec = SKIP_SPECS.find((x) => x.id === 'dashboard');
+    if (spec && (await offerSkip(ctx, spec)) === 'later') return 'skipped';
+
+    localSettings(ctx);
+    say(ctx, 'dashboard.token');
 
     if (await io.confirm('Create a dashboard access token now?', true)) {
       writeKeys(ctx, { WEB_AUTH_MODE: 'token' }, true);

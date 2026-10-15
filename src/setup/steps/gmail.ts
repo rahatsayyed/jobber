@@ -2,8 +2,12 @@
 // Step 4: Gmail OAuth. The wizard never reads the OAuth keys or the credentials file; the
 // doctor `gmail-oauth` check is the only reader. The auth helper gets exactly two env keys.
 import path from 'node:path';
+import { setupChecks } from '../../platform/checksSetup.js';
+import { runChecks } from '../../platform/doctor.js';
+import { coachOn, confirmDone, offerSkip, say } from '../coach.js';
 import { envFileValue } from '../envWriter.js';
 import type { SetupContext, SetupStep } from '../runner.js';
+import { SKIP_SPECS } from '../skips.js';
 
 const KEYS_DEFAULT = './secrets/gcp-oauth.keys.json';
 const CREDS_DEFAULT = './secrets/gmail-credentials.json';
@@ -24,13 +28,56 @@ export const gmailStep: SetupStep = {
     const keys = resolvePath(ctx, envText, 'GMAIL_OAUTH_PATH', KEYS_DEFAULT);
     const creds = resolvePath(ctx, envText, 'GMAIL_CREDENTIALS_PATH', CREDS_DEFAULT);
 
-    io.say('Create a Google OAuth client for Gmail:');
-    io.say('  1. In Google Cloud Console, create (or pick) a project.');
-    io.say('  2. Enable the Gmail API for that project.');
-    io.say('  3. Configure the OAuth consent screen and add yourself as a test user.');
-    io.say('  4. Create credentials: OAuth client ID, application type Desktop app.');
-    io.say(`  5. Download the JSON and save it as ${path.relative(ctx.root, keys) || keys}`);
-    await io.pause('Press Enter when the keys file is saved');
+    const spec = SKIP_SPECS.find((x) => x.id === 'gmail');
+    if (spec && (await offerSkip(ctx, spec)) === 'later') return 'skipped';
+
+    say(ctx, 'gmail.where');
+    const keysRel = path.relative(ctx.root, keys) || keys;
+    const groups = [
+      {
+        id: 'gmail.project',
+        action: 'Create a Google Cloud project and enable the Gmail API',
+        explain: coachOn(ctx)
+          ? [
+              '1. In Google Cloud Console, create (or pick) a project.',
+              '2. Open APIs and Services, Library, search Gmail API and press Enable.',
+            ]
+          : ['In Google Cloud Console: create or pick a project and enable the Gmail API.'],
+        again: [
+          'Console path: select a project at the top, then APIs and Services, Library, Gmail API, Enable.',
+          'You are done when the Gmail API page shows Manage instead of Enable.',
+        ],
+      },
+      {
+        id: 'gmail.consent',
+        action: 'Configure the consent screen with yourself as a test user',
+        explain: coachOn(ctx)
+          ? [
+              '3. Open APIs and Services, OAuth consent screen (Google Auth Platform in newer consoles).',
+              '4. Choose External, fill the app name and your email, and add your own address under Test users.',
+            ]
+          : ['Configure the OAuth consent screen and add yourself as a test user.'],
+        again: [
+          'Console path: APIs and Services, OAuth consent screen (or Google Auth Platform, Audience), Test users, Add users.',
+          'Your own Gmail address must be in the Test users list, or sign-in is refused later.',
+        ],
+      },
+      {
+        id: 'gmail.client',
+        action: `Create a Desktop app OAuth client and save its JSON as ${keysRel}`,
+        explain: coachOn(ctx)
+          ? [
+              '5. APIs and Services, Credentials, Create credentials, OAuth client ID, application type Desktop app.',
+              `6. Download the JSON and save it as ${keysRel}`,
+            ]
+          : [`Create an OAuth client ID of type Desktop app, download the JSON and save it as ${keysRel}`],
+        again: [
+          'Console path: APIs and Services, Credentials, Create credentials, OAuth client ID, Desktop app, then Download JSON.',
+          `The file must be named exactly ${keysRel}`,
+        ],
+      },
+    ];
+    for (const g of groups) await confirmDone(ctx, g);
 
     ctx.fs.mkdirp(path.dirname(keys), 0o700);
     if (ctx.fs.exists(keys)) ctx.fs.chmod(keys, 0o600);
@@ -45,6 +92,18 @@ export const gmailStep: SetupStep = {
       );
       if (ctx.fs.exists(creds)) ctx.fs.chmod(creds, 0o600);
       if (code !== 0) throw new Error(`Gmail auth helper exited with code ${code}`);
+      // Only the doctor check reads the key and credentials files, never this step.
+      const check = setupChecks.find((c) => c.id === 'gmail-oauth');
+      if (check) {
+        const [r] = await runChecks([check], ctx.doctor);
+        if (r.result.status === 'pass') {
+          io.say('Gmail is authorised on this machine.');
+        } else {
+          io.say('The consent screen did not finish; run this step again.');
+          if (r.result.fix) io.say(`  fix: ${r.result.fix}`);
+          return 'skipped';
+        }
+      }
     } else {
       io.say('Skipped the consent screen; run this step again when ready.');
     }
