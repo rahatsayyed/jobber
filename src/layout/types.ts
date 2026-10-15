@@ -40,4 +40,8 @@ export interface KindMemory {
   counters: { match: number; partial: number; drift: number };
   drift_streak: number; drift_window_start: string | null; last_drift_at: string | null;
 }
+// Result of comparing an Observation with stored layout memory (see classify.ts).
+export type Verdict =
+  | { class: 'match' | 'partial' | 'drift' | 'unknown'; score: number; missing: LandmarkId[]; variant: string | null }
+  | { class: 'blocked' | 'logged_out' | 'unloaded' };
 export interface LayoutFile { schema: 1; platform: Platform; updated_at: string; kinds: Record<KindId, KindMemory> }
