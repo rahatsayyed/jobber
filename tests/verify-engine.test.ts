@@ -23,6 +23,9 @@ describe('forceDryEnv', () => {
       expect(out.JOBAPPLIER_DB).toBe('/t/db');
     }
   });
+  it('requires a db path', () => {
+    expect(() => forceDryEnv({}, '')).toThrow();
+  });
   it('copies nothing beyond the input', () => {
     const out = forceDryEnv({ A: '1' }, 'x');
     expect(Object.keys(out).sort()).toEqual(['A', 'JOBAPPLIER_DB', 'JOBBER_DRY_RUN', 'LINKEDIN_DRY_RUN', 'SCHEDULER_DRY_RUN']);

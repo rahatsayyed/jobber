@@ -59,7 +59,8 @@ export interface VerifyCtx {
   llm?: boolean;
 }
 
-export function forceDryEnv(env: NodeJS.ProcessEnv, dbPath = ''): NodeJS.ProcessEnv {
+export function forceDryEnv(env: NodeJS.ProcessEnv, dbPath: string): NodeJS.ProcessEnv {
+  if (!dbPath) throw new Error('forceDryEnv: dbPath is required');
   const out: NodeJS.ProcessEnv = { ...env };
   out.JOBBER_DRY_RUN = '1';
   out.SCHEDULER_DRY_RUN = 'true';
@@ -90,6 +91,7 @@ export async function runStages(
     const s = stages.find((x) => x.id === id);
     if (s && !s.skippable) throw new UsageError(`stage ${id} cannot be skipped`);
   }
+  // A timed-out stage is reported as fail but not cancelled; its promise keeps running.
   const out: StageResult[] = [];
   for (const s of stages) {
     if (opts.skip.includes(s.id)) {

@@ -149,9 +149,10 @@ describe('dashboard-login', () => {
     expect(r.status).toBe('skip');
     expect(r.detail).toContain('8C dashboard login not merged');
   });
-  it('skips when the server cannot start', async () => {
+  it('fails when the server cannot start', async () => {
     const r = await S.dashboardLogin.run(mk({ startWeb: async () => { throw new Error('needs OIDC'); } }));
-    expect(r.status).toBe('skip');
+    expect(r.status).toBe('fail');
+    expect(r.fix).toContain('npm run doctor');
   });
   it('passes with token mode, 200 and 401', async () => {
     let closed = false;

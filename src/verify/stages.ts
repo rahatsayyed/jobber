@@ -212,7 +212,7 @@ const dashboardLogin: Stage = {
     try {
       srv = await ctx.startWeb({ port: 0, host: '127.0.0.1', tmp: ctx.tmp });
     } catch (e) {
-      return skip(`dashboard cannot start hermetically: ${firstLine(e)}`);
+      return fail(`dashboard server did not start: ${firstLine(e)}`, fix);
     }
     try {
       const mode = await get(`${srv.url}/api/auth/mode`);
