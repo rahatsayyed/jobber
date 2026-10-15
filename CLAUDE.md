@@ -13,7 +13,7 @@ Phase 1 pipeline — both now run automatically as part of every hunt run, per t
 `outreach`, see "Scheduler" and "Outreach safety layers" below; `.mcp.json` is the list of
 registered servers) and skills (`match-jobs`, `draft-outreach`, `draft-connect-note`,
 `draft-linkedin-message`, `tailor-resume`, `review-application`, `telegram-format`,
-`the-humanizer`, `manager`). The `gates` server exposes `check_liveness` and `apply_vetoes`; `db` also
+`the-humanizer`, `manager`, `setup-guide`). The `gates` server exposes `check_liveness` and `apply_vetoes`; `db` also
 has `save_match_result`, `record_outcome`, and `calibration`. `apply` is one MCP server exposing both a per-platform tool for each
 target — `apply.linkedin`, `apply.greenhouse`, `apply.lever`, `apply.workday`, `apply.ashby` —
 and a single `apply.auto({apply_url, job_id})` router tool that inspects `apply_url` and
@@ -610,7 +610,8 @@ section is the reference for what exists.
   one. No session ever runs with skip-permissions.
 - **Scripts** (only those in `package.json`): `doctor` (ok/warn/fail/skip checks, never prints
   secret values), `setup` (guided wizard, 12 resumable steps, needs a TTY; `-- --list`,
-  `-- --step <id>`, `-- --redo`), `status -- limits|working|health|json`, `web` (dashboard on
+  `-- --step <id>`, `-- --redo`, `-- --no-guide|--guide-only|--status`), `bootstrap`, `dry-run`,
+  `up`, `down` (see "Bring-up commands" below), `status -- limits|working|health|json`, `web` (dashboard on
   127.0.0.1, Google OIDC sign-in for one allowed account, `WEB_CHAT_ENABLED` off by default),
   `dashboard -- allow <email>|status|audit`, `models -- list|verify|fetch|pin`, `scheduler`,
   `scheduler:units`, `jobber:control -- stop|resume|status`, `dry-run:report`, `auto-update`
@@ -637,6 +638,18 @@ section is the reference for what exists.
   Backups are age-encrypted, exclude `secrets/` unless `BACKUP_INCLUDE_SECRETS=true`, and
   need a restore drill (`npm run restore -- <archive> --identity <key> --drill`). Restart Claude
   sessions after an applied update (MCP servers keep old code).
+
+**Bring-up commands** (plan 8E; README.md quick start): `bash scripts/bootstrap.sh` (detects and
+installs what is missing after asking; `--check` and `--plan` only report; writes
+`.jobber/bootstrap.json`), `npm run setup` (the wizard, plus an optional guided Claude session
+under the `setup_guide` profile in `config/run-profiles.json`: `interactive`, `classifier:
+not_required`, no MCP tools, only `Skill` and `Read` on docs and config paths, and Bash limited
+to the exact strings in `bash_exact`, no wildcard; the guide never reads secrets or `.env`),
+`npm run dry-run` (end-to-end smoke in dry mode against fixtures and a temporary database; writes
+only `.jobber/verify.json`; its dashboard stage is skipped until plan 8C's login routes exist)
+and `npm run up` / `npm run down` (doctor gate, kill-switch refusal with exit 4, ordered start of
+bridge, windows, scheduler and dashboard; `up -- --status` is read-only). `up` never changes the
+mode: it prints `MODE: DRY RUN` or `MODE: LIVE` from `.env`, and the owner alone flips the flags.
 
 ## Layout memory and platform operators
 
@@ -756,6 +769,10 @@ in code. Layers, outermost first:
    `outreach_wake` (scheduler) has platform and db tools only, no Bash, Read or web fetch.
    Profile `hunt` (`./run-hunt.sh`) takes its tools from the `outreach_send` set; its main
    thread still holds the send tools (only subagents are narrowed by the hook).
+   Interactive profiles (`setup_guide`, `interactive: true`) take only an allowlisted env, list
+   Bash commands as exact strings in `bash_exact` (no wildcard), may declare `classifier:
+   not_required` only when validated to have no MCP tools, and are covered by the
+   `prompt-secret-guard` hook, which blocks a prompt that looks like a pasted secret.
 2. **PreToolUse allowlist hook** (`.claude/hooks/tool-allowlist.cjs`): denies any tool, path or
    secret-shaped argument outside the run profile, fail closed. `block-outside-project.cjs`
    (project `.claude/settings.json`) denies Read/Write/Edit/Bash paths outside the project.
@@ -982,7 +999,8 @@ is not measured by it.
 ### After merge: user checklist
 
 0. First-time machine setup (install, `npm run setup`, doctor, sessions, permission set,
-   classifier, dashboard) is the README.md quick start; the platform and scheduler owner
+   classifier, dashboard) is the README.md quick start (`bash scripts/bootstrap.sh`, then the
+   "Bring-up commands" below); the platform and scheduler owner
    checklists are in the 6B, 6B2, 6D and 7D plans and `docs/backup-and-restore.md`. The items
    below are the older, still-true ones.
 1. FULLY quit and restart Claude Code (not a selective MCP reconnect) after any change to an MCP
@@ -1049,6 +1067,15 @@ and the Indian and Gulf job boards.
   `discover.linkedin_jobs` post text, board and Hacker News descriptions, Gmail reply bodies read
   by `reply-watcher`, and `linkedin_screenshot` pixels. The launcher and doctor classifier
   readiness cover only the screened surfaces in `SCREENED_SURFACES`.
+- Bring-up (plan 8E) is covered by hermetic tests with fakes only. Unverified until the owner
+  live checks (plan "Owner-only live checks"): Claude Code CLI install method and flags (U1, L1);
+  interactive `claude` under the restricted launcher and its flags (U2, L3); whether Claude's
+  `Bash(<exact>)` rules match strings containing ` -- ` (U3, L3); whether a blocked
+  `UserPromptSubmit` prompt also leaves the model context and transcript (U4, L3); Homebrew and
+  apt package names, Playwright system dependencies (U5, L1, L2); Linux Node, uv and Chrome
+  installer URLs (U6, L2); tmux window environment inheritance (U7, L8, L9); how ccgram binds the
+  `manager` window (U8, L8); single-instance scheduler and SIGINT behaviour (U9, L8);
+  `better-sqlite3` native build toolchain (U12, L1).
 
 Test baseline: `npx tsc -p . --noEmit` is clean; `npx vitest run` has exactly 5 known failures
 (4 in `tests/renderChecked.test.ts`, 1 in `tests/resume.test.ts`) because a Playwright browser is

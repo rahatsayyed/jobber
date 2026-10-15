@@ -12,7 +12,7 @@ Jobber is an autonomous job-hunting agent. It discovers new job postings, scores
 
 ## Prerequisites
 
-Git and a shell. `bash scripts/bootstrap.sh` installs the rest (macOS with Homebrew first, with an Ubuntu variant): Node 20+, the Claude Code CLI, Google Chrome, tmux, ccgram and the browser binaries. The exact ccgram version is pinned in `config/ccgram.pin.json`; the start script refuses to run on any other version. You still log in to `claude` yourself.
+Git and a shell. `bash scripts/bootstrap.sh` installs what it can after asking (macOS with Homebrew first, with an Ubuntu variant): tmux, ccgram, uv and the browser binaries; the Claude Code CLI only through an npm global prefix you can write to (otherwise it prints instructions), Google Chrome as a brew cask on macOS (you install it yourself on Ubuntu), and Node 20+ on Ubuntu only with sudo after a prompt. The exact ccgram version is pinned in `config/ccgram.pin.json`; the start script refuses to run on any other version. You still log in to `claude` yourself.
 
 ---
 

@@ -144,3 +144,5 @@ start `hunt` and `followups`.
 | Bot works in a group but ignores plain messages | Group Privacy is on | BotFather, `/mybots`, bot, Bot Settings, Group Privacy off (re-add the bot to the group if it does not take effect) |
 | Token shown in a screenshot or log | Leak | Rotate with `/revoke`, see Security notes |
 | Doctor `ccgram-env` fails "`.env` is readable by others" | File mode too open | `chmod 600 .env` |
+
+The guided session can walk you through this: `npm run setup`.

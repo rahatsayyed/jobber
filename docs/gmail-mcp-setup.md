@@ -188,3 +188,5 @@ means re-authorizing about weekly on a machine with a browser and copying the ne
 paste them into chat, or put them in a backup you do not trust (backups exclude `secrets/` unless
 `BACKUP_INCLUDE_SECRETS=true`). The `.env.example` also lists `GMAIL_USER` and `GMAIL_APP_PASSWORD`;
 those belong to the older SMTP helper in `src/email.ts` and are not used by the OAuth MCP flow above.
+
+The guided session can walk you through this: `npm run setup`.
