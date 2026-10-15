@@ -1,0 +1,4 @@
+[
+  { "job_id": "fixture-clean", "score": 82, "reasons": "fixture: strong React and TypeScript overlap", "missing_keywords": [] },
+  { "job_id": "fixture-dealbreaker", "score": 82, "reasons": "fixture: strong overlap but carries a deal-breaker", "missing_keywords": [] }
+]

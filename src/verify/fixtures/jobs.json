@@ -1,0 +1,20 @@
+[
+  {
+    "id": "fixture-clean",
+    "source": "fixture",
+    "title": "Full stack developer (FIXTURE, synthetic)",
+    "company": "Fixture Clean Labs",
+    "url": "https://example.invalid/jobs/clean",
+    "apply_url": "https://example.invalid/apply/clean",
+    "description": "FIXTURE POSTING, SYNTHETIC. Build React and TypeScript web apps with a small team. Remote in India. Contact hiring@example.invalid."
+  },
+  {
+    "id": "fixture-dealbreaker",
+    "source": "fixture",
+    "title": "Developer (FIXTURE, synthetic deal-breaker)",
+    "company": "Fixture Breaker Works",
+    "url": "https://example.invalid/jobs/dealbreaker",
+    "apply_url": "https://example.invalid/apply/dealbreaker",
+    "description": "FIXTURE POSTING, SYNTHETIC, DEAL-BREAKER CASE. This role is unpaid for the first quarter. React and TypeScript. Remote in India."
+  }
+]
