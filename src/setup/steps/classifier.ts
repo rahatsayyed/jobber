@@ -8,6 +8,7 @@ import { isFullyPinned, loadRegistry, type ClassifierProfile, type ClassifierReg
 import { defaultFetchDeps, fetchProfile, GatedProfileError, verifyProfile, type FetchDeps } from '../../safety/modelFetch.js';
 import { SMOKE_BENIGN, SMOKE_INJECTION } from '../../safety/smoke.js';
 import { updateEnvText, writeEnvFile } from '../envWriter.js';
+import { say } from '../coach.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 
 export interface ClassifierStepDeps {
@@ -108,6 +109,9 @@ export function createClassifierStep(deps: ClassifierStepDeps = {}): SetupStep {
       );
       const p = reg.profiles[id];
       describe(ctx, p);
+      say(ctx, 'classifier.intro');
+      say(ctx, 'classifier.required');
+      say(ctx, 'classifier.commands');
 
       if (p.gated || !p.fetchable) {
         io.say('This profile is not downloaded automatically. Manual steps:');
@@ -131,6 +135,7 @@ export function createClassifierStep(deps: ClassifierStepDeps = {}): SetupStep {
         const size = mb(totalBytes(p));
         if (!(await io.confirm(`Download ${size} now?`, false))) {
           io.say(`Not downloaded. Fetch later with: npm run models -- fetch ${p.id}`);
+          say(ctx, 'classifier.skip');
           return 'skipped';
         }
         const fetchDeps = deps.fetchDeps ?? defaultFetchDeps((l) => io.say(l));

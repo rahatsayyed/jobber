@@ -6,6 +6,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { COACH_TEXT } from '../src/setup/coach.js';
 import type { DoctorContext } from '../src/platform/doctor.js';
 import type { FetchDeps } from '../src/safety/modelFetch.js';
 import { redactingIO, scriptedIO, type ScriptItem } from '../src/setup/io.js';
@@ -355,5 +356,24 @@ describe('gated / owner-supplied profile', () => {
     expect(f.calls).toHaveLength(0);
     expect(sio.transcript.join('\n')).toContain('npm run models -- pin tiny-gated');
     expect(existsSync(path.join(root, '.env'))).toBe(false);
+  });
+});
+
+describe('terminal-mode coaching (plan 8F task 8)', () => {
+  const lines = (...ids: string[]) => ids.flatMap((id) => COACH_TEXT[id] ?? []);
+  it('agent transcript has none of the coaching; terminal adds it and nothing else', async () => {
+    const script: ScriptItem[] = [{ choose: '' }, { confirm: false }];
+    const a = setup(script);
+    const t = setup(script);
+    a.ctx.mode = 'agent';
+    t.ctx.mode = 'terminal';
+    const step = createClassifierStep({ fetchDeps: fakeFetch().deps, smoke: OK_SMOKE });
+    expect(await step.run(a.ctx)).toBe('skipped');
+    expect(await step.run(t.ctx)).toBe('skipped');
+    const want = lines('classifier.intro', 'classifier.required', 'classifier.commands', 'classifier.skip');
+    expect(want.join(' ')).toContain('REQUIRED BEFORE LIVE');
+    for (const l of want) expect(a.sio.transcript.join('\n')).not.toContain(l);
+    for (const l of want) expect(t.sio.transcript.join('\n')).toContain(l);
+    expect(t.sio.transcript.filter((l) => !want.some((w) => l.includes(w)))).toEqual(a.sio.transcript);
   });
 });

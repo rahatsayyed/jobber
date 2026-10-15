@@ -12,6 +12,7 @@ import {
   type LimitSpec,
 } from '../limitsCatalog.js';
 import { envEntries, updateEnvText, writeEnvFile } from '../envWriter.js';
+import { say } from '../coach.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 
 const GROUPS: { id: LimitGroup; title: string }[] = [
@@ -46,6 +47,7 @@ export const limitsStep: SetupStep = {
     };
     const effective = (spec: LimitSpec): string => current(spec) ?? String(spec.default);
 
+    say(ctx, 'limits.intro');
     io.say('Daily caps are hard stops enforced in code. Quiet hours (local time) pause all actions.');
     io.say('Pacing adds human-like gaps and bursts. Per-company limits cap how many people you contact at one company.');
     for (const g of GROUPS) {

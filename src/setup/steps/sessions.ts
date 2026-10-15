@@ -5,6 +5,7 @@
 import path from 'node:path';
 import { setupAccountChecks } from '../../platform/checksSetup.js';
 import { runChecks } from '../../platform/doctor.js';
+import { say } from '../coach.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 
 interface Account {
@@ -58,6 +59,9 @@ export const sessionsStep: SetupStep = {
     io.say('Safety rule: the BURNER LinkedIn account is for applying, the MAIN account is for');
     io.say('connection requests. They are never swapped: log in to the right one for each prompt.');
 
+    say(ctx, 'sessions.why');
+    say(ctx, 'sessions.window');
+
     for (const a of ACCOUNTS) {
       const out = path.join(dir, a.file);
       const answerKey = `session_${a.name}`;
@@ -69,6 +73,7 @@ export const sessionsStep: SetupStep = {
       } else if (!(await io.confirm(`Capture the ${a.label} session now?`, true))) {
         ctx.state.answers[answerKey] = 'skipped';
         io.say(`${a.label}: skipped. Run later: npx ${a.argv.join(' ')}`);
+        say(ctx, `sessions.lose.${a.name}`);
         continue;
       }
       io.say(`A browser window opens. Log in with ${a.who}, then return here and press Enter.`);

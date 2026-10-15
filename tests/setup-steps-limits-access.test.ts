@@ -5,6 +5,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { COACH_TEXT } from '../src/setup/coach.js';
 import { checksById } from '../src/setup/steps/prereqs.js';
 import { runChecks, type DoctorContext } from '../src/platform/doctor.js';
 import { redactingIO, scriptedIO, type ScriptItem } from '../src/setup/io.js';
@@ -299,5 +300,39 @@ describe('limitsStep pre-existing pair conflict', () => {
     expect(env.get('PACING_MIN_BURST')).toBe('9');
     expect(env.get('PACING_MAX_BURST')).toBe('12');
     t.sio.assertDone();
+  });
+});
+
+describe('terminal-mode coaching (plan 8F task 8)', () => {
+  const lines = (...ids: string[]) => ids.flatMap((id) => COACH_TEXT[id] ?? []);
+  const strip = (x: string[], want: string[]) => x.filter((l) => !want.some((w) => l.includes(w)));
+  it('limits: only terminal mode prints the intro', async () => {
+    const a = setup([{ choose: 'leave' }], { '.env': 'A=1\n' });
+    const t = setup([{ choose: 'leave' }], { '.env': 'A=1\n' });
+    a.ctx.mode = 'agent';
+    t.ctx.mode = 'terminal';
+    await limitsStep.run(a.ctx);
+    await limitsStep.run(t.ctx);
+    const want = lines('limits.intro');
+    for (const l of want) expect(a.sio.transcript.join('\n')).not.toContain(l);
+    for (const l of want) expect(t.sio.transcript.join('\n')).toContain(l);
+    expect(strip(t.sio.transcript, want)).toEqual(a.sio.transcript);
+  });
+  it('access: only terminal mode prints the read_only advice, prompts identical', async () => {
+    const files = {
+      'config/permission-sets.json': readFileSync(path.join(process.cwd(), 'config', 'permission-sets.json'), 'utf8'),
+      '.gitignore': '.ccgram/\n.claude/settings.local.json\n.claude/settings.local.managed.json\n.env\nuser-data/\nsecrets/\n',
+    };
+    const a = setup([{ choose: 'read_only' }], files);
+    const t = setup([{ choose: 'read_only' }], files);
+    a.ctx.mode = 'agent';
+    t.ctx.mode = 'terminal';
+    await accessStep.run(a.ctx);
+    await accessStep.run(t.ctx);
+    const want = lines('access.intro');
+    for (const l of want) expect(a.sio.transcript.join('\n')).not.toContain(l);
+    for (const l of want) expect(t.sio.transcript.join('\n')).toContain(l);
+    const prompts = (x: string[]) => x.filter((l) => !l.startsWith('say:'));
+    expect(prompts(t.sio.transcript)).toEqual(prompts(a.sio.transcript));
   });
 });

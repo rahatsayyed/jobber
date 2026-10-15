@@ -4,6 +4,7 @@ import { ccgramChecks } from '../../platform/checks.js';
 import { setupChecks } from '../../platform/checksSetup.js';
 import type { Check, CheckOutcome } from '../../platform/doctor.js';
 import { runChecks } from '../../platform/doctor.js';
+import { say } from '../coach.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 
 const ALL_CHECKS: Check[] = [...ccgramChecks, ...setupChecks];
@@ -33,6 +34,7 @@ export const prereqsStep: SetupStep = {
   title: 'Prerequisites',
   checkIds: ['node-version', 'tmux', 'chrome', 'browser-binaries', 'ccgram-version'],
   async run(ctx) {
+    say(ctx, 'prereqs.intro');
     const checks = checksById(prereqsStep.checkIds);
     for (let round = 1; round <= MAX_ROUNDS; round++) {
       const results = await runChecks(checks, ctx.doctor);

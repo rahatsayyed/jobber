@@ -47,6 +47,53 @@ export const COACH_TEXT: Record<string, string[]> = {
     'Message @userinfobot with any text; it replies with your numeric ID. It is 5 to 15 digits.',
   ],
   'telegram.next': ['Then send /health to your bot to confirm the bridge answers.'],
+  'prereqs.intro': [
+    'Each check below is a tool Jobber needs: Node, tmux, Chrome, its browser files and the pinned ccgram.',
+    'A failing check prints its exact fix. Run it in another terminal, then press Enter here.',
+    'Or run bash scripts/bootstrap.sh, which offers to install what is missing.',
+  ],
+  'claude.intro': [
+    'Logged in means the claude command reaches your Claude account without asking you to sign in again.',
+    'To log in, run claude in another terminal, follow the sign-in prompts, then come back here.',
+  ],
+  'sessions.why': [
+    'Three separate accounts keep risks apart: the burner applies, the main account sends connect requests.',
+    'Naukri has its own login. They are never swapped, so one flagged account cannot affect another.',
+  ],
+  'sessions.window': [
+    'A browser window opens for each account. Log in there as you normally would, then return here.',
+    'Press Enter when logged in; the session is saved and the window closes.',
+    'How long a saved session lasts is unmeasured. Rerun this step if the doctor says one expired.',
+  ],
+  'sessions.lose.linkedin_burner': ['If you skip this: LinkedIn Easy Apply stays off.'],
+  'sessions.lose.linkedin_main': ['If you skip this: LinkedIn connection requests and messages stay off.'],
+  'sessions.lose.naukri': ['If you skip this: Naukri search and recruiter replies stay off.'],
+  'classifier.intro': [
+    'The classifier is a small local model. It screens job posts, profiles and replies for injected text.',
+    'It protects the agent from text that tries to take control. It runs here; no text leaves this machine.',
+    'The download size is shown above, and every file is checked against a pinned hash.',
+  ],
+  'classifier.required': [
+    'REQUIRED BEFORE LIVE: until fetched and pinned, live LinkedIn and Naukri actions are refused.',
+    'Dry runs work without it.',
+  ],
+  'classifier.commands': [
+    'After the download, three commands finish the setup:',
+    '  1. npm run models -- pin <profile>',
+    '  2. npm run classifier:fit -- --profile <profile> --write',
+    '  3. npm run doctor',
+  ],
+  'classifier.skip': [
+    'Skipped: live LinkedIn and Naukri actions stay refused until the model is fetched and pinned.',
+  ],
+  'access.intro': [
+    'read_only is recommended: it shows stats, drafts and status, and cannot send or change anything.',
+    'Move to outreach_send later, on purpose, after a dry run looked right. There is no skip here.',
+  ],
+  'limits.intro': [
+    'Each cap lives in .env and is enforced in code, not by the agent. The shipped defaults are safe.',
+    'Choose safe defaults unless you have a reason; you can rerun this step any time.',
+  ],
 };
 
 export function coachOn(ctx: { mode?: SetupMode }): boolean {

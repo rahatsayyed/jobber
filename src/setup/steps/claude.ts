@@ -3,6 +3,7 @@
 // check (`claude auth status` exit code); the one-token probe is only a fallback when that
 // check cannot verify, and always behind a confirm.
 import { runChecks } from '../../platform/doctor.js';
+import { say } from '../coach.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 import { checksById, printProblems } from './prereqs.js';
 
@@ -19,6 +20,7 @@ export const claudeStep: SetupStep = {
   title: 'Claude Code login',
   checkIds: ['claude-cli', 'claude-login'],
   async run(ctx) {
+    say(ctx, 'claude.intro');
     const [cliCheck, loginCheck] = checksById(['claude-cli', 'claude-login']);
     for (let round = 1; round <= MAX_ROUNDS; round++) {
       const [cli] = await runChecks([cliCheck], ctx.doctor);

@@ -5,7 +5,17 @@ import path from 'node:path';
 import { ccgramChecks, restrictedChecks } from '../../platform/checks.js';
 import { looseDbFiles, setupChecks } from '../../platform/checksSetup.js';
 import { formatReport, runChecks } from '../../platform/doctor.js';
+import { parseEnv } from '../../platform/envFile.js';
 import type { SetupStep } from '../runner.js';
+import { SKIP_SPECS, skippedFeatures, type SkippableId } from '../skips.js';
+
+// Open non-skippable items that block going live, by doctor check id.
+const NOT_READY: { id: string; label: string; stepId: string }[] = [
+  { id: 'classifier_model', label: 'Classifier model or fit', stepId: 'classifier' },
+  { id: 'permission-set', label: 'Permission set', stepId: 'access' },
+  { id: 'resume-valid', label: 'Resume', stepId: 'resume' },
+  { id: 'profile-valid', label: 'Profile', stepId: 'profile' },
+];
 
 export const finalStep: SetupStep = {
   id: 'final',
@@ -37,10 +47,51 @@ export const finalStep: SetupStep = {
     if (results.some((r) => r.result.status === 'fail')) {
       io.say('Some checks failed: fix them and run npm run setup again, or npm run doctor.');
     }
+    // Skipped by choice: recorded skips that are still unconfigured (state and .env, no secrets).
+    let skipped: SkippableId[] = [];
+    try {
+      let fileEnv: Record<string, string> = {};
+      if (ctx.envPath && ctx.fs.exists(ctx.envPath)) fileEnv = parseEnv(ctx.fs.read(ctx.envPath));
+      skipped = skippedFeatures({
+        state: ctx.state,
+        env: { ...fileEnv, ...ctx.env },
+        fs: ctx.fs,
+        root: ctx.root,
+      });
+    } catch {
+      skipped = [];
+    }
+    if (skipped.length > 0) {
+      io.say('Skipped by choice:');
+      for (const id of skipped) {
+        const spec = SKIP_SPECS.find((s) => s.id === id);
+        if (!spec) continue;
+        io.say(`  ${spec.title}: ${spec.lose[0]}`);
+        io.say(`    re-enable: npm run setup -- --step ${spec.stepId}`);
+      }
+    }
+
+    // Not ready for live: open items that are not skippable, from the doctor results above.
+    const notReady = NOT_READY.filter((n) => {
+      const r = results.find((x) => x.id === n.id);
+      return r !== undefined && r.result.status !== 'pass';
+    });
+    if (notReady.length > 0) {
+      io.say('Not ready for live:');
+      for (const n of notReady) io.say(`  ${n.label}: npm run setup -- --step ${n.stepId}`);
+    }
+
+    const next: string[] = [];
+    if (!skipped.includes('telegram')) {
+      next.push('bash scripts/ccgram/start.sh');
+      next.push('Send /health from Telegram');
+    }
+    if (!skipped.includes('dashboard')) next.push('npm run dashboard -- token (sign-in link for the status page)');
+    next.push('npm run dry-run (end-to-end check in dry mode, sends nothing)');
+    next.push('npm run up (starts the bridge, windows, scheduler and dashboard after the doctor gate)');
+    next.push('Run the first supervised /runhunt and read the outputs');
     io.say('Next, yourself:');
-    io.say('  1. bash scripts/ccgram/start.sh');
-    io.say('  2. Send /health from Telegram');
-    io.say('  3. Run the first supervised /runhunt and read the outputs');
+    next.forEach((l, i) => io.say(`  ${i + 1}. ${l}`));
     return 'done';
   },
 };

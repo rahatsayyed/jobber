@@ -10,6 +10,7 @@ import {
   type RawSets,
   type SetName,
 } from '../../platform/permissions.js';
+import { say } from '../coach.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 
 const REQUIRED_IGNORES = [
@@ -27,6 +28,7 @@ function ignored(lines: string[], rule: string): boolean {
 
 async function chooseSet(ctx: SetupContext): Promise<SetName> {
   const { io } = ctx;
+  say(ctx, 'access.intro');
   io.say('read_only: look at stats, drafts and status; nothing is sent, applied or changed.');
   io.say('outreach_send: read_only plus the tools that fetch jobs, queue outreach, and send email, connect and apply (still bound by the daily caps).');
   io.say('full: whole servers, every tool they expose. Only for someone who has read the tool list.');
