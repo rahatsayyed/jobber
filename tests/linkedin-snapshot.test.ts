@@ -179,3 +179,74 @@ const RUN = process.env.LINKEDIN_BROWSER_TESTS === 'true';
     } finally { await browser.close(); }
   });
 });
+
+// Structure counts: visible elements only, same rules on the fixture side and in-page.
+import { formatState } from '../src/linkedin/state.js';
+const STRUCT_HTML = `<html><body><main>
+  <h1>Jo</h1><h2>One</h2><h2 style="display:none">Hidden two</h2>
+  <ul><li>a</li><li role="listitem">b</li><li hidden>c</li></ul>
+  <button>Go</button><div role="button">Pseudo</div><button aria-hidden="true">No</button>
+  <a href="/x">x</a><a>no href</a><a href="/y" style="opacity:0">gone</a>
+  <form><input></form>
+  <dialog open><p>d</p></dialog><dialog><p>closed</p></dialog>
+</main></body></html>`;
+describe('structure counts', () => {
+  it('counts visible elements per key on the fixture side', () => {
+    const s = buildSnapshotFromHtml(STRUCT_HTML, 'https://www.linkedin.com/feed/');
+    expect(s.structure).toEqual({ main: 1, h1: 1, h2: 1, dialog: 1, listitem: 2, button: 2, link: 1, form: 1 });
+  });
+  it('does not count hidden elements and stays numbers-only', () => {
+    const s = buildSnapshotFromHtml('<main><h1 style="display:none">x</h1><button hidden>b</button></main>', 'https://www.linkedin.com/feed/');
+    expect(s.structure).toMatchObject({ main: 1, h1: 0, button: 0 });
+    expect(Object.values(s.structure ?? {}).every((n) => typeof n === 'number')).toBe(true);
+  });
+  it('caps each count', () => {
+    const many = '<main>' + '<button>b</button>'.repeat(1500) + '</main>';
+    expect(buildSnapshotFromHtml(many, 'https://www.linkedin.com/feed/').structure?.button).toBe(999);
+  });
+  it('in-page source yields the same counts as the builder (fake DOM)', () => {
+    type El = any;
+    const all: El[] = [];
+    const mk = (tag: string, attrs: Record<string, string> = {}, kids: El[] = []): El => {
+      const e: El = { tagName: tag.toUpperCase(), nodeType: 1, parentElement: null, childNodes: kids, _a: attrs,
+        hasAttribute: (k: string) => k in attrs, getAttribute: (k: string) => attrs[k] ?? null,
+        getBoundingClientRect: () => ({ width: 100, height: 20, right: 100, bottom: 20 }),
+        classList: { contains: () => false } };
+      for (const k of kids) k.parentElement = e;
+      all.push(e);
+      return e;
+    };
+    const main = mk('main', {}, [
+      mk('h1'), mk('h2'), mk('li'), mk('div', { role: 'listitem' }),
+      mk('button'), mk('div', { role: 'button' }), mk('a', { href: '/x' }), mk('a'), mk('form'),
+      mk('dialog', { open: '' }), mk('div', { role: 'dialog' }),
+    ]);
+    const body = mk('body', {}, [main]);
+    const match = (e: El, sel: string): boolean => sel.split(',').some((s) => {
+      const t = s.trim();
+      const role = /^\[role=(\w+)\]$/.exec(t);
+      if (role) return e._a.role === role[1];
+      const tagHref = /^(\w+)\[href\]$/.exec(t);
+      if (tagHref) return e.tagName.toLowerCase() === tagHref[1] && 'href' in e._a;
+      return /^\w+$/.test(t) && e.tagName.toLowerCase() === t;
+    });
+    const doc = { title: '', body, querySelector: () => null, querySelectorAll: (sel: string) => all.filter((e) => match(e, sel)) };
+    for (const e of all) e.querySelectorAll = (sel: string) => all.filter((x) => x !== e && match(x, sel));
+    const run = new Function('document', 'window', 'location', 'getComputedStyle', 'return (' + SNAPSHOT_SRC + ')');
+    const out = run(doc, { scrollX: 0, scrollY: 0 }, { href: 'https://www.linkedin.com/feed/', pathname: '/feed/' }, () => ({ ...BASE, backgroundColor: 'rgb(255, 255, 255)' }));
+    const built = buildSnapshotFromHtml(
+      '<main><h1>a</h1><h2>b</h2><li>l</li><div role="listitem">x</div><button>b</button><div role="button">y</div><a href="/x">x</a><a>n</a><form></form><dialog open><p>d</p></dialog><div role="dialog">z</div></main>',
+      'https://www.linkedin.com/feed/');
+    expect(out.structure).toEqual(built.structure);
+    expect(out.structure).toEqual({ main: 1, h1: 1, h2: 1, dialog: 2, listitem: 2, button: 2, link: 1, form: 1 });
+  });
+  it('formatState output is byte-identical with or without structure', () => {
+    const c = { halted: null, dryRun: true };
+    for (const n of ['profile-not-connected.html', 'profile-connected.html', 'search-results.html', 'invitations.html', 'message-overlay.html', 'checkpoint.html']) {
+      const s = buildSnapshotFromHtml(fx(n), U);
+      expect(s.structure).toBeDefined();
+      const { structure: _drop, ...bare } = s;
+      expect(JSON.stringify(formatState(s, c))).toBe(JSON.stringify(formatState(bare, c)));
+    }
+  });
+});

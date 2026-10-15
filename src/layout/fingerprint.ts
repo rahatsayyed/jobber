@@ -33,7 +33,9 @@ export function bucket(n: number): number {
   return 4;
 }
 
-const finish = (set: Set<LandmarkId>): LandmarkId[] => [...set].sort();
+const STRUCTURE_KEYS = ['main', 'h1', 'h2', 'dialog', 'listitem', 'button', 'link', 'form'] as const;
+
+const finish =(set: Set<LandmarkId>): LandmarkId[] => [...set].sort();
 
 export function observeLinkedin(
   raw: RawSnapshot,
@@ -68,19 +70,26 @@ export function observeLinkedin(
   else if (block === 'session_expired' || raw.hasPasswordInput) nonDrift = 'logged_out';
   else if (raw.bodyText.length < unloadedMax && kind !== 'login' && kind !== 'checkpoint') nonDrift = 'unloaded';
 
+  const counts: Record<string, number> = {
+    actions: bucket(p?.actions.length ?? 0),
+    results: bucket(raw.results.length),
+    invitations: bucket(raw.invitations.length),
+    messages: bucket(raw.messages.length),
+    notices: bucket(raw.notices.length),
+  };
+  const st = raw.structure;
+  if (st) for (const k of STRUCTURE_KEYS) counts[k] = bucket(st[k]);
+
+  // shell: page loaded as a known non-auth app kind (proxy), and, when structure counts are present,
+  // it also has a <main> or at least one visible button or link (an empty frame is not a shell).
+  const loaded = kind !== 'login' && kind !== 'checkpoint' && kind !== 'other' && raw.bodyText.length >= unloadedMax;
+  const structured = !st || st.main >= 1 || st.button + st.link > 0;
   return {
     platform: 'linkedin',
     kind,
     landmarks: finish(lm),
-    counts: {
-      actions: bucket(p?.actions.length ?? 0),
-      results: bucket(raw.results.length),
-      invitations: bucket(raw.invitations.length),
-      messages: bucket(raw.messages.length),
-      notices: bucket(raw.notices.length),
-    },
-    // shell: page loaded as a known non-auth app kind (proxy; Task 5 may refine it with structure counts).
-    shell: kind !== 'login' && kind !== 'checkpoint' && kind !== 'other' && raw.bodyText.length >= unloadedMax,
+    counts,
+    shell: loaded && structured,
     nonDrift,
   };
 }

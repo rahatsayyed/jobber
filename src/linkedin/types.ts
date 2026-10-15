@@ -30,7 +30,11 @@ export interface RawSnapshot {
   dialogText: string | null;          // visible <dialog>/[role=dialog] text
   hasPasswordInput: boolean;
   bodyText: string;                   // visible text of the page, capped at 60000, NEVER surfaced to the model
+  structure?: StructureCounts;        // counts of visible elements (each capped at 999); numbers only, ignored by formatState
 }
+
+export type StructureKey = 'main' | 'h1' | 'h2' | 'dialog' | 'listitem' | 'button' | 'link' | 'form';
+export type StructureCounts = Record<StructureKey, number>;
 
 // Structural browser types so fakes can implement them (patchright's real objects satisfy these).
 export interface LiLocator {

@@ -271,8 +271,12 @@ export const SNAPSHOT_SRC = String.raw`(function () {
     if (dialogText) dialogText = cap(dialogText, 2000);
     var pw = qs(document, 'input[type=password]');
     var bodyText = vis(body) ? cap(vlines(body).join('\n'), 60000) : '';
+    function cnt(sel) { return Math.min(qs(document, sel).length, 999); }
+    var structure = { main: cnt('main'), h1: cnt('h1'), h2: cnt('h2'), dialog: cnt('dialog,[role=dialog]'),
+      listitem: cnt('li,[role=listitem]'), button: cnt('button,[role=button]'), link: cnt('a[href]'), form: cnt('form') };
     return { url: url, title: title, profile: profile, results: results, invitations: invitations, messages: messages,
-      messageHeaderName: messageHeaderName, notices: notices, dialogText: dialogText, hasPasswordInput: pw.length > 0, bodyText: bodyText };
+      messageHeaderName: messageHeaderName, notices: notices, dialogText: dialogText, hasPasswordInput: pw.length > 0, bodyText: bodyText,
+      structure: structure };
   } catch (err) {
     return empty(title, url);
   }
@@ -390,6 +394,17 @@ export function buildSnapshotFromHtml(html: string, url: string): RawSnapshot {
       out.dialogText = t ? cap(t, 2000) : null;
     }
     out.hasPasswordInput = vq(root, (n) => n.tag === 'input' && (n.attrs['type'] ?? '').toLowerCase() === 'password').length > 0;
+    // Structure counts: same selectors as the in-page `structure` object, visible elements only, each capped at 999.
+    const cnt = (pred: (n: HtmlNode) => boolean) => Math.min(vq(root, pred).length, 999);
+    const role = (n: HtmlNode, r: string) => n.attrs['role'] === r;
+    out.structure = {
+      main: cnt(tagIn('main')), h1: cnt(tagIn('h1')), h2: cnt(tagIn('h2')),
+      dialog: cnt((n) => n.tag === 'dialog' || role(n, 'dialog')),
+      listitem: cnt((n) => n.tag === 'li' || role(n, 'listitem')),
+      button: cnt((n) => n.tag === 'button' || role(n, 'button')),
+      link: cnt((n) => n.tag === 'a' && 'href' in n.attrs),
+      form: cnt(tagIn('form')),
+    };
   } catch {
     // fail closed: return what was built so far; bodyText stays visible-only
   }

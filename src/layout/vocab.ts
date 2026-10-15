@@ -37,7 +37,11 @@ export const LANDMARKS: Record<Platform, readonly LandmarkId[]> = {
 };
 
 // Count keys that may appear in Observation.counts.
-export const COUNT_KEYS: readonly string[] = ['actions', 'results', 'invitations', 'messages', 'notices', 'buttons', 'options'];
+// The last eight are LinkedIn structure counts (RawSnapshot.structure).
+export const COUNT_KEYS: readonly string[] = [
+  'actions', 'results', 'invitations', 'messages', 'notices', 'buttons', 'options',
+  'main', 'h1', 'h2', 'dialog', 'listitem', 'button', 'link', 'form',
+];
 
 // Landmarks whose loss on a known kind means a tool cannot work (drift is critical).
 export const CRITICAL: Record<Platform, Record<KindId, readonly LandmarkId[]>> = {

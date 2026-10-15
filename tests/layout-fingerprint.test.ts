@@ -123,6 +123,20 @@ describe('observeNaukri', () => {
     }, { loginRequired: false });
     for (const o of [li, nk]) for (const k of Object.keys(o.counts)) expect(COUNT_KEYS).toContain(k);
   });
+  it('structure counts: bucketed, in COUNT_KEYS, absent adds nothing, refines shell', () => {
+    const st = (over: Record<string, number> = {}) =>
+      ({ main: 1, h1: 1, h2: 0, dialog: 0, listitem: 5, button: 3, link: 0, form: 0, ...over });
+    const o = observeLinkedin(liSnap({ structure: st() }), null);
+    expect(o.counts.main).toBe(bucket(1));
+    expect(o.counts.listitem).toBe(bucket(5));
+    expect(o.counts.button).toBe(bucket(3));
+    for (const k of Object.keys(o.counts)) expect(COUNT_KEYS).toContain(k);
+    expect(Object.keys(observeLinkedin(liSnap(), null).counts).sort()).toEqual(['actions', 'invitations', 'messages', 'notices', 'results']);
+    expect(observeLinkedin(liSnap(), null).shell).toBe(true);
+    expect(observeLinkedin(liSnap({ structure: st() }), null).shell).toBe(true);
+    expect(observeLinkedin(liSnap({ structure: st({ main: 0, button: 2 }) }), null).shell).toBe(true);
+    expect(observeLinkedin(liSnap({ structure: st({ main: 0, button: 0, link: 0 }) }), null).shell).toBe(false);
+  });
   it('login required is logged_out', () => {
     const o = observeNaukri({
       title: 'Login', url: 'https://www.naukri.com/nlogin/login', buttons: [],
