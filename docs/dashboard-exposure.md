@@ -15,44 +15,93 @@ computer can reach it. On a laptop, use it as is.
 
 ## 2. Sign-in is mandatory
 
-Every exposure needs sign-in. There is one allowed account, checked through OpenID Connect
-(Google by default, `WEB_OIDC_ISSUER`).
+Every exposure needs sign-in. `WEB_AUTH_MODE` picks one of three modes. `token` is the default.
 
-- Change the account only on the machine: `npm run dashboard -- allow <email>`.
-  There is no web page for this on purpose.
-- `npm run dashboard -- status` shows the current account, `npm run dashboard -- audit`
-  lists recent sign-ins.
-- Recovery: if your Google email changes or the account is lost, run the `allow` command
-  again with the new email on the machine. The next successful sign-in pins the new account.
+| Mode | What protects the page | Network use | Where it works |
+|---|---|---|---|
+| `token` | A long random access token you hold. Only its SHA-256 hash is stored, in `.dashboard/auth.sqlite`. | None | Loopback, or behind a TLS proxy |
+| `google_desktop` | One allowed Google account, through the Desktop OAuth client you already made for Gmail. | Google | Loopback only |
+| `oidc` | One allowed account through a Web OAuth client (`WEB_OIDC_*`, Google by default). | Provider | Loopback, or behind a TLS proxy |
+
+If `WEB_AUTH_MODE` is unset and both `WEB_OIDC_CLIENT_ID` and `WEB_OIDC_CLIENT_SECRET` are set,
+the mode resolves to `oidc` and `npm run doctor` warns once. Existing OIDC installs need to do
+nothing, or can set `WEB_AUTH_MODE=oidc` explicitly to silence the warning.
+
+### Token mode
+
+- `npm run dashboard -- token` creates the token and prints it once. It exits with code 3 if a
+  token already exists. `npm run web` prints nothing secret. Setup runs `token` for you.
+- Open `http://127.0.0.1:<port>/` with `#token=<token>` appended (the part after `#` never
+  leaves the browser), or paste the token into the login form. The page sends it with a POST to
+  `/auth/token`. A `?token=` query string does not sign you in, on purpose.
+- The token is not stored anywhere in readable form: not in `.env`, not in the database. Only the
+  hash is kept. Do not paste it into chat, tickets or screenshots.
+- `npm run dashboard -- rotate` replaces the token and revokes every session. Run it if you
+  lose the token or think it leaked.
+- It listens on loopback by default. A non-loopback request is accepted only when a TLS proxy
+  you control marked it https: set `WEB_TRUST_PROXY=true` and `WEB_ALLOWED_HOSTS`. Plain http
+  from another machine is refused, because the token would cross the network in clear text.
+- The SSH tunnel keeps working unchanged: the page still sees loopback.
+- Sessions, CSRF, the idle and absolute limits and the failed-login throttle are the same in all
+  three modes.
+
+### Google desktop mode (unverified)
+
+- Reuses the Desktop OAuth client from the Gmail setup. It needs an allowed account:
+  `DASHBOARD_ALLOWED_EMAIL` or `npm run dashboard -- allow <email>`. The keys file comes from
+  `WEB_GOOGLE_KEYS_PATH`, else `GMAIL_OAUTH_PATH`.
+- Loopback only. The server rejects `WEB_TRUST_PROXY=true` in this mode.
+- `WEB_GOOGLE_REDIRECT_SHAPE` is `callback` (`/auth/callback`) or `root` (`/`).
+- Unverified: whether Google accepts a loopback redirect from this client has not been checked
+  against live Google. `npm run dashboard -- google-url` prints the sign-in URL so you can test
+  it. If `callback` is refused with `redirect_uri_mismatch`, set the shape to `root` and try
+  again.
+- Fallback order if it is refused: `root` shape, then `oidc` with a dedicated Web client, then
+  `token`.
+
+### OIDC mode
+
+- One allowed account, checked through OpenID Connect (Google by default, `WEB_OIDC_ISSUER`).
 - The redirect URI registered at the provider must equal `WEB_OIDC_REDIRECT_URI` in `.env`
   exactly: `https://<your hostname>/auth/callback`, or `http://127.0.0.1:8787/auth/callback`
   for localhost only.
 
+### Status and recovery
+
+- `npm run dashboard -- status` shows the mode, the account (when the mode uses one) and the
+  token state. `npm run dashboard -- audit` lists recent sign-ins.
+- Lost token: run `npm run dashboard -- rotate` on the machine.
+- Google or OIDC account changed or lost: run `npm run dashboard -- allow <email>` with the new
+  email on the machine. The next successful sign-in pins the new account. There is no web page
+  for this on purpose.
+
 ## 3. Options
 
 All four keep the dashboard process on `127.0.0.1`. Set the env keys in `.env` and restart
-`npm run web`.
+`npm run web`. Behind a proxy all three modes work except `google_desktop`, which is loopback
+only. So with Tailscale `serve` or a tunnel, use `token` or `oidc`.
 
 ### Tailscale (use `serve`, not `funnel`)
 
 1. Install Tailscale on the machine and on your phone, same tailnet.
 2. Run `tailscale serve --bg 8787`. This gives HTTPS inside your tailnet only.
    Avoid `tailscale funnel`: it publishes the page to the whole internet.
-3. Register `https://<machine>.<tailnet>.ts.net/auth/callback` as the redirect URI.
-4. Set `WEB_OIDC_REDIRECT_URI` to the same value, `WEB_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net`
-   and `WEB_TRUST_PROXY=true`.
+3. Set `WEB_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net` and `WEB_TRUST_PROXY=true`.
+4. Modes: `token` or `oidc` (not `google_desktop`). For `oidc`, register
+   `https://<machine>.<tailnet>.ts.net/auth/callback` and set `WEB_OIDC_REDIRECT_URI` to it.
 
 Protects: only devices in your tailnet can connect, with HTTPS. Does not protect: a device of
-yours that is already in the tailnet and compromised. Open risk (unverified): Google may reject
-a `ts.net` redirect URI. This must be tried live. If it is refused, use the SSH tunnel or a
-real domain through Cloudflare Tunnel.
+yours that is already in the tailnet and compromised. Open risk for `oidc` (unverified): Google
+may reject a `ts.net` redirect URI. This must be tried live. If it is refused, use `token`, the
+SSH tunnel, or a real domain through Cloudflare Tunnel.
 
 ### Cloudflare Tunnel
 
 1. Create a tunnel to `http://127.0.0.1:8787` with `cloudflared tunnel` and map a hostname you own.
 2. Optionally put Cloudflare Access in front as an extra gate.
-3. Register `https://<your hostname>/auth/callback`; set `WEB_OIDC_REDIRECT_URI` to it,
-   `WEB_ALLOWED_HOSTS=<your hostname>` and `WEB_TRUST_PROXY=true`.
+3. Set `WEB_ALLOWED_HOSTS=<your hostname>` and `WEB_TRUST_PROXY=true`.
+4. Modes: `token` or `oidc` (not `google_desktop`). For `oidc`, register
+   `https://<your hostname>/auth/callback` and set `WEB_OIDC_REDIRECT_URI` to it.
 
 Protects: HTTPS and no open inbound port. Does not protect: the page is reachable from the
 internet, so only the sign-in stands in the way (unless you add Access).
@@ -84,7 +133,8 @@ server {
 server { listen 80; server_name dash.example.com; return 301 https://$host$request_uri; }
 ```
 
-Set `WEB_ALLOWED_HOSTS=dash.example.com`, `WEB_TRUST_PROXY=true` and
+Set `WEB_ALLOWED_HOSTS=dash.example.com` and `WEB_TRUST_PROXY=true`. Modes: `token` or `oidc`
+(not `google_desktop`); for `oidc` also set
 `WEB_OIDC_REDIRECT_URI=https://dash.example.com/auth/callback`. Never expose plain http.
 
 Protects: HTTPS. Does not protect: public reachability; you must keep the proxy patched.
@@ -92,7 +142,8 @@ Protects: HTTPS. Does not protect: public reachability; you must keep the proxy 
 ### SSH tunnel
 
 For a server: `ssh -L 8787:127.0.0.1:8787 host`, then open `http://127.0.0.1:8787`.
-Keep `WEB_OIDC_REDIRECT_URI=http://127.0.0.1:8787/auth/callback` (allowed for loopback).
+Modes: all three work, because the page sees loopback. For `oidc` keep
+`WEB_OIDC_REDIRECT_URI=http://127.0.0.1:8787/auth/callback` (allowed for loopback).
 Leave `WEB_TRUST_PROXY=false`.
 
 Protects: nothing is exposed; SSH keys gate access. Does not protect: the laptop end of the tunnel.
@@ -101,8 +152,11 @@ Protects: nothing is exposed; SSH keys gate access. Does not protect: the laptop
 
 - HTTPS only (except the loopback URI).
 - `WEB_TRUST_PROXY=true` only behind a proxy you control.
-- Redirect URI identical at the provider and in `.env`.
-- OAuth consent screen in testing mode with only you as test user.
+- `WEB_AUTH_MODE` matches what you intend (`npm run doctor` shows the active mode).
+- The token was not pasted into chat, tickets or screenshots; if it was, run
+  `npm run dashboard -- rotate`.
+- For `oidc`: redirect URI identical at the provider and in `.env`.
+- For Google modes: OAuth consent screen in testing mode with only you as test user.
 - Keep `WEB_CHAT_ENABLED=false` unless you need the chat box, and keep its permission set `read_only`.
 - Run `npm run doctor`.
 - Review sign-ins with `npm run dashboard -- audit`.
@@ -112,5 +166,5 @@ Protects: nothing is exposed; SSH keys gate access. Does not protect: the laptop
 
 The dashboard shows company contacts, email addresses, recruiter names, outreach drafts and
 conversation state. That is personal data about you and other people. A page like that should
-not sit on the public internet by default: one misconfiguration or stolen Google session would
-expose it. Prefer the tailnet or an SSH tunnel.
+not sit on the public internet by default: one misconfiguration or a leaked token or Google
+session would expose it. Prefer the tailnet or an SSH tunnel.

@@ -50,7 +50,7 @@ In this order:
 - `limits`: shows every daily cap, quiet hour and pacing value with its default and an explanation, and writes the ones you choose to `.env`.
 - `access`: asks which permission set sessions may use (default `read_only`), applies it and installs the ccgram hooks into `.claude/settings.local.json`.
 - `classifier`: downloads the prompt-injection classifier model (about 750 MB) only after you consent, then verifies its files. The default model is English-only; see [classifier models](docs/classifier-models.md) for licences, limitations and how to switch. The smoke test is skipped while the files are only pinned by a weaker hash. Live LinkedIn and Naukri reads and sends are refused (fail closed) until a model is downloaded, pinned and fitted and `CLASSIFIER_MODEL` is set; dry runs continue unscreened.
-- `dashboard`: sets up sign-in with one allowed Google account through an OAuth client from your own Google Cloud project; no password or token is created and the client secret is stored only in `.env`. The sign-in part is skipped only if `scripts/dashboard.ts` is missing (it is present in this repository).
+- `dashboard`: sets up dashboard sign-in. The default is a one-time access token (`npm run dashboard -- token`, shown once, only its hash is stored); Google desktop and OIDC with one allowed Google account are options. The sign-in part is skipped only if `scripts/dashboard.ts` is missing (it is present in this repository).
 - `final`: runs the doctor once more, lists anything still open and prints the next steps.
 
 ---
@@ -129,7 +129,7 @@ Commands you can send from Telegram (or type in a CLI session):
 
 ## Status web page
 
-Start it with `npm run web` (sign-in is Google OIDC: set the `WEB_OIDC_*` keys and `DASHBOARD_ALLOWED_EMAIL` in `.env`, or run `npm run dashboard -- allow <email>`; see `.env.example`; `npm run doctor` shows the dashboard checks). It prints `http://127.0.0.1:<port>`.
+Start it with `npm run web`; on first run use `npm run dashboard -- token` (setup does this for you) and open the printed URL. The token is shown once, and `npm run dashboard -- rotate` replaces it. The sign-in mode is `WEB_AUTH_MODE`: `token` (default), `google_desktop` (loopback only, reuses the Gmail Desktop client, unverified) or `oidc` (Web client, `WEB_OIDC_*`); see `.env.example`, and `npm run doctor` shows the dashboard checks. `npm run web` prints `http://127.0.0.1:<port>`.
 
 - The send box is off unless `WEB_CHAT_ENABLED=true`; when on, it types your text into a live Claude session after a two-step confirmation; the only slash commands it accepts are bare `/limits`, `/working` and `/health`. Keep the permission set at `read_only` unless you need more.
 - Text typed in the chat box also answers any pending permission or confirmation prompt in the Claude window, so only enable it for an account you trust and keep the permission set `read_only`.

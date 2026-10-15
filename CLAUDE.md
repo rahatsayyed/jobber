@@ -611,8 +611,8 @@ section is the reference for what exists.
 - **Scripts** (only those in `package.json`): `doctor` (ok/warn/fail/skip checks, never prints
   secret values), `setup` (guided wizard, 12 resumable steps, needs a TTY; `-- --list`,
   `-- --step <id>`, `-- --redo`), `status -- limits|working|health|json`, `web` (dashboard on
-  127.0.0.1, Google OIDC sign-in for one allowed account, `WEB_CHAT_ENABLED` off by default),
-  `dashboard -- allow <email>|status|audit`, `models -- list|verify|fetch|pin`, `scheduler`,
+  127.0.0.1, access-token sign-in by default, `WEB_CHAT_ENABLED` off by default),
+  `dashboard -- token|rotate|allow <email>|status|audit|google-url`, `models -- list|verify|fetch|pin`, `scheduler`,
   `scheduler:units`, `jobber:control -- stop|resume|status`, `dry-run:report`, `auto-update`
   (`--tick|--now|--dry-run|--status`), `backup` (`--tick|--now|--plan|--status`), `restore`,
   `user-data -- init|migrate`, `linkedin:login`, `linkedin:clear-halt`, `linkedin:seed`,
@@ -620,9 +620,14 @@ section is the reference for what exists.
   `permissions`, `ccgram-hooks`, and `mcp:<name>` (job-fetch, resume, contacts, email, db, gates,
   apply, discover, outreach) to start one stdio server by hand; there is no `mcp:connect` (the
   `connect` MCP is gone). The dashboard (`scripts/web.ts` serving `src/web/server.ts`, sign-in in
-  `src/dash/oidc.ts`) listens on loopback by default (`WEB_BIND`, `WEB_ALLOW_REMOTE_BIND`), signs in
-  one allowed Google account (`DASHBOARD_ALLOWED_EMAIL`, `WEB_OIDC_*`) and keeps its chat box off
-  (`WEB_CHAT_ENABLED=false`). See README.md for the dashboard and
+  `src/dash/oidc.ts`) listens on loopback by default (`WEB_BIND`, `WEB_ALLOW_REMOTE_BIND`) and
+  keeps its chat box off (`WEB_CHAT_ENABLED=false`). `WEB_AUTH_MODE` is `token` (default: a
+  one-time access token from `dashboard -- token`, only its SHA-256 hash in
+  `.dashboard/auth.sqlite`, `rotate` replaces it and revokes sessions, never in a query string,
+  loopback or a TLS proxy with `WEB_TRUST_PROXY=true` and `WEB_ALLOWED_HOSTS`), `google_desktop`
+  (loopback only, reuses the Gmail Desktop client for one allowed account; Google's redirect
+  acceptance is unverified) or `oidc` (Web client, `WEB_OIDC_*`; chosen implicitly when the mode
+  is unset and the client id and secret are set). See README.md for the dashboard and
   `docs/dashboard-exposure.md` for exposure and login recovery.
 - **One credentials file**: `.env` (mode 600, git-ignored; `.env.example` lists every key).
   Launchers parse it themselves and pass child processes an allowlisted environment; nothing
