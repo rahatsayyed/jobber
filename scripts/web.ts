@@ -12,6 +12,7 @@ import { redactSecrets, startWebServer } from '../src/web/server.js';
 import { openAuthStore, getAllowedAccount } from '../src/dash/authStore.js';
 import { allowAccount } from '../src/dash/account.js';
 import { createOidc } from '../src/dash/oidc.js';
+import { tokenStatus } from '../src/dash/accessToken.js';
 import { openReadOnlyDb } from '../src/dash/readDb.js';
 
 let maskLiterals: string[] = [];
@@ -38,6 +39,11 @@ async function main(): Promise<number> {
     return 1;
   }
   const cfg = early.config;
+  const tokenMode = cfg.authMode === 'token';
+  if (cfg.authMode === 'google_desktop') {
+    console.error('web: WEB_AUTH_MODE=google_desktop is not available in this build: refusing to start');
+    return 1;
+  }
 
   const authPath = isAbsolute(cfg.authDb) ? cfg.authDb : join(process.cwd(), cfg.authDb);
   let auth;
@@ -53,7 +59,7 @@ async function main(): Promise<number> {
     for (const e of full.errors) console.error(`web: ${e.message}`);
     return 1;
   }
-  if (!stored && cfg.allowedEmail) {
+  if (!tokenMode && !stored && cfg.allowedEmail) {
     const r = allowAccount(auth, cfg.allowedEmail, new Date());
     if (!r.ok) {
       console.error('web: DASHBOARD_ALLOWED_EMAIL is not a valid email address');
@@ -71,21 +77,27 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  const oidc = createOidc(
-    {
-      issuer: cfg.issuer,
-      clientId: cfg.clientId,
-      clientSecret: cfg.clientSecret,
-      redirectUri: cfg.redirectUri,
-      reauthPrompt: cfg.reauthPrompt,
-      maxAgeSec: cfg.reauthMaxAgeSec,
-    },
-    { fetch, now: () => new Date(), random: (n) => randomBytes(n) },
-  );
-  try {
-    await oidc.discover();
-  } catch {
-    console.error('web: warning: OIDC discovery failed at start; it will be retried on the first login');
+  let oidc: ReturnType<typeof createOidc> | undefined;
+  if (!tokenMode) {
+    oidc = createOidc(
+      {
+        issuer: cfg.issuer,
+        clientId: cfg.clientId,
+        clientSecret: cfg.clientSecret,
+        redirectUri: cfg.redirectUri,
+        reauthPrompt: cfg.reauthPrompt,
+        maxAgeSec: cfg.reauthMaxAgeSec,
+      },
+      { fetch, now: () => new Date(), random: (n) => randomBytes(n) },
+    );
+    try {
+      await oidc.discover();
+    } catch {
+      console.error('web: warning: OIDC discovery failed at start; it will be retried on the first login');
+    }
+  }
+  if (tokenMode && !tokenStatus(auth).set) {
+    console.error('web: no access token yet: run npm run dashboard -- token');
   }
 
   try {
@@ -96,8 +108,11 @@ async function main(): Promise<number> {
       allowedHosts: cfg.allowedHosts,
       trustProxy: cfg.trustProxy,
       auth,
-      oidc,
-      oidcCfg: { redirectUri: cfg.redirectUri, reauthMaxAgeSec: cfg.reauthMaxAgeSec },
+      authMode: cfg.authMode,
+      ...(tokenMode ? {} : {
+        oidc,
+        oidcCfg: { redirectUri: cfg.redirectUri, reauthMaxAgeSec: cfg.reauthMaxAgeSec },
+      }),
       data,
       cfg: loadOutreachConfig(),
       run: defaultRun,
