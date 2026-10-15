@@ -109,6 +109,29 @@ describe('run-claude spawn path (fake claude)', () => {
     expect(keys).toContain('JOBBER_RUN_PROFILE');
   });
 
+  it('--interactive on a non-interactive profile exits 2, claude not invoked', { timeout: T }, () => {
+    const r = run(['hunt', '--interactive', '--no-classifier', 'p'], DRY);
+    expect(r.status, r.stderr).toBe(2);
+    expect(r.stderr).toContain('--interactive');
+    expect(invoked()).toBe(false);
+  });
+
+  it('kill switch exits 4 before the --interactive check', { timeout: T }, () => {
+    const r = run(['hunt', '--interactive', '--no-classifier', 'p'], { ...DRY, JOBBER_KILL: '1' });
+    expect(r.status, r.stderr).toBe(4);
+    expect(invoked()).toBe(false);
+  });
+
+  it('hunt --print-args prints the golden argv and env key names only', { timeout: T }, () => {
+    const r = run(['hunt', '--print-args'], { GMAIL_APP_PASSWORD: 'synthetic-secret-value-123' });
+    expect(r.status, r.stderr).toBe(0);
+    const golden = JSON.parse(readFileSync(join(root, 'tests/fixtures/runner-golden.json'), 'utf8')) as any;
+    const printed = JSON.parse(r.stdout.split('\n')[0]) as string[];
+    expect(printed).toEqual(['claude', ...golden.hunt.args.map((a: string) => (a.startsWith('debug/runner/') ? join(root, a) : a))]);
+    expect(r.stdout).toContain('env keys: ');
+    expect(r.stdout).not.toContain('synthetic-secret-value-123');
+  });
+
   it('flags after "--" are prompt text', { timeout: T }, () => {
     const r = run(['hunt', '--no-classifier', '--', '--print-args'], DRY);
     expect(r.status, r.stderr).toBe(0);

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import {
   assertSafeArgs,
   buildClaudeArgs,
+  buildInteractiveArgs,
   buildEnv,
   loadProfiles,
   renderPolicy,
@@ -17,6 +18,7 @@ import {
 } from '../src/platform/runner.js';
 import { writeSecure } from '../src/platform/permissions.js';
 import { parseEnv } from '../src/platform/envFile.js';
+import { CLASSIFIER_SKIP_LINE, checkInteractiveUse, formatPrintArgs, spawnInteractive } from '../src/platform/interactive.js';
 import { checkClassifierForLaunch } from '../src/platform/launchCheck.js';
 import { isDryRun } from '../src/safety/dryRun.js';
 import { stopActive } from './killSwitch.js';
@@ -49,7 +51,7 @@ async function main(): Promise<void> {
       i++;
       break;
     }
-    if (a === '--print-args' || a === '--no-classifier') flags.add(a);
+    if (a === '--print-args' || a === '--no-classifier' || a === '--interactive') flags.add(a);
     else break;
   }
   const promptParts = argv.slice(i);
@@ -79,7 +81,26 @@ async function main(): Promise<void> {
     }
   }
 
-  const args = buildClaudeArgs(profileName, profile, { settingsPath });
+  const interactive = profile.interactive === true;
+  const printOnly = flags.has('--print-args');
+  // Kill switch first (--print-args only prints, as before).
+  if (!printOnly) {
+    const stop0 = stopActive(root, process.env);
+    if (stop0.stopped) die(4, stop0.reason);
+  }
+  const tty = printOnly || (Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY));
+  const useErr = checkInteractiveUse(profile, flags.has('--interactive'), tty);
+  if (useErr) die(2, useErr);
+
+  const initialPrompt = promptParts.join(' ').trim();
+  let args: string[];
+  try {
+    args = interactive
+      ? buildInteractiveArgs(profileName, profile, { settingsPath }, initialPrompt)
+      : buildClaudeArgs(profileName, profile, { settingsPath });
+  } catch (e) {
+    die(2, (e as Error).message);
+  }
   const env = buildEnv(profile, process.env, dotenv);
   try {
     assertSafeArgs(args, env);
@@ -91,23 +112,25 @@ async function main(): Promise<void> {
   writeSecure(policyPath, JSON.stringify(renderPolicy(profileName, profile), null, 2));
 
   if (flags.has('--print-args')) {
-    process.stdout.write(`${JSON.stringify(['claude', ...args])}\n`);
-    process.stdout.write(`env keys: ${Object.keys(env).sort().join(',')}\n`);
+    process.stdout.write(formatPrintArgs(args, env));
     process.exit(0);
   }
-
-  const stop = stopActive(root, process.env);
-  if (stop.stopped) die(4, stop.reason);
 
   if (flags.has('--no-classifier') && process.env.JOBBER_DRY_RUN !== '1') {
     die(2, '--no-classifier is only allowed with JOBBER_DRY_RUN=1');
   }
 
-  let prompt = promptParts.length > 0 ? promptParts.join(' ') : await readStdin();
-  prompt = prompt.trim();
-  if (!prompt) die(2, 'empty prompt');
+  let prompt = '';
+  if (!interactive) {
+    prompt = promptParts.length > 0 ? promptParts.join(' ') : await readStdin();
+    prompt = prompt.trim();
+    if (!prompt) die(2, 'empty prompt');
+  }
 
-  if (!flags.has('--no-classifier')) {
+  if (profile.classifier === 'not_required') {
+    // Only reachable for a profile that loadProfiles validated as having no MCP tools.
+    process.stderr.write(`${CLASSIFIER_SKIP_LINE}\n`);
+  } else if (!flags.has('--no-classifier')) {
     let check;
     try {
       check = await checkClassifierForLaunch(env, root, isDryRun(env, { linkedin: true }));
@@ -115,6 +138,13 @@ async function main(): Promise<void> {
       die(3, `classifier not ready: ${(e as Error).message}`);
     }
     if (!check.ok) die(3, `classifier not ready: ${check.problems.join('; ')}`);
+  }
+
+  if (interactive) {
+    const ichild = spawnInteractive(spawn, args, env, root);
+    ichild.on('error', (e) => die(1, `cannot start claude: ${e.message}`));
+    ichild.on('close', (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
+    return;
   }
 
   const child = spawn('claude', args, { env, stdio: ['pipe', 'inherit', 'inherit'], cwd: root });

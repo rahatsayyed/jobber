@@ -19,6 +19,13 @@ export interface RunProfile {
   max_turns: number;
   // 'json' (default) or 'stream-json' (needed by the scheduler budget tracker).
   output_format?: 'json' | 'stream-json';
+  // true: interactive session (no -p, no --output-format, no --max-turns); needs --interactive.
+  interactive?: boolean;
+  // 'required' (default) runs the classifier launch check. 'not_required' is valid only for a
+  // profile with no MCP tools and the empty MCP config (validated in loadProfiles).
+  classifier?: 'required' | 'not_required';
+  // Exact command strings the Bash tool may run. Only valid with interactive: true.
+  bash_exact?: string[];
 }
 
 export type ResolvedProfile = RunProfile & { allow: string[]; name?: string };
@@ -54,6 +61,28 @@ export function assertSafeArgs(args: string[], env: Record<string, string>): voi
     if (/^CLAUDE_CODE_.*(SKIP|BYPASS|DANGEROUS|PERMISSION)/i.test(k)) {
       throw new Error(`refusing to start claude with ${k} set`);
     }
+  }
+}
+
+const BASH_EXACT_RE =
+  /^(npm run [a-z0-9:-]+( -- [a-z0-9 :._=-]+)?|npx tsx scripts\/[A-Za-z0-9_./-]+\.ts( [a-z0-9 :._=-]+)?)$/;
+const BASH_EXACT_BAD_RE = /[;&|<>`$()\\'"*?~\n\r]/;
+const BASH_EXACT_MAX = 40;
+const NO_MCP_CONFIG = 'config/runner/mcp.none.json';
+
+function checkBashExact(name: string, p: RunProfile): void {
+  if (p.bash_exact === undefined) return;
+  if (!Array.isArray(p.bash_exact)) throw new Error(`profile ${name}: bash_exact must be an array`);
+  if (p.interactive !== true) throw new Error(`profile ${name}: bash_exact needs interactive: true`);
+  if (name === 'hunt' || name === 'outreach_wake') throw new Error(`profile ${name}: must not have bash_exact`);
+  if (p.bash_exact.length > BASH_EXACT_MAX) throw new Error(`profile ${name}: bash_exact has more than ${BASH_EXACT_MAX} entries`);
+  const seen = new Set<string>();
+  for (const e of p.bash_exact) {
+    if (typeof e !== 'string' || !BASH_EXACT_RE.test(e) || BASH_EXACT_BAD_RE.test(e) || e.includes('..')) {
+      throw new Error(`profile ${name}: bash_exact entry not allowed: ${JSON.stringify(e)}`);
+    }
+    if (seen.has(e)) throw new Error(`profile ${name}: duplicate bash_exact entry: ${e}`);
+    seen.add(e);
   }
 }
 
@@ -123,6 +152,26 @@ export function loadProfiles(
     if (p.env_mode === 'allowlist' && p.env_keys === undefined && p.env_prefixes === undefined) {
       throw new Error(`profile ${name}: allowlist env needs env_keys or env_prefixes`);
     }
+    if (p.interactive !== undefined && typeof p.interactive !== 'boolean') {
+      throw new Error(`profile ${name}: interactive must be a boolean`);
+    }
+    if (p.interactive === true && p.env_mode !== 'allowlist') {
+      throw new Error(`profile ${name}: interactive needs env_mode allowlist`);
+    }
+    if (p.classifier !== undefined && p.classifier !== 'required' && p.classifier !== 'not_required') {
+      throw new Error(`profile ${name}: classifier must be required or not_required`);
+    }
+    if (p.classifier === 'not_required') {
+      if (
+        allow.length !== 0 ||
+        p.allow_from_permission_set !== undefined ||
+        p.allow_extra !== undefined ||
+        p.mcp_config !== NO_MCP_CONFIG
+      ) {
+        throw new Error(`profile ${name}: classifier not_required needs no MCP tools and ${NO_MCP_CONFIG}`);
+      }
+    }
+    checkBashExact(name, p);
     out[name] = { ...p, allow, name };
   }
   return out;
@@ -144,6 +193,33 @@ export function buildClaudeArgs(name: string, p: ResolvedProfile, paths: { setti
     '--disallowedTools', DANGEROUS_BUILTINS.join(','),
     '--max-turns', String(p.max_turns),
   ];
+  assertSafeArgs(args, {});
+  return args;
+}
+
+// Interactive argv: no -p, no --output-format, no --max-turns. Bash enters only as exact
+// Bash(<command>) entries from bash_exact; builtin_tools still may not list it.
+export function buildInteractiveArgs(
+  name: string,
+  p: ResolvedProfile,
+  paths: { settingsPath: string },
+  initialPrompt: string,
+): string[] {
+  void name;
+  if (p.interactive !== true) throw new Error('buildInteractiveArgs: profile is not interactive');
+  if (initialPrompt.startsWith('-')) throw new Error('initial prompt must not start with a dash');
+  const bash = p.bash_exact ?? [];
+  const tools = [...p.builtin_tools, ...(bash.length > 0 ? ['Bash'] : [])];
+  const args = [
+    '--permission-mode', 'dontAsk',
+    '--setting-sources', 'project',
+    '--strict-mcp-config', '--mcp-config', p.mcp_config,
+    '--settings', paths.settingsPath,
+    '--tools', tools.join(','),
+    '--allowedTools', [...p.allow, ...p.builtin_tools, ...bash.map((c) => `Bash(${c})`)].join(','),
+    '--disallowedTools', DANGEROUS_BUILTINS.filter((b) => !(b === 'Bash' && bash.length > 0)).join(','),
+  ];
+  if (initialPrompt !== '') args.push(initialPrompt);
   assertSafeArgs(args, {});
   return args;
 }
@@ -185,8 +261,12 @@ export function renderSettings(
   for (const v of [paths.hookPath, paths.policyPath]) {
     if (BAD_PATH_RE.test(v.replace(/^\$CLAUDE_PROJECT_DIR(?=\/)/, ''))) throw new Error('unsafe character in hook or policy path');
   }
-  return {
-    permissions: { allow: [...p.allow, ...p.builtin_tools], deny: DANGEROUS_BUILTINS },
+  const bash = p.interactive === true ? (p.bash_exact ?? []) : [];
+  const settings: Record<string, any> = {
+    permissions: {
+      allow: [...p.allow, ...p.builtin_tools, ...bash.map((c) => `Bash(${c})`)],
+      deny: DANGEROUS_BUILTINS.filter((b) => !(b === 'Bash' && bash.length > 0)),
+    },
     hooks: {
       PreToolUse: [
         {
@@ -204,6 +284,17 @@ export function renderSettings(
       ],
     },
   };
+  if (p.interactive === true) {
+    // The guard file itself ships in Task 7; settings only reference it by path.
+    settings.hooks.UserPromptSubmit = [
+      {
+        hooks: [
+          { type: 'command', command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/prompt-secret-guard.cjs"', timeout: 10, onFailure: 'block' },
+        ],
+      },
+    ];
+  }
+  return settings;
 }
 
 export function renderPolicy(name: string, p: ResolvedProfile): object {
