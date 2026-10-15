@@ -33,17 +33,17 @@ the Task tool, and only ever sees each stage's compact JSON result. See "Running
 below.
 
 A second, scheduled path runs LinkedIn and Naukri outreach: the scheduler (see "Scheduler")
-launches a bounded, restricted `claude` run per wake that dispatches four worker agents
-(`inbox-recruiter-replies`, `due-followups`, `new-outreach`, `naukri-search`; exact tool lists
-in `config/worker-tools.json`). They use the `linkedin` MCP (a locked headless Patchright
+launches a bounded, restricted `claude` run per wake that dispatches two platform operators
+(`linkedin-operator`, `naukri-operator`; exact tool lists in `config/worker-tools.json`; see
+"Layout memory and platform operators"). They use the `linkedin` MCP (a locked headless Patchright
 session on the main account, free-form `open/state/click/type/scroll/screenshot` for reading,
 typed tools: `linkedin_find_profiles` (people search for a company and role hint, also used by
 the hunt's contact-finder), `linkedin_check_connection_status`, `linkedin_connect_send`,
 `linkedin_send_message` (required `kind`: role_ask, rapport, referral_ask, followup, feedback),
-`linkedin_accept_invite`, `linkedin_limits`; 13 tools in all, see `TOOL_NAMES` in
+`linkedin_accept_invite`, `linkedin_limits`, `linkedin_layout` (read-only layout memory); 14 tools in all, see `TOOL_NAMES` in
 `src/mcp/linkedin.ts`),
-the `naukri` MCP (`naukri_search`, `naukri_inbox`, `naukri_read_thread`, `naukri_send_message`
-and the older open/state/click/type/screenshot/close) and the `outreach` MCP
+the `naukri` MCP (`naukri_search`, `naukri_inbox`, `naukri_read_thread`, `naukri_send_message`,
+`naukri_layout` and the older open/state/click/type/screenshot/close) and the `outreach` MCP
 (`list_due_touches`, `next_contacts`, `record_inbound`, `escalate`, `list_open_escalations`).
 The hunt's `contact-finder` stage finds LinkedIn people through `linkedin_find_profiles`, which
 also registers every returned profile in the `people` table (also in dry runs), so the typed send
@@ -638,6 +638,99 @@ section is the reference for what exists.
   need a restore drill (`npm run restore -- <archive> --identity <key> --drill`). Restart Claude
   sessions after an applied update (MCP servers keep old code).
 
+## Layout memory and platform operators
+
+Plan 8B. Code, not the model, remembers what the LinkedIn and Naukri pages looked like, so the
+scheduled operators can skip exploratory reads when a page matches and stop when a page drifted.
+
+**Layout memory** (`src/layout/*`). One JSON file per platform at `.jobber/layout/<platform>.json`
+(git-ignored; `LAYOUT_DIR` must resolve inside the project, else the default is used; a file
+over `LAYOUT_MAX_BYTES` is not grown). It holds only ids from the closed vocabulary in
+`src/layout/vocab.ts` (page kinds, landmark ids, count keys, action labels): page text can never
+reach it, and nothing in it is model-written. The observer is advisory: it records what the
+extractors parsed from a state read and never blocks a read. Variants are promoted after
+`LAYOUT_PROMOTE_N` observations over `LAYOUT_PROMOTE_RUNS` distinct run ids. A run id is the
+process or run id (`JOBBER_RUN_ID`, else `SCHEDULER_RUN_ID`, else per process). Promoted variants
+are never auto-evicted: a third distinct layout needs `npm run layout -- reset`
+(`variant_replaced` is effectively dormant).
+
+**Reading `layout=`**: `linkedin_state`/`linkedin_open` and the Naukri state header carry
+`layout=<match|partial|drift|unknown|blocked|logged_out|unloaded>`. `match`: known layout, use
+typed tools directly. `partial`: some landmarks missing, re-read before relying on them. `drift`:
+a learned landmark is gone. `unknown`: kind or variant not learned yet. `blocked`, `logged_out`:
+not layout problems (halt and login rules win). `unloaded`: page not fully loaded, retry.
+Read-only tools `linkedin_layout` and `naukri_layout` return the enforce mode, the last verdict
+and the compact memory.
+
+**Warn then enforce.** `LAYOUT_ENFORCE=warn` (default): typed tools add a `layout=` note and
+proceed. `enforce`: the irreversible LinkedIn tools (`linkedin_connect_send`,
+`linkedin_send_message`, `linkedin_accept_invite`) refuse with `layout_drift` or
+`layout_unverified` before any ceiling is consumed; `unknown` kinds refuse until learned;
+`partial` passes only if every landmark the tool needs is present. Naukri has the precondition
+only on `naukri_send_message` for the `thread` kind. `off` disables it. Enforce only after the
+supervised learning run below.
+
+**Drift handling.** `LAYOUT_DRIFT_ESCALATE_N` drift observations within
+`LAYOUT_DRIFT_WINDOW_HOURS` write an owner info escalation; a platform halt (`layout_drift:*` in
+`halt_flags`) needs a streak of at least `LAYOUT_DRIFT_HALT_N` AND at least 2 distinct run ids.
+Only the owner clears it.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `LAYOUT_ENFORCE` | `warn` | `off`, `warn` or `enforce` |
+| `LAYOUT_PROMOTE_N` | `3` | observations before a variant is promoted |
+| `LAYOUT_PROMOTE_RUNS` | `2` | distinct run ids needed for promotion |
+| `LAYOUT_MATCH_MIN` | `0.9` | landmark score for `match` |
+| `LAYOUT_PARTIAL_MIN` | `0.6` | landmark score for `partial` (must be <= match min) |
+| `LAYOUT_STALE_DAYS` | `30` | days before a kind counts as stale |
+| `LAYOUT_DRIFT_ESCALATE_N` | `3` | drift streak that escalates |
+| `LAYOUT_DRIFT_HALT_N` | `5` | drift streak that halts (needs 2 run ids) |
+| `LAYOUT_DRIFT_WINDOW_HOURS` | `24` | window for the streak |
+| `LAYOUT_MAX_BYTES` | `65536` | file size cap (floor 4096) |
+| `LAYOUT_RENDER_MAX_CHARS` | `1200` | cap on the memory text given to an operator |
+| `LAYOUT_UNLOADED_MAX_CHARS` | `80` | a page shorter than this is `unloaded` |
+| `LAYOUT_EXPLORE_BUDGET` | `6` | extra exploratory tool calls per kind per run |
+| `LAYOUT_DIR` | `.jobber/layout` | store directory, inside the project only |
+
+Invalid values fall back to the default and never throw.
+
+**Operators.** `linkedin-operator` and `naukri-operator` replace the four old workers
+(`due-followups`, `new-outreach`, `inbox-recruiter-replies`, `naukri-search`). The top-level wake
+session dispatches them with one Agent call each, LinkedIn first, sequentially. Each gets a list
+of tasks with a `kind` and `quota`: `inbox`, `followups`, `new_outreach`, and `search` (Naukri
+only; it returns counts only). Every operator starts with the layout tool and follows the
+`layout=` protocol; a typed-tool refusal is final for that item. Tool lists: `config/worker-tools.json`.
+
+**Owner CLI.** `npm run layout -- status|show <platform>|reset <platform> [--kind <id>]|clear-halt
+<platform>|learn <platform>` (offline; `reset` moves the file or one kind aside to
+`*.reset-<time>`; `clear-halt` clears only a `layout_drift` halt). `npm run status -- layout`
+prints the summary. `npm run doctor` checks `layout_store`, `layout_age`, `layout_drift` and
+`layout_enforce`. The dashboard chat box still accepts only `limits`, `working` and `health`.
+
+**Supervised learning run (owner-only; NOT performed in this build).**
+1. Fully restart Claude Code (new agents, new MCP tool names, removed workers); check
+   `git check-ignore .jobber/layout/linkedin.json`.
+2. Dry-run flags (`LINKEDIN_DRY_RUN=true`, `SCHEDULER_DRY_RUN=true`) and `LAYOUT_ENFORCE=warn`.
+   Trigger two scheduler wakes (two run ids) while logged in, covering a profile, a search page,
+   and for Naukri a search and a chatbot or thread page.
+3. `npm run layout -- status`: each visited kind should be `stable`; `learn <platform>` shows
+   missing observations or runs.
+4. `npm run layout -- show linkedin` and check only vocabulary ids appear; expect to tune
+   `MIN_SET` and `CRITICAL` in `src/layout/vocab.ts` (a code change).
+5. Set `LAYOUT_ENFORCE=enforce` only after a clean week of `warn` with no drift on critical kinds
+   and doctor `layout_enforce` ready. A new page kind a typed tool starts using needs a new
+   supervised learn step.
+6. On a `layout_drift:*` halt: look at the page in a headed session, `reset <platform> --kind <id>`
+   if the layout really changed, `clear-halt <platform>`, then relearn.
+
+**Known limits.** Real pages are unverified: landmark rules come from the parsed snapshot shape,
+so `MIN_SET`/`CRITICAL` need tuning after the first live observation. `chat.input` rests on the
+unverified Naukri `chatbot_Drawer` selector. The memory detects the code's view of the page, not
+the DOM: a change the extractors parse identically is invisible. LinkedIn structure counts are a
+coarse extra signal, and `shell` is a proxy. Naukri's Akamai blocks are sensitive: observation adds
+no navigation and no probe pages exist; do not add any without re-running the 2026-10-13 headless
+check. Auto-promotion can learn a bad steady state (use `reset`). Halts need the owner to clear.
+
 ## Outreach safety layers
 
 LinkedIn and Naukri outreach is agent-driven (ADR `docs/superpowers/specs/2026-10-13-adr-agent-driven-browser-runtime.md`):
@@ -729,7 +822,9 @@ model (`src/scheduler/`). Each wake: read the kill switch and halts, skip quiet 
 and token budgets (`RUN_MAX_*`), then finish the run in the `scheduler_runs` log. Wake times,
 burst sizes and waits are drawn at random in code (`PACING_*`); a usage-limit hit pauses for
 `USAGE_LIMIT_BACKOFF_MIN` rather than retrying. Escalations go to SQLite and
-`.jobber/notify.jsonl` (and `JOBBER_NOTIFY_CMD` if set). Worker agents and their exact tools:
+`.jobber/notify.jsonl` (and `JOBBER_NOTIFY_CMD` if set). The wake session dispatches the platform
+operators `linkedin-operator` then `naukri-operator` (one Agent call each, sequential, only for
+platforms with work). Operator agents and their exact tools:
 `config/worker-tools.json` and `.claude/agents/`. `npm run scheduler:units` writes launchd and
 systemd unit files under `.jobber/units` and prints the install commands; it installs nothing.
 After a non-killed wake outside quiet hours the scheduler may run the update and backup ticks
@@ -790,8 +885,8 @@ home IP; Akamai may treat a datacenter/VPS IP harder, so re-run the check from t
   (typed, gated: recruiter or reply threads only, `NAUKRI_MAX_MESSAGES_PER_DAY`, input and output
   gates, dry run and halt aware). `apply.auto` routes a naukri.com `apply_url` to
   `{status: needs_agent}`; the `sender` stage records `apply_status` `agent_naukri` and never
-  clicks through Naukri itself; the scheduled `naukri-search` worker finds jobs and the
-  `inbox-recruiter-replies` worker reads and answers or escalates recruiter messages. The manual
+  clicks through Naukri itself; the scheduled `naukri-operator` runs the `search` task (finds jobs,
+  returns counts only) and the `inbox` task (reads and answers or escalates recruiter messages). The manual
   Apply click honours dry run and halts and also consumes `naukri_apply`
   (`NAUKRI_MAX_APPLIES_PER_DAY`) beside the shared `MAX_APPLIES_PER_DAY`.
 - **Cold Naukri outreach is not possible by design**: a message goes out only on a thread already
@@ -934,7 +1029,7 @@ and the Indian and Gulf job boards.
   which ships `false`; nothing in the autonomous path has run against real Gmail, and a follow-up
   raises deliverability risk, so `SEND_LIMIT_PER_RUN` stays the ceiling. They run only from a hunt's
   reply check plus the follow-up command, never from the scheduler. LinkedIn and Naukri follow-ups
-  run from the scheduler (`due-followups`) under the cadence and ceilings in code.
+  run from the scheduler (the operators' `followups` task) under the cadence and ceilings in code.
 - LinkedIn inbound replies are read and recorded or escalated only; there are no typed LinkedIn
   inbox tools yet. Email replies and Naukri threads are handled as described above.
 - Model-bound third-party text that is NOT classifier-screened: `discover.linkedin_posts` and
@@ -962,7 +1057,7 @@ not installed (`npx playwright install --with-deps chromium` fixes them). The li
    explicit, informed design decision, not an oversight. Since the agent-driven runtime
    (ADR 2026-10-13) LinkedIn and Naukri messages are also allowed, but only through the typed,
    gated tools (`linkedin_connect_send`, `linkedin_send_message` with a required `kind`,
-   `naukri_send_message`) from the `sender` stage or the scheduled workers, never by clicking
+   `naukri_send_message`) from the `sender` stage or the scheduled operators, never by clicking
    Send through the free-form tools and never on a channel without a typed tool. The hunt's
    `sender` does not draft a direct message for an already-connected profile: it records the
    status and flags the job for a manual connect.
