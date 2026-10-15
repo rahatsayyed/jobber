@@ -94,6 +94,11 @@ describe('interactive profiles: validation', () => {
     expect(() => load({ ...guide, allow_extra: ['mcp__db__get_funnel'] })).toThrow();
     expect(() => load({ ...guide, mcp_config: '.mcp.json' })).toThrow();
     expect(() => load({ ...guide, classifier: 'maybe' })).toThrow();
+    for (const b of ['Agent', 'Task', 'Grep']) {
+      expect(() => load({ ...guide, builtin_tools: ['Skill', 'Read', b] }), b).toThrow();
+    }
+    expect(load({ ...guide, builtin_tools: ['Read'] }).builtin_tools).toEqual(['Read']);
+    expect(load({ ...guide, builtin_tools: [] }).builtin_tools).toEqual([]);
   });
   it('interactive needs env_mode allowlist', () => {
     expect(() => load({ ...guide, env_mode: 'dotenv_all', env_files: ['.env'] })).toThrow();
@@ -127,7 +132,10 @@ describe('buildInteractiveArgs and interactive settings', () => {
     expect(next(a, '--mcp-config')).toBe('config/runner/mcp.none.json');
     expect(next(a, '--tools')).toBe('Skill,Read,Bash');
     expect(next(a, '--disallowedTools')).toBe('Write,Edit,NotebookEdit,WebFetch,WebSearch');
-    expect(a[a.length - 1]).toBe('Start by running the doctor.');
+    expect(a[0]).toBe('Start by running the doctor.');
+    expect(a.slice(1).filter((x) => x === 'Start by running the doctor.')).toEqual([]);
+    expect(a.indexOf('--allowedTools')).toBeGreaterThan(0);
+    expect(a.indexOf('--disallowedTools')).toBeGreaterThan(0);
     const allowed = next(a, '--allowedTools');
     expect(allowed).toBe('Skill,Read,Bash(npm run doctor -- --json),Bash(npm run doctor)');
     const bashEntries = allowed.split(',').filter((e) => e.startsWith('Bash('));

@@ -166,7 +166,8 @@ export function loadProfiles(
         allow.length !== 0 ||
         p.allow_from_permission_set !== undefined ||
         p.allow_extra !== undefined ||
-        p.mcp_config !== NO_MCP_CONFIG
+        p.mcp_config !== NO_MCP_CONFIG ||
+        p.builtin_tools.some((b) => b !== 'Skill' && b !== 'Read')
       ) {
         throw new Error(`profile ${name}: classifier not_required needs no MCP tools and ${NO_MCP_CONFIG}`);
       }
@@ -210,7 +211,11 @@ export function buildInteractiveArgs(
   if (initialPrompt.startsWith('-')) throw new Error('initial prompt must not start with a dash');
   const bash = p.bash_exact ?? [];
   const tools = [...p.builtin_tools, ...(bash.length > 0 ? ['Bash'] : [])];
+  // The initial prompt is the FIRST argument: --allowedTools/--disallowedTools are variadic and
+  // would swallow a trailing positional. UNVERIFIED against a real claude binary (plan U2,
+  // owner check L3).
   const args = [
+    ...(initialPrompt !== '' ? [initialPrompt] : []),
     '--permission-mode', 'dontAsk',
     '--setting-sources', 'project',
     '--strict-mcp-config', '--mcp-config', p.mcp_config,
@@ -219,7 +224,6 @@ export function buildInteractiveArgs(
     '--allowedTools', [...p.allow, ...p.builtin_tools, ...bash.map((c) => `Bash(${c})`)].join(','),
     '--disallowedTools', DANGEROUS_BUILTINS.filter((b) => !(b === 'Bash' && bash.length > 0)).join(','),
   ];
-  if (initialPrompt !== '') args.push(initialPrompt);
   assertSafeArgs(args, {});
   return args;
 }
