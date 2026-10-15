@@ -97,17 +97,20 @@ export function observeLinkedin(
 function naukriKind(url: string): string {
   let host = '';
   let path = '';
+  let threaded = false;
   try {
     const u = new URL(url);
     host = u.hostname.toLowerCase();
     path = u.pathname.toLowerCase();
+    // A thread is the inbox page with a thread id (threadUrl in src/mcp/naukri.ts).
+    threaded = ['threadId', 'chatId', 'conversationId'].some((k) => u.searchParams.has(k));
   } catch {
     return 'other';
   }
   if (host !== 'naukri.com' && !host.endsWith('.naukri.com')) return 'other';
   if (/^\/(nlogin|login)(\/|$)/.test(path)) return 'login';
   if (path.startsWith('/job-listings-')) return 'job';
-  if (path.startsWith('/mnjuser/inbox') || path.startsWith('/inbox')) return 'inbox';
+  if (path.startsWith('/mnjuser/inbox') || path.startsWith('/inbox')) return threaded ? 'thread' : 'inbox';
   if (/-jobs(-|$|\/)/.test(path) || path.startsWith('/jobs')) return 'search';
   if (path === '/' || path === '') return 'home';
   return 'other';

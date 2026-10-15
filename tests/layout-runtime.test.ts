@@ -216,6 +216,7 @@ describe('observer wiring in the runtime and MCP', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const throwing = {
       observe: () => { throw new Error('observer exploded'); },
+      observeNaukri: () => { throw new Error('observer exploded'); },
       last: () => null, recordOutcome: () => undefined, render: () => '',
     };
     const { handlers, rt } = make(throwing);

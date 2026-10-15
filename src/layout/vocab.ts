@@ -6,7 +6,7 @@ export const ID_RE = /^[a-z0-9_.:-]{1,48}$/;
 
 export const KINDS: Record<Platform, readonly KindId[]> = {
   linkedin: ['profile', 'search', 'feed', 'messaging', 'invitations', 'jobs', 'login', 'checkpoint', 'other'],
-  naukri: ['job', 'search', 'inbox', 'login', 'home', 'other'],
+  naukri: ['job', 'search', 'inbox', 'thread', 'login', 'home', 'other'],
 };
 
 export const ACTION_LABELS: Record<Platform, Record<string, string>> = {
@@ -52,6 +52,7 @@ export const CRITICAL: Record<Platform, Record<KindId, readonly LandmarkId[]>> =
   },
   naukri: {
     job: ['button:apply'],
+    thread: ['chat.input'],
   },
 };
 
@@ -64,6 +65,7 @@ export const MIN_SET: Record<Platform, Record<KindId, readonly LandmarkId[]>> = 
   },
   naukri: {
     job: ['button:apply'],
+    thread: ['chat.input'],
   },
 };
 
@@ -74,4 +76,5 @@ export const TOOL_REQUIRES: Record<string, { kind: KindId; landmarks: readonly L
   linkedin_send_message: { kind: 'profile', landmarks: ['profile.name', 'profile.message_button'] },
   linkedin_find_profiles: { kind: 'search', landmarks: ['results.cards'] },
   linkedin_accept_invite: { kind: 'invitations', landmarks: ['invitations.rows'] },
+  naukri_send_message: { kind: 'thread', landmarks: ['chat.input'] },
 };

@@ -8,10 +8,10 @@ import type { BlockKind } from '../linkedin/state.js';
 import type { RawSnapshot } from '../linkedin/types.js';
 import type { LayoutConfig } from './config.js';
 import { applyObservation, type ApplyResult } from './classify.js';
-import { observeLinkedin } from './fingerprint.js';
+import { observeLinkedin, observeNaukri, type NaukriRawSnapshot } from './fingerprint.js';
 import { renderLayout } from './render.js';
 import { emptyLayout, loadLayout, saveLayout, withLayoutLock } from './store.js';
-import type { KindId, LandmarkId, LayoutFile, Platform, Recipe, Verdict } from './types.js';
+import type { KindId, LandmarkId, LayoutFile, Observation, Platform, Recipe, Verdict } from './types.js';
 import { ACTION_LABELS } from './vocab.js';
 
 export type LayoutEventName = ApplyResult['events'][number];
@@ -19,6 +19,8 @@ export interface LayoutEvent { platform: Platform; kind: KindId; event: LayoutEv
 
 export interface LayoutObserver {
   observe(raw: RawSnapshot, block: BlockKind | null): Verdict;      // classify + learn + persist + events
+  /** Naukri: the same pipeline from the already parsed snapshot; it never touches the page. */
+  observeNaukri(raw: NaukriRawSnapshot, loginRequired: boolean): Verdict;
   /** `landmarks` is the observation's own landmark set (what is on the page now). */
   last(): { kind: KindId; verdict: Verdict; landmarks?: LandmarkId[] } | null;
   recordOutcome(label: string, ok: boolean, action?: Recipe['action']): void;  // vocabulary label only
@@ -67,10 +69,10 @@ export function createLayoutObserver(d: {
     return r.file;
   };
 
-  function observe(raw: RawSnapshot, block: BlockKind | null): Verdict {
-    if (platform !== 'linkedin') return UNKNOWN;
+  // Shared tail: apply one observation under the file lock, remember it, forward its events.
+  function commit(build: () => Observation): Verdict {
     try {
-      const obs = observeLinkedin(raw, block, { unloadedMaxChars: cfg.unloadedMaxChars });
+      const obs = build();
       const res = withLayoutLock(file, () => {
         const out = applyObservation(load(), obs, { now: d.now(), runId: d.runId }, cfg);
         // Blocked, logged out and unloaded pages change nothing: skip the write.
@@ -90,6 +92,13 @@ export function createLayoutObserver(d: {
       return UNKNOWN;
     }
   }
+
+  const observe = (raw: RawSnapshot, block: BlockKind | null): Verdict =>
+    platform !== 'linkedin' ? UNKNOWN
+      : commit(() => observeLinkedin(raw, block, { unloadedMaxChars: cfg.unloadedMaxChars }));
+
+  const observeNaukriSnapshot = (raw: NaukriRawSnapshot, loginRequired: boolean): Verdict =>
+    platform !== 'naukri' ? UNKNOWN : commit(() => observeNaukri(raw, { loginRequired }));
 
   function recordOutcome(label: string, ok: boolean, action: Recipe['action'] = 'click'): void {
     try {
@@ -134,5 +143,5 @@ export function createLayoutObserver(d: {
     }
   }
 
-  return { observe, last: () => lastSeen, recordOutcome, render };
+  return { observe, observeNaukri: observeNaukriSnapshot, last: () => lastSeen, recordOutcome, render };
 }

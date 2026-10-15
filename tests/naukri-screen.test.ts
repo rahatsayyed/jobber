@@ -11,6 +11,7 @@ import { openDb } from '../src/db.js';
 import { upsertPerson } from '../src/outreach/people.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { setState } from '../src/scheduler/runLog.js';
+import { loadLayoutConfig } from '../src/layout/config.js';
 import { SCREENED_SURFACES, type ScreenVerdict, type ScreenPurpose } from '../src/safety/screen.js';
 
 const fx = (n: string) => JSON.parse(readFileSync(path.join(__dirname, 'fixtures', 'naukri', n), 'utf8'));
@@ -56,7 +57,7 @@ function deps(h: ReturnType<typeof harness>, screen: any, extra: Record<string, 
   return {
     db: openDb(':memory:'), chromium: h.launcher, sessionStatePath: p, settleMs: 0,
     env: { SCHEDULER_DRY_RUN: 'false' } as NodeJS.ProcessEnv, now: () => new Date('2026-10-14T10:00:00Z'),
-    screen, ...extra,
+    screen, layoutCfg: loadLayoutConfig({ LAYOUT_DIR: 'layout' } as NodeJS.ProcessEnv, dir), ...extra,
   } as any;
 }
 

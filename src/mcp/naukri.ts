@@ -24,6 +24,11 @@ import { classifyInboundScreened } from '../naukri/inbound.js';
 import { screenUntrusted, type ScreenPurpose, type ScreenVerdict } from '../safety/screen.js';
 import { gateField } from '../safety/fieldGate.js';
 import { naukriSendMessage, type PageDriver, type SendDeps } from '../naukri/actions.js';
+import { loadLayoutConfig, type LayoutConfig } from '../layout/config.js';
+import { createLayoutObserver, resolveRunId, type LayoutObserver } from '../layout/runtime.js';
+import type { Verdict } from '../layout/types.js';
+import { TOOL_REQUIRES } from '../layout/vocab.js';
+import { naukriLayoutPrecondition, type NaukriLayoutDecision } from '../naukri/layoutGuard.js';
 
 /**
  * `naukri` MCP server: hands and eyes for a persistent HEADLESS Naukri browser session that the
@@ -103,6 +108,8 @@ export interface NaukriDeps {
   style?: SendDeps['style'];
   /** Injectable classifier screen. Default: screenUntrusted with the deps/process env. */
   screen?: (t: string, p: ScreenPurpose) => Promise<ScreenVerdict>;
+  /** Layout memory settings; defaults to loadLayoutConfig(env). Tests pass a temp dir here. */
+  layoutCfg?: LayoutConfig;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -240,8 +247,15 @@ export interface StateFlags {
   applied_confirmation_seen: boolean;
   login_required: boolean;
   recorded?: boolean;
+  /** Layout verdict class of this page (closed set, else `unknown`); omitted when no observer is attached. */
+  layout?: string;
   extra?: string[];
 }
+
+// Closed set of layout verdict classes, taken from the Verdict type so the two cannot drift apart.
+const LAYOUT_TOKENS: readonly string[] = Object.keys({
+  match: 0, partial: 0, drift: 0, unknown: 0, blocked: 0, logged_out: 0, unloaded: 0,
+} satisfies Record<Verdict['class'], 0>);
 
 /** Compact, capped text state. Page-derived text sits in one delimited block. */
 export function formatState(raw: RawSnapshot, flags: StateFlags): string {
@@ -263,7 +277,8 @@ export function formatState(raw: RawSnapshot, flags: StateFlags): string {
   const header =
     `chatbot_open=${flags.chatbot_open} applied_confirmation_seen=${flags.applied_confirmation_seen} ` +
     `login_required=${flags.login_required}` +
-    (flags.recorded !== undefined ? ` application_recorded=${flags.recorded}` : '');
+    (flags.recorded !== undefined ? ` application_recorded=${flags.recorded}` : '') +
+    (flags.layout === undefined ? '' : ` layout=${LAYOUT_TOKENS.includes(flags.layout) ? flags.layout : 'unknown'}`);
   const extra = flags.extra?.length ? flags.extra.join('\n') + '\n' : '';
   const open = `NOTE: ${UNTRUSTED_NOTE}\n<<<PAGE_TEXT\n`;
   const close = '\nPAGE_TEXT>>>';
@@ -307,6 +322,8 @@ interface Session {
   page: any;
   countedJobs: Set<string>;
   idleTimer: NodeJS.Timeout | null;
+  /** Layout observer for this session (advisory; null when it could not be created). */
+  layout: LayoutObserver | null;
 }
 
 let session: Session | null = null;
@@ -377,6 +394,37 @@ function recordIfConfirmed(raw: RawSnapshot, deps: NaukriDeps): boolean | undefi
   return true;
 }
 
+const layoutCfgOf = (deps: NaukriDeps): LayoutConfig => deps.layoutCfg ?? loadLayoutConfig(deps.env ?? process.env);
+
+function makeObserver(deps: NaukriDeps): LayoutObserver | null {
+  try {
+    return createLayoutObserver({
+      platform: 'naukri', cfg: layoutCfgOf(deps), now: deps.now ?? (() => new Date()),
+      runId: resolveRunId(deps.env ?? process.env),
+    });
+  } catch (err) {
+    console.error(`[layout] naukri observer: ${errText(err)}`);
+    return null;
+  }
+}
+
+const errText = (err: unknown): string => String((err as Error)?.message ?? err).replace(/\s+/g, ' ').slice(0, 160);
+
+/**
+ * Feed the snapshot a tool ALREADY took to the layout observer (no page access, no extra request).
+ * Returns the verdict class for the state header, or undefined when no observer is attached.
+ * Advisory: any failure is swallowed.
+ */
+function observeLayout(raw: RawSnapshot): string | undefined {
+  const o = session?.layout;
+  if (!o) return undefined;
+  try {
+    return o.observeNaukri(raw, detectLoginRequired(raw)).class;
+  } catch {
+    return 'unknown';
+  }
+}
+
 function screenFn(deps: NaukriDeps): (t: string, p: ScreenPurpose) => Promise<ScreenVerdict> {
   if (deps.screen) return deps.screen;
   const env = deps.env ?? process.env;
@@ -417,6 +465,7 @@ async function stateText(deps: NaukriDeps, extra: string[] = []): Promise<string
     applied_confirmation_seen: detectAppliedConfirmation(raw),
     login_required: detectLoginRequired(raw),
     recorded,
+    layout: observeLayout(raw),
     extra,
   };
   return emit(formatState(raw, flags), deps);
@@ -439,7 +488,7 @@ export function naukriOpen({ url }: { url: string }, deps: NaukriDeps = {}): Pro
       browser = await launcher.launch({ channel: 'chrome', headless: true, args: ['--headless=new'] });
       const context = await browser.newContext({ ...HEADLESS_CONTEXT_OPTIONS, storageState: statePath });
       const page = await context.newPage();
-      session = { browser, context, page, countedJobs: new Set(), idleTimer: null };
+      session = { browser, context, page, countedJobs: new Set(), idleTimer: null, layout: makeObserver(deps) };
       touch(deps);
       await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' });
       await settle(page, deps);
@@ -811,6 +860,7 @@ async function loadPage(url: string, deps: NaukriDeps): Promise<string | null> {
     await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' });
     await settle(page, deps);
     const raw = (await page.evaluate(SNAPSHOT_SRC)) as RawSnapshot;
+    observeLayout(raw);
     if (detectLoginRequired(raw)) return jsonOut({ status: 'login_required' });
   } catch (err) {
     return jsonOut({ status: 'failed', reason: errReason(err, 'page error') });
@@ -967,9 +1017,33 @@ export function naukriReadThread({ thread_ref }: { thread_ref: string }, deps: N
 
 let styleCache: ReturnType<typeof loadStyleConfigSafe> | null = null;
 
+/** Mutable outcome of the send-path guards, filled by the driver and read by naukri_send_message. */
+interface SendGuard {
+  code: string | null;
+  layout: Extract<NaukriLayoutDecision, { ok: false }> | null;
+  note: string | null;
+}
+
+/** The layout precondition for naukri_send_message against the observation of the page just opened. */
+function threadLayoutDecision(deps: NaukriDeps): NaukriLayoutDecision {
+  let v: Verdict | null = null;
+  let present: readonly string[] | undefined;
+  try {
+    const last = session?.layout?.last();
+    if (last && last.kind === TOOL_REQUIRES.naukri_send_message?.kind) {
+      v = last.verdict;
+      present = last.landmarks;
+    }
+  } catch {
+    v = null;
+  }
+  return naukriLayoutPrecondition(v, layoutCfgOf(deps), present);
+}
+
 /** Real page driver on the persistent session: verify the header recipient, then type in the thread. */
-function makeDriver(deps: NaukriDeps, guard: { code: string | null } = { code: null }): PageDriver {
-  const open = async (ref: string): Promise<RawThreadPage> => {
+function makeDriver(deps: NaukriDeps, guard: SendGuard = { code: null, layout: null, note: null }): PageDriver {
+  // `observe`: feed the snapshot taken here to the layout observer (once per send, in verifyThread).
+  const open = async (ref: string, observe = false): Promise<RawThreadPage> => {
     if (!session) throw new Error('no open session');
     const page = session.page;
     const url = threadUrl(ref);
@@ -978,12 +1052,13 @@ function makeDriver(deps: NaukriDeps, guard: { code: string | null } = { code: n
       await settle(page, deps);
     }
     const snap = (await page.evaluate(SNAPSHOT_SRC)) as RawSnapshot;
+    if (observe) observeLayout(snap);
     if (detectLoginRequired(snap)) throw new Error('login_required');
     return (await page.evaluate(THREAD_SRC)) as RawThreadPage;
   };
   return {
     async verifyThread(ref) {
-      const t = await open(ref);
+      const t = await open(ref, true);
       // Send-path guard: the last inbound text is screened ('send') before anything is typed.
       const inbound = [...(Array.isArray(t.messages) ? t.messages : [])].reverse().find((m) => m.from !== 'me');
       let sv: ScreenVerdict;
@@ -996,6 +1071,13 @@ function makeDriver(deps: NaukriDeps, guard: { code: string | null } = { code: n
         guard.code = sv.code;
         throw new Error('send_screen_blocked');
       }
+      // Layout gate: after the screens, before the ceiling, the compose box and any typing.
+      const dec = threadLayoutDecision(deps);
+      if (!dec.ok) {
+        guard.layout = dec;
+        throw new Error('layout_refused');
+      }
+      guard.note = dec.note ?? null;
       return { recipient: t.recipient ?? null, company: t.company ?? null };
     },
     async sendInThread(ref, body) {
@@ -1048,7 +1130,7 @@ export function naukriSendMessageTool(
           return { ok: r.verdict !== 'block', normalized: r.normalized_text, verdict: r.verdict };
         });
       touch(deps);
-      const guard: { code: string | null } = { code: null };
+      const guard: SendGuard = { code: null, layout: null, note: null };
       const res = await naukriSendMessage(
         {
           db: getDb(deps),
@@ -1063,11 +1145,37 @@ export function naukriSendMessageTool(
         { personId: i.person_id, threadRef: i.thread_ref, text: i.text, ...(i.job_id ? { jobId: i.job_id } : {}), kind: i.kind }
       );
       if (guard.code !== null) return jsonOut({ status: 'refused', code: guard.code });
-      return jsonOut(res);
+      if (guard.layout) return jsonOut({ status: 'refused', code: guard.layout.code, reason: guard.layout.reason });
+      return jsonOut(guard.note ? { ...res, layout_note: guard.note } : res);
     } catch (err) {
       return jsonOut({ status: 'failed', reasons: [`error: ${errReason(err, 'unknown')}`] });
     }
   });
+}
+
+/**
+ * Read-only layout report: enforcement mode, the verdict of the last observed page and a compact
+ * vocabulary-only summary of learned layouts. It touches no page, so it adds no Akamai exposure.
+ */
+export function naukriLayout(deps: NaukriDeps = {}): Promise<string> {
+  const cfg = layoutCfgOf(deps);
+  const o = session?.layout ?? makeObserver(deps);
+  const last = o?.last() ?? null;
+  const v = last?.verdict;
+  let memory = '';
+  try {
+    memory = o ? o.render() : '';
+  } catch {
+    memory = '';
+  }
+  // Vocabulary ids, integers and dates only: no page text can reach this result.
+  return Promise.resolve(jsonOut({
+    enforce: cfg.enforce,
+    verdict_last: last && v
+      ? { kind: last.kind, class: v.class, ...('score' in v ? { score_pct: Math.round(v.score * 100), missing: v.missing } : {}) }
+      : null,
+    memory,
+  }));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1075,6 +1183,8 @@ export function naukriSendMessageTool(
 // ---------------------------------------------------------------------------------------------
 
 const server = new McpServer({ name: 'naukri', version: '0.1.0' });
+/** Exported for tests (registered tool names and descriptions). */
+export const naukriServer = server;
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 
 server.registerTool(
@@ -1175,6 +1285,17 @@ server.registerTool(
   },
   async ({ person_id, thread_ref, text: t, job_id, kind }) =>
     text(await naukriSendMessageTool({ person_id, thread_ref, text: t, job_id, kind }))
+);
+
+server.registerTool(
+  'naukri_layout',
+  {
+    description:
+      'Read-only: layout memory enforcement mode, the verdict class of the last observed page, and a compact vocabulary-only summary of ' +
+      'learned Naukri page layouts (no page text). Touches no page and consumes no counter.',
+    inputSchema: {},
+  },
+  async () => text(await naukriLayout())
 );
 
 server.registerTool(

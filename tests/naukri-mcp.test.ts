@@ -20,6 +20,7 @@ import {
   type Candidate,
 } from '../src/mcp/naukri.js';
 import { openDb } from '../src/db.js';
+import { loadLayoutConfig } from '../src/layout/config.js';
 
 const JOB_URL = 'https://www.naukri.com/job-listings-software-engineer-netapp-bengaluru-5-to-8-years-081026050522?src=x';
 
@@ -122,7 +123,10 @@ const benignScreen = async (t: string) => ({ blocked: false, unscreened: false, 
 
 function deps(h: ReturnType<typeof makeLauncher>, extra: Record<string, unknown> = {}) {
   // SCHEDULER_DRY_RUN='false': the native Apply click now refuses in dry run (the default).
-  return { db: openDb(':memory:'), chromium: h.launcher, sessionStatePath: stateFile(), settleMs: 0, env: { SCHEDULER_DRY_RUN: 'false' } as NodeJS.ProcessEnv, screen: benignScreen, ...extra };
+  const sessionStatePath = stateFile();
+  // layout memory goes to the temp dir, never the project's .jobber/layout
+  const layoutCfg = loadLayoutConfig({ LAYOUT_DIR: 'layout' } as NodeJS.ProcessEnv, path.dirname(sessionStatePath));
+  return { db: openDb(':memory:'), chromium: h.launcher, sessionStatePath, settleMs: 0, env: { SCHEDULER_DRY_RUN: 'false' } as NodeJS.ProcessEnv, screen: benignScreen, layoutCfg, ...extra };
 }
 
 afterEach(async () => {

@@ -122,6 +122,7 @@ describe('connectSend with a layout precondition', () => {
     let seen: { kind: string; verdict: Verdict } | null = null;
     const layout: LayoutObserver = {
       observe: () => { seen = { kind: 'profile', verdict }; return verdict; },
+      observeNaukri: () => verdict,
       last: () => seen,
       recordOutcome: () => undefined,
       render: () => '',

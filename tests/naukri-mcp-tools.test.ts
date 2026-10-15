@@ -10,6 +10,7 @@ import {
   naukriReadThread,
   naukriSendMessageTool,
   shutdownNaukri,
+  naukriServer,
   buildSearchUrl,
   threadRefFromRaw,
   THREAD_REF_RE,
@@ -24,6 +25,7 @@ import { upsertPerson } from '../src/outreach/people.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { haltPlatform } from '../src/outreach/limits.js';
 import { setState } from '../src/scheduler/runLog.js';
+import { loadLayoutConfig } from '../src/layout/config.js';
 
 const fx = (n: string) => JSON.parse(readFileSync(path.join(__dirname, 'fixtures', 'naukri', n), 'utf8'));
 const JOB_URL = 'https://www.naukri.com/job-listings-software-engineer-netapp-bengaluru-5-to-8-years-081026050522';
@@ -79,6 +81,8 @@ function deps(h: ReturnType<typeof harness>, extra: Record<string, unknown> = {}
   return {
     db: openDb(':memory:'), chromium: h.launcher, sessionStatePath: p, settleMs: 0,
     env: LIVE, now: () => new Date('2026-10-14T10:00:00Z'),
+    // layout memory goes to the temp dir, never the project's .jobber/layout
+    layoutCfg: loadLayoutConfig({ LAYOUT_DIR: 'layout' } as NodeJS.ProcessEnv, dir),
     screen: async (t: string) => ({ blocked: false, unscreened: false, text: t, flags: [], code: 'ok' as const }),
     ...extra,
   } as any;
@@ -121,6 +125,16 @@ describe('search', () => {
     const h = harness();
     const out = JSON.parse(await naukriSearch({ query: 'react' }, deps(h)));
     expect(out.status).toBe('no_session');
+  });
+});
+
+describe('tool surface', () => {
+  it('registers the typed tools and the read-only naukri_layout', () => {
+    const tools = Object.keys((naukriServer as unknown as { _registeredTools: Record<string, unknown> })._registeredTools).sort();
+    expect(tools).toEqual([
+      'naukri_click', 'naukri_close', 'naukri_inbox', 'naukri_layout', 'naukri_open', 'naukri_read_thread',
+      'naukri_screenshot', 'naukri_search', 'naukri_send_message', 'naukri_state', 'naukri_type',
+    ]);
   });
 });
 
