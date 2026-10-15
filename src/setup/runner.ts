@@ -6,7 +6,7 @@ import { formatReport, runChecks } from '../platform/doctor.js';
 import type { Run } from '../platform/tmux.js';
 import type { EnvFs } from './envWriter.js';
 import type { SetupIO } from './io.js';
-import type { SetupState } from './state.js';
+import type { SetupMode, SetupState } from './state.js';
 import { saveState } from './state.js';
 
 export interface SetupFs extends EnvFs {
@@ -32,6 +32,8 @@ export interface SetupContext {
   state: SetupState;
   statePath: string;
   envPath: string;
+  /** Plan 8F: agent (terse prompts) or terminal (coaching text); unset behaves as terminal. */
+  mode?: SetupMode;
 }
 
 export interface SetupStep {

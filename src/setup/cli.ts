@@ -1,5 +1,6 @@
 // src/setup/cli.ts
 // Pure helpers for scripts/setup.ts so they can be unit-tested without running the process.
+import type { SetupMode } from './state.js';
 import { writeEnvFile, type EnvFs } from './envWriter.js';
 
 export interface SetupArgs {
@@ -10,6 +11,7 @@ export interface SetupArgs {
   noGuide?: boolean;
   guideOnly?: boolean;
   status?: boolean;
+  mode?: SetupMode;
   error?: string;
 }
 
@@ -22,7 +24,16 @@ export function parseArgs(argv: string[]): SetupArgs {
     else if (a === '--no-guide') out.noGuide = true;
     else if (a === '--guide-only') out.guideOnly = true;
     else if (a === '--status') out.status = true;
-    else if (a === '--help' || a === '-h') out.help = true;
+    else if (a === '--mode') {
+      const v = argv[i + 1];
+      if (v === 'agent' || v === 'terminal') {
+        out.mode = v;
+        i++;
+      } else {
+        out.error = '--mode needs agent or terminal';
+        if (v !== undefined && !v.startsWith('-')) i++;
+      }
+    } else if (a === '--help' || a === '-h') out.help = true;
     else if (a === '--step') {
       const v = argv[i + 1];
       if (v === undefined || v.startsWith('-')) out.error = '--step needs a step id';
@@ -34,6 +45,11 @@ export function parseArgs(argv: string[]): SetupArgs {
   }
   if (out.guideOnly && out.noGuide && !out.error) {
     out.error = '--guide-only and --no-guide cannot be used together';
+  }
+  if (out.mode !== undefined && !out.error) {
+    if (out.noGuide && out.mode === 'agent') out.error = '--mode agent and --no-guide cannot be used together';
+    else if (out.guideOnly && out.mode === 'terminal') out.error = '--mode terminal and --guide-only cannot be used together';
+    else if (out.list || out.status) out.error = '--mode cannot be used with --list or --status';
   }
   return out;
 }
@@ -89,11 +105,12 @@ export async function spawnSuspended<T>(
   }
 }
 
-export const USAGE =`Usage: npm run setup -- [--step <id>] [--redo] [--list] [--status] [--no-guide | --guide-only] [--help]
+export const USAGE =`Usage: npm run setup -- [--step <id>] [--redo] [--list] [--status] [--mode agent|terminal] [--no-guide | --guide-only] [--help]
   --step <id>  run only that step
   --redo       run steps even when their checks already pass
   --list       print the step ids and exit
   --status     print each step as done|skipped|pending with its time and exit
+  --mode <m>   agent (guided session) or terminal (walkthrough here); remembered
   --no-guide   do not offer the guided setup session
   --guide-only start only the guided setup session in this terminal
   --help       print this text

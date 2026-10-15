@@ -23,7 +23,8 @@ import { redactingIO, ttyIO } from '../src/setup/io.js';
 import { runSetup, type SetupContext, type SetupFs } from '../src/setup/runner.js';
 import { setupGuideChecks } from '../src/platform/checksGuide.js';
 import { runChecks } from '../src/platform/doctor.js';
-import { GUIDE_CHECK_IDS, formatStatus, offerGuide, runGuideOnly } from '../src/setup/guide.js';
+import { GUIDE_CHECK_IDS, formatStatus, guideReadiness, launchGuide, runGuideOnly } from '../src/setup/guide.js';
+import { resolveMode } from '../src/setup/mode.js';
 import { loadState, saveState } from '../src/setup/state.js';
 import { ALL_STEPS } from '../src/setup/steps/index.js';
 
@@ -176,24 +177,36 @@ const ctx: SetupContext = {
 let code = 1;
 try {
   if (args.redo) delete ctx.state.guide_offered;
-  if (args.step === undefined) {
-    const guideChecks = [...setupChecks, ...setupGuideChecks()].filter((c) => GUIDE_CHECK_IDS.includes(c.id));
-    await offerGuide({
-      io: ctx.io,
-      root,
-      run: defaultRun,
-      state: ctx.state,
-      noGuide: args.noGuide === true,
-      tty: true,
-      checks: () => runChecks(guideChecks, doctor),
-      save: () => {
-        try {
-          saveState(statePath, ctx.state, fs, now);
-        } catch {
-          ctx.io.say('warning: could not save setup state');
-        }
-      },
-    });
+  const guideChecks = [...setupChecks, ...setupGuideChecks()].filter((c) => GUIDE_CHECK_IDS.includes(c.id));
+  const save = (): void => {
+    try {
+      saveState(statePath, ctx.state, fs, now);
+    } catch {
+      ctx.io.say('warning: could not save setup state');
+    }
+  };
+  const readiness = (): ReturnType<typeof guideReadiness> =>
+    guideReadiness({ run: defaultRun, checks: () => runChecks(guideChecks, doctor) });
+  const mode = await resolveMode({
+    io: ctx.io,
+    state: ctx.state,
+    now,
+    save,
+    flagMode: args.mode,
+    noGuide: args.noGuide === true,
+    interactive: args.step === undefined,
+    guideReady: readiness,
+  });
+  // --no-guide means terminal text and no guide for this run only; it is never stored.
+  ctx.mode = args.noGuide === true ? 'terminal' : mode;
+  if (args.step === undefined && ctx.mode === 'agent') {
+    const g = await readiness();
+    if (!g.ready) {
+      ctx.io.say(`The guide cannot start: ${g.why ?? 'not ready'}. Continuing with the wizard alone.`);
+    } else if ((await launchGuide({ io: ctx.io, root, run: defaultRun })) !== 'failed') {
+      ctx.state.guide_offered = true;
+      save();
+    }
   }
   code = await runSetup(ALL_STEPS, ctx, {
     only: args.step,

@@ -3,6 +3,7 @@
 // in a second terminal or a detached tmux window; it never receives keys and never reads the wizard.
 import type { CheckOutcome } from '../platform/doctor.js';
 import type { Run } from '../platform/tmux.js';
+import { SKIP_SPECS } from './skips.js';
 import type { SetupState } from './state.js';
 
 export const GUIDE_PROMPT = 'Use the setup-guide skill. Start by running the doctor.';
@@ -49,6 +50,17 @@ export async function offerGuide(d: GuideDeps): Promise<OfferResult> {
     d.io.say('Open a second terminal here and run: npm run setup -- --guide-only');
     return 'no-tmux';
   }
+  return launchGuide(d);
+}
+
+export interface LaunchDeps {
+  io: { say(line: string): void };
+  root: string;
+  run: Run;
+}
+
+/** Starts (or finds) the detached tmux guide window. No checks and no confirm: the caller decided. */
+export async function launchGuide(d: LaunchDeps): Promise<'started-tmux' | 'already-running' | 'failed'> {
   const attach = `Open another terminal and run: tmux attach -t ${GUIDE_SESSION}`;
   const keys = 'Keep entering keys in THIS window; the guide never sees them.';
   const hasSession = (await d.run('tmux', ['has-session', '-t', `=${GUIDE_SESSION}`])).code === 0;
@@ -72,6 +84,21 @@ export async function offerGuide(d: GuideDeps): Promise<OfferResult> {
   return 'started-tmux';
 }
 
+/** Whether the guide can start: the 8E checks all pass and tmux answers `-V`. */
+export async function guideReadiness(d: {
+  run: Run;
+  checks: () => Promise<CheckOutcome[]>;
+}): Promise<{ ready: boolean; why?: string }> {
+  const out = await d.checks();
+  for (const id of GUIDE_CHECK_IDS) {
+    if (out.find((o) => o.id === id)?.result.status !== 'pass') {
+      return { ready: false, why: `the guide needs the ${id} check to pass first` };
+    }
+  }
+  if ((await d.run('tmux', ['-V'])).code !== 0) return { ready: false, why: 'tmux is not available' };
+  return { ready: true };
+}
+
 /** `--guide-only`: run the guide in this terminal through the injected spawner. */
 export function runGuideOnly(
   spawner: (cmd: string, args: string[]) => Promise<number>,
@@ -81,10 +108,12 @@ export function runGuideOnly(
 
 /** `--status`: step ids, status and time only; no answers or values. */
 export function formatStatus(stepIds: string[], state: SetupState): string {
-  return stepIds
-    .map((id) => {
-      const s = state.steps[id];
-      return s ? `${id}  ${s.status}  ${s.at}` : `${id}  pending`;
-    })
-    .join('\n');
+  const recommended = new Set(SKIP_SPECS.filter((k) => k.label === 'RECOMMENDED').map((k) => k.stepId));
+  const rows = stepIds.map((id) => {
+    const s = state.steps[id];
+    if (!s) return `${id}  pending`;
+    const status = s.status === 'skipped' && recommended.has(id) ? 'skipped (recommended)' : s.status;
+    return `${id}  ${status}  ${s.at}`;
+  });
+  return [`mode: ${state.mode ?? 'unset'}`, ...rows].join('\n');
 }

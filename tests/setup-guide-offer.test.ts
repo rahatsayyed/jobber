@@ -131,7 +131,7 @@ describe('guide-only, status, args', () => {
         }),
     });
     const out = formatStatus(['env', 'limits', 'final'], st);
-    expect(out).toBe('env  done  2026-10-14T00:00:00Z\nlimits  skipped  2026-10-14T01:00:00Z\nfinal  pending');
+    expect(out).toBe('mode: unset\nenv  done  2026-10-14T00:00:00Z\nlimits  skipped  2026-10-14T01:00:00Z\nfinal  pending');
     expect(out).not.toContain('invented-value');
   });
 
