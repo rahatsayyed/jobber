@@ -69,8 +69,28 @@ describe('static frontend lint', () => {
     }
   });
 
+  it('login view strips the fragment before any network call and never persists the token', () => {
+    const t = read(join(ROOT, 'views', 'login.js'));
+    const r = t.indexOf('replaceState');
+    expect(r, 'replaceState present').toBeGreaterThan(-1);
+    for (const call of ['postToken(', 'fetch(']) {
+      const i = t.indexOf(call, t.indexOf('export function render'));
+      if (i !== -1) expect(r, `replaceState before ${call}`).toBeLessThan(i);
+    }
+    expect(t.indexOf('postToken(')).toBeGreaterThan(-1);
+    expect(/localStorage|sessionStorage|document\.cookie/.test(t)).toBe(false);
+    expect(/type:\s*['"]password['"]/.test(t)).toBe(true);
+    expect(read(join(ROOT, 'api.js'))).toMatch(/export (async )?function (getAuthMode|postToken)/);
+  });
+
   it('dom helper has no href in its attribute allowlist and views never pass href', () => {
     expect(read(join(ROOT, 'dom.js'))).not.toMatch(/['"]href['"]/);
     for (const f of js) expect(/\bhref\s*:/.test(read(f)), f).toBe(false);
+  });
+
+  it('chat reauth uses the server url and does not hardcode the oidc login path', () => {
+    const t = read(join(ROOT, 'views', 'chat.js'));
+    expect(t.includes('/auth/' + 'login')).toBe(false);
+    expect(t.includes('data.url')).toBe(true);
   });
 });

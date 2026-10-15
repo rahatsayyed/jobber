@@ -11,7 +11,8 @@ import { verifyProfile, type VerifyReport } from '../safety/modelFetch.js';
 import { SMOKE_BENIGN, SMOKE_INJECTION } from '../safety/smoke.js';
 import { screenUntrusted, SCREENED_SURFACES, callsScreen, type ScreenVerdict } from '../safety/screen.js';
 import { loadProfiles } from './runner.js';
-import { authDbPathFromEnv, isLoopbackBind, validateRunnerConfig } from '../web/env.js';
+import { authDbPathFromEnv, DEFAULT_GOOGLE_KEYS_PATH, isLoopbackBind, resolveAuthMode, validateRunnerConfig } from '../web/env.js';
+import { loadDesktopKeys } from '../dash/desktopClient.js';
 import { normaliseEmail } from '../dash/account.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -495,9 +496,11 @@ export const ccgramChecks: Check[] = [
     title: 'dashboard web server config',
     async run(ctx) {
       const r = validateRunnerConfig(mergedEnv(ctx), { accountStored: true });
-      if (r.ok) return pass('port, bind and host values are valid');
+      const m = resolveAuthMode(mergedEnv(ctx));
+      const okText = `port, bind and host values are valid (auth mode ${'mode' in m ? m.mode : 'unknown'})`;
+      if (r.ok) return pass(okText);
       const problems = r.errors.filter((e) => e.scope === 'web').map((e) => e.message);
-      return problems.length ? fail(problems.join('; '), 'fix the WEB_* values in .env') : pass('port, bind and host values are valid');
+      return problems.length ? fail(problems.join('; '), 'fix the WEB_* values in .env') : pass(okText);
     },
   },
   {
@@ -509,8 +512,12 @@ export const ccgramChecks: Check[] = [
       const authPath = isAbsolute(authRel) ? authRel : join(ctx.root, authRel);
       const dirPath = dirname(authPath);
       const authExists = ctx.fs.exists(authPath);
+      const resolved = resolveAuthMode(env);
+      if ('error' in resolved) return fail(resolved.error, 'set WEB_AUTH_MODE to token, google_desktop or oidc in .env');
+      const mode = resolved.mode;
       const configured =
         authExists ||
+        (env.WEB_AUTH_MODE ?? '').trim() !== '' ||
         ['WEB_OIDC_CLIENT_ID', 'WEB_OIDC_CLIENT_SECRET', 'WEB_OIDC_REDIRECT_URI', 'DASHBOARD_ALLOWED_EMAIL'].some(
           (k) => (env[k] ?? '').trim() !== '',
         );
@@ -524,21 +531,52 @@ export const ccgramChecks: Check[] = [
         if (mode !== null && (mode & 0o077) !== 0) fails.push(`dashboard ${label} is accessible to group or others`);
       }
       const cfg = validateRunnerConfig(env, { accountStored: true });
-      if (!cfg.ok) for (const e of cfg.errors) if (e.scope === 'oidc') fails.push(e.message);
-      if (fails.length) {
-        return fail(fails.join('; '), 'chmod 700 the .dashboard directory, chmod 600 auth.sqlite, and fix the WEB_OIDC_* values in .env');
+      const scope = mode === 'oidc' ? 'oidc' : mode === 'token' ? 'token' : 'google';
+      if (!cfg.ok) for (const e of cfg.errors) if (e.scope === scope) fails.push(e.message);
+      let failFix = 'chmod 700 the .dashboard directory, chmod 600 auth.sqlite, and fix the WEB_* values in .env';
+      if (mode === 'google_desktop') {
+        const keysRel = (env.WEB_GOOGLE_KEYS_PATH ?? '').trim() || (env.GMAIL_OAUTH_PATH ?? '').trim() || DEFAULT_GOOGLE_KEYS_PATH;
+        const keysPath = isAbsolute(keysRel) ? keysRel : join(ctx.root, keysRel);
+        const keys = ctx.fs.exists(keysPath)
+          ? loadDesktopKeys(keysPath, (p) => ctx.fs.read(p))
+          : ({ ok: false, reason: 'unreadable' } as const);
+        if (!keys.ok) {
+          fails.push(`Google keys file unusable (reason: ${keys.reason})`);
+          failFix = 'download the Desktop client again (see docs/gmail-mcp-setup.md)';
+        }
       }
+      if (fails.length) return fail(`${mode} mode: ${fails.join('; ')}`, failFix);
 
       const warns: string[] = [];
       let fix: string | undefined;
-      const acct = authExists && ctx.authAccount ? ctx.authAccount(authPath) : null;
-      if (!acct) {
+      let tokenInfo = '';
+      if (resolved.implicit) {
+        warns.push('OIDC selected implicitly, set WEB_AUTH_MODE=oidc');
+        fix = 'set WEB_AUTH_MODE=oidc in .env';
+      }
+      if (mode === 'token') {
+        const t = authExists && ctx.authToken ? ctx.authToken(authPath) : null;
+        if (!t || !t.set) {
+          warns.push('no access token is set');
+          fix = fix ?? 'npm run dashboard -- token';
+        } else if (t.createdAt) {
+          tokenInfo = ` (created ${t.createdAt.slice(0, 10)})`;
+        }
+      }
+      const acct = mode !== 'token' && authExists && ctx.authAccount ? ctx.authAccount(authPath) : null;
+      if (mode === 'token') {
+        // token mode has no allowed account
+      } else if (!acct) {
         warns.push('no allowed account is stored');
-        fix = 'run npm run dashboard -- allow <email>';
+        fix = fix ?? 'run npm run dashboard -- allow <email>';
       } else {
         if (!acct.pinned) {
-          warns.push('account is not pinned yet');
-          fix = 'the first sign-in pins the account; do it now';
+          warns.push(
+            mode === 'google_desktop'
+              ? 'Google sign-in is unverified until the first sign-in pins the account (owner check L2)'
+              : 'account is not pinned yet',
+          );
+          fix = fix ?? 'the first sign-in pins the account; do it now';
         }
         const wanted = normaliseEmail(env.DASHBOARD_ALLOWED_EMAIL ?? '');
         if (wanted !== null && wanted !== acct.email) {
@@ -561,7 +599,8 @@ export const ccgramChecks: Check[] = [
         }
         if (set !== 'read_only') warns.push('WEB_CHAT_ENABLED=true while the permission set is not read_only');
       }
-      return warns.length ? warn(warns.join('; '), fix) : pass('account pinned, files private, config valid');
+      if (warns.length) return warn(`${mode} mode: ${warns.join('; ')}`, fix);
+      return pass(mode === 'token' ? `token mode, token set${tokenInfo}` : `${mode} mode, account pinned, files private, config valid`);
     },
   },
 ];

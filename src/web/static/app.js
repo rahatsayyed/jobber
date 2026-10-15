@@ -41,9 +41,14 @@ function rememberTab(name) {
   }
 }
 
+let lastAppHash = '#/'; // where a reauth should return to
+
 function parseHash() {
-  const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-  return { name: parts[0] || '', arg: parts[1] || null };
+  if (location.hash.startsWith('#token=')) return { name: 'login', arg: null, reauth: false };
+  const [path, query] = location.hash.split('?');
+  const parts = path.replace(/^#\/?/, '').split('/').filter(Boolean);
+  const reauth = new URLSearchParams(query || '').get('reauth') === '1';
+  return { name: parts[0] || '', arg: parts[1] || null, reauth };
 }
 
 async function signOut() {
@@ -69,12 +74,15 @@ async function route() {
   const token = ++renderToken;
   cleanups.forEach((f) => f());
   cleanups = [];
-  const { name, arg } = parseHash();
+  const { name, arg, reauth } = parseHash();
   clear(root);
   if (name === 'denied' || name === 'login') {
-    login.render({ root, mode: name, onCleanup: (f) => cleanups.push(f) });
+    login.render({
+      root, mode: name, reauth, returnTo: lastAppHash, onCleanup: (f) => cleanups.push(f),
+    });
     return;
   }
+  lastAppHash = location.hash || '#/';
   if (!current) {
     try {
       current = await session();

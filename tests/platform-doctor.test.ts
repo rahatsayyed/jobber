@@ -272,14 +272,18 @@ describe('ccgram checks', () => {
 
 describe('web and dashboard-login checks', () => {
   const OIDC =
-    'WEB_OIDC_CLIENT_ID=cid\nWEB_OIDC_CLIENT_SECRET=SUPER-SECRET-OIDC\nWEB_OIDC_REDIRECT_URI=http://127.0.0.1:8787/auth/callback\n';
+    'WEB_AUTH_MODE=oidc\nWEB_OIDC_CLIENT_ID=cid\nWEB_OIDC_CLIENT_SECRET=SUPER-SECRET-OIDC\nWEB_OIDC_REDIRECT_URI=http://127.0.0.1:8787/auth/callback\n';
   type Acct = { email: string; pinned: boolean } | null;
   const run = async (
     extra: string,
-    o: { acct?: Acct; env?: NodeJS.ProcessEnv; dirMode?: number; dbMode?: number; set?: 'read_only' | 'full'; noOidc?: boolean } = {},
+    o: {
+      acct?: Acct; env?: NodeJS.ProcessEnv; dirMode?: number; dbMode?: number; set?: 'read_only' | 'full'; noOidc?: boolean;
+      bare?: boolean; token?: { set: boolean; createdAt: string | null } | null; keys?: string;
+    } = {},
   ) => {
     const files = goodFiles();
-    files['/p/.env'] = { text: GOOD_ENV + (o.noOidc ? '' : OIDC) + extra, mode: 0o600 };
+    files['/p/.env'] = { text: GOOD_ENV + (o.bare ? '' : o.noOidc ? 'WEB_AUTH_MODE=oidc\n' : OIDC) + extra, mode: 0o600 };
+    if (o.keys !== undefined) files['/p/secrets/gcp-oauth.keys.json'] = { text: o.keys, mode: 0o600 };
     files['/p/.dashboard'] = { text: '', mode: o.dirMode ?? 0o700 };
     files['/p/.dashboard/auth.sqlite'] = { text: '', mode: o.dbMode ?? 0o600 };
     if (o.set === 'full') {
@@ -289,10 +293,85 @@ describe('web and dashboard-login checks', () => {
     }
     const ctx = ctxWith(files, { env: o.env });
     ctx.authAccount = () => (o.acct === undefined ? { email: 'owner@example.com', pinned: true } : o.acct);
+    ctx.authToken = () => (o.token === undefined ? { set: true, createdAt: '2026-10-15T08:00:00.000Z' } : o.token);
     const r = await byId(ctx);
     return { web: r['web'], login: r['dashboard-login'] };
   };
   const OWNER = 'DASHBOARD_ALLOWED_EMAIL=owner@example.com\n';
+  const DESKTOP_OK = JSON.stringify({
+    installed: {
+      client_id: 'x.apps.googleusercontent.com', client_secret: 'S', project_id: 'p',
+      auth_uri: 'https://accounts.google.com/o/oauth2/v2/auth', token_uri: 'https://oauth2.googleapis.com/token',
+      redirect_uris: ['http://localhost'],
+    },
+  });
+
+  describe('per auth mode', () => {
+    it('token: no token stored warns with the token fix', async () => {
+      const r = (await run('WEB_AUTH_MODE=token\n', { bare: true, token: { set: false, createdAt: null } })).login;
+      expect(r.status).toBe('warn');
+      expect(r.detail).toContain('no access token is set');
+      expect(r.fix).toContain('npm run dashboard -- token');
+    });
+    it('token: token set passes and states the mode, no secret shapes', async () => {
+      const r = (await run('WEB_AUTH_MODE=token\n', { bare: true })).login;
+      expect(r.status).toBe('pass');
+      expect(r.detail).toContain('token mode, token set (created 2026-10-15)');
+      expect(r.detail).not.toMatch(/[A-Za-z0-9_-]{43}/);
+      expect(r.detail).not.toMatch(/[0-9a-f]{64}/);
+    });
+    it('token: non-loopback bind without proxy and hosts fails', async () => {
+      const r = (await run('WEB_AUTH_MODE=token\nWEB_BIND=192.168.1.5\nWEB_ALLOW_REMOTE_BIND=true\n', { bare: true })).login;
+      expect(r.status).toBe('fail');
+      expect(r.detail).toContain('WEB_TRUST_PROXY=true');
+    });
+    it('token: loopback with proxy trust and no hosts warns', async () => {
+      const r = (await run('WEB_AUTH_MODE=token\nWEB_TRUST_PROXY=true\n', { bare: true })).login;
+      expect(r.status).toBe('warn');
+      expect(r.detail).toContain('WEB_ALLOWED_HOSTS');
+    });
+    it('google_desktop: missing keys file fails with the reason and fix', async () => {
+      const r = (await run('WEB_AUTH_MODE=google_desktop\n' + OWNER, { bare: true })).login;
+      expect(r.status).toBe('fail');
+      expect(r.detail).toContain('unreadable');
+      expect(r.fix).toContain('docs/gmail-mcp-setup.md');
+    });
+    it('google_desktop: wrong-shape keys fail with a reason code, never content', async () => {
+      const r = (await run('WEB_AUTH_MODE=google_desktop\n' + OWNER, { bare: true, keys: JSON.stringify({ web: { client_id: 'LEAKME' } }) })).login;
+      expect(r.status).toBe('fail');
+      expect(JSON.stringify(r)).not.toContain('LEAKME');
+    });
+    it('google_desktop: unpinned account warns about L2', async () => {
+      const r = (await run('WEB_AUTH_MODE=google_desktop\n' + OWNER, { bare: true, keys: DESKTOP_OK, acct: { email: 'owner@example.com', pinned: false } })).login;
+      expect(r.status).toBe('warn');
+      expect(r.detail).toContain('owner check L2');
+      expect(JSON.stringify(r)).not.toContain('googleusercontent');
+    });
+    it('google_desktop: pinned account with good keys passes', async () => {
+      const r = (await run('WEB_AUTH_MODE=google_desktop\n' + OWNER, { bare: true, keys: DESKTOP_OK })).login;
+      expect(r.status).toBe('pass');
+    });
+    it('google_desktop: non-loopback bind fails', async () => {
+      const r = (await run('WEB_AUTH_MODE=google_desktop\nWEB_BIND=192.168.1.5\nWEB_ALLOW_REMOTE_BIND=true\n' + OWNER, { bare: true, keys: DESKTOP_OK })).login;
+      expect(r.status).toBe('fail');
+    });
+    it('implicit oidc warns once and does not fail', async () => {
+      const implicit = OIDC.replace('WEB_AUTH_MODE=oidc\n', '');
+      const files = goodFiles();
+      files['/p/.env'] = { text: GOOD_ENV + implicit + OWNER, mode: 0o600 };
+      files['/p/.dashboard'] = { text: '', mode: 0o700 };
+      files['/p/.dashboard/auth.sqlite'] = { text: '', mode: 0o600 };
+      const ctx = ctxWith(files);
+      ctx.authAccount = () => ({ email: 'owner@example.com', pinned: true });
+      const r = (await byId(ctx))['dashboard-login'];
+      expect(r.status).toBe('warn');
+      expect(r.detail.match(/selected implicitly/g)?.length).toBe(1);
+      expect(r.detail).toContain('WEB_AUTH_MODE=oidc');
+    });
+    it('web check names the mode', async () => {
+      expect((await run('WEB_AUTH_MODE=token\n', { bare: true })).web.detail).toContain('token');
+    });
+  });
 
   it('passes with a pinned account and a good config', async () => {
     const r = await run(OWNER);

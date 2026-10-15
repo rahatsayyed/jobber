@@ -15,6 +15,8 @@ import { redactSecrets } from '../safety/redact.js';
 import { buildSnapshot } from '../status/snapshot.js';
 import { audit, listAudit, savePendingLogin, takePendingLogin, type AuthDb } from '../dash/authStore.js';
 import { OidcError, type createOidc } from '../dash/oidc.js';
+import { verifyToken } from '../dash/accessToken.js';
+import type { AuthMode } from './env.js';
 import { evaluateLogin, normaliseEmail } from '../dash/account.js';
 import { checkLogin, recordLogin } from '../dash/throttle.js';
 import {
@@ -42,8 +44,10 @@ export interface WebDeps {
   allowedHosts: string[]; // extra Host values (tunnel hostnames); loopback with port is always allowed
   trustProxy: boolean; // WEB_TRUST_PROXY
   auth: AuthDb;
-  oidc: ReturnType<typeof createOidc>;
-  oidcCfg: { redirectUri: string; reauthMaxAgeSec: number };
+  authMode?: AuthMode; // default 'oidc'
+  oidc?: ReturnType<typeof createOidc>; // required for oidc and google_desktop
+  oidcCfg?: { redirectUri: string; reauthMaxAgeSec: number }; // required for oidc and google_desktop
+  googleRedirectShape?: 'callback' | 'root'; // google_desktop only; root routes GET /?code&state to the callback
   data: BetterSqlite3.Database; // read-only
   cfg: OutreachConfig;
   run: Run;
@@ -88,6 +92,11 @@ export function createWebServer(deps: WebDeps): http.Server {
   if (!LOOPBACK_BINDS.has(deps.bind) && !deps.allowRemoteBind) {
     throw new Error('refusing to bind a non-loopback address without allowRemoteBind');
   }
+  const authMode: AuthMode = deps.authMode ?? 'oidc';
+  if (authMode !== 'token' && (!deps.oidc || !deps.oidcCfg)) {
+    throw new Error(`auth mode ${authMode} needs oidc and oidcCfg`);
+  }
+  const reauthMaxAgeSec = deps.oidcCfg?.reauthMaxAgeSec ?? 300;
   const now = deps.now ?? ((): Date => new Date());
   const statics = loadStatic(deps.staticDir ?? fileURLToPath(new URL('./static', import.meta.url)));
   const threshold = deps.threshold ?? 60;
@@ -122,6 +131,7 @@ export function createWebServer(deps: WebDeps): http.Server {
   }
 
   async function authLogin(c: Ctx): Promise<void> {
+    if (authMode === 'token') return json(c.res, 404, { error: 'not found' });
     const reauth = c.url.searchParams.get('reauth') === '1';
     if (reauth && !c.session) {
       json(c.res, 401, { error: 'unauthenticated' });
@@ -135,7 +145,7 @@ export function createWebServer(deps: WebDeps): http.Server {
     }
     let req;
     try {
-      req = await deps.oidc.buildAuthRequest({ reauth });
+      req = await deps.oidc!.buildAuthRequest({ reauth });
     } catch (e) {
       audit(deps.auth, 'login_error', { ip: c.ip, note: e instanceof OidcError ? e.code : 'provider' }, t);
       denied(c.res);
@@ -159,6 +169,7 @@ export function createWebServer(deps: WebDeps): http.Server {
   }
 
   async function authCallback(c: Ctx): Promise<void> {
+    if (authMode === 'token') return json(c.res, 404, { error: 'not found' });
     const t = now();
     const clearOidc = clearCookie(oidcCookieName(c.secure), c.secure);
     const th = checkLogin(deps.auth, c.ip, t);
@@ -187,8 +198,8 @@ export function createWebServer(deps: WebDeps): http.Server {
 
     let identity;
     try {
-      const { idToken } = await deps.oidc.exchangeCode(code, pending.verifier);
-      identity = await deps.oidc.verifyIdToken(idToken, {
+      const { idToken } = await deps.oidc!.exchangeCode(code, pending.verifier);
+      identity = await deps.oidc!.verifyIdToken(idToken, {
         nonce: pending.nonce,
         ...(pending.reauth ? { notBefore: new Date(pending.createdAt) } : {}),
       });
@@ -237,6 +248,55 @@ export function createWebServer(deps: WebDeps): http.Server {
 
   // ---- api routes --------------------------------------------------------------------------------------------
 
+  // Token login. Every denial is the same generic body; the token is never logged, audited or echoed.
+  const LOOPBACK_PEERS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+  function transportOk(c: Ctx): boolean {
+    if (c.secure) return true;
+    const peer = c.req.socket.remoteAddress ?? '';
+    if (!LOOPBACK_PEERS.has(peer)) return false;
+    for (const k of Object.keys(c.req.headers)) {
+      if (k.startsWith('x-forwarded-') || k === 'forwarded') return false;
+    }
+    const host = (c.req.headers.host ?? '').toLowerCase();
+    return host === `127.0.0.1:${port()}` || host === `localhost:${port()}`;
+  }
+
+  async function authToken(c: Ctx): Promise<void> {
+    if (authMode !== 'token') return json(c.res, 404, { error: 'not found' });
+    const t = now();
+    if (!transportOk(c)) {
+      audit(deps.auth, 'token_login_denied', { ip: c.ip, note: 'insecure_transport' }, t);
+      return json(c.res, 403, { error: 'insecure_transport' });
+    }
+    if (c.req.headers.origin !== `${c.secure ? 'https' : 'http'}://${c.req.headers.host ?? ''}`) {
+      return json(c.res, 403, { error: 'forbidden origin' });
+    }
+    if (!/^application\/json\s*(;|$)/i.test(c.req.headers['content-type'] ?? '')) {
+      return json(c.res, 403, { error: 'forbidden' });
+    }
+    const th = checkLogin(deps.auth, c.ip, t);
+    if (!th.allowed) return lockoutResponse(c, th.scope ?? 'ip', th.retryAfterSec);
+    const body = await readJson(c.req, 1024);
+    const o = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+    if (!verifyToken(deps.auth, o.token)) {
+      recordLogin(deps.auth, c.ip, false, t);
+      audit(deps.auth, 'token_login_denied', { ip: c.ip, note: 'bad_token' }, t);
+      return json(c.res, 401, { error: 'denied' });
+    }
+    recordLogin(deps.auth, c.ip, true, t);
+    if (o.reauth === true) {
+      if (!c.session) return json(c.res, 401, { error: 'denied' });
+      refreshAuth(deps.auth, c.session.idHash, t);
+      audit(deps.auth, 'reauth_ok', { ip: c.ip }, t);
+      return json(c.res, 200, { ok: true });
+    }
+    const old = parseCookies(c.req.headers.cookie)[sessionCookieName(c.secure)];
+    if (old) revokeSession(deps.auth, old, t);
+    const { cookieValue } = createSession(deps.auth, c.ip, t, t);
+    audit(deps.auth, 'token_login_ok', { ip: c.ip }, t);
+    json(c.res, 200, { ok: true }, { 'Set-Cookie': serializeSession(cookieValue, c.secure, SESSION_MAX_AGE_SEC) });
+  }
+
   const routes: Route[] = [];
   const add = (method: string, pattern: string, open: boolean, fn: RouteFn): void => {
     const re = new RegExp('^' + pattern.replace(/:[a-z]+/g, '([^/]+)') + '$');
@@ -246,6 +306,8 @@ export function createWebServer(deps: WebDeps): http.Server {
   add('GET', '/api/health', true, (c) => json(c.res, 200, { ok: true }));
   add('GET', '/auth/login', true, authLogin);
   add('GET', '/auth/callback', true, authCallback);
+  add('GET', '/api/auth/mode', true, (c) => json(c.res, 200, { mode: authMode }));
+  add('POST', '/auth/token', true, authToken);
 
   add('POST', '/api/logout', false, (c) => {
     const cookie = parseCookies(c.req.headers.cookie)[sessionCookieName(c.secure)];
@@ -262,7 +324,7 @@ export function createWebServer(deps: WebDeps): http.Server {
       expiresAt: s.expiresAt,
       authAt: s.authAt,
       chatEnabled: deps.chat.enabled,
-      reauthRequired: !isFresh(s, now(), deps.oidcCfg.reauthMaxAgeSec),
+      reauthRequired: !isFresh(s, now(), reauthMaxAgeSec),
     });
   });
 
@@ -373,9 +435,11 @@ export function createWebServer(deps: WebDeps): http.Server {
   // ---- confirmed chat send (CSRF and Origin are enforced by the gate for every POST) ----------------------
 
   const lastSend = new Map<string, number>(); // session id hash -> last send time (ms)
-  const stale = (c: Ctx): boolean => !isFresh(c.session!, now(), deps.oidcCfg.reauthMaxAgeSec);
+  const stale = (c: Ctx): boolean => !isFresh(c.session!, now(), reauthMaxAgeSec);
   const reauth = (c: Ctx): void =>
-    json(c.res, 401, { error: 'reauth_required', url: '/auth/login?reauth=1' });
+    json(c.res, 401, {
+      error: 'reauth_required', url: authMode === 'token' ? '/#/login?reauth=1' : '/auth/login?reauth=1',
+    });
   const bodyText = async (c: Ctx): Promise<{ text: unknown; token: unknown }> => {
     const b = await readJson(c.req, 8192);
     const o = (b && typeof b === 'object' ? b : {}) as Record<string, unknown>;
@@ -494,6 +558,20 @@ export function createWebServer(deps: WebDeps): http.Server {
       return json(res, 400, { error: 'bad request' });
     }
     const path = url.pathname;
+
+    if (
+      method === 'GET' && path === '/' && authMode === 'google_desktop' && deps.googleRedirectShape === 'root' &&
+      url.searchParams.has('code') && url.searchParams.has('state')
+    ) {
+      const s1 = validateSession(deps.auth, parseCookies(req.headers.cookie)[sessionCookieName(secure)], now());
+      try {
+        await authCallback({ req, res, url, ip, secure, session: s1 });
+      } catch {
+        if (!res.headersSent) json(res, 500, { error: 'internal' });
+        else res.end();
+      }
+      return;
+    }
 
     const file = method === 'GET' ? statics.get(path) : undefined;
     if (file) {

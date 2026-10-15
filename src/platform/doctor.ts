@@ -27,6 +27,8 @@ export interface DoctorContext {
   now?: () => Date;
   // Offline read of the dashboard allowed-account row (email and whether a sub is pinned). Optional.
   authAccount?(path: string): { email: string; pinned: boolean } | null;
+  // Offline read of whether an access token is stored (never the hash). Optional.
+  authToken?: (authPath: string) => { set: boolean; createdAt: string | null } | null;
 }
 
 // A check that cannot run yet ("skipped until installed"); never affects the exit code.

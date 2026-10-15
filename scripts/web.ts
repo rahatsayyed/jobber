@@ -9,9 +9,11 @@ import { parseEnv } from '../src/platform/envFile.js';
 import { secretValuesFromEnv } from '../src/safety/outputGate.js';
 import { validateRunnerConfig } from '../src/web/env.js';
 import { redactSecrets, startWebServer } from '../src/web/server.js';
-import { openAuthStore, getAllowedAccount } from '../src/dash/authStore.js';
+import { openAuthStore, getAllowedAccount, recordAuthMode } from '../src/dash/authStore.js';
 import { allowAccount } from '../src/dash/account.js';
 import { createOidc } from '../src/dash/oidc.js';
+import { tokenStatus } from '../src/dash/accessToken.js';
+import { loadDesktopKeys, keysFailureMessage, oidcConfigForDesktop, type DesktopClient } from '../src/dash/desktopClient.js';
 import { openReadOnlyDb } from '../src/dash/readDb.js';
 
 let maskLiterals: string[] = [];
@@ -38,6 +40,18 @@ async function main(): Promise<number> {
     return 1;
   }
   const cfg = early.config;
+  const tokenMode = cfg.authMode === 'token';
+  let desktop: DesktopClient | null = null;
+  if (cfg.authMode === 'google_desktop') {
+    const keysPath = isAbsolute(cfg.googleKeysPath) ? cfg.googleKeysPath : join(process.cwd(), cfg.googleKeysPath);
+    const k = loadDesktopKeys(keysPath, (p) => readFileSync(p, 'utf8'));
+    if (!k.ok) {
+      console.error(`web: ${keysFailureMessage(k.reason)}`);
+      return 1;
+    }
+    desktop = k.client;
+    maskLiterals = [...maskLiterals, k.client.clientSecret];
+  }
 
   const authPath = isAbsolute(cfg.authDb) ? cfg.authDb : join(process.cwd(), cfg.authDb);
   let auth;
@@ -47,13 +61,20 @@ async function main(): Promise<number> {
     console.error(`web: could not open the auth store: ${e instanceof Error ? e.message.split('\n')[0] : 'error'}`);
     return 1;
   }
+  try {
+    const m = recordAuthMode(auth, cfg.authMode, new Date());
+    if (m.changed) console.error(`web: auth mode changed (${m.previous} to ${cfg.authMode}); all sessions were revoked`);
+  } catch {
+    console.error('web: could not record the auth mode');
+    return 1;
+  }
   let stored = getAllowedAccount(auth) !== null;
   const full = validateRunnerConfig(env, { accountStored: stored });
   if (!full.ok) {
     for (const e of full.errors) console.error(`web: ${e.message}`);
     return 1;
   }
-  if (!stored && cfg.allowedEmail) {
+  if (!tokenMode && !stored && cfg.allowedEmail) {
     const r = allowAccount(auth, cfg.allowedEmail, new Date());
     if (!r.ok) {
       console.error('web: DASHBOARD_ALLOWED_EMAIL is not a valid email address');
@@ -71,21 +92,29 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  const oidc = createOidc(
-    {
-      issuer: cfg.issuer,
-      clientId: cfg.clientId,
-      clientSecret: cfg.clientSecret,
-      redirectUri: cfg.redirectUri,
-      reauthPrompt: cfg.reauthPrompt,
-      maxAgeSec: cfg.reauthMaxAgeSec,
-    },
-    { fetch, now: () => new Date(), random: (n) => randomBytes(n) },
-  );
-  try {
-    await oidc.discover();
-  } catch {
-    console.error('web: warning: OIDC discovery failed at start; it will be retried on the first login');
+  let oidc: ReturnType<typeof createOidc> | undefined;
+  if (!tokenMode) {
+    oidc = createOidc(
+      desktop
+        ? oidcConfigForDesktop(desktop, { port: cfg.port, shape: cfg.googleRedirectShape, reauthMaxAgeSec: cfg.reauthMaxAgeSec })
+        : {
+            issuer: cfg.issuer,
+            clientId: cfg.clientId,
+            clientSecret: cfg.clientSecret,
+            redirectUri: cfg.redirectUri,
+            reauthPrompt: cfg.reauthPrompt,
+            maxAgeSec: cfg.reauthMaxAgeSec,
+          },
+      { fetch, now: () => new Date(), random: (n) => randomBytes(n) },
+    );
+    try {
+      await oidc.discover();
+    } catch {
+      console.error('web: warning: OIDC discovery failed at start; it will be retried on the first login');
+    }
+  }
+  if (tokenMode && !tokenStatus(auth).set) {
+    console.error('web: no access token yet: run npm run dashboard -- token');
   }
 
   try {
@@ -96,13 +125,17 @@ async function main(): Promise<number> {
       allowedHosts: cfg.allowedHosts,
       trustProxy: cfg.trustProxy,
       auth,
-      oidc,
-      oidcCfg: { redirectUri: cfg.redirectUri, reauthMaxAgeSec: cfg.reauthMaxAgeSec },
+      authMode: cfg.authMode,
+      ...(tokenMode ? {} : {
+        oidc,
+        oidcCfg: { redirectUri: cfg.redirectUri, reauthMaxAgeSec: cfg.reauthMaxAgeSec },
+        ...(desktop ? { googleRedirectShape: cfg.googleRedirectShape } : {}),
+      }),
       data,
       cfg: loadOutreachConfig(),
       run: defaultRun,
       sessionsToShow: [cfg.session],
-      secrets: [...secrets, cfg.clientSecret].filter(Boolean),
+      secrets: [...secrets, cfg.clientSecret, ...(desktop ? [desktop.clientSecret] : [])].filter(Boolean),
       chat: {
         enabled: cfg.chatEnabled,
         session: cfg.session,

@@ -43,7 +43,7 @@ describe('host and bind', () => {
     const anyAddr = ['0', '0', '0', '0'].join('.');
     h = await makeHarness();
     const base = {
-      port: 0, bind: anyAddr, allowRemoteBind: false, allowedHosts: [], trustProxy: false, auth: h.auth,
+      port: 0, bind: anyAddr, allowRemoteBind: false, allowedHosts: [], trustProxy: false, auth: h.auth, authMode: 'token' as const,
       oidc: undefined as never, oidcCfg: { redirectUri: 'x', reauthMaxAgeSec: 300 }, data: h.data, cfg: {} as never,
       run: (async () => ({ stdout: '', code: 0 })) as never, sessionsToShow: [],
       chat: { enabled: false, session: 's', window: 'w', send: async () => {} },
@@ -58,7 +58,7 @@ describe('host and bind', () => {
   it('startWebServer listens on the given loopback address', async () => {
     h = await makeHarness();
     const s = await startWebServer({
-      port: 0, bind: '127.0.0.1', allowRemoteBind: false, allowedHosts: [], trustProxy: false, auth: h.auth,
+      port: 0, bind: '127.0.0.1', allowRemoteBind: false, allowedHosts: [], trustProxy: false, auth: h.auth, authMode: 'token' as const,
       oidc: undefined as never, oidcCfg: { redirectUri: 'x', reauthMaxAgeSec: 300 }, data: h.data, cfg: {} as never,
       run: (async () => ({ stdout: '', code: 0 })) as never, sessionsToShow: [],
       chat: { enabled: false, session: 's', window: 'w', send: async () => {} },

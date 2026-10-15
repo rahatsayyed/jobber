@@ -2,8 +2,11 @@
 // Pure validation of the dashboard runner environment. No I/O, never echoes a secret value.
 import { assertName } from '../platform/tmux.js';
 import { normaliseEmail } from '../dash/account.js';
+import { redirectFor, type RedirectShape } from '../dash/desktopClient.js';
 
 export type RunnerEnv = Record<string, string | undefined>;
+
+export type AuthMode = 'token' | 'google_desktop' | 'oidc';
 
 export interface WebConfig {
   port: number;
@@ -22,9 +25,14 @@ export interface WebConfig {
   reauthPrompt: 'login' | 'select_account';
   reauthMaxAgeSec: number;
   allowedEmail: string | null;
+  authMode: AuthMode;
+  /** true when WEB_AUTH_MODE was unset and the OIDC keys selected 'oidc'. */
+  authModeImplicit: boolean;
+  googleKeysPath: string;
+  googleRedirectShape: RedirectShape;
 }
 
-export type ErrorScope = 'web' | 'oidc' | 'account';
+export type ErrorScope = 'web' | 'oidc' | 'account' | 'token' | 'google';
 export interface ConfigError { scope: ErrorScope; message: string }
 export type RunnerConfigResult = { ok: true; config: WebConfig } | { ok: false; errors: ConfigError[] };
 
@@ -34,6 +42,7 @@ const HOST_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[
 
 const val = (env: RunnerEnv, k: string): string => (env[k] ?? '').trim();
 
+export const DEFAULT_GOOGLE_KEYS_PATH = './secrets/gcp-oauth.keys.json';
 export const DEFAULT_AUTH_DB = '.dashboard/auth.sqlite';
 
 // The one place the auth store path (relative to the project root unless absolute) is resolved from a merged env.
@@ -65,11 +74,29 @@ export function isLoopbackBind(bind: string): boolean {
   return LOOPBACK_BINDS.includes(bind.toLowerCase());
 }
 
+/** Effective auth mode: explicit WEB_AUTH_MODE wins; unset selects oidc (implicit) when client id and secret are set, else token. */
+export function resolveAuthMode(env: RunnerEnv): { mode: AuthMode; implicit: boolean } | { error: string } {
+  const raw = val(env, 'WEB_AUTH_MODE');
+  if (raw === 'token' || raw === 'google_desktop' || raw === 'oidc') return { mode: raw, implicit: false };
+  if (raw !== '') return { error: 'WEB_AUTH_MODE must be token, google_desktop or oidc' };
+  if (val(env, 'WEB_OIDC_CLIENT_ID') !== '' && val(env, 'WEB_OIDC_CLIENT_SECRET') !== '') return { mode: 'oidc', implicit: true };
+  return { mode: 'token', implicit: false };
+}
+
 /** accountStored: whether the auth store already holds an allowed account. */
 export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: boolean }): RunnerConfigResult {
   const errs: ConfigError[] = [];
   const web = (message: string): void => void errs.push({ scope: 'web', message });
   const oidc = (message: string): void => void errs.push({ scope: 'oidc', message });
+
+  const resolved = resolveAuthMode(env);
+  let authMode: AuthMode = 'token';
+  let authModeImplicit = false;
+  if ('error' in resolved) web(resolved.error);
+  else { authMode = resolved.mode; authModeImplicit = resolved.implicit; }
+  const modeKnown = !('error' in resolved);
+  const oidcMode = authMode === 'oidc';
+  const google = (message: string): void => void errs.push({ scope: 'google', message });
 
   let port = 8787;
   const rawPort = val(env, 'WEB_PORT');
@@ -106,16 +133,31 @@ export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: bool
   try { assertName(session); } catch { web('WEB_TMUX_SESSION is not a valid tmux name'); }
   try { assertName(window); } catch { web('WEB_TMUX_WINDOW is not a valid tmux name'); }
 
+  if (modeKnown && authMode === 'token' && !isLoopbackBind(bind) && allowRemoteBind && !(trustProxy && allowedHosts.length > 0)) {
+    errs.push({ scope: 'token', message: 'token sign-in on a non-loopback bind needs WEB_TRUST_PROXY=true behind a TLS proxy and WEB_ALLOWED_HOSTS' });
+  }
+
+  const googleKeysPath = val(env, 'WEB_GOOGLE_KEYS_PATH') || val(env, 'GMAIL_OAUTH_PATH') || DEFAULT_GOOGLE_KEYS_PATH;
+  let googleRedirectShape: RedirectShape = 'callback';
+  const rawShape = val(env, 'WEB_GOOGLE_REDIRECT_SHAPE');
+  if (authMode === 'google_desktop') {
+    if (rawShape === 'callback' || rawShape === 'root') googleRedirectShape = rawShape;
+    else if (rawShape !== '') google('WEB_GOOGLE_REDIRECT_SHAPE must be callback or root');
+    if (!isLoopbackBind(bind)) google('google_desktop sign-in needs a loopback WEB_BIND (a Desktop client only supports loopback redirects)');
+    else if (trustProxy) google('google_desktop sign-in does not support WEB_TRUST_PROXY=true (a Desktop client only supports direct loopback redirects)');
+  }
+
   const issuer = val(env, 'WEB_OIDC_ISSUER') || GOOGLE_ISSUER;
   let issuerOk = false;
   try { issuerOk = new URL(issuer).protocol === 'https:'; } catch { /* invalid */ }
-  if (!issuerOk) oidc('WEB_OIDC_ISSUER must be an https URL');
+  if (oidcMode && !issuerOk) oidc('WEB_OIDC_ISSUER must be an https URL');
   const clientId = val(env, 'WEB_OIDC_CLIENT_ID');
   const clientSecret = val(env, 'WEB_OIDC_CLIENT_SECRET');
   const redirectUri = val(env, 'WEB_OIDC_REDIRECT_URI');
-  if (clientId === '') oidc('WEB_OIDC_CLIENT_ID is required');
-  if (clientSecret === '') oidc('WEB_OIDC_CLIENT_SECRET is required');
-  if (redirectUri === '') oidc('WEB_OIDC_REDIRECT_URI is required');
+  if (oidcMode && clientId === '') oidc('WEB_OIDC_CLIENT_ID is required');
+  if (oidcMode && clientSecret === '') oidc('WEB_OIDC_CLIENT_SECRET is required');
+  if (!oidcMode) { /* redirect derived or unused */ }
+  else if (redirectUri === '') oidc('WEB_OIDC_REDIRECT_URI is required');
   else {
     let u: URL | null = null;
     try { u = new URL(redirectUri); } catch { /* invalid */ }
@@ -138,22 +180,23 @@ export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: bool
   let reauthPrompt: 'login' | 'select_account' = issuer === GOOGLE_ISSUER ? 'select_account' : 'login';
   const rawPrompt = val(env, 'WEB_OIDC_REAUTH_PROMPT');
   if (rawPrompt === 'login' || rawPrompt === 'select_account') reauthPrompt = rawPrompt;
-  else if (rawPrompt !== '') oidc('WEB_OIDC_REAUTH_PROMPT must be login or select_account');
+  else if (oidcMode && rawPrompt !== '') oidc('WEB_OIDC_REAUTH_PROMPT must be login or select_account');
 
   let reauthMaxAgeSec = 300;
   const rawAge = val(env, 'WEB_REAUTH_MAX_AGE_SEC');
   if (rawAge !== '') {
     if (!/^\d+$/.test(rawAge) || Number(rawAge) < 60 || Number(rawAge) > 3600) {
-      oidc('WEB_REAUTH_MAX_AGE_SEC must be an integer from 60 to 3600');
+      web('WEB_REAUTH_MAX_AGE_SEC must be an integer from 60 to 3600');
     } else reauthMaxAgeSec = Number(rawAge);
   }
 
   const rawEmail = val(env, 'DASHBOARD_ALLOWED_EMAIL');
   const allowedEmail = rawEmail === '' ? null : normaliseEmail(rawEmail);
-  if (rawEmail !== '' && allowedEmail === null) {
+  const needsAccount = authMode === 'google_desktop' || authMode === 'oidc';
+  if (needsAccount && rawEmail !== '' && allowedEmail === null) {
     errs.push({ scope: 'account', message: 'DASHBOARD_ALLOWED_EMAIL is not a valid email address' });
   }
-  if (!opts.accountStored && allowedEmail === null) {
+  if (needsAccount && !opts.accountStored && allowedEmail === null) {
     errs.push({ scope: 'account', message: 'no allowed account: run npm run dashboard -- allow <email>' });
   }
 
@@ -162,7 +205,9 @@ export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: bool
     ok: true,
     config: {
       port, bind, allowRemoteBind, allowedHosts, trustProxy, authDb, chatEnabled, session, window,
-      issuer, clientId, clientSecret, redirectUri, reauthPrompt, reauthMaxAgeSec, allowedEmail,
+      issuer, clientId, clientSecret,
+      redirectUri: authMode === 'google_desktop' ? redirectFor(googleRedirectShape, port) : redirectUri,
+      reauthPrompt, reauthMaxAgeSec, allowedEmail, authMode, authModeImplicit, googleKeysPath, googleRedirectShape,
     },
   };
 }

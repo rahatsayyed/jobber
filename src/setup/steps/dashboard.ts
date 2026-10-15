@@ -1,16 +1,13 @@
 // src/setup/steps/dashboard.ts
-// Step 10: dashboard hand-off. Local web settings first, then (only when plan 7C is installed
-// and the user agrees) the OIDC client id/secret, the one allowed account and the redirect URI.
-// The client secret travels from askSecret straight into .env; it is never in state, argv, the
-// child environment or any say line. The wizard never signs in and never calls the provider.
+// Step 10: dashboard hand-off. Local web settings first, then one confirm for a token sign-in
+// (the CLI child prints the URL to the terminal; the wizard never holds the token), or an
+// existing OIDC install kept as is, or Google sign-in as an option. Never signs in itself.
 import path from 'node:path';
 import { envFileValue, updateEnvText, writeEnvFile } from '../envWriter.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-const DEFAULT_REDIRECT = 'http://127.0.0.1:8787/auth/callback';
 const CALLBACK_PATH = '/auth/callback';
-const PLAN_DOC = 'docs/superpowers/plans/2026-10-14-7c-dashboard-v1.md';
 
 function readEnvText(ctx: SetupContext): string {
   if (ctx.fs.exists(ctx.envPath)) return ctx.fs.read(ctx.envPath);
@@ -46,13 +43,12 @@ export function redirectUriProblem(raw: string): string | null {
 export const dashboardStep: SetupStep = {
   id: 'dashboard',
   title: 'Dashboard hand-off',
-  // No checkIds on purpose: `web` passes with WEB_TOKEN unset and `dashboard-login` is a skip
-  // placeholder until plan 7C, so a check gate would mark this step done on a fresh machine.
+  // No checkIds on purpose: a check gate would mark this step done on a fresh machine.
   checkIds: [],
   async run(ctx) {
     const { io, root } = ctx;
 
-    // Local settings first. No WEB_TOKEN: sign-in is OIDC only.
+    // Local settings first.
     writeKeys(
       ctx,
       { WEB_PORT: '8787', WEB_TMUX_SESSION: 'ccgram', WEB_TMUX_WINDOW: 'JobApplier' },
@@ -83,38 +79,43 @@ export const dashboardStep: SetupStep = {
       io.say('skipped until installed (plan 7C)');
       return 'skipped';
     }
-    if (!(await io.confirm('Set up dashboard sign-in now?', false))) return 'skipped';
-
-    io.say(
-      `Create the OAuth client by following the Owner-only checklist in ${PLAN_DOC} (Google Cloud console steps); the wizard does not repeat them.`,
-    );
 
     const envText = readEnvText(ctx);
-    const updates: Record<string, string> = {};
+    const mode = envFileValue(envText, 'WEB_AUTH_MODE').trim();
 
-    const haveId = envFileValue(envText, 'WEB_OIDC_CLIENT_ID');
-    if (haveId && (await io.confirm('Keep the existing OAuth client ID?', true))) {
-      /* keep */
-    } else {
-      updates.WEB_OIDC_CLIENT_ID = (
-        await io.ask('OAuth client ID', {
-          validate: (v) => (v.trim() !== '' && !/\s/.test(v.trim()) ? null : 'Required, no spaces'),
-        })
-      ).trim();
+    // Existing OIDC owner: keep it, no questions.
+    if (
+      (mode === '' || mode === 'oidc') &&
+      envFileValue(envText, 'WEB_OIDC_CLIENT_ID').trim() !== '' &&
+      envFileValue(envText, 'WEB_OIDC_CLIENT_SECRET').trim() !== ''
+    ) {
+      if (mode !== 'oidc') writeKeys(ctx, { WEB_AUTH_MODE: 'oidc' }, false);
+      io.say('Your OIDC sign-in is kept (WEB_AUTH_MODE=oidc).');
+      return 'done';
     }
 
-    const haveSecret = envFileValue(envText, 'WEB_OIDC_CLIENT_SECRET');
-    if (haveSecret) io.registerSecret(haveSecret);
-    if (haveSecret && (await io.confirm('Keep the existing OAuth client secret?', true))) {
-      io.say('client secret set');
-    } else {
-      const s = await io.askSecret('Paste the OAuth client secret (input is hidden)', {
-        validate: (v) => (v.trim() !== '' ? null : 'Required'),
-      });
-      updates.WEB_OIDC_CLIENT_SECRET = s.trim();
-      io.say('client secret set');
+    if (await io.confirm('Create a dashboard access token now?', true)) {
+      writeKeys(ctx, { WEB_AUTH_MODE: 'token' }, true);
+      // The child prints the URL straight to the terminal; the wizard never sees it.
+      const code = await ctx.spawnInteractive('npx', ['tsx', 'scripts/dashboard.ts', 'token']);
+      if (code === 3) {
+        io.say('token already set, use rotate: npm run dashboard -- rotate');
+        return 'done';
+      }
+      if (code !== 0) {
+        io.say(
+          `The token command did not finish (exit ${code}). Run npm run dashboard -- token yourself in a terminal; rotate if a token already exists.`,
+        );
+        return 'skipped';
+      }
+      io.say('Open that URL once; the token is not stored. Lost it? npm run dashboard -- rotate');
+      return 'done';
     }
 
+    if (!(await io.confirm('Use Google sign-in instead? (needs the Gmail OAuth client, see docs)', false))) {
+      return 'skipped';
+    }
+    writeKeys(ctx, { WEB_AUTH_MODE: 'google_desktop' }, false);
     let email = envFileValue(envText, 'DASHBOARD_ALLOWED_EMAIL').toLowerCase();
     if (!(email && EMAIL_RE.test(email) && (await io.confirm(`Keep the allowed account ${email}?`, true)))) {
       email = (
@@ -124,27 +125,12 @@ export const dashboardStep: SetupStep = {
       )
         .trim()
         .toLowerCase();
-      updates.DASHBOARD_ALLOWED_EMAIL = email;
+      writeKeys(ctx, { DASHBOARD_ALLOWED_EMAIL: email }, false);
     }
-
-    const haveRedirect = envFileValue(envText, 'WEB_OIDC_REDIRECT_URI');
-    if (haveRedirect && redirectUriProblem(haveRedirect) === null && (await io.confirm('Keep the existing redirect URI?', true))) {
-      /* keep */
-    } else {
-      updates.WEB_OIDC_REDIRECT_URI = (
-        await io.ask('Redirect URI', { default: DEFAULT_REDIRECT, validate: redirectUriProblem })
-      ).trim();
-    }
-
-    if (Object.keys(updates).length > 0) writeKeys(ctx, updates, false);
-    writeKeys(ctx, { WEB_OIDC_ISSUER: 'https://accounts.google.com' }, true);
-
-    // The email is the only argument; the secret is never in argv or in the child's env.
     const code = await ctx.spawnInteractive('npx', ['tsx', 'scripts/dashboard.ts', 'allow', email]);
     if (code !== 0) throw new Error(`dashboard allow exited with code ${code}`);
-
     io.say(
-      'Open the dashboard and sign in once with that account so the account is pinned (npm run dashboard -- status shows pinned or not)',
+      'The first sign-in pins the account; until then the owner check (L2) is unverified. npm run dashboard -- status shows pinned or not.',
     );
     return 'done';
   },

@@ -14,7 +14,8 @@ export interface PendingLogin {
 }
 export type AuditKind =
   | 'login_ok' | 'login_denied' | 'login_error' | 'sub_pinned' | 'allow_changed' | 'lockout'
-  | 'logout' | 'session_expired' | 'reauth_ok' | 'chat_prepare' | 'chat_send' | 'chat_reject';
+  | 'logout' | 'session_expired' | 'reauth_ok' | 'chat_prepare' | 'chat_send' | 'chat_reject'
+  | 'token_created' | 'token_rotated' | 'token_login_ok' | 'token_login_denied' | 'mode_changed';
 
 const NOTE_MAX = 200;
 const ID_HINT_MAX = 12;
@@ -49,6 +50,14 @@ export function openAuthStore(path: string): AuthDb {
     );
     CREATE TABLE IF NOT EXISTS chat_pending (
       token_hash TEXT PRIMARY KEY, session_hash TEXT, text_hash TEXT, expires_at TEXT, used_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS access_token (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      token_hash TEXT NOT NULL, created_at TEXT NOT NULL, rotated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS auth_mode (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      mode TEXT NOT NULL, updated_at TEXT NOT NULL
     );
   `);
   return db;
@@ -126,6 +135,24 @@ export function audit(
     detail.textHash ?? null,
     detail.idHint === undefined ? null : detail.idHint.slice(0, ID_HINT_MAX),
   );
+}
+
+// Remember the effective auth mode. First sight stores it and revokes nothing; a different stored mode
+// is replaced, every live session is revoked and one mode_changed audit row (mode names only) is written.
+export function recordAuthMode(db: AuthDb, mode: string, now: Date): { changed: boolean; previous: string | null } {
+  const at = now.toISOString();
+  return db.transaction((): { changed: boolean; previous: string | null } => {
+    const r = db.prepare('SELECT mode FROM auth_mode WHERE id = 1').get() as { mode: string } | undefined;
+    if (!r) {
+      db.prepare('INSERT INTO auth_mode (id, mode, updated_at) VALUES (1, ?, ?)').run(mode, at);
+      return { changed: false, previous: null };
+    }
+    if (r.mode === mode) return { changed: false, previous: r.mode };
+    db.prepare('UPDATE auth_mode SET mode = ?, updated_at = ? WHERE id = 1').run(mode, at);
+    db.prepare('UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL').run(at);
+    audit(db, 'mode_changed', { note: `${r.mode}->${mode}` }, now);
+    return { changed: true, previous: r.mode };
+  })();
 }
 
 export function listAudit(

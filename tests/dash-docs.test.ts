@@ -32,4 +32,26 @@ describe('dashboard exposure doc', () => {
   it('only names WEB_ env keys present in .env.example', () => {
     for (const m of text.matchAll(/\b(WEB_[A-Z_]+)\b/g)) expect(envExample).toContain(m[1]);
   });
+  it('documents the three sign-in modes and what is unverified', () => {
+    for (const w of ['WEB_AUTH_MODE', 'token', 'google_desktop', 'oidc', 'rotate', 'unverified']) {
+      expect(text).toContain(w);
+    }
+  });
+  it('states loopback-only for google_desktop and the recovery commands', () => {
+    expect(text).toMatch(/google_desktop[^\n]*loopback/i);
+    expect(text).toContain('npm run dashboard -- rotate');
+    expect(text).toContain('npm run dashboard -- allow');
+  });
+  it('.env.example defaults to token mode and has no token key', () => {
+    expect(envExample).toMatch(/^WEB_AUTH_MODE=token$/m);
+    expect(envExample).not.toContain('DASHBOARD_TOKEN');
+  });
+  it('README names the token command', () => {
+    expect(readFileSync('README.md', 'utf8')).toContain('npm run dashboard -- token');
+  });
+  it('gmail runbook mentions dashboard sign-in reuse as unverified', () => {
+    const g = readFileSync('docs/gmail-mcp-setup.md', 'utf8');
+    expect(g).toContain('google_desktop');
+    expect(g).toMatch(/unverified/i);
+  });
 });

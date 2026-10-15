@@ -57,6 +57,20 @@ const ctx: DoctorContext = {
       return null;
     }
   },
+  authToken: (p) => {
+    try {
+      const Database = createRequire(import.meta.url)('better-sqlite3') as SqliteCtor;
+      const db = new Database(p, { readonly: true, fileMustExist: true });
+      try {
+        const r = db.prepare('SELECT created_at FROM access_token WHERE id = 1').get() as { created_at: string } | undefined;
+        return r ? { set: true, createdAt: r.created_at } : { set: false, createdAt: null };
+      } finally {
+        db.close();
+      }
+    } catch {
+      return null;
+    }
+  },
   now: () => new Date(),
 };
 

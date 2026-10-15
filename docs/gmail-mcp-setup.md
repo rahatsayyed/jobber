@@ -182,6 +182,13 @@ ssh user@host 'chmod 600 ~/jobber/secrets/*.json'
 The token refreshes itself without a browser while the refresh token is valid; in Testing mode that
 means re-authorizing about weekly on a machine with a browser and copying the new credentials file.
 
+## Dashboard sign-in reuses this client
+
+The dashboard can sign in through the same Desktop client (`WEB_AUTH_MODE=google_desktop`, keys
+from `WEB_GOOGLE_KEYS_PATH`, else `GMAIL_OAUTH_PATH`). It is loopback only and off by default
+(the default is an access token). Unverified: Google's acceptance of the loopback redirect for
+this client has not been checked live; see `docs/dashboard-exposure.md`.
+
 ## Security
 
 `gcp-oauth.keys.json` and `gmail-credentials.json` are keys to send mail as you. Never commit them,
