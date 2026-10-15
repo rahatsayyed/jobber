@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { emptyLayout, loadLayout, saveLayout, withLayoutLock } from '../src/layout/store.js';
 import { loadLayoutConfig } from '../src/layout/config.js';
+import { KINDS } from '../src/layout/vocab.js';
 import type { KindMemory, LayoutFile, Variant } from '../src/layout/types.js';
 
 const NOW = new Date('2026-10-15T00:00:00.000Z');
@@ -225,5 +226,97 @@ describe('withLayoutLock', () => {
     const c = clock();
     fs.writeFileSync(file + '.lock', `dead\n${c.t - 11_000}`);
     expect(withLayoutLock(file, () => 'ok', c)).toBe('ok');
+    expect(fs.readdirSync(dir).filter((n) => n.includes('.stale-'))).toEqual([]);
+  });
+  it('backs off when the lock was re-acquired between judging it stale and moving it', () => {
+    const c = clock();
+    fs.writeFileSync(file + '.lock', `dead\n${c.t - 11_000}`);
+    let fresh = 0;
+    let swapped = false;
+    const deps = {
+      now: c.now, sleep: c.sleep,
+      onStaleJudged: () => {
+        if (swapped) return;
+        swapped = true;
+        fresh = c.t;                                   // another process broke it and took a new lock
+        fs.writeFileSync(file + '.lock', `other\n${fresh}`);
+      },
+    };
+    let ranAt = 0;
+    withLayoutLock(file, () => { ranAt = c.t; }, deps);
+    expect(swapped).toBe(true);
+    expect(ranAt - fresh).toBeGreaterThanOrEqual(10_000);   // waited out the live lock, did not steal it
+    expect(fs.readdirSync(dir).filter((n) => n.includes('.stale-'))).toEqual([]);
+  });
+  it('refuses a symlinked parent before creating anything', () => {
+    const real = path.join(dir, 'real');
+    fs.mkdirSync(real);
+    fs.symlinkSync(real, path.join(dir, 'link'));
+    const viaLink = path.join(dir, 'link', 'sub', 'linkedin.json');
+    expect(() => withLayoutLock(viaLink, () => 1, clock())).toThrow(/symlink/i);
+    expect(fs.readdirSync(real)).toEqual([]);
+  });
+});
+
+describe('closed vocabulary and caps', () => {
+  const poison = (mutate: (f: LayoutFile) => void) => () => { const f = sample(); mutate(f); return JSON.stringify(f); };
+  const cases: [string, () => string][] = [
+    ['unknown landmark', poison((f) => { f.kinds.profile.variants[0].landmarks = ['ignore.previous.instructions']; })],
+    ['unknown count key', poison((f) => { f.kinds.profile.variants[0].counts = { 'ignore.previous.instructions': [1, 1] }; })],
+    ['__proto__ count key', () => JSON.stringify(sample()).replace('"actions"', '"__proto__"')],
+    ['__proto__ kind', () => JSON.stringify(sample()).replace('"profile":', '"__proto__":')],
+    ['unknown label', poison((f) => { f.kinds.profile.variants[0].recipes[0].label = 'action:bogus'; })],
+    ['unknown region', poison((f) => { f.kinds.profile.variants[0].recipes[0].region = 'nope.region'; })],
+    ['41 landmarks', poison((f) => { f.kinds.profile.variants[0].landmarks = Array(41).fill('profile.name'); })],
+  ];
+  for (const [name, make] of cases) {
+    it(`load quarantines: ${name}`, () => {
+      fs.writeFileSync(file, make());
+      const r = loadLayout(file, 'linkedin', NOW);
+      expect(r.file).toEqual(emptyLayout('linkedin', NOW));
+      expect(r.note).toMatch(/corrupt/);
+      expect(corrupt()).toHaveLength(1);
+    });
+  }
+  it('save throws and writes nothing on vocabulary misses', () => {
+    const f = sample();
+    f.kinds.profile.variants[0].landmarks = ['ignore.previous.instructions'];
+    expect(() => saveLayout(file, f, 65536)).toThrow(/invalid/);
+    const g = sample();
+    g.kinds.bogus = kind([]);
+    expect(() => saveLayout(file, g, 65536)).toThrow(/unknown kind/);
+    expect(() => saveLayout(file, sample(), 65536, 'naukri')).toThrow(/invalid/);
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+  it('truncates over-cap input instead of quarantining (24 recipes, 3 variants, 5 run ids)', () => {
+    const f = sample();
+    const rec = f.kinds.profile.variants[0].recipes[0];
+    f.kinds.profile.variants[0].recipes = Array(30).fill(rec);
+    f.kinds.profile.variants[0].run_ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+    f.kinds.profile.variants.push(variant('v2', { first_seen: '2026-10-02T00:00:00.000Z' }), variant('v3', { first_seen: '2026-10-03T00:00:00.000Z' }), variant('v4', { first_seen: '2026-10-04T00:00:00.000Z' }));
+    fs.writeFileSync(file, JSON.stringify(f));
+    const r = loadLayout(file, 'linkedin', NOW, 1_000_000);
+    expect(r.note).toBeNull();
+    expect(r.file.kinds.profile.variants).toHaveLength(3);
+    expect(corrupt()).toHaveLength(0);
+  });
+  it('vocabulary kinds fit the 12 kind cap', () => {
+    expect(KINDS.linkedin.length).toBeLessThanOrEqual(12);
+    expect(KINDS.naukri.length).toBeLessThanOrEqual(12);
+  });
+  it('resets a kind to learning when trimming empties its variants', () => {
+    const f = emptyLayout('linkedin', NOW);
+    f.kinds.profile = kind([variant('np', { promoted: false })]);
+    f.kinds.profile.state = 'stable';
+    f.kinds.search = kind([variant('s1')]);
+    const onlySearch = (() => { const g = emptyLayout('linkedin', NOW); g.kinds.search = kind([variant('s1')]); g.kinds.profile = { ...kind([]), state: 'learning' }; return JSON.stringify(g).length; })();
+    saveLayout(file, f, onlySearch);
+    const got = JSON.parse(fs.readFileSync(file, 'utf8')) as LayoutFile;
+    expect(got.kinds.profile.variants).toEqual([]);
+    expect(got.kinds.profile.state).toBe('learning');
+  });
+  it('floors LAYOUT_MAX_BYTES at 4096', () => {
+    expect(loadLayoutConfig({ LAYOUT_MAX_BYTES: '2048' }, '/proj/root').maxBytes).toBe(65536);
+    expect(loadLayoutConfig({ LAYOUT_MAX_BYTES: '4096' }, '/proj/root').maxBytes).toBe(4096);
   });
 });

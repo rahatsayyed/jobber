@@ -19,7 +19,7 @@ export interface LayoutConfig {
   dir: string;                                // LAYOUT_DIR, default <root>/.jobber/layout; must resolve inside the project
 }
 
-const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+export const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 function int(raw: string | undefined, def: number, min: number, max: number): number {
   if (raw === undefined || !/^\d{1,9}$/.test(raw.trim())) return def;
@@ -58,7 +58,7 @@ export function loadLayoutConfig(env: NodeJS.ProcessEnv = process.env, root: str
     driftEscalateN,
     driftHaltN,
     driftWindowHours: int(env.LAYOUT_DRIFT_WINDOW_HOURS, 24, 1, 8760),
-    maxBytes: int(env.LAYOUT_MAX_BYTES, 65536, 1024, 1048576),
+    maxBytes: int(env.LAYOUT_MAX_BYTES, 65536, 4096, 1048576),
     renderMaxChars: int(env.LAYOUT_RENDER_MAX_CHARS, 1200, 100, 20000),
     unloadedMaxChars: int(env.LAYOUT_UNLOADED_MAX_CHARS, 80, 1, 2000),
     exploreBudget: int(env.LAYOUT_EXPLORE_BUDGET, 6, 0, 100),
