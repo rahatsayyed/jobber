@@ -17,6 +17,8 @@ computer can reach it. On a laptop, use it as is.
 
 Every exposure needs sign-in. `WEB_AUTH_MODE` picks one of three modes. `token` is the default.
 
+Login options: see `docs/dashboard-login.md`.
+
 | Mode | What protects the page | Network use | Where it works |
 |---|---|---|---|
 | `token` | A long random access token you hold. Only its SHA-256 hash is stored, in `.dashboard/auth.sqlite`. | None | Loopback, or behind a TLS proxy (a non-loopback bind also needs `WEB_ALLOW_REMOTE_BIND=true`) |
