@@ -25,16 +25,6 @@ const OWNER_DOCS: string[] = [
 // line here (one-line edit); Task 13 empties the list.
 const PLANNED_ONLY: string[] = [
   'docs/00-start-here.md',
-  'docs/prerequisites.md',
-  'docs/api-keys.md',
-  'docs/operations.md',
-  'docs/rollout.md',
-  'docs/scheduler-install.md',
-  'docs/config-reference.md',
-  'docs/architecture.md',
-  'docs/layout-memory.md',
-  'docs/dashboard-login.md',
-  'docs/setup-modes.md',
   'docs/index.md',
 ];
 
