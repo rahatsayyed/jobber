@@ -609,8 +609,8 @@ section is the reference for what exists.
   install|status|remove` merges ccgram's hooks into the same project-scoped file, never a global
   one. No session ever runs with skip-permissions.
 - **Scripts** (only those in `package.json`): `doctor` (ok/warn/fail/skip checks, never prints
-  secret values), `setup` (guided wizard, 12 resumable steps, needs a TTY; `-- --list`,
-  `-- --step <id>`, `-- --redo`), `status -- limits|working|health|json`, `web` (dashboard on
+  secret values), `setup` (guided wizard, 13 resumable steps, needs a TTY; `-- --list`,
+  `-- --step <id>`, `-- --redo`, `-- --mode agent|terminal`), `status -- limits|working|health|json`, `web` (dashboard on
   127.0.0.1, access-token sign-in by default, `WEB_CHAT_ENABLED` off by default),
   `dashboard -- token|rotate|allow <email>|status|audit|google-url`, `models -- list|verify|fetch|pin`, `scheduler`,
   `scheduler:units`, `jobber:control -- stop|resume|status`, `dry-run:report`, `auto-update`
@@ -645,6 +645,28 @@ section is the reference for what exists.
   Backups are age-encrypted, exclude `secrets/` unless `BACKUP_INCLUDE_SECRETS=true`, and
   need a restore drill (`npm run restore -- <archive> --identity <key> --drill`). Restart Claude
   sessions after an applied update (MCP servers keep old code).
+
+**Setup modes and optional steps** (plan 8F). `npm run setup` runs in one of two modes, asked once and
+stored as `mode` (with `mode_at`) in `user-data/.setup-state.json`: `agent` (the guided Claude
+session of the `setup_guide` profile beside the wizard, offered only when `claude-cli`,
+`claude-login` and `setup_guide_ready` pass, otherwise the wizard says why and continues in
+terminal text) and `terminal` (plain walkthroughs for telegram, gmail, apikeys and dashboard, no
+guide). `--mode agent|terminal` sets and stores it, `--no-guide` is per run and not stored, and
+`--step <id>` runs one step in the stored mode with no chooser. The skippable catalog is
+`src/setup/skips.ts`: `telegram` and `dashboard` (RECOMMENDED), `gmail` (NEEDED FOR EMAIL
+OUTREACH), `apikeys` (OPTIONAL). A skip is recorded as `steps.<id>.status: skipped` in the same
+state file; it never writes `.env`, a dry-run flag, a permission set or a halt. The doctor rule:
+the doctor wrapper (`withSkips`) turns a fail or warn of that feature's allowlisted checks
+(`telegram-api`, `ccgram-env`, `daemon`; `web`, `dashboard-login`; `gmail-oauth`; `api-keys`) into
+`skip` with the fix `npm run setup -- --step <id>`, and prints `Skipped by choice: ...` as the last
+line of the text output (not in `--json`). Configured wins: when the feature is configured anyway
+(for example a `TELEGRAM_BOT_TOKEN` added by hand) the record is ignored and the normal result
+shows. Safety checks (classifier, permission set, hooks, limits, kill switch, halts) are not in
+the allowlist and are never skipped. `npm run up` and `npm run dry-run` use the same definition:
+with Telegram skipped `up` prints `bridge: skipped (setup)` and `windows: skipped (setup)` and
+starts neither the bridge nor the ccgram windows; with the dashboard skipped it prints `web:
+skipped (setup)` and starts no `web` window; it ends with a `STACK: skipped by choice` line, and
+the dry-run `dashboard-login` stage is skipped for a skipped dashboard.
 
 **Bring-up commands** (plan 8E; README.md quick start): `bash scripts/bootstrap.sh` (detects and
 installs what is missing after asking; `--check` and `--plan` only report; writes
@@ -1087,6 +1109,16 @@ and the Indian and Gulf job boards.
   exercise the install paths only loosely. How ccgram binds the `manager` window (U8) is owner
   decision O5 in plan 8E. The `better-sqlite3` native build toolchain (U12) is surfaced by the
   `build-tools` item and `npm ci` output. The dry-run dashboard stage runs the token login for real (plan 8C merged; it skips only on a 404 auth mode route). The patchright browser download is not installed by bootstrap (U13).
+- Plan 8F setup text is unverified until the owner live checks: BotFather's Threaded Mode / Topics
+  label and path, Mini App versus `/mybots` (unverified until owner live check L1); whether `getMe`
+  returns the topics field the step reads (`has_topics_enabled`, one constant in
+  `src/setup/steps/telegram.ts`; absence never fails; unverified until L1); whether ccgram needs
+  topics in a private chat or a forum supergroup (unverified until L1 and upstream docs); the
+  Adzuna, Serper and Hunter verification endpoints, their credit cost and limits (unverified until
+  L7; a rejection offers keep-anyway); hidden `askSecret` input in a real terminal (unverified
+  until L1); that a skipped Telegram is safe for every consumer of `TELEGRAM_BOT_TOKEN`
+  (`src/platform/notify.ts`, `run.sh`, `claude-session.sh`, `start.sh`; traced by reading,
+  unverified until L2); Hunter's account-endpoint credit use (unverified until L7).
 
 Test baseline: `npx tsc -p . --noEmit` is clean; `npx vitest run` has exactly 5 known failures
 (4 in `tests/renderChecked.test.ts`, 1 in `tests/resume.test.ts`) because a Playwright browser is

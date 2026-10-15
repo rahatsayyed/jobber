@@ -157,6 +157,22 @@ describe('README', () => {
     expect(sessions).toContain('npm run down');
   });
 
+  it('documents setup modes and optional steps (plan 8F)', () => {
+    const ids = ALL_STEPS.map((s) => s.id);
+    expect(ids).toContain('apikeys');
+    expect(readme).toContain('--mode');
+    expect(readme).toContain('apikeys');
+    expect(readme).toContain('RECOMMENDED');
+    expect(readme).toContain('--mode agent|terminal');
+    const quick = section(/Quick start/i);
+    expect(quick).toContain('--mode');
+    expect(quick).toMatch(/skipped/i);
+    const body = section(/What setup does/i);
+    const order = [...body.matchAll(/^- `([a-z0-9-]+)`/gm)].map((m) => m[1]);
+    expect(order.indexOf('apikeys')).toBe(order.indexOf('gmail') + 1);
+    expect(order.indexOf('sessions')).toBe(order.indexOf('apikeys') + 1);
+  });
+
   it('never recommends skipping permissions or piping curl to a shell', () => {
     for (const l of readme.split('\n')) {
       if (/skip-permissions/i.test(l)) expect(l, l).toMatch(/\bno\b|never|not/i);

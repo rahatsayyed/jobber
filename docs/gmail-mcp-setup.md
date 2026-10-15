@@ -9,6 +9,11 @@ setup is self-contained and does not touch `~/.gmail-mcp/`.
 Labels in Google Cloud Console change from time to time. Follow the label currently on screen if it
 differs from the one written here.
 
+`npm run setup -- --step gmail` runs this whole runbook as a guided step. Gmail is NEEDED FOR EMAIL
+OUTREACH but skippable: if skipped there is no cold email, no email follow-ups and no reply
+watching (LinkedIn and Naukri outreach still run), and `npm run doctor` shows `gmail-oauth` as
+skipped until you run the step.
+
 ## What is configured where
 
 `.mcp.json` registers the server and passes the two paths through its `env` block (paths are
