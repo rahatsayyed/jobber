@@ -8,7 +8,7 @@ import { ensureManagerWindow, loadManagerConfig, sessionName, startWindow } from
 import { assertName, hasSession, listWindows, newWindow, type Run } from '../platform/tmux.js';
 import { stopActive } from '../../scripts/killSwitch.js';
 import { DEFAULT_LABEL, SERVICE_NAME } from '../scheduler/units.js';
-import { currentMode } from './mode.js';
+import { currentMode, fileFlags, shellDivergence } from './mode.js';
 import { cleanEnvArgv, DEFAULT_STACK_SESSION, SCHEDULER_CMD, WEB_CMD, type UpPlan } from './plan.js';
 
 export { currentMode } from './mode.js';
@@ -34,15 +34,18 @@ export interface StackDeps {
 
 const PROBE_SECONDS = 20;
 
-function mergedEnv(deps: StackDeps): NodeJS.ProcessEnv {
+function readFileEnv(deps: StackDeps): Record<string, string> {
   const f = join(deps.root, '.env');
-  let file: Record<string, string> = {};
   try {
-    if (deps.fs.exists(f)) file = parseEnv(deps.fs.read(f));
+    if (deps.fs.exists(f)) return parseEnv(deps.fs.read(f));
   } catch {
-    file = {};
+    // unreadable: treated as empty
   }
-  return { ...file, ...deps.env };
+  return {};
+}
+
+function mergedEnv(deps: StackDeps): NodeJS.ProcessEnv {
+  return { ...readFileEnv(deps), ...deps.env };
 }
 
 function stackSession(env: NodeJS.ProcessEnv): string {
@@ -118,6 +121,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
   const daemonSession = (env.CCGRAM_DAEMON_SESSION ?? '').trim() || 'ccgram-daemon';
   const rows: Array<[string, string, string]> = [];
   const warnings: string[] = [];
+  const started: string[] = [];
   const kill = stopActive(deps.root, env);
   let cfg;
   try {
@@ -180,6 +184,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
     else {
       try {
         await startStackWindow(deps, session, 'scheduler', cleanEnvArgv(env, SCHEDULER_CMD));
+        started.push('scheduler');
         say('scheduler: started');
       } catch (e) {
         warnings.push(`scheduler: ${(e as Error).message}`);
@@ -193,6 +198,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
     else {
       try {
         await startStackWindow(deps, session, 'web', cleanEnvArgv(env, WEB_CMD));
+        started.push('web');
         say('web: started');
         let up = false;
         for (let i = 0; i < PROBE_SECONDS && !up; i++) {
@@ -208,8 +214,13 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
     say(`kill switch is ON (${kill.reason}); \`up\` would refuse`);
   }
 
-  // Final table.
+  // Final table. Re-check the windows we just started: one that exited at once is not running.
   const stackNames = await windowNames(deps.run, session);
+  if (!status) {
+    for (const n of started) {
+      if (!stackNames.has(n)) warnings.push(`window ${n} exited immediately`);
+    }
+  }
   const bridgeUp = await hasSession(deps.run, daemonSession);
   const unitNow = await unitLoaded(deps.run);
   const csess = cfg ? sessionName(cfg, env) : 'ccgram';
@@ -236,8 +247,15 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
 
 export async function runUp(deps: StackDeps, opts: { status: boolean }): Promise<number> {
   const env = mergedEnv(deps);
+  const fileEnv = readFileEnv(deps);
+  // The children run under `env -i` and read .env themselves: the banner shows what they will use.
+  const modeView = currentMode(fileFlags(fileEnv));
+  const warns = shellDivergence(fileEnv, deps.env);
+  const killLine = `JOBBER_KILL=${env.JOBBER_KILL ?? '(unset)'}`;
   const banner = (): void => {
-    for (const l of currentMode(env).lines) deps.say(l);
+    for (const l of modeView.lines) deps.say(l);
+    deps.say(`  ${killLine}`);
+    for (const w of warns) deps.say(w);
   };
   banner();
   let code: number;

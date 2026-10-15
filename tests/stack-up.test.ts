@@ -19,6 +19,10 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
+function setEnvFile(extra: string): void {
+  writeFileSync(join(root, '.env'), `SOME_API_KEY=${SECRET}\nTELEGRAM_BOT_TOKEN=tok-${SECRET}\n${extra}`);
+}
+
 interface Fake { run: Run; calls: string[][]; sessions: Map<string, string[]> }
 
 function fake(opts: { launchd?: boolean; preSessions?: Record<string, string[]> } = {}): Fake {
@@ -152,16 +156,52 @@ describe('up', () => {
 
   it('prints the mode banner first and last; LIVE only when all flags are explicitly live', async () => {
     const f = fake();
-    const d = deps(f);
+    const d = deps(f, {}, { SCHEDULER_DRY_RUN: undefined });
     await runUp(d, { status: false });
     expect(d.out[0]).toBe('MODE: DRY RUN (nothing is sent)');
-    expect(d.out[d.out.length - 2]).toBe('MODE: DRY RUN (nothing is sent)');
-    const live = deps(fake(), {}, { SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false', JOBBER_DRY_RUN: '0' });
+    expect(d.out[d.out.length - 3]).toBe('MODE: DRY RUN (nothing is sent)');
+    expect(d.out.filter((l) => l.startsWith('warning: shell exports'))).toEqual([]);
+    expect(d.out[2]).toBe('  JOBBER_KILL=(unset)');
+    setEnvFile('SCHEDULER_DRY_RUN=false\nLINKEDIN_DRY_RUN=false\nJOBBER_DRY_RUN=0\n');
+    const live = deps(fake(), {}, { SCHEDULER_DRY_RUN: undefined });
     await runUp(live, { status: true });
     expect(live.out[0]).toContain('MODE: LIVE');
-    const half = deps(fake(), {}, { SCHEDULER_DRY_RUN: 'false' });
+    setEnvFile('SCHEDULER_DRY_RUN=false\n');
+    const half = deps(fake(), {}, { SCHEDULER_DRY_RUN: undefined });
     await runUp(half, { status: true });
     expect(half.out[0]).toContain('DRY RUN');
+  });
+
+  it('banner follows .env, not the shell, and warns on divergence (top and bottom)', async () => {
+    setEnvFile('SCHEDULER_DRY_RUN=true\nLINKEDIN_DRY_RUN=true\n');
+    const a = deps(fake(), {}, { SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'true' });
+    await runUp(a, { status: true });
+    expect(a.out[0]).toContain('DRY RUN');
+    const w = a.out.filter((l) => l.includes('shell exports SCHEDULER_DRY_RUN=false'));
+    expect(w.length).toBe(2);
+    expect(w[0]).toContain('use .env (true)');
+    expect(a.out.some((l) => l.includes('shell exports LINKEDIN_DRY_RUN'))).toBe(false);
+
+    setEnvFile('SCHEDULER_DRY_RUN=false\nLINKEDIN_DRY_RUN=false\n');
+    const b = deps(fake(), {}, { SCHEDULER_DRY_RUN: 'true', JOBBER_DRY_RUN: '0' });
+    await runUp(b, { status: true });
+    expect(b.out[0]).toContain('MODE: LIVE');
+    expect(b.out.filter((l) => l.includes('shell exports SCHEDULER_DRY_RUN=true')).length).toBe(2);
+    expect(b.out.some((l) => l.includes('shell exports JOBBER_DRY_RUN=0') && l.includes('(unset)'))).toBe(true);
+  });
+
+  it('warns when a started window exits immediately and shows it as not running', async () => {
+    const f = fake();
+    const base = f.run;
+    f.run = async (c, a, o) => {
+      const r = await base(c, a, o);
+      if (c === 'tmux' && a[0] === 'new-session' && a.includes('scheduler')) f.sessions.get('jobber-stack')?.splice(0);
+      return r;
+    };
+    const d = deps(f);
+    expect(await runUp(d, { status: false })).toBe(0);
+    expect(d.out.join('\n')).toContain('warning: window scheduler exited immediately');
+    expect(d.out.some((l) => /scheduler\s+not running/.test(l))).toBe(true);
   });
 
   it('status starts nothing, runs no doctor, exits 0 even with STOP', async () => {
@@ -199,21 +239,32 @@ describe('mode immutability', () => {
       "JOBBER_DRY_RUN: env.JOBBER_DRY_RUN ?? '(unset)',",
       "SCHEDULER_DRY_RUN: env.SCHEDULER_DRY_RUN ?? '(unset)',",
       "LINKEDIN_DRY_RUN: env.LINKEDIN_DRY_RUN ?? '(unset)',",
+      "const FLAG_NAMES = ['JOBBER_DRY_RUN', 'SCHEDULER_DRY_RUN', 'LINKEDIN_DRY_RUN'] as const;",
       "const tail = Object.entries(flags).map(([k, v]) => `${k}=${v}`).join('  ');",
     ]);
     const re = /JOBBER_DRY_RUN|SCHEDULER_DRY_RUN|LINKEDIN_DRY_RUN|applyResume|applyStop|halt_flags|permissions|settings\.local/;
+    const files = (readdirSync(dir, { recursive: true }) as string[])
+      .filter((f) => f.endsWith('.ts'))
+      .map((f) => join(dir, f));
+    expect(files.length).toBeGreaterThanOrEqual(3);
+    const assign = /\.(JOBBER|SCHEDULER|LINKEDIN)_DRY_RUN\s*=[^=]/;
+    const procAssign = /process\.env(\.\w+|\[[^\]]+\])?\s*=[^=]/;
     const bad: string[] = [];
-    for (const f of readdirSync(dir)) {
-      for (const line of readFileSync(join(dir, f), 'utf8').split('\n')) {
-        if (!re.test(line)) continue;
+    for (const file of files) {
+      const text = readFileSync(file, 'utf8');
+      expect(text).not.toMatch(/writeFile|appendFile|unlink|rmSync/);
+      for (const line of text.split('\n')) {
         const t = line.trim();
+        if (assign.test(t) || procAssign.test(t)) bad.push(`ASSIGN ${file}: ${t}`);
+        if (!re.test(line)) continue;
         if (t.startsWith('//') || allowed.has(t)) continue;
-        bad.push(`${f}: ${t}`);
+        bad.push(`${file}: ${t}`);
       }
     }
     expect(bad).toEqual([]);
-    for (const f of readdirSync(dir)) {
-      expect(readFileSync(join(dir, f), 'utf8')).not.toMatch(/writeFile|appendFile|unlink|rmSync/);
-    }
+    // the guard itself catches what it should
+    expect(assign.test('env.SCHEDULER_DRY_RUN = "false"')).toBe(true);
+    expect(procAssign.test("process.env['X'] = 'y'")).toBe(true);
+    expect(assign.test('env.SCHEDULER_DRY_RUN ?? 1')).toBe(false);
   });
 });
