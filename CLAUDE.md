@@ -13,7 +13,7 @@ Phase 1 pipeline — both now run automatically as part of every hunt run, per t
 `outreach`, see "Scheduler" and "Outreach safety layers" below; `.mcp.json` is the list of
 registered servers) and skills (`match-jobs`, `draft-outreach`, `draft-connect-note`,
 `draft-linkedin-message`, `tailor-resume`, `review-application`, `telegram-format`,
-`the-humanizer`, `manager`, `setup-guide`). The `gates` server exposes `check_liveness` and `apply_vetoes`; `db` also
+`the-humanizer`, `manager`). The `gates` server exposes `check_liveness` and `apply_vetoes`; `db` also
 has `save_match_result`, `record_outcome`, and `calibration`. `apply` is one MCP server exposing both a per-platform tool for each
 target — `apply.linkedin`, `apply.greenhouse`, `apply.lever`, `apply.workday`, `apply.ashby` —
 and a single `apply.auto({apply_url, job_id})` router tool that inspects `apply_url` and
@@ -610,8 +610,7 @@ section is the reference for what exists.
   one. No session ever runs with skip-permissions.
 - **Scripts** (only those in `package.json`): `doctor` (ok/warn/fail/skip checks, never prints
   secret values), `setup` (guided wizard, 12 resumable steps, needs a TTY; `-- --list`,
-  `-- --step <id>`, `-- --redo`, `-- --no-guide|--guide-only|--status`), `bootstrap`, `dry-run`,
-  `up`, `down` (see "Bring-up commands" below), `status -- limits|working|health|json`, `web` (dashboard on
+  `-- --step <id>`, `-- --redo`), `status -- limits|working|health|json`, `web` (dashboard on
   127.0.0.1, Google OIDC sign-in for one allowed account, `WEB_CHAT_ENABLED` off by default),
   `dashboard -- allow <email>|status|audit`, `models -- list|verify|fetch|pin`, `scheduler`,
   `scheduler:units`, `jobber:control -- stop|resume|status`, `dry-run:report`, `auto-update`
@@ -625,6 +624,9 @@ section is the reference for what exists.
   one allowed Google account (`DASHBOARD_ALLOWED_EMAIL`, `WEB_OIDC_*`) and keeps its chat box off
   (`WEB_CHAT_ENABLED=false`). See README.md for the dashboard and
   `docs/dashboard-exposure.md` for exposure and login recovery.
+- **Bring-up scripts** (plan 8E): `bootstrap`, `dry-run`, `up`, `down`, and `setup -- --no-guide|
+  --guide-only|--status`; see "Bring-up commands" below. The `setup-guide` skill (interactive
+  setup coach, `.claude/skills/setup-guide/`) is the skill the `setup_guide` profile loads.
 - **One credentials file**: `.env` (mode 600, git-ignored; `.env.example` lists every key).
   Launchers parse it themselves and pass child processes an allowlisted environment; nothing
   sources it into a shell. `user-data/` (mode 700) and `secrets/` hold personal data and
@@ -641,9 +643,10 @@ section is the reference for what exists.
 
 **Bring-up commands** (plan 8E; README.md quick start): `bash scripts/bootstrap.sh` (detects and
 installs what is missing after asking; `--check` and `--plan` only report; writes
-`.jobber/bootstrap.json`), `npm run setup` (the wizard, plus an optional guided Claude session
+`.jobber/bootstrap.json`; `npm run bootstrap` is the same CLI once Node exists), `npm run setup` (the wizard, plus an optional guided Claude session
 under the `setup_guide` profile in `config/run-profiles.json`: `interactive`, `classifier:
-not_required`, no MCP tools, only `Skill` and `Read` on docs and config paths, and Bash limited
+not_required`, no MCP tools, only `Skill` and `Read` limited to the prefixes `docs/`,
+`config/`, `user-data.example/` and `.claude/skills/setup-guide/`, and Bash limited
 to the exact strings in `bash_exact`, no wildcard; the guide never reads secrets or `.env`),
 `npm run dry-run` (end-to-end smoke in dry mode against fixtures and a temporary database; writes
 only `.jobber/verify.json`; its dashboard stage is skipped until plan 8C's login routes exist)
@@ -999,10 +1002,10 @@ is not measured by it.
 ### After merge: user checklist
 
 0. First-time machine setup (install, `npm run setup`, doctor, sessions, permission set,
-   classifier, dashboard) is the README.md quick start (`bash scripts/bootstrap.sh`, then the
-   "Bring-up commands" below); the platform and scheduler owner
+   classifier, dashboard) is the README.md quick start; the platform and scheduler owner
    checklists are in the 6B, 6B2, 6D and 7D plans and `docs/backup-and-restore.md`. The items
-   below are the older, still-true ones.
+   below are the older, still-true ones. Start with `bash scripts/bootstrap.sh`, then see
+   "Bring-up commands" under "Platform and sessions".
 1. FULLY quit and restart Claude Code (not a selective MCP reconnect) after any change to an MCP
    server, `src/db.ts`, the agents or the skills. Every stdio MCP server in `.mcp.json` (`db`,
    `gates`, `resume`, `job-fetch`, `contacts`, `apply`, `discover`, `naukri`,
@@ -1067,15 +1070,19 @@ and the Indian and Gulf job boards.
   `discover.linkedin_jobs` post text, board and Hacker News descriptions, Gmail reply bodies read
   by `reply-watcher`, and `linkedin_screenshot` pixels. The launcher and doctor classifier
   readiness cover only the screened surfaces in `SCREENED_SURFACES`.
-- Bring-up (plan 8E) is covered by hermetic tests with fakes only. Unverified until the owner
-  live checks (plan "Owner-only live checks"): Claude Code CLI install method and flags (U1, L1);
-  interactive `claude` under the restricted launcher and its flags (U2, L3); whether Claude's
-  `Bash(<exact>)` rules match strings containing ` -- ` (U3, L3); whether a blocked
-  `UserPromptSubmit` prompt also leaves the model context and transcript (U4, L3); Homebrew and
-  apt package names, Playwright system dependencies (U5, L1, L2); Linux Node, uv and Chrome
-  installer URLs (U6, L2); tmux window environment inheritance (U7, L8, L9); how ccgram binds the
-  `manager` window (U8, L8); single-instance scheduler and SIGINT behaviour (U9, L8);
-  `better-sqlite3` native build toolchain (U12, L1).
+- Bring-up (plan 8E) is covered by hermetic tests with fakes only. The live checks L1 to L9 are
+  defined in `docs/superpowers/plans/2026-10-15-8e-bootstrap-guided-setup-run-all.md` ("Owner-only
+  live checks"). Unverified: interactive `claude` under the restricted launcher and its flags
+  (U2, until L3); whether Claude's `Bash(<exact>)` rules match strings containing ` -- ` (U3,
+  until L3); whether a blocked `UserPromptSubmit` prompt also leaves the model context and
+  transcript (U4, until L3); tmux window environment inheritance (U7, until L9 and L8);
+  single-instance scheduler and SIGINT behaviour (U9, until L8). Check upstream, no live check:
+  the Claude Code CLI install method and flags (U1), Homebrew and apt package names and
+  Playwright system dependencies (U5), Linux Node, uv and Chrome installer URLs (U6); L1 and L2
+  exercise the install paths only loosely. How ccgram binds the `manager` window (U8) is owner
+  decision O5 in plan 8E. The `better-sqlite3` native build toolchain (U12) is surfaced by the
+  `build-tools` item and `npm ci` output. The dry-run dashboard stage skips until plan 8C's login
+  routes exist (U10). The patchright browser download is not installed by bootstrap (U13).
 
 Test baseline: `npx tsc -p . --noEmit` is clean; `npx vitest run` has exactly 5 known failures
 (4 in `tests/renderChecked.test.ts`, 1 in `tests/resume.test.ts`) because a Playwright browser is
