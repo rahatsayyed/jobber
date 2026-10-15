@@ -141,6 +141,17 @@ describe('layout drift side effects', () => {
     expect(haltReason(db, 'linkedin')).toBe('layout_drift:profile');
   });
 
+  it('off mode records the would-be halt (mode=off) but never halts', () => {
+    const { db, notices, mk } = setup('off');
+    const a = mk('run-c'); const b = mk('run-d');
+    for (let i = 0; i < 3; i++) a.observe(drift(), null);
+    for (let i = 0; i < 3; i++) b.observe(drift(), null);
+    expect(haltReason(db, 'linkedin')).toBeNull();
+    const halt = listOpenEscalations(db, 20).find((e) => e.reason === 'layout_drift_halt');
+    expect(halt?.detail).toMatch(/ mode=off$/);
+    expect(notices.at(-1)?.title).toMatch(/off mode/);
+  });
+
   it('warn mode records the would-be halt (mode=warn, vocabulary tokens) but never halts', () => {
     const { db, notices, mk } = setup('warn');
     const a = mk('run-c'); const b = mk('run-d');

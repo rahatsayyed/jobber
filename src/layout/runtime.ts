@@ -103,16 +103,16 @@ export function createLayoutObserver(d: {
         send({ level: 'warn', title: `layout drift on ${platform} (${k})`, ...run });
       } else if (event === 'drift_halt') {
         // drift_halt repeats while the streak stays past the limit: act only on the first one.
-        if (cfg.enforce === 'warn') {
-          // Warn mode refuses and halts nothing: record the escalation (once while one is open for
+        if (cfg.enforce !== 'enforce') {
+          // Only enforce halts; warn and off halt nothing: record the escalation (once while one is open for
           // this kind) so the owner sees the would-be halt, but never touch halt_flags.
           const open = db.prepare(
             `SELECT 1 FROM escalations WHERE platform = ? AND reason = 'layout_drift_halt'
                AND resolved_at IS NULL AND detail LIKE ? ESCAPE '\\' LIMIT 1`,
           ).get(platform, `kind=${k.replace(/[\\%_]/g, '\\$&')} %`);
           if (open) return;
-          addEscalation(db, { runId: d.runId, platform, reason: 'layout_drift_halt', detail: `${detail} mode=warn` }, now);
-          send({ level: 'warn', title: `layout drift on ${platform} (${k}) would halt (warn mode, not halted)`, ...run });
+          addEscalation(db, { runId: d.runId, platform, reason: 'layout_drift_halt', detail: `${detail} mode=${cfg.enforce}` }, now);
+          send({ level: 'warn', title: `layout drift on ${platform} (${k}) would halt (${cfg.enforce} mode, not halted)`, ...run });
           return;
         }
         if (haltReason(db, platform) !== null) return;

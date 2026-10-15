@@ -673,9 +673,9 @@ supervised learning run below.
 **Drift handling.** `LAYOUT_DRIFT_ESCALATE_N` drift observations within
 `LAYOUT_DRIFT_WINDOW_HOURS` write an owner info escalation; a platform halt (`layout_drift:*` in
 `halt_flags`) needs a streak of at least `LAYOUT_DRIFT_HALT_N` AND at least 2 distinct run ids.
-Only the owner clears it. The halt itself is applied only when `LAYOUT_ENFORCE` is not `warn`: in
-`warn` mode the same event records the `layout_drift_halt` escalation (detail ends `mode=warn`)
-and a notification, but halts nothing. `npm run layout -- clear-halt <platform>` also resets the
+Only the owner clears it. The halt itself is applied only when `LAYOUT_ENFORCE=enforce`: in
+`warn` and `off` mode the same event records the `layout_drift_halt` escalation (detail ends
+`mode=warn` or `mode=off`) and a notification, but halts nothing. `npm run layout -- clear-halt <platform>` also resets the
 drift streak, window and run ids of the kind named in the `layout_drift:<kind>` reason (totals are
 kept), so the next dead page cannot re-halt at once, and it refuses when only the global `all`
 halt carries the reason. A LinkedIn `profile` URL whose snapshot has no extracted profile name
