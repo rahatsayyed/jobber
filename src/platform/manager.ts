@@ -142,3 +142,18 @@ export async function restartWindow(
   await startWindow(run, cfg, env, name, root);
   return stopped === 'stopped' ? 'restarted' : 'started';
 }
+
+// Create the protected `manager` window only when it is missing (same session argv as the others).
+export async function ensureManagerWindow(
+  run: Run,
+  cfg: ManagerConfig,
+  env: NodeJS.ProcessEnv,
+  root: string,
+): Promise<'started' | 'exists'> {
+  const session = sessionName(cfg, env);
+  if ((await listWindows(run, session)).some((x) => x.name === 'manager')) return 'exists';
+  const command = buildCommand(['bash', 'scripts/ccgram/claude-session.sh']);
+  const r = await run('tmux', ['new-window', '-d', '-t', `=${session}:`, '-n', 'manager', '-c', root, command]);
+  if (r.code !== 0) throw new Error('failed to start window manager');
+  return 'started';
+}
