@@ -720,6 +720,12 @@
       "fixes": {}
     }
   ],
+  "skip_facts": [
+    "The owner may skip the telegram, dashboard, gmail and apikeys steps in the wizard.",
+    "A skip doctor line for a skipped feature is expected and not a problem.",
+    "Say what the owner loses (the step's skip text) and name npm run setup -- --step <id> to turn it back on.",
+    "The guide never skips anything for the owner and cannot run the wizard."
+  ],
   "ignore_keys": [
     "ANTHROPIC_DEFAULT_OPUS_MODEL"
   ]

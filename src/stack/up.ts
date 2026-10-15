@@ -9,6 +9,7 @@ import { ensureManagerWindow, loadManagerConfig, sessionName, startWindow } from
 import { assertName, hasSession, listWindows, newWindow, type Run } from '../platform/tmux.js';
 import { stopActive } from '../../scripts/killSwitch.js';
 import { DEFAULT_LABEL, SERVICE_NAME } from '../scheduler/units.js';
+import { skippedForRoot, type SkippableId } from '../setup/skips.js';
 import { currentMode, fileFlags, shellDivergence } from './mode.js';
 import { cleanEnvArgv, DEFAULT_STACK_SESSION, SCHEDULER_CMD, WEB_CMD, type UpPlan } from './plan.js';
 
@@ -147,6 +148,10 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
   const started: string[] = [];
   let startFailed = false; // a bridge, scheduler or web start error, or a window that exited at once
   const kill = stopActive(deps.root, env);
+  // One definition of skipped (src/setup/skips.ts): recorded as skipped and still unconfigured.
+  const skipped: SkippableId[] = skippedForRoot({ root: deps.root, env, fs: deps.fs });
+  const noTelegram = skipped.includes('telegram');
+  const noDashboard = skipped.includes('dashboard');
   let cfg;
   try {
     cfg = loadManagerConfig(deps.fs.read(join(deps.root, 'config', 'manager-windows.json')));
@@ -169,7 +174,9 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
     }
 
     // Bridge.
-    if ((env.TELEGRAM_BOT_TOKEN ?? '') === '') {
+    if (noTelegram) {
+      say('bridge: skipped (setup)');
+    } else if ((env.TELEGRAM_BOT_TOKEN ?? '') === '') {
       say('bridge: skipped (TELEGRAM_BOT_TOKEN not set)');
     } else {
       const r = await deps.run('bash', ['scripts/ccgram/start.sh'], { cwd: deps.root });
@@ -180,7 +187,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
     }
 
     // Manager windows.
-    if (cfg) {
+    if (cfg && !noTelegram) {
       const csession = sessionName(cfg, env);
       if (!(await hasSession(deps.run, csession))) {
         const r = await deps.run('tmux', ['new-session', '-d', '-s', csession, '-c', deps.root]);
@@ -221,7 +228,8 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
     // Dashboard.
     const url = webUrl(env);
     const names2 = await windowNames(deps.run, session);
-    if (names2.has('web')) say('web: already running');
+    if (noDashboard) say('web: skipped (setup)');
+    else if (names2.has('web')) say('web: already running');
     else {
       try {
         await startStackWindow(deps, session, 'web', cleanEnvArgv(env, WEB_CMD));
@@ -256,23 +264,39 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
   const unitNow = await unitLoaded(deps.run);
   const csess = cfg ? sessionName(cfg, env) : 'ccgram';
   const cNames = await windowNames(deps.run, csess);
-  rows.push(['bridge', bridgeUp ? 'running' : 'not running', `tmux attach -t ${daemonSession}`]);
-  for (const n of ['hunt', 'followups', 'manager']) {
-    rows.push([n, cNames.has(n) ? 'running' : 'not running', `tmux attach -t ${csess}`]);
+  const telegramFix = 'npm run setup -- --step telegram';
+  if (noTelegram) {
+    rows.push(['bridge', 'skipped (setup)', telegramFix]);
+    rows.push(['windows', 'skipped (setup)', telegramFix]);
+  } else {
+    rows.push(['bridge', bridgeUp ? 'running' : 'not running', `tmux attach -t ${daemonSession}`]);
+    for (const n of ['hunt', 'followups', 'manager']) {
+      rows.push([n, cNames.has(n) ? 'running' : 'not running', `tmux attach -t ${csess}`]);
+    }
   }
   const sched = env.SCHEDULER_ENABLED === 'false' ? 'disabled' : unitNow ? 'unit loaded' : stackNames.has('scheduler') ? 'running' : 'not running';
   rows.push(['scheduler', sched, `tmux attach -t ${session}`]);
-  let webState = stackNames.has('web') ? 'running' : 'not running';
-  if (status && stackNames.has('web')) webState = (await deps.probe(`${webUrl(env)}/api/auth/mode`)) ? 'running' : 'window up, no answer';
-  rows.push(['web', webState, `tmux attach -t ${session}`]);
+  if (noDashboard) {
+    rows.push(['web', 'skipped (setup)', 'npm run setup -- --step dashboard']);
+  } else {
+    let webState = stackNames.has('web') ? 'running' : 'not running';
+    if (status && stackNames.has('web')) webState = (await deps.probe(`${webUrl(env)}/api/auth/mode`)) ? 'running' : 'window up, no answer';
+    rows.push(['web', webState, `tmux attach -t ${session}`]);
+  }
   say('components:');
   for (const l of table(rows)) say(l);
   for (const w of warnings) say(`warning: ${w}`);
-  say(`dashboard: ${webUrl(env)}`);
-  for (const l of dashboardAuthLines(deps, env)) say(l);
-  say(`windows: tmux attach -t ${csess}   scheduler and web: tmux attach -t ${session}`);
+  if (!noDashboard) {
+    say(`dashboard: ${webUrl(env)}`);
+    for (const l of dashboardAuthLines(deps, env)) say(l);
+  }
+  if (noTelegram) say('local-only windows: npx tsx scripts/manager.ts start hunt');
+  else say(`windows: tmux attach -t ${csess}   scheduler and web: tmux attach -t ${session}`);
   say(`ticks (run by the scheduler after a wake): auto-update ${env.AUTO_UPDATE === 'true' ? 'on' : 'off'}, backup ${env.BACKUP_ENABLED === 'true' ? 'on' : 'off'}`);
   say(lastVerify(deps));
+  if (skipped.length > 0) {
+    say(`STACK: skipped by choice: ${skipped.join(', ')}. Re-enable: npm run setup -- --step <id>`);
+  }
   say('Stop: npm run down   Emergency: npm run jobber:control -- stop');
   return !status && startFailed ? 1 : 0;
 }

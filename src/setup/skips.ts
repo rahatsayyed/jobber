@@ -102,21 +102,35 @@ export function skippedFeatures(input: {
 
 const cache = new WeakMap<object, SkippableId[]>();
 
+/**
+ * Skipped, still unconfigured features for a project root: process env over .env, state from the
+ * user-data setup state. Read-only; any read problem gives an empty list (nothing is skipped).
+ */
+export function skippedForRoot(input: {
+  root: string;
+  env: Record<string, string | undefined>;
+  fs: { exists(p: string): boolean; read?(p: string): string };
+}): SkippableId[] {
+  try {
+    const read = input.fs.read;
+    if (!read) return [];
+    const rd = { exists: (p: string) => input.fs.exists(p), read: (p: string) => read(p) };
+    let fileEnv: Record<string, string> = {};
+    const envPath = join(input.root, '.env');
+    if (rd.exists(envPath)) fileEnv = parseEnv(rd.read(envPath));
+    const env: Record<string, string | undefined> = { ...fileEnv, ...input.env };
+    const state = loadState(join(userDataDir(input.env as NodeJS.ProcessEnv, input.root), '.setup-state.json'), rd);
+    return skippedFeatures({ state, env, fs: rd, root: input.root });
+  } catch {
+    return [];
+  }
+}
+
 /** Skipped, still unconfigured features, computed once per doctor context (process env over .env). */
 export function skippedFromContext(ctx: DoctorContext): SkippableId[] {
   const hit = cache.get(ctx);
   if (hit) return hit;
-  let out: SkippableId[] = [];
-  try {
-    let fileEnv: Record<string, string> = {};
-    const envPath = join(ctx.root, '.env');
-    if (ctx.fs.exists(envPath)) fileEnv = parseEnv(ctx.fs.read(envPath));
-    const env: Record<string, string | undefined> = { ...fileEnv, ...ctx.env };
-    const state = loadState(join(userDataDir(ctx.env, ctx.root), '.setup-state.json'), ctx.fs);
-    out = skippedFeatures({ state, env, fs: ctx.fs, root: ctx.root });
-  } catch {
-    out = [];
-  }
+  const out = skippedForRoot({ root: ctx.root, env: ctx.env, fs: ctx.fs });
   cache.set(ctx, out);
   return out;
 }

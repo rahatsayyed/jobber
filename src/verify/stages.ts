@@ -4,6 +4,7 @@
 import { createRequire } from 'node:module';
 import { join, resolve, sep } from 'node:path';
 import { parseEnv } from '../platform/envFile.js';
+import { skippedForRoot } from '../setup/skips.js';
 import { isDryRun, recordDryRun } from '../safety/dryRun.js';
 import { applyResume, applyStop, defaultDeps, readControl } from '../scheduler/control.js';
 import { saveJob, saveMatchResult, setJobExcluded, enqueueOutreach, getExcludedReason } from '../db.js';
@@ -205,7 +206,10 @@ const dashboardLogin: Stage = {
   id: 'dashboard-login', title: 'dashboard token login', skippable: true,
   async run(ctx) {
     const fix = 'npm run doctor, check web and dashboard-login';
-    const get = ctx.fetch ?? (async (u: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => {
+    if (skippedForRoot({ root: ctx.root, env: ctx.env, fs: ctx.fs }).includes('dashboard')) {
+      return skip('dashboard skipped in setup (npm run setup -- --step dashboard)');
+    }
+    const get =ctx.fetch ?? (async (u: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => {
       const r = await fetch(u, init);
       return { status: r.status, headers: r.headers, text: () => r.text() };
     });

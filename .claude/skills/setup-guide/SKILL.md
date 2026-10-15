@@ -44,6 +44,18 @@ For each step in `config/setup-guide.json`:
 For the limits step point at `npm run status -- limits` and the catalog; never invent numbers.
 For the access step explain `read_only` and recommend keeping it.
 
+## Skipped optional steps
+
+The owner may skip Telegram, the dashboard, Gmail and the optional API keys in the wizard. For these:
+
+- A `skip` doctor line for `telegram-api`, `ccgram-env`, `daemon`, `web`, `dashboard-login`,
+  `gmail-oauth` or `api-keys` is expected and not a problem. Do not treat it as a failure.
+- Say what the owner loses, using the step's `skip` text in `config/setup-guide.json`.
+- Name how to turn it back on: `npm run setup -- --step <id>` (for example `npm run setup -- --step telegram`).
+- The guide never skips anything for the owner. It cannot run the wizard; skipping and
+  re-enabling are the owner's own commands.
+- `npm run setup -- --status` shows the chosen mode and which steps are skipped.
+
 ## Doctor translation
 
 The plain-words text for a doctor check id comes from the `fixes` map in
