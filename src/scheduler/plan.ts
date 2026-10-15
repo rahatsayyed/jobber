@@ -4,8 +4,10 @@ import { drawBurstSize, inQuietHours, type PacingConfig, type Rng } from '../out
 import type { ControlState, Platform } from './control.js';
 import type { DueCounts } from './due.js';
 
-export type Worker = 'inbox-recruiter-replies' | 'due-followups' | 'new-outreach' | 'naukri-search';
-export interface Assignment { worker: Worker; quota: number; platforms: Platform[] }
+export type Operator = 'linkedin-operator' | 'naukri-operator';
+export type TaskKind = 'inbox' | 'followups' | 'new_outreach' | 'search';
+export interface OperatorTask { kind: TaskKind; quota: number }
+export interface Assignment { operator: Operator; platform: Platform; tasks: OperatorTask[] }
 export type SkipReason = 'killed' | 'halted' | 'quiet_hours' | 'ceilings_exhausted' | 'nothing_due';
 export type WakeDecision =
   | { kind: 'skip'; reason: SkipReason; detail?: string }
@@ -53,14 +55,14 @@ export function planWake(i: {
   const plats = (pairs: [Platform, LimitKey[]][]): Platform[] =>
     pairs.filter(([p, keys]) => allowed.has(p) && keys.some(ok)).map(([p]) => p);
 
-  const tasks: Assignment[] = [];
+  const ORDER: Platform[] = ['linkedin', 'naukri']; // stable order: linkedin first
+  const byPlatform: Record<Platform, OperatorTask[]> = { linkedin: [], naukri: [] };
   let remaining = burst;
 
   const inboxDue = due.inboxLastCheckedMinAgo === null || due.inboxLastCheckedMinAgo >= knobs.inboxEveryMin;
-  if (inboxDue) tasks.push({ worker: 'inbox-recruiter-replies', quota: INBOX_QUOTA, platforms: [...control.allowed] });
+  if (inboxDue) for (const p of control.allowed) byPlatform[p].push({ kind: 'inbox', quota: INBOX_QUOTA });
 
   const withWork = (ps: Platform[], by: Record<Platform, number>): Platform[] => ps.filter((p) => by[p] > 0);
-  const total = (ps: Platform[], by: Record<Platform, number>): number => ps.reduce((n, p) => n + by[p], 0);
   const followPlats = withWork(
     plats([
       ['linkedin', ['linkedin_message']],
@@ -77,19 +79,31 @@ export function planWake(i: {
   );
   const searchPlats = plats([['naukri', ['naukri_apply']]]);
 
-  if (followPlats.length > 0 && remaining > 0) {
-    const q = Math.min(total(followPlats, due.followupsDueByPlatform), remaining);
-    tasks.push({ worker: 'due-followups', quota: q, platforms: followPlats });
-    remaining -= q;
+  // Each platform takes min(its due, what is left of the burst), in stable order, so the total
+  // spent equals the old single quota.
+  for (const p of followPlats) {
+    const q = Math.min(due.followupsDueByPlatform[p], remaining);
+    if (q > 0) {
+      byPlatform[p].push({ kind: 'followups', quota: q });
+      remaining -= q;
+    }
   }
-  if (outreachPlats.length > 0 && remaining > 0) {
-    const q = Math.min(total(outreachPlats, due.newOutreachReadyByPlatform), remaining);
-    tasks.push({ worker: 'new-outreach', quota: q, platforms: outreachPlats });
-    remaining -= q;
+  for (const p of outreachPlats) {
+    const q = Math.min(due.newOutreachReadyByPlatform[p], remaining);
+    if (q > 0) {
+      byPlatform[p].push({ kind: 'new_outreach', quota: q });
+      remaining -= q;
+    }
   }
   const searchDue =
     due.naukriSearchLastHoursAgo === null || due.naukriSearchLastHoursAgo >= knobs.naukriSearchEveryHours;
-  if (searchDue && searchPlats.length > 0) tasks.push({ worker: 'naukri-search', quota: 1, platforms: searchPlats });
+  if (searchDue && searchPlats.length > 0) byPlatform.naukri.push({ kind: 'search', quota: 1 });
+
+  const tasks: Assignment[] = ORDER.filter((p) => byPlatform[p].length > 0).map((p) => ({
+    operator: `${p}-operator` as Operator,
+    platform: p,
+    tasks: byPlatform[p],
+  }));
 
   if (tasks.length > 0) return { kind: 'run', burst, tasks };
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { loadProfiles } from '../src/platform/runner.js';
 
-const WORKERS = ['due-followups', 'new-outreach', 'inbox-recruiter-replies', 'naukri-search'] as const;
+const WORKERS = ['linkedin-operator', 'naukri-operator'] as const;
 
 const FORBIDDEN_EXACT = [
   'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Agent', 'Task',
@@ -109,33 +109,37 @@ describe('worker agents', () => {
       it('stop rule names halted, rate_limited and killed', () => {
         for (const w of ['halted', 'rate_limited', 'killed']) expect(body).toContain(w);
       });
-      it('has no type tool, and click only for the inbox reader', () => {
+      it('has no type tool, and click only for the LinkedIn inbox reader', () => {
         for (const t of tools) {
           expect(t.endsWith('_type')).toBe(false);
-          if (name !== 'inbox-recruiter-replies') expect(t.endsWith('_click')).toBe(false);
+          if (name !== 'linkedin-operator') expect(t.endsWith('_click')).toBe(false);
         }
+      });
+      it('has no mcp__connect reference', () => {
+        expect(fm + body).not.toMatch(/mcp__connect/);
       });
     });
   }
-  it('worker-tools.json has exactly the four workers', () => {
+  it('worker-tools.json has exactly the two operators', () => {
     expect(Object.keys(config).sort()).toEqual([...WORKERS].sort());
   });
-  it('per-worker body contracts', () => {
-    expect(frontmatter('due-followups').body).toContain('kind');
-    const no = frontmatter('new-outreach').body;
-    expect(no.indexOf('linkedin_state')).toBeGreaterThan(-1);
-    expect(no.indexOf('linkedin_state')).toBeLessThan(no.indexOf('linkedin_connect_send'));
-    const ib = frontmatter('inbox-recruiter-replies').body;
-    expect(ib).toContain('salary');
-    expect(ib.indexOf('record_inbound')).toBeLessThan(ib.indexOf('naukri_send_message({person_id'));
-    expect(ib).toContain('https://www.linkedin.com/messaging/');
-    expect(frontmatter('naukri-search').body).toMatch(/never apply/);
+  it('per-operator body contracts', () => {
+    const li = frontmatter('linkedin-operator').body;
+    expect(li).toContain('kind');
+    expect(li.indexOf('linkedin_state')).toBeGreaterThan(-1);
+    expect(li.indexOf('linkedin_state')).toBeLessThan(li.indexOf('linkedin_connect_send'));
+    expect(li).toContain('salary');
+    expect(li.indexOf('record_inbound')).toBeGreaterThan(-1);
+    expect(li).toContain('https://www.linkedin.com/messaging/');
+    const nk = frontmatter('naukri-operator').body;
+    expect(nk).toContain('salary');
+    expect(nk.indexOf('record_inbound')).toBeLessThan(nk.indexOf('naukri_send_message({person_id, thread_ref, text, kind: "followup"})'));
+    expect(nk).toMatch(/never apply/);
   });
-  it('inbox-recruiter-replies has no LinkedIn send tool', () => {
-    expect(toolsOf('inbox-recruiter-replies')).not.toContain('mcp__linkedin__linkedin_send_message');
-  });
-  it('inbox-recruiter-replies cannot record outcomes', () => {
-    expect(toolsOf('inbox-recruiter-replies')).not.toContain('mcp__db__record_outcome');
+  it('linkedin-operator has no inbox LinkedIn send path and cannot record outcomes', () => {
+    expect(frontmatter('linkedin-operator').body).toMatch(/never answer/);
+    expect(toolsOf('linkedin-operator')).not.toContain('mcp__db__record_outcome');
+    expect(toolsOf('naukri-operator')).not.toContain('mcp__db__record_outcome');
   });
 });
 

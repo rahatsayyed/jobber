@@ -75,46 +75,86 @@ describe('planWake', () => {
       expect(calls).toBe(1);
       if (d.kind !== 'run') throw new Error('expected run');
       const spent = d.tasks
-        .filter((t) => t.worker === 'due-followups' || t.worker === 'new-outreach')
+        .flatMap((a) => a.tasks)
+        .filter((t) => t.kind === 'followups' || t.kind === 'new_outreach')
         .reduce((s, t) => s + t.quota, 0);
       expect(spent).toBeLessThanOrEqual(d.burst);
       expect(spent).toBe(d.burst);
     }
   });
-  it('orders tasks inbox, followups, new-outreach, naukri-search', () => {
+  it('emits linkedin before naukri, one assignment per platform, tasks ordered inbox, followups, new_outreach, search', () => {
     const { d } = plan({
       due: due({ followupsDue: 1, newOutreachReady: 1, inboxLastCheckedMinAgo: null, naukriSearchLastHoursAgo: null }),
     });
     if (d.kind !== 'run') throw new Error('expected run');
-    expect(d.tasks.map((t) => t.worker)).toEqual([
-      'inbox-recruiter-replies', 'due-followups', 'new-outreach', 'naukri-search',
+    expect(d.tasks.map((a) => [a.operator, a.platform])).toEqual([
+      ['linkedin-operator', 'linkedin'], ['naukri-operator', 'naukri'],
     ]);
+    expect(d.tasks[0].tasks.map((t) => t.kind)).toEqual(['inbox', 'followups', 'new_outreach']);
+    expect(d.tasks[1].tasks.map((t) => t.kind)).toEqual(['inbox', 'followups', 'new_outreach', 'search']);
+  });
+  it('splits quotas per platform in stable order from the remaining burst', () => {
+    // rng 0.99 -> burst 4: linkedin takes 3 of its 3 followups, naukri gets the 1 left
+    const { d } = plan({ due: due({ followupsDueByPlatform: { linkedin: 3, naukri: 3 }, followupsDue: 6 }) }, 0.99);
+    if (d.kind !== 'run') throw new Error('expected run');
+    const q = (p: string, k: string) =>
+      d.tasks.find((a) => a.platform === p)?.tasks.find((t) => t.kind === k)?.quota;
+    expect(d.burst).toBe(4);
+    expect(q('linkedin', 'followups')).toBe(3);
+    expect(q('naukri', 'followups')).toBe(1);
+    expect(q('linkedin', 'new_outreach')).toBeUndefined();
+  });
+  it('search belongs to naukri only', () => {
+    const { d } = plan({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: null }) });
+    if (d.kind !== 'run') throw new Error('expected run');
+    const withSearch = d.tasks.filter((a) => a.tasks.some((t) => t.kind === 'search'));
+    expect(withSearch.map((a) => a.platform)).toEqual(['naukri']);
   });
   it('assigns inbox when never checked or 61 min ago, not at 30', () => {
     const has = (v: number | null) => {
       const { d } = plan({ due: due({ inboxLastCheckedMinAgo: v, followupsDue: 1 }) });
-      return d.kind === 'run' && d.tasks.some((t) => t.worker === 'inbox-recruiter-replies');
+      return d.kind === 'run' && d.tasks.some((a) => a.tasks.some((t) => t.kind === 'inbox'));
     };
     expect(has(null)).toBe(true);
     expect(has(61)).toBe(true);
     expect(has(30)).toBe(false);
   });
-  it('linkedin halted leaves only naukri platforms', () => {
+  it('inbox is assigned per allowed platform', () => {
+    const { d } = plan({
+      control: ctl({ allowed: ['naukri'], halted: { linkedin: 'x', naukri: null } }),
+      due: due({ inboxLastCheckedMinAgo: null }),
+    });
+    if (d.kind !== 'run') throw new Error('expected run');
+    expect(d.tasks.map((a) => a.platform)).toEqual(['naukri']);
+    expect(d.tasks[0].tasks).toEqual([{ kind: 'inbox', quota: 5 }]);
+  });
+  it('linkedin halted leaves only the naukri assignment', () => {
     const { d } = plan({
       control: ctl({ allowed: ['naukri'], halted: { linkedin: 'x', naukri: null } }),
       due: due({ followupsDue: 2, newOutreachReady: 2, naukriSearchLastHoursAgo: null }),
     });
     if (d.kind !== 'run') throw new Error('expected run');
-    for (const t of d.tasks) expect(t.platforms).toEqual(['naukri']);
+    for (const a of d.tasks) {
+      expect(a.platform).toBe('naukri');
+      expect(a.operator).toBe('naukri-operator');
+    }
   });
-  it('linkedin_message exhausted removes linkedin from due-followups only', () => {
+  it('linkedin_message exhausted removes the linkedin followups task only', () => {
     const { d } = plan({
       ceilings: ceil(['linkedin_message']),
       due: due({ followupsDue: 2, newOutreachReady: 2 }),
     });
     if (d.kind !== 'run') throw new Error('expected run');
-    expect(d.tasks.find((t) => t.worker === 'due-followups')!.platforms).toEqual(['naukri']);
-    expect(d.tasks.find((t) => t.worker === 'new-outreach')!.platforms).toEqual(['linkedin', 'naukri']);
+    const kinds = (p: string) => d.tasks.find((a) => a.platform === p)!.tasks.map((t) => t.kind);
+    expect(kinds('linkedin')).not.toContain('followups');
+    expect(kinds('naukri')).toContain('followups');
+    // burst 4: naukri followups take 2, linkedin new_outreach the other 2, naukri new_outreach gets none
+    expect(kinds('linkedin')).toContain('new_outreach');
+  });
+  it('does not emit an assignment with zero tasks', () => {
+    const { d } = plan({ due: due({ followupsDueByPlatform: { linkedin: 0, naukri: 2 }, followupsDue: 2 }) });
+    if (d.kind !== 'run') throw new Error('expected run');
+    for (const a of d.tasks) expect(a.tasks.length).toBeGreaterThan(0);
   });
   it('all ceilings exhausted with work due gives ceilings_exhausted', () => {
     const { d } = plan({
@@ -130,7 +170,7 @@ describe('planWake', () => {
   it('naukri-search needs naukri_apply ok and an old enough last search', () => {
     const run = (o: Partial<Parameters<typeof planWake>[0]>) => {
       const { d } = plan({ due: due({ followupsDue: 1 }), ...o });
-      return d.kind === 'run' && d.tasks.some((t) => t.worker === 'naukri-search');
+      return d.kind === 'run' && d.tasks.some((a) => a.tasks.some((t) => t.kind === 'search'));
     };
     expect(run({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: 7 }) })).toBe(true);
     expect(run({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: 2 }) })).toBe(false);
@@ -153,7 +193,9 @@ describe('planWake', () => {
       0.99,
     );
     if (d.kind !== 'run') throw new Error('expected run');
-    expect(d.tasks.find((t) => t.worker === 'due-followups')).toMatchObject({ quota: 1, platforms: ['linkedin'] });
+    expect(d.tasks).toHaveLength(1);
+    expect(d.tasks[0]).toMatchObject({ operator: 'linkedin-operator', platform: 'linkedin' });
+    expect(d.tasks[0].tasks.find((t) => t.kind === 'followups')).toEqual({ kind: 'followups', quota: 1 });
   });
   it('loadPlanKnobs defaults and overrides', () => {
     expect(loadPlanKnobs({})).toEqual({ inboxEveryMin: 60, naukriSearchEveryHours: 6 });

@@ -12,7 +12,13 @@ const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
 const warn = (detail: string, fix?: string): CheckResult => ({ status: 'warn', detail, fix });
 const fail = (detail: string, fix?: string): CheckResult => ({ status: 'fail', detail, fix });
 
-const WORKERS = ['due-followups', 'new-outreach', 'inbox-recruiter-replies', 'naukri-search'] as const;
+const OPERATORS = [
+  { name: 'linkedin-operator', otherPrefix: 'mcp__naukri__' },
+  { name: 'naukri-operator', otherPrefix: 'mcp__linkedin__' },
+] as const;
+// The four per-task workers were replaced by the operators; their files must not come back.
+const RETIRED_WORKERS = ['due-followups', 'new-outreach', 'inbox-recruiter-replies', 'naukri-search'] as const;
+const FORBIDDEN_OPERATOR_TOOLS = ['Agent', 'Task', 'Bash', 'Read', 'Write', 'Edit'];
 
 function mergedEnv(ctx: DoctorContext): NodeJS.ProcessEnv {
   const file = join(ctx.root, '.env');
@@ -107,7 +113,12 @@ export function schedulerChecks(): Check[] {
           return fail('config/worker-tools.json is not valid JSON');
         }
         const bad: string[] = [];
-        for (const w of WORKERS) {
+        for (const w of RETIRED_WORKERS) {
+          if (ctx.fs.exists(join(ctx.root, '.claude', 'agents', `${w}.md`))) {
+            bad.push(`${w}: retired worker file still exists`);
+          }
+        }
+        for (const { name: w, otherPrefix } of OPERATORS) {
           const file = join(ctx.root, '.claude', 'agents', `${w}.md`);
           if (!ctx.fs.exists(file)) {
             bad.push(`${w}: agent file missing`);
@@ -115,11 +126,18 @@ export function schedulerChecks(): Check[] {
           }
           const tools = toolsLine(ctx.fs.read(file));
           const want = cfg[w];
-          if (!tools) bad.push(`${w}: no single tools line`);
-          else if (!Array.isArray(want) || want.join(', ') !== tools.join(', ')) bad.push(`${w}: tools differ from config`);
+          if (!tools) {
+            bad.push(`${w}: no single tools line`);
+            continue;
+          }
+          if (!Array.isArray(want) || want.join(', ') !== tools.join(', ')) bad.push(`${w}: tools differ from config`);
+          for (const t of tools) {
+            if (FORBIDDEN_OPERATOR_TOOLS.includes(t)) bad.push(`${w}: lists ${t}`);
+            else if (t.startsWith(otherPrefix)) bad.push(`${w}: lists ${t} (other platform)`);
+          }
         }
         return bad.length === 0
-          ? pass('four worker agents match config/worker-tools.json')
+          ? pass('two operator agents match config/worker-tools.json')
           : fail(bad.join('; '), 'align the agent tools line with config/worker-tools.json');
       },
     },

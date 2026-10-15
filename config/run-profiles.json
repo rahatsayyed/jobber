@@ -15,7 +15,8 @@
         "mcp__linkedin__linkedin_click", "mcp__linkedin__linkedin_check_connection_status",
         "mcp__linkedin__linkedin_connect_send", "mcp__linkedin__linkedin_send_message",
         "mcp__naukri__naukri_search", "mcp__naukri__naukri_inbox", "mcp__naukri__naukri_read_thread",
-        "mcp__naukri__naukri_send_message", "mcp__db__list_jobs", "mcp__db__update_outreach_status"
+        "mcp__naukri__naukri_send_message", "mcp__db__list_jobs", "mcp__db__update_outreach_status",
+        "mcp__linkedin__linkedin_layout", "mcp__naukri__naukri_layout"
       ],
       "screen_args": [
         "mcp__outreach__escalate", "mcp__outreach__record_inbound",

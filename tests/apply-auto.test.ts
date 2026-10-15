@@ -116,7 +116,7 @@ describe('apply tool dry run seam', () => {
     const want = {
       status: 'needs_agent',
       platform: 'naukri',
-      reason: 'naukri apply is agent-driven: dispatch the naukri-search worker or use naukri_open',
+      reason: 'naukri apply is agent-driven: dispatch the naukri-operator or use naukri_open',
     };
     expect(await handleApplyAuto({ apply_url: 'https://www.naukri.com/job-listings-x', job_id: 'j1' })).toEqual(want);
     process.env.SCHEDULER_DRY_RUN = 'false';

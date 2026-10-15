@@ -26,6 +26,8 @@
       "mcp__gmail__read_email",
       "mcp__naukri__naukri_state",
       "mcp__naukri__naukri_screenshot",
+      "mcp__linkedin__linkedin_layout",
+      "mcp__naukri__naukri_layout",
       "Bash(npx tsx scripts/status.ts limits)",
       "Bash(npx tsx scripts/status.ts working)",
       "Bash(npx tsx scripts/status.ts health)"

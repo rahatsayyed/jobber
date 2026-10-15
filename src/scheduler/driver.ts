@@ -267,7 +267,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
     // (5) run
     const startAt = d.now();
     const budget = loadBudget(d.env);
-    inboxPlanned = decision.tasks.some((t) => t.worker === 'inbox-recruiter-replies');
+    inboxPlanned = decision.tasks.some((a) => a.tasks.some((k) => k.kind === 'inbox'));
     startRun(d.db, {
       id: runId, at: startAt, trigger, dryRun: dry, burst: decision.burst, tasks: decision.tasks, status: 'running',
     });

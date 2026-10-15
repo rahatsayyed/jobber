@@ -27,7 +27,10 @@ const run = async (ctx: DoctorContext) => {
   return Object.fromEntries(res.map((r) => [r.id, r.result]));
 };
 
-const TOOLS = { 'due-followups': ['Skill', 'mcp__a__b'], 'new-outreach': ['mcp__c__d'], 'inbox-recruiter-replies': ['Skill'], 'naukri-search': ['mcp__e__f'] };
+const TOOLS = {
+  'linkedin-operator': ['Skill', 'mcp__linkedin__linkedin_layout', 'mcp__outreach__escalate'],
+  'naukri-operator': ['Skill', 'mcp__naukri__naukri_layout', 'mcp__outreach__escalate'],
+};
 const agent = (tools: string[]) => `---\nname: x\ntools: ${tools.join(', ')}\n---\nbody\n`;
 const goodAgents = (): Files => {
   const f: Files = { '/p/config/worker-tools.json': { text: JSON.stringify(TOOLS) } };
@@ -89,12 +92,40 @@ describe('scheduler doctor checks', () => {
   it('worker tools lint', async () => {
     expect((await run(ctxWith(goodAgents())))['agents-worker-tools'].status).toBe('pass');
     const drift = goodAgents();
-    drift['/p/.claude/agents/new-outreach.md'] = { text: agent(['mcp__c__d', 'Bash']) };
+    drift['/p/.claude/agents/naukri-operator.md'] = { text: agent(['mcp__naukri__naukri_layout', 'Skill', 'mcp__outreach__escalate', 'Bash']) };
     const r = await run(ctxWith(drift));
     expect(r['agents-worker-tools'].status).toBe('fail');
-    expect(r['agents-worker-tools'].detail).toContain('new-outreach');
+    expect(r['agents-worker-tools'].detail).toContain('naukri-operator');
     const missing = goodAgents();
     delete missing['/p/config/worker-tools.json'];
     expect((await run(ctxWith(missing)))['agents-worker-tools'].status).toBe('fail');
+  });
+
+  it('fails when a retired worker file still exists', async () => {
+    for (const w of ['due-followups', 'new-outreach', 'inbox-recruiter-replies', 'naukri-search']) {
+      const f = goodAgents();
+      f[`/p/.claude/agents/${w}.md`] = { text: agent(['Skill']) };
+      const r = await run(ctxWith(f));
+      expect(r['agents-worker-tools'].status).toBe('fail');
+      expect(r['agents-worker-tools'].detail).toContain(w);
+    }
+  });
+
+  it('fails when an operator lists Agent, Bash, Read, Write, Edit or a tool of the other platform', async () => {
+    const bad: Array<[string, string]> = [
+      ['linkedin-operator', 'Agent'], ['linkedin-operator', 'Bash'], ['linkedin-operator', 'Read'],
+      ['linkedin-operator', 'Write'], ['linkedin-operator', 'Edit'],
+      ['linkedin-operator', 'mcp__naukri__naukri_search'], ['naukri-operator', 'mcp__linkedin__linkedin_state'],
+    ];
+    for (const [op, tool] of bad) {
+      // config and agent file agree, so only the policy check can fail
+      const f = goodAgents();
+      const tools = [...(TOOLS as Record<string, string[]>)[op], tool];
+      f['/p/config/worker-tools.json'] = { text: JSON.stringify({ ...TOOLS, [op]: tools }) };
+      f[`/p/.claude/agents/${op}.md`] = { text: agent(tools) };
+      const r = await run(ctxWith(f));
+      expect(r['agents-worker-tools'].status, `${op} ${tool}`).toBe('fail');
+      expect(r['agents-worker-tools'].detail).toContain(tool);
+    }
   });
 });

@@ -44,7 +44,7 @@ export async function handleApplyAuto(
     return {
       status: 'needs_agent',
       platform: 'naukri',
-      reason: 'naukri apply is agent-driven: dispatch the naukri-search worker or use naukri_open',
+      reason: 'naukri apply is agent-driven: dispatch the naukri-operator or use naukri_open',
     };
   }
   const platform = route.kind === 'linkedin' ? 'linkedin' : route.platform ?? 'external';

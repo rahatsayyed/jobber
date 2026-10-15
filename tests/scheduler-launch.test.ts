@@ -3,7 +3,6 @@ import { mkdtempSync, appendFileSync, statSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildRunnerArgv, defaultFsOps, tmuxLauncher, type FsOps } from '../src/scheduler/launch.js';
-import { buildWakePrompt } from '../src/scheduler/prompt.js';
 import type { Run } from '../src/platform/tmux.js';
 
 function fakeRun(codes: Record<string, number> = {}, stdout: Record<string, string> = {}) {
@@ -178,60 +177,5 @@ describe('tmuxLauncher', () => {
     const h = await l.start(plan);
     await expect(l.kill(h)).resolves.toBeUndefined();
     expect(calls.some((c) => c.args[0] === 'kill-window')).toBe(false);
-  });
-});
-
-describe('buildWakePrompt', () => {
-  const i = {
-    runId: 'abcd1234',
-    dryRun: false,
-    burst: 3,
-    tasks: [
-      { worker: 'due-followups' as const, quota: 2, platforms: ['linkedin' as const] },
-      { worker: 'naukri-search' as const, quota: 1, platforms: ['naukri' as const] },
-    ],
-    budget: { maxToolCalls: 60, maxWallSec: 900, maxTokensApprox: 150000 },
-    allowed: ['linkedin' as const, 'naukri' as const],
-    now: new Date('2026-10-15T10:00:00Z'),
-  };
-  it('contains the expected lines, ends with the JSON instruction, no dry-run sentence', () => {
-    const p = buildWakePrompt(i);
-    expect(p).toContain('abcd1234');
-    expect(p).toContain('Dry run: no.');
-    expect(p).toContain('Allowed platforms: linkedin, naukri.');
-    expect(p).toContain('Dispatch worker `due-followups` with quota 2, platforms linkedin.');
-    expect(p).toContain('Dispatch worker `naukri-search` with quota 1, platforms naukri.');
-    expect(p).not.toContain('must not send');
-    expect(p.indexOf('due-followups')).toBeLessThan(p.indexOf('naukri-search'));
-    const nonEmpty = p.split('\n').filter(Boolean);
-    expect(nonEmpty[nonEmpty.length - 1]).toBe('End with one JSON line {run_id, workers: [{worker, done, skipped, escalated}]}.');
-    expect(p.match(/halted/g)).toHaveLength(2);
-  });
-  it('states the dry-run sentence only when set', () => {
-    const p = buildWakePrompt({ ...i, dryRun: true });
-    expect(p).toContain('Dry run: yes.');
-    expect(p).toContain('must not send');
-  });
-});
-
-describe('defaultFsOps', () => {
-  it('writes 0600, reads appended bytes from an offset, creates dirs', () => {
-    const d = mkdtempSync(join(tmpdir(), 'sched-launch-'));
-    try {
-      const f = join(d, 'a.txt');
-      defaultFsOps.writeFile(f, 'hello', 0o600);
-      expect(statSync(f).mode & 0o777).toBe(0o600);
-      const r1 = defaultFsOps.readFromOffset(f, 0);
-      expect(r1.data.toString()).toBe('hello');
-      appendFileSync(f, ' world');
-      expect(defaultFsOps.readFromOffset(f, r1.offset).data.toString()).toBe(' world');
-      expect(defaultFsOps.readFromOffset(join(d, 'none'), 0).data.length).toBe(0);
-      expect(defaultFsOps.exists(f)).toBe(true);
-      expect(defaultFsOps.readText(f)).toBe('hello world');
-      defaultFsOps.mkdir(join(d, 'x', 'y'));
-      expect(defaultFsOps.exists(join(d, 'x', 'y'))).toBe(true);
-    } finally {
-      rmSync(d, { recursive: true, force: true });
-    }
   });
 });

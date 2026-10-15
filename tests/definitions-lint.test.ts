@@ -132,9 +132,9 @@ describe('backticked server.tool and typed-tool references resolve', () => {
   }
 });
 
-describe('scheduled workers match config/worker-tools.json', () => {
+describe('scheduled operators match config/worker-tools.json', () => {
   const cfg: Record<string, string[]> = JSON.parse(readFileSync('config/worker-tools.json', 'utf8'));
-  for (const w of ['due-followups', 'new-outreach', 'inbox-recruiter-replies', 'naukri-search']) {
+  for (const w of ['linkedin-operator', 'naukri-operator']) {
     it(w, () => {
       const d = agents.find((a) => a.name === w)!;
       expect(toolsOf(d)).toEqual(cfg[w]);
