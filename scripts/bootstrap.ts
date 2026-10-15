@@ -9,6 +9,7 @@ import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildCatalog } from '../src/bootstrap/catalog.js';
+import { buildState, writeState, type BootstrapState } from '../src/bootstrap/state.js';
 import { exitCodeFor, renderTable, runBootstrap, type ExecDeps, type ExecOptions, type ItemResult } from '../src/bootstrap/exec.js';
 import type { CcgramPin, ItemId, Platform } from '../src/bootstrap/types.js';
 import { defaultRun } from '../src/platform/tmux.js';
@@ -71,6 +72,8 @@ export interface MainDeps extends ExecDeps {
   interactive: boolean;
   /** Injected so tests never touch the network; the real one wraps scripts/models.ts. */
   modelCli?: Omit<CliDeps, 'out'>;
+  /** Persists .jobber/bootstrap.json; absent in tests. Failures are swallowed. */
+  saveState?: (root: string, state: BootstrapState) => void;
 }
 
 export async function main(argv: string[], deps: MainDeps): Promise<number> {
@@ -136,6 +139,13 @@ export async function main(argv: string[], deps: MainDeps): Promise<number> {
     ...(args.only ? { only: args.only } : {}),
   };
   const results: ItemResult[] = await runBootstrap(items, exec, opts);
+  if (!args.check && !args.plan && deps.saveState) {
+    try {
+      deps.saveState(deps.root, buildState(deps.platform, results, deps.now()));
+    } catch {
+      /* state is informational; never fails the run */
+    }
+  }
   if (args.json) deps.say(JSON.stringify(results, null, 2));
   else deps.say(renderTable(results));
   if (deps.platform === 'unsupported' && !results.some((r) => r.outcome === 'ok')) return 4;
@@ -165,6 +175,7 @@ function realDeps(): MainDeps {
       },
     },
     now: () => new Date(),
+    saveState: writeState,
     interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
     modelCli: {
       registryPath: join(root, 'config', 'classifier-models.json'),

@@ -43,7 +43,7 @@ export const prereqsStep: SetupStep = {
       if (round === MAX_ROUNDS) break;
       await ctx.io.pause('Run the commands above, then press Enter');
     }
-    ctx.io.say('Some prerequisites are still missing. Fix them and run setup again.');
+    ctx.io.say('Some prerequisites are still missing. Fix them (or run bash scripts/bootstrap.sh) and run setup again.');
     return 'done';
   },
 };
