@@ -199,9 +199,23 @@ describe('up', () => {
       return r;
     };
     const d = deps(f);
-    expect(await runUp(d, { status: false })).toBe(0);
+    expect(await runUp(d, { status: false })).toBe(1);
     expect(d.out.join('\n')).toContain('warning: window scheduler exited immediately');
     expect(d.out.some((l) => /scheduler\s+not running/.test(l))).toBe(true);
+    expect(d.out.join('\n')).toContain('Stop: npm run down');
+  });
+
+  it('a bridge start failure exits 1 but still prints the table; --status stays 0', async () => {
+    const f = fake();
+    const base = f.run;
+    f.run = async (c, a, o) => (c === 'bash' ? { stdout: 'nope', code: 1 } : base(c, a, o));
+    const d = deps(f);
+    expect(await runUp(d, { status: false })).toBe(1);
+    const text = d.out.join('\n');
+    expect(text).toContain('warning: bridge: start.sh failed');
+    expect(text).toContain('components:');
+    const s = deps(f);
+    expect(await runUp(s, { status: true })).toBe(0);
   });
 
   it('status starts nothing, runs no doctor, exits 0 even with STOP', async () => {

@@ -122,6 +122,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
   const rows: Array<[string, string, string]> = [];
   const warnings: string[] = [];
   const started: string[] = [];
+  let startFailed = false; // a bridge, scheduler or web start error, or a window that exited at once
   const kill = stopActive(deps.root, env);
   let cfg;
   try {
@@ -149,8 +150,10 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
       say('bridge: skipped (TELEGRAM_BOT_TOKEN not set)');
     } else {
       const r = await deps.run('bash', ['scripts/ccgram/start.sh'], { cwd: deps.root });
-      if (r.code !== 0) warnings.push('bridge: start.sh failed');
-      else say(`bridge: ${r.stdout.trim().split('\n').pop() ?? 'ok'}`);
+      if (r.code !== 0) {
+        warnings.push('bridge: start.sh failed');
+        startFailed = true;
+      } else say(`bridge: ${r.stdout.trim().split('\n').pop() ?? 'ok'}`);
     }
 
     // Manager windows.
@@ -188,6 +191,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
         say('scheduler: started');
       } catch (e) {
         warnings.push(`scheduler: ${(e as Error).message}`);
+        startFailed = true;
       }
     }
 
@@ -208,6 +212,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
         if (!up) warnings.push(`web: no answer within ${PROBE_SECONDS}s; read it with: tmux attach -t ${session}`);
       } catch (e) {
         warnings.push(`web: ${(e as Error).message}`);
+        startFailed = true;
       }
     }
   } else if (kill.stopped) {
@@ -218,7 +223,10 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
   const stackNames = await windowNames(deps.run, session);
   if (!status) {
     for (const n of started) {
-      if (!stackNames.has(n)) warnings.push(`window ${n} exited immediately`);
+      if (!stackNames.has(n)) {
+        warnings.push(`window ${n} exited immediately`);
+        startFailed = true;
+      }
     }
   }
   const bridgeUp = await hasSession(deps.run, daemonSession);
@@ -242,7 +250,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
   say(`ticks (run by the scheduler after a wake): auto-update ${env.AUTO_UPDATE === 'true' ? 'on' : 'off'}, backup ${env.BACKUP_ENABLED === 'true' ? 'on' : 'off'}`);
   say(lastVerify(deps));
   say('Stop: npm run down   Emergency: npm run jobber:control -- stop');
-  return 0;
+  return !status && startFailed ? 1 : 0;
 }
 
 export async function runUp(deps: StackDeps, opts: { status: boolean }): Promise<number> {

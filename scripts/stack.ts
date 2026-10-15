@@ -36,8 +36,9 @@ export async function loopbackProbe(url: string): Promise<boolean> {
   try {
     const u = new URL(url);
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname)) return false;
-    const r = await fetch(url, { signal: AbortSignal.timeout(2000) });
-    return r.status === 200 || r.status === 401;
+    // redirect: manual so a redirect to another host is never followed; a 3xx means the server answered
+    const r = await fetch(url, { signal: AbortSignal.timeout(2000), redirect: 'manual' });
+    return r.status === 200 || r.status === 401 || (r.status >= 300 && r.status < 400);
   } catch {
     return false;
   }

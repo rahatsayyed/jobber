@@ -1,5 +1,6 @@
 // tests/stack-cli.test.ts
 import { readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { describe, expect, it } from 'vitest';
 import { loopbackProbe, parseArgs } from '../scripts/stack.js';
 
@@ -36,5 +37,28 @@ describe('stack CLI parse', () => {
   it('probe refuses non-loopback hosts without any request', async () => {
     expect(await loopbackProbe('http://example.com/api/auth/mode')).toBe(false);
     expect(await loopbackProbe('not a url')).toBe(false);
+  });
+
+  it('probe does not follow a redirect and counts a 3xx as up', async () => {
+    let hits = 0;
+    const srv = createServer((req, res) => {
+      hits++;
+      if (req.url === '/target') {
+        res.statusCode = 200;
+        res.end('ok');
+      } else {
+        res.statusCode = 302;
+        res.setHeader('location', 'http://127.0.0.1:1/elsewhere');
+        res.end();
+      }
+    });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    try {
+      const port = (srv.address() as { port: number }).port;
+      expect(await loopbackProbe(`http://127.0.0.1:${port}/start`)).toBe(true);
+      expect(hits).toBe(1);
+    } finally {
+      await new Promise((r) => srv.close(r));
+    }
   });
 });
