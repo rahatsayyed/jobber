@@ -124,6 +124,10 @@ export const apikeysStep: SetupStep = {
           continue;
         }
       } else {
+        const missing = p.keys.filter((k) => existing[k.env] === '').map((k) => k.env);
+        if (missing.length < p.keys.length) {
+          io.say(`${p.name} is only partly set; not set: ${missing.join(', ')}. Treating it as not configured.`);
+        }
         const spec: SkipSpec = { ...base, title: p.name, lose: [p.lose] };
         if ((await offerSkip(ctx, spec, p.defaultChoice)) === 'later') continue;
       }
@@ -145,7 +149,7 @@ export const apikeysStep: SetupStep = {
         else if (await io.confirm('Keep it anyway?', false)) accepted = values;
       }
       if (!accepted) {
-        io.say(`${p.name} left unset.`);
+        io.say(allSet ? `${p.name} left unchanged (the existing value is kept).` : `${p.name} left unset.`);
         continue;
       }
       Object.assign(updates, accepted);

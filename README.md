@@ -45,6 +45,7 @@ In this order:
 - `claude`: checks that the Claude Code CLI is installed and logged in, and tells you how to log in if it is not.
 - `telegram`: walks you through creating a bot with @BotFather, tells you to enable Topics and turn Group Privacy off, stores the bot token in `.env` (never echoed), records your numeric Telegram ID in `ALLOWED_USERS` (a comma-separated list of numeric IDs; each extra ID needs an explicit extra confirmation), and sends a test message.
 - `gmail`: guides you through creating a Desktop OAuth client in your own Google Cloud project, then runs the consent screen so the send token stays on this machine.
+- `apikeys`: optional Adzuna, Serper and Hunter keys, each skippable; Hunter stays off unless you confirm.
 - `sessions`: opens a browser so you log in once to the burner LinkedIn account (applying), the main LinkedIn account (people search, connection requests and messages) and Naukri; the saved sessions live in `secrets/`.
 - `resume`: has a model transcribe your resume text into `user-data/resume.json`, rejects any number that is not in your source text, and writes nothing until you confirm.
 - `profile`: asks for roles, locations, remote preference, salary floors and targets, notice period and work authorization, and writes `user-data/profile.json`, the application answers file and the language list.

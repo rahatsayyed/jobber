@@ -143,6 +143,9 @@ describe('apikeysStep', () => {
     });
     expect(await apikeysStep.run(t.ctx)).toBe('done');
     expect(env(t)).toContain(`SERPER_API_KEY=${SERP}`);
+    const out = t.sio.transcript.join('\n');
+    for (const s of SECRETS) expect(out.includes(s), s).toBe(false);
+    expect(out).not.toContain('https://');
     t.sio.assertDone();
   });
 
@@ -157,6 +160,39 @@ describe('apikeysStep', () => {
     });
     expect(await apikeysStep.run(t.ctx)).toBe('skipped');
     expect(t.files.has('proj/.env')).toBe(false);
+    const out = t.sio.transcript.join('\n');
+    for (const s of SECRETS) expect(out.includes(s), s).toBe(false);
+    expect(out).not.toContain('https://');
+    expect(out).toContain('Serper left unset.');
+  });
+
+  it('replacing an existing key that is rejected and not kept says unchanged', async () => {
+    const t = mk({
+      env: `SERPER_API_KEY=${SERP}\n`,
+      status: () => 401,
+      script: [
+        { choose: 'later' },
+        { confirm: false }, { secret: 'new-synthetic-key-5555' }, { secret: 'new-synthetic-key-5555' }, { confirm: false },
+        { choose: 'later' },
+      ],
+    });
+    await apikeysStep.run(t.ctx);
+    expect(env(t)).toBe(`SERPER_API_KEY=${SERP}\n`);
+    const out = t.sio.transcript.join('\n');
+    expect(out).toContain('left unchanged');
+    expect(out).not.toContain('left unset');
+  });
+
+  it('partly set Adzuna names the missing variable and is treated as not configured', async () => {
+    const t = mk({
+      env: `ADZUNA_APP_ID=${ADZ_ID}\n`,
+      script: [{ choose: 'later' }, { choose: 'later' }, { choose: 'later' }],
+    });
+    expect(await apikeysStep.run(t.ctx)).toBe('skipped');
+    const out = t.sio.transcript.join('\n');
+    expect(out).toContain('not set: ADZUNA_APP_KEY');
+    expect(out).not.toContain(ADZ_ID);
+    t.sio.assertDone();
   });
 
   it('network failure keeps the key with a warning and never logs the URL or key', async () => {
