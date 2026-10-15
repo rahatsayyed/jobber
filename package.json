@@ -43,6 +43,8 @@
     "jobber:control": "tsx scripts/jobber-control.ts",
     "scheduler": "tsx scripts/scheduler.ts",
     "scheduler:units": "tsx scripts/scheduler-units.ts",
+    "up": "tsx scripts/stack.ts up",
+    "down": "tsx scripts/stack.ts down",
     "dry-run": "tsx scripts/dry-run.ts",
     "dry-run:report": "tsx scripts/dry-run-report.ts",
     "setup": "tsx scripts/setup.ts"

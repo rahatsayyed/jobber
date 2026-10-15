@@ -44,17 +44,17 @@ function readFileEnv(deps: StackDeps): Record<string, string> {
   return {};
 }
 
-function mergedEnv(deps: StackDeps): NodeJS.ProcessEnv {
+export function mergedEnv(deps: StackDeps): NodeJS.ProcessEnv {
   return { ...readFileEnv(deps), ...deps.env };
 }
 
-function stackSession(env: NodeJS.ProcessEnv): string {
+export function stackSession(env: NodeJS.ProcessEnv): string {
   const s = (env.STACK_TMUX_SESSION ?? '').trim() || DEFAULT_STACK_SESSION;
   assertName(s);
   return s;
 }
 
-async function unitLoaded(run: Run): Promise<string | null> {
+export async function unitLoaded(run: Run): Promise<string | null> {
   const l = await run('launchctl', ['list']);
   if (l.code === 0 && l.stdout.includes(DEFAULT_LABEL)) return `launchd unit ${DEFAULT_LABEL}`;
   const s = await run('systemctl', ['--user', 'is-active', SERVICE_NAME]);
@@ -62,7 +62,7 @@ async function unitLoaded(run: Run): Promise<string | null> {
   return null;
 }
 
-async function windowNames(run: Run, session: string): Promise<Set<string>> {
+export async function windowNames(run: Run, session: string): Promise<Set<string>> {
   return new Set((await listWindows(run, session)).map((w) => w.name));
 }
 
