@@ -86,7 +86,7 @@ describe('gmail skip and confirms', () => {
         { confirm: false },
       ],
     });
-    expect(await gmailStep.run(t.ctx)).toBe('done');
+    expect(await gmailStep.run(t.ctx)).toBe('skipped');
     const out = t.sio.transcript.join('\n');
     expect(out).toContain('must be named exactly secrets/gcp-oauth.keys.json');
     expect(out).toContain('Console path');
