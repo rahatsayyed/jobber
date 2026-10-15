@@ -48,7 +48,7 @@ export function observeLinkedin(
     if (p.name.trim()) lm.add('profile.name');
     if (p.headline.trim()) lm.add('profile.headline');
     if (p.degree !== null) lm.add('profile.degree');
-    if (p.about) lm.add('profile.about');
+    if (p.about?.trim()) lm.add('profile.about');
     if (p.hasBell) lm.add('profile.bell');
     if (p.pending) lm.add('profile.pending');
     if (p.hasMessageButton) lm.add('profile.message_button');
@@ -59,8 +59,8 @@ export function observeLinkedin(
   if (raw.results.length > 0) lm.add('results.cards');
   if (raw.invitations.length > 0) lm.add('invitations.rows');
   if (raw.messages.length > 0) lm.add('messages.thread');
-  if (raw.messageHeaderName) lm.add('message.header');
-  if (raw.dialogText) lm.add('dialog.open');
+  if (raw.messageHeaderName?.trim()) lm.add('message.header');
+  if (raw.dialogText?.trim()) lm.add('dialog.open');
   if (raw.notices.length > 0) lm.add('notice.present');
 
   let nonDrift: Observation['nonDrift'] = null;
@@ -79,7 +79,7 @@ export function observeLinkedin(
       messages: bucket(raw.messages.length),
       notices: bucket(raw.notices.length),
     },
-    // RawSnapshot has no nav/search-box field; a loaded, non-auth LinkedIn page stands in for the shell.
+    // shell: page loaded as a known non-auth app kind (proxy; Task 5 may refine it with structure counts).
     shell: kind !== 'login' && kind !== 'checkpoint' && kind !== 'other' && raw.bodyText.length >= unloadedMax,
     nonDrift,
   };

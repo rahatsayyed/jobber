@@ -9,9 +9,6 @@ export interface Observation {
   kind: KindId;                           // from classifyUrl (LinkedIn) or url path (Naukri)
   landmarks: LandmarkId[];                // sorted, unique, closed vocabulary
   counts: Record<string, number>;         // bucketed (0,1,2-3,4-7,8+ => 0..4), keys from COUNT_KEYS
-  shell: boolean;                         // global shell landmarks present (nav and search box)
+  shell: boolean;                         // page loaded as a known non-auth app kind (proxy; Task 5 may refine it with structure counts)
   nonDrift: null | 'blocked' | 'logged_out' | 'unloaded';
 }
-
-// Outcome of comparing an Observation with remembered layout (used by later tasks).
-export type Verdict = 'ok' | 'drift' | 'unknown' | 'non_drift';

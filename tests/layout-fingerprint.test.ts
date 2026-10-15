@@ -1,4 +1,3 @@
-// Facts: new test for src/layout/{types,vocab,fingerprint}.ts (plan 8B task 1), synthetic data only.
 import { describe, it, expect } from 'vitest';
 import { observeLinkedin, observeNaukri, bucket } from '../src/layout/fingerprint.js';
 import { ACTION_LABELS, KINDS, LANDMARKS, ID_RE, COUNT_KEYS } from '../src/layout/vocab.js';
@@ -48,6 +47,15 @@ describe('observeLinkedin', () => {
     expect(json).not.toMatch(/[0-9a-f]{16,}/);
   });
 
+  it('whitespace-only about, header and dialog are not landmarks', () => {
+    const o = observeLinkedin(liSnap({
+      profile: profile({ about: '   ' }), messageHeaderName: '  ', dialogText: '\n ',
+    }), null);
+    expect(o.landmarks).not.toContain('profile.about');
+    expect(o.landmarks).not.toContain('message.header');
+    expect(o.landmarks).not.toContain('dialog.open');
+  });
+
   it('non-drift states', () => {
     expect(observeLinkedin(liSnap(), 'captcha').nonDrift).toBe('blocked');
     expect(observeLinkedin(liSnap(), 'restriction').nonDrift).toBe('blocked');
@@ -93,6 +101,27 @@ describe('observeNaukri', () => {
     const json = JSON.stringify(o);
     expect(json).not.toContain('Secret');
     expect(json).not.toContain('years');
+  });
+  it('url path kinds', () => {
+    const kindOf = (url: string) => observeNaukri({
+      title: 't', url, buttons: [],
+      chatbot: { open: false, messages: [], placeholder: null, sendLabel: null, options: [] },
+      notices: [], hasPasswordInput: false,
+    }, { loginRequired: false }).kind;
+    expect(kindOf('https://www.naukri.com/mnjuser/inbox')).toBe('inbox');
+    expect(kindOf('https://www.naukri.com/react-developer-jobs-in-bengaluru')).toBe('search');
+    expect(kindOf('https://www.naukri.com/')).toBe('home');
+    expect(kindOf('https://www.naukri.com/some/other/page')).toBe('other');
+    expect(kindOf('https://evil.example.com/job-listings-x')).toBe('other');
+  });
+  it('counts keys are all in COUNT_KEYS', () => {
+    const li = observeLinkedin(liSnap({ profile: profile() }), null);
+    const nk = observeNaukri({
+      title: 't', url: 'https://www.naukri.com/', buttons: ['Apply'],
+      chatbot: { open: true, messages: [{ from: 'bot', text: 'q' }], placeholder: 'p', sendLabel: null, options: ['a'] },
+      notices: ['n'], hasPasswordInput: false,
+    }, { loginRequired: false });
+    for (const o of [li, nk]) for (const k of Object.keys(o.counts)) expect(COUNT_KEYS).toContain(k);
   });
   it('login required is logged_out', () => {
     const o = observeNaukri({
