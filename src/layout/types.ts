@@ -39,6 +39,8 @@ export interface KindMemory {
   variants: Variant[];                       // max 3
   counters: { match: number; partial: number; drift: number };
   drift_streak: number; drift_window_start: string | null; last_drift_at: string | null;
+  // Distinct run ids (max 5) behind the current drift streak; absent in older files.
+  drift_run_ids?: string[];
 }
 // Result of comparing an Observation with stored layout memory (see classify.ts).
 export type Verdict =

@@ -24,7 +24,7 @@ const THREAD_URL = 'https://www.naukri.com/mnjuser/inbox?threadId=abc123';
 const OPTION_SECRET = 'Fresher-ZZSECRETOPT';
 const PLACEHOLDER_SECRET = 'Type ZZSECRETPLACEHOLDER here';
 
-type Mode = 'v1' | 'v2' | 'login';
+type Mode = 'v1' | 'v2' | 'v3' | 'login';
 
 const snapV1 = (url: string): RawSnapshot => ({
   title: 'Job', url, buttons: ['Apply', 'Save'],
@@ -57,6 +57,7 @@ function harness(mode: { v: Mode } = { v: 'v1' }) {
       }
       if (src.includes('data-nk-i')) return [{ i: 1, text: 'Apply', native: true, company: false }];
       const url = mode.v === 'login' ? LOGIN_URL : gotos[gotos.length - 1] ?? JOB_URL;
+      if (mode.v === 'v3') return { ...snapV2(url), buttons: [] };
       return mode.v === 'v2' ? snapV2(url) : snapV1(url);
     }),
     locator: vi.fn((sel: string) => {
@@ -99,6 +100,18 @@ function setup(envExtra: Record<string, string> = {}, h = harness()) {
 
 afterEach(async () => {
   await shutdownNaukri();
+});
+
+describe('drift side effects are wired to the server db', () => {
+  it('escalates into the db the server uses after repeated drift', async () => {
+    const h = harness({ v: 'v2' });
+    const { d } = setup({}, h);
+    await naukriOpen({ url: JOB_URL }, d); // promotes (N=1, runs=1)
+    h.mode.v = 'v3';
+    for (let i = 0; i < 3; i++) await naukriState(d);
+    const rows = d.db.prepare('SELECT platform, reason, detail FROM escalations').all();
+    expect(rows).toEqual([{ platform: 'naukri', reason: 'layout_drift', detail: 'kind=job streak=3 missing=button:apply' }]);
+  });
 });
 
 describe('observation per state call', () => {

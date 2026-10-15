@@ -400,7 +400,7 @@ function makeObserver(deps: NaukriDeps): LayoutObserver | null {
   try {
     return createLayoutObserver({
       platform: 'naukri', cfg: layoutCfgOf(deps), now: deps.now ?? (() => new Date()),
-      runId: resolveRunId(deps.env ?? process.env),
+      runId: resolveRunId(deps.env ?? process.env), db: getDb(deps),
     });
   } catch (err) {
     console.error(`[layout] naukri observer: ${errText(err)}`);

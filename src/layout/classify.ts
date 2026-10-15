@@ -156,7 +156,7 @@ export function applyObservation(
   const existed = obs.kind in out.kinds;
   const km: KindMemory = out.kinds[obs.kind] ?? {
     state: 'learning', variants: [], counters: { match: 0, partial: 0, drift: 0 },
-    drift_streak: 0, drift_window_start: null, last_drift_at: null,
+    drift_streak: 0, drift_window_start: null, last_drift_at: null, drift_run_ids: [],
   };
   out.kinds[obs.kind] = km;
   out.updated_at = now;
@@ -174,6 +174,7 @@ export function applyObservation(
   if (verdict.class === 'match' || verdict.class === 'partial') {
     km.drift_streak = 0;
     km.drift_window_start = null;
+    km.drift_run_ids = [];
     if (verdict.class === 'match') {
       km.counters.match = Math.min(km.counters.match + 1, MAX_COUNT);
       const v = km.variants.find((x) => x.id === verdict.variant);
@@ -188,15 +189,21 @@ export function applyObservation(
       && ctx.now.getTime() - Date.parse(km.drift_window_start) > cfg.driftWindowHours * 3_600_000) {
       km.drift_streak = 0;
       km.drift_window_start = null;
+      km.drift_run_ids = [];
     }
     if (km.drift_window_start === null) km.drift_window_start = now;
     km.counters.drift = Math.min(km.counters.drift + 1, MAX_COUNT);
     km.drift_streak = Math.min(km.drift_streak + 1, MAX_COUNT);
     km.last_drift_at = now;
+    const rid = ctx.runId !== null && RUN_ID_RE.test(ctx.runId) ? ctx.runId : ANON_RUN;
+    const ids = km.drift_run_ids ?? [];
+    if (!ids.includes(rid) && ids.length < MAX_RUN_IDS) ids.push(rid);
+    km.drift_run_ids = ids;
     km.state = 'drifted';
     // Escalate once per streak (on crossing); halt stays asserted while the streak is at or past the limit.
     if (km.drift_streak === cfg.driftEscalateN) events.push('drift_escalate');
-    if (km.drift_streak >= cfg.driftHaltN) events.push('drift_halt');
+    // Halt needs the streak AND at least two distinct runs: one run alone (a slow load) never halts.
+    if (km.drift_streak >= cfg.driftHaltN && ids.length >= Math.min(2, MAX_RUN_IDS)) events.push('drift_halt');
     learn(km, obs, now, ctx.runId, cfg, events);
   } else {
     learn(km, obs, now, ctx.runId, cfg, events);

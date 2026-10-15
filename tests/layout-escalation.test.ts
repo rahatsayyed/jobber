@@ -6,7 +6,7 @@ import { createLayoutObserver } from '../src/layout/runtime.js';
 import { loadLayoutConfig } from '../src/layout/config.js';
 import { ID_RE } from '../src/layout/vocab.js';
 import { openDb } from '../src/db.js';
-import { haltReason } from '../src/outreach/limits.js';
+import { haltPlatform, haltReason } from '../src/outreach/limits.js';
 import { listOpenEscalations } from '../src/outreach/service.js';
 import type { RawSnapshot } from '../src/linkedin/types.js';
 import type { Notice } from '../src/scheduler/notify.js';
@@ -63,10 +63,35 @@ describe('layout drift side effects', () => {
     expect(notices).toHaveLength(1);
   });
 
+  it('one run never halts, however many drifts; the streak reset on match clears escalation state', () => {
+    const { db, mk } = setup();
+    const o = mk('run-c');
+    for (let i = 0; i < 8; i++) o.observe(drift(), null);
+    expect(haltReason(db, 'linkedin')).toBeNull();
+    expect(listOpenEscalations(db, 20).map((e) => e.reason)).toEqual(['layout_drift']);
+    expect(o.observe(snap(), null).class).toBe('match'); // resets the streak
+    for (let i = 0; i < 3; i++) o.observe(drift(), null);
+    expect(listOpenEscalations(db, 20).map((e) => e.reason)).toEqual(['layout_drift', 'layout_drift']);
+  });
+
+  it('does not overwrite another halt reason or an all halt', () => {
+    for (const [plat, reason] of [['linkedin', 'checkpoint'], ['all', 'stop: owner']] as const) {
+      const { db, mk } = setup();
+      haltPlatform(db, plat, reason, NOW);
+      const a = mk('run-c'); const b = mk('run-d');
+      for (let i = 0; i < 3; i++) a.observe(drift(), null);
+      for (let i = 0; i < 3; i++) b.observe(drift(), null);
+      expect(haltReason(db, plat)).toBe(reason);
+      expect(listOpenEscalations(db, 20).map((e) => e.reason)).toEqual(['layout_drift']);
+    }
+  });
+
   it('halts at the halt threshold with the expected reason, once', () => {
     const { db, notices, mk } = setup();
     const o = mk('run-c');
-    for (let i = 0; i < 5; i++) o.observe(drift(), null);
+    const o2 = mk('run-d');
+    for (let i = 0; i < 3; i++) o.observe(drift(), null);
+    for (let i = 0; i < 2; i++) o2.observe(drift(), null);
     expect(haltReason(db, 'linkedin')).toBe('layout_drift:profile');
     const reasons = listOpenEscalations(db, 20).map((e) => e.reason);
     expect(reasons).toEqual(['layout_drift', 'layout_drift_halt']);
@@ -99,7 +124,12 @@ describe('layout drift side effects', () => {
       notify: () => { throw new Error('boom'); }, onEvent: (e) => events.push(e.event),
     });
     db.exec('DROP TABLE escalations');
-    for (let i = 0; i < 5; i++) o.observe(drift(), null);
+    for (let i = 0; i < 3; i++) o.observe(drift(), null);
+    const o2 = createLayoutObserver({
+      platform: 'linkedin', cfg: cfg(), now: () => NOW, runId: 'run-d', db,
+      notify: () => { throw new Error('boom'); }, onEvent: (e) => events.push(e.event),
+    });
+    for (let i = 0; i < 2; i++) o2.observe(drift(), null);
     expect(events).toContain('drift_escalate');
     expect(events).toContain('drift_halt');
     expect(haltReason(db, 'linkedin')).toBe('layout_drift:profile');

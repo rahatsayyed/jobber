@@ -12,6 +12,7 @@ import { observeLinkedin, observeNaukri, type NaukriRawSnapshot } from './finger
 import { renderLayout } from './render.js';
 import { emptyLayout, loadLayout, saveLayout, withLayoutLock } from './store.js';
 import type { KindId, LandmarkId, LayoutFile, Observation, Platform, Recipe, Verdict } from './types.js';
+import { PROJECT_ROOT } from './config.js';
 import { ACTION_LABELS, ID_RE } from './vocab.js';
 import { haltPlatform, haltReason } from '../outreach/limits.js';
 import { addEscalation } from '../outreach/service.js';
@@ -78,7 +79,8 @@ export function createLayoutObserver(d: {
       if (d.notify) r = d.notify(n);
       else {
         defaultNotifier ??= fileNotifier(
-          path.join(process.cwd(), '.jobber', 'notify.jsonl'), d.now, defaultRun, process.env.JOBBER_NOTIFY_CMD);
+          // default layout dir is <PROJECT_ROOT>/.jobber/layout, so this is .jobber/notify.jsonl
+          path.join(cfg.dir ? path.dirname(cfg.dir) : path.join(PROJECT_ROOT, '.jobber'), 'notify.jsonl'), d.now, defaultRun, process.env.JOBBER_NOTIFY_CMD);
         r = defaultNotifier.notify(n);
       }
       if (r && typeof (r as Promise<void>).catch === 'function') (r as Promise<void>).catch((e) => warn('notify', e));

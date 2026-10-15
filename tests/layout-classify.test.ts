@@ -277,7 +277,7 @@ describe('applyObservation: drift', () => {
     let f = base();
     const evs: string[][] = [];
     for (let i = 0; i < 6; i++) {
-      const r = run(f, driftObs, hours(T0, i));
+      const r = run(f, driftObs, hours(T0, i), i < 3 ? 'r1' : 'r2');
       f = r.file;
       evs.push(r.events);
     }
@@ -287,6 +287,36 @@ describe('applyObservation: drift', () => {
     expect(evs[3]).toEqual([]);
     expect(evs[4]).toContain('drift_halt');
     expect(evs[4]).not.toContain('drift_escalate');
+  });
+
+  it('five drifts in one run escalate but never halt; a second run halts', () => {
+    let f = base();
+    const evs: string[] = [];
+    for (let i = 0; i < 7; i++) { const r = run(f, driftObs, hours(T0, 0), 'r1'); f = r.file; evs.push(...r.events); }
+    expect(evs).toEqual(['drift_escalate']);
+    expect(f.kinds.profile.drift_run_ids).toEqual(['r1']);
+    const r = run(f, driftObs, hours(T0, 0), 'r2');
+    expect(r.events).toContain('drift_halt');
+  });
+
+  it('null run ids are one anonymous run and cannot supply the second', () => {
+    let f = base();
+    const evs: string[] = [];
+    for (let i = 0; i < 6; i++) { const r = run(f, driftObs, hours(T0, 0), null); f = r.file; evs.push(...r.events); }
+    expect(evs).not.toContain('drift_halt');
+    expect(f.kinds.profile.drift_run_ids).toEqual(['norun']);
+  });
+
+  it('a match and window expiry both clear the drift run ids', () => {
+    let f = base();
+    f = run(f, driftObs, T0, 'r1').file;
+    f = run(f, driftObs, T0, 'r2').file;
+    expect(f.kinds.profile.drift_run_ids).toEqual(['r1', 'r2']);
+    const m = run(f, obs(FULL), T0, 'r3').file;
+    expect(m.kinds.profile.drift_run_ids).toEqual([]);
+    const w = run(f, driftObs, hours(T0, 25), 'r3').file;
+    expect(w.kinds.profile.drift_run_ids).toEqual(['r3']);
+    expect(w.kinds.profile.drift_streak).toBe(1);
   });
 
   it('a drift observation that holds MIN_SET feeds a learning variant', () => {

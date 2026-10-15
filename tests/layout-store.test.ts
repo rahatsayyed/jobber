@@ -29,7 +29,7 @@ function variant(id: string, over: Partial<Variant> = {}): Variant {
 function kind(variants: Variant[]): KindMemory {
   return {
     state: 'stable', variants, counters: { match: 1, partial: 0, drift: 0 },
-    drift_streak: 0, drift_window_start: null, last_drift_at: null,
+    drift_streak: 0, drift_window_start: null, last_drift_at: null, drift_run_ids: [],
   };
 }
 function sample(): LayoutFile {
@@ -47,6 +47,15 @@ describe('layout store', () => {
     const r = loadLayout(file, 'linkedin', NOW);
     expect(r.note).toBeNull();
     expect(r.file).toEqual(sample());
+  });
+
+  it('a file written before drift_run_ids existed loads with an empty list', () => {
+    const f = sample();
+    delete (f.kinds.profile as { drift_run_ids?: string[] }).drift_run_ids;
+    fs.writeFileSync(file, JSON.stringify(f), { mode: 0o600 });
+    const r = loadLayout(file, 'linkedin', NOW);
+    expect(r.note).toBeNull();
+    expect(r.file.kinds.profile.drift_run_ids).toEqual([]);
   });
 
   it('missing file gives an empty layout with no note', () => {

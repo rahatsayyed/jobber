@@ -69,6 +69,7 @@ function buildSchema(platform: Platform) {
     drift_streak: count,
     drift_window_start: iso.nullable(),
     last_drift_at: iso.nullable(),
+    drift_run_ids: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,40}$/)).max(5).default([]),
   }).strict();
 
   return z.object({
