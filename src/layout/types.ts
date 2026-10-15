@@ -12,3 +12,32 @@ export interface Observation {
   shell: boolean;                         // page loaded as a known non-auth app kind (proxy; Task 5 may refine it with structure counts)
   nonDrift: null | 'blocked' | 'logged_out' | 'unloaded';
 }
+
+// Persisted layout memory. Every string is a vocabulary id, an ISO date or a run id.
+export interface Recipe {
+  action: 'click' | 'type' | 'scroll';
+  label: string;            // ACTION_LABELS id, e.g. 'action:more'
+  how: 'text' | 'role_name' | 'ordinal';
+  ordinal?: number;         // 0..9
+  region?: LandmarkId;
+  v: number;                // recipe version, bumped when the variant is re-promoted
+  ok: number; fail: number; last_ok: string | null;  // ISO
+}
+export interface Variant {
+  id: string;               // sha256(sorted landmarks + counts shape).slice(0,12)
+  landmarks: LandmarkId[];
+  counts: Record<string, [number, number]>;  // observed bucket min,max
+  recipes: Recipe[];
+  first_seen: string; last_verified: string | null;
+  obs: number; runs: number;                 // observations, distinct run ids
+  run_ids: string[];                         // at most 5 most recent
+  promoted: boolean;
+  ok: number; fail: number;
+}
+export interface KindMemory {
+  state: 'learning' | 'stable' | 'stale' | 'drifted';
+  variants: Variant[];                       // max 3
+  counters: { match: number; partial: number; drift: number };
+  drift_streak: number; drift_window_start: string | null; last_drift_at: string | null;
+}
+export interface LayoutFile { schema: 1; platform: Platform; updated_at: string; kinds: Record<KindId, KindMemory> }
