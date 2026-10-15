@@ -12,7 +12,11 @@ import { observeLinkedin, observeNaukri, type NaukriRawSnapshot } from './finger
 import { renderLayout } from './render.js';
 import { emptyLayout, loadLayout, saveLayout, withLayoutLock } from './store.js';
 import type { KindId, LandmarkId, LayoutFile, Observation, Platform, Recipe, Verdict } from './types.js';
-import { ACTION_LABELS } from './vocab.js';
+import { ACTION_LABELS, ID_RE } from './vocab.js';
+import { haltPlatform, haltReason } from '../outreach/limits.js';
+import { addEscalation } from '../outreach/service.js';
+import { defaultRun } from '../platform/tmux.js';
+import { fileNotifier, type Notice } from '../scheduler/notify.js';
 
 export type LayoutEventName = ApplyResult['events'][number];
 export interface LayoutEvent { platform: Platform; kind: KindId; event: LayoutEventName }
@@ -54,14 +58,60 @@ export function actionLabelId(platform: Platform, text: string): string {
   return ACTION_LABELS[platform]?.[text.replace(/\s+/g, ' ').trim().toLowerCase()] ?? 'action:other';
 }
 
+const safeId = (s: string): string => (ID_RE.test(s) ? s : 'other');
+
 export function createLayoutObserver(d: {
   platform: Platform; cfg: LayoutConfig; now: () => Date; runId: string | null;
   db?: BetterSqlite3.Database; path?: string; onEvent?: (e: LayoutEvent) => void;
+  /** Notification sink; defaults to the scheduler's .jobber/notify.jsonl notifier (and JOBBER_NOTIFY_CMD). */
+  notify?: (n: Notice) => void | Promise<void>;
 }): LayoutObserver {
   const { platform, cfg } = d;
   const file = d.path ?? path.join(cfg.dir, `${platform}.json`);
   const labels = new Set<string>([...Object.values(ACTION_LABELS[platform] ?? {}), 'action:other']);
   let lastSeen: { kind: KindId; verdict: Verdict; landmarks: LandmarkId[] } | null = null;
+
+  let defaultNotifier: ReturnType<typeof fileNotifier> | null = null;
+  const send = (n: Notice): void => {
+    try {
+      let r: void | Promise<void>;
+      if (d.notify) r = d.notify(n);
+      else {
+        defaultNotifier ??= fileNotifier(
+          path.join(process.cwd(), '.jobber', 'notify.jsonl'), d.now, defaultRun, process.env.JOBBER_NOTIFY_CMD);
+        r = defaultNotifier.notify(n);
+      }
+      if (r && typeof (r as Promise<void>).catch === 'function') (r as Promise<void>).catch((e) => warn('notify', e));
+    } catch (e) { warn('notify', e); }
+  };
+
+  // Side effects of drift events (fixed templates, vocabulary tokens only, no page text). Internal
+  // state, so they record in dry-run too; never throws.
+  function sideEffect(event: LayoutEventName, kind: KindId, streak: number, v: Verdict): void {
+    try {
+      const db = d.db;
+      if (!db) return;
+      if (v.class === 'blocked' || v.class === 'logged_out' || v.class === 'unloaded') return;
+      const k = safeId(kind);
+      const missing = ('missing' in v ? v.missing : []).filter((m) => ID_RE.test(m)).slice(0, 8);
+      const detail = `kind=${k} streak=${Math.max(0, Math.trunc(streak))} missing=${missing.join(',') || 'none'}`;
+      const now = d.now();
+      const run = d.runId ? { runId: d.runId } : {};
+      if (event === 'drift_escalate') {
+        addEscalation(db, { runId: d.runId, platform, reason: 'layout_drift', detail }, now);
+        send({ level: 'warn', title: `layout drift on ${platform} (${k})`, ...run });
+      } else if (event === 'drift_halt') {
+        // drift_halt repeats while the streak stays past the limit: act only on the first one.
+        if (haltReason(db, platform) !== null) return;
+        haltPlatform(db, platform, `layout_drift:${k}`, now);
+        addEscalation(db, { runId: d.runId, platform, reason: 'layout_drift_halt', detail }, now);
+        send({ level: 'halt', title: `${platform} halted: repeated layout drift (${k})`, ...run });
+      } else if (event === 'variant_replaced') {
+        addEscalation(db, { runId: d.runId, platform, reason: 'layout_changed', detail }, now);
+        send({ level: 'info', title: `layout changed on ${platform} (${k})`, ...run });
+      }
+    } catch (e) { warn('sideEffect', e); }
+  }
 
   const load = (): LayoutFile => {
     const r = loadLayout(file, platform, d.now(), cfg.maxBytes);
@@ -73,8 +123,10 @@ export function createLayoutObserver(d: {
   function commit(build: () => Observation): Verdict {
     try {
       const obs = build();
+      let streak = 0;
       const res = withLayoutLock(file, () => {
         const out = applyObservation(load(), obs, { now: d.now(), runId: d.runId }, cfg);
+        streak = out.file.kinds[obs.kind]?.drift_streak ?? 0;
         // Blocked, logged out and unloaded pages change nothing: skip the write.
         if (out.verdict.class !== 'blocked' && out.verdict.class !== 'logged_out' && out.verdict.class !== 'unloaded') {
           saveLayout(file, out.file, cfg.maxBytes, platform);
@@ -83,6 +135,7 @@ export function createLayoutObserver(d: {
       });
       lastSeen = { kind: obs.kind, verdict: res.verdict, landmarks: obs.landmarks };
       for (const event of res.events) {
+        sideEffect(event, obs.kind, streak, res.verdict);
         try { d.onEvent?.({ platform, kind: obs.kind, event }); } catch (e) { warn('onEvent', e); }
       }
       return res.verdict;
