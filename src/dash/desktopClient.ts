@@ -56,6 +56,35 @@ export function redirectFor(shape: RedirectShape, port: number): string {
   return `http://127.0.0.1:${port}${shape === 'callback' ? '/auth/callback' : '/'}`;
 }
 
+export type LoadKeysResult =
+  | { ok: true; client: DesktopClient }
+  | { ok: false; reason: 'unreadable' | 'bad_json' | 'not_object' | 'not_desktop' | 'missing_field' | 'bad_endpoint' };
+
+/** Reads and parses the keys file through an injected readFile. Returns only a reason code on failure, never content. */
+export function loadDesktopKeys(path: string, readFile: (p: string) => string): LoadKeysResult {
+  let text: string;
+  try {
+    text = readFile(path);
+  } catch {
+    return { ok: false, reason: 'unreadable' };
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: 'bad_json' };
+  }
+  return parseDesktopKeys(raw);
+}
+
+/** Fixed operator message for a failed load; includes the documented fallback order. */
+export function keysFailureMessage(reason: string): string {
+  return (
+    `google_desktop sign-in cannot start (reason: ${reason}). Fallbacks in order: ` +
+    '(1) WEB_GOOGLE_REDIRECT_SHAPE=root; (2) WEB_AUTH_MODE=oidc with a dedicated Web client; (3) WEB_AUTH_MODE=token.'
+  );
+}
+
 /** The authorization URL the live check prints (response_type=code, scope=openid email, S256 PKCE). No secret in it. */
 export function authUrlFor(client: DesktopClient, redirectUri: string, state: string, challenge: string): string {
   const u = new URL(client.authUri);

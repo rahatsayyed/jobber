@@ -1,10 +1,12 @@
 // scripts/dashboard.ts
 // Local owner CLI for the dashboard allowed account and access token. No web equivalent.
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
+import { createHash, randomBytes } from 'node:crypto';
+import { authUrlFor, keysFailureMessage, loadDesktopKeys, redirectFor } from '../src/dash/desktopClient.js';
 import { createInterface } from 'node:readline';
 import { parseEnv } from '../src/platform/envFile.js';
-import { authDbPathFromEnv, resolveAuthMode, type RunnerEnv } from '../src/web/env.js';
+import { authDbPathFromEnv, resolveAuthMode, validateRunnerConfig, type RunnerEnv } from '../src/web/env.js';
 import { pathToFileURL } from 'node:url';
 import { audit, getAllowedAccount, listAudit, openAuthStore } from '../src/dash/authStore.js';
 import { accountStatus, allowAccount, normaliseEmail } from '../src/dash/account.js';
@@ -13,12 +15,13 @@ import { generateToken, setToken, tokenStatus } from '../src/dash/accessToken.js
 export type Parsed =
   | { ok: true; cmd: 'allow'; email: string }
   | { ok: true; cmd: 'status' }
+  | { ok: true; cmd: 'google-url' }
   | { ok: true; cmd: 'audit'; n: number }
   | { ok: true; cmd: 'token' | 'rotate'; port: number | null; print: boolean }
   | { ok: false; error: string };
 
 const USAGE =
-  'usage: dashboard allow <email> | status | audit [n] | token [--port N] [--print] | rotate [--port N] [--print]';
+  'usage: dashboard allow <email> | status | audit [n] | token [--port N] [--print] | rotate [--port N] [--print] | google-url';
 
 export function parseArgs(argv: string[]): Parsed {
   const [cmd, ...rest] = argv;
@@ -43,6 +46,9 @@ export function parseArgs(argv: string[]): Parsed {
       return { ok: false, error: USAGE };
     }
     return { ok: true, cmd, port, print };
+  }
+  if (cmd === 'google-url') {
+    return rest.length === 0 ? { ok: true, cmd: 'google-url' } : { ok: false, error: USAGE };
   }
   if (cmd === 'status') {
     return rest.length === 0 ? { ok: true, cmd: 'status' } : { ok: false, error: USAGE };
@@ -73,6 +79,7 @@ export interface CliIo {
   confirm?: (question: string) => Promise<boolean>;
   now?: () => Date;
   random?: (n: number) => Buffer;
+  readFile?: (path: string) => string;
 }
 
 export async function main(argv: string[], io: CliIo = {}): Promise<number> {
@@ -87,6 +94,25 @@ export async function main(argv: string[], io: CliIo = {}): Promise<number> {
     const envFile = join(process.cwd(), '.env');
     const fileEnv = existsSync(envFile) ? parseEnv(readFileSync(envFile, 'utf8')) : {};
     env = { ...fileEnv, ...process.env };
+  }
+  if (p.cmd === 'google-url') {
+    // Offline and read-only: no auth store, no network. The throwaway state and challenge are never stored.
+    const cfgRes = validateRunnerConfig({ ...env, WEB_AUTH_MODE: 'google_desktop' }, { accountStored: true });
+    if (!cfgRes.ok) {
+      for (const e of cfgRes.errors) err(e.message);
+      return 1;
+    }
+    const c = cfgRes.config;
+    const read = io.readFile ?? ((f: string) => readFileSync(f, 'utf8'));
+    const keysPath = isAbsolute(c.googleKeysPath) ? c.googleKeysPath : join(process.cwd(), c.googleKeysPath);
+    const k = loadDesktopKeys(keysPath, read);
+    if (!k.ok) { err(keysFailureMessage(k.reason)); return 1; }
+    const rnd = io.random ?? ((n: number) => randomBytes(n));
+    const b64u = (b: Buffer): string => b.toString('base64url');
+    const challenge = b64u(createHash('sha256').update(b64u(rnd(32))).digest());
+    out(authUrlFor(k.client, redirectFor(c.googleRedirectShape, c.port), b64u(rnd(24)), challenge));
+    out('Open this in a browser. Google showing the account chooser means the redirect shape is accepted; redirect_uri_mismatch means it is not. Nothing is signed in by this URL.');
+    return 0;
   }
   const isTTY = io.isTTY ?? process.stdout.isTTY === true;
   const db = openAuthStore(authDbPathFromEnv(env));

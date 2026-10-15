@@ -47,6 +47,7 @@ export interface WebDeps {
   authMode?: AuthMode; // default 'oidc'
   oidc?: ReturnType<typeof createOidc>; // required for oidc and google_desktop
   oidcCfg?: { redirectUri: string; reauthMaxAgeSec: number }; // required for oidc and google_desktop
+  googleRedirectShape?: 'callback' | 'root'; // google_desktop only; root routes GET /?code&state to the callback
   data: BetterSqlite3.Database; // read-only
   cfg: OutreachConfig;
   run: Run;
@@ -557,6 +558,20 @@ export function createWebServer(deps: WebDeps): http.Server {
       return json(res, 400, { error: 'bad request' });
     }
     const path = url.pathname;
+
+    if (
+      method === 'GET' && path === '/' && authMode === 'google_desktop' && deps.googleRedirectShape === 'root' &&
+      url.searchParams.has('code') && url.searchParams.has('state')
+    ) {
+      const s1 = validateSession(deps.auth, parseCookies(req.headers.cookie)[sessionCookieName(secure)], now());
+      try {
+        await authCallback({ req, res, url, ip, secure, session: s1 });
+      } catch {
+        if (!res.headersSent) json(res, 500, { error: 'internal' });
+        else res.end();
+      }
+      return;
+    }
 
     const file = method === 'GET' ? statics.get(path) : undefined;
     if (file) {

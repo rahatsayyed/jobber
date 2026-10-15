@@ -13,6 +13,7 @@ import { openAuthStore, getAllowedAccount } from '../src/dash/authStore.js';
 import { allowAccount } from '../src/dash/account.js';
 import { createOidc } from '../src/dash/oidc.js';
 import { tokenStatus } from '../src/dash/accessToken.js';
+import { loadDesktopKeys, keysFailureMessage, type DesktopClient } from '../src/dash/desktopClient.js';
 import { openReadOnlyDb } from '../src/dash/readDb.js';
 
 let maskLiterals: string[] = [];
@@ -40,9 +41,16 @@ async function main(): Promise<number> {
   }
   const cfg = early.config;
   const tokenMode = cfg.authMode === 'token';
+  let desktop: DesktopClient | null = null;
   if (cfg.authMode === 'google_desktop') {
-    console.error('web: WEB_AUTH_MODE=google_desktop is not available in this build: refusing to start');
-    return 1;
+    const keysPath = isAbsolute(cfg.googleKeysPath) ? cfg.googleKeysPath : join(process.cwd(), cfg.googleKeysPath);
+    const k = loadDesktopKeys(keysPath, (p) => readFileSync(p, 'utf8'));
+    if (!k.ok) {
+      console.error(`web: ${keysFailureMessage(k.reason)}`);
+      return 1;
+    }
+    desktop = k.client;
+    maskLiterals = [...maskLiterals, k.client.clientSecret];
   }
 
   const authPath = isAbsolute(cfg.authDb) ? cfg.authDb : join(process.cwd(), cfg.authDb);
@@ -81,11 +89,11 @@ async function main(): Promise<number> {
   if (!tokenMode) {
     oidc = createOidc(
       {
-        issuer: cfg.issuer,
-        clientId: cfg.clientId,
-        clientSecret: cfg.clientSecret,
+        issuer: desktop ? 'https://accounts.google.com' : cfg.issuer,
+        clientId: desktop ? desktop.clientId : cfg.clientId,
+        clientSecret: desktop ? desktop.clientSecret : cfg.clientSecret,
         redirectUri: cfg.redirectUri,
-        reauthPrompt: cfg.reauthPrompt,
+        reauthPrompt: desktop ? 'select_account' : cfg.reauthPrompt,
         maxAgeSec: cfg.reauthMaxAgeSec,
       },
       { fetch, now: () => new Date(), random: (n) => randomBytes(n) },
@@ -112,12 +120,13 @@ async function main(): Promise<number> {
       ...(tokenMode ? {} : {
         oidc,
         oidcCfg: { redirectUri: cfg.redirectUri, reauthMaxAgeSec: cfg.reauthMaxAgeSec },
+        ...(desktop ? { googleRedirectShape: cfg.googleRedirectShape } : {}),
       }),
       data,
       cfg: loadOutreachConfig(),
       run: defaultRun,
       sessionsToShow: [cfg.session],
-      secrets: [...secrets, cfg.clientSecret].filter(Boolean),
+      secrets: [...secrets, cfg.clientSecret, ...(desktop ? [desktop.clientSecret] : [])].filter(Boolean),
       chat: {
         enabled: cfg.chatEnabled,
         session: cfg.session,
