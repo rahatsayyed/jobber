@@ -55,6 +55,21 @@ In this order:
 
 ---
 
+## Before going live: the classifier model
+
+Live LinkedIn and Naukri reads and sends fail closed until a classifier model is downloaded, pinned and fitted. Dry runs continue, with text marked unscreened. Nothing downloads automatically. The default model (ProtectAI DeBERTa, about 750 MB of disk) is English-only and does not detect jailbreaks. In order:
+
+1. `npm run models -- fetch` (asks before downloading; the default profile).
+2. `npm run models -- verify`
+3. `npm run models -- pin protectai-deberta-v3-base-v2` (review the diff of `config/classifier-models.json`).
+4. `npm run classifier:fit -- --profile protectai-deberta-v3-base-v2 --write`
+5. Set `CLASSIFIER_MODEL=protectai-deberta-v3-base-v2` in `.env` (the setup `classifier` step does this for you).
+6. `npm run doctor` must show `classifier_wired` ok, then restart sessions.
+
+`npm run setup -- --step classifier` covers fetch, verify and the `.env` line. To use Llama Prompt Guard 2 instead, see [classifier models](docs/classifier-models.md).
+
+---
+
 ## Where your data lives
 
 | Location | Holds | Notes |
@@ -196,4 +211,6 @@ Capture the LinkedIn and Naukri sessions on a machine with a display, or run the
 - [LinkedIn sessions setup](docs/linkedin-sessions-setup.md)
 - [Naukri session setup](docs/naukri-session-setup.md)
 - [Classifier models](docs/classifier-models.md)
+- [Telegram bot setup](docs/telegram-bot-setup.md)
 - [Telegram slash commands](docs/telegram-slash-commands.md)
+- [Telegram bot branding](docs/telegram-branding.md)

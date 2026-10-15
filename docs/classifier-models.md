@@ -2,6 +2,13 @@
 
 This page covers the prompt-injection classifier that Jobber runs over untrusted text (job postings, reply mail) before a model sees it. It lists the model profiles in `config/classifier-models.json`, their licences, and how to switch or add one. It is a plain summary of what the model cards and licence files say. It is not legal advice; read the licence files yourself.
 
+## Which model should I use
+
+- **Default: `protectai-deberta-v3-base-v2`.** Recommended zero-effort choice. Ungated, Apache-2.0, fetched and hash-checked by `npm run models -- fetch`. English-only and no jailbreak detection (see section 6).
+- **Optional upgrade: `llama-prompt-guard-2-22m`.** Only if you already have Hugging Face access to the gated `meta-llama/Llama-Prompt-Guard-2-22M` repo and can obtain or export an ONNX file. Meta ships no ONNX upstream; for the export route check upstream, this project documents only the manual steps in the config. Upstream claims, to verify yourself: multilingual coverage (en, fr, de, hi, it, pt, es, th) and detection aimed at jailbreak style attacks. The shipped profile is a stub and nothing here has measured it on job postings.
+- **Licence obligation for Prompt Guard 2:** display "Built with Llama" and follow the Llama 4 Community License (section 3).
+- **How to switch:** place the files in `models/llama-prompt-guard-2-22m/`, `npm run models -- pin llama-prompt-guard-2-22m`, `npm run classifier:fit -- --profile llama-prompt-guard-2-22m --write`, set `CLASSIFIER_MODEL=llama-prompt-guard-2-22m` in `.env`, run `npm run doctor`, restart sessions (section 4 has the detail).
+
 ## 1. What the classifier is for
 
 The classifier scores untrusted text for injection attempts (instructions aimed at an AI reader). The input gate blocks text scoring at or above the profile's fitted threshold. It is one layer of defence next to the code gates; it is a probabilistic filter, not a proof.
