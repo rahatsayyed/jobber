@@ -41,6 +41,10 @@ export interface Action {
   network: boolean;
   url?: string;
   downloadsScript?: boolean; // fetch to a temp file first, show url/size/sha256, ask again
+  /** Printed before consent is asked (licence, size, pinning notes). */
+  lines?: string[];
+  /** In-process step run instead of argv (argv is only shown); same consent rules as any non-sudo action. */
+  fn?: () => Promise<{ ok: boolean; note: string }>;
 }
 
 export type Plan =

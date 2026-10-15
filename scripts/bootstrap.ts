@@ -12,6 +12,8 @@ import { buildCatalog } from '../src/bootstrap/catalog.js';
 import { exitCodeFor, renderTable, runBootstrap, type ExecDeps, type ExecOptions, type ItemResult } from '../src/bootstrap/exec.js';
 import type { CcgramPin, ItemId, Platform } from '../src/bootstrap/types.js';
 import { defaultRun } from '../src/platform/tmux.js';
+import { defaultFetchDeps } from '../src/safety/modelFetch.js';
+import type { CliDeps } from './models.js';
 
 const IDS: ItemId[] = ['git', 'build-tools', 'node', 'npm-deps', 'renderer-deps', 'playwright-chromium', 'chrome', 'tmux', 'uv', 'ccgram', 'claude-cli', 'age', 'rclone', 'classifier-model'];
 
@@ -67,6 +69,8 @@ export function parseArgs(argv: string[]): { ok: true; args: Parsed } | { ok: fa
 
 export interface MainDeps extends ExecDeps {
   interactive: boolean;
+  /** Injected so tests never touch the network; the real one wraps scripts/models.ts. */
+  modelCli?: Omit<CliDeps, 'out'>;
 }
 
 export async function main(argv: string[], deps: MainDeps): Promise<number> {
@@ -111,6 +115,7 @@ export async function main(argv: string[], deps: MainDeps): Promise<number> {
     engines,
     hasRenderer: deps.fs.exists(join(deps.root, 'renderer', 'package.json')),
     modelProfile,
+    ...(deps.modelCli ? { modelCli: { ...deps.modelCli, out: () => {} } } : {}),
     ...(modelError
       ? {
           detectClassifier: async (): Promise<never> => {
@@ -141,10 +146,11 @@ export async function main(argv: string[], deps: MainDeps): Promise<number> {
 }
 
 function realDeps(): MainDeps {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const platform: Platform = process.platform === 'darwin' ? 'darwin' : process.platform === 'linux' ? 'linux' : 'unsupported';
   return {
     platform,
-    root: resolve(dirname(fileURLToPath(import.meta.url)), '..'),
+    root,
     env: { BOOTSTRAP_MODEL_PROFILE: process.env.BOOTSTRAP_MODEL_PROFILE, PATH: process.env.PATH, HOME: process.env.HOME },
     run: defaultRun,
     fs: {
@@ -160,6 +166,12 @@ function realDeps(): MainDeps {
     },
     now: () => new Date(),
     interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+    modelCli: {
+      registryPath: join(root, 'config', 'classifier-models.json'),
+      root,
+      env: {},
+      fetchDeps: defaultFetchDeps((l) => console.log(l)),
+    },
     say: (l) => console.log(l),
     ask: async (prompt) => {
       if (!process.stdin.isTTY) return false;

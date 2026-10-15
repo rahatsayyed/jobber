@@ -2,7 +2,9 @@
 // Pure catalog: what "present" means per item and what an install would run. Nothing executes here.
 import { join } from 'node:path';
 import { ccgramInstallArgv } from '../platform/checks.js';
-import type { Action, BootstrapDeps, CcgramPin, Detection, Item, Plan } from './types.js';
+import type { CliDeps } from '../../scripts/models.js';
+import { createModelParts } from './model.js';
+import type { Action,BootstrapDeps, CcgramPin, Detection, Item, Plan } from './types.js';
 
 // Upstream URLs: check upstream before relying on them (plan U1, U5, U6).
 const UV_URL = 'https://astral.sh/uv/install.sh';
@@ -101,7 +103,9 @@ export function buildCatalog(input: {
   engines: string;
   hasRenderer: boolean;
   modelProfile: string;
-  /** Task 4 wires this to verifyProfile; default reports absent. */
+  /** Real model machinery (src/bootstrap/model.ts); absent means the item reports it is unavailable. */
+  modelCli?: CliDeps;
+  /** Overrides detect (used to surface a bad profile id as a failure). */
   detectClassifier?: (d: BootstrapDeps, profile: string) => Promise<Detection>;
 }): Item[] {
   const needMajor = engineMajor(input.engines);
@@ -342,6 +346,7 @@ export function buildCatalog(input: {
     },
   });
 
+  const modelParts = input.modelCli ? createModelParts(input.modelCli, input.modelProfile) : null;
   const classifier: Item = {
     id: 'classifier-model',
     title: `classifier model (${input.modelProfile})`,
@@ -350,10 +355,12 @@ export function buildCatalog(input: {
     detect: (d) =>
       input.detectClassifier
         ? input.detectClassifier(d, input.modelProfile)
-        : Promise.resolve({ present: false, detail: 'wired in Task 4' }),
+        : modelParts
+          ? modelParts.detect()
+          : Promise.resolve({ present: false, detail: 'classifier model machinery not available' }),
     plan(_d, det) {
       if (det.present) return done(det);
-      return { kind: 'owner', message: 'classifier model install is wired in Task 4' };
+      return modelParts ? modelParts.plan() : { kind: 'owner', message: 'run: npm run models -- fetch <profile>' };
     },
   };
 

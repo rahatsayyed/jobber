@@ -112,7 +112,7 @@ describe('detect', () => {
   });
 
   it('classifier-model reports absent by default and uses an injected hook', async () => {
-    expect((await item('classifier-model').detect(deps())).detail).toBe('wired in Task 4');
+    expect((await item('classifier-model').detect(deps())).detail).toBe('classifier model machinery not available');
     const it2 = buildCatalog({
       pin: PIN, engines: '>=20', hasRenderer: true, modelProfile: 'p1',
       detectClassifier: async (_d, profile) => ({ present: true, detail: `ok ${profile}` }),

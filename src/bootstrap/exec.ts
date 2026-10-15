@@ -63,6 +63,7 @@ export async function runBootstrap(items: Item[], deps: ExecDeps, opts: ExecOpti
   const runAction = async (a: Action): Promise<Step> => {
     try {
       let argv = a.argv;
+      for (const l of a.lines ?? []) deps.say(l);
       if (a.downloadsScript) {
         if (a.needsSudo) return { kind: 'stop', outcome: 'failed', note: `${a.id}: refusing to run a downloaded script with sudo` };
         if (!a.url) return { kind: 'stop', outcome: 'failed', note: `${a.id}: downloaded script has no url` };
@@ -87,6 +88,11 @@ export async function runBootstrap(items: Item[], deps: ExecDeps, opts: ExecOpti
         deps.say(`action: ${a.summary}`);
         if (!opts.interactive) return { kind: 'stop', outcome: 'skipped', note: 'needs --yes' };
         if (!(await deps.ask(`run: ${argv.join(' ')}?`))) return { kind: 'stop', outcome: 'skipped', note: 'declined' };
+      }
+      if (a.fn) {
+        deps.say(`running: ${argv.join(' ')} (sudo: no, network: ${a.network ? 'yes' : 'no'})`);
+        const fr = await a.fn();
+        return fr.ok ? { kind: 'done' } : { kind: 'stop', outcome: 'failed', note: `${a.id} failed: ${redactPane(fr.note)}` };
       }
       const full = a.needsSudo ? ['sudo', ...argv] : argv;
       deps.say(`running: ${full.join(' ')} (sudo: ${a.needsSudo ? 'yes' : 'no'}, network: ${a.network ? 'yes' : 'no'}${a.url ? `, url: ${a.url}` : ''})`);
