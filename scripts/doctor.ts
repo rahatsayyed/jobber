@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { allDoctorChecks } from '../src/platform/checkLists.js';
 import { exitCode, formatJson, formatReport, runChecks, type DoctorContext } from '../src/platform/doctor.js';
+import { skipSummary, skippedFromContext, withSkips } from '../src/setup/skips.js';
 import { defaultRun } from '../src/platform/tmux.js';
 
 interface SqliteDb {
@@ -74,6 +75,11 @@ const ctx: DoctorContext = {
   now: () => new Date(),
 };
 
-const results = await runChecks(allDoctorChecks(), ctx);
-console.log(process.argv.includes('--json') ? formatJson(results) : formatReport(results));
+const results = await runChecks(withSkips(allDoctorChecks()), ctx);
+if (process.argv.includes('--json')) {
+  console.log(formatJson(results));
+} else {
+  const summary = skipSummary(skippedFromContext(ctx));
+  console.log(formatReport(results) + (summary ? `\n${summary}` : ''));
+}
 process.exit(exitCode(results));

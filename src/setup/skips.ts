@@ -3,6 +3,11 @@
 // doctor check ids the wrapper may turn into a skip. Pure: env and fs are passed in.
 import { isAbsolute, join } from 'node:path';
 import type { SetupState } from './state.js';
+import { loadState } from './state.js';
+import type { Check, CheckResult, DoctorContext } from '../platform/doctor.js';
+import { skip } from '../platform/doctor.js';
+import { parseEnv } from '../platform/envFile.js';
+import { userDataDir } from '../lib/userData.js';
 
 export type SkippableId = 'telegram' | 'dashboard' | 'gmail' | 'apikeys';
 
@@ -91,4 +96,54 @@ export function skippedFeatures(input: {
   return SKIP_SPECS.filter(
     (s) => input.state.steps[s.stepId]?.status === 'skipped' && !s.configured(input.env, input.fs, input.root),
   ).map((s) => s.id);
+}
+
+// Doctor integration (plan 8F task 2).
+
+const cache = new WeakMap<object, SkippableId[]>();
+
+/** Skipped, still unconfigured features, computed once per doctor context (process env over .env). */
+export function skippedFromContext(ctx: DoctorContext): SkippableId[] {
+  const hit = cache.get(ctx);
+  if (hit) return hit;
+  let out: SkippableId[] = [];
+  try {
+    let fileEnv: Record<string, string> = {};
+    const envPath = join(ctx.root, '.env');
+    if (ctx.fs.exists(envPath)) fileEnv = parseEnv(ctx.fs.read(envPath));
+    const env: Record<string, string | undefined> = { ...fileEnv, ...ctx.env };
+    const state = loadState(join(userDataDir(ctx.env, ctx.root), '.setup-state.json'), ctx.fs);
+    out = skippedFeatures({ state, env, fs: ctx.fs, root: ctx.root });
+  } catch {
+    out = [];
+  }
+  cache.set(ctx, out);
+  return out;
+}
+
+/** Wrap checks: a fail or warn of an allowlisted check of a skipped feature becomes a skip. */
+export function withSkips(checks: Check[]): Check[] {
+  return checks.map((check) => {
+    const spec = SKIP_SPECS.find((s) => s.checkIds.includes(check.id));
+    if (!spec) return check;
+    return {
+      id: check.id,
+      title: check.title,
+      async run(ctx: DoctorContext): Promise<CheckResult> {
+        const res = await check.run(ctx);
+        if (res.status !== 'fail' && res.status !== 'warn') return res;
+        if (!skippedFromContext(ctx).includes(spec.id)) return res;
+        return skip(
+          `skipped in setup (${spec.title}, ${spec.label}). ${spec.lose[0]}`,
+          `npm run setup -- --step ${spec.stepId}`,
+        );
+      },
+    };
+  });
+}
+
+/** Last line of the doctor text output, or an empty string when nothing is skipped. */
+export function skipSummary(skipped: SkippableId[]): string {
+  if (skipped.length === 0) return '';
+  return `Skipped by choice: ${skipped.join(', ')}. Re-enable: npm run setup -- --step <id>`;
 }
