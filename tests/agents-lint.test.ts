@@ -16,11 +16,11 @@ const FORBIDDEN_PREFIX = ['mcp__playwright__', 'mcp__claude-in-chrome__', 'mcp__
 const SNAPSHOT: Record<string, string> = {
   discoverer: 'mcp__job-fetch__list_new_jobs, mcp__job-fetch__board_status, mcp__discover__linkedin_jobs, mcp__discover__linkedin_posts',
   'contact-finder': 'mcp__contacts__find_company_emails, mcp__linkedin__linkedin_find_profiles',
-  sender: 'mcp__db__list_queued_outreach, mcp__db__list_skipped_outreach, mcp__db__update_outreach_status, mcp__db__record_email_sent, mcp__db__check_and_increment, mcp__gmail__send_email, mcp__apply__linkedin, mcp__apply__greenhouse, mcp__apply__lever, mcp__apply__workday, mcp__apply__ashby, mcp__db__list_approved_followups, mcp__db__claim_followup_for_send, mcp__db__mark_followup_sent, mcp__db__mark_followup_failed, mcp__linkedin__linkedin_connect_send, mcp__linkedin__linkedin_send_message, mcp__linkedin__linkedin_check_connection_status, mcp__naukri__naukri_send_message',
+  sender: 'mcp__db__list_queued_outreach, mcp__db__list_skipped_outreach, mcp__db__update_outreach_status, mcp__db__record_email_sent, mcp__db__check_and_increment, mcp__gmail__send_email, mcp__apply__linkedin, mcp__apply__greenhouse, mcp__apply__lever, mcp__apply__workday, mcp__apply__ashby, mcp__db__approve_drafted_followups, mcp__db__list_followup_candidates, mcp__db__list_approved_followups, mcp__db__claim_followup_for_send, mcp__db__mark_followup_sent, mcp__db__mark_followup_failed, mcp__linkedin__linkedin_connect_send, mcp__linkedin__linkedin_send_message, mcp__linkedin__linkedin_check_connection_status, mcp__naukri__naukri_send_message',
   'followup-drafter': 'Skill, mcp__db__list_followup_candidates, mcp__db__save_followup_draft',
   'outreach-preparer': 'Skill, mcp__resume__get_base_resume, mcp__resume__render_resume, mcp__resume__check_text, mcp__resume__apply_review_edits, mcp__db__enqueue_outreach',
   matcher: 'Skill, mcp__resume__get_base_resume, mcp__gates__check_liveness',
-  'reply-watcher': 'mcp__db__list_sent_emails, mcp__db__set_email_thread, mcp__db__triage_replies, mcp__gmail__search_emails, mcp__gmail__read_email',
+  'reply-watcher': 'mcp__db__list_sent_emails, mcp__db__set_email_thread, mcp__db__triage_replies, mcp__db__record_reply_check, mcp__gmail__search_emails, mcp__gmail__read_email',
 };
 
 function frontmatter(name: string): { fm: string; body: string } {
