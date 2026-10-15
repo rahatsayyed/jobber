@@ -75,4 +75,19 @@ describe('bootstrap main state writing', () => {
     const code = await main(['--only', 'git'], deps({ saveState: () => { throw new Error('disk full'); } }));
     expect(code).toBe(0);
   });
+  it('a partial run merges into existing items', async () => {
+    let last: { items: Record<string, unknown> } | null = null;
+    const prev = buildState('darwin', [{ id: 'tmux', outcome: 'ok' }, { id: 'age', outcome: 'skipped' }], new Date(0));
+    const d = deps({ saveState: (_r, s) => void (last = s as never) });
+    const base = d.fs.read;
+    d.fs.read = (p) => (p.endsWith('bootstrap.json') ? JSON.stringify(prev) : base(p));
+    await main(['--only', 'git'], d);
+    expect(Object.keys(last!.items).sort()).toEqual(['age', 'git', 'tmux']);
+  });
+  it('tightens an existing directory to 700', () => {
+    const root = tmp();
+    mkdirSync(join(root, '.jobber'), { mode: 0o755 });
+    writeState(root, buildState('darwin', [], new Date(0)));
+    expect(statSync(join(root, '.jobber')).mode & 0o777).toBe(0o700);
+  });
 });

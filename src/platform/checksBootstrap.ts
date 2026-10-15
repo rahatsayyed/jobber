@@ -3,7 +3,7 @@
 // Read-only: never installs, downloads or fetches. Output lists item ids only.
 import { join } from 'node:path';
 import { buildCatalog } from '../bootstrap/catalog.js';
-import type { BootstrapDeps, CcgramPin, ItemId, Platform } from '../bootstrap/types.js';
+import type { BootstrapDeps, CcgramPin, Detection, ItemId, Platform } from '../bootstrap/types.js';
 import { defaultFetchDeps } from '../safety/modelFetch.js';
 import type { Check, CheckResult, DoctorContext } from './doctor.js';
 
@@ -15,7 +15,9 @@ function hostPlatform(): Platform {
   return process.platform === 'darwin' ? 'darwin' : process.platform === 'linux' ? 'linux' : 'unsupported';
 }
 
-export function bootstrapChecks(opts: { platform?: Platform } = {}): Check[] {
+export function bootstrapChecks(
+  opts: { platform?: Platform; detectClassifier?: (d: BootstrapDeps, profile: string) => Promise<Detection> } = {},
+): Check[] {
   return [
     {
       id: 'bootstrap_complete',
@@ -52,7 +54,9 @@ export function bootstrapChecks(opts: { platform?: Platform } = {}): Check[] {
           modelProfile: profile,
           // detect only runs a read-only registry verify; the fetch deps are never exercised
           modelCli: { registryPath, root: ctx.root, env: {}, fetchDeps: defaultFetchDeps(() => {}), out: () => {} },
-          ...(profile === 'unresolved'
+          ...(opts.detectClassifier
+            ? { detectClassifier: opts.detectClassifier }
+            : profile === 'unresolved'
             ? {
                 detectClassifier: async (): Promise<never> => {
                   throw new Error('no classifier profile');
@@ -65,6 +69,7 @@ export function bootstrapChecks(opts: { platform?: Platform } = {}): Check[] {
           root: ctx.root,
           env: ctx.env,
           run: ctx.run,
+          // scripts/doctor.ts supplies fs.list (readdirSync), so list-based detections work; [] only for a ctx without it
           fs: { exists: (p) => ctx.fs.exists(p), read: (p) => ctx.fs.read(p), list: (p) => ctx.fs.list?.(p) ?? [] },
           now: ctx.now ?? (() => new Date()),
         };

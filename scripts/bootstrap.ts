@@ -9,7 +9,7 @@ import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildCatalog } from '../src/bootstrap/catalog.js';
-import { buildState, writeState, type BootstrapState } from '../src/bootstrap/state.js';
+import { buildState, mergeState, statePath, writeState, type BootstrapState } from '../src/bootstrap/state.js';
 import { exitCodeFor, renderTable, runBootstrap, type ExecDeps, type ExecOptions, type ItemResult } from '../src/bootstrap/exec.js';
 import type { CcgramPin, ItemId, Platform } from '../src/bootstrap/types.js';
 import { defaultRun } from '../src/platform/tmux.js';
@@ -141,7 +141,14 @@ export async function main(argv: string[], deps: MainDeps): Promise<number> {
   const results: ItemResult[] = await runBootstrap(items, exec, opts);
   if (!args.check && !args.plan && deps.saveState) {
     try {
-      deps.saveState(deps.root, buildState(deps.platform, results, deps.now()));
+      let prev: BootstrapState | null = null;
+      try {
+        const v = JSON.parse(deps.fs.read(statePath(deps.root))) as BootstrapState;
+        if (v && v.version === 1 && v.items && Array.isArray(v.declined)) prev = v;
+      } catch {
+        prev = null;
+      }
+      deps.saveState(deps.root, mergeState(prev, buildState(deps.platform, results, deps.now())));
     } catch {
       /* state is informational; never fails the run */
     }

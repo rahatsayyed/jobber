@@ -18,6 +18,23 @@ function ctx(missing: string[]): DoctorContext {
 }
 const check = (platform: 'darwin' | 'linux' | 'unsupported' = 'darwin') => bootstrapChecks({ platform })[0]!;
 
+describe('bootstrap_complete pass path', () => {
+  const present = async () => ({ present: true, version: '1.2.3', detail: 'model at a-secret-path' });
+  it('passes with ids only, with or without the state file', async () => {
+    for (const hasState of [true, false]) {
+      const c = ctx([]);
+      c.env = { HOME: '/home/u' };
+      c.fs.list = () => ['chromium-1100'];
+      const base = c.fs.exists;
+      c.fs.exists = (p) => (p.endsWith('bootstrap.json') ? hasState : base(p));
+      const r = await bootstrapChecks({ platform: 'darwin', detectClassifier: present })[0]!.run(c);
+      expect(r.status).toBe('pass');
+      expect(r.detail).toContain('classifier-model');
+      expect(r.detail).not.toMatch(/99\.0\.0|1\.2\.3|secret|fake/);
+    }
+  });
+});
+
 describe('bootstrap_complete', () => {
   it('unsupported platform warns', async () => {
     expect((await check('unsupported').run(ctx([]))).status).toBe('warn');

@@ -1,7 +1,7 @@
 // src/bootstrap/state.ts
 // .jobber/bootstrap.json: informational record of the last bootstrap run. Item ids, outcomes,
 // versions and timestamps only; never env values or paths. A failure here must never fail a run.
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Outcome } from './exec.js';
 
@@ -19,10 +19,30 @@ export const statePath = (root: string): string => join(stateDir(root), 'bootstr
 export function writeState(root: string, state: BootstrapState): void {
   const dir = stateDir(root);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o700);
   const tmp = join(dir, `bootstrap.json.tmp-${process.pid}`);
-  writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n', { mode: 0o600 });
-  chmodSync(tmp, 0o600);
-  renameSync(tmp, statePath(root));
+  try {
+    writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n', { mode: 0o600 });
+    chmodSync(tmp, 0o600);
+    renameSync(tmp, statePath(root));
+  } catch (e) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      // nothing to clean
+    }
+    throw e;
+  }
+}
+
+/** A partial run keeps earlier records: new items override, declined ids resolved by this run drop out. */
+export function mergeState(prev: BootstrapState | null, next: BootstrapState): BootstrapState {
+  if (!prev) return next;
+  return {
+    ...next,
+    items: { ...prev.items, ...next.items },
+    declined: [...new Set([...prev.declined.filter((id) => !(id in next.items)), ...next.declined])],
+  };
 }
 
 /** Null for a missing file, corrupt JSON or an unknown version; never throws. */
