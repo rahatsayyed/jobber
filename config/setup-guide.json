@@ -90,7 +90,10 @@
       "id": "dashboard", "title": "Dashboard login", "owner_command": "npm run setup -- --step dashboard",
       "doctor_checks": ["web", "dashboard-login"],
       "keys": [
-        { "name": "WEB_PORT", "secret": false, "purpose": "local port of the dashboard", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
+        { "name": "WEB_AUTH_MODE", "secret": false, "purpose": "dashboard sign-in mode: token (default), google_desktop or oidc", "where": "docs/dashboard-exposure.md", "entered_in": "wizard" },
+        { "name": "WEB_GOOGLE_KEYS_PATH", "secret": false, "purpose": "keys file of the Gmail Desktop client, only for google_desktop sign-in", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
+        { "name": "WEB_GOOGLE_REDIRECT_SHAPE", "secret": false, "purpose": "callback or root address shape, only for google_desktop sign-in", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
+        { "name": "WEB_PORT","secret": false, "purpose": "local port of the dashboard", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
         { "name": "WEB_TMUX_SESSION", "secret": false, "purpose": "tmux session the dashboard chat box would target", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
         { "name": "WEB_TMUX_WINDOW", "secret": false, "purpose": "tmux window the dashboard chat box would target", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
         { "name": "DASHBOARD_ALLOWED_EMAIL", "secret": false, "purpose": "the one Google account allowed to sign in", "where": "docs/dashboard-exposure.md", "entered_in": "wizard" },
@@ -106,10 +109,10 @@
         { "name": "WEB_ALLOWED_HOSTS", "secret": false, "purpose": "extra host names the dashboard accepts", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" },
         { "name": "WEB_TRUST_PROXY", "secret": false, "purpose": "trust forwarded headers from a reverse proxy", "where": "docs/dashboard-exposure.md", "entered_in": "owner edits .env" }
       ],
-      "explain": "The dashboard is a local page for looking at the funnel. It listens on your own machine only, and sign-in is one Google account you choose. The Google client for it is created by you.",
+      "explain": "The dashboard is a local page for looking at the funnel. It listens on your own machine only, and sign-in is by default a one-time access token that is shown once and only its hash is stored. Google desktop sign-in or OIDC with one Google account you choose are options.",
       "fixes": {
         "web": "Start the dashboard with npm run web in your own terminal, see docs/dashboard-exposure.md.",
-        "dashboard-login": "Run the wizard dashboard step to set the allowed account; see docs/dashboard-exposure.md for login recovery."
+        "dashboard-login": "In token mode run npm run dashboard -- token in your own terminal to create the access token; in the other modes run the wizard dashboard step to set the allowed account; see docs/dashboard-exposure.md for login recovery."
       }
     },
     {

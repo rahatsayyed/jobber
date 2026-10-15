@@ -654,9 +654,9 @@ not_required`, no MCP tools, only `Skill` and `Read` limited to the prefixes `do
 `config/`, `user-data.example/` and `.claude/skills/setup-guide/`, and Bash limited
 to the exact strings in `bash_exact`, no wildcard; the guide never reads secrets or `.env`),
 `npm run dry-run` (end-to-end smoke in dry mode against fixtures and a temporary database; writes
-`.jobber/verify.json` plus the idempotent launcher debug files; `--llm` runs a real hunt and is refused unless `.env` itself is dry; its dashboard stage is skipped until plan 8C's login routes exist)
+`.jobber/verify.json` plus the idempotent launcher debug files; `--llm` runs a real hunt and is refused unless `.env` itself is dry; its dashboard stage logs in for real in token mode against a temp auth store and temp token, and is skipped only for a server whose auth mode route answers 404)
 and `npm run up` / `npm run down` (doctor gate, kill-switch refusal with exit 4, ordered start of
-bridge, windows, scheduler and dashboard; exit 1 when a start failed, after printing the full table; `up -- --status` is read-only). `up` never changes the
+bridge, windows, scheduler and dashboard; exit 1 when a start failed, after printing the full table; `up -- --status` is read-only; the final lines show the dashboard auth mode and, in token mode with no token stored, `npm run dashboard -- token`). `up` never changes the
 mode: it prints `MODE: DRY RUN` or `MODE: LIVE` from `.env`, and the owner alone flips the flags.
 
 ## Layout memory and platform operators
@@ -1086,8 +1086,7 @@ and the Indian and Gulf job boards.
   Playwright system dependencies (U5), Linux Node, uv and Chrome installer URLs (U6); L1 and L2
   exercise the install paths only loosely. How ccgram binds the `manager` window (U8) is owner
   decision O5 in plan 8E. The `better-sqlite3` native build toolchain (U12) is surfaced by the
-  `build-tools` item and `npm ci` output. The dry-run dashboard stage skips until plan 8C's login
-  routes exist (U10). The patchright browser download is not installed by bootstrap (U13).
+  `build-tools` item and `npm ci` output. The dry-run dashboard stage runs the token login for real (plan 8C merged; it skips only on a 404 auth mode route). The patchright browser download is not installed by bootstrap (U13).
 
 Test baseline: `npx tsc -p . --noEmit` is clean; `npx vitest run` has exactly 5 known failures
 (4 in `tests/renderChecked.test.ts`, 1 in `tests/resume.test.ts`) because a Playwright browser is

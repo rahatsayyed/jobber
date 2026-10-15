@@ -236,6 +236,27 @@ describe('up', () => {
     expect(d.out.join('\n')).toContain('passed 3 failed 0 skipped 1');
   });
 
+  it('prints the dashboard auth mode and the token hint only in token mode with no token', async () => {
+    const noDb = deps(fake());
+    await runUp(noDb, { status: true });
+    const t = noDb.out.join('\n');
+    expect(t).toContain('dashboard auth mode: token');
+    expect(t).toContain('npm run dashboard -- token');
+
+    mkdirSync(join(root, '.dashboard'));
+    writeFileSync(join(root, '.dashboard', 'auth.sqlite'), '');
+    const withTok = deps(fake(), { authTokenSet: () => true });
+    await runUp(withTok, { status: true });
+    expect(withTok.out.join('\n')).toContain('dashboard auth mode: token');
+    expect(withTok.out.join('\n')).not.toContain('npm run dashboard -- token');
+
+    setEnvFile('WEB_AUTH_MODE=oidc\n');
+    const oidc = deps(fake());
+    await runUp(oidc, { status: true });
+    expect(oidc.out.join('\n')).toContain('dashboard auth mode: oidc');
+    expect(oidc.out.join('\n')).not.toContain('npm run dashboard -- token');
+  });
+
   it('a manager window failure is a warning, not a failure', async () => {
     const f = fake();
     const base = f.run;

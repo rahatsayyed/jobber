@@ -144,22 +144,46 @@ describe('dashboard-login', () => {
     const k = Object.keys(m).find((p) => u.endsWith(p))!;
     return { status: m[k][0], text: async () => m[k][1] };
   };
-  it('skips with the status in the reason on 401 and fails on 500', async () => {
-    const s = await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [401, ''], '/api/status': [401, ''], 'http://x/': [200, ''] }) }));
-    expect(s.status).toBe('skip');
-    expect(s.detail).toContain('(got 401)');
-    expect((await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [500, ''] }) }))).status).toBe('fail');
+  it('fails on 401 or 500 from the auth mode route (no pre-8C skip heuristic)', async () => {
+    for (const code of [401, 500]) {
+      const r = await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [code, ''], '/api/status': [401, ''], 'http://x/': [200, ''] }) }));
+      expect(r.status).toBe('fail');
+    }
   });
-  it('skips when /api/auth/mode is absent', async () => {
-    const r = await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [404, ''], '/api/status': [401, ''], 'http://x/': [200, ''] }) }));
+  it('skips only when the auth mode route is 404 (server without the login routes)', async () => {
+    const r = await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [404, ''] }) }));
     expect(r.status).toBe('skip');
-    expect(r.detail).toContain('8C dashboard login not merged');
+    expect(r.detail).toContain('login routes absent');
   });
-  it('does not skip when / is broken or status is open while the auth route is absent', async () => {
-    const bad1 = await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [404, ''], '/api/status': [401, ''], 'http://x/': [500, ''] }) }));
-    expect(bad1.status).toBe('fail');
-    const bad2 = await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [404, ''], '/api/status': [200, '{}'], 'http://x/': [200, ''] }) }));
-    expect(bad2.status).toBe('fail');
+  it('runs the token login with the temp token: wrong 401, right 200 plus cookie, session 200, no token in detail', async () => {
+    const TOKEN = 'TempTokenValue_abc123';
+    const calls: string[] = [];
+    const f = async (u: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => {
+      calls.push(`${init?.method ?? 'GET'} ${u}`);
+      const mkr = (status: number, body: string, headers: Record<string, string> = {}) => ({
+        status, text: async () => body, headers: { get: (n: string) => headers[n.toLowerCase()] ?? null },
+      });
+      if (u.endsWith('/api/auth/mode')) return mkr(200, '{"mode":"token"}');
+      if (u.endsWith('/api/status')) return mkr(401, '');
+      if (u.endsWith('/auth/token')) {
+        const t = (JSON.parse(init!.body!) as { token: string }).token;
+        return t === TOKEN ? mkr(200, '{"ok":true}', { 'set-cookie': 'sid=abc; Path=/; HttpOnly' }) : mkr(401, '{"error":"denied"}');
+      }
+      if (u.endsWith('/api/session')) return mkr(init?.headers?.cookie === 'sid=abc' ? 200 : 401, '{}');
+      return mkr(200, '<html>');
+    };
+    const r = await S.dashboardLogin.run(mk({ startWeb: async () => ({ url: 'http://h', close: async () => {}, token: TOKEN }), fetch: f }));
+    expect(r.status).toBe('pass');
+    expect(JSON.stringify(r)).not.toContain(TOKEN);
+    expect(calls.filter((c) => c.startsWith('POST'))).toHaveLength(2);
+  });
+  it('fails when the right token is refused', async () => {
+    const f = async (u: string) => ({
+      status: u.endsWith('/api/auth/mode') ? 200 : u.endsWith('/api/status') ? 401 : u.endsWith('/auth/token') ? 401 : 200,
+      text: async () => (u.endsWith('/api/auth/mode') ? '{"mode":"token"}' : ''),
+    });
+    const r = await S.dashboardLogin.run(mk({ startWeb: async () => ({ url: 'http://h', close: async () => {}, token: 'tok' }), fetch: f }));
+    expect(r.status).toBe('fail');
   });
   it('fails when the server cannot start', async () => {
     const r = await S.dashboardLogin.run(mk({ startWeb: async () => { throw new Error('needs OIDC'); } }));

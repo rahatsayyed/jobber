@@ -4,7 +4,6 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { randomBytes } from 'node:crypto';
 import { buildCtx, exitCodeFor, renderTable, runStages, UsageError, type CtxParts, type Fixtures, type StageResult } from './engine.js';
 import { allStages } from './stages.js';
 
@@ -52,31 +51,31 @@ export function loadFixtures(root: string): Fixtures {
 
 /**
  * Starts the production web server module in-process on loopback, port 0, with a temp auth store, a temp
- * read-only data db and a dummy OIDC config whose fetch always rejects (no network, no real credentials).
+ * read-only data db, in token mode with a temp access token set through the 8C helper (never the real auth
+ * store, no network, no real credentials). The token is returned so the dashboard-login stage can log in.
  */
-export async function realStartWeb(opts: { port: 0; host: string; tmp: string }): Promise<{ url: string; close(): Promise<void> }> {
-  const [{ startWebServer }, { openAuthStore }, { createOidc }, { openReadOnlyDb }, { openDb }, { loadOutreachConfig }] = await Promise.all([
-    import('../web/server.js'), import('../dash/authStore.js'), import('../dash/oidc.js'),
+export async function realStartWeb(opts: { port: 0; host: string; tmp: string }): Promise<{ url: string; close(): Promise<void>; token: string }> {
+  const [{ startWebServer }, { openAuthStore }, { generateToken, setToken }, { openReadOnlyDb }, { openDb }, { loadOutreachConfig }] = await Promise.all([
+    import('../web/server.js'), import('../dash/authStore.js'), import('../dash/accessToken.js'),
     import('../dash/readDb.js'), import('../db.js'), import('../outreach/config.js'),
   ]);
   const dataPath = join(opts.tmp, 'web-data.sqlite');
   openDb(dataPath).close();
   const auth = openAuthStore(join(opts.tmp, 'web-auth.sqlite'));
+  // A throwaway token for the throwaway store; it is never printed, stored outside tmp or reused.
+  const token = generateToken();
+  setToken(auth, token, new Date());
   const data = openReadOnlyDb(dataPath);
-  const redirectUri = 'http://127.0.0.1/cb';
-  const oidc = createOidc(
-    { issuer: 'https://example.invalid', clientId: 'verify', clientSecret: 'verify', redirectUri, reauthPrompt: 'login', maxAgeSec: 300 } as never,
-    { fetch: async () => { throw new Error('no network in verify'); }, now: () => new Date(), random: (n: number) => randomBytes(n) } as never,
-  );
   const server = await startWebServer({
     port: opts.port, bind: opts.host, allowRemoteBind: false, allowedHosts: [], trustProxy: false,
-    auth, oidc, oidcCfg: { redirectUri, reauthMaxAgeSec: 300 }, data,
+    auth, authMode: 'token', data,
     cfg: loadOutreachConfig({}), run: async () => ({ stdout: '', code: 1 }), sessionsToShow: [],
     chat: { enabled: false, session: '', window: '', send: async () => {} },
   });
   const url = `http://${opts.host}:${(server.address() as AddressInfo).port}`;
   return {
     url,
+    token,
     close: () => new Promise<void>((res) => {
       server.close(() => {
         try { data.close(); } catch { /* already closed */ }

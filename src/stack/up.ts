@@ -1,7 +1,8 @@
 // src/stack/up.ts
 // `up`: preflight (kill switch, doctor), mode banner, ordered idempotent start of the whole stack.
 // It never resumes a stop, never writes a mode flag, never touches halts or permission sets.
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
+import { authDbPathFromEnv, resolveAuthMode } from '../web/env.js';
 import type { CheckOutcome } from '../platform/doctor.js';
 import { parseEnv } from '../platform/envFile.js';
 import { ensureManagerWindow, loadManagerConfig, sessionName, startWindow } from '../platform/manager.js';
@@ -30,6 +31,8 @@ export interface StackDeps {
   sleep(ms: number): Promise<void>;
   // Loopback GET; a 200 or 401 status counts as up.
   probe(url: string): Promise<boolean>;
+  // Offline read of whether the dashboard auth db holds an access token; null when unreadable. Optional.
+  authTokenSet?(path: string): boolean | null;
 }
 
 const PROBE_SECONDS = 20;
@@ -70,6 +73,26 @@ function webUrl(env: NodeJS.ProcessEnv): string {
   const raw = (env.WEB_PORT ?? '').trim();
   const port = /^\d+$/.test(raw) && Number(raw) >= 1024 && Number(raw) <= 65535 ? Number(raw) : 8787;
   return `http://127.0.0.1:${port}`;
+}
+
+/** Auth mode (default per plan 8C) and, in token mode with no token stored, the command that sets one. */
+export function dashboardAuthLines(deps: StackDeps, env: NodeJS.ProcessEnv): string[] {
+  const m = resolveAuthMode(env);
+  if ('error' in m) return ['dashboard auth mode: invalid (WEB_AUTH_MODE must be token, google_desktop or oidc)'];
+  const lines = [`dashboard auth mode: ${m.mode}${m.implicit ? ' (implicit, set WEB_AUTH_MODE=oidc)' : ''}`];
+  if (m.mode === 'token') {
+    const rel = authDbPathFromEnv(env);
+    const p = isAbsolute(rel) ? rel : join(deps.root, rel);
+    let set: boolean | null = null;
+    try {
+      if (!deps.fs.exists(p)) set = false;
+      else if (deps.authTokenSet) set = deps.authTokenSet(p);
+    } catch {
+      set = null;
+    }
+    if (set === false) lines.push('dashboard token: not set, run npm run dashboard -- token');
+  }
+  return lines;
 }
 
 function lastVerify(deps: StackDeps): string {
@@ -246,6 +269,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
   for (const l of table(rows)) say(l);
   for (const w of warnings) say(`warning: ${w}`);
   say(`dashboard: ${webUrl(env)}`);
+  for (const l of dashboardAuthLines(deps, env)) say(l);
   say(`windows: tmux attach -t ${csess}   scheduler and web: tmux attach -t ${session}`);
   say(`ticks (run by the scheduler after a wake): auto-update ${env.AUTO_UPDATE === 'true' ? 'on' : 'off'}, backup ${env.BACKUP_ENABLED === 'true' ? 'on' : 'off'}`);
   say(lastVerify(deps));

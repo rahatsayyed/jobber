@@ -205,11 +205,11 @@ const dashboardLogin: Stage = {
   id: 'dashboard-login', title: 'dashboard token login', skippable: true,
   async run(ctx) {
     const fix = 'npm run doctor, check web and dashboard-login';
-    const get = ctx.fetch ?? (async (u: string) => {
-      const r = await fetch(u);
-      return { status: r.status, text: () => r.text() };
+    const get = ctx.fetch ?? (async (u: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => {
+      const r = await fetch(u, init);
+      return { status: r.status, headers: r.headers, text: () => r.text() };
     });
-    let srv: { url: string; close(): Promise<void> };
+    let srv: { url: string; close(): Promise<void>; token?: string };
     try {
       srv = await ctx.startWeb({ port: 0, host: '127.0.0.1', tmp: ctx.tmp });
     } catch (e) {
@@ -217,15 +217,8 @@ const dashboardLogin: Stage = {
     }
     try {
       const mode = await get(`${srv.url}/api/auth/mode`);
-      if (mode.status === 404 || mode.status === 401) {
-        // TODO: remove this skip branch when plan 8C (dashboard login) merges.
-        // Even without the auth route, the server must serve / and must not expose /api/status unauthenticated.
-        const r0 = await get(`${srv.url}/`);
-        if (r0.status !== 200 && r0.status !== 401) return fail(`GET / returned ${r0.status} while /api/auth/mode is absent`, fix);
-        const s0 = await get(`${srv.url}/api/status`);
-        if (s0.status === 200) return fail('/api/status returned 200 without a session while /api/auth/mode is absent', fix);
-        return skip(`8C dashboard login not merged: /api/auth/mode absent (got ${mode.status})`);
-      }
+      // A server without the login routes (404) is skipped; any other non-200 status is a failure.
+      if (mode.status === 404) return skip('dashboard login routes absent (/api/auth/mode returned 404)');
       if (mode.status !== 200) return fail(`/api/auth/mode returned ${mode.status}`, fix);
       let m: unknown;
       try { m = JSON.parse(await mode.text()); } catch { return fail('/api/auth/mode is not JSON', fix); }
@@ -234,9 +227,26 @@ const dashboardLogin: Stage = {
       if (root.status !== 200) return fail(`GET / returned ${root.status}`, fix);
       const st = await get(`${srv.url}/api/status`);
       if (st.status !== 401) return fail(`/api/status without session returned ${st.status}, expected 401`, fix);
-      return pass('/ 200, auth mode token, /api/status 401 without a session');
+      if (srv.token === undefined) return pass('/ 200, auth mode token, /api/status 401 without a session');
+      const token = srv.token;
+      const post = (t: string) => get(`${srv.url}/auth/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: srv.url },
+        body: JSON.stringify({ token: t }),
+      });
+      const bad = await post(`wrong-${token.slice(0, 4)}`);
+      if (bad.status !== 401) return fail(`wrong token returned ${bad.status}, expected 401`, fix);
+      if ((await bad.text()).includes(token)) return fail('wrong-token response echoed the token', fix);
+      const ok = await post(token);
+      if (ok.status !== 200) return fail(`token login returned ${ok.status}, expected 200`, fix);
+      const cookie = (ok.headers?.get('set-cookie') ?? '').split(';')[0] ?? '';
+      if (!cookie.includes('=')) return fail('token login set no session cookie', fix);
+      const sess = await get(`${srv.url}/api/session`, { headers: { cookie } });
+      if (sess.status !== 200) return fail(`/api/session with the session cookie returned ${sess.status}, expected 200`, fix);
+      return pass('/ 200, token mode, wrong token 401, token login 200 with cookie, /api/session 200');
     } catch (e) {
-      return fail(firstLine(e), fix);
+      const m = firstLine(e);
+      return fail(srv.token ? m.split(srv.token).join('<token>') : m, fix);
     } finally {
       try { await srv.close(); } catch { /* closing a stub */ }
     }

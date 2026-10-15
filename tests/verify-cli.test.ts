@@ -148,7 +148,7 @@ describe('fixtures', () => {
 });
 
 describe('realStartWeb', () => {
-  it('the dashboard-login stage skips against the real pre-8C server', async () => {
+  it('the dashboard-login stage passes against the real 8C server in token mode with a temp token', async () => {
     const { dashboardLogin } = await import('../src/verify/stages.js');
     const ctx = buildCtx({
       root: ROOT, env: { PATH: process.env.PATH }, run: async () => ({ stdout: '', code: 0 }), fs: realFs,
@@ -156,16 +156,17 @@ describe('realStartWeb', () => {
       startWeb: realStartWeb, fixtures: () => loadFixtures(ROOT),
     });
     const r = await dashboardLogin.run(ctx);
-    expect(r.status).toBe('skip');
-    expect(r.detail).toContain('(got 401)');
+    expect(r.status).toBe('pass');
+    expect(r.detail).toContain('token login 200');
   });
   it('starts hermetically on loopback port 0 and serves without real config', async () => {
     const srv = await realStartWeb({ port: 0, host: '127.0.0.1', tmp: mkTmp() });
     try {
       expect(srv.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
-      // Production answers 401 (not 404) for an unknown /api path without a session; with 8C absent the
-      // dashboard-login stage therefore reports fail on a real run (R13: skip only on 404). Reported upstream.
-      expect((await fetch(`${srv.url}/api/auth/mode`)).status).toBe(401);
+      // Plan 8C: the auth mode route is open and answers the mode; the hermetic store runs in token mode.
+      const mode = await fetch(`${srv.url}/api/auth/mode`);
+      expect(mode.status).toBe(200);
+      expect(await mode.json()).toEqual({ mode: 'token' });
       expect((await fetch(`${srv.url}/`)).status).toBe(200);
     } finally {
       await srv.close();

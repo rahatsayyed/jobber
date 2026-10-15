@@ -53,10 +53,14 @@ export interface VerifyCtx {
   now: () => Date;
   doctor(): Promise<CheckOutcome[]>;
   openDb(path: string): BetterSqlite3.Database;
-  startWeb(opts: { port: 0; host: string; tmp: string }): Promise<{ url: string; close(): Promise<void> }>;
+  // `token` is the hermetic temp access token of the throwaway auth store (never the real one); absent for a stub.
+  startWeb(opts: { port: 0; host: string; tmp: string }): Promise<{ url: string; close(): Promise<void>; token?: string }>;
   fixtures(): Fixtures;
   /** HTTP seam for the dashboard stage (default global fetch against loopback). */
-  fetch?: (url: string) => Promise<{ status: number; text(): Promise<string> }>;
+  fetch?: (
+    url: string,
+    init?: { method?: string; headers?: Record<string, string>; body?: string },
+  ) => Promise<{ status: number; headers?: { get(name: string): string | null }; text(): Promise<string> }>;
   /** Enables the llm-hunt stage. */
   llm?: boolean;
 }

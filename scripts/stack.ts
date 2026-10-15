@@ -1,6 +1,7 @@
 // scripts/stack.ts
 // `npm run up` / `npm run down`. Real dependencies only; the logic is in src/stack.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
@@ -60,6 +61,17 @@ async function main(): Promise<number> {
     say: (l: string) => console.log(l),
     sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
     probe: loopbackProbe,
+    authTokenSet: (p: string): boolean | null => {
+      try {
+        const Database = createRequire(import.meta.url)('better-sqlite3') as new (f: string, o: object) => {
+          prepare(q: string): { get(): unknown }; close(): void;
+        };
+        const db = new Database(p, { readonly: true, fileMustExist: true });
+        try { return db.prepare('SELECT 1 AS x FROM access_token WHERE id = 1').get() !== undefined; } finally { db.close(); }
+      } catch {
+        return null;
+      }
+    },
     doctor: async (): Promise<CheckOutcome[]> => {
       const ctx: DoctorContext = {
         root,
