@@ -9,7 +9,7 @@ import { parseEnv } from '../src/platform/envFile.js';
 import { secretValuesFromEnv } from '../src/safety/outputGate.js';
 import { validateRunnerConfig } from '../src/web/env.js';
 import { redactSecrets, startWebServer } from '../src/web/server.js';
-import { openAuthStore, getAllowedAccount } from '../src/dash/authStore.js';
+import { openAuthStore, getAllowedAccount, recordAuthMode } from '../src/dash/authStore.js';
 import { allowAccount } from '../src/dash/account.js';
 import { createOidc } from '../src/dash/oidc.js';
 import { tokenStatus } from '../src/dash/accessToken.js';
@@ -59,6 +59,13 @@ async function main(): Promise<number> {
     auth = openAuthStore(authPath);
   } catch (e) {
     console.error(`web: could not open the auth store: ${e instanceof Error ? e.message.split('\n')[0] : 'error'}`);
+    return 1;
+  }
+  try {
+    const m = recordAuthMode(auth, cfg.authMode, new Date());
+    if (m.changed) console.error(`web: auth mode changed (${m.previous} to ${cfg.authMode}); all sessions were revoked`);
+  } catch {
+    console.error('web: could not record the auth mode');
     return 1;
   }
   let stored = getAllowedAccount(auth) !== null;

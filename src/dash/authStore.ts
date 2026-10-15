@@ -55,6 +55,10 @@ export function openAuthStore(path: string): AuthDb {
       id INTEGER PRIMARY KEY CHECK (id = 1),
       token_hash TEXT NOT NULL, created_at TEXT NOT NULL, rotated_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS auth_mode (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      mode TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
   `);
   return db;
 }
@@ -131,6 +135,24 @@ export function audit(
     detail.textHash ?? null,
     detail.idHint === undefined ? null : detail.idHint.slice(0, ID_HINT_MAX),
   );
+}
+
+// Remember the effective auth mode. First sight stores it and revokes nothing; a different stored mode
+// is replaced, every live session is revoked and one mode_changed audit row (mode names only) is written.
+export function recordAuthMode(db: AuthDb, mode: string, now: Date): { changed: boolean; previous: string | null } {
+  const at = now.toISOString();
+  return db.transaction((): { changed: boolean; previous: string | null } => {
+    const r = db.prepare('SELECT mode FROM auth_mode WHERE id = 1').get() as { mode: string } | undefined;
+    if (!r) {
+      db.prepare('INSERT INTO auth_mode (id, mode, updated_at) VALUES (1, ?, ?)').run(mode, at);
+      return { changed: false, previous: null };
+    }
+    if (r.mode === mode) return { changed: false, previous: r.mode };
+    db.prepare('UPDATE auth_mode SET mode = ?, updated_at = ? WHERE id = 1').run(mode, at);
+    db.prepare('UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL').run(at);
+    audit(db, 'mode_changed', { note: `${r.mode}->${mode}` }, now);
+    return { changed: true, previous: r.mode };
+  })();
 }
 
 export function listAudit(

@@ -205,4 +205,19 @@ describe('no leak', () => {
       expect(line).not.toContain(th);
     }
   });
+
+  it('stale token session: chat reauth_required url is the hash route', async () => {
+    h = await mk({ chat: { enabled: true, session: 's', window: 'w', send: async () => {} } });
+    const cookie = sessionCookie(await post(h, { token: TOKEN }));
+    const sess = JSON.parse((await h.call('GET', '/api/session', { headers: { cookie } })).body);
+    h.auth.prepare('UPDATE sessions SET auth_at = ?').run(new Date(h.now().getTime() - 86_400_000).toISOString());
+    const p = await h.call('POST', '/api/send/prepare', {
+      headers: {
+        cookie, 'x-csrf-token': sess.csrf, origin: `http://127.0.0.1:${h.port}`, 'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'hi' }),
+    });
+    expect(p.status).toBe(401);
+    expect(JSON.parse(p.body)).toEqual({ error: 'reauth_required', url: '/#/login?reauth=1' });
+  });
 });

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import BetterSqlite3 from 'better-sqlite3';
 import { validateRunnerConfig, resolveAuthMode } from '../src/web/env.js';
-import { openAuthStore, getAllowedAccount, listAudit } from '../src/dash/authStore.js';
+import { openAuthStore, getAllowedAccount, listAudit, recordAuthMode } from '../src/dash/authStore.js';
 import { setToken } from '../src/dash/accessToken.js';
 import { validateSession } from '../src/dash/sessions.js';
 import { makeHarness, type Harness } from './helpers/webHarness.js';
@@ -139,5 +139,59 @@ describe('switching an OIDC install to token mode', () => {
     // switching back needs no `allow`: the account is still there and pinned
     expect(before?.email).toBe('owner@example.test');
     expect(before?.sub).not.toBeNull();
+  });
+});
+
+describe('auth mode record (D8)', () => {
+  const mkdb = () => openAuthStore(join(mkdtempSync(join(tmpdir(), 'jobber-mode-')), 'auth.sqlite'));
+  const t0 = new Date('2026-10-15T10:00:00.000Z');
+  const addSession = (db: ReturnType<typeof openAuthStore>, id: string) =>
+    db.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?, ?, NULL, NULL)')
+      .run(sha(id), t0.toISOString(), t0.toISOString(), t0.toISOString(), new Date(t0.getTime() + 3600_000).toISOString());
+  const live = (db: ReturnType<typeof openAuthStore>): number =>
+    (db.prepare('SELECT COUNT(*) AS n FROM sessions WHERE revoked_at IS NULL').get() as { n: number }).n;
+
+  it('first call stores the mode, revokes nothing; same mode is a no-op', () => {
+    const db = mkdb();
+    addSession(db, 'a');
+    expect(recordAuthMode(db, 'oidc', t0)).toEqual({ changed: false, previous: null });
+    expect(live(db)).toBe(1);
+    expect(recordAuthMode(db, 'oidc', t0)).toEqual({ changed: false, previous: 'oidc' });
+    expect(live(db)).toBe(1);
+    expect(listAudit(db, 10)).toEqual([]);
+  });
+
+  it('a switch revokes every session and audits mode_changed once', () => {
+    const db = mkdb();
+    recordAuthMode(db, 'oidc', t0);
+    addSession(db, 'a');
+    addSession(db, 'b');
+    expect(recordAuthMode(db, 'token', t0)).toEqual({ changed: true, previous: 'oidc' });
+    expect(live(db)).toBe(0);
+    const rows = listAudit(db, 10);
+    expect(rows.map((r) => r.kind)).toEqual(['mode_changed']);
+    expect(rows[0].note).toBe('oidc->token');
+    expect(recordAuthMode(db, 'token', t0).changed).toBe(false);
+  });
+
+  it('an old-schema db (no auth_mode table) opens and records', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'jobber-mode-')), 'auth.sqlite');
+    const old = new BetterSqlite3(path);
+    old.exec('CREATE TABLE sessions (id_hash TEXT PRIMARY KEY, created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, auth_at TEXT NOT NULL, expires_at TEXT NOT NULL, ip TEXT, revoked_at TEXT);');
+    old.close();
+    const db = openAuthStore(path);
+    expect(recordAuthMode(db, 'oidc', t0).changed).toBe(false);
+  });
+
+  it('oidc install with live sessions: first start keeps them; switch to token revokes, account untouched', async () => {
+    h = await makeHarness();
+    const { cookie } = await h.login();
+    const acct = getAllowedAccount(h.auth);
+    expect(recordAuthMode(h.auth, 'oidc', h.now()).changed).toBe(false);
+    expect((await sessionOf(h, cookie)).status).toBe(200);
+    expect(recordAuthMode(h.auth, 'token', h.now())).toEqual({ changed: true, previous: 'oidc' });
+    expect((await sessionOf(h, cookie)).status).toBe(401);
+    expect(listAudit(h.auth, 200).filter((a) => a.kind === 'mode_changed')).toHaveLength(1);
+    expect(getAllowedAccount(h.auth)).toEqual(acct);
   });
 });

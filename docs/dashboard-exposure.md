@@ -19,13 +19,18 @@ Every exposure needs sign-in. `WEB_AUTH_MODE` picks one of three modes. `token` 
 
 | Mode | What protects the page | Network use | Where it works |
 |---|---|---|---|
-| `token` | A long random access token you hold. Only its SHA-256 hash is stored, in `.dashboard/auth.sqlite`. | None | Loopback, or behind a TLS proxy |
+| `token` | A long random access token you hold. Only its SHA-256 hash is stored, in `.dashboard/auth.sqlite`. | None | Loopback, or behind a TLS proxy (a non-loopback bind also needs `WEB_ALLOW_REMOTE_BIND=true`) |
 | `google_desktop` | One allowed Google account, through the Desktop OAuth client you already made for Gmail. | Google | Loopback only |
 | `oidc` | One allowed account through a Web OAuth client (`WEB_OIDC_*`, Google by default). | Provider | Loopback, or behind a TLS proxy |
 
 If `WEB_AUTH_MODE` is unset and both `WEB_OIDC_CLIENT_ID` and `WEB_OIDC_CLIENT_SECRET` are set,
-the mode resolves to `oidc` and `npm run doctor` warns once. Existing OIDC installs need to do
-nothing, or can set `WEB_AUTH_MODE=oidc` explicitly to silence the warning.
+the mode resolves to `oidc` and `npm run doctor` warns on every doctor run until `WEB_AUTH_MODE`
+is set. Existing OIDC installs need to do nothing, or can set `WEB_AUTH_MODE=oidc` explicitly to
+silence the warning.
+
+The server remembers the mode it last ran in. The first start only records it. When a later
+start runs in a different mode, every session is revoked and a `mode_changed` audit row is
+written (mode names only), so a sign-in from the old mode never carries over.
 
 ### Token mode
 
@@ -39,8 +44,10 @@ nothing, or can set `WEB_AUTH_MODE=oidc` explicitly to silence the warning.
 - `npm run dashboard -- rotate` replaces the token and revokes every session. Run it if you
   lose the token or think it leaked.
 - It listens on loopback by default. A non-loopback request is accepted only when a TLS proxy
-  you control marked it https: set `WEB_TRUST_PROXY=true` and `WEB_ALLOWED_HOSTS`. Plain http
+  you control marked it https: set `WEB_TRUST_PROXY=true` and `WEB_ALLOWED_HOSTS`, and, if the
+  server binds a non-loopback address, also `WEB_ALLOW_REMOTE_BIND=true`. Plain http
   from another machine is refused, because the token would cross the network in clear text.
+- Sessions are revoked on `rotate` and when a mode switch is detected at start.
 - The SSH tunnel keeps working unchanged: the page still sees loopback.
 - Sessions, CSRF, the idle and absolute limits and the failed-login throttle are the same in all
   three modes.

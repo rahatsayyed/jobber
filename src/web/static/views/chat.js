@@ -3,7 +3,7 @@
 // POST /api/send/confirm {text, token} -> {ok:true}. Errors: 400 invalid text {reason}, 401 reauth_required {url},
 // 409 {error: mismatch|used|...}, 429 too many sends, 502 send failed. After 409, 429 or 502 the owner prepares again.
 import { post } from '../api.js';
-import { button, clear, el, form, notice, pre } from '../dom.js';
+import { button, clear, el, notice, pre } from '../dom.js';
 
 export async function render({ root, session }) {
   root.append(el('h2', null, 'Chat'));
@@ -18,15 +18,18 @@ export async function render({ root, session }) {
 
   const say = (text, kind) => clear(out).append(notice(text, kind));
 
-  function reauth() {
+  // The server says where to confirm: a hash route in token mode, the provider login path otherwise.
+  function reauth(url) {
+    const ok = typeof url === 'string' && url.startsWith('/') && !url.startsWith('/' + '/') && url.length < 100;
+    const target = ok ? url : '/#/login?reauth=1';
     clear(out).append(
       notice('Please confirm it is you before sending.', 'warn'),
-      form('/auth/login', 'get', { reauth: '1' }, el('button', { type: 'submit' }, 'Confirm it is you')),
+      button('Confirm it is you', () => location.assign(target)),
     );
   }
 
   function failure(e) {
-    if (e.status === 401 && e.code === 'reauth_required') return reauth();
+    if (e.status === 401 && e.code === 'reauth_required') return reauth(e.data && e.data.url);
     if (e.status === 400) return say('That text cannot be sent. Check it and try again.', 'error');
     if (e.status === 429) return say('Sending too fast. Wait a moment, then prepare again.', 'error');
     if (e.status === 409) return say('The preview is no longer valid. Prepare the message again.', 'error');

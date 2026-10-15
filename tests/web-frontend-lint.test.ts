@@ -87,4 +87,10 @@ describe('static frontend lint', () => {
     expect(read(join(ROOT, 'dom.js'))).not.toMatch(/['"]href['"]/);
     for (const f of js) expect(/\bhref\s*:/.test(read(f)), f).toBe(false);
   });
+
+  it('chat reauth uses the server url and does not hardcode the oidc login path', () => {
+    const t = read(join(ROOT, 'views', 'chat.js'));
+    expect(t.includes('/auth/' + 'login')).toBe(false);
+    expect(t.includes('data.url')).toBe(true);
+  });
 });
