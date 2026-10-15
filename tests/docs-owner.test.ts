@@ -28,7 +28,19 @@ const PLANNED_ONLY: string[] = [];
 const ENV_ALLOWLIST = /^(HOME|PATH|NODE_ENV|TMPDIR|SHELL|USER|ANTHROPIC_[A-Z_]+|CLAUDE_[A-Z_]+|CI|TERM)$/;
 const LOCAL_ONLY_FILES = ['user-data/resume.json', 'user-data/profile.json'];
 const FILE_PREFIXES = ['config/', 'docs/', 'scripts/', 'src/', '.claude/', 'tests/'];
-const RUNTIME_PREFIXES = ['secrets/', '.jobber/', '.env', 'data.sqlite'];
+const RUNTIME_PREFIXES = [
+  'secrets/',
+  '.jobber/',
+  '.env',
+  'data.sqlite',
+  // git-ignored machine-local files: absent in a fresh clone, so a doc may name them
+  '.claude/settings.local.json',
+  '.claude/settings.local.managed.json',
+  'models/',
+  '.dashboard/',
+  '.update/',
+  '.backups/',
+];
 const SECRET_RE = /AKIA[0-9A-Z]{16}|-----BEGIN|sk-[A-Za-z0-9]{20,}|xox[bp]-/;
 const ENV_TOKEN = /^[A-Z][A-Z0-9]*_[A-Z0-9_]+$/;
 
