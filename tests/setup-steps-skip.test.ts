@@ -1,6 +1,7 @@
 // tests/setup-steps-skip.test.ts
 // Plan 8F task 6: skip offers and done-confirms for the gmail and dashboard steps.
 import { describe, expect, it } from 'vitest';
+import { setupChecks } from '../src/platform/checksSetup.js';
 import type { DoctorContext } from '../src/platform/doctor.js';
 import { redactingIO, scriptedIO, type ScriptItem } from '../src/setup/io.js';
 import type { SetupContext, SetupFs } from '../src/setup/runner.js';
@@ -92,9 +93,23 @@ describe('gmail skip and confirms', () => {
     t.sio.assertDone();
   });
 
-  it('three nos on a group throw step not confirmed', async () => {
+  it('three nos on a group give a clean skipped', async () => {
     const t = mk({ script: [{ choose: 'now' }, { confirm: false }, { confirm: false }, { confirm: false }] });
-    await expect(gmailStep.run(t.ctx)).rejects.toThrow('step not confirmed');
+    expect(await gmailStep.run(t.ctx)).toBe('skipped');
+    expect(t.spawns).toEqual([]);
+    t.sio.assertDone();
+  });
+
+  it('missing gmail-oauth check returns skipped with a reason', async () => {
+    const i = setupChecks.findIndex((c) => c.id === 'gmail-oauth');
+    const [removed] = setupChecks.splice(i, 1);
+    try {
+      const t = mk({ script: [{ choose: 'now' }, ...CONFIRMS, { confirm: true }] });
+      expect(await gmailStep.run(t.ctx)).toBe('skipped');
+      expect(t.sio.transcript.join('\n')).toContain('could not be verified');
+    } finally {
+      setupChecks.splice(i, 0, removed);
+    }
   });
 
   it('verify pass says authorised and returns done', async () => {
@@ -114,7 +129,7 @@ describe('gmail skip and confirms', () => {
       files: { [KEYS]: '{}', [CREDS]: '{}' },
     });
     expect(await gmailStep.run(t.ctx)).toBe('skipped');
-    expect(t.sio.transcript.join('\n')).toContain('consent screen did not finish; run this step again');
+    expect(t.sio.transcript.join('\n')).toContain('Gmail is not authorised yet; run this step again');
   });
 });
 

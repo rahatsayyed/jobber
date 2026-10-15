@@ -77,7 +77,12 @@ export const gmailStep: SetupStep = {
         ],
       },
     ];
-    for (const g of groups) await confirmDone(ctx, g);
+    for (const g of groups) {
+      if ((await confirmDone(ctx, { ...g, allowSkip: true })) === 'skip') {
+        io.say('Gmail setup not confirmed; run this step again with npm run setup -- --step gmail');
+        return 'skipped';
+      }
+    }
 
     ctx.fs.mkdirp(path.dirname(keys), 0o700);
     if (ctx.fs.exists(keys)) ctx.fs.chmod(keys, 0o600);
@@ -94,18 +99,21 @@ export const gmailStep: SetupStep = {
       if (code !== 0) throw new Error(`Gmail auth helper exited with code ${code}`);
       // Only the doctor check reads the key and credentials files, never this step.
       const check = setupChecks.find((c) => c.id === 'gmail-oauth');
-      if (check) {
-        const [r] = await runChecks([check], ctx.doctor);
-        if (r.result.status === 'pass') {
-          io.say('Gmail is authorised on this machine.');
-        } else {
-          io.say('The consent screen did not finish; run this step again.');
-          if (r.result.fix) io.say(`  fix: ${r.result.fix}`);
-          return 'skipped';
-        }
+      if (!check) {
+        io.say('Gmail could not be verified (the gmail-oauth check is missing); run npm run doctor.');
+        return 'skipped';
+      }
+      const [r] = await runChecks([check], ctx.doctor);
+      if (r.result.status === 'pass') {
+        io.say('Gmail is authorised on this machine.');
+      } else {
+        io.say('Gmail is not authorised yet; run this step again.');
+        if (r.result.fix) io.say(`  fix: ${r.result.fix}`);
+        return 'skipped';
       }
     } else {
-      io.say('Skipped the consent screen; run this step again when ready.');
+      io.say('Skipped the consent screen; run this step again with npm run setup -- --step gmail');
+      return 'skipped';
     }
     return 'done';
   },
