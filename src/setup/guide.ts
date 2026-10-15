@@ -60,7 +60,9 @@ export interface LaunchDeps {
 }
 
 /** Starts (or finds) the detached tmux guide window. No checks and no confirm: the caller decided. */
-export async function launchGuide(d: LaunchDeps): Promise<'started-tmux' | 'already-running' | 'failed'> {
+export type LaunchResult = 'started-tmux' | 'already-running' | 'failed';
+
+export async function launchGuide(d: LaunchDeps): Promise<LaunchResult> {
   const attach = `Open another terminal and run: tmux attach -t ${GUIDE_SESSION}`;
   const keys = 'Keep entering keys in THIS window; the guide never sees them.';
   const hasSession = (await d.run('tmux', ['has-session', '-t', `=${GUIDE_SESSION}`])).code === 0;

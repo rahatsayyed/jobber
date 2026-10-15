@@ -1,9 +1,9 @@
 // tests/setup-mode.test.ts
 import { describe, expect, it } from 'vitest';
 import { parseArgs } from '../src/setup/cli.js';
-import { GUIDE_CHECK_IDS, guideReadiness, launchGuide } from '../src/setup/guide.js';
+import { GUIDE_CHECK_IDS, formatStatus, guideReadiness, launchGuide } from '../src/setup/guide.js';
 import { scriptedIO, type ScriptItem } from '../src/setup/io.js';
-import { resolveMode, type ModeDeps } from '../src/setup/mode.js';
+import { resolveMode, startGuideForMode, type ModeDeps } from '../src/setup/mode.js';
 import { emptyState, type SetupMode } from '../src/setup/state.js';
 import type { Run } from '../src/platform/tmux.js';
 
@@ -90,7 +90,7 @@ describe('resolveMode', () => {
 describe('parseArgs --mode', () => {
   it('accepts valid values', () => {
     expect(parseArgs(['--mode', 'agent']).mode).toBe('agent');
-    expect(parseArgs(['--mode', 'terminal', '--no-guide']).error).toBeUndefined();
+    expect(parseArgs(['--mode', 'terminal', '--no-guide'])).toMatchObject({ mode: 'terminal', noGuide: true });
     expect(parseArgs(['--mode', 'agent', '--guide-only']).error).toBeUndefined();
   });
   it('rejects bad arity and values', () => {
@@ -101,10 +101,8 @@ describe('parseArgs --mode', () => {
   it('rejects combinations', () => {
     expect(parseArgs(['--mode', 'agent', '--no-guide']).error).toBeDefined();
     expect(parseArgs(['--mode', 'terminal', '--guide-only']).error).toBeDefined();
-    expect(parseArgs(['--mode', 'x', '--list']).error).toBeDefined();
-    expect(parseArgs(['--mode', 'x', '--status']).error).toBeDefined();
-    expect(parseArgs(['--mode', 'agent', '--list']).error).toBeDefined();
-    expect(parseArgs(['--mode', 'terminal', '--status']).error).toBeDefined();
+    expect(parseArgs(['--mode', 'agent', '--list']).error).toBe('--mode cannot be used with --list or --status');
+    expect(parseArgs(['--mode', 'terminal', '--status']).error).toBe('--mode cannot be used with --list or --status');
   });
 });
 
@@ -127,11 +125,6 @@ describe('launch split', () => {
     expect(r.calls.some((c) => c[1] === 'send-keys')).toBe(false);
   });
 
-  it('terminal mode makes zero tmux calls (nothing in the script launches)', () => {
-    const r = runner();
-    expect(r.calls).toHaveLength(0);
-  });
-
   it('guideReadiness reports the first failing check and missing tmux', async () => {
     const pass = GUIDE_CHECK_IDS.map((id) => ({ id, title: id, result: { status: 'pass' as const, detail: '' } }));
     const r = runner();
@@ -142,5 +135,78 @@ describe('launch split', () => {
     expect(g.why).toContain(GUIDE_CHECK_IDS[1]);
     const noTmux = (async () => ({ stdout: '', code: 1 })) as unknown as Run;
     expect((await guideReadiness({ run: noTmux, checks: async () => pass })).why).toContain('tmux');
+  });
+});
+
+describe('startGuideForMode', () => {
+  function go(o: { mode: SetupMode; noGuide?: boolean; interactive?: boolean; ready?: boolean; why?: string }) {
+    const calls: string[][] = [];
+    const said: string[] = [];
+    const run = (async (cmd: string, args: string[]) => {
+      calls.push([cmd, ...args]);
+      return { stdout: '', code: args[0] === 'has-session' ? 1 : 0 };
+    }) as unknown as Run;
+    const state = emptyState();
+    state.mode = o.mode;
+    let saves = 0;
+    const p = startGuideForMode({
+      io: { say: (l) => void said.push(l) },
+      root: 'proj',
+      run,
+      state,
+      mode: o.mode,
+      noGuide: o.noGuide ?? false,
+      interactive: o.interactive ?? true,
+      readiness: async () => ({ ready: o.ready ?? true, why: o.why }),
+      save: () => void saves++,
+    });
+    return { p, calls, said, state, saves: () => saves };
+  }
+
+  it('agent and ready: one new-session, guide_offered set and saved', async () => {
+    const t = go({ mode: 'agent' });
+    expect(await t.p).toEqual({ mode: 'agent', launch: 'started-tmux' });
+    expect(t.calls.filter((c) => c[1] === 'new-session')).toHaveLength(1);
+    expect(t.state.guide_offered).toBe(true);
+    expect(t.saves()).toBe(1);
+  });
+  it('agent and not ready: reason printed, no tmux call at all', async () => {
+    const t = go({ mode: 'agent', ready: false, why: 'tmux is not available' });
+    expect((await t.p).launch).toBe('not-ready');
+    expect(t.calls).toHaveLength(0);
+    expect(t.said.join('\n')).toContain('tmux is not available');
+    expect(t.state.guide_offered).toBeUndefined();
+  });
+  it('terminal: zero calls', async () => {
+    const t = go({ mode: 'terminal' });
+    expect(await t.p).toEqual({ mode: 'terminal', launch: 'none' });
+    expect(t.calls).toHaveLength(0);
+  });
+  it('--step (not interactive): nothing launched', async () => {
+    const t = go({ mode: 'agent', interactive: false });
+    expect(await t.p).toEqual({ mode: 'agent', launch: 'none' });
+    expect(t.calls).toHaveLength(0);
+  });
+  it('--no-guide with stored agent: terminal, no launch, stored mode untouched', async () => {
+    const t = go({ mode: 'agent', noGuide: true });
+    expect(await t.p).toEqual({ mode: 'terminal', launch: 'none' });
+    expect(t.calls).toHaveLength(0);
+    expect(t.state.mode).toBe('agent');
+  });
+});
+
+describe('stored line and status', () => {
+  it('stored agent with --no-guide says so', async () => {
+    const m = make([], { stored: 'agent', noGuide: true });
+    await resolveMode(m.deps);
+    expect(m.io.transcript.join('\n')).toContain('--no-guide makes this run terminal-only');
+  });
+  it('formatStatus labels a recommended skip and a plain skip', () => {
+    const st = emptyState();
+    st.mode = 'agent';
+    st.steps.telegram = { status: 'skipped', at: 't1' };
+    st.steps.resume = { status: 'skipped', at: 't2' };
+    const out = formatStatus(['telegram', 'resume'], st);
+    expect(out).toBe('mode: agent\ntelegram  skipped (recommended)  t1\nresume  skipped  t2');
   });
 });
