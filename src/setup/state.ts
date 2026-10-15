@@ -2,11 +2,15 @@
 // Resumable wizard state: which steps are done plus non-secret answers. Never holds a secret.
 import type { EnvFs } from './envWriter.js';
 
+export type SetupMode = 'agent' | 'terminal';
+
 export interface SetupState {
   version: 1;
   steps: Record<string, { status: 'done' | 'skipped'; at: string }>;
   answers: Record<string, string | number | boolean>; // non-secret only
   guide_offered?: boolean; // the guided session was offered (accepted or declined)
+  mode?: SetupMode; // plan 8F: chosen once by the chooser or --mode
+  mode_at?: string; // ISO time of the choice
 }
 
 const SECRET_KEY_RE = /token|password|secret|key|cookie|client_secret|WEB_OIDC_CLIENT_SECRET/i;
@@ -44,6 +48,8 @@ export function loadState(
       }
     }
     if (o.guide_offered === true) state.guide_offered = true;
+    if (o.mode === 'agent' || o.mode === 'terminal') state.mode = o.mode;
+    if (typeof o.mode_at === 'string') state.mode_at = o.mode_at;
     return state;
   } catch {
     return emptyState();
