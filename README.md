@@ -18,6 +18,8 @@ Git and a shell. `bash scripts/bootstrap.sh` installs what is missing after aski
 
 ## Quick start
 
+New here? Read [docs/00-start-here.md](docs/00-start-here.md) first; the order is bootstrap, then setup, then dry-run, then up.
+
 ```bash
 bash scripts/bootstrap.sh        # 1. install and validate everything missing (asks before each action)
 npm run setup                    # 2. keys, accounts, sessions, limits; optional guided Claude session
@@ -207,6 +209,7 @@ Capture the LinkedIn and Naukri sessions on a machine with a display, or run the
 
 ## Links
 
+- Owner docs: [docs/00-start-here.md](docs/00-start-here.md) first, then the [index](docs/index.md) for operations, rollout, config reference, architecture and more.
 - [CLAUDE.md](CLAUDE.md): full orchestration spec and safety rules.
 - [Platform, sessions, dashboard and setup requirements](docs/superpowers/specs/2026-10-14-platform-sessions-dashboard-setup-requirements.md)
 - [Plans](docs/superpowers/plans/) and [design specs](docs/superpowers/specs/)

@@ -589,6 +589,12 @@ below). Three real bugs were found and fixed during this run:
   apply attempt fell through to `manual_review` with "no prepared resume found" as a result.
   `findPreparedResumePath` (`src/apply/linkedin.ts`) now checks `outreach_queue` too.
 
+## Owner docs
+
+Owner-facing pages are listed in `docs/index.md`: `docs/00-start-here.md`, `docs/operations.md`,
+`docs/rollout.md`, `docs/config-reference.md`, `docs/architecture.md`, `docs/setup-modes.md`,
+`docs/layout-memory.md` and `docs/dashboard-login.md`. They are pointers; the rules stay in this file.
+
 ## Platform and sessions
 
 README.md is the owner quick start (`npm install`, `npm run setup`, `npm run doctor`); this
@@ -1031,7 +1037,7 @@ is not measured by it.
 ### After merge: user checklist
 
 0. First-time machine setup (install, `npm run setup`, doctor, sessions, permission set,
-   classifier, dashboard) is the README.md quick start; the platform and scheduler owner
+   classifier, dashboard) is `docs/00-start-here.md`; the platform and scheduler owner
    checklists are in the 6B, 6B2, 6D and 7D plans and `docs/backup-and-restore.md`. The items
    below are the older, still-true ones. Start with `bash scripts/bootstrap.sh`, then see
    "Bring-up commands" under "Platform and sessions".
