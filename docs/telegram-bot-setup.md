@@ -17,7 +17,8 @@ differs from the one written here. Anything not confirmed by this repository is 
 The quickest route is `npm run setup -- --mode terminal --step telegram` (or `npm run setup -- --step
 telegram` once terminal mode is stored; `npm run setup -- --status` shows the mode). The terminal
 walkthrough takes you through the steps below one at a time: it asks you to confirm "done?" after
-BotFather and again after Threaded Mode (answer no to see the instructions once more), takes the
+BotFather and again after Threaded Mode (answer no and it re-prints a short recap of the route,
+then asks again, up to three rounds), takes the
 token as hidden input (never echoed, never printed), validates it with Telegram's `getMe`, asks for
 your numeric ID, writes `.env`, and sends a test message you confirm arrived. Threaded Mode is an
 explicit confirm in the wizard, not an assumption; the optional `getMe` topics check only adds a

@@ -648,11 +648,13 @@ section is the reference for what exists.
 
 **Setup modes and optional steps** (plan 8F). `npm run setup` runs in one of two modes, asked once and
 stored as `mode` (with `mode_at`) in `user-data/.setup-state.json`: `agent` (the guided Claude
-session of the `setup_guide` profile beside the wizard, offered only when `claude-cli`,
-`claude-login` and `setup_guide_ready` pass, otherwise the wizard says why and continues in
-terminal text) and `terminal` (plain walkthroughs for telegram, gmail, apikeys and dashboard, no
+session of the `setup_guide` profile in a detached tmux window beside the wizard; it is launched
+only when `claude-cli`, `claude-login`, `setup_guide_ready` and `tmux -V` all pass, otherwise the
+wizard says why and continues in terminal text; the chooser is always shown on an interactive run
+with no stored mode and no `--no-guide`, readiness only picks its default, and `agent` can be
+stored while not ready) and `terminal` (plain walkthroughs for telegram, gmail, apikeys and dashboard, no
 guide). `--mode agent|terminal` sets and stores it, `--no-guide` is per run and not stored, and
-`--step <id>` runs one step in the stored mode with no chooser. The skippable catalog is
+`--step <id>` runs one step in the stored mode, or in terminal text without storing it when none is stored, with no chooser. The skippable catalog is
 `src/setup/skips.ts`: `telegram` and `dashboard` (RECOMMENDED), `gmail` (NEEDED FOR EMAIL
 OUTREACH), `apikeys` (OPTIONAL). A skip is recorded as `steps.<id>.status: skipped` in the same
 state file; it never writes `.env`, a dry-run flag, a permission set or a halt. The doctor rule:
