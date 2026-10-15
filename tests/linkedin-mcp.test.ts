@@ -11,7 +11,7 @@ import { buildSnapshotFromHtml } from '../src/linkedin/snapshot.js';
 import { SELECTORS } from '../src/linkedin/selectors.js';
 import { profileKeyOf } from '../src/linkedin/urls.js';
 import { DEFAULT_STYLE_CONFIG } from '../src/safety/styleGate.js';
-import { buildHandlers, shutdownHandlers, schemas, TOOL_NAMES } from '../src/mcp/linkedin.js';
+import { buildHandlers, buildServer, shutdownHandlers, schemas, TOOL_NAMES } from '../src/mcp/linkedin.js';
 import { makeFakeLauncher } from './helpers/fakeLinkedin.js';
 
 const STATE = { cookies: [{ name: 'li_at', value: 'SENTINEL-NOT-REAL', domain: '.linkedin.com', path: '/' }], origins: [] };
@@ -51,14 +51,27 @@ function make(env: NodeJS.ProcessEnv = {}) {
 }
 
 describe('linkedin MCP handlers', () => {
-  it('exposes exactly the 13 tools', () => {
+  it('exposes exactly the 14 tools', () => {
     const { handlers } = make();
     expect(Object.keys(handlers).sort()).toEqual([
       'linkedin_accept_invite', 'linkedin_check_connection_status', 'linkedin_click', 'linkedin_close',
-      'linkedin_connect_send', 'linkedin_find_profiles', 'linkedin_limits', 'linkedin_open', 'linkedin_screenshot', 'linkedin_scroll',
-      'linkedin_send_message', 'linkedin_state', 'linkedin_type',
+      'linkedin_connect_send', 'linkedin_find_profiles', 'linkedin_layout', 'linkedin_limits', 'linkedin_open',
+      'linkedin_screenshot', 'linkedin_scroll', 'linkedin_send_message', 'linkedin_state', 'linkedin_type',
     ]);
     expect([...TOOL_NAMES].sort()).toEqual(Object.keys(handlers).sort());
+  });
+
+  it('linkedin_layout is registered on the server with no input and is read-only', async () => {
+    const { handlers, db } = make();
+    expect(TOOL_NAMES).toContain('linkedin_layout');
+    expect(Object.keys(schemas.linkedin_layout)).toEqual([]);
+    const server = buildServer(handlers) as unknown as { _registeredTools: Record<string, { description?: string }> };
+    expect(server._registeredTools.linkedin_layout?.description).toMatch(/Read-only/);
+    const before = db.prepare('SELECT COUNT(*) c FROM daily_counters').get();
+    const r = JSON.parse((await handlers.linkedin_layout({})) as string);
+    // no observer attached to this fake runtime: nothing observed, nothing remembered
+    expect(r).toEqual({ enforce: 'warn', verdict_last: null, memory: '' });
+    expect(db.prepare('SELECT COUNT(*) c FROM daily_counters').get()).toEqual(before);
   });
 
   it('connect_send with default env is a dry run and clicks nothing', async () => {

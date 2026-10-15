@@ -1,6 +1,7 @@
 // Shared dependencies and result helpers for the typed LinkedIn tools (Tasks 10 to 13).
 import type BetterSqlite3 from 'better-sqlite3';
 import type { StyleConfig } from '../safety/styleGate.js';
+import type { LayoutConfig } from '../layout/config.js';
 import type { LinkedinConfig } from './config.js';
 import type { FactCheck } from './guard.js';
 import type { Runtime } from './runtime.js';
@@ -18,6 +19,8 @@ export interface ToolDeps {
   styleCfg: StyleConfig;
   /** Classifier screen for third-party page text (fail closed live, unscreened in dry run). */
   screen: Screen;
+  /** Layout memory settings (LAYOUT_ENFORCE and friends); defaults to loadLayoutConfig(env). */
+  layoutCfg?: LayoutConfig;
 }
 
 export type SendStatus =

@@ -22,6 +22,8 @@ import { connectSend } from '../linkedin/connectSend.js';
 import { sendMessage } from '../linkedin/sendMessage.js';
 import { acceptInvite } from '../linkedin/acceptInvite.js';
 import { findProfiles } from '../linkedin/findProfiles.js';
+import { loadLayoutConfig, type LayoutConfig } from '../layout/config.js';
+import { actionLabelId, createLayoutObserver, resolveRunId } from '../layout/runtime.js';
 
 /**
  * `linkedin` MCP server: a locked headless LinkedIn session (hands and eyes) plus typed,
@@ -37,6 +39,7 @@ export const TOOL_NAMES = [
   'linkedin_open', 'linkedin_state', 'linkedin_click', 'linkedin_type', 'linkedin_scroll',
   'linkedin_screenshot', 'linkedin_close', 'linkedin_limits', 'linkedin_check_connection_status',
   'linkedin_connect_send', 'linkedin_send_message', 'linkedin_accept_invite', 'linkedin_find_profiles',
+  'linkedin_layout',
 ] as const;
 type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -52,6 +55,7 @@ export const schemas = {
   linkedin_screenshot: { full_page: z.boolean().optional() },
   linkedin_close: {},
   linkedin_limits: {},
+  linkedin_layout: {},
   linkedin_check_connection_status: { profile_url: url },
   linkedin_connect_send: {
     profile_url: url, note: z.string().min(1).max(300), job_id: short.optional(), company: short.optional(), dry_run: z.boolean().optional(),
@@ -75,6 +79,8 @@ export interface HandlerDeps {
   now?: () => Date;
   env?: NodeJS.ProcessEnv;
   cfg?: LinkedinConfig;
+  /** Layout memory settings; defaults to loadLayoutConfig(env). Tests pass a temp dir here. */
+  layoutCfg?: LayoutConfig;
   sessionPath?: string;
   /** Test seam: replaces the default classifier loader. */
   classifier?: ClassifierPort | (() => Promise<ClassifierPort>);
@@ -115,12 +121,16 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
   const env = deps.env ?? process.env;
   const now = deps.now ?? (() => new Date());
   const cfg = deps.cfg ?? loadLinkedinConfig(env);
+  const layoutCfg = deps.layoutCfg ?? loadLayoutConfig(env);
   const sessionPath = deps.sessionPath ?? DEFAULT_SESSION_PATH;
   let db = deps.db;
   let rt = deps.rt;
   let styleCfg = deps.styleCfg;
   const getDb = () => (db ??= openDb(dbPath()));
-  const getRt = () => (rt ??= createRuntime({ db: getDb(), env, idleMs: cfg.idleMs, settleMs: cfg.settleMs }));
+  const getRt = () => (rt ??= createRuntime({
+    db: getDb(), env, idleMs: cfg.idleMs, settleMs: cfg.settleMs,
+    layout: createLayoutObserver({ platform: 'linkedin', cfg: layoutCfg, now, runId: resolveRunId(env), db: getDb() }),
+  }));
   let styleNoteShown = false;
   const getStyle = () => {
     if (!styleCfg) {
@@ -141,7 +151,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
     });
   const toolDeps = (): ToolDeps => ({
     rt: getRt(), db: getDb(), now, cfg, env, factCheck,
-    styleCfg: getStyle(), screen,
+    styleCfg: getStyle(), screen, layoutCfg,
   });
   const json = (v: unknown) => JSON.stringify(v);
   const safe = (fn: Handler): Handler => async (args) => {
@@ -170,11 +180,17 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
       halted: halted ?? null,
     });
   /** Classifier-screen a formatted snapshot before it reaches the model. */
+  /** Verdict class of the last observed page for the state header; undefined when no observer is attached. */
+  const layoutToken = (): string | undefined => {
+    const l = rt?.layout;
+    return l ? (l.last()?.verdict.class ?? 'unknown') : undefined;
+  };
   const renderState = async (snap: Parameters<typeof formatState>[0], halted: string | null) => {
-    const first = formatState(snap, { halted, dryRun: cfg.dryRun });
+    const layout = layoutToken();
+    const first = formatState(snap, { halted, dryRun: cfg.dryRun, layout });
     const v = await screen(pageTextOf(first.text), 'read');
     if (v.blocked) return blockedResult(v.code, first.flags.page_kind ?? null, halted);
-    if (v.unscreened) return formatState(snap, { halted, dryRun: cfg.dryRun, extra: ['classifier=unscreened'] }).text;
+    if (v.unscreened) return formatState(snap, { halted, dryRun: cfg.dryRun, extra: ['classifier=unscreened'], layout }).text;
     return first.text;
   };
   const actionText = async (r: { ok: boolean; code: string; reason?: string; state?: string }) => {
@@ -205,8 +221,20 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
       return renderState(r.snapshot, haltReason(getDb(), 'linkedin'));
     }),
     linkedin_state: safe(async () => stateOf()),
-    linkedin_click: safe(async ({ text }) => actionText(await getRt().click(text))),
-    linkedin_type: safe(async ({ text, submit }) => actionText(await getRt().type(text, { submit }))),
+    linkedin_click: safe(async ({ text }) => {
+      const r = await getRt().click(text);
+      // Only an attempted click is an outcome (refusals and no-match are not). It is recorded against
+      // the observation that preceded it: the runtime observes only open() and snapshot().
+      if (r.ok || ['failed', 'click_timeout', 'target_changed'].includes(r.code)) {
+        getRt().layout?.recordOutcome(actionLabelId('linkedin', text), r.ok, 'click');
+      }
+      return actionText(r);
+    }),
+    linkedin_type: safe(async ({ text, submit }) => {
+      const r = await getRt().type(text, { submit });
+      if (r.ok || r.code === 'failed') getRt().layout?.recordOutcome('action:other', r.ok, 'type');
+      return actionText(r);
+    }),
     linkedin_scroll: safe(async ({ direction }) => {
       await getRt().scroll(direction);
       return stateOf();
@@ -237,6 +265,22 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
         session: { ok: s.ok, ...(s.reason ? { reason: s.reason } : {}) },
       });
     }),
+    linkedin_layout: safe(async () => {
+      const o = getRt().layout;
+      const last = o?.last() ?? null;
+      const v = last?.verdict;
+      // Vocabulary ids, integers and dates only: no page text can reach this result.
+      return json({
+        enforce: layoutCfg.enforce,
+        verdict_last: last && v
+          ? {
+            kind: last.kind, class: v.class,
+            ...('score' in v ? { score_pct: Math.round(v.score * 100), missing: v.missing } : {}),
+          }
+          : null,
+        memory: o ? o.render() : '',
+      });
+    }),
     linkedin_check_connection_status: safe(async (a) => json(await checkConnectionStatus(a, toolDeps()))),
     linkedin_connect_send: safe(async (a) => json(await connectSend(a, toolDeps()))),
     linkedin_send_message: safe(async (a) => json(await sendMessage(a, toolDeps()))),
@@ -260,6 +304,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   linkedin_screenshot: 'EMERGENCY fallback: PNG of the viewport, at most 900px wide (full_page is accepted but ignored). Refused while LinkedIn is halted. Costs many tokens; prefer linkedin_state. ' + UNTRUSTED,
   linkedin_close: 'Closes the LinkedIn session, saves session state and releases the lock.',
   linkedin_limits: 'Read-only: halt reason, weekly invite and message ceilings, daily accept counter, dry_run flag and session validity (booleans and reasons only).',
+  linkedin_layout: 'Read-only: layout memory enforcement mode, the verdict class of the last observed page, and a compact vocabulary-only summary of learned page layouts (no page text).',
   linkedin_check_connection_status: 'TYPED, read-only: opens a profile and reports connected, not_connected, pending or failed. ' + UNTRUSTED,
   linkedin_connect_send: 'TYPED, irreversible: sends a connection request with a note (max 300 chars) through fail-closed gates. Dry run unless LINKEDIN_DRY_RUN=false. ' + UNTRUSTED,
   linkedin_send_message: 'TYPED, irreversible: sends a message to an existing connection through fail-closed gates. kind is one of role_ask, rapport, referral_ask, followup, feedback. Dry run unless LINKEDIN_DRY_RUN=false. ' + UNTRUSTED,

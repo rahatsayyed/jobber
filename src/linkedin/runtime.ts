@@ -8,6 +8,7 @@ import { SNAPSHOT_SRC } from './snapshot.js';
 import { detectBlock, formatState, type BlockKind } from './state.js';
 import { isBlockedPath, isLinkedInUrl } from './urls.js';
 import { haltPlatform, haltReason } from '../outreach/limits.js';
+import type { LayoutObserver } from '../layout/runtime.js';
 import type { LiBrowser, LiContext, LiLauncher, LiPage, RawSnapshot } from './types.js';
 
 type Db = BetterSqlite3.Database;
@@ -15,6 +16,8 @@ type Db = BetterSqlite3.Database;
 export interface RuntimeDeps {
   db: Db; launcher?: LiLauncher; now?: () => Date; env?: NodeJS.ProcessEnv;
   sessionPath?: string; lockPath?: string; settleMs?: number; idleMs?: number;
+  /** Advisory layout observer: sees each fresh snapshot of open() and snapshot(); never fails a tool. */
+  layout?: LayoutObserver;
 }
 export interface ActionResult { ok: boolean; code: string; reason?: string; state?: string }
 export interface Runtime {
@@ -29,6 +32,8 @@ export interface Runtime {
   close(): Promise<boolean>;
   serial<T>(fn: () => Promise<T>): Promise<T>;
   afterNavigation(snap: RawSnapshot): BlockKind | null;
+  /** The layout observer, when one is attached (optional so test doubles need not provide it). */
+  layout?: LayoutObserver;
 }
 
 export const CLICKABLE_SELECTOR = 'a, button, [role=button], [role=menuitem], [role=tab]';
@@ -126,6 +131,11 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
   let pendingClose: Promise<unknown> = Promise.resolve();
   const onExit = () => { void closeSession(); };
 
+  /** Advisory: an observer failure goes to stderr and never reaches the caller. */
+  const observeLayout = (snap: RawSnapshot, block: BlockKind | null): void => {
+    try { deps.layout?.observe(snap, block); } catch (e) { logErr('layout', e); }
+  };
+
   const rawSnapshot = async (): Promise<RawSnapshot | null> => {
     if (!session) return null;
     try { return (await session.page.evaluate<RawSnapshot>(SNAPSHOT_SRC)) ?? null; } catch { return null; }
@@ -182,7 +192,9 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
       await settle(page);
       const snap = await rawSnapshot();
       if (!snap) { await closeSession(); return { ok: false, code: 'failed', reason: 'no snapshot' }; }
-      if (afterNavigation(snap)) { await pendingClose; return { ok: false, code: 'halted', reason: halted() ?? 'block page' }; }
+      const blk = afterNavigation(snap);
+      observeLayout(snap, blk);
+      if (blk) { await pendingClose; return { ok: false, code: 'halted', reason: halted() ?? 'block page' }; }
       if (!isLinkedInUrl(page.url()) || isBlockedPath(page.url()).blocked) {
         await closeSession(false);
         return { ok: false, code: 'blocked_path', reason: 'page redirected to a blocked or off-site URL' };
@@ -303,7 +315,14 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
 
   return {
     open: (url) => serial(() => open(url)),
-    snapshot: async () => (session && !halted() ? serial(async () => { touch(); return rawSnapshot(); }) : null),
+    snapshot: async () => (session && !halted()
+      ? serial(async () => {
+        touch();
+        const snap = await rawSnapshot();
+        if (snap) observeLayout(snap, detectBlock(snap));
+        return snap;
+      })
+      : null),
     page: () => session?.page ?? null,
     context: () => session?.context ?? null,
     click: (text) => serial(() => click(text)),
@@ -324,5 +343,6 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
     close: () => serial(() => closeSession()),
     serial,
     afterNavigation,
+    layout: deps.layout,
   };
 }

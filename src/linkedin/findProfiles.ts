@@ -5,6 +5,7 @@ import { checkAndIncrement } from '../lib/rateLimit.js';
 import { upsertPerson } from '../outreach/people.js';
 import { gateField, MAX_FIELD_CHARS } from './state.js';
 import { classifyUrl, isBlockedPath, isLinkedInUrl, isProfileUrl, profileKeyOf } from './urls.js';
+import { layoutClassOf } from './layoutGuard.js';
 import type { ToolDeps } from './toolDeps.js';
 
 export type FindProfilesCategory = 'recruiter' | 'hiring_manager' | 'peer';
@@ -15,6 +16,8 @@ export interface FindProfilesResult {
   code: string;
   candidates: ProfileCandidateOut[];
   injection_suspected?: boolean;
+  /** Layout verdict class for the search page (advisory; never a refusal). */
+  layout?: string;
 }
 
 const CATEGORIES: readonly string[] = ['recruiter', 'hiring_manager', 'peer'];
@@ -50,6 +53,8 @@ export async function findProfiles(a: FindProfilesArgs, deps: ToolDeps): Promise
   if (!r.ok) return r.code === 'halted' ? { status: 'halted', code: 'halted', candidates: [] } : fail(r.code);
   const snap = r.snapshot;
   if (classifyUrl(snap.url) !== 'search') return fail('not_search_page');
+  // The runtime's open() already showed the search page to the layout observer; report its verdict only.
+  const layout = layoutClassOf(deps.rt, 'find_profiles');
 
   let injection = false;
   const seen = new Set<string>();
@@ -69,7 +74,7 @@ export async function findProfiles(a: FindProfilesArgs, deps: ToolDeps): Promise
   }
 
   if (cands.length === 0) {
-    return { status: 'ok', code: 'no_candidates', candidates: [], ...(injection ? { injection_suspected: true } : {}) };
+    return { status: 'ok', code: 'no_candidates', candidates: [], ...(injection ? { injection_suspected: true } : {}), ...layout };
   }
   const verdict = await deps.screen(cands.map((c) => `${c.name}\n${c.headline}`).join('\n'), 'read');
   if (verdict.blocked) return { status: 'failed', code: verdict.code, candidates: [], injection_suspected: true };
@@ -84,5 +89,5 @@ export async function findProfiles(a: FindProfilesArgs, deps: ToolDeps): Promise
       category: a.category,
     });
   }
-  return { status: 'ok', code: cands.length ? 'found' : 'no_candidates', candidates: cands, ...(injection ? { injection_suspected: true } : {}) };
+  return { status: 'ok', code: cands.length ? 'found' : 'no_candidates', candidates: cands, ...(injection ? { injection_suspected: true } : {}), ...layout };
 }

@@ -3,6 +3,7 @@
 import { saveConnection } from '../db.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
 import { haltReason } from '../outreach/limits.js';
+import { layoutGate } from './layoutGuard.js';
 import { SELECTORS } from './selectors.js';
 import { gateField, MAX_FIELD_CHARS } from './state.js';
 import { companyPaused } from '../outreach/people.js';
@@ -144,6 +145,9 @@ export async function acceptInvite(
           return refusal('refused', 'recipient_mismatch', 'invitation sender name does not match the known person');
         }
       }
+      // Layout precondition: after the recipient guards, before any gate cost or counter.
+      const lay = layoutGate('accept_invite', deps);
+      if (!lay.ok) return refusal('refused', lay.code, lay.reason);
       // Injection gate over the sender fields, also for known senders and acceptUnknown.
       for (const [s, max] of [
         [inv?.name ?? '', MAX_FIELD_CHARS.name], [inv?.headline ?? '', MAX_FIELD_CHARS.headline],

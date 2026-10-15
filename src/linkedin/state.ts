@@ -46,7 +46,12 @@ function trimUrl(url: string): string {
   return noQuery.length > 110 ? noQuery.slice(0, 40) + '…' + noQuery.slice(-50) : noQuery;
 }
 
-export function formatState(raw: RawSnapshot, ctx: { halted: string | null; dryRun: boolean; extra?: string[] }): FormattedState {
+const LAYOUT_TOKENS = ['match', 'partial', 'drift', 'unknown', 'blocked', 'logged_out', 'unloaded'];
+
+export function formatState(
+  raw: RawSnapshot,
+  ctx: { halted: string | null; dryRun: boolean; extra?: string[]; layout?: string | null },
+): FormattedState {
   const inputFlags = new Set<string>();
   let injection = false;
   // Gate one free-text field; returns sanitized, capped text or the blocked marker.
@@ -107,7 +112,9 @@ export function formatState(raw: RawSnapshot, ctx: { halted: string | null; dryR
     injection_suspected: injection,
   };
 
-  const header = `page_kind=${flags.page_kind} halted=${sanitize(flags.halted ?? 'none').slice(0, 200)} dry_run=${flags.dry_run} login_required=${flags.login_required} block=${flags.block ?? 'none'} injection_suspected=${flags.injection_suspected}`;
+  const header = `page_kind=${flags.page_kind} halted=${sanitize(flags.halted ?? 'none').slice(0, 200)} dry_run=${flags.dry_run} login_required=${flags.login_required} block=${flags.block ?? 'none'} injection_suspected=${flags.injection_suspected}`
+    // Tool-authored layout verdict class; anything outside the closed set is not echoed.
+    + (ctx.layout === undefined ? '' : ` layout=${ctx.layout && LAYOUT_TOKENS.includes(ctx.layout) ? ctx.layout : 'unknown'}`);
   // At most 10 extra lines of 200 chars each (tool-authored) so total output stays bounded.
   const extra = (ctx.extra ?? []).slice(0, 10).map((e) => sanitize(e).slice(0, 200));
   const head = [header, ...extra, `NOTE: ${UNTRUSTED_NOTE}`, '<<<PAGE_TEXT'].join('\n') + '\n';

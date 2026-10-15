@@ -6,6 +6,7 @@ import { ceilings, haltReason, tryConsume } from '../outreach/limits.js';
 import { gateOutbound } from '../safety/outputGate.js';
 import { outputGateContext, preSendGuard } from './guard.js';
 import { getProfileNamePoint, pickNearestLocator } from './proximity.js';
+import { layoutGate } from './layoutGuard.js';
 import { SELECTORS } from './selectors.js';
 import { gateField, MAX_FIELD_CHARS } from './state.js';
 import { finishTouch, pauseContact, type TouchStatus } from './touches.js';
@@ -90,6 +91,9 @@ export async function connectSend(
       if (!p) return fail('no_profile', 'profile header not found');
       if (p.hasBell) return refuse('already_connected', 'recipient is already a connection');
       if (p.pending) return refuse('already_pending', 'an invitation is already pending');
+      // Layout precondition: after the recipient and status guards, before any gate cost or ceiling.
+      const lay = layoutGate('connect_send', deps);
+      if (!lay.ok) return refuse(lay.code, lay.reason);
       // Step 5: injection gate over visible profile fields, then the page-dependent output gate.
       const fields: Array<[string, number]> = [
         [snap.title, MAX_FIELD_CHARS.headline], [p.name, MAX_FIELD_CHARS.name],

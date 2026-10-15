@@ -35,7 +35,7 @@ export function bucket(n: number): number {
 
 const STRUCTURE_KEYS = ['main', 'h1', 'h2', 'dialog', 'listitem', 'button', 'link', 'form'] as const;
 
-const finish =(set: Set<LandmarkId>): LandmarkId[] => [...set].sort();
+const finish = (set: Set<LandmarkId>): LandmarkId[] => [...set].sort();
 
 export function observeLinkedin(
   raw: RawSnapshot,

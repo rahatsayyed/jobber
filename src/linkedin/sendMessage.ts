@@ -7,6 +7,7 @@ import { ceilings, haltReason, tryConsume } from '../outreach/limits.js';
 import { gateOutbound } from '../safety/outputGate.js';
 import { outputGateContext, preSendGuard, type Kind } from './guard.js';
 import { getProfileNamePoint, pickNearestLocator } from './proximity.js';
+import { layoutGate } from './layoutGuard.js';
 import { SELECTORS } from './selectors.js';
 import { gateField, MAX_FIELD_CHARS } from './state.js';
 import { finishTouch, pauseContact, type TouchStatus } from './touches.js';
@@ -127,6 +128,9 @@ export async function sendMessage(
       if (!p) return fail('no_profile', 'profile header not found');
       // 1st-degree requirement: LinkedIn shows Message to some non-connections.
       if (!p.hasBell) return refuse('not_connected', 'recipient is not a 1st-degree connection');
+      // Layout precondition: after the recipient and status guards, before any gate cost or ceiling.
+      const lay = layoutGate('send_message', deps);
+      if (!lay.ok) return refuse(lay.code, lay.reason);
       const fields: Array<[string, number]> = [
         [snap.title, MAX_FIELD_CHARS.headline], [p.name, MAX_FIELD_CHARS.name],
         [p.headline, MAX_FIELD_CHARS.headline], [p.location, MAX_FIELD_CHARS.location],
