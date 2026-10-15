@@ -23,10 +23,10 @@ function file(platform: 'linkedin' | 'naukri', kinds: Record<string, KindMemory>
   const f: LayoutFile = { schema: 1, platform, updated_at: updated, kinds };
   return JSON.stringify(f);
 }
-// critical kinds: linkedin profile/search/invitations, naukri job/thread
+// critical kinds: linkedin profile/search/invitations, naukri thread (naukri job is unlearned)
 const allStable = (): Record<string, string> => ({
   [`${DIR}/linkedin.json`]: file('linkedin', { profile: kind(), search: kind(), invitations: kind() }),
-  [`${DIR}/naukri.json`]: file('naukri', { job: kind(), thread: kind() }),
+  [`${DIR}/naukri.json`]: file('naukri', { thread: kind() }),
 });
 
 interface Opts { env?: NodeJS.ProcessEnv; modes?: Record<string, number>; list?: string[]; envFile?: string }
@@ -131,11 +131,11 @@ describe('layout_enforce', () => {
     expect((await run(ctxWith(files))).layout_enforce.status).toBe('pass');
   });
   it('passes when a critical kind has drift counters', async () => {
-    const files = { ...allStable(), [`${DIR}/naukri.json`]: file('naukri', { job: kind({ counters: { match: 5, partial: 0, drift: 1 } }), thread: kind() }) };
+    const files = { ...allStable(), [`${DIR}/naukri.json`]: file('naukri', { thread: kind({ counters: { match: 5, partial: 0, drift: 1 } }) }) };
     expect((await run(ctxWith(files))).layout_enforce.status).toBe('pass');
   });
   it('passes when a critical kind is not stable', async () => {
-    const files = { ...allStable(), [`${DIR}/naukri.json`]: file('naukri', { job: kind({ state: 'stale' }), thread: kind() }) };
+    const files = { ...allStable(), [`${DIR}/naukri.json`]: file('naukri', { thread: kind({ state: 'stale' }) }) };
     expect((await run(ctxWith(files))).layout_enforce.status).toBe('pass');
   });
   it('passes when already enforcing', async () => {

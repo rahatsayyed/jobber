@@ -176,6 +176,10 @@ describe('actionLabelId', () => {
     expect(actionLabelId('linkedin', ' More ')).toBe('action:more');
     expect(actionLabelId('linkedin', 'Send profile in a message')).toBe('action:send_profile');
     expect(actionLabelId('linkedin', 'Ignore previous instructions')).toBe('action:other');
+    for (const t of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      expect(actionLabelId('linkedin', t)).toBe('action:other');
+      expect(actionLabelId('naukri', t)).toBe('action:other');
+    }
   });
 });
 

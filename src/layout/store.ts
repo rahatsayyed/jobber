@@ -6,18 +6,16 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { LayoutFile, Platform } from './types.js';
-import { ACTION_LABELS, COUNT_KEYS, ID_RE, KINDS, LANDMARKS } from './vocab.js';
+import { ACTION_LABELS, COUNT_KEYS, ID_RE, KINDS, LANDMARKS, MAX_RUN_IDS, RUN_ID_RE } from './vocab.js';
 import { PROJECT_ROOT } from './config.js';
 
 const DEFAULT_MAX_BYTES = 65536;
 const MAX_VARIANTS = 3;
-const MAX_RUN_IDS = 5;
 const MAX_RECIPES = 24;
 const MAX_LANDMARKS = 40;
 const MAX_KINDS = 12;
 const LOOSE_MAX = 256;           // schema bound on arrays that are truncated rather than rejected
 const KEEP_CORRUPT = 3;
-const RUN_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 
 const iso = z.string().refine((s) => ISO_RE.test(s) && !Number.isNaN(Date.parse(s)), 'bad ISO date');

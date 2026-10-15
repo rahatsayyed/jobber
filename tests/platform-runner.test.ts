@@ -120,6 +120,19 @@ describe('buildEnv', () => {
     expect(env.SERPER_API_KEY).toBeUndefined();
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
   });
+  it('passes LAYOUT_* to the wake (MCP servers read LAYOUT_ENFORCE) and nothing unrelated', () => {
+    const env = buildEnv(wake, { ...base, LAYOUT_ENFORCE: 'enforce', LAYOUT_DRIFT_HALT_N: '4', UNRELATED_FLAG: '1' }, {});
+    expect(env.LAYOUT_ENFORCE).toBe('enforce');
+    expect(env.LAYOUT_DRIFT_HALT_N).toBe('4');
+    expect(env.UNRELATED_FLAG).toBeUndefined();
+    expect(wake.env_prefixes).toContain('LAYOUT_');
+  });
+  it('every allowlist profile that launches linkedin or naukri servers passes LAYOUT_', () => {
+    for (const p of Object.values(profiles)) {
+      const launches = p.allow.some((e) => e.startsWith('mcp__linkedin__') || e.startsWith('mcp__naukri__'));
+      if (p.env_mode === 'allowlist' && launches) expect(p.env_prefixes ?? []).toContain('LAYOUT_');
+    }
+  });
   it('does not let a prefix pull in a secret-shaped key', () => {
     const p: ResolvedProfile = { ...wake, env_prefixes: ['PACING_'] };
     expect(buildEnv(p, { ...base, PACING_API_KEY: 'x-secret-value' }, {}).PACING_API_KEY).toBeUndefined();

@@ -13,7 +13,7 @@ import { renderLayout } from './render.js';
 import { emptyLayout, loadLayout, saveLayout, withLayoutLock } from './store.js';
 import type { KindId, LandmarkId, LayoutFile, Observation, Platform, Recipe, Verdict } from './types.js';
 import { PROJECT_ROOT } from './config.js';
-import { ACTION_LABELS, ID_RE } from './vocab.js';
+import { ACTION_LABELS, ID_RE, RUN_ID_RE, actionLabelFor } from './vocab.js';
 import { haltPlatform, haltReason } from '../outreach/limits.js';
 import { addEscalation } from '../outreach/service.js';
 import { defaultRun } from '../platform/tmux.js';
@@ -32,7 +32,6 @@ export interface LayoutObserver {
   render(): string;                                                // <= renderMaxChars
 }
 
-const RUN_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const MAX_RECIPES = 24;
 const MAX_COUNT = 1_000_000;
 const PROCESS_START = Date.now();
@@ -56,7 +55,7 @@ export function resolveRunId(env: NodeJS.ProcessEnv = process.env, pid: number =
 
 /** Vocabulary id of a clicked label; anything outside the vocabulary is `action:other`. */
 export function actionLabelId(platform: Platform, text: string): string {
-  return ACTION_LABELS[platform]?.[text.replace(/\s+/g, ' ').trim().toLowerCase()] ?? 'action:other';
+  return actionLabelFor(platform, text);
 }
 
 const safeId = (s: string): string => (ID_RE.test(s) ? s : 'other');
@@ -104,6 +103,18 @@ export function createLayoutObserver(d: {
         send({ level: 'warn', title: `layout drift on ${platform} (${k})`, ...run });
       } else if (event === 'drift_halt') {
         // drift_halt repeats while the streak stays past the limit: act only on the first one.
+        if (cfg.enforce === 'warn') {
+          // Warn mode refuses and halts nothing: record the escalation (once while one is open for
+          // this kind) so the owner sees the would-be halt, but never touch halt_flags.
+          const open = db.prepare(
+            `SELECT 1 FROM escalations WHERE platform = ? AND reason = 'layout_drift_halt'
+               AND resolved_at IS NULL AND detail LIKE ? ESCAPE '\\' LIMIT 1`,
+          ).get(platform, `kind=${k.replace(/[\\%_]/g, '\\$&')} %`);
+          if (open) return;
+          addEscalation(db, { runId: d.runId, platform, reason: 'layout_drift_halt', detail: `${detail} mode=warn` }, now);
+          send({ level: 'warn', title: `layout drift on ${platform} (${k}) would halt (warn mode, not halted)`, ...run });
+          return;
+        }
         if (haltReason(db, platform) !== null) return;
         haltPlatform(db, platform, `layout_drift:${k}`, now);
         addEscalation(db, { runId: d.runId, platform, reason: 'layout_drift_halt', detail }, now);

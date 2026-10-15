@@ -47,6 +47,16 @@ export function layoutHaltReason(db: BetterSqlite3.Database | undefined | null, 
   try { return haltReason(db, platform); } catch { return null; }
 }
 
+/** Active reason on the platform's own halt row only (no fallback to the global `all` halt). */
+export function ownHaltReason(db: BetterSqlite3.Database | undefined | null, platform: Platform): string | null {
+  if (!db) return null;
+  try {
+    const row = db.prepare('SELECT reason FROM halt_flags WHERE platform = ? AND cleared_at IS NULL')
+      .get(platform) as { reason: string } | undefined;
+    return row ? row.reason : null;
+  } catch { return null; }
+}
+
 const daysBetween = (from: string, now: Date): number =>
   Math.max(0, Math.floor((now.getTime() - Date.parse(from)) / DAY_MS));
 

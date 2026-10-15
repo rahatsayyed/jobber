@@ -55,7 +55,9 @@ function naukriRaw(html: string, url: string): NaukriRawSnapshot {
     hasPasswordInput: findAll(root, (n) => n.tag === 'input' && (n.attrs['type'] ?? '').toLowerCase() === 'password').length > 0,
   };
 }
-const JOB = 'https://www.naukri.com/job-listings-react-developer-example-labs-pune-2-to-5-years-111222333';
+// The `job` kind is intentionally unlearned (no safe landmark set), so the chatbot simulation runs on
+// the `thread` kind, which requires chat.input.
+const JOB = 'https://www.naukri.com/mnjuser/inbox?threadId=abc123';
 function nkObs(name: string, url: string): Observation {
   const raw = naukriRaw(nk(name), url);
   return observeNaukri(raw, { loginRequired: detectLoginRequired(raw) });
@@ -221,7 +223,7 @@ describe('naukri chatbot drift simulation', () => {
     f.feed(v2, 'r4'); f.feed(v2, 'r5');
     expect(f.feed(v2, 'r5').verdict.class).toBe('match');
     expect(f.feed(v1, 'r6').verdict.class).toBe('match');
-    expect(f.read().kinds.job.variants.filter((v) => v.promoted)).toHaveLength(2);
+    expect(f.read().kinds.thread.variants.filter((v) => v.promoted)).toHaveLength(2);
   });
 
   it('logged-out never moves counters', () => {
@@ -231,7 +233,7 @@ describe('naukri chatbot drift simulation', () => {
     const lo = nkObs('logged-out', 'https://www.naukri.com/nlogin/login');
     expect(lo.nonDrift).toBe('logged_out');
     expect(f.feed(lo, 'r3').verdict.class).toBe('logged_out');
-    const k = f.read().kinds.job;
+    const k = f.read().kinds.thread;
     expect(k.counters).toEqual({ match: 0, partial: 0, drift: 0 });
     expect(k.variants[0].obs).toBe(3);
   });

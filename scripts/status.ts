@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import { existsSync } from 'node:fs';
 import { dbPath } from '../src/dbPath.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
-import { loadLayoutConfig } from '../src/layout/config.js';
+import { loadLayoutConfig, loadLayoutEnv } from '../src/layout/config.js';
 import { renderSummary, summarize } from '../src/layout/summary.js';
 import { buildSnapshot } from '../src/status/snapshot.js';
 import { renderHealth, renderLimits, renderWorking } from '../src/status/render.js';
@@ -14,7 +14,7 @@ const cmd = process.argv[2];
 
 // Read-only layout memory summary (plan 8B). Works without a database; halts are read when one exists.
 function layoutStatus(): number {
-  const cfg = loadLayoutConfig();
+  const cfg = loadLayoutConfig(loadLayoutEnv());
   const p = dbPath();
   let db: Database.Database | undefined;
   try {

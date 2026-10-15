@@ -1,6 +1,8 @@
 // Layout memory settings from the environment. Invalid values fall back to the default, never throw.
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseEnv } from '../platform/envFile.js';
 
 export interface LayoutConfig {
   enforce: 'off' | 'warn' | 'enforce';        // LAYOUT_ENFORCE, default warn
@@ -15,11 +17,34 @@ export interface LayoutConfig {
   maxBytes: number;                           // LAYOUT_MAX_BYTES, default 65536
   renderMaxChars: number;                     // LAYOUT_RENDER_MAX_CHARS, default 1200
   unloadedMaxChars: number;                   // LAYOUT_UNLOADED_MAX_CHARS, default 80
-  exploreBudget: number;                      // LAYOUT_EXPLORE_BUDGET, default 6 tool calls per kind per run
+  exploreBudget: number;                      // LAYOUT_EXPLORE_BUDGET, default 6; parsed only, the operators' prompts state 6 (not enforced)
   dir: string;                                // LAYOUT_DIR, default <root>/.jobber/layout; must resolve inside the project
 }
 
 export const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+/**
+ * The one LAYOUT_* merge: `base` (the process environment) wins; LAYOUT_* keys from parsed .env
+ * variables fill the gaps. Every other .env key is ignored, so nothing else is ever read or copied.
+ */
+export function mergeLayoutEnv(base: NodeJS.ProcessEnv, fileVars: Record<string, string>): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...base };
+  for (const [k, v] of Object.entries(fileVars)) {
+    if (k.startsWith('LAYOUT_') && out[k] === undefined) out[k] = v;
+  }
+  return out;
+}
+
+/** Process env plus LAYOUT_* from `<root>/.env` when present. A missing or unreadable file is ignored. */
+export function loadLayoutEnv(root: string = PROJECT_ROOT, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  try {
+    const file = path.join(root, '.env');
+    if (!fs.existsSync(file)) return { ...base };
+    return mergeLayoutEnv(base, parseEnv(fs.readFileSync(file, 'utf8')));
+  } catch {
+    return { ...base };
+  }
+}
 
 function int(raw: string | undefined, def: number, min: number, max: number): number {
   if (raw === undefined || !/^\d{1,9}$/.test(raw.trim())) return def;

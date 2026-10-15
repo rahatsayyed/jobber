@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createLayoutObserver } from '../src/layout/runtime.js';
@@ -15,7 +15,9 @@ let dir: string;
 beforeEach(() => { dir = mkdtempSync(path.join(tmpdir(), 'layout-esc-')); });
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); vi.restoreAllMocks(); });
 
-const cfg = () => ({ ...loadLayoutConfig({}), dir });
+// Nested under the temp dir so a default notifier (<dirname(cfg.dir)>/notify.jsonl) stays inside it.
+const cfg = (enforce: 'off' | 'warn' | 'enforce' = 'enforce') =>
+  ({ ...loadLayoutConfig({}), dir: path.join(dir, 'layout'), enforce });
 const NOW = new Date('2026-10-14T10:00:00.000Z');
 
 function snap(over: Partial<RawSnapshot['profile']> = {}, top: Partial<RawSnapshot> = {}): RawSnapshot {
@@ -30,11 +32,11 @@ function snap(over: Partial<RawSnapshot['profile']> = {}, top: Partial<RawSnapsh
   };
 }
 
-function setup() {
+function setup(mode: 'off' | 'warn' | 'enforce' = 'enforce') {
   const db = openDb(':memory:');
   const notices: Notice[] = [];
   const mk = (runId: string) => createLayoutObserver({
-    platform: 'linkedin', cfg: cfg(), now: () => NOW, runId, db,
+    platform: 'linkedin', cfg: cfg(mode), now: () => NOW, runId, db,
     notify: (n) => { notices.push(n); },
   });
   // promote the profile kind over two runs
@@ -42,7 +44,8 @@ function setup() {
   a.observe(snap(), null); a.observe(snap(), null); b.observe(snap(), null);
   return { db, notices, mk };
 }
-const drift = () => snap({ name: '' });
+// Same person page, but the layout lost headline, degree and actions: score 0.2, still a loaded page.
+const drift = () => snap({ headline: '', degree: null, actions: [] });
 
 describe('layout drift side effects', () => {
   it('escalates once at the threshold, with vocabulary-only detail and a fixed notice', () => {
@@ -52,7 +55,7 @@ describe('layout drift side effects', () => {
     const esc = listOpenEscalations(db, 20);
     expect(esc).toHaveLength(1);
     expect(esc[0]).toMatchObject({ platform: 'linkedin', reason: 'layout_drift' });
-    expect(esc[0].detail).toBe('kind=profile streak=3 missing=profile.name');
+    expect(esc[0].detail).toBe('kind=profile streak=3 missing=action:connect,action:more,profile.degree,profile.headline');
     for (const tok of esc[0].detail!.split(/[ =,]/).filter(Boolean)) expect(ID_RE.test(tok) || /^\d+$/.test(tok)).toBe(true);
     expect(haltReason(db, 'linkedin')).toBeNull();
     expect(notices).toHaveLength(1);
@@ -109,6 +112,9 @@ describe('layout drift side effects', () => {
       o.observe(drift(), 'checkpoint' as never);
       o.observe(snap({}, { hasPasswordInput: true, url: 'https://www.linkedin.com/login' }), null);
       o.observe(snap({ name: '' }, { bodyText: 'x' }), null);
+      // profile unavailable (no extracted name) and a sub-page: unloaded, never drift
+      o.observe(snap({ name: '' }, { bodyText: 'Profile unavailable. '.repeat(20) }), null);
+      o.observe({ ...snap({}, { bodyText: 'Activity '.repeat(40) }), profile: null, url: 'https://www.linkedin.com/in/x/recent-activity/' }, null);
     }
     expect(listOpenEscalations(db, 20)).toHaveLength(0);
     expect(haltReason(db, 'linkedin')).toBeNull();
@@ -133,6 +139,34 @@ describe('layout drift side effects', () => {
     expect(events).toContain('drift_escalate');
     expect(events).toContain('drift_halt');
     expect(haltReason(db, 'linkedin')).toBe('layout_drift:profile');
+  });
+
+  it('warn mode records the would-be halt (mode=warn, vocabulary tokens) but never halts', () => {
+    const { db, notices, mk } = setup('warn');
+    const a = mk('run-c'); const b = mk('run-d');
+    for (let i = 0; i < 3; i++) a.observe(drift(), null);
+    for (let i = 0; i < 3; i++) b.observe(drift(), null);
+    expect(haltReason(db, 'linkedin')).toBeNull();
+    const esc = listOpenEscalations(db, 20);
+    expect(esc.map((e) => e.reason)).toEqual(['layout_drift', 'layout_drift_halt']);
+    const halt = esc[1];
+    expect(halt.detail).toMatch(/ mode=warn$/);
+    for (const tok of halt.detail!.split(/[ =,]/).filter(Boolean)) expect(ID_RE.test(tok) || /^\d+$/.test(tok)).toBe(true);
+    expect(notices.map((n) => n.level)).toEqual(['warn', 'warn']);
+    expect(notices[1].title).toMatch(/warn mode/);
+    // repeated drift while the escalation is open adds nothing
+    b.observe(drift(), null);
+    expect(listOpenEscalations(db, 20)).toHaveLength(2);
+    expect(notices).toHaveLength(2);
+  });
+
+  it('a default notifier writes next to the layout dir, inside the temp dir', () => {
+    const db = openDb(':memory:');
+    const mkd = (runId: string) => createLayoutObserver({ platform: 'linkedin', cfg: cfg(), now: () => NOW, runId, db });
+    const a = mkd('run-a'); const b = mkd('run-b');
+    a.observe(snap(), null); a.observe(snap(), null); b.observe(snap(), null);
+    for (let i = 0; i < 3; i++) a.observe(drift(), null);
+    expect(existsSync(path.join(dir, 'notify.jsonl'))).toBe(true);
   });
 
   it('records nothing without a db', () => {

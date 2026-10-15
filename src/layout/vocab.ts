@@ -3,6 +3,9 @@
 import type { KindId, LandmarkId, Platform } from './types.js';
 
 export const ID_RE = /^[a-z0-9_.:-]{1,48}$/;
+// One definition for run id handling, shared by store, classify and runtime.
+export const RUN_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+export const MAX_RUN_IDS = 5;
 
 export const KINDS: Record<Platform, readonly KindId[]> = {
   linkedin: ['profile', 'search', 'feed', 'messaging', 'invitations', 'jobs', 'login', 'checkpoint', 'other'],
@@ -21,6 +24,16 @@ export const ACTION_LABELS: Record<Platform, Record<string, string>> = {
   },
   naukri: {},
 };
+
+/**
+ * Vocabulary id of an action label (own properties only, so `constructor` and `__proto__` are never
+ * looked up on the prototype); anything outside the vocabulary is `action:other`.
+ */
+export function actionLabelFor(platform: Platform, text: string): string {
+  const key = text.replace(/\s+/g, ' ').trim().toLowerCase();
+  const table = ACTION_LABELS[platform];
+  return table && Object.hasOwn(table, key) ? table[key] : 'action:other';
+}
 
 export const LANDMARKS: Record<Platform, readonly LandmarkId[]> = {
   linkedin: [
@@ -50,8 +63,9 @@ export const CRITICAL: Record<Platform, Record<KindId, readonly LandmarkId[]>> =
     search: ['results.cards'],
     invitations: ['invitations.rows'],
   },
+  // `job` has no entry: the apply button is absent on applied or company-site jobs, so the kind stays
+  // `unknown` (never drift, never learned) until a safe landmark set exists.
   naukri: {
-    job: ['button:apply'],
     thread: ['chat.input'],
   },
 };
@@ -64,7 +78,6 @@ export const MIN_SET: Record<Platform, Record<KindId, readonly LandmarkId[]>> = 
     invitations: ['invitations.rows'],
   },
   naukri: {
-    job: ['button:apply'],
     thread: ['chat.input'],
   },
 };

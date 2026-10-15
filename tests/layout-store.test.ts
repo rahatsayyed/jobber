@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { emptyLayout, loadLayout, saveLayout, withLayoutLock } from '../src/layout/store.js';
-import { loadLayoutConfig } from '../src/layout/config.js';
-import { KINDS } from '../src/layout/vocab.js';
+import { loadLayoutConfig, loadLayoutEnv, mergeLayoutEnv } from '../src/layout/config.js';
+import { KINDS, MAX_RUN_IDS, RUN_ID_RE } from '../src/layout/vocab.js';
 import type { KindMemory, LayoutFile, Variant } from '../src/layout/types.js';
 
 const NOW = new Date('2026-10-15T00:00:00.000Z');
@@ -193,6 +193,45 @@ describe('layout config', () => {
     expect(loadLayoutConfig({ LAYOUT_DIR: '/etc' }, root).dir).toBe(def);
     expect(loadLayoutConfig({ LAYOUT_DIR: '../../x' }, root).dir).toBe(def);
     expect(loadLayoutConfig({ LAYOUT_DIR: root }, root).dir).toBe(def);
+  });
+});
+
+describe('shared LAYOUT_* env merge', () => {
+  it('mergeLayoutEnv: process env wins, only LAYOUT_* keys come from the file', () => {
+    const merged = mergeLayoutEnv(
+      { LAYOUT_ENFORCE: 'off', PATH: '/bin' },
+      { LAYOUT_ENFORCE: 'enforce', LAYOUT_STALE_DAYS: '9', GMAIL_APP_PASSWORD: 'synthetic-pw', OTHER: '1' },
+    );
+    expect(merged.LAYOUT_ENFORCE).toBe('off');
+    expect(merged.LAYOUT_STALE_DAYS).toBe('9');
+    expect(merged.PATH).toBe('/bin');
+    expect(merged.GMAIL_APP_PASSWORD).toBeUndefined();
+    expect(merged.OTHER).toBeUndefined();
+  });
+  it('loadLayoutEnv reads <root>/.env and tolerates a missing file', () => {
+    expect(loadLayoutEnv(dir, {}).LAYOUT_ENFORCE).toBeUndefined();
+    fs.writeFileSync(path.join(dir, '.env'), 'LAYOUT_ENFORCE=enforce\nGMAIL_APP_PASSWORD=synthetic-pw\n');
+    const env = loadLayoutEnv(dir, { PATH: '/bin' });
+    expect(env.LAYOUT_ENFORCE).toBe('enforce');
+    expect(env.GMAIL_APP_PASSWORD).toBeUndefined();
+    expect(loadLayoutConfig(env, dir).enforce).toBe('enforce');
+  });
+  it('status and the layout CLI use the one helper', () => {
+    for (const f of ['scripts/status.ts', 'scripts/layout.ts']) {
+      expect(fs.readFileSync(f, 'utf8')).toContain('loadLayoutEnv');
+    }
+  });
+});
+
+describe('run id constants', () => {
+  it('have one definition shared by store, classify and runtime', () => {
+    expect(RUN_ID_RE.test('run-1_A')).toBe(true);
+    expect(RUN_ID_RE.test('bad id')).toBe(false);
+    expect(MAX_RUN_IDS).toBe(5);
+    for (const f of ['src/layout/store.ts', 'src/layout/classify.ts', 'src/layout/runtime.ts']) {
+      const t = fs.readFileSync(f, 'utf8');
+      expect(t).not.toMatch(/const (MAX_RUN_IDS|RUN_ID_RE)\b/);
+    }
   });
 });
 

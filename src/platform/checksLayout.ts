@@ -7,7 +7,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import type { Check, CheckResult, DoctorContext } from './doctor.js';
 import { skip } from './doctor.js';
 import { parseEnv } from './envFile.js';
-import { loadLayoutConfig } from '../layout/config.js';
+import { loadLayoutConfig, mergeLayoutEnv } from '../layout/config.js';
 import { layoutFilePath, summarize, type LayoutSummary } from '../layout/summary.js';
 import type { Platform } from '../layout/types.js';
 import { CRITICAL } from '../layout/vocab.js';
@@ -47,7 +47,12 @@ function mergedEnv(ctx: DoctorContext): NodeJS.ProcessEnv {
   } catch {
     fromFile = {};
   }
-  return { ...fromFile, ...ctx.env }; // process env over .env, like the daemon
+  // process env over .env, like the daemon; LAYOUT_* merged by the shared helper
+  const base: NodeJS.ProcessEnv = { ...ctx.env };
+  if (base.SCHEDULER_ENABLED === undefined && fromFile.SCHEDULER_ENABLED !== undefined) {
+    base.SCHEDULER_ENABLED = fromFile.SCHEDULER_ENABLED;
+  }
+  return mergeLayoutEnv(base, fromFile);
 }
 
 // `corrupt` files are named <file>.corrupt-<iso with - for : and .>[-n]; returns the age in days or null.

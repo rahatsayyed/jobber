@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { observeLinkedin, observeNaukri, bucket } from '../src/layout/fingerprint.js';
-import { ACTION_LABELS, KINDS, LANDMARKS, ID_RE, COUNT_KEYS } from '../src/layout/vocab.js';
+import { ACTION_LABELS, KINDS, LANDMARKS, ID_RE, COUNT_KEYS, actionLabelFor } from '../src/layout/vocab.js';
 import type { RawSnapshot } from '../src/linkedin/types.js';
+import { applyObservation } from '../src/layout/classify.js';
+import { loadLayoutConfig } from '../src/layout/config.js';
+import { emptyLayout } from '../src/layout/store.js';
 
 function liSnap(over: Partial<RawSnapshot> = {}): RawSnapshot {
   return {
@@ -62,10 +65,34 @@ describe('observeLinkedin', () => {
     expect(observeLinkedin(liSnap(), 'session_expired').nonDrift).toBe('logged_out');
     expect(observeLinkedin(liSnap({ hasPasswordInput: true }), null).nonDrift).toBe('logged_out');
     expect(observeLinkedin(liSnap({ bodyText: 'hi' }), null).nonDrift).toBe('unloaded');
-    expect(observeLinkedin(liSnap({ bodyText: 'x'.repeat(50) }), null, { unloadedMaxChars: 10 }).nonDrift).toBeNull();
+    expect(observeLinkedin(liSnap({ profile: profile(), bodyText: 'x'.repeat(50) }), null, { unloadedMaxChars: 10 }).nonDrift).toBeNull();
+    // a full-size profile page with a name is a real page
+    expect(observeLinkedin(liSnap({ profile: profile() }), null).nonDrift).toBeNull();
     // login page with short body is not "unloaded"
     const login = observeLinkedin(liSnap({ url: 'https://www.linkedin.com/login', bodyText: 'hi' }), null);
     expect(login.nonDrift).toBeNull();
+  });
+  it('a profile URL without an extracted name is unloaded, never drift (unavailable page, sub-page)', () => {
+    const body = 'Profile unavailable. This profile is not available. '.repeat(10);
+    expect(observeLinkedin(liSnap({ profile: null, bodyText: body }), null).nonDrift).toBe('unloaded');
+    expect(observeLinkedin(liSnap({ profile: profile({ name: '  ' }), bodyText: body }), null).nonDrift).toBe('unloaded');
+    const recent = observeLinkedin(
+      liSnap({ url: 'https://www.linkedin.com/in/x/recent-activity/all/', profile: null, bodyText: body }), null);
+    expect(recent.kind).toBe('profile');
+    expect(recent.nonDrift).toBe('unloaded');
+    // blocked and logged out keep priority
+    expect(observeLinkedin(liSnap({ profile: null, bodyText: body }), 'captcha').nonDrift).toBe('blocked');
+    expect(observeLinkedin(liSnap({ profile: null, bodyText: body }), 'session_expired').nonDrift).toBe('logged_out');
+  });
+  it('label lookup uses own properties only', () => {
+    const o = observeLinkedin(liSnap({ profile: profile({ actions: ['constructor', '__proto__', 'toString', 'Connect'] }) }), null);
+    expect(o.landmarks).toContain('action:other');
+    expect(o.landmarks).toContain('action:connect');
+    for (const l of o.landmarks) expect(ID_RE.test(l)).toBe(true);
+    expect(actionLabelFor('linkedin', 'constructor')).toBe('action:other');
+    expect(actionLabelFor('linkedin', '__proto__')).toBe('action:other');
+    expect(actionLabelFor('naukri', 'constructor')).toBe('action:other');
+    expect(actionLabelFor('linkedin', ' CONNECT ')).toBe('action:connect');
   });
   it('structure counts: bucketed, in COUNT_KEYS, absent adds nothing, refines shell', () => {
     const st = (over: Record<string, number> = {}) =>
@@ -127,6 +154,56 @@ describe('observeNaukri', () => {
     expect(kindOf('https://www.naukri.com/')).toBe('home');
     expect(kindOf('https://www.naukri.com/some/other/page')).toBe('other');
     expect(kindOf('https://evil.example.com/job-listings-x')).toBe('other');
+  });
+  describe('shell and unloaded come from snapshot content', () => {
+    const empty = { open: false, messages: [], placeholder: null, sendLabel: null, options: [] };
+    const nk = (over: Record<string, unknown> = {}, url = 'https://www.naukri.com/mnjuser/inbox?threadId=t1') =>
+      observeNaukri({ title: '', url, buttons: [], chatbot: empty, notices: [], hasPasswordInput: false, ...over } as never, { loginRequired: false });
+    it('an empty snapshot at a known-kind URL is unloaded and not a shell', () => {
+      const o = nk();
+      expect(o.kind).toBe('thread');
+      expect(o.nonDrift).toBe('unloaded');
+      expect(o.shell).toBe(false);
+    });
+    it('any content makes it a shell: title, buttons, chat messages or input', () => {
+      for (const over of [
+        { title: 'Inbox' }, { buttons: ['Save'] },
+        { chatbot: { ...empty, messages: [{ from: 'bot', text: 'hi' }] } },
+        { chatbot: { ...empty, placeholder: 'Type' } },
+      ]) {
+        const o = nk(over);
+        expect(o.nonDrift).toBeNull();
+        expect(o.shell).toBe(true);
+      }
+    });
+    it('access denied pages are blocked, error pages unloaded, login walls not a shell', () => {
+      expect(nk({ title: 'Access Denied' }).nonDrift).toBe('blocked');
+      expect(nk({ title: 'Inbox', notices: ['Access Denied: reference #18.1'] }).nonDrift).toBe('blocked');
+      expect(nk({ title: '404 Page not found', buttons: ['Home'] }).nonDrift).toBe('unloaded');
+      expect(nk({ title: '404 Page not found', buttons: ['Home'] }).shell).toBe(false);
+      const wall = nk({ title: 'Inbox', buttons: ['Login'], hasPasswordInput: true });
+      expect(wall.shell).toBe(false);
+    });
+    it('an unknown URL stays other with no shell and no nonDrift', () => {
+      const o = nk({ title: 'x' }, 'https://www.naukri.com/some/other/page');
+      expect(o.kind).toBe('other');
+      expect(o.shell).toBe(false);
+    });
+    it('the job kind is never drift and never learned (no critical or minimum set)', () => {
+      const cfg = loadLayoutConfig({ LAYOUT_PROMOTE_N: '1', LAYOUT_PROMOTE_RUNS: '1' } as NodeJS.ProcessEnv, '/proj');
+      const now = new Date('2026-10-15T00:00:00.000Z');
+      const job = nk({ title: 'Job', buttons: ['Apply'] }, 'https://www.naukri.com/job-listings-dev-acme-bengaluru-123');
+      expect(job.kind).toBe('job');
+      let f = emptyLayout('naukri', now);
+      for (let i = 0; i < 4; i++) {
+        const r = applyObservation(f, job, { now, runId: 'r1' }, cfg);
+        expect(r.verdict.class).toBe('unknown');
+        f = r.file;
+      }
+      expect(f.kinds.job).toBeUndefined();
+      const applied = nk({ title: 'Job', buttons: ['Applied'] }, 'https://www.naukri.com/job-listings-dev-acme-bengaluru-123');
+      expect(applyObservation(f, applied, { now, runId: 'r2' }, cfg).verdict.class).toBe('unknown');
+    });
   });
   it('counts keys are all in COUNT_KEYS', () => {
     const li = observeLinkedin(liSnap({ profile: profile() }), null);

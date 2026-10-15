@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto';
 import type { LandmarkId, LayoutFile, KindMemory, Observation, Variant, Verdict } from './types.js';
 import type { LayoutConfig } from './config.js';
-import { CRITICAL, MIN_SET } from './vocab.js';
+import { CRITICAL, MAX_RUN_IDS, MIN_SET, RUN_ID_RE } from './vocab.js';
 
 export type { Verdict } from './types.js';
 
@@ -17,9 +17,7 @@ export interface ApplyResult {
 // Same caps the store enforces, so a result always passes its validate.
 const MAX_VARIANTS = 3;
 const MAX_LANDMARKS = 40;
-const MAX_RUN_IDS = 5;
 const MAX_COUNT = 1_000_000; // clamp for obs, runs and counters
-const RUN_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 // A null or malformed run id counts as one anonymous run id.
 const ANON_RUN = 'norun';
 

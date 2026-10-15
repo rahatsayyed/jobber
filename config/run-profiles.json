@@ -29,7 +29,7 @@
         "JOBBER_RUN_ID", "JOBBER_DRY_RUN", "SCHEDULER_DRY_RUN", "LINKEDIN_DRY_RUN",
         "LINKEDIN_ALLOWED_URLS", "LINKEDIN_ALLOWED_EMAILS", "LINKEDIN_IDLE_MS", "LINKEDIN_ACCEPT_UNKNOWN"
       ],
-      "env_prefixes": ["PACING_", "COOLDOWN_", "CADENCE_", "LINKEDIN_MAX_", "NAUKRI_MAX_", "CLASSIFIER_"],
+      "env_prefixes": ["PACING_", "COOLDOWN_", "CADENCE_", "LINKEDIN_MAX_", "NAUKRI_MAX_", "CLASSIFIER_", "LAYOUT_"],
       "output_format": "stream-json",
       "max_turns": 40
     },

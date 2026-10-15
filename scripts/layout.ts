@@ -10,11 +10,11 @@ import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import type BetterSqlite3 from 'better-sqlite3';
-import { loadLayoutConfig, type LayoutConfig } from '../src/layout/config.js';
+import { loadLayoutConfig, loadLayoutEnv, type LayoutConfig } from '../src/layout/config.js';
 import { renderLayout } from '../src/layout/render.js';
 import { emptyLayout, saveLayout, withLayoutLock } from '../src/layout/store.js';
 import {
-  LAYOUT_HALT_PREFIX, layoutFilePath, layoutHaltReason, readLayoutFile, renderSummary, summarize,
+  LAYOUT_HALT_PREFIX, layoutFilePath, layoutHaltReason, ownHaltReason, readLayoutFile, renderSummary, summarize,
 } from '../src/layout/summary.js';
 import type { Platform } from '../src/layout/types.js';
 import { KINDS } from '../src/layout/vocab.js';
@@ -150,24 +150,41 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     d.err(`not a layout halt (reason: ${reason.slice(0, 80)}); refusing. Use npm run linkedin:clear-halt or npm run jobber:control for other halts.`);
     return 1;
   }
-  if (!(await confirm(d, `Clear the ${platform} layout halt (${reason})?`, yes))) { d.out('aborted, nothing changed'); return 1; }
+  // The platform's own row must carry the reason; an `all` halt is not ours to clear.
+  const own = ownHaltReason(db, platform);
+  if (own === null || !own.startsWith(LAYOUT_HALT_PREFIX)) {
+    d.err(`the layout_drift reason comes from the global all halt, not a ${platform} halt; nothing cleared. Use npm run jobber:control -- resume.`);
+    return 1;
+  }
+  if (!(await confirm(d, `Clear the ${platform} layout halt (${own})?`, yes))) { d.out('aborted, nothing changed'); return 1; }
+  // Reset the streak of the kind that caused the halt first, so the next dead profile cannot re-halt at once.
+  const haltKind = own.slice(LAYOUT_HALT_PREFIX.length);
+  let streakNote = '';
+  if ((KINDS[platform] as readonly string[]).includes(haltKind)) {
+    try {
+      withLayoutLock(file, () => {
+        const r = readLayoutFile(platform, d.cfg);
+        const km = r.data?.kinds[haltKind];
+        if (!r.data || !km) return;
+        km.drift_streak = 0;
+        km.drift_window_start = null;
+        km.drift_run_ids = [];
+        r.data.updated_at = now.toISOString();
+        saveLayout(file, r.data, d.cfg.maxBytes, platform);
+        streakNote = ` Drift streak of kind ${haltKind} reset.`;
+      });
+    } catch (e) {
+      streakNote = ` Streak reset failed (${e instanceof Error ? e.message.split('\n')[0] : 'error'}); run reset for the kind.`;
+    }
+  }
   clearHalt(db, platform, now);
-  d.out(`cleared ${platform} layout halt. The kind keeps its drift counters: reset it if the page has changed for good.`);
+  d.out(`cleared ${platform} layout halt.${streakNote} Drift totals are kept: reset the kind if the page has changed for good.`);
   return 0;
 }
 
 async function defaultDeps(): Promise<CliDeps> {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  // LAYOUT_* settings only, from .env when the process environment lacks them.
-  try {
-    const { parseEnv } = await import('../src/platform/envFile.js');
-    const envFile = path.join(process.cwd(), '.env');
-    if (fs.existsSync(envFile)) {
-      for (const [k, v] of Object.entries(parseEnv(fs.readFileSync(envFile, 'utf8')))) {
-        if (k.startsWith('LAYOUT_') && env[k] === undefined) env[k] = v;
-      }
-    }
-  } catch { /* defaults */ }
+  // LAYOUT_* settings only, from .env when the process environment lacks them (shared helper).
+  const env = loadLayoutEnv();
   let db: BetterSqlite3.Database | null | undefined;
   return {
     cfg: loadLayoutConfig(env),

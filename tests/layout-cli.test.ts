@@ -182,6 +182,43 @@ describe('layout cli', () => {
     expect(haltReason(db, 'all')).toBe('stop');
   });
 
+  it('clear-halt resets the streak, window and run ids of the halting kind only', async () => {
+    put('linkedin', {
+      profile: kind({
+        state: 'drifted', drift_streak: 7, drift_window_start: '2026-10-15T01:00:00.000Z',
+        last_drift_at: '2026-10-15T11:00:00.000Z', drift_run_ids: ['r1', 'r2'], counters: { match: 9, partial: 1, drift: 7 },
+      }),
+      search: kind({ drift_streak: 2, drift_window_start: '2026-10-15T02:00:00.000Z', drift_run_ids: ['r1'] }),
+    });
+    haltPlatform(db, 'linkedin', 'layout_drift:profile', NOW);
+    expect(await main(['clear-halt', 'linkedin', '--yes'], deps())).toBe(0);
+    expect(haltReason(db, 'linkedin')).toBeNull();
+    const sum = summarize('linkedin', cfg, NOW, db);
+    const p = sum.kinds.find((k) => k.kind === 'profile')!;
+    expect(p.drift_streak).toBe(0);
+    expect(p.drift_total).toBe(7); // totals are history, kept
+    const text = JSON.parse(fs.readFileSync(path.join(cfg.dir, 'linkedin.json'), 'utf8'));
+    expect(text.kinds.profile.drift_window_start).toBeNull();
+    expect(text.kinds.profile.drift_run_ids).toEqual([]);
+    expect(text.kinds.search.drift_streak).toBe(2);
+    expect(text.kinds.search.drift_run_ids).toEqual(['r1']);
+    expect(out.join('\n')).toMatch(/streak of kind profile reset/);
+  });
+
+  it('clear-halt works without a layout file', async () => {
+    haltPlatform(db, 'linkedin', 'layout_drift:profile', NOW);
+    expect(await main(['clear-halt', 'linkedin', '--yes'], deps())).toBe(0);
+    expect(haltReason(db, 'linkedin')).toBeNull();
+  });
+
+  it('clear-halt does not claim to clear an all halt that carries a layout_drift reason', async () => {
+    haltPlatform(db, 'all', 'layout_drift:profile', NOW);
+    expect(await main(['clear-halt', 'linkedin', '--yes'], deps())).toBe(1);
+    expect(haltReason(db, 'all')).toBe('layout_drift:profile');
+    expect(out.join('\n')).not.toMatch(/cleared/);
+    expect(errs.join('\n')).toMatch(/all halt/);
+  });
+
   it('clear-halt without --yes needs a typed yes', async () => {
     haltPlatform(db, 'naukri', 'layout_drift:job', NOW);
     answers = ['n'];

@@ -4,7 +4,7 @@ import type { RawSnapshot } from '../linkedin/types.js';
 import type { BlockKind } from '../linkedin/state.js';
 import { classifyUrl } from '../linkedin/urls.js';
 import type { LandmarkId, Observation } from './types.js';
-import { ACTION_LABELS } from './vocab.js';
+import { actionLabelFor } from './vocab.js';
 
 // Structural copy of the Naukri RawSnapshot (src/mcp/naukri.ts); importing that module has side effects.
 export interface NaukriRawSnapshot {
@@ -55,7 +55,7 @@ export function observeLinkedin(
     if (p.pending) lm.add('profile.pending');
     if (p.hasMessageButton) lm.add('profile.message_button');
     for (const label of p.actions) {
-      lm.add(ACTION_LABELS.linkedin[label.trim().toLowerCase()] ?? 'action:other');
+      lm.add(actionLabelFor('linkedin', label));
     }
   }
   if (raw.results.length > 0) lm.add('results.cards');
@@ -69,6 +69,9 @@ export function observeLinkedin(
   if (block !== null && block !== 'session_expired') nonDrift = 'blocked';
   else if (block === 'session_expired' || raw.hasPasswordInput) nonDrift = 'logged_out';
   else if (raw.bodyText.length < unloadedMax && kind !== 'login' && kind !== 'checkpoint') nonDrift = 'unloaded';
+  // A profile URL without an extracted profile name is "profile unavailable" or a sub-page such as
+  // /in/x/recent-activity: not the layout of a profile page, so never drift and never learned.
+  else if (kind === 'profile' && !(p && p.name.trim())) nonDrift = 'unloaded';
 
   const counts: Record<string, number> = {
     actions: bucket(p?.actions.length ?? 0),
@@ -93,6 +96,10 @@ export function observeLinkedin(
     nonDrift,
   };
 }
+
+// Akamai and generic error pages: tested on the title and notices only, never stored.
+const ACCESS_DENIED_RE = /access denied|403 forbidden|request blocked|unusual traffic/i;
+const ERROR_PAGE_RE = /\b(404|page not found|not found|500|internal server error|something went wrong|service unavailable)\b/i;
 
 function naukriKind(url: string): string {
   let host = '';
@@ -136,6 +143,19 @@ export function observeNaukri(raw: NaukriRawSnapshot, flags: { loginRequired: bo
   if (raw.hasPasswordInput) lm.add('login.password');
 
   const kind = naukriKind(raw.url);
+  // Content-based page state (the URL alone says nothing about whether the page loaded).
+  const hasContent = raw.title.trim().length > 0 || raw.buttons.length > 0
+    || c.messages.length > 0 || c.placeholder !== null;
+  const probe = [raw.title, ...raw.notices].join('\n');
+  const denied = ACCESS_DENIED_RE.test(probe);
+  const errorPage = ERROR_PAGE_RE.test(raw.title);
+  const loginWall = kind === 'login' || raw.hasPasswordInput;
+
+  let nonDrift: Observation['nonDrift'] = null;
+  if (denied) nonDrift = 'blocked';
+  else if (flags.loginRequired) nonDrift = 'logged_out';
+  else if (kind !== 'other' && (!hasContent || errorPage)) nonDrift = 'unloaded';
+
   return {
     platform: 'naukri',
     kind,
@@ -146,7 +166,7 @@ export function observeNaukri(raw: NaukriRawSnapshot, flags: { loginRequired: bo
       messages: bucket(c.messages.length),
       notices: bucket(raw.notices.length),
     },
-    shell: kind !== 'other' && kind !== 'login',
-    nonDrift: flags.loginRequired ? 'logged_out' : null,
+    shell: kind !== 'other' && hasContent && !loginWall && !errorPage && !denied,
+    nonDrift,
   };
 }

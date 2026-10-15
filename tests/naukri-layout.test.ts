@@ -104,31 +104,31 @@ afterEach(async () => {
 
 describe('drift side effects are wired to the server db', () => {
   it('escalates into the db the server uses after repeated drift', async () => {
-    const h = harness({ v: 'v2' });
+    const h = harness({ v: 'v1' });
     const { d } = setup({}, h);
-    await naukriOpen({ url: JOB_URL }, d); // promotes (N=1, runs=1)
+    await naukriOpen({ url: THREAD_URL }, d); // promotes (N=1, runs=1); the thread kind needs chat.input
     h.mode.v = 'v3';
     for (let i = 0; i < 3; i++) await naukriState(d);
     const rows = d.db.prepare('SELECT platform, reason, detail FROM escalations').all();
-    expect(rows).toEqual([{ platform: 'naukri', reason: 'layout_drift', detail: 'kind=job streak=3 missing=button:apply' }]);
+    expect(rows).toEqual([{ platform: 'naukri', reason: 'layout_drift', detail: 'kind=thread streak=3 missing=button:apply,button:save,chat.input,chat.messages,chat.open,chat.options,chat.send' }]);
   });
 });
 
 describe('observation per state call', () => {
   it('persists exactly one observation per open and per state call', async () => {
     const { d, file, read } = setup({ LAYOUT_PROMOTE_N: '100' });
-    await naukriOpen({ url: JOB_URL }, d);
-    expect(read().kinds.job.variants[0].obs).toBe(1);
+    await naukriOpen({ url: THREAD_URL }, d);
+    expect(read().kinds.thread.variants[0].obs).toBe(1);
     await naukriState(d);
-    expect(read().kinds.job.variants[0].obs).toBe(2);
+    expect(read().kinds.thread.variants[0].obs).toBe(2);
     await naukriState(d);
-    expect(read().kinds.job.variants[0].obs).toBe(3);
+    expect(read().kinds.thread.variants[0].obs).toBe(3);
     expect(existsSync(file)).toBe(true);
   });
 
   it('never stores option, placeholder or message text', async () => {
     const { d, file } = setup();
-    await naukriOpen({ url: JOB_URL }, d);
+    await naukriOpen({ url: THREAD_URL }, d);
     await naukriState(d);
     const raw = readFileSync(file, 'utf8');
     for (const s of ['ZZSECRET', 'How many years', '"Apply"', 'NetApp']) expect(raw).not.toContain(s);
@@ -137,7 +137,7 @@ describe('observation per state call', () => {
 
   it('adds no page interaction beyond the existing snapshot', async () => {
     const { d, h } = setup();
-    await naukriOpen({ url: JOB_URL }, d);
+    await naukriOpen({ url: THREAD_URL }, d);
     h.page.evaluate.mockClear();
     h.page.goto.mockClear();
     h.page.locator.mockClear();
@@ -152,7 +152,7 @@ describe('observation per state call', () => {
 
   it('puts a layout= class token in the state header', async () => {
     const { d } = setup();
-    const first = await naukriOpen({ url: JOB_URL }, d);
+    const first = await naukriOpen({ url: THREAD_URL }, d);
     expect(first.split('\n')[0]).toMatch(/ layout=unknown$| layout=unknown /);
     const second = await naukriState(d);
     expect(second.split('\n')[0]).toContain('layout=match');
@@ -161,7 +161,7 @@ describe('observation per state call', () => {
   it('a login wall is logged_out and teaches nothing', async () => {
     const mode = { v: 'login' as Mode };
     const { d, file } = setup({}, harness(mode));
-    const out = await naukriOpen({ url: JOB_URL }, d);
+    const out = await naukriOpen({ url: THREAD_URL }, d);
     expect(out).toContain('login_required=true');
     expect(out.split('\n')[0]).toContain('layout=logged_out');
     expect(existsSync(file)).toBe(false);
@@ -170,18 +170,18 @@ describe('observation per state call', () => {
   it('chatbot v1 learned, then v2 reads as drift', async () => {
     const mode = { v: 'v1' as Mode };
     const { d, read } = setup({}, harness(mode));
-    await naukriOpen({ url: JOB_URL }, d);
+    await naukriOpen({ url: THREAD_URL }, d);
     expect((await naukriState(d)).split('\n')[0]).toContain('layout=match');
     mode.v = 'v2';
     expect((await naukriState(d)).split('\n')[0]).toContain('layout=drift');
-    expect(read().kinds.job.counters.drift).toBe(1);
+    expect(read().kinds.thread.counters.drift).toBe(1);
   });
 
   it('an observer failure never reaches the tool result', async () => {
     const { d, h } = setup();
     d.layoutCfg = { ...d.layoutCfg, dir: path.join(path.dirname(d.sessionStatePath), 'state.json', 'nope') };
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const out = await naukriOpen({ url: JOB_URL }, d);
+    const out = await naukriOpen({ url: THREAD_URL }, d);
     err.mockRestore();
     expect(out).toContain('chatbot_open=true');
     expect(out.split('\n')[0]).toContain('layout=unknown');
@@ -198,14 +198,14 @@ describe('naukri_layout', () => {
   it('returns enforce, the last verdict and a vocabulary-only summary, with no page calls', async () => {
     const { d, h } = setup({ LAYOUT_ENFORCE: 'enforce' });
     expect(JSON.parse(await naukriLayout(d))).toMatchObject({ enforce: 'enforce', verdict_last: null });
-    await naukriOpen({ url: JOB_URL }, d);
+    await naukriOpen({ url: THREAD_URL }, d);
     await naukriState(d);
     h.page.evaluate.mockClear();
     const r = JSON.parse(await naukriLayout(d));
     expect(h.page.evaluate).not.toHaveBeenCalled();
     expect(r.enforce).toBe('enforce');
-    expect(r.verdict_last).toMatchObject({ kind: 'job', class: 'match' });
-    expect(r.memory).toContain('job:');
+    expect(r.verdict_last).toMatchObject({ kind: 'thread', class: 'match' });
+    expect(r.memory).toContain('thread:');
     expect(JSON.stringify(r)).not.toContain('ZZSECRET');
   });
 });
