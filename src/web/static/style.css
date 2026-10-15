@@ -73,3 +73,10 @@ th { color: var(--muted); font-weight: 600; }
   td { border-bottom: none; padding: 4px 12px; }
   td::before { content: attr(data-label); display: block; color: var(--muted); font-size: 0.8rem; }
 }
+
+.login form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.login input[type="password"] {
+  flex: 1 1 200px; min-width: 0; min-height: 44px; padding: 8px 14px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card);
+}
+.login .notice[hidden] { display: none; }

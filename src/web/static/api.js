@@ -44,6 +44,37 @@ export async function session() {
   return s;
 }
 
+export async function getAuthMode() {
+  const res = await fetch('/api/auth/mode', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  if (!res.ok || !data) throw new ApiError(res.status, data, null);
+  return data;
+}
+
+// Open route: no CSRF header exists before login. Deliberately bypasses parse() so a 401 never redirects.
+export async function postToken(token, reauth) {
+  const body = reauth ? { token, reauth: true } : { token };
+  const res = await fetch('/auth/token', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  if (!res.ok) throw new ApiError(res.status, data, res.headers.get('Retry-After'));
+  return data;
+}
+
 export async function post(path, body) {
   if (!csrf) await session();
   const res = await fetch(path, {
