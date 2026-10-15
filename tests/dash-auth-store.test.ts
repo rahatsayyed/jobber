@@ -16,6 +16,29 @@ function fresh() {
 }
 const now = new Date('2026-10-14T10:00:00Z');
 
+describe('authStore additive schema', () => {
+  it('opens a pre-8c auth db and keeps allowed account, sessions and audit rows', async () => {
+    const BetterSqlite3 = (await import('better-sqlite3')).default;
+    const dir = mkdtempSync(join(tmpdir(), 'dash-'));
+    const path = join(dir, 'auth.sqlite');
+    const old = new BetterSqlite3(path);
+    old.exec(`
+      CREATE TABLE allowed_account (id INTEGER PRIMARY KEY CHECK (id = 1), email TEXT NOT NULL, sub TEXT, set_at TEXT NOT NULL, pinned_at TEXT);
+      CREATE TABLE sessions (id_hash TEXT PRIMARY KEY, created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, auth_at TEXT NOT NULL, expires_at TEXT NOT NULL, ip TEXT, revoked_at TEXT);
+      CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, kind TEXT NOT NULL, ip TEXT, note TEXT, text_hash TEXT, id_hint TEXT);
+      INSERT INTO allowed_account VALUES (1, 'old@x.com', 'sub9', 't', 't');
+      INSERT INTO sessions VALUES ('h1', 'c', 'l', 'a', 'e', NULL, NULL);
+      INSERT INTO audit_log (at, kind) VALUES ('t', 'login_ok');
+    `);
+    old.close();
+    const db = openAuthStore(path);
+    expect(getAllowedAccount(db)?.email).toBe('old@x.com');
+    expect((db.prepare('SELECT COUNT(*) AS n FROM sessions').get() as { n: number }).n).toBe(1);
+    expect(listAudit(db, 10)).toHaveLength(1);
+    expect(() => db.prepare('SELECT * FROM access_token').all()).not.toThrow();
+  });
+});
+
 describe('authStore', () => {
   it('creates dir 700 and file 600', () => {
     const { sub, path } = fresh();

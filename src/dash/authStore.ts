@@ -14,7 +14,8 @@ export interface PendingLogin {
 }
 export type AuditKind =
   | 'login_ok' | 'login_denied' | 'login_error' | 'sub_pinned' | 'allow_changed' | 'lockout'
-  | 'logout' | 'session_expired' | 'reauth_ok' | 'chat_prepare' | 'chat_send' | 'chat_reject';
+  | 'logout' | 'session_expired' | 'reauth_ok' | 'chat_prepare' | 'chat_send' | 'chat_reject'
+  | 'token_created' | 'token_rotated' | 'token_login_ok' | 'token_login_denied' | 'mode_changed';
 
 const NOTE_MAX = 200;
 const ID_HINT_MAX = 12;
@@ -49,6 +50,10 @@ export function openAuthStore(path: string): AuthDb {
     );
     CREATE TABLE IF NOT EXISTS chat_pending (
       token_hash TEXT PRIMARY KEY, session_hash TEXT, text_hash TEXT, expires_at TEXT, used_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS access_token (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      token_hash TEXT NOT NULL, created_at TEXT NOT NULL, rotated_at TEXT
     );
   `);
   return db;
