@@ -17,7 +17,12 @@ function mk(over: Partial<MainDeps> & { present?: boolean } = {}): { deps: MainD
     },
     fs: {
       exists: () => present,
-      read: (p) => (p.endsWith('ccgram.pin.json') ? '{"version":"4.16.0"}' : '{"engines":{"node":">=20"}}'),
+      read: (p) =>
+        p.endsWith('ccgram.pin.json')
+          ? '{"version":"4.16.0"}'
+          : p.endsWith('classifier-models.json')
+            ? '{"default_profile":"reg-default"}'
+            : '{"engines":{"node":">=20"}}',
       list: () => [],
     },
     now: () => new Date(0),
@@ -90,5 +95,38 @@ describe('main', () => {
     const { deps, out } = mk({ env: { SECRET_TOKEN: 'sekrit-value' } });
     await main(['--check'], deps);
     expect(out.join('\n')).not.toContain('sekrit-value');
+  });
+
+  async function modelRow(over: Partial<MainDeps>): Promise<{ title: string; outcome: string; note: string }> {
+    const { deps, out } = mk({ present: false, ...over });
+    await main(['--check', '--json', '--only', 'classifier-model'], deps);
+    return (JSON.parse(out[0]!) as Array<{ title: string; outcome: string; note: string }>)[0]!;
+  }
+  it('model profile: env wins over the registry default', async () => {
+    const r = await modelRow({ env: { BOOTSTRAP_MODEL_PROFILE: 'env-prof' } });
+    expect(r.title).toContain('env-prof');
+  });
+  it('model profile: registry default_profile, CLASSIFIER_MODEL ignored', async () => {
+    const r = await modelRow({ env: { CLASSIFIER_MODEL: 'other' } });
+    expect(r.title).toContain('reg-default');
+  });
+  it('model profile: invalid env value is refused as a failure', async () => {
+    const r = await modelRow({ env: { BOOTSTRAP_MODEL_PROFILE: 'Bad Value!' } });
+    expect(r.outcome).toBe('failed');
+    expect(r.note).toContain('BOOTSTRAP_MODEL_PROFILE');
+  });
+  it('model profile: unreadable registry is a clear failure', async () => {
+    const base = mk().deps;
+    const r = await modelRow({
+      fs: {
+        ...base.fs,
+        read: (p) => {
+          if (p.endsWith('classifier-models.json')) throw new Error('ENOENT');
+          return base.fs.read(p);
+        },
+      },
+    });
+    expect(r.outcome).toBe('failed');
+    expect(r.note).toContain('classifier-models.json');
   });
 });

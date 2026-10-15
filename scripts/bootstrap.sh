@@ -41,7 +41,7 @@ fi
 # confirm <prompt>: returns 0 when the owner agrees.
 confirm() {
   if [ "$YES" = "1" ]; then return 0; fi
-  if [ ! -r /dev/tty ]; then
+  if ! ( : < /dev/tty ) 2>/dev/null; then
     echo "bootstrap: no terminal to ask on; rerun with --yes" >&2
     exit 3
   fi

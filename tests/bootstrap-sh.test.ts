@@ -72,6 +72,11 @@ describe('bootstrap.sh', () => {
     const r = runScript(dir, ['--check']);
     expect(r.code).not.toBe(3);
   });
+  it('prompt path probes /dev/tty by opening it, writing nothing to it on failure', () => {
+    const src = readFileSync(SCRIPT, 'utf8');
+    expect(src).toContain('if ! ( : < /dev/tty ) 2>/dev/null; then');
+    expect(src).not.toContain('-r /dev/tty');
+  });
   it('source has no curl, wget, pipe to shell, bare sudo or stray rm -rf', () => {
     expect(existsSync(SCRIPT)).toBe(true);
     const src = readFileSync(SCRIPT, 'utf8');

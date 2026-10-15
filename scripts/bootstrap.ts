@@ -5,9 +5,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildCatalog } from '../src/bootstrap/catalog.js';
 import { exitCodeFor, renderTable, runBootstrap, type ExecDeps, type ExecOptions, type ItemResult } from '../src/bootstrap/exec.js';
 import type { CcgramPin, ItemId, Platform } from '../src/bootstrap/types.js';
@@ -83,7 +83,8 @@ export async function main(argv: string[], deps: MainDeps): Promise<number> {
   }
   let pin: CcgramPin;
   let engines = '>=20';
-  let modelProfile = 'protectai-deberta-v3-base-v2';
+  let modelProfile = 'unresolved';
+  let modelError: string | null = null;
   try {
     pin = JSON.parse(deps.fs.read(join(deps.root, 'config', 'ccgram.pin.json'))) as CcgramPin;
     engines = (JSON.parse(deps.fs.read(join(deps.root, 'package.json'))) as { engines?: { node?: string } }).engines?.node ?? engines;
@@ -91,9 +92,33 @@ export async function main(argv: string[], deps: MainDeps): Promise<number> {
     deps.say(`cannot read config: ${String((e as Error).message).slice(0, 120)}`);
     return 1;
   }
-  const envModel = deps.env.CLASSIFIER_MODEL;
-  if (envModel && /^[a-z0-9][a-z0-9-]{0,63}$/.test(envModel)) modelProfile = envModel;
-  const items = buildCatalog({ pin, engines, hasRenderer: deps.fs.exists(join(deps.root, 'renderer', 'package.json')), modelProfile });
+  const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+  const envModel = deps.env.BOOTSTRAP_MODEL_PROFILE;
+  if (envModel !== undefined && envModel !== '') {
+    if (ID_RE.test(envModel)) modelProfile = envModel;
+    else modelError = 'BOOTSTRAP_MODEL_PROFILE is not a valid profile id';
+  } else {
+    try {
+      const d = (JSON.parse(deps.fs.read(join(deps.root, 'config', 'classifier-models.json'))) as { default_profile?: unknown }).default_profile;
+      if (typeof d === 'string' && ID_RE.test(d)) modelProfile = d;
+      else modelError = 'config/classifier-models.json has no valid default_profile';
+    } catch {
+      modelError = 'cannot read config/classifier-models.json for the default classifier profile';
+    }
+  }
+  const items = buildCatalog({
+    pin,
+    engines,
+    hasRenderer: deps.fs.exists(join(deps.root, 'renderer', 'package.json')),
+    modelProfile,
+    ...(modelError
+      ? {
+          detectClassifier: async (): Promise<never> => {
+            throw new Error(modelError!);
+          },
+        }
+      : {}),
+  });
   const exec: ExecDeps = { ...deps, say: args.json ? () => {} : deps.say };
   const opts: ExecOptions = {
     yes: args.yes,
@@ -119,8 +144,8 @@ function realDeps(): MainDeps {
   const platform: Platform = process.platform === 'darwin' ? 'darwin' : process.platform === 'linux' ? 'linux' : 'unsupported';
   return {
     platform,
-    root: process.cwd(),
-    env: { CLASSIFIER_MODEL: process.env.CLASSIFIER_MODEL, PATH: process.env.PATH, HOME: process.env.HOME },
+    root: resolve(dirname(fileURLToPath(import.meta.url)), '..'),
+    env: { BOOTSTRAP_MODEL_PROFILE: process.env.BOOTSTRAP_MODEL_PROFILE, PATH: process.env.PATH, HOME: process.env.HOME },
     run: defaultRun,
     fs: {
       exists: (p) => existsSync(p),
