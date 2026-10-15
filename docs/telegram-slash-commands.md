@@ -13,12 +13,20 @@ Jobber uses explicit slash commands (`/runhunt`, `/status`, etc.) for reliable, 
 4. **Paste this command list** (one command per line):
    ```
    runhunt - Discover jobs, match, find contacts, send cold emails
-   status - Show job/outreach/thread statistics
-   followups - Send follow-up nudges to old sent emails
-   apply - Apply to a job (Phase 2 — not implemented yet)
-   applyall - Apply to all matched jobs (Phase 2 — not implemented yet)
-   connect - Connect on LinkedIn with a note (Phase 2 — not implemented yet)
-   checkreplies - Check email/LinkedIn replies (Phase 3 — not implemented yet)
+   status - Funnel, rates and benchmarks
+   followups - Draft and send email follow-ups, resolve stale
+   apply - Apply to a job (Easy Apply or external ATS)
+   applyall - Apply to all of today's matched jobs
+   connect - Draft + send a LinkedIn connect request or message
+   include - Un-exclude a vetoed job (manual override)
+   outcome - Record a job outcome (replied/interview/offer/rejected...)
+   calibrate - Check whether match scores predict interviews
+   checkreplies - Detect replies in Gmail and record outcomes
+   patterns - What kind of jobs reply
+   report - Offline HTML funnel
+   limits - Today's send, apply and connect limits
+   working - Queue, halts and funnel snapshot
+   health - Platform and pipeline health
    ```
 
 5. **Save.** The commands are now registered for your bot.
@@ -31,8 +39,8 @@ Examples:
 ```
 /runhunt          → starts the full hunt (discover → match → send)
 /status           → shows current job/outreach/thread counts
-/followups        → sends follow-up emails to old outreach (Phase 1.5)
-/apply 123        → applies to job #123 (Phase 2)
+/followups        → drafts and sends email follow-ups (needs your approval unless FOLLOWUPS_AUTONOMOUS=true)
+/apply #123       → applies to job #123
 ```
 
 ## Updating Commands

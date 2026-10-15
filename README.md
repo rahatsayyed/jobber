@@ -5,8 +5,8 @@
 Jobber is an autonomous job-hunting agent. It discovers new job postings, scores each one against your base resume, tailors the resume for good matches, finds a verified contact at the hiring company, drafts a cold outreach email, and sends it. It also applies through LinkedIn Easy Apply and external ATS forms and sends LinkedIn connection requests. It sends real email and takes real LinkedIn actions on your own accounts, always inside daily caps that the code enforces.
 
 **Phase 1 (complete):** cold-email discovery and outreach.
-**Phase 2 (substantially complete):** LinkedIn Easy Apply (burner account), external ATS apply and LinkedIn connection requests (main account). See [Phase 2 known issues](docs/phase2-known-issues.md) before treating it as fully production-proven.
-**Phase 3 (in progress):** reply detection, follow-ups and the funnel report.
+**Phase 2 (substantially complete):** LinkedIn Easy Apply (burner account, `apply.linkedin`, the one remaining use of the burner), external ATS apply and LinkedIn connection requests and messages (main account, typed `linkedin` tools). See [Phase 2 known issues](docs/phase2-known-issues.md) before treating it as fully production-proven.
+**Phase 3 (in progress):** reply detection, email follow-ups (autonomous mode is built but ships off, see `FOLLOWUPS_AUTONOMOUS` in `.env.example`) and the funnel report.
 
 ---
 
@@ -44,13 +44,13 @@ In this order:
 - `claude`: checks that the Claude Code CLI is installed and logged in, and tells you how to log in if it is not.
 - `telegram`: walks you through creating a bot with @BotFather, tells you to enable Topics and turn Group Privacy off, stores the bot token in `.env` (never echoed), records your numeric Telegram ID in `ALLOWED_USERS` (a comma-separated list of numeric IDs; each extra ID needs an explicit extra confirmation), and sends a test message.
 - `gmail`: guides you through creating a Desktop OAuth client in your own Google Cloud project, then runs the consent screen so the send token stays on this machine.
-- `sessions`: opens a browser so you log in once to the burner LinkedIn account (applying), the main LinkedIn account (connection requests) and Naukri; the saved sessions live in `secrets/`.
+- `sessions`: opens a browser so you log in once to the burner LinkedIn account (applying), the main LinkedIn account (people search, connection requests and messages) and Naukri; the saved sessions live in `secrets/`.
 - `resume`: has a model transcribe your resume text into `user-data/resume.json`, rejects any number that is not in your source text, and writes nothing until you confirm.
 - `profile`: asks for roles, locations, remote preference, salary floors and targets, notice period and work authorization, and writes `user-data/profile.json`, the application answers file and the language list.
 - `limits`: shows every daily cap, quiet hour and pacing value with its default and an explanation, and writes the ones you choose to `.env`.
 - `access`: asks which permission set sessions may use (default `read_only`), applies it and installs the ccgram hooks into `.claude/settings.local.json`.
-- `classifier`: downloads the prompt-injection classifier model (about 750 MB) only after you consent, then verifies its files. The default model is English-only; see [classifier models](docs/classifier-models.md) for licences, limitations and how to switch. The smoke test is skipped while the files are only pinned by a weaker hash.
-- `dashboard`: sets up sign-in with one allowed Google account through an OAuth client from your own Google Cloud project; no password or token is created and the client secret is stored only in `.env`. The sign-in part is skipped until plan 7C (the dashboard) is installed.
+- `classifier`: downloads the prompt-injection classifier model (about 750 MB) only after you consent, then verifies its files. The default model is English-only; see [classifier models](docs/classifier-models.md) for licences, limitations and how to switch. The smoke test is skipped while the files are only pinned by a weaker hash. Live LinkedIn and Naukri reads and sends are refused (fail closed) until a model is downloaded, pinned and fitted and `CLASSIFIER_MODEL` is set; dry runs continue unscreened.
+- `dashboard`: sets up sign-in with one allowed Google account through an OAuth client from your own Google Cloud project; no password or token is created and the client secret is stored only in `.env`. The sign-in part is skipped only if `scripts/dashboard.ts` is missing (it is present in this repository).
 - `final`: runs the doctor once more, lists anything still open and prints the next steps.
 
 ---
@@ -64,7 +64,7 @@ In this order:
 | `secrets/` | Gmail OAuth files, LinkedIn and Naukri session files | git-ignored |
 | `data.sqlite` | jobs, scores, outreach queue, outcomes, counters | git-ignored |
 
-None of it is committed (a pre-commit guard blocks these names; enable it with `git config core.hooksPath .githooks`). None of it is sent to a model beyond what a single stage needs for its job.
+None of it is committed because `.gitignore` excludes these names (there is no pre-commit guard any more, so check `git status` before you commit). None of it is sent to a model beyond what a single stage needs for its job.
 
 ---
 
@@ -73,7 +73,7 @@ None of it is committed (a pre-commit guard blocks these names; enable it with `
 Sessions run with an allow-list of tool names taken from one set in `config/permission-sets.json`. The set is the ceiling for what a session may do.
 
 - `read_only`: the default. Look at stats, drafts and status; nothing is sent, applied or changed.
-- `outreach_send`: `read_only` plus the tools that fetch jobs, queue outreach, and send email, connection requests and applications (still bound by the daily caps).
+- `outreach_send`: `read_only` plus the tools that fetch jobs, queue outreach, and send email, LinkedIn connection requests and messages, Naukri messages and applications (still bound by the daily and weekly caps).
 - `full`: `outreach_send` plus whole MCP servers, every tool they expose. Only for someone who has read the tool list.
 
 Change it with `npm run setup -- --step access`. No session ever runs with skip-permissions.
@@ -105,7 +105,7 @@ Commands you can send from Telegram (or type in a CLI session):
 
 - `/runhunt`: run the full pipeline (discover, match, contacts, drafts, send).
 - `/status`: funnel, reply and interview rates.
-- `/followups`: check replies, then draft follow-ups for your approval.
+- `/followups`: check replies, then draft email follow-ups; they wait for your approval unless `FOLLOWUPS_AUTONOMOUS=true` (ships off), in which case code approves and sends them under the shared daily send cap.
 - `/checkreplies`: detect replies in Gmail and propose outcomes.
 - `/apply #N`: apply to one matched job.
 - `/limits`, `/working`, `/health`: caps and usage, queue and halts, platform health.
@@ -116,7 +116,7 @@ Commands you can send from Telegram (or type in a CLI session):
 
 Start it with `npm run web` (sign-in is Google OIDC: set the `WEB_OIDC_*` keys and `DASHBOARD_ALLOWED_EMAIL` in `.env`, or run `npm run dashboard -- allow <email>`; see `.env.example`; `npm run doctor` shows the dashboard checks). It prints `http://127.0.0.1:<port>`.
 
-- The send box types into a live Claude session. Keep the permission set at `read_only` unless you need more.
+- The send box is off unless `WEB_CHAT_ENABLED=true`; when on, it types your text into a live Claude session after a two-step confirmation; the only slash commands it accepts are bare `/limits`, `/working` and `/health`. Keep the permission set at `read_only` unless you need more.
 - Text typed in the chat box also answers any pending permission or confirmation prompt in the Claude window, so only enable it for an account you trust and keep the permission set `read_only`.
 - The page listens on localhost only. From another machine use an SSH tunnel (`ssh -L 8787:127.0.0.1:8787 host`); never open the port.
 - Exposure options and login recovery: [docs/dashboard-exposure.md](docs/dashboard-exposure.md).
@@ -132,7 +132,7 @@ Start it with `npm run web` (sign-in is Google OIDC: set the `WEB_OIDC_*` keys a
 3. **Filter**: jobs below `MATCH_THRESHOLD` (default 60) are skipped.
 4. **Find contacts** (`contact-finder`): a verified email and up to two LinkedIn profiles per job.
 5. **Prepare** (`outreach-preparer`): tailors the resume, drafts the email and connect notes, reviews and fact-checks them, then queues them.
-6. **Execute** (`sender`): sends email, connection requests and applies from the queue, within the daily caps.
+6. **Execute** (`sender`): sends email, connection requests and applies from the queue, within the caps. Email follow-ups are not part of the hunt; they run from the follow-up command.
 7. **Report**: counts and flags to Telegram, or to the terminal when Telegram is not active.
 
 Tune the basics in the Preferences block of `CLAUDE.md` and the limits in `.env`:
@@ -147,9 +147,9 @@ SEND_LIMIT_PER_RUN=1      # max real emails per day (a daily counter, not per in
 ## Safety model
 
 - Email goes only to addresses marked verified; an unverified guess is never sent to.
-- Daily caps (emails, applies, connects, messages) are enforced in code, not by prompts; items over a cap stay queued.
+- Caps (daily emails and applies, weekly LinkedIn invites and messages) are enforced in code, not by prompts; items over a cap stay queued.
 - A fact gate blocks resumes and emails that contain claims not supported by your own resume.
-- Follow-ups and reply outcomes need your explicit approval; auto-recording of outcomes ships off.
+- Reply outcomes need your explicit approval; auto-recording of outcomes ships off. Email follow-ups need your approval by default; with `FOLLOWUPS_AUTONOMOUS=true` (ships `false`) they send without approval under four code guards (fresh clean reply check, claim step, block list, fact gate) and the same daily send cap.
 - The permission set is the ceiling, and no session skips permissions. Job posting text, board data and reply mail are untrusted input and never instructions.
 
 ---

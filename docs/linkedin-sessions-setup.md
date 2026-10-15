@@ -2,8 +2,8 @@
 
 Phase 2 uses two separate, never-shared LinkedIn browser sessions:
 
-- **Burner account** — used only by `linkedin-apply` (Easy Apply). Never used for the `linkedin` MCP.
-- **Main account** — used only by the `linkedin` MCP (profile search, connection requests, messages). Never used for Easy Apply.
+- **Burner account** — used only by `apply.linkedin` (Easy Apply, `src/apply/linkedin.ts`) and the `discover.linkedin_*` tools. Never used for the `linkedin` MCP.
+- **Main account** — used only by the `linkedin` MCP (`linkedin_find_profiles`, connection requests, messages; the `connect` MCP no longer exists). Never used for Easy Apply.
 
 Each MCP server loads its session from a hardcoded path — this is a structural safeguard, not just convention, so the two accounts can't accidentally get cross-wired.
 
@@ -26,8 +26,12 @@ Both files are gitignored (`secrets/` is fully excluded) and must never be commi
 
 ## Re-running later
 
-LinkedIn sessions expire periodically. If `linkedin-apply` or the `linkedin` MCP starts failing with a login/redirect error, re-run the relevant `save-linkedin-session.ts <account>` command to refresh that session file.
+LinkedIn sessions expire periodically. If `apply.linkedin` or the `linkedin` MCP starts failing with a login/redirect error, re-run the relevant `save-linkedin-session.ts <account>` command to refresh that session file.
 
-## Before enabling `AUTO_APPLY_ENABLED`
+## Before applying for real
 
-Fill in real values in `user-data/easy-apply-answers.json` (years of experience, work authorization, sponsorship needs, relocation, etc.) — the placeholder defaults in that file are not safe to submit as-is.
+Applying is part of every hunt run (there is no `AUTO_APPLY_ENABLED` switch). Fill in real values in `user-data/easy-apply-answers.json` (years of experience, work authorization, sponsorship needs, relocation, etc.) — the placeholder defaults in that file are not safe to submit as-is.
+
+## Before live LinkedIn reads or sends
+
+The `linkedin` MCP is dry-run by default (`LINKEDIN_DRY_RUN=true`) and, when live, refuses every read and send until the prompt-injection classifier is downloaded, pinned and fitted and `CLASSIFIER_MODEL` is set (see [classifier models](classifier-models.md)). `npm run doctor` shows the `classifier_wired` check.
