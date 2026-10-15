@@ -51,8 +51,15 @@ export const SKIP_SPECS: readonly SkipSpec[] = [
       '/limits, /working, /health and npm run status still work.',
     ],
     checkIds: ['web', 'dashboard-login'],
-    configured: (env) =>
-      set(env, 'WEB_AUTH_MODE') || set(env, 'WEB_OIDC_CLIENT_ID') || set(env, 'DASHBOARD_ALLOWED_EMAIL'),
+    // WEB_AUTH_MODE=token is the shipped .env.example default, so it is not a deliberate choice;
+    // only oidc or google_desktop (or a client id or allowed email) counts as configured.
+    configured: (env) => {
+      const mode = (env.WEB_AUTH_MODE ?? '').trim().toLowerCase();
+      return (
+        mode === 'oidc' || mode === 'google_desktop' ||
+        set(env, 'WEB_OIDC_CLIENT_ID') || set(env, 'DASHBOARD_ALLOWED_EMAIL')
+      );
+    },
   },
   {
     id: 'gmail',

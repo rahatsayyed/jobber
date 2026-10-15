@@ -24,9 +24,12 @@ describe('skip catalog', () => {
     const d = spec('dashboard');
     expect(d.checkIds).toEqual(['web', 'dashboard-login']);
     expect(d.configured({}, fsNone, '/r')).toBe(false);
-    for (const k of ['WEB_AUTH_MODE', 'WEB_OIDC_CLIENT_ID', 'DASHBOARD_ALLOWED_EMAIL']) {
+    for (const k of ['WEB_OIDC_CLIENT_ID', 'DASHBOARD_ALLOWED_EMAIL']) {
       expect(d.configured({ [k]: 'x' }, fsNone, '/r')).toBe(true);
     }
+    expect(d.configured({ WEB_AUTH_MODE: 'oidc' }, fsNone, '/r')).toBe(true);
+    expect(d.configured({ WEB_AUTH_MODE: 'google_desktop' }, fsNone, '/r')).toBe(true);
+    expect(d.configured({ WEB_AUTH_MODE: 'token' }, fsNone, '/r')).toBe(false);
   });
   it('gmail uses GMAIL_OAUTH_PATH or the default', () => {
     const g = spec('gmail');

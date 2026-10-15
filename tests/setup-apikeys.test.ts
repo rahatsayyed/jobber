@@ -195,6 +195,18 @@ describe('apikeysStep', () => {
     t.sio.assertDone();
   });
 
+  it('registers the existing half of a partly set pair as a secret', async () => {
+    const t = mk({
+      env: `ADZUNA_APP_ID=${ADZ_ID}\n`,
+      script: [{ choose: 'later' }, { choose: 'later' }, { choose: 'later' }],
+    });
+    const seen: string[] = [];
+    const base = t.ctx.io;
+    t.ctx.io = { ...base, registerSecret: (v: string) => { seen.push(v); base.registerSecret(v); } };
+    await apikeysStep.run(t.ctx);
+    expect(seen).toContain(ADZ_ID);
+  });
+
   it('network failure keeps the key with a warning and never logs the URL or key', async () => {
     const t = mk({
       status: () => 'throw',

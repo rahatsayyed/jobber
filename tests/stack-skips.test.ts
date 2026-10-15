@@ -88,7 +88,7 @@ const created = (f: Fake): string[] =>
     .map((c) => (c.includes('-n') ? c[c.indexOf('-n') + 1] : c[c.indexOf('-s') + 1]));
 
 const TG = 'TELEGRAM_BOT_TOKEN=tok-abc\n';
-const WEB = 'WEB_AUTH_MODE=token\n';
+const WEB = 'WEB_AUTH_MODE=oidc\n';
 
 describe('up with skipped features', () => {
   it('both configured and nothing skipped: unchanged', async () => {
@@ -150,6 +150,22 @@ describe('up with skipped features', () => {
     expect(d.out.join('\n')).not.toContain('skipped (setup)');
   });
 
+  it('WEB_AUTH_MODE=token (shipped default) plus a dashboard skip stays skipped', async () => {
+    setup({ env: TG + 'WEB_AUTH_MODE=token\n', skipped: ['dashboard'] });
+    const f = fake();
+    const d = deps(f);
+    await runUp(d, { status: false });
+    expect(created(f)).not.toContain('web');
+    expect(d.out.join('\n')).toMatch(/web\s+skipped \(setup\)/);
+  });
+
+  it('google_desktop plus a dashboard skip: configured wins', async () => {
+    setup({ env: TG + 'WEB_AUTH_MODE=google_desktop\n', skipped: ['dashboard'] });
+    const f = fake();
+    await runUp(deps(f), { status: false });
+    expect(created(f)).toContain('web');
+  });
+
   it('dashboard skipped but configured: web starts', async () => {
     setup({ env: TG + WEB, skipped: ['dashboard'] });
     const f = fake();
@@ -183,7 +199,7 @@ describe('up with skipped features', () => {
 
 describe('dashboard-login stage with a skipped dashboard', () => {
   it('skips before starting a server', async () => {
-    setup({ skipped: ['dashboard'] });
+    setup({ env: 'WEB_AUTH_MODE=token\n', skipped: ['dashboard'] });
     let started = 0;
     const ctx = buildCtx({
       root, env: { PATH: '/usr/bin' }, run: async () => ({ stdout: '', code: 0 }),

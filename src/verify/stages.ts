@@ -209,7 +209,7 @@ const dashboardLogin: Stage = {
     if (skippedForRoot({ root: ctx.root, env: ctx.env, fs: ctx.fs }).includes('dashboard')) {
       return skip('dashboard skipped in setup (npm run setup -- --step dashboard)');
     }
-    const get =ctx.fetch ?? (async (u: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => {
+    const get = ctx.fetch ?? (async (u: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => {
       const r = await fetch(u, init);
       return { status: r.status, headers: r.headers, text: () => r.text() };
     });

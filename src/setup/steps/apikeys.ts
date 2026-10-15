@@ -124,6 +124,7 @@ export const apikeysStep: SetupStep = {
           continue;
         }
       } else {
+        for (const k of p.keys) if (existing[k.env] !== '') io.registerSecret(existing[k.env]);
         const missing = p.keys.filter((k) => existing[k.env] === '').map((k) => k.env);
         if (missing.length < p.keys.length) {
           io.say(`${p.name} is only partly set; not set: ${missing.join(', ')}. Treating it as not configured.`);
