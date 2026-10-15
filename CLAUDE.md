@@ -643,15 +643,15 @@ section is the reference for what exists.
 
 **Bring-up commands** (plan 8E; README.md quick start): `bash scripts/bootstrap.sh` (detects and
 installs what is missing after asking; `--check` and `--plan` only report; writes
-`.jobber/bootstrap.json`; `npm run bootstrap` is the same CLI once Node exists), `npm run setup` (the wizard, plus an optional guided Claude session
+`.jobber/bootstrap.json`; `npm run bootstrap` is the same CLI once Node exists; install actions run with inherited stdio and a 30 minute cap, `--yes` never covers sudo without `--allow-sudo` and `--allow-sudo` alone still prompts; `BOOTSTRAP_MODEL_PROFILE` is read from `.env`, process env wins), `npm run setup` (the wizard, plus an optional guided Claude session
 under the `setup_guide` profile in `config/run-profiles.json`: `interactive`, `classifier:
 not_required`, no MCP tools, only `Skill` and `Read` limited to the prefixes `docs/`,
 `config/`, `user-data.example/` and `.claude/skills/setup-guide/`, and Bash limited
 to the exact strings in `bash_exact`, no wildcard; the guide never reads secrets or `.env`),
 `npm run dry-run` (end-to-end smoke in dry mode against fixtures and a temporary database; writes
-only `.jobber/verify.json`; its dashboard stage is skipped until plan 8C's login routes exist)
+`.jobber/verify.json` plus the idempotent launcher debug files; `--llm` runs a real hunt and is refused unless `.env` itself is dry; its dashboard stage is skipped until plan 8C's login routes exist)
 and `npm run up` / `npm run down` (doctor gate, kill-switch refusal with exit 4, ordered start of
-bridge, windows, scheduler and dashboard; `up -- --status` is read-only). `up` never changes the
+bridge, windows, scheduler and dashboard; exit 1 when a start failed, after printing the full table; `up -- --status` is read-only). `up` never changes the
 mode: it prints `MODE: DRY RUN` or `MODE: LIVE` from `.env`, and the owner alone flips the flags.
 
 ## Layout memory and platform operators

@@ -25,9 +25,9 @@ npm run dry-run                  # 3. end-to-end smoke in dry mode only, PASS/FA
 npm run up                       # 4. start bridge, windows, scheduler, dashboard (and: npm run down)
 ```
 
-- `bash scripts/bootstrap.sh` detects what is missing and asks before every install (sudo steps and downloaded scripts are always shown first). Rerunning is safe. `--check` and `--plan` only report.
+- `bash scripts/bootstrap.sh` detects what is missing and asks before every install (sudo steps and downloaded scripts are always shown first). Rerunning is safe. `--check` and `--plan` only report. `--yes` accepts plain actions only; a sudo step is asked about even with `--allow-sudo` unless `--yes` is also given. Installs run with their own output on your terminal (up to 30 minutes each); the result table shows only the exit code.
 - `npm run setup` is the guided wizard that writes `.env`, captures accounts and sessions, converts your resume, and chooses limits and a permission set. It needs a real terminal and exits with code 2 when stdin is not a TTY. `npm run setup -- --no-guide` skips the guided Claude session.
-- `npm run dry-run` runs an end-to-end smoke test against fixtures and a temporary database, prints PASS, FAIL or SKIP per stage and writes nothing live (only `.jobber/verify.json`).
+- `npm run dry-run` runs an end-to-end smoke test against fixtures and a temporary database, prints PASS, FAIL or SKIP per stage and touches no live state: it writes `.jobber/verify.json` and idempotently rewrites the launcher's `debug/runner/<profile>.settings.json` and `.policy.json` (via `run-claude --print-args`). `--llm` adds a real hunt run and only runs when `.env` itself is dry (it uses subscription usage).
 - `npm run up` runs the doctor first, starts the stack, and prints `MODE: DRY RUN` or `MODE: LIVE` at the top and bottom. It never changes the mode: your `.env` decides. `npm run down` stops it again without touching data.
 - `npm run doctor` can be run at any time to check the result. Each check reports ok, warn, fail or skipped.
 

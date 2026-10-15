@@ -75,7 +75,12 @@ describe('runCli', () => {
 
   it('whole run: banner, table, exit 0, exactly one file (mode 600, no details); llm-hunt off', async () => {
     const stateDir = join(mkTmp(), '.jobber');
-    const t = deps(ROOT, { fetch: async () => ({ status: 404, text: async () => '' }) });
+    const t = deps(ROOT, {
+      fetch: async (u: string) => ({
+        status: u.endsWith('/api/auth/mode') ? 404 : u.endsWith('/api/status') ? 401 : 200,
+        text: async () => '',
+      }),
+    });
     const code = await runCli([], { ...t.d, stateDir });
     expect(t.err.join('\n')).toBe('');
     expect(t.out[0]).toContain('DRY RUN VERIFY: nothing is sent');
