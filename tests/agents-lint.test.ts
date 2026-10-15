@@ -161,7 +161,7 @@ describe('existing agents are unchanged', () => {
 });
 
 describe('legacy connect MCP is not referenced by agents, skills, commands or config', () => {
-  const LEGACY = /mcp__connect\b|\bconnect\.(find_linkedin_profile|check_connection_status|connect_send|send_linkedin_message|record_connection_status)\b|legacy connect/;
+  const LEGACY = /mcp__connect(__|\b)|\bconnect\.(find_linkedin_profile|check_connection_status|connect_send|send_linkedin_message|record_connection_status)\b|legacy connect/;
   const files: string[] = [];
   for (const f of readdirSync('.claude/agents')) if (f.endsWith('.md')) files.push(`.claude/agents/${f}`);
   for (const d of readdirSync('.claude/skills')) if (existsSync(`.claude/skills/${d}/SKILL.md`)) files.push(`.claude/skills/${d}/SKILL.md`);

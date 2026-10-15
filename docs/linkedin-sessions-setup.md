@@ -2,8 +2,8 @@
 
 Phase 2 uses two separate, never-shared LinkedIn browser sessions:
 
-- **Burner account** — used only by `linkedin-apply` (Easy Apply). Never used for `connect`.
-- **Main account** — used only by `connect` (profile search + connection requests). Never used for Easy Apply.
+- **Burner account** — used only by `linkedin-apply` (Easy Apply). Never used for the `linkedin` MCP.
+- **Main account** — used only by the `linkedin` MCP (profile search, connection requests, messages). Never used for Easy Apply.
 
 Each MCP server loads its session from a hardcoded path — this is a structural safeguard, not just convention, so the two accounts can't accidentally get cross-wired.
 
@@ -26,7 +26,7 @@ Both files are gitignored (`secrets/` is fully excluded) and must never be commi
 
 ## Re-running later
 
-LinkedIn sessions expire periodically. If `linkedin-apply` or `connect` starts failing with a login/redirect error, re-run the relevant `save-linkedin-session.ts <account>` command to refresh that session file.
+LinkedIn sessions expire periodically. If `linkedin-apply` or the `linkedin` MCP starts failing with a login/redirect error, re-run the relevant `save-linkedin-session.ts <account>` command to refresh that session file.
 
 ## Before enabling `AUTO_APPLY_ENABLED`
 

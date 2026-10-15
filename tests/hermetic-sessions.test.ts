@@ -5,7 +5,6 @@ import path from 'node:path';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const FILES = [
-  'connect.test.ts',
   'linkedin-apply.test.ts',
   'discover-linkedin-jobs.test.ts',
   'discover-linkedin-posts.test.ts',

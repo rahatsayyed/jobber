@@ -141,7 +141,6 @@ describe('rendered settings and committed settings.json', () => {
     for (const m of arr.matchAll(/'([a-z_]+)'/g)) all.add(`mcp__linkedin__${m[1]}`);
     for (const m of readFileSync(join(ROOT, 'src/mcp/naukri.ts'), 'utf8').matchAll(/'(naukri_[a-z_]+)'/g)) all.add(`mcp__naukri__${m[1]}`);
     for (const t of registered('src/mcp/apply.ts')) all.add(`mcp__apply__${t}`);
-    for (const t of registered('src/mcp/connect.ts')) all.add(`mcp__connect__${t}`);
     // apply.ts registers greenhouse/lever/workday/ashby through a loop over a literal list
     for (const p of ['greenhouse', 'lever', 'workday', 'ashby']) all.add(`mcp__apply__${p}`);
     return all;

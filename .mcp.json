@@ -7,7 +7,6 @@
     "gates": { "command": "npx", "args": ["tsx", "src/mcp/gates.ts"] },
     "gmail": { "command": "npx", "args": ["-y", "@gongrzhe/server-gmail-autoauth-mcp"] },
     "apply": { "command": "npx", "args": ["tsx", "src/mcp/apply.ts"] },
-    "connect": { "command": "npx", "args": ["tsx", "src/mcp/connect.ts"] },
     "discover": { "command": "npx", "args": ["tsx", "src/mcp/discover.ts"] },
     "naukri": { "command": "npx", "args": ["tsx", "src/mcp/naukri.ts"] },
     "linkedin": { "command": "npx", "args": ["tsx", "src/mcp/linkedin.ts"] },

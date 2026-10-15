@@ -32,7 +32,6 @@
     "mcp:db": "tsx src/mcp/db.ts",
     "mcp:gates": "tsx src/mcp/gates.ts",
     "mcp:apply": "tsx src/mcp/apply.ts",
-    "mcp:connect": "tsx src/mcp/connect.ts",
     "mcp:discover": "tsx src/mcp/discover.ts",
     "mcp:outreach": "tsx src/mcp/outreach.ts",
     "eval:gen": "tsx scripts/eval/generate.ts",
