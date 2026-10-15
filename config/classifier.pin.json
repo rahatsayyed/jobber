@@ -1,8 +1,0 @@
-{
-  "source": "gravitee-io/Llama-Prompt-Guard-2-22M-onnx (replace with your own export if you self-export)",
-  "model": { "file": "model.onnx", "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
-  "tokenizer": { "file": "tokenizer.json", "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
-  "config": { "file": "config.json", "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
-  "extra": [],
-  "malicious_index": 1
-}

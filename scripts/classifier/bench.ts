@@ -3,7 +3,8 @@
 // Never prints corpus text; the input is a fixed benign sentence repeated.
 import os from 'node:os';
 import { join } from 'node:path';
-import { loadClassifier, loadPin } from '../../src/safety/classifierModel.js';
+import { loadClassifier } from '../../src/safety/classifierModel.js';
+import { loadRegistry, modelDir, resolveProfile } from '../../src/safety/classifierRegistry.js';
 import { percentile } from '../../src/safety/classifier.js';
 
 const SENTENCE = 'The quarterly planning meeting covers roadmap priorities and staffing for the team. ';
@@ -15,7 +16,8 @@ const mb = (n: number): number => Math.round((n / 1024 / 1024) * 10) / 10;
 async function main(): Promise<void> {
   const rssBefore = process.memoryUsage().rss;
   const t0 = performance.now();
-  const loaded = await loadClassifier();
+  const profile = resolveProfile(loadRegistry(), process.env);
+  const loaded = await loadClassifier({ profile, allowUnfitted: true });
   const loadMs = performance.now() - t0;
   const rssAfterLoad = process.memoryUsage().rss;
 
@@ -43,8 +45,7 @@ async function main(): Promise<void> {
   }
   const rssAfterRuns = process.memoryUsage().rss;
 
-  const dir = process.env.CLASSIFIER_MODEL_DIR ?? 'models/prompt-guard-2-22m';
-  const pin = loadPin('config/classifier.pin.json');
+  const modelFile = profile.files.find((f) => f.role === 'model');
   const cpus = os.cpus();
   const doc = {
     when: new Date().toISOString(),
@@ -56,7 +57,11 @@ async function main(): Promise<void> {
       totalMemGb: Math.round((os.totalmem() / 1024 ** 3) * 10) / 10,
       node: process.version,
     },
-    model: { file: join(dir, pin.model.file), sha256: pin.model.sha256 },
+    model: {
+      profile: profile.id,
+      file: modelFile ? join(modelDir(profile), modelFile.local) : null,
+      sha256: modelFile?.sha256 ?? null,
+    },
     load_ms: Math.round(loadMs),
     rss_mb: { before: mb(rssBefore), after_load: mb(rssAfterLoad), after_runs: mb(rssAfterRuns) },
     latency_ms: latency,

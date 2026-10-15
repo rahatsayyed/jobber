@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { _resetClassifierForTests, getClassifier, loadClassifier, loadPin, sha256File, verifyModelFiles, type AdapterDeps } from '../src/safety/classifierModel.js';
+import { loadPin, sha256File, verifyModelFiles } from '../src/safety/classifierModel.js';
 
 const HEX = 'a'.repeat(64);
 const pin = {
@@ -58,43 +58,6 @@ describe('verifyModelFiles', () => {
   });
 });
 
-describe('loadClassifier with fake adapters', () => {
-  it('refuses to load when verification fails', async () => {
-    const d = mkdtempSync(join(tmpdir(), 'mdl-'));
-    const p = join(d, 'pin.json');
-    writeFileSync(p, JSON.stringify(pin));
-    await expect(loadClassifier({ dir: d, pinPath: p })).rejects.toThrow(/integrity|missing/i);
-  });
-
-  it('feeds input_ids and attention_mask by the names the session reports and reads logits', async () => {
-    const d = mkdtempSync(join(tmpdir(), 'mdl-'));
-    for (const f of ['model.onnx', 'tokenizer.json', 'config.json']) writeFileSync(join(d, f), 'x');
-    const p = join(d, 'pin.json');
-    writeFileSync(p, JSON.stringify({
-      ...pin,
-      model: { file: 'model.onnx', sha256: await sha256File(join(d, 'model.onnx')) },
-      tokenizer: { file: 'tokenizer.json', sha256: await sha256File(join(d, 'tokenizer.json')) },
-      config: { file: 'config.json', sha256: await sha256File(join(d, 'config.json')) },
-    }));
-    const seen: string[] = [];
-    const deps: AdapterDeps = {
-      createSession: async () => ({
-        inputNames: ['input_ids', 'attention_mask'],
-        outputNames: ['logits'],
-        run: async (feeds) => {
-          seen.push(...Object.keys(feeds));
-          return { logits: { data: [0, 5] } };
-        },
-      }),
-      loadTokenizer: async () => ({ encode: () => [7, 7], clsId: 1, sepId: 2 }),
-    };
-    const loaded = await loadClassifier({ dir: d, pinPath: p, deps });
-    const v = await loaded.classifier.classify('hello world');
-    expect(v.malicious).toBe(true);
-    expect(seen).toEqual(['input_ids', 'attention_mask']);
-  });
-});
-
 describe('pin hardening', () => {
   const wr = (obj: unknown): string => {
     const p = join(mkdtempSync(join(tmpdir(), 'pin-')), 'pin.json');
@@ -122,51 +85,5 @@ describe('pin hardening', () => {
     writeFileSync(join(d, 'tokenizer_config.json'), 'x');
     const bad = await verifyModelFiles(d, withExtra, hash);
     expect(bad.problems.some((p) => p.includes('tokenizer_config.json') && /sha256/.test(p))).toBe(true);
-  });
-});
-
-describe('config validation and getClassifier', () => {
-  async function setup(cfg: unknown): Promise<{ d: string; p: string; c: string; deps: AdapterDeps }> {
-    const d = mkdtempSync(join(tmpdir(), 'mdl-'));
-    const e = async (f: string) => {
-      writeFileSync(join(d, f), 'x');
-      return { file: f, sha256: await sha256File(join(d, f)) };
-    };
-    const p = join(d, 'pin.json');
-    writeFileSync(p, JSON.stringify({ ...pin, model: await e('model.onnx'), tokenizer: await e('tokenizer.json'), config: await e('config.json') }));
-    const c = join(d, 'cfg.json');
-    writeFileSync(c, JSON.stringify(cfg));
-    const deps: AdapterDeps = {
-      createSession: async () => ({ inputNames: ['input_ids'], outputNames: ['logits'], run: async () => ({ logits: { data: [5, 0] } }) }),
-      loadTokenizer: async () => ({ encode: () => [7], clsId: 1, sepId: 2 }),
-    };
-    return { d, p, c, deps };
-  }
-  it('rejects a bad threshold', async () => {
-    const s = await setup({ threshold: 2 });
-    await expect(loadClassifier({ dir: s.d, pinPath: s.p, configPath: s.c, deps: s.deps })).rejects.toThrow(/config invalid/);
-  });
-  it('ignores maliciousIndex from the config file (pin wins)', async () => {
-    const s = await setup({ maliciousIndex: 0 });
-    const l = await loadClassifier({ dir: s.d, pinPath: s.p, configPath: s.c, deps: s.deps });
-    // logits [5,0]: pin index 1 is the low one, so not malicious (index 0 would flag it)
-    expect((await l.classifier.classify('hi')).malicious).toBe(false);
-  });
-  it('getClassifier retries a failure and caches a success', async () => {
-    _resetClassifierForTests();
-    let calls = 0;
-    const fake = { classify: async () => ({ malicious: false, score: 0, chunks: 1, truncated: false }) };
-    const load = async () => {
-      calls++;
-      if (calls === 1) throw new Error('boom');
-      return { classifier: fake, inputNames: [], outputName: 'logits' } as never;
-    };
-    await expect(getClassifier(load)).rejects.toThrow('boom');
-    await new Promise((r) => setTimeout(r, 0));
-    const a = await getClassifier(load);
-    const b = await getClassifier(load);
-    expect(a).toBe(b);
-    expect(calls).toBe(2);
-    _resetClassifierForTests();
   });
 });

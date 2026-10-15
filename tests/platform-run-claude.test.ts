@@ -39,11 +39,11 @@ function run(args: string[], extra: Record<string, string> = {}, dropDryRun = tr
 }
 const read = (f: string): string => readFileSync(join(dir, f), 'utf8');
 const invoked = (): boolean => existsSync(join(dir, 'invoked'));
-const modelsPresent = existsSync(join(root, 'models', 'prompt-guard-2-22m'));
+const DRY = { JOBBER_DRY_RUN: '1' };
 
 describe('run-claude spawn path (fake claude)', () => {
   it('(a) argv is restricted, never has the prompt; stdin is the prompt exactly', { timeout: T }, () => {
-    const r = run(['hunt', 'the prompt']);
+    const r = run(['hunt', '--no-classifier', 'the prompt'], DRY);
     expect(r.status, r.stderr).toBe(0);
     const argv = read('argv').split('\n').filter(Boolean);
     expect(argv).toContain('dontAsk');
@@ -54,7 +54,7 @@ describe('run-claude spawn path (fake claude)', () => {
 
   it('(b) propagates the child exit code', { timeout: T }, () => {
     writeFileSync(join(dir, 'exit'), '7');
-    const r = run(['hunt', 'the prompt']);
+    const r = run(['hunt', '--no-classifier', 'the prompt'], DRY);
     expect(r.status, r.stderr).toBe(7);
   });
 
@@ -70,14 +70,14 @@ describe('run-claude spawn path (fake claude)', () => {
     expect(invoked()).toBe(false);
   });
 
-  it.skipIf(modelsPresent)('(e) outreach_wake without model files exits 3, claude not invoked', { timeout: T }, () => {
-    const r = run(['outreach_wake', 'hello']);
+  it('(e) outreach_wake with an unknown classifier profile exits 3, claude not invoked', { timeout: T }, () => {
+    const r = run(['outreach_wake', 'hello'], { CLASSIFIER_MODEL: 'no-such-profile' });
     expect(r.status, r.stderr).toBe(3);
     expect(invoked()).toBe(false);
   });
 
   it('(f) rendered files are private and contain both hooks and no set reference', { timeout: T }, () => {
-    const r = run(['hunt', 'the prompt']);
+    const r = run(['hunt', '--no-classifier', 'the prompt'], DRY);
     expect(r.status, r.stderr).toBe(0);
     const out = join(root, 'debug', 'runner');
     expect(statSync(out).mode & 0o777).toBe(0o700);
@@ -103,7 +103,7 @@ describe('run-claude spawn path (fake claude)', () => {
   });
 
   it('flags after "--" are prompt text', { timeout: T }, () => {
-    const r = run(['hunt', '--', '--print-args']);
+    const r = run(['hunt', '--no-classifier', '--', '--print-args'], DRY);
     expect(r.status, r.stderr).toBe(0);
     expect(read('stdin')).toBe('--print-args');
   });

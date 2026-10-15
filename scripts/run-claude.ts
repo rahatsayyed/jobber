@@ -17,7 +17,8 @@ import {
 } from '../src/platform/runner.js';
 import { writeSecure } from '../src/platform/permissions.js';
 import { parseEnv } from '../src/platform/envFile.js';
-import { loadPin, verifyModelFiles } from '../src/safety/classifierModel.js';
+import { checkClassifierForLaunch } from '../src/platform/launchCheck.js';
+import { isDryRun } from '../src/safety/dryRun.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
@@ -102,15 +103,14 @@ async function main(): Promise<void> {
   prompt = prompt.trim();
   if (!prompt) die(2, 'empty prompt');
 
-  if (profileName === 'outreach_wake' && !flags.has('--no-classifier')) {
+  if (!flags.has('--no-classifier')) {
+    let check;
     try {
-      const pin = loadPin(join(root, 'config/classifier.pin.json'));
-      const dir = process.env.CLASSIFIER_MODEL_DIR ?? join(root, 'models/prompt-guard-2-22m');
-      const check = await verifyModelFiles(dir, pin);
-      if (!check.ok) die(3, `classifier integrity check failed: ${check.problems.join('; ')}`);
+      check = await checkClassifierForLaunch(env, root, isDryRun(env, { linkedin: true }));
     } catch (e) {
-      die(3, `classifier integrity check failed: ${(e as Error).message}`);
+      die(3, `classifier not ready: ${(e as Error).message}`);
     }
+    if (!check.ok) die(3, `classifier not ready: ${check.problems.join('; ')}`);
   }
 
   const child = spawn('claude', args, { env, stdio: ['pipe', 'inherit', 'inherit'], cwd: root });

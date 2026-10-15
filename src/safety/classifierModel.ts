@@ -175,11 +175,8 @@ export interface LoadedClassifier {
 }
 
 export interface LoadOptions {
-  profile?: ClassifierProfile;
+  profile: ClassifierProfile;
   root?: string;
-  dir?: string;
-  pinPath?: string;
-  configPath?: string;
   deps?: AdapterDeps;
   allowUnfitted?: boolean;
 }
@@ -244,64 +241,6 @@ async function loadFromProfile(profile: ClassifierProfile, opts: LoadOptions): P
   };
 }
 
-export async function loadClassifier(opts: LoadOptions = {}): Promise<LoadedClassifier> {
-  if (opts.profile) return loadFromProfile(opts.profile, opts);
-  const dir = opts.dir ?? process.env.CLASSIFIER_MODEL_DIR ?? 'models/prompt-guard-2-22m';
-  const pin = loadPin(opts.pinPath ?? 'config/classifier.pin.json');
-  const check = await verifyModelFiles(dir, pin);
-  if (!check.ok) throw new Error(`classifier integrity check failed: ${check.problems.join('; ')}`);
-
-  let config: ClassifierConfig = { ...DEFAULT_CLASSIFIER_CONFIG, maliciousIndex: pin.malicious_index };
-  const cfgPath = opts.configPath ?? 'config/classifier.json';
-  if (existsSync(cfgPath)) {
-    const { maliciousIndex: _ignored, ...fileCfg } = JSON.parse(readFileSync(cfgPath, 'utf8')) as Partial<ClassifierConfig>;
-    config = { ...config, ...fileCfg };
-  }
-  validateConfig(config);
-
-  const deps = opts.deps ?? defaultDeps;
-  const session = await deps.createSession(join(dir, pin.model.file));
-  const tokenizer = await deps.loadTokenizer(dir);
-  const outputName = session.outputNames.includes('logits') ? 'logits' : session.outputNames[0];
-
-  const run: ModelRunner = async (ids) => {
-    const input_ids = BigInt64Array.from(ids.map((n) => BigInt(n)));
-    const feeds: Record<string, { data: unknown }> = {};
-    for (const name of session.inputNames) {
-      if (name === 'input_ids') feeds[name] = { data: input_ids };
-      else if (name === 'attention_mask') feeds[name] = { data: BigInt64Array.from(ids.map(() => 1n)) };
-      else if (name === 'token_type_ids') feeds[name] = { data: BigInt64Array.from(ids.map(() => 0n)) };
-      else throw new Error(`classifier model has an unexpected input: ${name}`);
-    }
-    const out = await session.run(feeds);
-    return Array.from(out[outputName].data);
-  };
-
-  return {
-    classifier: createClassifier({ tokenizer, run, config }),
-    inputNames: session.inputNames,
-    outputName,
-    tokenizer,
-    profileId: 'legacy',
-    threshold: config.threshold,
-  };
-}
-
-let singleton: Promise<InjectionClassifier> | null = null;
-export function _resetClassifierForTests(): void {
-  singleton = null;
-}
-/**
- * @deprecated Use getActiveClassifier from classifierSelect.ts (profile-driven, one model per
- * process, refuses unfitted profiles outside dry runs). Kept for 6B tests and legacy callers.
- */
-export function getClassifier(load: () => Promise<LoadedClassifier> = loadClassifier): Promise<InjectionClassifier> {
-  if (!singleton) {
-    const p = load().then((l) => l.classifier);
-    singleton = p;
-    p.catch(() => {
-      if (singleton === p) singleton = null; // never cache a failure; a later call retries
-    });
-  }
-  return singleton;
+export async function loadClassifier(opts: LoadOptions): Promise<LoadedClassifier> {
+  return loadFromProfile(opts.profile, opts);
 }
