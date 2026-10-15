@@ -210,6 +210,11 @@ describe('auth mode validation', () => {
       const e = errs({ ...GD, ...remote, WEB_ALLOW_REMOTE_BIND: 'true', WEB_TRUST_PROXY: 'true', WEB_ALLOWED_HOSTS: 'd.example.com' });
       expect(e.map((x) => x.scope)).toEqual(['google']);
     });
+    it('google_desktop on loopback with WEB_TRUST_PROXY=true: google error', () => {
+      const e = errs({ ...GD, WEB_TRUST_PROXY: 'true' });
+      expect(e.map((x) => x.scope)).toEqual(['google']);
+      expect(e[0].message).toMatch(/WEB_TRUST_PROXY/);
+    });
     it('oidc non-loopback ok (unchanged)', () => {
       const env = { ...GOOD, ...remote, WEB_ALLOW_REMOTE_BIND: 'true', WEB_TRUST_PROXY: 'true', WEB_ALLOWED_HOSTS: 'd.example.com', WEB_OIDC_REDIRECT_URI: 'https://d.example.com/auth/callback' };
       expect(errs(env)).toEqual([]);

@@ -144,6 +144,7 @@ export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: bool
     if (rawShape === 'callback' || rawShape === 'root') googleRedirectShape = rawShape;
     else if (rawShape !== '') google('WEB_GOOGLE_REDIRECT_SHAPE must be callback or root');
     if (!isLoopbackBind(bind)) google('google_desktop sign-in needs a loopback WEB_BIND (a Desktop client only supports loopback redirects)');
+    else if (trustProxy) google('google_desktop sign-in does not support WEB_TRUST_PROXY=true (a Desktop client only supports direct loopback redirects)');
   }
 
   const issuer = val(env, 'WEB_OIDC_ISSUER') || GOOGLE_ISSUER;

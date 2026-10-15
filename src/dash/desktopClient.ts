@@ -2,6 +2,8 @@
 // Pure helpers for the google_desktop login mode: parse a Google "Desktop app" OAuth keys file,
 // build loopback redirect URIs and the authorization URL. No I/O, no network, no secret echo.
 
+import type { OidcConfig } from './oidc.js';
+
 export interface DesktopClient {
   clientId: string;
   clientSecret: string;
@@ -83,6 +85,21 @@ export function keysFailureMessage(reason: string): string {
     `google_desktop sign-in cannot start (reason: ${reason}). Fallbacks in order: ` +
     '(1) WEB_GOOGLE_REDIRECT_SHAPE=root; (2) WEB_AUTH_MODE=oidc with a dedicated Web client; (3) WEB_AUTH_MODE=token.'
   );
+}
+
+/** The OIDC client config for google_desktop: Desktop client credentials, Google issuer, loopback redirect. */
+export function oidcConfigForDesktop(
+  client: DesktopClient,
+  input: { port: number; shape: RedirectShape; reauthMaxAgeSec: number },
+): OidcConfig {
+  return {
+    issuer: 'https://accounts.google.com',
+    clientId: client.clientId,
+    clientSecret: client.clientSecret,
+    redirectUri: redirectFor(input.shape, input.port),
+    reauthPrompt: 'select_account',
+    maxAgeSec: input.reauthMaxAgeSec,
+  };
 }
 
 /** The authorization URL the live check prints (response_type=code, scope=openid email, S256 PKCE). No secret in it. */

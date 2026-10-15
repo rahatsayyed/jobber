@@ -13,7 +13,7 @@ import { openAuthStore, getAllowedAccount } from '../src/dash/authStore.js';
 import { allowAccount } from '../src/dash/account.js';
 import { createOidc } from '../src/dash/oidc.js';
 import { tokenStatus } from '../src/dash/accessToken.js';
-import { loadDesktopKeys, keysFailureMessage, type DesktopClient } from '../src/dash/desktopClient.js';
+import { loadDesktopKeys, keysFailureMessage, oidcConfigForDesktop, type DesktopClient } from '../src/dash/desktopClient.js';
 import { openReadOnlyDb } from '../src/dash/readDb.js';
 
 let maskLiterals: string[] = [];
@@ -88,14 +88,16 @@ async function main(): Promise<number> {
   let oidc: ReturnType<typeof createOidc> | undefined;
   if (!tokenMode) {
     oidc = createOidc(
-      {
-        issuer: desktop ? 'https://accounts.google.com' : cfg.issuer,
-        clientId: desktop ? desktop.clientId : cfg.clientId,
-        clientSecret: desktop ? desktop.clientSecret : cfg.clientSecret,
-        redirectUri: cfg.redirectUri,
-        reauthPrompt: desktop ? 'select_account' : cfg.reauthPrompt,
-        maxAgeSec: cfg.reauthMaxAgeSec,
-      },
+      desktop
+        ? oidcConfigForDesktop(desktop, { port: cfg.port, shape: cfg.googleRedirectShape, reauthMaxAgeSec: cfg.reauthMaxAgeSec })
+        : {
+            issuer: cfg.issuer,
+            clientId: cfg.clientId,
+            clientSecret: cfg.clientSecret,
+            redirectUri: cfg.redirectUri,
+            reauthPrompt: cfg.reauthPrompt,
+            maxAgeSec: cfg.reauthMaxAgeSec,
+          },
       { fetch, now: () => new Date(), random: (n) => randomBytes(n) },
     );
     try {

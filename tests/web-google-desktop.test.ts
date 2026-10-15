@@ -3,7 +3,7 @@
 // Offline: fake OIDC provider, invented fixtures only. Google acceptance of the redirect is NOT tested here.
 import { afterEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { loadDesktopKeys, keysFailureMessage } from '../src/dash/desktopClient.js';
+import { loadDesktopKeys, keysFailureMessage, oidcConfigForDesktop } from '../src/dash/desktopClient.js';
 import { validateRunnerConfig } from '../src/web/env.js';
 import { main } from '../scripts/dashboard.js';
 import { makeHarness, setCookies, type Harness } from './helpers/webHarness.js';
@@ -38,7 +38,33 @@ describe('loadDesktopKeys', () => {
   });
 });
 
+describe('oidcConfigForDesktop', () => {
+  const k = loadDesktopKeys('k', () => fx('gcp-oauth.desktop.json'));
+  if (!k.ok) throw new Error('fixture');
+  it('root shape and callback shape', () => {
+    const root = oidcConfigForDesktop(k.client, { port: 9001, shape: 'root', reauthMaxAgeSec: 120 });
+    expect(root).toEqual({
+      issuer: 'https://accounts.google.com',
+      clientId: '000000000000-fixture.apps.googleusercontent.com',
+      clientSecret: SECRET,
+      redirectUri: 'http://127.0.0.1:9001/',
+      reauthPrompt: 'select_account',
+      maxAgeSec: 120,
+    });
+    const cb = oidcConfigForDesktop(k.client, { port: 9001, shape: 'callback', reauthMaxAgeSec: 300 });
+    expect(cb.redirectUri).toBe('http://127.0.0.1:9001/auth/callback');
+  });
+});
+
 describe('config rejects unsafe google_desktop', () => {
+  it('trust proxy on loopback is rejected with scope google', () => {
+    const r = validateRunnerConfig(
+      { WEB_AUTH_MODE: 'google_desktop', DASHBOARD_ALLOWED_EMAIL: 'owner@example.test', WEB_TRUST_PROXY: 'true' },
+      { accountStored: true },
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.map((e) => e.scope)).toEqual(['google']);
+  });
   const base = { WEB_AUTH_MODE: 'google_desktop', DASHBOARD_ALLOWED_EMAIL: 'owner@example.test' };
   it('non-loopback bind is rejected', () => {
     const r = validateRunnerConfig(
@@ -80,6 +106,13 @@ describe('google_desktop server flow', () => {
     expect(r.cb.headers.location).toBe('/#/denied');
     const rows = h.auth.prepare("SELECT note FROM audit_log WHERE kind = 'login_denied'").all() as { note: string }[];
     expect(rows.map((x) => x.note)).toContain('sub_mismatch');
+  });
+  it('unverified email is audited as login_denied', async () => {
+    h = await makeHarness({ authMode: 'google_desktop', googleRedirectShape: 'root' });
+    await viaRoot(h, { email_verified: false });
+    const rows = h.auth.prepare("SELECT note FROM audit_log WHERE kind = 'login_denied'").all() as { note: string }[];
+    expect(rows.length).toBe(1);
+    expect(rows[0].note).toBe('unverified_email');
   });
   it('unverified email is denied', async () => {
     h = await makeHarness({ authMode: 'google_desktop', googleRedirectShape: 'root' });
