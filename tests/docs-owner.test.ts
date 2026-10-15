@@ -23,10 +23,7 @@ const OWNER_DOCS: string[] = [
 ];
 // Docs allowed to be absent until their task lands. A writer removes its own
 // line here (one-line edit); Task 13 empties the list.
-const PLANNED_ONLY: string[] = [
-  'docs/00-start-here.md',
-  'docs/index.md',
-];
+const PLANNED_ONLY: string[] = [];
 
 const ENV_ALLOWLIST = /^(HOME|PATH|NODE_ENV|TMPDIR|SHELL|USER|ANTHROPIC_[A-Z_]+|CLAUDE_[A-Z_]+|CI|TERM)$/;
 const LOCAL_ONLY_FILES = ['user-data/resume.json', 'user-data/profile.json'];
