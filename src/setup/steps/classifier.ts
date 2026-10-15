@@ -41,6 +41,9 @@ function describe(ctx: SetupContext, p: ClassifierProfile): void {
     'The classifier reads untrusted text (job posts, profiles, replies) before the agent sees it and blocks injected instructions. It runs locally; no text leaves this machine.',
   );
   io.say(
+    'The default model is English-only and does not detect jailbreaks. Llama Prompt Guard 2 is an optional upgrade that needs your own gated Hugging Face access and an ONNX file you supply; it is never downloaded automatically.',
+  );
+  io.say(
     'The model files are downloaded from huggingface.co at a fixed, pinned version, checked against known hashes, and stored in models/ (not committed).',
   );
 }
@@ -68,6 +71,9 @@ function fitNotice(ctx: SetupContext, p: ClassifierProfile): void {
   if (!fitted) {
     ctx.io.say(
       `Threshold is not fitted for this model: sends are refused until you run: npm run classifier:fit -- --profile ${p.id} --write (dry runs work now)`,
+    );
+    ctx.io.say(
+      `Remaining steps: 1) npm run models -- pin ${p.id} (if files are unpinned), 2) npm run classifier:fit -- --profile ${p.id} --write, 3) CLASSIFIER_MODEL=${p.id} in .env (done above), 4) npm run doctor, then restart sessions.`,
     );
   }
 }
