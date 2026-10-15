@@ -494,7 +494,7 @@ export const setupAccountChecks: Check[] = [
   },
   placeholder('mcp-connect', 'MCP servers connect', 'skipped: needs a live launch, run the owner checklist in plan 7B'),
   placeholder('sessions-live', 'sessions log in headless', 'skipped: headless login check is owner-run (plan 7B owner checklist)'),
-  placeholder('dashboard-login', 'dashboard sign-in', 'skipped until installed (plan 7C)'),
+  placeholder('dashboard-login', 'dashboard sign-in', 'judged by the doctor per auth mode (plan 8C)'),
   placeholder('backup-configured', 'backup configured', 'skipped until installed (plan 7D)'),
   placeholder('auto-update', 'auto-update configured', 'skipped until installed (plan 7D)'),
   placeholder('last-update', 'last update recent', 'skipped until installed (plan 7D)'),

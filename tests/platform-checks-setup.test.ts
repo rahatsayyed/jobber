@@ -515,7 +515,7 @@ describe('placeholders', () => {
   const want: Record<string, string> = {
     'mcp-connect': 'skipped: needs a live launch, run the owner checklist in plan 7B',
     'sessions-live': 'skipped: headless login check is owner-run (plan 7B owner checklist)',
-    'dashboard-login': 'skipped until installed (plan 7C)',
+    'dashboard-login': 'judged by the doctor per auth mode (plan 8C)',
     'backup-configured': 'skipped until installed (plan 7D)',
     'auto-update': 'skipped until installed (plan 7D)',
     'last-update': 'skipped until installed (plan 7D)',
