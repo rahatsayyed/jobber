@@ -1,6 +1,6 @@
 // tests/bootstrap-cli.test.ts
 import { describe, expect, it } from 'vitest';
-import { main, parseArgs, type MainDeps } from '../scripts/bootstrap.js';
+import { main, modelProfileFromEnv, parseArgs, type MainDeps } from '../scripts/bootstrap.js';
 
 function mk(over: Partial<MainDeps> & { present?: boolean } = {}): { deps: MainDeps; out: string[]; asked: string[]; ran: string[] } {
   const out: string[] = [];
@@ -14,6 +14,10 @@ function mk(over: Partial<MainDeps> & { present?: boolean } = {}): { deps: MainD
     run: async (cmd, args) => {
       ran.push([cmd, ...args].join(' '));
       return { code: present ? 0 : 1, stdout: present ? 'tool 99.0.0' : '' };
+    },
+    exec: async (cmd, args) => {
+      ran.push([cmd, ...args].join(' '));
+      return { code: present ? 0 : 1 };
     },
     fs: {
       exists: () => present,
@@ -128,5 +132,23 @@ describe('main', () => {
     });
     expect(r.outcome).toBe('failed');
     expect(r.note).toContain('classifier-models.json');
+  });
+});
+
+describe('model profile from .env and exit 3 by reason', () => {
+  it('process env wins, else the single key from root .env, else undefined', () => {
+    const read = (): string => 'OTHER=1\nBOOTSTRAP_MODEL_PROFILE=from-file\n';
+    expect(modelProfileFromEnv('/r', { BOOTSTRAP_MODEL_PROFILE: 'from-env' }, read)).toBe('from-env');
+    expect(modelProfileFromEnv('/r', {}, read)).toBe('from-file');
+    expect(
+      modelProfileFromEnv('/r', {}, () => {
+        throw new Error('nope');
+      }),
+    ).toBeUndefined();
+  });
+  it('exit 3 comes from the structured reason (skipped, needs_yes)', async () => {
+    const { deps, out } = mk({ present: false });
+    expect(await main(['--only', 'tmux', '--json'], deps)).toBe(3);
+    expect(JSON.parse(out[0]!)[0].reason).toBe('needs_yes');
   });
 });

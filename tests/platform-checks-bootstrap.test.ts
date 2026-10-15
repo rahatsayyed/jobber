@@ -53,3 +53,21 @@ describe('bootstrap_complete', () => {
     expect(r.fix).toBe('npm run bootstrap');
   });
 });
+
+describe('bootstrap_complete model profile from .env', () => {
+  it('reads BOOTSTRAP_MODEL_PROFILE from root .env when the process env lacks it', async () => {
+    const seen: string[] = [];
+    const c = ctx([]);
+    c.env = { HOME: '/home/u' };
+    const base = c.fs.read;
+    c.fs.read = (p) => (p.endsWith('/.env') ? 'BOOTSTRAP_MODEL_PROFILE=from-dotenv\nOTHER=zzz\n' : base(p));
+    await bootstrapChecks({
+      platform: 'darwin',
+      detectClassifier: async (_d, profile) => {
+        seen.push(profile);
+        return { present: true, detail: 'x' };
+      },
+    })[0]!.run(c);
+    expect(seen).toEqual(['from-dotenv']);
+  });
+});

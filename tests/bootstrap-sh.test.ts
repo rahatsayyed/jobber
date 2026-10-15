@@ -1,7 +1,7 @@
 // tests/bootstrap-sh.test.ts
 // Hermetic: runs scripts/bootstrap.sh with PATH limited to a directory of stubs that only log and exit.
-import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -71,6 +71,37 @@ describe('bootstrap.sh', () => {
     const { dir } = setup(['node', 'git', 'npm', 'npx', 'uname'], 18);
     const r = runScript(dir, ['--check']);
     expect(r.code).not.toBe(3);
+  });
+  it('an unknown flag exits 2 before anything runs', () => {
+    const { dir, log } = setup(['node', 'git', 'npm', 'npx', 'uname'], 22);
+    const r = runScript(dir, ['--bogus']);
+    expect(r.code).toBe(2);
+    expect(called(log).filter((x) => x === 'npm' || x === 'npx')).toEqual([]);
+  });
+  it('--check without node_modules/.bin/tsx says so, exits 1 and never calls npx', () => {
+    const { dir, log } = setup(['node', 'git', 'npm', 'npx', 'uname'], 22);
+    const proj = mkdtempSync(join(tmpdir(), 'jobber-bsh-proj-'));
+    dirs.push(proj);
+    mkdirSync(join(proj, 'scripts'));
+    copyFileSync(SCRIPT, join(proj, 'scripts', 'bootstrap.sh'));
+    const r = spawnSync(which('bash'), [join(proj, 'scripts', 'bootstrap.sh'), '--check'], { env: { PATH: dir, HOME: dir }, encoding: 'utf8', input: '' });
+    expect(r.status).toBe(1);
+    expect(`${r.stdout}${r.stderr}`).toContain('dependencies not installed: run bash scripts/bootstrap.sh');
+    expect(called(log)).not.toContain('npx');
+  });
+  it('--allow-sudo alone does not skip the sudo prompt: no tty exits 3 and sudo never runs', async () => {
+    const { dir, log } = setup(['node', 'git', 'npm', 'npx', 'sudo'], 18);
+    writeFileSync(join(dir, 'uname'), '#!/bin/sh\necho Linux\n');
+    writeFileSync(join(dir, 'apt-cache'), '#!/bin/sh\necho "nodejs:"\necho "  Candidate: 22.1.0-1"\n');
+    chmodSync(join(dir, 'uname'), 0o755);
+    chmodSync(join(dir, 'apt-cache'), 0o755);
+    // detached => new session => no controlling terminal, so the /dev/tty probe fails
+    const code = await new Promise<number>((res) => {
+      const c = spawn(which('bash'), [SCRIPT, '--allow-sudo'], { env: { PATH: dir, HOME: dir }, detached: true, stdio: ['ignore', 'ignore', 'ignore'] });
+      c.on('close', (n) => res(n ?? -1));
+    });
+    expect(code).toBe(3);
+    expect(called(log)).not.toContain('sudo');
   });
   it('prompt path probes /dev/tty by opening it, writing nothing to it on failure', () => {
     const src = readFileSync(SCRIPT, 'utf8');

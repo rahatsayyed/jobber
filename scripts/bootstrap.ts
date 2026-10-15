@@ -2,12 +2,14 @@
 // Usage: npm run bootstrap -- [--check|--plan] [--yes] [--allow-sudo] [--only a,b] [--with-optional] [--skip-model] [--json]
 // Exit: 0 required present, 1 required failed or needs owner, 2 usage, 3 non-interactive needs --yes, 4 unsupported platform.
 // Never prints process.env.
+import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { parseEnv } from '../src/platform/envFile.js';
 import { buildCatalog } from '../src/bootstrap/catalog.js';
 import { buildState, mergeState, statePath, writeState, type BootstrapState } from '../src/bootstrap/state.js';
 import { exitCodeFor, renderTable, runBootstrap, type ExecDeps, type ExecOptions, type ItemResult } from '../src/bootstrap/exec.js';
@@ -156,10 +158,38 @@ export async function main(argv: string[], deps: MainDeps): Promise<number> {
   if (args.json) deps.say(JSON.stringify(results, null, 2));
   else deps.say(renderTable(results));
   if (deps.platform === 'unsupported' && !results.some((r) => r.outcome === 'ok')) return 4;
-  const code = exitCodeFor(results);
-  const needsAction = results.some((r) => /needs --yes|needs sudo|needs a terminal/.test(r.note));
+  const code = exitCodeFor(results, { planOnly: args.plan });
+  const needsAction = results.some((r) => r.reason === 'needs_yes' || r.reason === 'needs_sudo' || r.reason === 'needs_tty');
   if (!deps.interactive && !args.yes && !args.check && !args.plan && needsAction) return 3;
   return code;
+}
+
+// BOOTSTRAP_MODEL_PROFILE: the process env wins, else the single key from <root>/.env. Nothing else is read.
+export function modelProfileFromEnv(root: string, env: NodeJS.ProcessEnv = process.env, read: (p: string) => string = (p) => readFileSync(p, 'utf8')): string | undefined {
+  if (env.BOOTSTRAP_MODEL_PROFILE) return env.BOOTSTRAP_MODEL_PROFILE;
+  try {
+    return parseEnv(read(join(root, '.env'))).BOOTSTRAP_MODEL_PROFILE || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Spawns without a shell, stdio inherited, killed after capMs (default 30 minutes).
+export function spawnInherited(cmd: string, args: string[], cwd?: string, capMs = 30 * 60 * 1000): Promise<{ code: number }> {
+  return new Promise((res) => {
+    const child = spawn(cmd, args, { ...(cwd ? { cwd } : {}), stdio: 'inherit' });
+    const t = setTimeout(() => {
+      child.kill('SIGKILL');
+    }, capMs);
+    child.on('error', () => {
+      clearTimeout(t);
+      res({ code: 127 });
+    });
+    child.on('close', (code) => {
+      clearTimeout(t);
+      res({ code: code ?? 1 });
+    });
+  });
 }
 
 function realDeps(): MainDeps {
@@ -168,8 +198,9 @@ function realDeps(): MainDeps {
   return {
     platform,
     root,
-    env: { BOOTSTRAP_MODEL_PROFILE: process.env.BOOTSTRAP_MODEL_PROFILE, PATH: process.env.PATH, HOME: process.env.HOME },
+    env: { BOOTSTRAP_MODEL_PROFILE: modelProfileFromEnv(root), PATH: process.env.PATH, HOME: process.env.HOME },
     run: defaultRun,
+    exec: (cmd, args, o) => spawnInherited(cmd, args, o.cwd),
     fs: {
       exists: (p) => existsSync(p),
       read: (p) => readFileSync(p, 'utf8'),

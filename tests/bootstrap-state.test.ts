@@ -48,6 +48,7 @@ function deps(over: Partial<MainDeps>): MainDeps {
     root: '/fake',
     env: {},
     run: async () => ({ code: 0, stdout: 'tool 99.0.0' }),
+    exec: async () => ({ code: 0 }),
     fs: {
       exists: () => true,
       read: (p) => (p.endsWith('ccgram.pin.json') ? '{"version":"4.16.0"}' : p.endsWith('classifier-models.json') ? '{"default_profile":"x"}' : '{"engines":{"node":">=20"}}'),

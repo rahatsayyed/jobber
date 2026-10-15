@@ -8,11 +8,16 @@ cd "$(dirname "$0")/.."
 YES=0
 CHECK=0
 ALLOW_SUDO=0
+SKIP_NEXT=0
 for a in "$@"; do
+  if [ "$SKIP_NEXT" = "1" ]; then SKIP_NEXT=0; continue; fi
   case "$a" in
     --yes) YES=1 ;;
     --check|--plan) CHECK=1 ;;
     --allow-sudo) ALLOW_SUDO=1 ;;
+    --only) SKIP_NEXT=1 ;;
+    --with-optional|--skip-model|--json|--help) ;;
+    *) echo "bootstrap: unknown argument: ${a:0:40} (see: npm run bootstrap -- --help)" >&2; exit 2 ;;
   esac
 done
 
@@ -89,7 +94,7 @@ if ! node_ok; then
         echo "bootstrap: --yes does not cover sudo; add --allow-sudo or run the command yourself" >&2
         exit 1
       fi
-      if [ "$ALLOW_SUDO" = "1" ] || confirm "run it with sudo?"; then
+      if confirm "run it with sudo?"; then
         sudo apt-get install -y nodejs npm
       else
         echo "bootstrap: declined"
@@ -102,6 +107,11 @@ if ! node_ok; then
       exit 1
     fi
   fi
+fi
+
+if [ "$CHECK" = "1" ] && [ ! -x node_modules/.bin/tsx ]; then
+  echo "dependencies not installed: run bash scripts/bootstrap.sh"
+  exit 1
 fi
 
 if [ "$CHECK" != "1" ] && [ ! -x node_modules/.bin/tsx ]; then

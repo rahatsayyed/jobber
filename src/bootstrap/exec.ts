@@ -4,12 +4,15 @@ import { redactPane } from '../platform/redact.js';
 import { UV_INSTALLER_ACTION } from './catalog.js';
 import type { Action, BootstrapDeps, Detection, Item, ItemId } from './types.js';
 
+export type Reason = 'needs_yes' | 'needs_sudo' | 'needs_tty' | 'declined' | 'waiting';
 export type Outcome = 'ok' | 'installed' | 'skipped' | 'needs_owner' | 'failed' | 'unsupported';
 export interface ItemResult {
   id: ItemId;
   title: string;
   required: boolean;
   outcome: Outcome;
+  /** Why an item was not acted on; the CLI derives exit code 3 from this, never from the note text. */
+  reason?: Reason;
   version?: string;
   note: string;
 }
@@ -28,13 +31,25 @@ export interface ExecDeps extends BootstrapDeps {
   say(line: string): void;
   download(url: string, destDir: string): Promise<{ path: string; bytes: number; sha256: string }>;
   mkTempDir(): string;
+  /**
+   * Runs a real install action with inherited stdio, no short timeout (the caller caps it) and no shell.
+   * `run` (inherited from BootstrapDeps) is for detection only: it has a short timeout and a small buffer.
+   */
+  exec(cmd: string, args: string[], opts: { cwd?: string }): Promise<{ code: number }>;
 }
 
 const DEPENDS: Partial<Record<ItemId, ItemId>> = { ccgram: 'uv', 'npm-deps': 'node', 'renderer-deps': 'npm-deps' };
 
-/** 1 when a required item is failed or needs the owner. */
-export function exitCodeFor(results: ItemResult[]): 0 | 1 {
-  return results.some((r) => r.required && (r.outcome === 'failed' || r.outcome === 'needs_owner')) ? 1 : 0;
+/**
+ * 1 when a required item is failed, needs the owner, or was skipped (declined, needs --yes, waiting on a
+ * dependency). With planOnly nothing is run, so a skipped item is the expected state and does not count.
+ */
+export function exitCodeFor(results: ItemResult[], opts: { planOnly?: boolean } = {}): 0 | 1 {
+  return results.some(
+    (r) => r.required && (r.outcome === 'failed' || r.outcome === 'needs_owner' || (r.outcome === 'skipped' && !opts.planOnly)),
+  )
+    ? 1
+    : 0;
 }
 
 export function renderTable(results: ItemResult[]): string {
@@ -53,7 +68,7 @@ function lastLine(text: string): string {
   return redactPane(lines[lines.length - 1] ?? 'no output');
 }
 
-type Step = { kind: 'done' } | { kind: 'stop'; outcome: Outcome; note: string };
+type Step = { kind: 'done' } | { kind: 'stop'; outcome: Outcome; note: string; reason?: Reason };
 
 export async function runBootstrap(items: Item[], deps: ExecDeps, opts: ExecOptions): Promise<ItemResult[]> {
   const results: ItemResult[] = [];
@@ -69,25 +84,25 @@ export async function runBootstrap(items: Item[], deps: ExecDeps, opts: ExecOpti
         if (!a.url) return { kind: 'stop', outcome: 'failed', note: `${a.id}: downloaded script has no url` };
         if (!opts.interactive) {
           deps.say(`script install needs a terminal: ${a.url}`);
-          return { kind: 'stop', outcome: 'needs_owner', note: `script review needs a terminal (${a.url})` };
+          return { kind: 'stop', outcome: 'needs_owner', note: `script review needs a terminal (${a.url})`, reason: 'needs_tty' };
         }
         // The show-and-ask flow is the consent surface; the second ask happens whatever --yes says.
         const dir = deps.mkTempDir();
         const dl = await deps.download(a.url, dir);
         deps.say(`downloaded ${a.url} (${dl.bytes} bytes, sha256 ${dl.sha256})`);
         deps.say(deps.fs.read(dl.path).split('\n').slice(0, 40).join('\n'));
-        if (!(await deps.ask(`run the downloaded script ${dl.path}?`))) return { kind: 'stop', outcome: 'skipped', note: 'script declined' };
+        if (!(await deps.ask(`run the downloaded script ${dl.path}?`))) return { kind: 'stop', outcome: 'skipped', note: 'script declined', reason: 'declined' };
         argv = a.argv.map((x) => (x === '{script}' ? dl.path : x));
       } else if (a.needsSudo) {
         deps.say(`needs sudo: sudo ${argv.join(' ')}`);
         if (!(opts.yes && opts.allowSudo)) {
-          if (!opts.interactive) return { kind: 'stop', outcome: 'needs_owner', note: `needs sudo: run sudo ${argv.join(' ')}` };
-          if (!(await deps.ask('run with sudo?'))) return { kind: 'stop', outcome: 'skipped', note: 'sudo declined' };
+          if (!opts.interactive) return { kind: 'stop', outcome: 'needs_owner', note: `needs sudo: run sudo ${argv.join(' ')}`, reason: 'needs_sudo' };
+          if (!(await deps.ask('run with sudo?'))) return { kind: 'stop', outcome: 'skipped', note: 'sudo declined', reason: 'declined' };
         }
       } else if (!opts.yes) {
         deps.say(`action: ${a.summary}`);
-        if (!opts.interactive) return { kind: 'stop', outcome: 'skipped', note: 'needs --yes' };
-        if (!(await deps.ask(`run: ${argv.join(' ')}?`))) return { kind: 'stop', outcome: 'skipped', note: 'declined' };
+        if (!opts.interactive) return { kind: 'stop', outcome: 'skipped', note: 'needs --yes', reason: 'needs_yes' };
+        if (!(await deps.ask(`run: ${argv.join(' ')}?`))) return { kind: 'stop', outcome: 'skipped', note: 'declined', reason: 'declined' };
       }
       if (a.fn) {
         deps.say(`running: ${argv.join(' ')} (sudo: no, network: ${a.network ? 'yes' : 'no'})`);
@@ -97,8 +112,9 @@ export async function runBootstrap(items: Item[], deps: ExecDeps, opts: ExecOpti
       const full = a.needsSudo ? ['sudo', ...argv] : argv;
       deps.say(`running: ${full.join(' ')} (sudo: ${a.needsSudo ? 'yes' : 'no'}, network: ${a.network ? 'yes' : 'no'}${a.url ? `, url: ${a.url}` : ''})`);
       const [cmd, ...args] = full;
-      const r = await deps.run(cmd!, args, a.cwd ? { cwd: a.cwd } : undefined);
-      if (r.code !== 0) return { kind: 'stop', outcome: 'failed', note: `${a.id} failed: ${lastLine(r.stdout)}` };
+      // Output is inherited by the child, so the note carries the exit code only.
+      const r = await deps.exec(cmd!, args, a.cwd ? { cwd: a.cwd } : {});
+      if (r.code !== 0) return { kind: 'stop', outcome: 'failed', note: `${a.id} failed: exit ${r.code}; see output above` };
       return { kind: 'done' };
     } catch (e) {
       return { kind: 'stop', outcome: 'failed', note: `${a.id} failed: ${lastLine(String((e as Error).message ?? e))}` };
@@ -118,8 +134,8 @@ export async function runBootstrap(items: Item[], deps: ExecDeps, opts: ExecOpti
   };
 
   for (const item of selected) {
-    const res = (outcome: Outcome, note: string, version?: string): void => {
-      const r: ItemResult = { id: item.id, title: item.title, required: item.required, outcome, note, ...(version ? { version } : {}) };
+    const res = (outcome: Outcome, note: string, version?: string, reason?: Reason): void => {
+      const r: ItemResult = { id: item.id, title: item.title, required: item.required, outcome, note, ...(version ? { version } : {}), ...(reason ? { reason } : {}) };
       results.push(r);
       byId.set(item.id, r);
     };
@@ -141,7 +157,7 @@ export async function runBootstrap(items: Item[], deps: ExecDeps, opts: ExecOpti
     const dep = DEPENDS[item.id];
     if (dep && !opts.planOnly) {
       if (!(await depPresent(dep))) {
-        res('skipped', `waiting for ${dep}`);
+        res('skipped', `waiting for ${dep}`, undefined, 'waiting');
         continue;
       }
     }
@@ -199,7 +215,7 @@ export async function runBootstrap(items: Item[], deps: ExecDeps, opts: ExecOpti
       res('failed', stop.note);
     } else if (stop) {
       const note = ownerNote ? `${ownerNote}; ${stop.note}` : stop.note;
-      res(plan.kind === 'owner' && stop.outcome === 'skipped' ? 'needs_owner' : stop.outcome, note);
+      res(plan.kind === 'owner' && stop.outcome === 'skipped' ? 'needs_owner' : stop.outcome, note, undefined, stop.reason);
     } else if (ran && cur.present) {
       res('installed', cur.detail, cur.version);
     } else {

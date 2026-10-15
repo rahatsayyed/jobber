@@ -19,14 +19,15 @@ function mk(env: Env, platform: 'darwin' | 'linux' = 'darwin'): ExecDeps {
     env: {},
     now: () => new Date(0),
     fs: { exists: () => false, read: () => Array.from({ length: 60 }, (_, i) => `line${i}`).join('\n'), list: () => [] },
-    run: (async (cmd: string, args: string[]) => {
+    run: (async () => ({ code: 0, stdout: '' })) as ExecDeps['run'],
+    exec: async (cmd: string, args: string[]) => {
       if (/\s/.test(cmd)) throw new Error('shell string');
       env.calls.push([cmd, ...args]);
-      if (env.failCmd && cmd === env.failCmd) return { code: 1, stdout: 'boom\nTOKEN=abc\nlast bad line' };
+      if (env.failCmd && cmd === env.failCmd) return { code: 1 };
       const t = args[args.length - 1];
       if (t) env.present.add(t);
-      return { code: 0, stdout: '' };
-    }) as ExecDeps['run'],
+      return { code: 0 };
+    },
     ask: async (p) => {
       env.asks.push(p);
       return true;
@@ -138,9 +139,9 @@ describe('executor consent table', () => {
   it('a throwing run or download fails the item, not the run', async () => {
     const e = newEnv();
     const d = mk(e);
-    d.run = (async () => {
+    d.exec = async () => {
       throw new Error('spawn exploded');
-    }) as ExecDeps['run'];
+    };
     d.download = async () => {
       throw new Error('net down');
     };
@@ -248,17 +249,53 @@ describe('executor other rules', () => {
     ];
     const r = await runBootstrap(items, mk(e), O({ yes: true }));
     expect(r[0]!.outcome).toBe('failed');
-    expect(r[0]!.note).toContain('last bad line');
+    expect(r[0]!.note).toContain('exit 1');
+    expect(r[0]!.note).toContain('see output above');
     expect(r[1]).toMatchObject({ outcome: 'skipped', note: 'waiting for uv' });
     expect(r[2]!.outcome).toBe('installed');
   });
-  it('a failed output line carrying a credential marker is redacted', async () => {
+  it('a thrown exec error carrying a credential marker is redacted', async () => {
     const e = newEnv();
-    e.failCmd = 'inst';
     const fake = mk(e);
-    fake.run = (async () => ({ code: 1, stdout: 'TOKEN=abc123' })) as ExecDeps['run'];
+    fake.exec = async () => {
+      throw new Error('TOKEN=abc123');
+    };
     const r = await runBootstrap([item('tmux', e, acts('tmux'))], fake, O({ yes: true }));
+    expect(r[0]!.outcome).toBe('failed');
     expect(r[0]!.note).not.toContain('abc123');
+  });
+  it('real actions go through exec, never run; a slow exec is not subject to the detection timeout', async () => {
+    const e = newEnv();
+    const fake = mk(e);
+    let runCalls = 0;
+    fake.run = (async () => {
+      runCalls++;
+      return { code: 0, stdout: '' };
+    }) as ExecDeps['run'];
+    fake.exec = async (cmd, args) => {
+      await new Promise((r) => setTimeout(r, 60));
+      e.present.add(args[args.length - 1]!);
+      e.calls.push([cmd, ...args]);
+      return { code: 0 };
+    };
+    const r = await runBootstrap([item('tmux', e, acts('tmux'))], fake, O({ yes: true }));
+    expect(r[0]!.outcome).toBe('installed');
+    expect(runCalls).toBe(0);
+    expect(e.calls).toEqual([['inst', 'tmux']]);
+  });
+  it('required skipped items fail the exit code except in plan mode; reasons are structured', async () => {
+    const e = newEnv();
+    const r = await runBootstrap([item('tmux', e, acts('tmux'))], mk(e), O({ interactive: false }));
+    expect(r[0]).toMatchObject({ outcome: 'skipped', reason: 'needs_yes' });
+    expect(exitCodeFor(r)).toBe(1);
+    expect(exitCodeFor(r, { planOnly: true })).toBe(0);
+    const e2 = newEnv();
+    const w = await runBootstrap([item('uv', e2, acts('uv')), item('ccgram', e2, acts('ccgram'))], { ...mk(e2), exec: async () => ({ code: 1 }) }, O({ yes: true }));
+    expect(w[1]).toMatchObject({ outcome: 'skipped', reason: 'waiting' });
+    const e3 = newEnv();
+    const d = await runBootstrap([item('tmux', e3, acts('tmux'))], { ...mk(e3), ask: async () => false }, O());
+    expect(d[0]).toMatchObject({ outcome: 'skipped', reason: 'declined' });
+    expect(exitCodeFor(d)).toBe(1);
   });
   it('only a present re-detection counts as installed', async () => {
     const e = newEnv();
@@ -271,7 +308,7 @@ describe('executor other rules', () => {
     const r = await runBootstrap([item('tmux', e, acts('tmux'))], mk(e), O({ planOnly: true }));
     expect(e.calls).toHaveLength(0);
     expect(e.said.join('\n')).toContain('would run: inst tmux');
-    expect(exitCodeFor(r)).toBe(0);
+    expect(exitCodeFor(r, { planOnly: true })).toBe(0);
   });
   it('all-present machine runs nothing; table has no env values', async () => {
     const e = newEnv(['git', 'tmux']);

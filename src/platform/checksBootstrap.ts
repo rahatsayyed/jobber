@@ -4,6 +4,7 @@
 import { join } from 'node:path';
 import { buildCatalog } from '../bootstrap/catalog.js';
 import type { BootstrapDeps, CcgramPin, Detection, ItemId, Platform } from '../bootstrap/types.js';
+import { parseEnv } from './envFile.js';
 import { defaultFetchDeps } from '../safety/modelFetch.js';
 import type { Check, CheckResult, DoctorContext } from './doctor.js';
 
@@ -37,7 +38,15 @@ export function bootstrapChecks(
         }
         const registryPath = join(ctx.root, 'config', 'classifier-models.json');
         let profile = 'unresolved';
-        const envP = ctx.env.BOOTSTRAP_MODEL_PROFILE;
+        // process env wins; else the single key BOOTSTRAP_MODEL_PROFILE from <root>/.env (nothing else is used)
+        let envP: string | undefined = ctx.env.BOOTSTRAP_MODEL_PROFILE;
+        if (!envP) {
+          try {
+            envP = parseEnv(ctx.fs.read(join(ctx.root, '.env'))).BOOTSTRAP_MODEL_PROFILE;
+          } catch {
+            envP = undefined;
+          }
+        }
         if (envP && ID_RE.test(envP)) profile = envP;
         else {
           try {

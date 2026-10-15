@@ -55,6 +55,7 @@ function mkExec(root: string, said: string[], asks: string[]): ExecDeps {
     platform: 'darwin', root, env: {}, now: () => new Date(0),
     fs: { exists: () => false, read: () => '', list: () => [] },
     run: (async () => ({ code: 0, stdout: '' })) as ExecDeps['run'],
+    exec: async () => ({ code: 0 }),
     ask: async (p) => { asks.push(p); return true; },
     say: (l) => { said.push(l); },
     download: async () => { throw new Error('no'); },
