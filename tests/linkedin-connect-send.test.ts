@@ -93,7 +93,7 @@ function setup(o: Opts = {}) {
   const env = { LINKEDIN_DRY_RUN: 'false', SCHEDULER_DRY_RUN: 'false', ...o.env };
   const deps: ToolDeps = {
     rt, db, now: () => NOW, cfg: loadLinkedinConfig(env), env,
-    factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
+    factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG, screen: async (t) => ({ blocked: false, unscreened: false, text: t, flags: [], code: 'ok' as const }),
   };
   return { deps, log, db, els, dlg, launcher, site, eventsAtSend: () => eventsAtSend };
 }

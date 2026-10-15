@@ -136,6 +136,14 @@ export async function sendMessage(
         pauseContact(db, person.id, 'injection_suspected', now());
         return refuse('injection_suspected', 'profile text looks like an injection attempt');
       }
+      {
+        const sv = await deps.screen(fields.map(([t]) => t).filter(Boolean).join('\n'), 'send');
+        if (sv.blocked) {
+          if (sv.code === 'classifier_unavailable') return fail('classifier_unavailable', 'classifier is unavailable');
+          pauseContact(db, person.id, 'injection_suspected', now());
+          return refuse('injection_suspected', 'profile text looks like an injection attempt');
+        }
+      }
       const og = gateOutbound(
         text,
         outputGateContext({

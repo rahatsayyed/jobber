@@ -135,7 +135,7 @@ class ScriptedLauncher implements Launcher {
         { profile_url: LI_URL, text: LI_MSG, kind: 'rapport', job_id: 'job-1', company: 'Acme' },
         {
           rt, db: this.db, now: () => now, cfg: loadLinkedinConfig(env), env,
-          factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
+          factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG, screen: async (t) => ({ blocked: false, unscreened: false, text: t, flags: [], code: 'ok' as const }),
         },
         LI_FAST,
       );

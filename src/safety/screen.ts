@@ -26,8 +26,8 @@ export function classifierRequired(purpose: ScreenPurpose, dryRun: boolean): boo
   return purpose !== 'escalate' && !dryRun;
 }
 
-export function defaultClassifier(dryRun: boolean): () => Promise<ClassifierPort> {
-  return () => getActiveClassifier(dryRun ? 'dry_run' : 'send');
+export function defaultClassifier(dryRun: boolean, env?: NodeJS.ProcessEnv): () => Promise<ClassifierPort> {
+  return () => getActiveClassifier(dryRun ? 'dry_run' : 'send', env ? { env } : {});
 }
 
 export async function screenUntrusted(
@@ -38,7 +38,7 @@ export async function screenUntrusted(
   const env = deps.env ?? process.env;
   const dryRun = deps.dryRun ?? isDryRun(env);
   const required = classifierRequired(purpose, dryRun);
-  const classifier = deps.classifier ?? defaultClassifier(dryRun);
+  const classifier = deps.classifier ?? defaultClassifier(dryRun, env);
   const r = await gateInputAsync(raw, {
     maxChars: deps.maxChars ?? 6000,
     classifier,
@@ -65,11 +65,11 @@ export async function screenUntrusted(
 /** Source files that must call screenUntrusted (each wiring task adds its lint test). */
 export const SCREENED_SURFACES: ReadonlyArray<{ id: string; file: string }> = [
   { id: 'linkedin_state', file: 'src/mcp/linkedin.ts' },
-  { id: 'linkedin_check_status', file: 'src/mcp/linkedin.ts' },
-  { id: 'linkedin_connect_send', file: 'src/mcp/linkedin.ts' },
-  { id: 'linkedin_send_message', file: 'src/mcp/linkedin.ts' },
-  { id: 'linkedin_accept_invite', file: 'src/mcp/linkedin.ts' },
-  { id: 'linkedin_find_profiles', file: 'src/mcp/linkedin.ts' },
+  { id: 'linkedin_check_status', file: 'src/linkedin/checkStatus.ts' },
+  { id: 'linkedin_connect_send', file: 'src/linkedin/connectSend.ts' },
+  { id: 'linkedin_send_message', file: 'src/linkedin/sendMessage.ts' },
+  { id: 'linkedin_accept_invite', file: 'src/linkedin/acceptInvite.ts' },
+  { id: 'linkedin_find_profiles', file: 'src/linkedin/findProfiles.ts' },
   { id: 'naukri_state', file: 'src/mcp/naukri.ts' },
   { id: 'naukri_search', file: 'src/mcp/naukri.ts' },
   { id: 'naukri_inbox', file: 'src/mcp/naukri.ts' },

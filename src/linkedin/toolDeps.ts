@@ -4,6 +4,9 @@ import type { StyleConfig } from '../safety/styleGate.js';
 import type { LinkedinConfig } from './config.js';
 import type { FactCheck } from './guard.js';
 import type { Runtime } from './runtime.js';
+import type { ScreenPurpose, ScreenVerdict } from '../safety/screen.js';
+
+export type Screen = (text: string, purpose: ScreenPurpose) => Promise<ScreenVerdict>;
 
 export interface ToolDeps {
   rt: Runtime;
@@ -13,6 +16,8 @@ export interface ToolDeps {
   env: NodeJS.ProcessEnv;
   factCheck: FactCheck;
   styleCfg: StyleConfig;
+  /** Classifier screen for third-party page text (fail closed live, unscreened in dry run). */
+  screen: Screen;
 }
 
 export type SendStatus =

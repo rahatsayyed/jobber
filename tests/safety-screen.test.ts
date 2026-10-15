@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { screenUntrusted, classifierRequired, SCREENED_SURFACES } from '../src/safety/screen.js';
+import { screenUntrusted, classifierRequired, defaultClassifier, SCREENED_SURFACES } from '../src/safety/screen.js';
 import type { ClassifierPort } from '../src/safety/inputGate.js';
 
 const fake = (v: { malicious?: boolean; truncated?: boolean }): ClassifierPort => ({
@@ -61,6 +61,9 @@ describe('screenUntrusted policy', () => {
     const v = await screenUntrusted('he​llo', 'read', { classifier: fake({}), dryRun: false });
     expect(v.text).toBe('hello');
     expect(v.flags).toContain('hidden_chars');
+  });
+  it('defaultClassifier forwards env (empty env rejects, never reads process.env)', async () => {
+    await expect(defaultClassifier(false, {})()).rejects.toThrow();
   });
   it('classifierRequired', () => {
     expect(classifierRequired('read', false)).toBe(true);

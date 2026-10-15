@@ -39,7 +39,7 @@ function setup(site: FakeSite) {
   runtimes.push(rt);
   const deps: ToolDeps = {
     rt, db, now: () => new Date('2026-10-14T10:00:00Z'), cfg: loadLinkedinConfig({}), env: {},
-    factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
+    factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG, screen: async (t) => ({ blocked: false, unscreened: false, text: t, flags: [], code: 'ok' as const }),
   };
   return { deps, log, db };
 }

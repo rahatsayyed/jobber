@@ -120,6 +120,16 @@ export async function acceptInvite(
           headline: gated(inv?.headline ?? '', MAX_FIELD_CHARS.headline),
           path: `/in/${slug}`,
         };
+        // Classifier screen over what is about to be surfaced to the caller.
+        const sv = await deps.screen(`${inv?.name ?? ''}\n${inv?.headline ?? ''}`, 'read');
+        if (sv.blocked) {
+          if (sv.code === 'classifier_unavailable') {
+            return refusal('failed', 'classifier_unavailable', 'classifier is unavailable');
+          }
+          sender.name = BLOCKED;
+          sender.headline = BLOCKED;
+          injection = true;
+        }
         return {
           ...refusal('refused', 'unknown_recipient', 'sender is not in people'),
           unknown_senders: [sender],
@@ -139,6 +149,16 @@ export async function acceptInvite(
         [inv?.name ?? '', MAX_FIELD_CHARS.name], [inv?.headline ?? '', MAX_FIELD_CHARS.headline],
       ] as const) {
         if (s && gateField(s, max).blocked) {
+          return refusal('refused', 'injection_suspected', 'invitation text looks like an injection attempt');
+        }
+      }
+
+      {
+        const sv = await deps.screen(`${inv?.name ?? ''}\n${inv?.headline ?? ''}`, 'send');
+        if (sv.blocked) {
+          if (sv.code === 'classifier_unavailable') {
+            return refusal('failed', 'classifier_unavailable', 'classifier is unavailable');
+          }
           return refusal('refused', 'injection_suspected', 'invitation text looks like an injection attempt');
         }
       }

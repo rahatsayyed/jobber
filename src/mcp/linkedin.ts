@@ -14,7 +14,9 @@ import { loadLinkedinConfig, type LinkedinConfig } from '../linkedin/config.js';
 import { checkSessionFile, DEFAULT_SESSION_PATH } from '../linkedin/session.js';
 import { formatState } from '../linkedin/state.js';
 import type { FactCheck } from '../linkedin/guard.js';
-import type { ToolDeps } from '../linkedin/toolDeps.js';
+import type { Screen, ToolDeps } from '../linkedin/toolDeps.js';
+import { screenUntrusted } from '../safety/screen.js';
+import type { ClassifierPort } from '../safety/inputGate.js';
 import { checkConnectionStatus } from '../linkedin/checkStatus.js';
 import { connectSend } from '../linkedin/connectSend.js';
 import { sendMessage } from '../linkedin/sendMessage.js';
@@ -69,6 +71,8 @@ export interface HandlerDeps {
   env?: NodeJS.ProcessEnv;
   cfg?: LinkedinConfig;
   sessionPath?: string;
+  /** Test seam: replaces the default classifier loader. */
+  classifier?: ClassifierPort | (() => Promise<ClassifierPort>);
 }
 
 export type Handler = (args: any) => Promise<unknown>;
@@ -132,7 +136,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
     });
   const toolDeps = (): ToolDeps => ({
     rt: getRt(), db: getDb(), now, cfg, env, factCheck,
-    styleCfg: getStyle(),
+    styleCfg: getStyle(), screen,
   });
   const json = (v: unknown) => JSON.stringify(v);
   const safe = (fn: Handler): Handler => async (args) => {
@@ -146,20 +150,54 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
       return json({ status: 'failed', code: 'error', kind: errorKind(text) });
     }
   };
-  const actionText = (r: { ok: boolean; code: string; reason?: string; state?: string }) =>
-    json({ ok: r.ok, code: r.code, ...(r.reason ? { reason: r.reason } : {}) }) + (r.state ? `\n${r.state}` : '');
+  const screen: Screen = (t, p) =>
+    screenUntrusted(t, p, { env, dryRun: cfg.dryRun, classifier: deps.classifier });
+  const pageTextOf = (state: string): string => {
+    const a = state.indexOf('<<<PAGE_TEXT\n');
+    const b = state.lastIndexOf('\nPAGE_TEXT>>>');
+    return a >= 0 && b > a ? state.slice(a + '<<<PAGE_TEXT\n'.length, b) : state;
+  };
+  const blockedResult = (code: string, pageKind: string | null, halted: string | null) =>
+    json({
+      ok: false,
+      code: code === 'classifier_unavailable' ? 'classifier_unavailable' : 'injection_suspected',
+      page_kind: pageKind,
+      halted: halted ?? null,
+    });
+  /** Classifier-screen a formatted snapshot before it reaches the model. */
+  const renderState = async (snap: Parameters<typeof formatState>[0], halted: string | null) => {
+    const first = formatState(snap, { halted, dryRun: cfg.dryRun });
+    const v = await screen(pageTextOf(first.text), 'read');
+    if (v.blocked) return blockedResult(v.code, first.flags.page_kind ?? null, halted);
+    if (v.unscreened) return formatState(snap, { halted, dryRun: cfg.dryRun, extra: ['classifier=unscreened'] }).text;
+    return first.text;
+  };
+  const actionText = async (r: { ok: boolean; code: string; reason?: string; state?: string }) => {
+    const head = json({ ok: r.ok, code: r.code, ...(r.reason ? { reason: r.reason } : {}) });
+    if (!r.state) return head;
+    const v = await screen(pageTextOf(r.state), 'read');
+    if (v.blocked) {
+      return blockedResult(v.code, /page_kind=(\S+)/.exec(r.state)?.[1] ?? null, haltReason(getDb(), 'linkedin'));
+    }
+    if (v.unscreened) {
+      const nl = r.state.indexOf('\n');
+      const marked = nl >= 0 ? `${r.state.slice(0, nl)}\nclassifier=unscreened${r.state.slice(nl)}` : r.state;
+      return `${head}\n${marked}`;
+    }
+    return `${head}\n${r.state}`;
+  };
   const stateOf = async () => {
     const snap = await getRt().snapshot();
     const halted = haltReason(getDb(), 'linkedin');
     if (!snap) return json({ ok: false, code: halted ? 'halted' : 'no_session' });
-    return formatState(snap, { halted, dryRun: cfg.dryRun }).text;
+    return renderState(snap, halted);
   };
 
   const handlers: Record<ToolName, Handler> = {
     linkedin_open: safe(async ({ url: u }) => {
       const r = await getRt().open(u);
       if (!r.ok) return json({ ok: false, code: r.code, reason: r.reason });
-      return formatState(r.snapshot, { halted: haltReason(getDb(), 'linkedin'), dryRun: cfg.dryRun }).text;
+      return renderState(r.snapshot, haltReason(getDb(), 'linkedin'));
     }),
     linkedin_state: safe(async () => stateOf()),
     linkedin_click: safe(async ({ text }) => actionText(await getRt().click(text))),

@@ -30,11 +30,18 @@ export async function checkConnectionStatus(a: { profile_url: string }, deps: To
     degree: p.degree,
   };
   const name = gateField(p.name ?? '', MAX_FIELD_CHARS.name);
+  const about = p.about ? gateField(p.about, MAX_FIELD_CHARS.about) : null;
+  // Classifier screen over everything surfaced; an unknown status must not decide a send.
+  const verdict = await deps.screen(`${p.name ?? ''}\n${p.about ?? ''}`, 'read');
+  if (verdict.blocked) {
+    if (verdict.code === 'classifier_unavailable') return { status: 'failed', code: 'classifier_unavailable' };
+    out.injection_suspected = true;
+    return out;
+  }
   if (name.text && !name.blocked) out.name = name.text;
-  if (p.about) {
-    const g = gateField(p.about, MAX_FIELD_CHARS.about);
-    if (g.blocked) out.injection_suspected = true;
-    else if (g.text) out.profileContext = { about: g.text };
+  if (about) {
+    if (about.blocked) out.injection_suspected = true;
+    else if (about.text) out.profileContext = { about: about.text };
   }
   return out;
 }
