@@ -5,6 +5,7 @@ import { restrictedChecks } from '../src/platform/checks.js';
 import type { ClassifierProfile, ClassifierRegistry } from '../src/safety/classifierRegistry.js';
 import type { VerifyReport } from '../src/safety/modelFetch.js';
 import { SMOKE_BENIGN, SMOKE_INJECTION } from '../src/safety/smoke.js';
+import { SCREENED_SURFACES, PENDING_SURFACE_FILES, type ScreenVerdict } from '../src/safety/screen.js';
 
 const D = 'd'.repeat(64);
 const profile = (over: Partial<ClassifierProfile> = {}): ClassifierProfile =>
@@ -200,5 +201,69 @@ describe('classifier_smoke check', () => {
       const out = await run(m.checks, makeCtx(files));
       expect(JSON.stringify(out)).not.toContain('sk-planted');
     }
+  });
+});
+
+describe('classifier_wired check', () => {
+  const surfaceFiles = (skip: string[] = []): Files => {
+    const f: Files = {};
+    for (const s of SCREENED_SURFACES) {
+      if (!PENDING_SURFACE_FILES.includes(s.file) && !skip.includes(s.file)) f[`/p/${s.file}`] = { text: 'screenUntrusted(' };
+    }
+    return f;
+  };
+  const verdict = (blocked: boolean, code: ScreenVerdict['code'] = 'ok'): ScreenVerdict =>
+    ({ blocked, unscreened: false, text: '', flags: [], code });
+  const good = () => vi.fn(async () => ({ injection: verdict(true, 'injection_suspected'), benign: verdict(false) }));
+  const wired = async (m: ReturnType<typeof mk>, files: Files, env: NodeJS.ProcessEnv = {}) =>
+    (await run(m.checks, makeCtx({ ...surfaceFiles(), ...files }, env)))['classifier_wired'];
+
+  it('passes when surfaces are wired and the screen blocks the injection', async () => {
+    const screenSmoke = good();
+    const r = await wired(mk({ screenSmoke }), withModel());
+    expect(r.status).toBe('pass');
+    expect(screenSmoke).toHaveBeenCalledTimes(1);
+  });
+  it('fails when a surface file lacks the screen call, naming it', async () => {
+    const files = { ...surfaceFiles(['src/mcp/linkedin.ts']), '/p/src/mcp/linkedin.ts': { text: 'nothing here' }, ...withModel() };
+    const r = (await run(mk({ screenSmoke: good() }).checks, makeCtx(files)))['classifier_wired'];
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain('linkedin_state');
+  });
+  it('fails on a missing non-pending surface file but skips the pending one', async () => {
+    const ok = await wired(mk({ screenSmoke: good() }), withModel());
+    expect(ok.status).toBe('pass'); // findProfiles.ts is absent from the fs and pending
+    const files = { ...surfaceFiles(['src/mcp/outreach.ts']), ...withModel() };
+    const missing = (await run(mk({ screenSmoke: good() }).checks, makeCtx(files)))['classifier_wired'];
+    expect(missing.status).toBe('fail');
+    expect(missing.detail).toContain('outreach_escalate');
+  });
+  it('unset or unfitted model: warn in dry, fail when SCHEDULER_DRY_RUN=false, with the fix', async () => {
+    const unset = await wired(mk({ screenSmoke: good() }), {});
+    expect(unset.status).toBe('warn');
+    expect((await wired(mk({ screenSmoke: good() }), {}, { SCHEDULER_DRY_RUN: 'false' })).status).toBe('fail');
+    const unfitted = mk({ profile: profile({ fit: { threshold: null } }), screenSmoke: good() });
+    const w = await wired(unfitted, withModel());
+    expect(w.status).toBe('warn');
+    expect(w.fix).toBe('npm run classifier:fit -- --profile pg2 --write');
+    expect((await wired(unfitted, withModel(), { SCHEDULER_DRY_RUN: 'false' })).status).toBe('fail');
+    const gone = mk({ verifyProfile: async () => okReport({ ok: false, problems: ['x'], observed_sha256: {} }), screenSmoke: good() });
+    const nd = await wired(gone, withModel());
+    expect(nd.status).toBe('warn');
+    expect(nd.fix).toBe('npm run models -- fetch pg2');
+  });
+  it('fails when the injection is not blocked or the benign text is blocked', async () => {
+    const a = await wired(mk({ screenSmoke: async () => ({ injection: verdict(false), benign: verdict(false) }) }), withModel());
+    expect(a.status).toBe('fail');
+    const b = await wired(mk({ screenSmoke: async () => ({ injection: verdict(true, 'classifier_unavailable'), benign: verdict(false) }) }), withModel());
+    expect(b.status).toBe('fail');
+    const c = await wired(mk({ screenSmoke: async () => ({ injection: verdict(true, 'injection_suspected'), benign: verdict(true, 'injection_suspected') }) }), withModel());
+    expect(c.status).toBe('fail');
+  });
+  it('DOCTOR_SKIP_SMOKE=1 warns without running the smoke', async () => {
+    const screenSmoke = good();
+    const r = await wired(mk({ screenSmoke }), withModel(), { DOCTOR_SKIP_SMOKE: '1' });
+    expect(r.status).toBe('warn');
+    expect(screenSmoke).not.toHaveBeenCalled();
   });
 });

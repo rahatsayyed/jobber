@@ -77,3 +77,11 @@ export const SCREENED_SURFACES: ReadonlyArray<{ id: string; file: string }> = [
   { id: 'naukri_inbound_classify', file: 'src/naukri/inbound.ts' },
   { id: 'outreach_escalate', file: 'src/mcp/outreach.ts' },
 ];
+
+// Surface files listed above but not created yet. The lint and the doctor check classifier_wired
+// skip these (and only these) while the file is missing. Task 8 creates
+// src/linkedin/findProfiles.ts and deletes this entry.
+export const PENDING_SURFACE_FILES: ReadonlyArray<string> = ['src/linkedin/findProfiles.ts'];
+
+// A surface file is wired when it calls screenUntrusted, an injected deps.screen(, or a passed screen(raw, ...).
+export const SCREEN_CALL_PATTERN = /screenUntrusted|deps\.screen\(|\bscreen\(raw,/;

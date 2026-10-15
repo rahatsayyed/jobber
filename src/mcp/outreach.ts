@@ -17,6 +17,7 @@ import {
   type InboundClass,
 } from '../outreach/service.js';
 import type { Platform } from '../scheduler/control.js';
+import { screenUntrusted, type ScreenDeps, type ScreenPurpose, type ScreenVerdict } from '../safety/screen.js';
 
 /**
  * `outreach` MCP server: thin registration over src/outreach/service.ts. Local sqlite only: no
@@ -28,6 +29,8 @@ type Db = BetterSqlite3.Database;
 export interface OutreachDeps {
   db?: Db;
   now?: () => Date;
+  /** Injected screen (tests). Default screenUntrusted. */
+  screen?: (raw: string, purpose: ScreenPurpose, deps?: ScreenDeps) => Promise<ScreenVerdict>;
 }
 
 let lazyDb: Db | null = null;
@@ -58,13 +61,23 @@ export function handleRecordInbound(
     nowOf(deps),
   );
 }
-export function handleEscalate(
+export async function handleEscalate(
   deps: OutreachDeps,
   a: { run_id?: string; platform: string; person_id?: number; thread_ref?: string; reason: string; detail?: string },
 ) {
+  // Policy D3: an escalation is never dropped. Blocked text becomes a code; unscreened is marked.
+  let reason = a.reason;
+  let detail = a.detail;
+  const verdict = await (deps.screen ?? screenUntrusted)(`${a.reason}\n${a.detail ?? ''}`, 'escalate');
+  if (verdict.blocked) {
+    reason = `[blocked: ${verdict.code}]`;
+    detail = `[blocked: ${verdict.code}]`;
+  } else if (verdict.unscreened) {
+    reason = `[unscreened] ${a.reason}`;
+  }
   const id = addEscalation(
     getDb(deps),
-    { runId: a.run_id ?? null, platform: a.platform, personId: a.person_id, threadRef: a.thread_ref, reason: a.reason, detail: a.detail },
+    { runId: a.run_id ?? null, platform: a.platform, personId: a.person_id, threadRef: a.thread_ref, reason, detail },
     nowOf(deps),
   );
   return { id };
@@ -128,7 +141,13 @@ export function buildServer(deps: OutreachDeps = {}): McpServer {
         detail: z.string().max(5000).optional(),
       },
     },
-    async (a) => safe(() => handleEscalate(deps, a)),
+    async (a) => {
+      try {
+        return text(await handleEscalate(deps, a));
+      } catch (err: any) {
+        return { ...text({ error: String(err?.message ?? err).slice(0, 300) }), isError: true as const };
+      }
+    },
   );
   server.registerTool(
     'list_open_escalations',

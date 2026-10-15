@@ -9,6 +9,7 @@ import { loadClassifier } from '../safety/classifierModel.js';
 import { loadRegistry, resolveProfile, type ClassifierProfile, type ClassifierRegistry } from '../safety/classifierRegistry.js';
 import { verifyProfile, type VerifyReport } from '../safety/modelFetch.js';
 import { SMOKE_BENIGN, SMOKE_INJECTION } from '../safety/smoke.js';
+import { screenUntrusted, SCREENED_SURFACES, PENDING_SURFACE_FILES, SCREEN_CALL_PATTERN, type ScreenVerdict } from '../safety/screen.js';
 import { loadProfiles } from './runner.js';
 import { authDbPathFromEnv, isLoopbackBind, validateRunnerConfig } from '../web/env.js';
 import { normaliseEmail } from '../dash/account.js';
@@ -63,6 +64,8 @@ export interface RestrictedDeps {
   loadRegistry(path: string): ClassifierRegistry;
   verifyProfile(p: ClassifierProfile, root: string): Promise<VerifyReport>;
   smoke(p: ClassifierProfile, root: string): Promise<{ benign: number; injection: number }>;
+  /** Runs screenUntrusted on the smoke strings with a live classifier; injected in tests. */
+  screenSmoke(p: ClassifierProfile, root: string): Promise<{ injection: ScreenVerdict; benign: ScreenVerdict }>;
   smokeTimeoutMs: number;
   loadProfiles(policyPath: string): Record<string, { allow: string[] }>;
 }
@@ -76,7 +79,14 @@ async function defaultSmoke(profile: ClassifierProfile, root: string): Promise<{
   return { benign, injection };
 }
 
-type Ready = { ok: true; profile: ClassifierProfile; report: VerifyReport } | { ok: false; result: CheckResult };
+async function defaultScreenSmoke(profile: ClassifierProfile, root: string): Promise<{ injection: ScreenVerdict; benign: ScreenVerdict }> {
+  const { classifier } = await loadClassifier({ profile, root, allowUnfitted: false });
+  const injection = await screenUntrusted(SMOKE_INJECTION, 'read', { dryRun: false, classifier });
+  const benign = await screenUntrusted(SMOKE_BENIGN, 'read', { dryRun: false, classifier });
+  return { injection, benign };
+}
+
+type Ready ={ ok: true; profile: ClassifierProfile; report: VerifyReport } | { ok: false; result: CheckResult };
 
 const firstLine = (e: unknown): string => String((e as Error)?.message ?? 'unknown error').split('\n')[0].slice(0, 200);
 
@@ -102,6 +112,7 @@ export function restrictedChecks(deps: Partial<RestrictedDeps> = {}): Check[] {
     loadRegistry: deps.loadRegistry ?? ((p) => loadRegistry(p)),
     verifyProfile: deps.verifyProfile ?? verifyProfile,
     smoke: deps.smoke ?? defaultSmoke,
+    screenSmoke: deps.screenSmoke ?? defaultScreenSmoke,
     smokeTimeoutMs: deps.smokeTimeoutMs ?? 30_000,
     loadProfiles: deps.loadProfiles ?? ((p) => loadProfiles(p)),
   };
@@ -199,6 +210,59 @@ export function restrictedChecks(deps: Partial<RestrictedDeps> = {}): Check[] {
         } catch (e) {
           const m = firstLine(e);
           return fail(m === '__timeout__' ? 'smoke test timed out after 30 s' : `smoke test failed: ${m}`, fix);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      },
+    },
+    {
+      id: 'classifier_wired',
+      title: 'classifier wired into every untrusted-text surface',
+      async run(ctx) {
+        const env = mergedEnv(ctx);
+        const live = env.SCHEDULER_DRY_RUN === 'false';
+        // 2. every surface file must call the screen
+        const bad: string[] = [];
+        for (const s of SCREENED_SURFACES) {
+          const p = join(ctx.root, s.file);
+          if (!ctx.fs.exists(p)) {
+            if (!PENDING_SURFACE_FILES.includes(s.file)) bad.push(`${s.id} (${s.file} missing)`);
+            continue;
+          }
+          if (!SCREEN_CALL_PATTERN.test(ctx.fs.read(p))) bad.push(`${s.id} (${s.file})`);
+        }
+        if (bad.length) return fail(`surfaces not screened: ${bad.join(', ')}`, 'route the text through screenUntrusted (src/safety/screen.ts)');
+        // 1. profile ready and fitted
+        const degrade = (r: CheckResult): CheckResult => (r.status === 'fail' && !live ? { ...r, status: 'warn' } : r);
+        const r = await ready(ctx);
+        if (!r.ok) return degrade(r.result);
+        const { profile, report } = r;
+        const id = profile.id;
+        const modelFile = profile.files.find((f) => f.role === 'model');
+        const digest = modelFile ? report.observed_sha256[modelFile.local] : undefined;
+        if (typeof profile.fit.threshold !== 'number' || profile.fit.model_sha256 !== digest) {
+          const res = fail(`threshold not fitted for ${id}: screened sends are refused until it is`, `npm run classifier:fit -- --profile ${id} --write`);
+          return degrade(res);
+        }
+        if (env.DOCTOR_SKIP_SMOKE === '1') return warn('wiring smoke skipped (DOCTOR_SKIP_SMOKE=1)');
+        if (report.unpinned.length > 0) {
+          return warn('skipped: files not sha256-pinned', `npm run models -- pin ${id}, then commit config/classifier-models.json`);
+        }
+        const fix = `npm run models -- verify ${id}; if files verify, check the profile threshold`;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const timeout = new Promise<never>((_, rej) => {
+            timer = setTimeout(() => rej(new Error('__timeout__')), d.smokeTimeoutMs);
+          });
+          const s = await Promise.race([d.screenSmoke(profile, ctx.root), timeout]);
+          if (!s.injection.blocked || s.injection.code !== 'injection_suspected') {
+            return fail(`screen did not block the smoke injection (code ${s.injection.code})`, fix);
+          }
+          if (s.benign.blocked) return fail(`screen blocked the benign smoke text (code ${s.benign.code})`, fix);
+          return pass(`${id}: screenUntrusted blocks the smoke injection and passes benign text`);
+        } catch (e) {
+          const m = firstLine(e);
+          return fail(m === '__timeout__' ? 'wiring smoke timed out after 30 s' : `wiring smoke failed: ${m}`, fix);
         } finally {
           if (timer) clearTimeout(timer);
         }

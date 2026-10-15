@@ -408,7 +408,8 @@ async function stateText(deps: NaukriDeps, extra: string[] = []): Promise<string
   try {
     raw = (await session.page.evaluate(SNAPSHOT_SRC)) as RawSnapshot;
   } catch (err) {
-    return `state unavailable: ${(err as Error).message?.slice(0, 120) ?? 'page error'} (try naukri_screenshot)`;
+    void err; // exception text is never surfaced: it can carry page content
+    return 'state unavailable: page_error (try naukri_screenshot)';
   }
   const recorded = recordIfConfirmed(raw, deps);
   const flags: StateFlags = {
