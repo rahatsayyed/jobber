@@ -9,7 +9,7 @@ import { loadClassifier } from '../safety/classifierModel.js';
 import { loadRegistry, resolveProfile, type ClassifierProfile, type ClassifierRegistry } from '../safety/classifierRegistry.js';
 import { verifyProfile, type VerifyReport } from '../safety/modelFetch.js';
 import { SMOKE_BENIGN, SMOKE_INJECTION } from '../safety/smoke.js';
-import { screenUntrusted, SCREENED_SURFACES, PENDING_SURFACE_FILES, SCREEN_CALL_PATTERN, type ScreenVerdict } from '../safety/screen.js';
+import { screenUntrusted, SCREENED_SURFACES, PENDING_SURFACE_FILES, callsScreen, type ScreenVerdict } from '../safety/screen.js';
 import { loadProfiles } from './runner.js';
 import { authDbPathFromEnv, isLoopbackBind, validateRunnerConfig } from '../web/env.js';
 import { normaliseEmail } from '../dash/account.js';
@@ -86,7 +86,7 @@ async function defaultScreenSmoke(profile: ClassifierProfile, root: string): Pro
   return { injection, benign };
 }
 
-type Ready ={ ok: true; profile: ClassifierProfile; report: VerifyReport } | { ok: false; result: CheckResult };
+type Ready = { ok: true; profile: ClassifierProfile; report: VerifyReport } | { ok: false; result: CheckResult };
 
 const firstLine = (e: unknown): string => String((e as Error)?.message ?? 'unknown error').split('\n')[0].slice(0, 200);
 
@@ -229,7 +229,7 @@ export function restrictedChecks(deps: Partial<RestrictedDeps> = {}): Check[] {
             if (!PENDING_SURFACE_FILES.includes(s.file)) bad.push(`${s.id} (${s.file} missing)`);
             continue;
           }
-          if (!SCREEN_CALL_PATTERN.test(ctx.fs.read(p))) bad.push(`${s.id} (${s.file})`);
+          if (!callsScreen(ctx.fs.read(p))) bad.push(`${s.id} (${s.file})`);
         }
         if (bad.length) return fail(`surfaces not screened: ${bad.join(', ')}`, 'route the text through screenUntrusted (src/safety/screen.ts)');
         // 1. profile ready and fitted

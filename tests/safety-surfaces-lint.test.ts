@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { SCREENED_SURFACES, PENDING_SURFACE_FILES, SCREEN_CALL_PATTERN } from '../src/safety/screen.js';
+import { SCREENED_SURFACES, PENDING_SURFACE_FILES, callsScreen } from '../src/safety/screen.js';
 
 const ROOT = process.cwd();
 
@@ -37,12 +37,22 @@ describe('screened surfaces lint', () => {
       const p = join(ROOT, s.file);
       if (PENDING_FILES.includes(s.file)) {
         // Pending: may be absent; once it exists it must screen.
-        expect(existsSync(p) ? SCREEN_CALL_PATTERN.test(readFileSync(p, 'utf8')) : true, s.id).toBe(true);
+        expect(existsSync(p) ? callsScreen(readFileSync(p, 'utf8')) : true, s.id).toBe(true);
         continue;
       }
       expect(existsSync(p), `${s.id}: ${s.file} missing`).toBe(true);
-      expect(SCREEN_CALL_PATTERN.test(readFileSync(p, 'utf8')), `${s.id}: ${s.file} does not screen`).toBe(true);
+      expect(callsScreen(readFileSync(p, 'utf8')), `${s.id}: ${s.file} does not screen`).toBe(true);
     }
+  });
+  it('callsScreen needs a real call, not a comment, import or unused identifier', () => {
+    expect(callsScreen("// screenUntrusted(raw, 'read')\nconst a = 1;")).toBe(false);
+    expect(callsScreen("/* await screenUntrusted(x, 'read') */\nconst a = 1;")).toBe(false);
+    expect(callsScreen("import { screenUntrusted } from '../safety/screen.js';\nconst a = 1;")).toBe(false);
+    expect(callsScreen("import {\n  screenUntrusted(,\n} from './x.js';\n")).toBe(false);
+    expect(callsScreen("import { screenUntrusted } from '../safety/screen.js';\nconst f = screenUntrusted;\n")).toBe(false);
+    expect(callsScreen("const v = await screenUntrusted(raw, 'read');")).toBe(true);
+    expect(callsScreen("const v = await deps.screen(raw, 'send');")).toBe(true);
+    expect(callsScreen("const v = await screen(raw, 'read');")).toBe(true);
   });
   it('only allowlisted files call gateInput( or gateField( from the input gate', () => {
     const offenders: string[] = [];

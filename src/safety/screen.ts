@@ -83,5 +83,16 @@ export const SCREENED_SURFACES: ReadonlyArray<{ id: string; file: string }> = [
 // src/linkedin/findProfiles.ts and deletes this entry.
 export const PENDING_SURFACE_FILES: ReadonlyArray<string> = ['src/linkedin/findProfiles.ts'];
 
-// A surface file is wired when it calls screenUntrusted, an injected deps.screen(, or a passed screen(raw, ...).
-export const SCREEN_CALL_PATTERN = /screenUntrusted|deps\.screen\(|\bscreen\(raw,/;
+/**
+ * True when the source makes a real screen call: `screenUntrusted(`, `deps.screen(` or an injected
+ * `screen(`. Comments and import statements are stripped first, so a comment, an import or an
+ * unused identifier does not count. Used by both the surfaces lint and the doctor check.
+ */
+export function callsScreen(source: string): boolean {
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1')
+    .replace(/^\s*import\s+[\s\S]*?\bfrom\s+['"][^'"]+['"];?/gm, ' ')
+    .replace(/^\s*import\s+['"][^'"]+['"];?/gm, ' ');
+  return /\bscreenUntrusted\s*\(|\bdeps\.screen\s*\(|\bscreen\s*\(/.test(code);
+}

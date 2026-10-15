@@ -68,7 +68,8 @@ export async function handleEscalate(
   // Policy D3: an escalation is never dropped. Blocked text becomes a code; unscreened is marked.
   let reason = a.reason;
   let detail = a.detail;
-  const verdict = await (deps.screen ?? screenUntrusted)(`${a.reason}\n${a.detail ?? ''}`, 'escalate');
+  const screen = deps.screen ?? screenUntrusted;
+  const verdict = await screen(`${a.reason}\n${a.detail ?? ''}`, 'escalate');
   if (verdict.blocked) {
     reason = `[blocked: ${verdict.code}]`;
     detail = `[blocked: ${verdict.code}]`;
