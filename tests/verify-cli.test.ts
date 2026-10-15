@@ -20,6 +20,17 @@ const realFs = {
   exists: (p: string) => existsSync(p),
   rm: (p: string) => rmSync(p, { recursive: true, force: true }),
 };
+// realFs with the project-root .env/.env.ccr replaced by an in-memory map, so the --llm dry guard never reads disk.
+const fsWithEnv = (files: Record<string, string>) => ({
+  ...realFs,
+  exists: (p: string) => (p === join(ROOT, '.env') || p === join(ROOT, '.env.ccr') ? (p.slice(ROOT.length + 1) in files) : existsSync(p)),
+  read: (p: string) => {
+    const k = p.slice(ROOT.length + 1);
+    if ((p === join(ROOT, '.env') || p === join(ROOT, '.env.ccr')) && k in files) return files[k];
+    return readFileSync(p, 'utf8');
+  },
+});
+const DRY_ENV = 'JOBBER_DRY_RUN=1\nSCHEDULER_DRY_RUN=true\nLINKEDIN_DRY_RUN=true\n';
 const ids = allStages().map((s) => s.id);
 const okDoctor = async () => [{ id: 'classifier_smoke', title: 'c', result: { status: 'pass' as const, detail: 'ok' } }];
 
@@ -108,7 +119,7 @@ describe('runCli', () => {
   it('--llm runs llm-hunt with all dry flags forced and no JOBBER_KILL in the child env copy', async () => {
     const stateDir = join(mkTmp(), '.jobber');
     const env = { PATH: process.env.PATH, JOBBER_KILL: '1', JOBBER_DRY_RUN: '0', SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false' };
-    const t = deps(ROOT, {}, env);
+    const t = deps(ROOT, { fs: fsWithEnv({ '.env': DRY_ENV }) }, env);
     await runCli(['--llm', '--json'], { ...t.d, stateDir });
     const hunt = t.calls.find((c) => c.cmd === './run-hunt.sh');
     expect(hunt?.args).toEqual(['run the hunt in dry mode: report only']);
@@ -116,6 +127,16 @@ describe('runCli', () => {
     expect(hunt?.env).not.toHaveProperty('JOBBER_KILL');
     expect(env.JOBBER_KILL).toBe('1');
     expect(env.JOBBER_DRY_RUN).toBe('0');
+  });
+
+  it('--llm is refused and run-hunt.sh never runs when the env file is not dry', async () => {
+    const stateDir = join(mkTmp(), '.jobber');
+    const live = 'JOBBER_DRY_RUN=0\nSCHEDULER_DRY_RUN=false\nLINKEDIN_DRY_RUN=false\n';
+    const t = deps(ROOT, { fs: fsWithEnv({ '.env': live }) });
+    const code = await runCli(['--llm', '--json'], { ...t.d, stateDir });
+    expect(code).toBe(1);
+    expect(t.calls.find((c) => c.cmd === './run-hunt.sh')).toBeUndefined();
+    expect(t.out.join('\n')).toContain('--llm refused: .env is not dry');
   });
 });
 
