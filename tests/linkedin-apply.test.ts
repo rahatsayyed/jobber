@@ -1,8 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { resolveAnswer, applyEasyApply, findPreparedResumePath, describeStuckValidationErrors, computeNumericFallbackCandidates, SELECTORS, type EasyApplyAnswers } from '../src/apply/linkedin.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { makeTempSession } from './helpers/tempSession.js';
+import { resolveAnswer, applyEasyApply as realApplyEasyApply, type ApplyEasyApplyDeps, findPreparedResumePath, describeStuckValidationErrors, computeNumericFallbackCandidates, SELECTORS, type EasyApplyAnswers } from '../src/apply/linkedin.js';
 import { openDb, saveJob, enqueueOutreach, saveOutreach } from '../src/db.js';
 import type Database from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
+
+// Hermetic: Easy Apply gets a temp burner session file, never the real secrets one.
+let session = makeTempSession();
+beforeEach(() => {
+  session = makeTempSession();
+});
+afterEach(() => session.cleanup());
+const applyEasyApply: typeof realApplyEasyApply = (a, d: ApplyEasyApplyDeps = {}) =>
+  realApplyEasyApply(a, { burnerStatePath: session.path, ...d });
 
 const answers: EasyApplyAnswers = {
   years_experience: 5,

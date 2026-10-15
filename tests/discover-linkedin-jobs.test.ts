@@ -1,14 +1,24 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { makeTempSession } from './helpers/tempSession.js';
 import {
   loadDiscoverConfig,
   extractLinkedInJobId,
   parseLinkedInJobCards,
-  fetchLinkedInJobs,
+  fetchLinkedInJobs as realFetchLinkedInJobs,
   buildLinkedInJobsSearchUrl,
   type RawJobCard,
   type JobSearchEntry,
 } from '../src/discover/linkedin-jobs.js';
 import { openDb, isSeen } from '../src/db.js';
+
+// Hermetic: a temp burner session file, never the real secrets one.
+let session = makeTempSession();
+beforeEach(() => {
+  session = makeTempSession();
+});
+afterEach(() => session.cleanup());
+const fetchLinkedInJobs: typeof realFetchLinkedInJobs = (d = {}) =>
+  realFetchLinkedInJobs({ burnerStatePath: session.path, ...d });
 
 describe('loadDiscoverConfig', () => {
   it('reads jobs (array) and posts config from config/discover-linkedin.json', () => {

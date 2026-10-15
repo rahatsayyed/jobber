@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { makeTempSession } from './helpers/tempSession.js';
 import {
   validateNoteLength,
-  findLinkedinProfile,
-  connectSend,
-  checkConnectionStatus,
-  sendLinkedinMessage,
+  findLinkedinProfile as realFindLinkedinProfile,
+  connectSend as realConnectSend,
+  checkConnectionStatus as realCheckConnectionStatus,
+  sendLinkedinMessage as realSendLinkedinMessage,
+  type ConnectDeps,
   recordConnectionStatus,
   extractNameAndHeadline,
   extractAboutText,
@@ -21,6 +23,18 @@ import {
 } from '../src/mcp/connect.js';
 import { openDb } from '../src/db.js';
 import type Database from 'better-sqlite3';
+
+// Hermetic: every browser-driven call gets a temp session file, never the real secrets one.
+let session = makeTempSession();
+beforeEach(() => {
+  session = makeTempSession();
+});
+afterEach(() => session.cleanup());
+const withSession = (d: ConnectDeps = {}): ConnectDeps => ({ statePath: session.path, ...d });
+const findLinkedinProfile: typeof realFindLinkedinProfile = (a, d) => realFindLinkedinProfile(a, withSession(d));
+const connectSend: typeof realConnectSend = (a, d) => realConnectSend(a, withSession(d));
+const checkConnectionStatus: typeof realCheckConnectionStatus = (a, d) => realCheckConnectionStatus(a, withSession(d));
+const sendLinkedinMessage: typeof realSendLinkedinMessage = (a, d) => realSendLinkedinMessage(a, withSession(d));
 
 /**
  * A minimal fake Playwright element: `click`/`fill` are spies so tests can assert

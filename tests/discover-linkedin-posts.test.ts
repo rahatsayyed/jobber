@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { makeTempSession } from './helpers/tempSession.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -172,8 +173,17 @@ describe('parseLinkedInPostCards', () => {
 });
 
 import { vi } from 'vitest';
-import { fetchLinkedInPosts } from '../src/discover/linkedin-posts.js';
+import { fetchLinkedInPosts as realFetchLinkedInPosts } from '../src/discover/linkedin-posts.js';
 import { openDb, isSeen } from '../src/db.js';
+
+// Hermetic: a temp burner session file, never the real secrets one.
+let session = makeTempSession();
+beforeEach(() => {
+  session = makeTempSession();
+});
+afterEach(() => session.cleanup());
+const fetchLinkedInPosts: typeof realFetchLinkedInPosts = (a, d = {}) =>
+  realFetchLinkedInPosts(a, { burnerStatePath: session.path, ...d });
 
 function makeFakePostPage(rawCards: RawPostCard[]) {
   const locator = {

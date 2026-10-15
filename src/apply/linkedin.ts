@@ -366,6 +366,8 @@ export interface ApplyEasyApplyDeps {
    */
   fallback?: FallbackDeps;
   fallbackEnabled?: boolean;
+  /** Burner session state file; defaults to the secrets path. Injectable for hermetic tests. */
+  burnerStatePath?: string;
 }
 
 export async function applyEasyApply(
@@ -419,7 +421,7 @@ export async function applyEasyApply(
     );
   }
 
-  if (!existsSync(BURNER_STATE_PATH)) {
+  if (!existsSync(deps.burnerStatePath ?? BURNER_STATE_PATH)) {
     return recordAndReturn(database, job_id, 'manual_review', 'burner session state not found');
   }
 
@@ -437,7 +439,7 @@ export async function applyEasyApply(
   let browser;
   try {
     browser = await browserLauncher.launch({ headless: true });
-    const context = await browser.newContext({ storageState: BURNER_STATE_PATH });
+    const context = await browser.newContext({ storageState: deps.burnerStatePath ?? BURNER_STATE_PATH });
     const page = await context.newPage();
     await page.goto(job.url, { timeout: 30000, waitUntil: 'domcontentloaded' });
 

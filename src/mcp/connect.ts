@@ -131,6 +131,8 @@ export interface ConnectDeps {
   messageComposeClearTimeoutMs?: number;
   /** How long each individual compose-box-clear poll attempt waits before checking again. */
   messageComposeClearPollMs?: number;
+  /** Main session state file; defaults to the secrets path. Injectable for hermetic tests. */
+  statePath?: string;
 }
 
 async function captureDebugScreenshot(
@@ -373,7 +375,7 @@ export async function findLinkedinProfile(
     };
   }
 
-  if (!existsSync(MAIN_STATE_PATH)) {
+  if (!existsSync(deps.statePath ?? MAIN_STATE_PATH)) {
     return { status: 'failed', candidates: [], reason: 'main LinkedIn session state not found' };
   }
 
@@ -381,7 +383,7 @@ export async function findLinkedinProfile(
   try {
     browser = await browserLauncher.launch({ headless: true });
     const context = await browser.newContext({
-      storageState: MAIN_STATE_PATH,
+      storageState: deps.statePath ?? MAIN_STATE_PATH,
       viewport: BROWSER_VIEWPORT,
     });
     const page = await context.newPage();
@@ -453,14 +455,14 @@ export async function checkConnectionStatus(
 ): Promise<ConnectionStatusResult> {
   const browserLauncher = deps.chromium ?? chromium;
 
-  if (!existsSync(MAIN_STATE_PATH)) {
+  if (!existsSync(deps.statePath ?? MAIN_STATE_PATH)) {
     return { status: 'failed', reason: 'main LinkedIn session state not found' };
   }
 
   let browser;
   try {
     browser = await browserLauncher.launch({ headless: true });
-    const context = await browser.newContext({ storageState: MAIN_STATE_PATH, viewport: BROWSER_VIEWPORT });
+    const context = await browser.newContext({ storageState: deps.statePath ?? MAIN_STATE_PATH, viewport: BROWSER_VIEWPORT });
     const page = await context.newPage();
     await page.goto(profile_url, { timeout: 30000, waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: PROFILE_HEADER_SETTLE_TIMEOUT_MS }).catch(() => {});
@@ -513,7 +515,7 @@ export async function connectSend(
     };
   }
 
-  if (!existsSync(MAIN_STATE_PATH)) {
+  if (!existsSync(deps.statePath ?? MAIN_STATE_PATH)) {
     return { status: 'failed', reason: 'main LinkedIn session state not found' };
   }
 
@@ -527,7 +529,7 @@ export async function connectSend(
   try {
     browser = await browserLauncher.launch({ headless: true });
     const context = await browser.newContext({
-      storageState: MAIN_STATE_PATH,
+      storageState: deps.statePath ?? MAIN_STATE_PATH,
       viewport: BROWSER_VIEWPORT,
     });
     const page = await context.newPage();
@@ -782,7 +784,7 @@ export async function sendLinkedinMessage(
     return { status: 'failed', reason: 'message is empty' };
   }
 
-  if (!existsSync(MAIN_STATE_PATH)) {
+  if (!existsSync(deps.statePath ?? MAIN_STATE_PATH)) {
     return { status: 'failed', reason: 'main LinkedIn session state not found' };
   }
 
@@ -794,7 +796,7 @@ export async function sendLinkedinMessage(
   let browser;
   try {
     browser = await browserLauncher.launch({ headless: true });
-    const context = await browser.newContext({ storageState: MAIN_STATE_PATH, viewport: BROWSER_VIEWPORT });
+    const context = await browser.newContext({ storageState: deps.statePath ?? MAIN_STATE_PATH, viewport: BROWSER_VIEWPORT });
     const page = await context.newPage();
     await page.goto(profile_url, { timeout: 30000, waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: PROFILE_HEADER_SETTLE_TIMEOUT_MS }).catch(() => {});
