@@ -29,6 +29,17 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "mcp__gmail__send_email|mcp__apply__.*|mcp__connect__.*|mcp__linkedin__linkedin_(connect_send|send_message|accept_invite)|mcp__naukri__naukri_(send_message|click|type)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/kill-switch.cjs\"",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
       }
     ]
   }

@@ -6,6 +6,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Kill switch: the launcher check is the authority; this avoids starting the CCR gateway.
+if [ -e .jobber/STOP ] || [ "${JOBBER_KILL:-}" = "1" ]; then
+  echo "kill switch active, not starting" >&2
+  exit 4
+fi
+
 # If using the CCR/Grok path, make sure the local gateway is up.
 if [ -f .env.ccr ]; then
   if ! nc -z 127.0.0.1 3456 2>/dev/null; then

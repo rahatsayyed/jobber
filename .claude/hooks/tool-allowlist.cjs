@@ -7,6 +7,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const kill = require('./kill-switch.cjs');
 
 const DEFAULT_ROOT = path.resolve(__dirname, '..', '..');
 const SECRET_ARG_RES = [
@@ -78,6 +79,8 @@ function decide(event, profile, opts) {
   const deny = (reason) => ({ allow: false, reason });
   try {
     if (!event || typeof event !== 'object' || typeof event.tool_name !== 'string') return deny('malformed event');
+    const k = kill.decide(event, { root, env: (opts && opts.env) || process.env });
+    if (!k.allow) return deny(k.reason);
     if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return deny('no profile');
     const allowList = profile.allow === undefined ? [] : profile.allow;
     const builtins = profile.builtin_tools === undefined ? [] : profile.builtin_tools;

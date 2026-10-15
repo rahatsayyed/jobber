@@ -64,6 +64,13 @@ describe('run-claude spawn path (fake claude)', () => {
     expect(invoked()).toBe(false);
   });
 
+  it('(c2) kill switch active: hunt exits 4 and claude is not invoked', { timeout: T }, () => {
+    const r = run(['hunt', '--no-classifier', 'the prompt'], { ...DRY, JOBBER_KILL: '1' });
+    expect(r.status, r.stderr).toBe(4);
+    expect(r.stderr).toContain('kill switch active');
+    expect(invoked()).toBe(false);
+  });
+
   it('(d) --no-classifier without JOBBER_DRY_RUN=1 exits 2', { timeout: T }, () => {
     const r = run(['outreach_wake', '--no-classifier', 'hello']);
     expect(r.status).toBe(2);

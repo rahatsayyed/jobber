@@ -19,6 +19,7 @@ import { writeSecure } from '../src/platform/permissions.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { checkClassifierForLaunch } from '../src/platform/launchCheck.js';
 import { isDryRun } from '../src/safety/dryRun.js';
+import { stopActive } from './killSwitch.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
@@ -94,6 +95,9 @@ async function main(): Promise<void> {
     process.stdout.write(`env keys: ${Object.keys(env).sort().join(',')}\n`);
     process.exit(0);
   }
+
+  const stop = stopActive(root, process.env);
+  if (stop.stopped) die(4, stop.reason);
 
   if (flags.has('--no-classifier') && process.env.JOBBER_DRY_RUN !== '1') {
     die(2, '--no-classifier is only allowed with JOBBER_DRY_RUN=1');
