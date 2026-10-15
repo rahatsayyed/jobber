@@ -10,9 +10,22 @@ import type { SetupStep } from '../runner.js';
 import { SKIP_SPECS, skippedFeatures, type SkippableId } from '../skips.js';
 
 // Open non-skippable items that block going live, by doctor check id.
-const NOT_READY: { id: string; label: string; stepId: string }[] = [
+// Only fail and warn are open; a skip (offline, owner-run, skipped feature) is never listed.
+// permission-set also warns for the deliberate `full` and `custom` sets, which are a finished
+// choice: only a failure or the "no .claude/settings.local.json yet" warning counts as open.
+const NOT_READY: {
+  id: string;
+  label: string;
+  stepId: string;
+  open?: (r: { status: string; detail: string }) => boolean;
+}[] = [
   { id: 'classifier_model', label: 'Classifier model or fit', stepId: 'classifier' },
-  { id: 'permission-set', label: 'Permission set', stepId: 'access' },
+  {
+    id: 'permission-set',
+    label: 'Permission set',
+    stepId: 'access',
+    open: (r) => r.status === 'fail' || (r.status === 'warn' && r.detail.startsWith('no .claude/settings.local.json')),
+  },
   { id: 'resume-valid', label: 'Resume', stepId: 'resume' },
   { id: 'profile-valid', label: 'Profile', stepId: 'profile' },
 ];
@@ -74,7 +87,9 @@ export const finalStep: SetupStep = {
     // Not ready for live: open items that are not skippable, from the doctor results above.
     const notReady = NOT_READY.filter((n) => {
       const r = results.find((x) => x.id === n.id);
-      return r !== undefined && r.result.status !== 'pass';
+      if (r === undefined) return false;
+      if (n.open) return n.open(r.result);
+      return r.result.status === 'fail' || r.result.status === 'warn';
     });
     if (notReady.length > 0) {
       io.say('Not ready for live:');
