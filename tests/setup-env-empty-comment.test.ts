@@ -8,7 +8,7 @@ import type { DoctorContext } from '../src/platform/doctor.js';
 import { envEntries, envFileValue, updateEnvText } from '../src/setup/envWriter.js';
 
 const example = readFileSync(join(import.meta.dirname, '..', '.env.example'), 'utf8');
-const KEYS = ['ANTHROPIC_AUTH_TOKEN', 'ADZUNA_APP_ID', 'SERPER_API_KEY', 'HUNTER_API_KEY'];
+const KEYS = ['ADZUNA_APP_ID', 'SERPER_API_KEY', 'HUNTER_API_KEY'];
 
 function ctxWith(env: string): DoctorContext {
   const p = '/proj/.env';
@@ -42,8 +42,7 @@ describe('empty value plus comment', () => {
   it('the writer moves the comment above and leaves KEY= , then is a no-op', () => {
     const first = updateEnvText(example, Object.fromEntries(KEYS.map((k) => [k, ''])));
     expect(first.changed.sort()).toEqual([...KEYS].sort());
-    expect(first.text).toContain('# OpenRouter API key');
-    expect(first.text).toMatch(/^ANTHROPIC_AUTH_TOKEN=$/m);
+    expect(first.text).toContain('# serper.dev');
     expect(first.text).toMatch(/^SERPER_API_KEY=$/m);
     const second = updateEnvText(first.text, Object.fromEntries(KEYS.map((k) => [k, ''])));
     expect(second.changed).toEqual([]);
