@@ -18,6 +18,14 @@ export const COACH_TEXT: Record<string, string[]> = {
   'generic.skip_note': [
     'Skipping is safe: it only records the choice. You can run this step again any time.',
   ],
+  'telegram.intro': [
+    'Telegram is how you control Jobber from your phone: start a hunt, ask for status, get alerts.',
+    'The bot token is a password. Anyone who has it can control your bot, so never share it.',
+  ],
+  'telegram.id': [
+    'Message @userinfobot with any text; it replies with your numeric ID. It is 5 to 15 digits.',
+  ],
+  'telegram.next': ['Then send /health to your bot to confirm the bridge answers.'],
 };
 
 export function coachOn(ctx: { mode?: SetupMode }): boolean {

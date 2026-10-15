@@ -35,8 +35,8 @@ export const SKIP_SPECS: readonly SkipSpec[] = [
     title: 'Telegram',
     label: 'RECOMMENDED',
     lose: [
-      'No phone control (/runhunt, /status, /checkreplies), no Telegram alerts or cap-overrun prompts.',
-      'Legacy-mode follow-ups cannot be approved, so none are sent.',
+      'No phone control: you cannot start a hunt or ask for status from Telegram.',
+      'No Telegram alerts, and email follow-ups cannot be approved, so none are sent.',
     ],
     checkIds: ['telegram-api', 'ccgram-env', 'daemon'],
     configured: (env) => set(env, 'TELEGRAM_BOT_TOKEN'),

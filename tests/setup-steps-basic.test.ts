@@ -108,7 +108,10 @@ describe('telegramStep', () => {
   it('writes token and ids to a new .env from .env.example, mode 600, token never exposed', async () => {
     const t = setup({
       script: [
+        { choose: 'now' },
+        { confirm: true }, // bot created
         { secret: TOKEN },
+        { confirm: true }, // threaded mode on
         { confirm: false }, // read from getUpdates?
         { ask: '12345678' },
         { confirm: false }, // another person?
@@ -138,8 +141,11 @@ describe('telegramStep', () => {
   it('re-prompts on a bad token shape', async () => {
     const t = setup({
       script: [
+        { choose: 'now' },
+        { confirm: true },
         { secret: 'nope' },
         { secret: TOKEN },
+        { confirm: true },
         { confirm: false },
         { ask: '12345678' },
         { confirm: false },
@@ -153,7 +159,7 @@ describe('telegramStep', () => {
 
   it('getMe failure leaves .env untouched and prints only the fixed message', async () => {
     const t = setup({
-      script: [{ secret: BAD_TOKEN }],
+      script: [{ choose: 'now' }, { confirm: true }, { secret: BAD_TOKEN }, { secret: BAD_TOKEN }],
       files: { 'proj/.env': 'TELEGRAM_BOT_TOKEN=\n' },
     });
     await expect(telegramStep.run(t.ctx)).rejects.toThrow('Telegram rejected that token');
@@ -165,7 +171,7 @@ describe('telegramStep', () => {
   it('keeps an existing working token and ids without rewriting .env', async () => {
     const env = `TELEGRAM_BOT_TOKEN=${TOKEN}\nALLOWED_USERS=12345678\n`;
     const t = setup({
-      script: [{ confirm: true }, { confirm: true }, { confirm: true }],
+      script: [{ confirm: true }, { confirm: true }, { confirm: true }, { confirm: true }],
       files: { 'proj/.env': env },
     });
     expect(await telegramStep.run(t.ctx)).toBe('done');
@@ -177,7 +183,15 @@ describe('telegramStep', () => {
 
   it('does not call getUpdates and does not offer it when the daemon session exists', async () => {
     const t = setup({
-      script: [{ secret: TOKEN }, { ask: '12345678' }, { confirm: false }, { confirm: true }],
+      script: [
+        { choose: 'now' },
+        { confirm: true },
+        { secret: TOKEN },
+        { confirm: true },
+        { ask: '12345678' },
+        { confirm: false },
+        { confirm: true },
+      ],
       run: (cmd, args) => ({ stdout: '', code: cmd === 'tmux' && args[0] === 'has-session' ? 0 : 1 }),
     });
     await telegramStep.run(t.ctx);
@@ -188,7 +202,10 @@ describe('telegramStep', () => {
   it('reads the ID from getUpdates when the daemon is down and the user agrees', async () => {
     const t = setup({
       script: [
+        { choose: 'now' },
+        { confirm: true },
         { secret: TOKEN },
+        { confirm: true },
         { confirm: true },
         { pause: true },
         { confirm: false },
@@ -205,7 +222,10 @@ describe('telegramStep', () => {
   it('requires a second confirm and warns before adding another ID', async () => {
     const t = setup({
       script: [
+        { choose: 'now' },
+        { confirm: true },
         { secret: TOKEN },
+        { confirm: true },
         { confirm: false },
         { ask: '12345678' },
         { confirm: true },
@@ -222,7 +242,19 @@ describe('telegramStep', () => {
 
   it('fails with a how-to when the test message did not arrive', async () => {
     const t = setup({
-      script: [{ secret: TOKEN }, { confirm: false }, { ask: '12345678' }, { confirm: false }, { confirm: false }],
+      script: [
+        { choose: 'now' },
+        { confirm: true },
+        { secret: TOKEN },
+        { confirm: true },
+        { confirm: false },
+        { ask: '12345678' },
+        { confirm: false },
+        { confirm: false }, // arrived? (1)
+        { confirm: false }, // arrived? (2)
+        { confirm: false }, // arrived? (3)
+        { confirm: false }, // keep settings with a warning?
+      ],
     });
     await expect(telegramStep.run(t.ctx)).rejects.toThrow('Test message was not received');
     expect(t.sio.transcript.some((l) => l.includes('press Start'))).toBe(true);
