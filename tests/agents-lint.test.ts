@@ -199,5 +199,9 @@ describe('Hacker News manual-review rule is retired (automated domain check)', (
     expect(body).toContain('hn_check');
     expect(body).toContain('job_id');
     expect(body).toContain('hn_domain_unmatched');
+    expect(body).toContain('hn_job_unknown');
+    expect(body).toContain('unknown_job');
+    expect(body).toContain('NO `hn_check`');
+    expect(body).not.toContain('accept both');
   });
 });

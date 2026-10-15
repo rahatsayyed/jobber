@@ -112,7 +112,6 @@ server.registerTool(
 );
 
 async function gather(company: string, resolvedDomain: string, person_name?: string): Promise<unknown[]> {
-  {
     const scraped = await scrapeEmails(resolvedDomain);
     const searched = await searchDomainEmails(resolvedDomain);
     const hunter = await hunterDomainSearch(resolvedDomain);
@@ -182,7 +181,6 @@ async function gather(company: string, resolvedDomain: string, person_name?: str
         : [];
 
     return output;
-  }
 }
 
 async function main() {

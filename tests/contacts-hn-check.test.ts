@@ -18,8 +18,13 @@ describe('withHnGate (contacts tool seam)', () => {
     const work = vi.fn(async () => [1]);
     const a = await withHnGate({ source: 'hackernews', description: 'x@acme.io' }, 'acme.io', work);
     const b = await withHnGate({ source: 'adzuna', description: null }, 'acme.io', work);
-    const c = await withHnGate(null, 'acme.io', work);
-    expect([a.hn_check, b.hn_check, c.hn_check]).toEqual(['matched', 'not_applicable', 'not_applicable']);
-    expect(work).toHaveBeenCalledTimes(3);
+    expect([a.hn_check, b.hn_check]).toEqual(['matched', 'not_applicable']);
+    expect(work).toHaveBeenCalledTimes(2);
+  });
+  it('unknown job row fails closed and runs nothing', async () => {
+    const work = vi.fn(async () => [1]);
+    const r = await withHnGate(null, 'acme.io', work);
+    expect(r).toEqual({ contacts: [], hn_check: 'unknown_job' });
+    expect(work).not.toHaveBeenCalled();
   });
 });

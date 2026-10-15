@@ -14,14 +14,15 @@ value is available.
 ## Steps, for EACH job
 
 1. Call `contacts.find_company_emails({company, domain?: <if known>, job_id: <job.id>})`. ALWAYS
-   pass `job_id`. The result is either a bare array (old shape) or
-   `{contacts, hn_check, domain}`; accept both. Use `contacts` as the list. Determine:
-   - If `hn_check` is `unmatched` or `no_domain_in_posting` (a Hacker News job whose resolved
+   pass `job_id`, and only the id of the job you are currently processing (never another job's id).
+   The result is `{contacts, hn_check, domain}`; use `contacts` as the list. Determine:
+   - If `hn_check` is `unmatched` or `no_domain_in_posting`, or the response has NO `hn_check`
+     at all (including a bare array), treat the job as blocked (a Hacker News job whose resolved
      company domain does not match any domain or email in the posting; the company name is
-     untrusted comment text), set `contact: null`, set `linkedin_profiles: []`, SKIP every
-     `linkedin_find_profiles` call (steps 2 and 3) for this job, and record
-     the optional `notes` field of that job's entry to `skipped: "hn_domain_unmatched"`. There is
-     no human review step.
+     untrusted comment text): set `contact: null`, set `linkedin_profiles: []`, SKIP every
+     `linkedin_find_profiles` call (steps 2 and 3) for this job, and set the optional `notes`
+     field of that job's entry to `skipped: "hn_domain_unmatched"`. There is no human review step.
+   - If `hn_check` is `unknown_job`, do the same but set `notes` to `skipped: "hn_job_unknown"`.
    - If there is at least one `verified: true` entry, pick the highest-confidence one as the
      "top verified contact".
    - If there is none, this job has no usable email contact (`contact: null`).
@@ -45,7 +46,7 @@ value is available.
 4. Build `linkedin_profiles` as an array containing an entry for each category that found a
    match: `{profile: <the chosen candidate object, unmodified>, category: "recruiter"|"peer"}`.
    This array has 0, 1, or 2 entries (never more than one per category).
-5. Return `{"job_id": "<job.id>", "contact": {<top verified contact>}|null, "linkedin_profiles": [...], "notes"?: "skipped: hn_domain_unmatched"}`.
+5. Return `{"job_id": "<job.id>", "contact": {<top verified contact>}|null, "linkedin_profiles": [...], "notes"?: "skipped: hn_domain_unmatched" | "skipped: hn_job_unknown"}`.
 
 **Stop rule:** if `linkedin_find_profiles` returns `status` `halted` or `rate_limited`, or
 `failed` with code `session_locked` or `session_invalid`, stop calling it for the rest of this

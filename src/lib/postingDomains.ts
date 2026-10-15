@@ -27,7 +27,25 @@ const EXCLUDED_HOSTS = [
   'gmx.com',
   'mail.com',
   'yandex.com',
+  'lever.co',
+  'greenhouse.io',
+  'boards.greenhouse.io',
+  'ashbyhq.com',
+  'workable.com',
+  'notion.so',
+  'notion.site',
+  'calendly.com',
+  'docs.google.com',
+  'drive.google.com',
+  'forms.gle',
+  'typeform.com',
 ];
+
+// Multi-tenant hosting suffixes: the tenant label is part of the registrable domain.
+const MULTI_TENANT = new Set([
+  'github.io', 'vercel.app', 'netlify.app', 'pages.dev', 'herokuapp.com', 'web.app',
+  'firebaseapp.com', 'workers.dev',
+]);
 
 const SECOND_LEVEL = new Set([
   'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'co.in', 'org.in', 'net.in', 'com.au', 'net.au', 'org.au',
@@ -43,7 +61,7 @@ export function registrableDomain(host: string): string {
   const labels = normHost(host).split('.').filter(Boolean);
   if (labels.length <= 2) return labels.join('.');
   const lastTwo = labels.slice(-2).join('.');
-  return SECOND_LEVEL.has(lastTwo) ? labels.slice(-3).join('.') : lastTwo;
+  return SECOND_LEVEL.has(lastTwo) || MULTI_TENANT.has(lastTwo) ? labels.slice(-3).join('.') : lastTwo;
 }
 
 function excluded(host: string): boolean {
@@ -69,7 +87,7 @@ export function postingDomains(text: string): string[] {
   return [...out];
 }
 
-export type HnCheck = 'matched' | 'unmatched' | 'no_domain_in_posting' | 'not_applicable';
+export type HnCheck = 'matched' | 'unmatched' | 'no_domain_in_posting' | 'not_applicable' | 'unknown_job';
 
 export function hnDomainCheck(
   job: { source: string; description: string | null },
@@ -78,6 +96,8 @@ export function hnDomainCheck(
   if (job.source !== 'hackernews') return 'not_applicable';
   const domains = postingDomains(job.description ?? '');
   if (domains.length === 0) return 'no_domain_in_posting';
+  // Fail closed on non-ASCII (IDN / homoglyph) resolved domains and shared hosts.
+  if (/[^\x00-\x7f]/.test(resolvedDomain) || excluded(normHost(resolvedDomain))) return 'unmatched';
   const want = registrableDomain(resolvedDomain);
   if (!want) return 'unmatched';
   return domains.some((d) => registrableDomain(d) === want) ? 'matched' : 'unmatched';
@@ -93,8 +113,9 @@ export async function withHnGate<T>(
   resolvedDomain: string,
   work: () => Promise<T[]>,
 ): Promise<{ contacts: T[]; hn_check: HnCheck }> {
-  const hn_check: HnCheck = job ? hnDomainCheck(job, resolvedDomain) : 'not_applicable';
-  if (hn_check === 'unmatched' || hn_check === 'no_domain_in_posting') {
+  // A supplied job_id with no job row fails closed.
+  const hn_check: HnCheck = job ? hnDomainCheck(job, resolvedDomain) : 'unknown_job';
+  if (hn_check === 'unmatched' || hn_check === 'no_domain_in_posting' || hn_check === 'unknown_job') {
     return { contacts: [], hn_check };
   }
   return { contacts: await work(), hn_check };

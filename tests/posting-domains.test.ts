@@ -27,6 +27,33 @@ describe('registrableDomain', () => {
   });
 });
 
+describe('lookalike and shared hosts', () => {
+  const hn = (d: string) => ({ source: 'hackernews', description: d });
+  it('acme.io.evil.com is evil.com', () => {
+    expect(hnDomainCheck(hn('see https://acme.io.evil.com/x'), 'acme.io')).toBe('unmatched');
+    expect(hnDomainCheck(hn('see https://acme.io.evil.com/x'), 'evil.com')).toBe('matched');
+  });
+  it('userinfo trick uses the real host', () => {
+    expect(postingDomains('https://acme.io@evil.com/')).toEqual(['evil.com']);
+  });
+  it('path segment is not a host', () => {
+    expect(postingDomains('https://evil.com/acme.io')).toEqual(['evil.com']);
+  });
+  it('unicode resolved domain fails closed', () => {
+    expect(hnDomainCheck(hn('jobs@xn--bcher-kva.de'), 'bücher.de')).toBe('unmatched');
+  });
+  it('shared and ATS hosts are not company evidence', () => {
+    for (const u of ['https://jobs.lever.co/acme', 'https://boards.greenhouse.io/acme', 'https://acme.notion.site/x', 'https://calendly.com/a']) {
+      expect(hnDomainCheck(hn(u), 'lever.co')).toBe('no_domain_in_posting');
+    }
+  });
+  it('multi-tenant suffixes keep the tenant label', () => {
+    expect(registrableDomain('acme.github.io')).toBe('acme.github.io');
+    expect(hnDomainCheck(hn('https://acme.github.io'), 'evil.github.io')).toBe('unmatched');
+    expect(hnDomainCheck(hn('https://acme.github.io'), 'acme.github.io')).toBe('matched');
+  });
+});
+
 describe('hnDomainCheck', () => {
   const hn = (d: string | null) => ({ source: 'hackernews', description: d });
   it('matched', () => expect(hnDomainCheck(hn('apply: jobs@acme.io'), 'careers.acme.io')).toBe('matched'));
