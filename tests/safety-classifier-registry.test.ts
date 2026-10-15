@@ -171,10 +171,15 @@ describe('resolveProfile', () => {
 });
 
 describe('pin and dir', () => {
-  it('pinFromProfile throws for shipped default with null digests', () => {
-    const p = loadRegistry().profiles['protectai-deberta-v3-base-v2'];
+  it('pinFromProfile throws for a profile with null digests', () => {
+    const fx = (fixture() as ClassifierRegistry).profiles.fx;
+    const p = { ...fx, files: fx.files.map((f, i) => (i === 0 ? { ...f, sha256: null } : f)) };
     expect(isFullyPinned(p)).toBe(false);
     expect(() => pinFromProfile(p)).toThrow(/models -- pin/);
+  });
+  it('the shipped default profile is fully pinned (digests are committed, not per-user)', () => {
+    const p = loadRegistry().profiles['protectai-deberta-v3-base-v2'];
+    expect(isFullyPinned(p)).toBe(true);
   });
   it('pinFromProfile succeeds for fully pinned fixture', () => {
     const p = (fixture() as ClassifierRegistry).profiles.fx;
