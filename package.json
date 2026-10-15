@@ -19,6 +19,7 @@
     "classifier:fit": "tsx scripts/classifier/fit.ts",
     "classifier:bench": "tsx scripts/classifier/bench.ts",
     "models": "tsx scripts/models.ts",
+    "bootstrap": "tsx scripts/bootstrap.ts",
     "status": "tsx scripts/status.ts",
     "layout": "tsx scripts/layout.ts",
     "web": "tsx scripts/web.ts",
