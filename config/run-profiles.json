@@ -43,6 +43,33 @@
       "env_mode": "dotenv_all",
       "env_files": [".env", ".env.ccr"],
       "max_turns": 200
+    },
+    "setup_guide": {
+      "description": "Interactive setup coach: reads docs and doctor output only; no MCP tools, no secrets in env.",
+      "interactive": true,
+      "classifier": "not_required",
+      "mcp_config": "config/runner/mcp.none.json",
+      "builtin_tools": ["Skill", "Read"],
+      "allow": [],
+      "bash_exact": [
+        "npm run doctor -- --json",
+        "npm run doctor",
+        "npm run setup -- --list",
+        "npm run setup -- --status",
+        "npm run models -- list",
+        "npm run models -- verify",
+        "npm run permissions -- --status",
+        "npm run dashboard -- status",
+        "npm run jobber:control -- status",
+        "npm run scheduler -- --status",
+        "npm run bootstrap -- --check",
+        "npm run dry-run"
+      ],
+      "path_rules": { "Read": { "prefixes": ["docs/", "config/", "user-data.example/", ".claude/skills/setup-guide/"] } },
+      "screen_args": [],
+      "env_mode": "allowlist",
+      "env_keys": ["TERM", "COLORTERM"],
+      "max_turns": 200
     }
   }
 }
