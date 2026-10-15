@@ -7,6 +7,7 @@ import { extractEmails, classify, rankEmails, genPatterns } from '../lib/emails.
 import { scrapeEmails } from '../lib/scrape.js';
 import { verifyEmail } from '../lib/verify.js';
 import { hunterDomainSearch } from '../lib/hunter.js';
+import { withHnGate } from '../lib/postingDomains.js';
 
 const db = openDb(dbPath());
 
@@ -86,15 +87,32 @@ server.registerTool(
       company: z.string(),
       domain: z.string().optional(),
       person_name: z.string().optional(),
+      job_id: z.string().max(200).optional(),
     },
   },
-  async ({ company, domain, person_name }) => {
+  async ({ company, domain, person_name, job_id }) => {
     const resolvedDomain = domain ?? (await findDomain(company));
 
-    if (!resolvedDomain) {
-      return { content: [{ type: 'text', text: JSON.stringify([]) }] };
+    // Without job_id the tool is unchanged (returns the bare array).
+    if (job_id === undefined) {
+      const out = resolvedDomain ? await gather(company, resolvedDomain, person_name) : [];
+      return { content: [{ type: 'text', text: JSON.stringify(out) }] };
     }
 
+    // source and description come from the jobs table, never from the model.
+    const job = db.prepare('SELECT source, description FROM jobs WHERE id = ?').get(job_id) as
+      | { source: string; description: string | null }
+      | undefined;
+    const gated = await withHnGate(job ?? null, resolvedDomain ?? '', async () =>
+      resolvedDomain ? gather(company, resolvedDomain, person_name) : [],
+    );
+    const result = { contacts: gated.contacts, hn_check: gated.hn_check, domain: resolvedDomain ?? null };
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  }
+);
+
+async function gather(company: string, resolvedDomain: string, person_name?: string): Promise<unknown[]> {
+  {
     const scraped = await scrapeEmails(resolvedDomain);
     const searched = await searchDomainEmails(resolvedDomain);
     const hunter = await hunterDomainSearch(resolvedDomain);
@@ -163,9 +181,9 @@ server.registerTool(
         ? [{ ...ranked[0], note: 'unverified — flag to human' }]
         : [];
 
-    return { content: [{ type: 'text', text: JSON.stringify(output) }] };
+    return output;
   }
-);
+}
 
 async function main() {
   const transport = new StdioServerTransport();

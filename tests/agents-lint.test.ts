@@ -186,3 +186,18 @@ describe('contact-finder and sender tools are registered and allowed for the hun
     }
   }
 });
+
+describe('Hacker News manual-review rule is retired (automated domain check)', () => {
+  it('discoverer no longer asks for user review of Hacker News outreach', () => {
+    const { body } = frontmatter('discoverer');
+    expect(body).not.toContain('should be reviewed by the');
+    expect(body).toContain('untrusted comment text');
+    expect(body).toContain('`hackernews`');
+  });
+  it('contact-finder uses hn_check, passes job_id and skips profile searches', () => {
+    const { body } = frontmatter('contact-finder');
+    expect(body).toContain('hn_check');
+    expect(body).toContain('job_id');
+    expect(body).toContain('hn_domain_unmatched');
+  });
+});
