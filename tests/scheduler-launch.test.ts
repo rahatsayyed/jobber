@@ -179,3 +179,25 @@ describe('tmuxLauncher', () => {
     expect(calls.some((c) => c.args[0] === 'kill-window')).toBe(false);
   });
 });
+
+describe('defaultFsOps', () => {
+  it('writes 0600, reads appended bytes from an offset, creates dirs', () => {
+    const d = mkdtempSync(join(tmpdir(), 'sched-launch-'));
+    try {
+      const f = join(d, 'a.txt');
+      defaultFsOps.writeFile(f, 'hello', 0o600);
+      expect(statSync(f).mode & 0o777).toBe(0o600);
+      const r1 = defaultFsOps.readFromOffset(f, 0);
+      expect(r1.data.toString()).toBe('hello');
+      appendFileSync(f, ' world');
+      expect(defaultFsOps.readFromOffset(f, r1.offset).data.toString()).toBe(' world');
+      expect(defaultFsOps.readFromOffset(join(d, 'none'), 0).data.length).toBe(0);
+      expect(defaultFsOps.exists(f)).toBe(true);
+      expect(defaultFsOps.readText(f)).toBe('hello world');
+      defaultFsOps.mkdir(join(d, 'x', 'y'));
+      expect(defaultFsOps.exists(join(d, 'x', 'y'))).toBe(true);
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+});
