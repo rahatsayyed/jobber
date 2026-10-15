@@ -20,7 +20,7 @@ const SECRET_ARG_RES = [
   /\/(etc|root|home|users|tmp|var)\//i,
 ];
 const BAD_BASENAME = /^\.env|secret|state\.json$|\.sqlite/i;
-const BAD_SEGMENT = /^(secrets|user-data|\.git|node_modules)$/i;
+const BAD_SEGMENT = /^(secrets|user-data|\.git|node_modules|\.dashboard|\.jobber)$/i;
 const AGENT_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 const TOOL_NAME = /^[A-Za-z0-9_-]+$/;
 const MAX_DEPTH = 8;
@@ -72,7 +72,29 @@ function validEntries(list) {
   );
 }
 
-const nonEmptyString = (v) => typeof v === 'string' && v !== '';
+// Keep in step with BASH_EXACT_RE / BASH_EXACT_BAD_RE / BASH_EXACT_MAX in src/platform/runner.ts
+// (tests/hook-tool-allowlist.test.ts runs both validators on one corpus).
+const BASH_EXACT_RE =
+  /^(npm run [a-z0-9:-]+( -- [a-z0-9 :._=-]+)?|npx tsx scripts\/[A-Za-z0-9_./-]+\.ts( [a-z0-9 :._=-]+)?)$/;
+const BASH_EXACT_BAD_RE = /[;&|<>`$()\\'"*?~\n\r]/;
+const BASH_EXACT_MAX = 40;
+const NO_BASH_PROFILES = new Set(['hunt', 'outreach_wake']);
+
+function validBashEntry(e) {
+  return typeof e === 'string' && BASH_EXACT_RE.test(e) && !BASH_EXACT_BAD_RE.test(e) && !e.includes('..');
+}
+
+function validBashExact(list) {
+  if (!Array.isArray(list) || list.length > BASH_EXACT_MAX) return false;
+  const seen = new Set();
+  for (const e of list) {
+    if (!validBashEntry(e) || seen.has(e)) return false;
+    seen.add(e);
+  }
+  return true;
+}
+
+const nonEmptyString =(v) => typeof v === 'string' && v !== '';
 
 function decide(event, profile, opts) {
   const root = (opts && opts.root) || DEFAULT_ROOT;
@@ -88,7 +110,18 @@ function decide(event, profile, opts) {
       return deny('profile contains wildcard or invalid entries');
     }
     const name = event.tool_name;
+    if (name === 'Bash' && !('agent_id' in event) && !('agent_type' in event)) {
+      if (opts && NO_BASH_PROFILES.has(opts.profileName)) return deny('Bash not allowed for this profile');
+      if (profile.interactive !== true || !validBashExact(profile.bash_exact)) return deny('Bash not allowed for this profile');
+      const input = event.tool_input;
+      if (!input || typeof input !== 'object' || Array.isArray(input)) return deny('Bash command not allowed');
+      if (typeof input.command !== 'string') return deny('Bash command not allowed');
+      if (input.run_in_background || input.dangerouslyDisableSandbox) return deny('Bash command not allowed');
+      if (!profile.bash_exact.includes(input.command.trim())) return deny('Bash command not allowed');
+      return { allow: true, reason: '' };
+    }
     let allowed = new Set([...allowList, ...builtins]);
+    if (name === 'Bash') allowed.delete('Bash'); // only the exact rule above can allow Bash
 
     const hasId = 'agent_id' in event;
     const hasType = 'agent_type' in event;
@@ -201,7 +234,7 @@ function main() {
         typeof profileName === 'string' && profiles && Object.prototype.hasOwnProperty.call(profiles, profileName)
           ? profiles[profileName]
           : null;
-      result = profile ? decide(event, profile) : { allow: false, reason: 'unknown run profile' };
+      result = profile ? decide(event, profile, { profileName }) : { allow: false, reason: 'unknown run profile' };
     } catch {
       result = { allow: false, reason: 'hook error (fail closed)' };
     }
@@ -214,7 +247,7 @@ function main() {
   });
 }
 
-module.exports = { decide, agentTools };
+module.exports = { decide, agentTools, validBashExact };
 if (require.main === module) {
   process.on('uncaughtException', () => emitDenyAndExit('hook crashed (fail closed)'));
   process.stdin.on('error', () => emitDenyAndExit('stdin error (fail closed)'));
