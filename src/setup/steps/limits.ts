@@ -97,7 +97,7 @@ export const limitsStep: SetupStep = {
           })
         ).trim();
         const raised =
-          spec.key !== 'CADENCE_GAPS_DAYS' && v !== startValue && Number(v) > Number(spec.default);
+          typeof spec.default !== 'string' && v !== startValue && Number(v) > Number(spec.default);
         if (raised) {
           io.say(`Warning: ${v} is above the default ${spec.default}.${spec.raiseNote ? ' ' + spec.raiseNote : ''}`);
           if (!(await io.confirm(`Really use ${v} for ${spec.key}?`, false))) continue;

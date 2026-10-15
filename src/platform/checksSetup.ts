@@ -204,7 +204,7 @@ export const setupToolingChecks: Check[] = [
         if (raw === undefined) continue;
         if (raw.trim() === '' && !DIRECT_READERS.has(spec.key)) continue; // loader falls back to default
         if (validateLimit(spec, raw) !== null) {
-          bad.push(`${spec.key} (expected ${spec.min}..${spec.max}${spec.key === 'CADENCE_GAPS_DAYS' ? ' per value' : ''})`);
+          bad.push(`${spec.key} (expected ${spec.min}..${spec.max}${typeof spec.default === 'string' ? ' per value' : ''})`);
         }
       }
       const pairs = validatePairs(Object.fromEntries(Object.entries(env).filter(([, v]) => /^\s*\d+\s*$/.test(v))));

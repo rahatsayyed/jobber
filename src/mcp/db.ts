@@ -6,7 +6,7 @@ import { dbPath } from '../dbPath.js';
 import { handleSaveMatchResults, matchResultsInputShape } from '../matchTool.js';
 import { REPLY_WINDOW_DAYS } from '../replies.js';
 import { resolveReplyProposals, triageReplies } from '../replyTriage.js';
-import { claimFollowupForSend, listApprovedFollowups, listFollowupCandidates, replyWatchQueries, listStale, listStuckSending, markFollowupFailed, markFollowupSent, resolveStale, saveFollowupDraft, setFollowupApproval } from '../followups.js';
+import { approveDraftedFollowups, claimFollowupForSend, claimFollowupGuarded, emailFollowupGaps, followupCheckMaxAgeMin, followupMode, recordReplyCheck, listApprovedFollowups, listFollowupCandidates, replyWatchQueries, listStale, listStuckSending, markFollowupFailed, markFollowupSent, resolveStale, saveFollowupDraft, setFollowupApproval } from '../followups.js';
 import { calibrate } from '../calibrate.js';
 import { funnelStats } from '../funnel.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
@@ -417,15 +417,17 @@ server.registerTool(
   async ({ decisions }) => ({ content: [{ type: 'text', text: JSON.stringify(resolveReplyProposals(db, decisions)) }] })
 );
 
+const modeOpts = () => { const mode = followupMode(process.env); return mode === 'autonomous' ? { mode, gapsDays: emailFollowupGaps(process.env) } : {}; };
+
 server.registerTool('list_followup_candidates', {
   description: 'Jobs whose cold email got no recorded outcome after >= 10 quiet days, with fewer than 2 follow-ups sent and no pending draft. Never lists a job with any outcome, any reply on file (even an unresolved proposal), a bounce, or whose address belongs to a contact who replied, bounced or rejected another job. Includes the original subject/body (the facts a follow-up may reuse) and thread id.',
   inputSchema: {},
-}, async () => ({ content: [{ type: 'text', text: JSON.stringify(listFollowupCandidates(db)) }] }));
+}, async () => ({ content: [{ type: 'text', text: JSON.stringify(listFollowupCandidates(db, new Date(), modeOpts())) }] }));
 
 server.registerTool('save_followup_draft', {
-  description: 'Store a drafted follow-up (status drafted; nothing is sent). n must be the candidate\'s next_n (1 or 2). Runs the fact gate itself (original email as extra source, job title and company blanked) and refuses a block; also enforces subject = "Re: <original subject>", 40-120 words and the banned phrases; stores the gate\'s normalized text. On refusal it throws with the reason (redraft once, then skip). Returns {id, subject, body, warnings}: show THESE stored texts and warnings for approval.',
-  inputSchema: { job_id: z.string().max(200), n: z.number().int().min(1).max(2), subject: z.string().min(1).max(300), body: z.string().min(1).max(5000) },
-}, async (d) => ({ content: [{ type: 'text', text: JSON.stringify(saveFollowupDraft(db, d)) }] }));
+  description: 'Store a drafted follow-up (status drafted; nothing is sent). n must be the candidate\'s next_n (1 or 2; up to 4 in autonomous mode, where the 4th is a feedback message). Runs the fact gate itself (original email as extra source, job title and company blanked) and refuses a block; also enforces subject = "Re: <original subject>", 40-120 words and the banned phrases; stores the gate\'s normalized text. On refusal it throws with the reason (redraft once, then skip). Returns {id, subject, body, warnings}: show THESE stored texts and warnings for approval.',
+  inputSchema: { job_id: z.string().max(200), n: z.number().int().min(1).max(4), subject: z.string().min(1).max(300), body: z.string().min(1).max(5000) },
+}, async (d) => ({ content: [{ type: 'text', text: JSON.stringify(saveFollowupDraft(db, d, new Date(), undefined, modeOpts())) }] }));
 
 server.registerTool('set_followup_approval', {
   description: 'Record the user\'s Telegram decision on drafted follow-ups: approve=true -> approved (sender may send them), false -> skipped (counts as the last contact).',
@@ -443,7 +445,27 @@ server.registerTool('list_approved_followups', {
 server.registerTool('claim_followup_for_send', {
   description: 'Call RIGHT BEFORE gmail.send_email for one approved follow-up: atomically moves it approved -> sending. Returns {claimed}. If claimed is false (already claimed or sent, skipped, cancelled by an outcome, or the job is now blocked by a reply/bounce) do NOT send it.',
   inputSchema: { id: z.number().int() },
-}, async ({ id }) => ({ content: [{ type: 'text', text: JSON.stringify({ claimed: claimFollowupForSend(db, id) }) }] }));
+}, async ({ id }) => {
+  if (followupMode(process.env) !== 'autonomous') return { content: [{ type: 'text', text: JSON.stringify({ claimed: claimFollowupForSend(db, id) }) }] };
+  const raw = process.env.SEND_LIMIT_PER_RUN;
+  const n = raw === undefined || raw.trim() === '' ? NaN : Number(raw);
+  const sendLimit = Number.isFinite(n) && n >= 0 ? n : 1;
+  const r = claimFollowupGuarded(db, id, { now: new Date(), maxAgeMin: followupCheckMaxAgeMin(process.env), sendLimit });
+  return { content: [{ type: 'text', text: JSON.stringify(r) }] };
+});
+
+server.registerTool('record_reply_check', {
+  description: "Record that a reply check just finished: {messages, errors}. Call it with the reply-watcher's counts (errors = its errors length, including any possible truncation). Only a check with errors = 0 is clean; in autonomous mode claim_followup_for_send refuses unless the latest check is clean and fresh (FOLLOWUP_CHECK_MAX_AGE_MIN).",
+  inputSchema: { messages: z.number().int().min(0), errors: z.number().int().min(0) },
+}, async ({ messages, errors }) => ({ content: [{ type: 'text', text: JSON.stringify(recordReplyCheck(db, { messages, errors }, new Date())) }] }));
+
+server.registerTool('approve_drafted_followups', {
+  description: "Autonomous mode only (FOLLOWUPS_AUTONOMOUS=true): approve every drafted follow-up whose job has no outcome, reply or bounce; blocked ones are skipped. Otherwise refuses with reason autonomous_off. Never use it in legacy mode: approval there is the user's Telegram decision.",
+  inputSchema: {},
+}, async () => {
+  if (followupMode(process.env) !== 'autonomous') return { content: [{ type: 'text', text: JSON.stringify({ approved: [], skipped: [], reason: 'autonomous_off' }) }] };
+  return { content: [{ type: 'text', text: JSON.stringify(approveDraftedFollowups(db)) }] };
+});
 
 server.registerTool('mark_followup_sent', {
   description: 'After gmail.send_email succeeds for a claimed follow-up: mark it sent with the Gmail message id. Only `sending` (claimed) or `approved` rows change; a skipped or cancelled row is never marked sent (returns ok: false). Returns {ok, late_block}: late_block true means a reply/outcome arrived after the claim.',
@@ -458,12 +480,12 @@ server.registerTool('mark_followup_failed', {
 server.registerTool('list_stale', {
   description: 'Sent jobs with no outcome, no reply or bounce on file, that went silent for 60+ days, or got no reply 10+ days after the 2nd follow-up. Show them to the user before resolving.',
   inputSchema: {},
-}, async () => ({ content: [{ type: 'text', text: JSON.stringify(listStale(db)) }] }));
+}, async () => ({ content: [{ type: 'text', text: JSON.stringify(listStale(db, new Date(), modeOpts())) }] }));
 
 server.registerTool('resolve_stale', {
   description: 'Record no_response (note "stale resolved no_response (date)") for the job ids the user approved; ids no longer stale are skipped.',
   inputSchema: { job_ids: z.array(z.string().max(200)).max(200) },
-}, async ({ job_ids }) => ({ content: [{ type: 'text', text: JSON.stringify(resolveStale(db, job_ids)) }] }));
+}, async ({ job_ids }) => ({ content: [{ type: 'text', text: JSON.stringify(resolveStale(db, job_ids, new Date(), modeOpts())) }] }));
 
 async function main() {
   const transport = new StdioServerTransport();

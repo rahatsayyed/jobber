@@ -167,6 +167,13 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
       decided_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_followups_job ON followups(job_id);
+    CREATE TABLE IF NOT EXISTS reply_checks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      checked_at TEXT NOT NULL,
+      clean INTEGER NOT NULL,
+      messages INTEGER NOT NULL,
+      errors INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS job_exclusion_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       job_id TEXT NOT NULL,

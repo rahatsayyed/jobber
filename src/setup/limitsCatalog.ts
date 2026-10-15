@@ -16,7 +16,7 @@ export type LimitGroup =
 export interface LimitSpec {
   key: string; // env var name
   group: LimitGroup;
-  default: number | string; // string only for CADENCE_GAPS_DAYS
+  default: number | string; // string only for the comma-list settings (CADENCE_GAPS_DAYS, EMAIL_FOLLOWUP_GAPS_DAYS)
   min: number;
   max: number;
   unit: string; // 'per day', 'per week', 'hour 0-23', 'seconds', 'minutes', 'days', 'percent', 'score'
@@ -91,6 +91,12 @@ export const LIMITS: LimitSpec[] = [
   { key: 'CADENCE_GAPS_DAYS', group: 'cooldowns', default: GAPS_DAYS.join(','), min: 1, max: 365, unit: 'days',
     what: 'Comma list of days between touches in a sequence, one number per follow-up gap (5 values, each 1 to 365).',
     raiseNote: 'Shorter gaps feel pushy.' },
+  { key: 'EMAIL_FOLLOWUP_GAPS_DAYS', group: 'cooldowns', default: '3,4,5,7', min: 1, max: 365, unit: 'days',
+    what: 'Comma list of quiet days before each autonomous email follow-up (4 values: three follow-ups, then the feedback message). Used only when FOLLOWUPS_AUTONOMOUS=true; independent of CADENCE_GAPS_DAYS.',
+    raiseNote: 'Shorter gaps feel pushy.' },
+  { key: 'FOLLOWUP_CHECK_MAX_AGE_MIN', group: 'cooldowns', default: 30, min: 5, max: 240, unit: 'minutes',
+    what: 'Longest age of the last clean reply check that still lets an autonomous email follow-up be claimed for sending.',
+    raiseNote: 'A longer window lets a follow-up go out after a reply that arrived since the last check.' },
 ];
 
 export function specFor(key: string): LimitSpec | undefined {
@@ -108,7 +114,7 @@ function intIn(raw: string, min: number, max: number): string | null {
 
 // null = ok, else the reason. Mirrors the loaders: whole numbers only, inside min..max.
 export function validateLimit(spec: LimitSpec, raw: string): string | null {
-  if (spec.key === 'CADENCE_GAPS_DAYS') {
+  if (typeof spec.default === 'string') {
     if (raw.trim() === '') return 'value is empty';
     const want = String(spec.default).split(',').length;
     const parts = raw.split(',');

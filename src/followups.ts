@@ -3,6 +3,7 @@
 // Mads Lorentzen): >= 10 quiet days, at most 2 follow-ups, draft-only until approved, 60-day stale -> no_response.
 import type BetterSqlite3 from 'better-sqlite3';
 import { recordOutcome } from './db.js';
+import { checkAndIncrement } from './lib/rateLimit.js';
 import { normalizeText } from './atsText.js';
 import { getBaseResume } from './resume.js';
 import { checkTextWithNormalized } from './resumeFacts.js';
@@ -16,7 +17,7 @@ const sqlNow = (now: Date) => now.toISOString().slice(0, 19).replace('T', ' ');
 
 export interface FollowupCandidate {
   job_id: string; company: string | null; title: string | null; email_to: string; subject: string | null; body: string | null;
-  thread_id: string | null; message_id: string | null; sent_at: string; followups_sent: number; days_quiet: number; next_n: 1 | 2;
+  thread_id: string | null; message_id: string | null; sent_at: string; followups_sent: number; days_quiet: number; next_n: 1 | 2 | 3 | 4;
 }
 
 interface Row {
@@ -82,18 +83,50 @@ export function blockedJobIds(db: BetterSqlite3.Database): Set<string> {
   return blocked;
 }
 
-/** A job is either follow-up eligible (10 <= quiet days < staleDays) or stale (quiet >= staleDays), never both. */
-export function listFollowupCandidates(db: BetterSqlite3.Database, now: Date = new Date(), opts: { afterDays?: number; max?: number; staleDays?: number } = {}): FollowupCandidate[] {
+// ---- Autonomous mode (flagged: FOLLOWUPS_AUTONOMOUS=true; the legacy 10-day / 2-follow-up flow is the library default) ----
+
+export type FollowupMode = 'legacy' | 'autonomous';
+export function followupMode(env: NodeJS.ProcessEnv = process.env): FollowupMode { return env.FOLLOWUPS_AUTONOMOUS === 'true' ? 'autonomous' : 'legacy'; }
+export const AUTONOMOUS_MAX = 4;
+/** The 4th message of the autonomous sequence is a feedback request, not a follow-up. */
+export function followupKind(n: number): 'followup' | 'feedback' { return n >= 4 ? 'feedback' : 'followup'; }
+export const EMAIL_FOLLOWUP_GAPS_DEFAULT: readonly number[] = [3, 4, 5, 7];
+/** EMAIL_FOLLOWUP_GAPS_DAYS: exactly 4 integers in 1..365, else the default (independent of CADENCE_GAPS_DAYS). */
+export function emailFollowupGaps(env: NodeJS.ProcessEnv = process.env): number[] {
+  const raw = env.EMAIL_FOLLOWUP_GAPS_DAYS;
+  if (raw === undefined || raw.trim() === '') return [...EMAIL_FOLLOWUP_GAPS_DEFAULT];
+  const nums = raw.split(',').map((x) => (/^\d+$/.test(x.trim()) ? Number(x.trim()) : NaN));
+  return nums.length === AUTONOMOUS_MAX && nums.every((n) => Number.isInteger(n) && n >= 1 && n <= 365) ? nums : [...EMAIL_FOLLOWUP_GAPS_DEFAULT];
+}
+/** FOLLOWUP_CHECK_MAX_AGE_MIN: default 30, clamped to 5..240 (non-numeric gives the default). */
+export function followupCheckMaxAgeMin(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.FOLLOWUP_CHECK_MAX_AGE_MIN;
+  const n = raw === undefined || raw.trim() === '' ? NaN : Number(raw);
+  if (!Number.isFinite(n)) return 30;
+  return Math.min(240, Math.max(5, Math.floor(n)));
+}
+
+export interface ModeOpts { mode?: FollowupMode; gapsDays?: readonly number[] }
+
+/** A job is either follow-up eligible (10 <= quiet days < staleDays) or stale (quiet >= staleDays), never both.
+ *  Autonomous mode: eligible when quiet days >= gapsDays[n_sent] (and n_sent < 4). */
+export function listFollowupCandidates(db: BetterSqlite3.Database, now: Date = new Date(), opts: { afterDays?: number; max?: number; staleDays?: number } & ModeOpts = {}): FollowupCandidate[] {
+  const auto = opts.mode === 'autonomous';
+  const gaps = opts.gapsDays ?? EMAIL_FOLLOWUP_GAPS_DEFAULT;
   const after = opts.afterDays ?? 10;
-  const max = opts.max ?? 2;
+  const max = auto ? AUTONOMOUS_MAX : opts.max ?? 2;
   const stale = opts.staleDays ?? STALE_DAYS;
   const blocked = blockedJobIds(db);
   return rows(db)
-    .filter((r) => { const q = daysBetween(lastContact(r), now); return !blocked.has(r.job_id) && r.email_to && r.pending === 0 && r.n_sent < max && q >= after && q < stale; })
+    .filter((r) => {
+      const q = daysBetween(lastContact(r), now);
+      if (blocked.has(r.job_id) || !r.email_to || r.pending !== 0 || r.n_sent >= max || q >= stale) return false;
+      return auto ? q >= (gaps[r.n_sent] ?? EMAIL_FOLLOWUP_GAPS_DEFAULT[r.n_sent]) : q >= after;
+    })
     .map((r) => ({
       job_id: r.job_id, company: r.company, title: r.title, email_to: r.email_to, subject: r.subject, body: r.body,
       thread_id: r.thread_id, message_id: r.message_id, sent_at: r.sent_at, followups_sent: r.n_sent,
-      days_quiet: daysBetween(lastContact(r), now), next_n: (r.n_sent + 1) as 1 | 2,
+      days_quiet: daysBetween(lastContact(r), now), next_n: (r.n_sent + 1) as 1 | 2 | 3 | 4,
     }));
 }
 
@@ -116,9 +149,9 @@ export interface SavedDraft { id: number; subject: string; body: string; warning
 /** Stores a follow-up draft (status drafted, nothing is sent). Throws, storing nothing, unless the job is a current candidate, n is its next_n,
  *  the fact gate does not block (original email as extra source, job title and company blanked), the subject is `Re: <original subject>`,
  *  the body is 40-120 words and no banned phrase appears. Stores the gate's NORMALIZED subject and body (the text that was gated is the text that is sent). */
-export function saveFollowupDraft(db: BetterSqlite3.Database, d: { job_id: string; n: number; subject: string; body: string }, now: Date = new Date(), gate: FollowupGate = realGate): SavedDraft {
-  const c = listFollowupCandidates(db, now).find((x) => x.job_id === d.job_id);
-  if (!c) throw new Error(`job ${d.job_id} is not a follow-up candidate (outcome or reply recorded, too recent, pending draft, or 2 already sent)`);
+export function saveFollowupDraft(db: BetterSqlite3.Database, d: { job_id: string; n: number; subject: string; body: string }, now: Date = new Date(), gate: FollowupGate = realGate, mo: ModeOpts = {}): SavedDraft {
+  const c = listFollowupCandidates(db, now, mo).find((x) => x.job_id === d.job_id);
+  if (!c) throw new Error(`job ${d.job_id} is not a follow-up candidate (outcome or reply recorded, too recent, pending draft, or the maximum already sent)`);
   if (d.n !== c.next_n) throw new Error(`expected follow-up #${c.next_n} for job ${d.job_id}, got #${d.n}`);
   if (/[\r\n]/.test(d.subject)) throw new Error('subject must be a single line');
   const g = gate(`${d.subject}\n\n${d.body}`, { extraSource: `${c.subject ?? ''}\n\n${c.body ?? ''}`, jobTitle: c.title, company: c.company });
@@ -212,26 +245,28 @@ export function replyWatchQueries(db: BetterSqlite3.Database, sent: SentEmail[])
   return buildReplyQueries([...sent, ...listReplyWatchJobs(db).filter((s) => !seen.has(s.job_id))], REPLY_WINDOW_DAYS);
 }
 
-export interface StaleCandidate { job_id: string; company: string | null; title: string | null; days_quiet: number; followups_sent: number; why: 'silent 60+ days' | 'no reply after 2 follow-ups' }
+export interface StaleCandidate { job_id: string; company: string | null; title: string | null; days_quiet: number; followups_sent: number; why: 'silent 60+ days' | 'no reply after 2 follow-ups' | 'no reply after 4 follow-ups' }
 
 /** Sent jobs gone quiet. Jobs with an outcome, a reply (even an unresolved proposal) or a bounce are never listed: the user decides those. */
-export function listStale(db: BetterSqlite3.Database, now: Date = new Date(), opts: { staleDays?: number; afterDays?: number; max?: number } = {}): StaleCandidate[] {
+export function listStale(db: BetterSqlite3.Database, now: Date = new Date(), opts: { staleDays?: number; afterDays?: number; max?: number } & ModeOpts = {}): StaleCandidate[] {
+  const auto = opts.mode === 'autonomous';
+  const gaps = opts.gapsDays ?? EMAIL_FOLLOWUP_GAPS_DEFAULT;
   const stale = opts.staleDays ?? STALE_DAYS;
-  const after = opts.afterDays ?? 10;
-  const max = opts.max ?? 2;
+  const after = auto ? gaps[AUTONOMOUS_MAX - 1] ?? 7 : opts.afterDays ?? 10;
+  const max = auto ? AUTONOMOUS_MAX : opts.max ?? 2;
   const blocked = blockedJobIds(db);
   const out: StaleCandidate[] = [];
   for (const r of rows(db)) {
     if (blocked.has(r.job_id)) continue;
     const q = daysBetween(lastContact(r), now);
-    const why = q >= stale ? 'silent 60+ days' : r.n_sent >= max && q >= after ? 'no reply after 2 follow-ups' : null;
+    const why = q >= stale ? 'silent 60+ days' : r.n_sent >= max && q >= after ? (auto ? 'no reply after 4 follow-ups' : 'no reply after 2 follow-ups') : null;
     if (why) out.push({ job_id: r.job_id, company: r.company, title: r.title, days_quiet: q, followups_sent: r.n_sent, why });
   }
   return out;
 }
 
-export function resolveStale(db: BetterSqlite3.Database, jobIds: string[], now: Date = new Date()): { recorded: string[]; skipped: string[] } {
-  const eligible = new Set(listStale(db, now).map((s) => s.job_id));
+export function resolveStale(db: BetterSqlite3.Database, jobIds: string[], now: Date = new Date(), mo: ModeOpts = {}): { recorded: string[]; skipped: string[] } {
+  const eligible = new Set(listStale(db, now, mo).map((s) => s.job_id));
   const recorded: string[] = [];
   const skipped: string[] = [];
   db.transaction(() => {
@@ -242,4 +277,48 @@ export function resolveStale(db: BetterSqlite3.Database, jobIds: string[], now: 
     }
   })();
   return { recorded, skipped };
+}
+
+// ---- reply_checks, guarded claim, auto-approve ----
+
+/** Records one reply-watcher run. clean = no errors (a truncated or failed read is never clean). */
+export function recordReplyCheck(db: BetterSqlite3.Database, c: { messages: number; errors: number }, now: Date): { id: number; clean: boolean } {
+  const clean = c.errors === 0;
+  const id = Number(db.prepare('INSERT INTO reply_checks (checked_at, clean, messages, errors) VALUES (?, ?, ?, ?)').run(sqlNow(now), clean ? 1 : 0, c.messages, c.errors).lastInsertRowid);
+  return { id, clean };
+}
+
+/** True when the LATEST reply check is clean and no older than maxAgeMin (inclusive). */
+export function hasFreshCleanReplyCheck(db: BetterSqlite3.Database, now: Date, maxAgeMin: number): boolean {
+  const r = db.prepare('SELECT checked_at, clean FROM reply_checks ORDER BY checked_at DESC, id DESC LIMIT 1').get() as { checked_at: string; clean: number } | undefined;
+  if (!r || r.clean !== 1) return false;
+  const age = now.getTime() - parseSqlTime(r.checked_at);
+  return age >= 0 && age <= maxAgeMin * 60_000;
+}
+
+export type ClaimResult = { claimed: true } | { claimed: false; reason: 'not_approved' | 'blocked' | 'no_clean_reply_check' | 'cap' };
+
+/** Autonomous claim: ONE immediate transaction. approved (and not blocked), then a fresh clean reply check, then the shared send_email counter
+ *  (consumed only here, on success), then approved -> sending. Any refusal writes nothing. */
+export function claimFollowupGuarded(db: BetterSqlite3.Database, id: number, g: { now: Date; maxAgeMin: number; sendLimit: number }): ClaimResult {
+  return db.transaction((): ClaimResult => {
+    const row = db.prepare("SELECT job_id FROM followups WHERE id = ? AND status = 'approved'").get(id) as { job_id: string } | undefined;
+    if (!row) return { claimed: false, reason: 'not_approved' };
+    if (!listApprovedFollowups(db).some((r) => r.id === id)) return { claimed: false, reason: 'blocked' };
+    if (!hasFreshCleanReplyCheck(db, g.now, g.maxAgeMin)) return { claimed: false, reason: 'no_clean_reply_check' };
+    if (!checkAndIncrement(db, 'send_email', g.sendLimit)) return { claimed: false, reason: 'cap' };
+    const ok = db.prepare("UPDATE followups SET status = 'sending' WHERE id = ? AND status = 'approved'").run(id).changes > 0;
+    return ok ? { claimed: true } : { claimed: false, reason: 'not_approved' };
+  }).immediate();
+}
+
+/** Autonomous approval: every drafted row whose job is not blocked is approved; blocked ones are skipped. */
+export function approveDraftedFollowups(db: BetterSqlite3.Database, _now: Date = new Date()): { approved: number[]; skipped: number[] } {
+  const drafted = db.prepare("SELECT id, job_id FROM followups WHERE status = 'drafted' ORDER BY id").all() as Array<{ id: number; job_id: string }>;
+  const blocked = blockedJobIds(db);
+  const ok = drafted.filter((d) => !blocked.has(d.job_id)).map((d) => d.id);
+  const no = drafted.filter((d) => blocked.has(d.job_id)).map((d) => d.id);
+  setFollowupApproval(db, ok, true);
+  setFollowupApproval(db, no, false);
+  return { approved: ok, skipped: no };
 }
