@@ -143,6 +143,17 @@ describe('fixtures', () => {
 });
 
 describe('realStartWeb', () => {
+  it('the dashboard-login stage skips against the real pre-8C server', async () => {
+    const { dashboardLogin } = await import('../src/verify/stages.js');
+    const ctx = buildCtx({
+      root: ROOT, env: { PATH: process.env.PATH }, run: async () => ({ stdout: '', code: 0 }), fs: realFs,
+      now: () => new Date('2026-10-15T00:00:00Z'), doctor: async () => [], openDb,
+      startWeb: realStartWeb, fixtures: () => loadFixtures(ROOT),
+    });
+    const r = await dashboardLogin.run(ctx);
+    expect(r.status).toBe('skip');
+    expect(r.detail).toContain('(got 401)');
+  });
   it('starts hermetically on loopback port 0 and serves without real config', async () => {
     const srv = await realStartWeb({ port: 0, host: '127.0.0.1', tmp: mkTmp() });
     try {

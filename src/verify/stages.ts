@@ -216,7 +216,9 @@ const dashboardLogin: Stage = {
     }
     try {
       const mode = await get(`${srv.url}/api/auth/mode`);
-      if (mode.status === 404) return skip('8C dashboard login not merged: /api/auth/mode absent');
+      if (mode.status === 404 || mode.status === 401) {
+        return skip(`8C dashboard login not merged: /api/auth/mode absent (got ${mode.status})`);
+      }
       if (mode.status !== 200) return fail(`/api/auth/mode returned ${mode.status}`, fix);
       let m: unknown;
       try { m = JSON.parse(await mode.text()); } catch { return fail('/api/auth/mode is not JSON', fix); }

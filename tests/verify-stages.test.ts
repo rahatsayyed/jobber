@@ -144,6 +144,12 @@ describe('dashboard-login', () => {
     const k = Object.keys(m).find((p) => u.endsWith(p))!;
     return { status: m[k][0], text: async () => m[k][1] };
   };
+  it('skips with the status in the reason on 401 and fails on 500', async () => {
+    const s = await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [401, ''] }) }));
+    expect(s.status).toBe('skip');
+    expect(s.detail).toContain('(got 401)');
+    expect((await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [500, ''] }) }))).status).toBe('fail');
+  });
   it('skips when /api/auth/mode is absent', async () => {
     const r = await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [404, ''] }) }));
     expect(r.status).toBe('skip');
