@@ -1,5 +1,5 @@
-// Pure verification helpers COPIED verbatim from src/mcp/connect.ts (which opens data.sqlite at
-// import, so it cannot be imported from src/linkedin/*). Behavior must stay identical; the
+// Pure verification helpers originally from the removed legacy connect MCP.
+// Behavior must stay identical to the original; the
 // incident notes record why each check is fail-closed.
 
 /** LinkedIn's hard cap on connection-request note length. */

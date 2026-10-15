@@ -628,8 +628,7 @@ section is the reference for what exists.
   Launchers parse it themselves and pass child processes an allowlisted environment; nothing
   sources it into a shell. `user-data/` (mode 700) and `secrets/` hold personal data and
   sessions and are never read by the agent beyond the tools that need them. There is no
-  pre-commit guard any more (`.githooks/pre-commit` was removed in c8c302a and `.githooks` is
-  itself git-ignored); the only protection against committing these paths is `.gitignore`
+  pre-commit guard any more (the `.githooks/pre-commit` file was removed in c8c302a); the only protection against committing these paths is `.gitignore`
   (`.env`, `.env.*` except `.env.example`, `secrets/`, `user-data/`, `.ccgram/`, `data.sqlite`,
   `.claude/settings.local.json`, `models/`, `.jobber/`), so check `git status` before you commit.
 - **Auto-update and backup** (both off by default, `AUTO_UPDATE`, `BACKUP_ENABLED`): see
@@ -670,8 +669,10 @@ in code. Layers, outermost first:
    `classifier_wired` doctor check fail when one of them stops calling it. Fail-closed policy:
    a live (non-dry-run) read or send is BLOCKED when the classifier is unset, unpinned, unfitted,
    missing or erroring (`classifier_unavailable`), truncated (`classifier_truncated`) or flags
-   injection (`injection_suspected`); in a dry run the call continues with the result marked
-   `classifier=unscreened` and an automatic reply (`mayAutoReply`) is never allowed; an escalation
+   injection (`injection_suspected`); in a dry run only `classifier_unavailable` degrades: the call
+   continues with the result marked `classifier=unscreened`, while `injection_suspected` and
+   `classifier_truncated` verdicts still block (`src/safety/screen.ts`), and an automatic reply
+   (`mayAutoReply`) is never allowed on an unscreened result; an escalation
    is never dropped: it is stored with a `[blocked: <code>]` or `[unscreened]` prefix. The
    launcher refuses to start any profile whose classifier is not ready (`src/platform/launchCheck.ts`,
    exit 3 `classifier not ready`); the legacy `config/classifier.pin.json` is removed. Each MCP
@@ -936,6 +937,10 @@ and the Indian and Gulf job boards.
   run from the scheduler (`due-followups`) under the cadence and ceilings in code.
 - LinkedIn inbound replies are read and recorded or escalated only; there are no typed LinkedIn
   inbox tools yet. Email replies and Naukri threads are handled as described above.
+- Model-bound third-party text that is NOT classifier-screened: `discover.linkedin_posts` and
+  `discover.linkedin_jobs` post text, board and Hacker News descriptions, Gmail reply bodies read
+  by `reply-watcher`, and `linkedin_screenshot` pixels. The launcher and doctor classifier
+  readiness cover only the screened surfaces in `SCREENED_SURFACES`.
 
 Test baseline: `npx tsc -p . --noEmit` is clean; `npx vitest run` has exactly 5 known failures
 (4 in `tests/renderChecked.test.ts`, 1 in `tests/resume.test.ts`) because a Playwright browser is
@@ -1008,7 +1013,12 @@ not installed (`npx playwright install --with-deps chromium` fixes them). The li
     (`db.record_reply_check`, at most `FOLLOWUP_CHECK_MAX_AGE_MIN` old, default 30, clamp 5..240),
     the claim step itself, the block list above, and the fact gate; the claim refuses with
     `not_approved`, `blocked`, `no_clean_reply_check` or `cap`. Email follow-ups run only when a
-    hunt or `/followups` runs (the scheduler's workers are LinkedIn and Naukri only).
+    hunt or `/followups` runs (the scheduler's workers are LinkedIn and Naukri only). If
+    `FOLLOWUPS_AUTONOMOUS` is switched from `true` back to `false`, rows autonomous mode left in
+    `approved` state are treated as user-approved by legacy mode: cancel them first.
+    `db.set_followup_approval` only changes `drafted` rows, so it cannot do this; recording an
+    outcome for the job (`db.record_outcome`) cancels its `approved` rows, otherwise the owner
+    must set them to `cancelled` in SQLite by hand before the flag is flipped.
 11. Reply outcomes are auto-recorded only when auto-record is enabled in `config/replies.json`
     (OFF by default; leave it off, see `/checkreplies`; otherwise proposed), and then only for a thread/sender-matched `interview` or `rejected` on a
     strong phrase; they never downgrade the latest outcome, and `replied` and `offer` always need

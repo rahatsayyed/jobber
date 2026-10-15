@@ -39,6 +39,13 @@ const EXCLUDED_HOSTS = [
   'drive.google.com',
   'forms.gle',
   'typeform.com',
+  'smartrecruiters.com',
+  'jobs.smartrecruiters.com',
+  'myworkdayjobs.com',
+  'bamboohr.com',
+  'linktr.ee',
+  'sites.google.com',
+  'airtable.com',
 ];
 
 // Multi-tenant hosting suffixes: the tenant label is part of the registrable domain.

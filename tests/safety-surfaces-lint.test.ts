@@ -18,6 +18,8 @@ const SYNC_ONLY = new Set([
   'src/safety/inputGate.ts',
 ]);
 
+const SURFACE_FILES = new Set(SCREENED_SURFACES.map((s) => s.file));
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const n of readdirSync(dir)) {
     const p = join(dir, n);
@@ -50,9 +52,10 @@ describe('screened surfaces lint', () => {
     for (const f of walk(join(ROOT, 'src'))) {
       const rel = relative(ROOT, f).split('\\').join('/');
       const text = readFileSync(f, 'utf8');
-      if (!/inputGate\.js/.test(text)) continue;
+      if (!/(inputGate|fieldGate)\.js/.test(text)) continue;
       if (!/\bgateInput\(|\bgateField\(/.test(text)) continue;
-      if (!SYNC_ONLY.has(rel)) offenders.push(rel);
+      // A caller must be an explicit SYNC_ONLY entry or a file that is itself a screened surface.
+      if (!SYNC_ONLY.has(rel) && !SURFACE_FILES.has(rel)) offenders.push(rel);
     }
     expect(offenders).toEqual([]);
   });

@@ -1,5 +1,5 @@
-// LinkedIn DOM selectors COPIED from src/mcp/connect.ts (cannot import it: it opens data.sqlite at
-// import). connect.ts's names are kept; incident comments record why each is shaped as it is.
+// LinkedIn DOM selectors originally from the removed legacy connect MCP. The original
+// names are kept; incident comments record why each is shaped as it is.
 
 // LinkedIn people-search / profile DOM selectors. See git history / .superpowers/sdd/task-6
 // -connect-fix-report.md for the live-inspection notes behind each of these.

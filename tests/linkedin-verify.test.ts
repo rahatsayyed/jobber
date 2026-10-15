@@ -299,7 +299,7 @@ function makeFakeResponse(url: string, method: string, status: number): any {
 
 describe('isLikelySendInvitationResponse', () => {
   // Best-effort heuristic (NOT verified against a real captured request/response — see
-  // src/mcp/connect.ts) — these tests exercise the predicate logic itself in isolation.
+  // the removed legacy connect MCP) — these tests exercise the predicate logic itself in isolation.
   it('matches a 2xx POST to a voyager-style invitation path', () => {
     const response = makeFakeResponse(
       'https://www.linkedin.com/voyager/api/voyagerRelationshipsDashMemberRelationships/invitation',

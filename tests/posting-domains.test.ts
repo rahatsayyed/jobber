@@ -47,6 +47,17 @@ describe('lookalike and shared hosts', () => {
       expect(hnDomainCheck(hn(u), 'lever.co')).toBe('no_domain_in_posting');
     }
   });
+  it.each([
+    'https://smartrecruiters.com/acme',
+    'https://jobs.smartrecruiters.com/acme',
+    'https://acme.wd5.myworkdayjobs.com/site',
+    'https://acme.bamboohr.com/careers',
+    'https://linktr.ee/acme',
+    'https://sites.google.com/view/acme',
+    'https://airtable.com/shrAcme',
+  ])('more shared and ATS host %s is not company evidence', (u) => {
+    expect(postingDomains(u)).toEqual([]);
+  });
   it('multi-tenant suffixes keep the tenant label', () => {
     expect(registrableDomain('acme.github.io')).toBe('acme.github.io');
     expect(hnDomainCheck(hn('https://acme.github.io'), 'evil.github.io')).toBe('unmatched');

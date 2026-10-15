@@ -1,5 +1,5 @@
-// 2D-proximity helpers COPIED from src/mcp/connect.ts (same bodies, typed on LiPage). connect.ts is
-// not imported: it opens data.sqlite at import. Fail-closed picks live in verify.ts.
+// 2D-proximity helpers originally from the removed legacy connect MCP (same bodies, typed on LiPage). That module was
+// removed in plan 8A. Fail-closed picks live in verify.ts.
 import { SELECTORS } from './selectors.js';
 import { pickNearestToNameIndex, type Point } from './verify.js';
 import type { LiLocator, LiPage } from './types.js';

@@ -128,7 +128,7 @@ Behaviour to know:
 - Untracked files in the checkout count as a dirty tree, so the update is skipped. Clean or
   ignore them.
 - Changes touching reserved paths (`AUTO_UPDATE_REVIEW_PATHS`, by default `.claude/settings.json`,
-  `.claude/hooks/`, `.githooks/`, `config/ccgram.pin.json`, `scripts/ccgram/`) force a manual
+  `.claude/hooks/`, `config/ccgram.pin.json`, `scripts/ccgram/`) force a manual
   review: the update is not applied.
 - Any failed step (merge, install, migrate-copy, doctor, tests, permissions fingerprint) rolls the code back to the previous
   commit. The database is not rolled back: migrations are additive so old code runs on a migrated
