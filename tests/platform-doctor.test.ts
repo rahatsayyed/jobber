@@ -279,7 +279,7 @@ describe('web and dashboard-login checks', () => {
     o: { acct?: Acct; env?: NodeJS.ProcessEnv; dirMode?: number; dbMode?: number; set?: 'read_only' | 'full'; noOidc?: boolean } = {},
   ) => {
     const files = goodFiles();
-    files['/p/.env'] = { text: GOOD_ENV + (o.noOidc ? '' : OIDC) + extra, mode: 0o600 };
+    files['/p/.env'] = { text: GOOD_ENV + (o.noOidc ? 'WEB_AUTH_MODE=oidc\n' : OIDC) + extra, mode: 0o600 };
     files['/p/.dashboard'] = { text: '', mode: o.dirMode ?? 0o700 };
     files['/p/.dashboard/auth.sqlite'] = { text: '', mode: o.dbMode ?? 0o600 };
     if (o.set === 'full') {
