@@ -82,63 +82,55 @@ describe('dashboardStep', () => {
     expect(env).toContain('# keep me');
   });
 
-  it('declining the confirm writes no OIDC keys and spawns nothing', async () => {
-    const { ctx, fs, spawns } = makeCtx([{ confirm: false }], WITH_DASH);
+  const TOKEN_RE = /#token=|[A-Za-z0-9_-]{43}/;
+
+  it('token path: one confirm, no ask, spawns the token CLI, no token anywhere', async () => {
+    const { ctx, sio, fs, spawns } = makeCtx([{ confirm: true }], WITH_DASH);
+    expect(await dashboardStep.run(ctx)).toBe('done');
+    expect(fs.files.get('proj/.env')).toMatch(/^WEB_AUTH_MODE=token$/m);
+    expect(spawns).toEqual([{ cmd: 'npx', args: ['tsx', 'scripts/dashboard.ts', 'token'], opts: undefined }]);
+    expect(sio.transcript.join('\n')).not.toMatch(TOKEN_RE);
+    expect(JSON.stringify(ctx.state)).not.toMatch(TOKEN_RE);
+    sio.assertDone();
+  });
+
+  it('existing OIDC owner: nothing asked, mode oidc, nothing spawned', async () => {
+    const env = 'WEB_PORT=8787\nWEB_OIDC_CLIENT_ID=cid\nWEB_OIDC_CLIENT_SECRET=sec\n';
+    const { ctx, sio, fs, spawns } = makeCtx([], { ...WITH_DASH, 'proj/.env': env });
+    expect(await dashboardStep.run(ctx)).toBe('done');
+    expect(sio.transcript.join('\n')).toContain('Your OIDC sign-in is kept');
+    expect(fs.files.get('proj/.env')).toMatch(/^WEB_AUTH_MODE=oidc$/m);
+    expect(spawns).toHaveLength(0);
+    sio.assertDone();
+  });
+
+  it('declining token and Google spawns nothing', async () => {
+    const { ctx, spawns } = makeCtx([{ confirm: false }, { confirm: false }], WITH_DASH);
     expect(await dashboardStep.run(ctx)).toBe('skipped');
-    expect(fs.files.get('proj/.env')).not.toContain('WEB_OIDC');
     expect(spawns).toHaveLength(0);
   });
 
-  it('accepting writes the keys at mode 600 and hides the secret everywhere', async () => {
+  it('google path: asks only for the email', async () => {
     const { ctx, sio, fs, spawns } = makeCtx(
-      [
-        { confirm: true },
-        { ask: 'my-client-id.apps.example' },
-        { secret: CANARY },
-        { ask: 'Owner@Example.com' },
-        { ask: '' },
-      ],
+      [{ confirm: false }, { confirm: true }, { ask: 'Owner@Example.com' }],
       WITH_DASH,
     );
     expect(await dashboardStep.run(ctx)).toBe('done');
     const env = fs.files.get('proj/.env') ?? '';
-    expect(env).toContain('WEB_OIDC_CLIENT_ID=my-client-id.apps.example');
-    expect(env).toContain(`WEB_OIDC_CLIENT_SECRET=${CANARY}`);
+    expect(env).toMatch(/^WEB_AUTH_MODE=google_desktop$/m);
     expect(env).toContain('DASHBOARD_ALLOWED_EMAIL=owner@example.com');
-    expect(env).toContain('WEB_OIDC_REDIRECT_URI=http://127.0.0.1:8787/auth/callback');
-    expect(env).toContain('WEB_OIDC_ISSUER=https://accounts.google.com');
-    expect(env).not.toMatch(/^WEB_TOKEN=.+/m);
-    expect(fs.modes.get('proj/.env')).toBe(0o600);
-    for (const [p, m] of fs.modes) if (p.includes('.bak-')) expect(m).toBe(0o600);
-    expect([...fs.files.keys()].some((p) => p.includes('.bak-'))).toBe(true);
-
     expect(spawns).toEqual([
       { cmd: 'npx', args: ['tsx', 'scripts/dashboard.ts', 'allow', 'owner@example.com'], opts: undefined },
     ]);
-    expect(JSON.stringify(spawns)).not.toContain(CANARY);
-    expect(sio.transcript.join('\n')).not.toContain(CANARY);
-    expect(JSON.stringify(ctx.state)).not.toContain(CANARY);
+    expect(sio.transcript.join('\n')).not.toMatch(/client id|client secret/i);
     sio.assertDone();
   });
 
-  it('re-prompts on a bad email and on a bad redirect URI', async () => {
-    const { ctx, sio } = makeCtx(
-      [
-        { confirm: true },
-        { ask: 'cid' },
-        { secret: CANARY },
-        { ask: 'not-an-email' },
-        { ask: 'a@b.co' },
-        { ask: 'ftp://127.0.0.1:8787/auth/callback' },
-        { ask: 'http://example.com:8787/auth/callback' },
-        { ask: 'https://dash.example.com/other' },
-        { ask: 'https://dash.example.com/auth/callback' },
-      ],
-      WITH_DASH,
-    );
+  it('rerun with a token already set: reports rotate and is done', async () => {
+    const { ctx, sio } = makeCtx([{ confirm: true }], WITH_DASH);
+    ctx.spawnInteractive = async () => 1;
     expect(await dashboardStep.run(ctx)).toBe('done');
-    expect(sio.transcript.filter((l) => l.startsWith('invalid:')).length).toBe(4);
-    sio.assertDone();
+    expect(sio.transcript.join('\n')).toContain('token already set, use rotate');
   });
 
   it('redirect URI rule', () => {
