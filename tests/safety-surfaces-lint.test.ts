@@ -1,13 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { SCREENED_SURFACES, PENDING_SURFACE_FILES, callsScreen } from '../src/safety/screen.js';
+import { SCREENED_SURFACES, callsScreen } from '../src/safety/screen.js';
 
 const ROOT = process.cwd();
-
-// Surface files that do not exist yet. Task 8 creates src/linkedin/findProfiles.ts and empties
-// PENDING_SURFACE_FILES in src/safety/screen.ts (this list follows it).
-const PENDING_FILES: ReadonlyArray<string> = PENDING_SURFACE_FILES;
 
 // Files that may call the synchronous gateInput( / gateField( directly. A new caller must be added
 // here on purpose, after deciding why it does not need screenUntrusted.
@@ -32,14 +28,9 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe('screened surfaces lint', () => {
-  it('every surface file exists (except the pending one) and calls the screen', () => {
+  it('every surface file exists and calls the screen', () => {
     for (const s of SCREENED_SURFACES) {
       const p = join(ROOT, s.file);
-      if (PENDING_FILES.includes(s.file)) {
-        // Pending: may be absent; once it exists it must screen.
-        expect(existsSync(p) ? callsScreen(readFileSync(p, 'utf8')) : true, s.id).toBe(true);
-        continue;
-      }
       expect(existsSync(p), `${s.id}: ${s.file} missing`).toBe(true);
       expect(callsScreen(readFileSync(p, 'utf8')), `${s.id}: ${s.file} does not screen`).toBe(true);
     }

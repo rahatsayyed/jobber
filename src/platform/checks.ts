@@ -9,7 +9,7 @@ import { loadClassifier } from '../safety/classifierModel.js';
 import { loadRegistry, resolveProfile, type ClassifierProfile, type ClassifierRegistry } from '../safety/classifierRegistry.js';
 import { verifyProfile, type VerifyReport } from '../safety/modelFetch.js';
 import { SMOKE_BENIGN, SMOKE_INJECTION } from '../safety/smoke.js';
-import { screenUntrusted, SCREENED_SURFACES, PENDING_SURFACE_FILES, callsScreen, type ScreenVerdict } from '../safety/screen.js';
+import { screenUntrusted, SCREENED_SURFACES, callsScreen, type ScreenVerdict } from '../safety/screen.js';
 import { loadProfiles } from './runner.js';
 import { authDbPathFromEnv, isLoopbackBind, validateRunnerConfig } from '../web/env.js';
 import { normaliseEmail } from '../dash/account.js';
@@ -226,7 +226,7 @@ export function restrictedChecks(deps: Partial<RestrictedDeps> = {}): Check[] {
         for (const s of SCREENED_SURFACES) {
           const p = join(ctx.root, s.file);
           if (!ctx.fs.exists(p)) {
-            if (!PENDING_SURFACE_FILES.includes(s.file)) bad.push(`${s.id} (${s.file} missing)`);
+            bad.push(`${s.id} (${s.file} missing)`);
             continue;
           }
           if (!callsScreen(ctx.fs.read(p))) bad.push(`${s.id} (${s.file})`);

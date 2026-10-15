@@ -78,11 +78,6 @@ export const SCREENED_SURFACES: ReadonlyArray<{ id: string; file: string }> = [
   { id: 'outreach_escalate', file: 'src/mcp/outreach.ts' },
 ];
 
-// Surface files listed above but not created yet. The lint and the doctor check classifier_wired
-// skip these (and only these) while the file is missing. Task 8 creates
-// src/linkedin/findProfiles.ts and deletes this entry.
-export const PENDING_SURFACE_FILES: ReadonlyArray<string> = ['src/linkedin/findProfiles.ts'];
-
 /**
  * True when the source makes a real screen call: `screenUntrusted(`, `deps.screen(` or an injected
  * `screen(`. Comments and import statements are stripped first, so a comment, an import or an

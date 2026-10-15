@@ -5,7 +5,7 @@ import { restrictedChecks } from '../src/platform/checks.js';
 import type { ClassifierProfile, ClassifierRegistry } from '../src/safety/classifierRegistry.js';
 import type { VerifyReport } from '../src/safety/modelFetch.js';
 import { SMOKE_BENIGN, SMOKE_INJECTION } from '../src/safety/smoke.js';
-import { SCREENED_SURFACES, PENDING_SURFACE_FILES, type ScreenVerdict } from '../src/safety/screen.js';
+import { SCREENED_SURFACES, type ScreenVerdict } from '../src/safety/screen.js';
 
 const D = 'd'.repeat(64);
 const profile = (over: Partial<ClassifierProfile> = {}): ClassifierProfile =>
@@ -208,7 +208,7 @@ describe('classifier_wired check', () => {
   const surfaceFiles = (skip: string[] = []): Files => {
     const f: Files = {};
     for (const s of SCREENED_SURFACES) {
-      if (!PENDING_SURFACE_FILES.includes(s.file) && !skip.includes(s.file)) f[`/p/${s.file}`] = { text: 'screenUntrusted(' };
+      if (!skip.includes(s.file)) f[`/p/${s.file}`] = { text: 'screenUntrusted(' };
     }
     return f;
   };

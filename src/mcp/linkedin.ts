@@ -21,6 +21,7 @@ import { checkConnectionStatus } from '../linkedin/checkStatus.js';
 import { connectSend } from '../linkedin/connectSend.js';
 import { sendMessage } from '../linkedin/sendMessage.js';
 import { acceptInvite } from '../linkedin/acceptInvite.js';
+import { findProfiles } from '../linkedin/findProfiles.js';
 
 /**
  * `linkedin` MCP server: a locked headless LinkedIn session (hands and eyes) plus typed,
@@ -35,7 +36,7 @@ const SCREENSHOT_MAX_WIDTH = 900;
 export const TOOL_NAMES = [
   'linkedin_open', 'linkedin_state', 'linkedin_click', 'linkedin_type', 'linkedin_scroll',
   'linkedin_screenshot', 'linkedin_close', 'linkedin_limits', 'linkedin_check_connection_status',
-  'linkedin_connect_send', 'linkedin_send_message', 'linkedin_accept_invite',
+  'linkedin_connect_send', 'linkedin_send_message', 'linkedin_accept_invite', 'linkedin_find_profiles',
 ] as const;
 type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -60,6 +61,10 @@ export const schemas = {
     job_id: short.optional(), company: short.optional(), dry_run: z.boolean().optional(),
   },
   linkedin_accept_invite: { profile_url: url, dry_run: z.boolean().optional() },
+  linkedin_find_profiles: {
+    company: z.string().min(1).max(100), role_hint: z.string().max(100).optional(),
+    category: z.enum(['recruiter', 'hiring_manager', 'peer']),
+  },
 } as const;
 
 export interface HandlerDeps {
@@ -236,6 +241,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
     linkedin_connect_send: safe(async (a) => json(await connectSend(a, toolDeps()))),
     linkedin_send_message: safe(async (a) => json(await sendMessage(a, toolDeps()))),
     linkedin_accept_invite: safe(async (a) => json(await acceptInvite(a, toolDeps()))),
+    linkedin_find_profiles: safe(async (a) => json(await findProfiles(a, toolDeps()))),
   };
   lifecycles.set(handlers, {
     close: async () => {
@@ -257,6 +263,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   linkedin_check_connection_status: 'TYPED, read-only: opens a profile and reports connected, not_connected, pending or failed. ' + UNTRUSTED,
   linkedin_connect_send: 'TYPED, irreversible: sends a connection request with a note (max 300 chars) through fail-closed gates. Dry run unless LINKEDIN_DRY_RUN=false. ' + UNTRUSTED,
   linkedin_send_message: 'TYPED, irreversible: sends a message to an existing connection through fail-closed gates. kind is one of role_ask, rapport, referral_ask, followup, feedback. Dry run unless LINKEDIN_DRY_RUN=false. ' + UNTRUSTED,
+  linkedin_find_profiles: 'TYPED, read-only toward LinkedIn: searches people by company (and optional role_hint) and returns at most 3 verified profile candidates (canonical profile_url, name, headline), registering them as people rows for the given category. Shares the daily search ceiling. Never clicks or sends. ' + UNTRUSTED,
   linkedin_accept_invite: 'TYPED, irreversible: accepts a pending invitation from a known sender only. Dry run unless LINKEDIN_DRY_RUN=false. ' + UNTRUSTED,
 };
 
