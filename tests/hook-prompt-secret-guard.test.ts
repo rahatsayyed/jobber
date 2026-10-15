@@ -55,6 +55,25 @@ describe('prompt secret guard', () => {
     expect(ident).toHaveLength(43);
     expect(prompt(`see ${ident}`).stdout).toContain('block');
   });
+  it('blocks zero-width-split and fullwidth variants', () => {
+    const variants = [
+      'GOCSPX-abcdefghij​klmnopqrstuvwx',
+      'AK​IAABCDEFGHIJKLMNOP',
+      'ＡＫＩＡABCDEFGHIJKLMNOP', // fullwidth AKIA
+      'xo⁠xb-1234-5678',
+      'GMAIL_API_KEY = hunter2',
+    ];
+    for (const v of variants) {
+      const r = prompt(`here: ${v}`);
+      expect(JSON.parse(r.stdout || '{}'), JSON.stringify(v)).toEqual({ decision: 'block', reason: MSG });
+    }
+  });
+  it('blocks an oversized prompt and finishes quickly on a 90 KB one', () => {
+    const t0 = Date.now();
+    const r = prompt('a-'.repeat(45000));
+    expect(Date.now() - t0).toBeLessThan(5000);
+    expect(JSON.parse(r.stdout)).toEqual({ decision: 'block', reason: MSG });
+  });
   it('fails closed on malformed input', () => {
     for (const s of ['', 'not json', '{}', '{"prompt":5}', '[]', 'null']) {
       const r = run(s);

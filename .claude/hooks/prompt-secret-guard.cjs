@@ -24,8 +24,19 @@ const PATTERNS = [
   /\b[A-Za-z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASS|COOKIE)[A-Za-z0-9_]*\s*[=:]\s*\S/i, // .env-style assignment
 ];
 
+const MAX_PROMPT = 20000; // longer prompts are blocked (fail closed; bounds regex work)
+
+function normalize(prompt) {
+  return prompt
+    .normalize('NFKC')
+    .replace(/[\p{Cf}​-‍⁠﻿  -   　]/gu, '');
+}
+
 function looksSecret(prompt) {
-  return PATTERNS.some((re) => re.test(prompt));
+  if (prompt.length > MAX_PROMPT) return true;
+  if (PATTERNS.some((re) => re.test(prompt))) return true;
+  const n = normalize(prompt);
+  return n !== prompt && PATTERNS.some((re) => re.test(n));
 }
 
 function decide(input) {

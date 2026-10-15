@@ -58,6 +58,7 @@ const code = await runCli(process.argv.slice(2), {
       mkdtemp: (p) => mkdtempSync(join(tmpdir(), p)),
       mkdir: (p) => { mkdirSync(p, { recursive: true }); },
       write: (p, d) => writeFileSync(p, d),
+      read: (p) => readFileSync(p, 'utf8'),
       exists: (p) => existsSync(p),
       rm: (p) => rmSync(p, { recursive: true, force: true }),
     },

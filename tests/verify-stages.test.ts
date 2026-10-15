@@ -145,15 +145,21 @@ describe('dashboard-login', () => {
     return { status: m[k][0], text: async () => m[k][1] };
   };
   it('skips with the status in the reason on 401 and fails on 500', async () => {
-    const s = await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [401, ''] }) }));
+    const s = await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [401, ''], '/api/status': [401, ''], 'http://x/': [200, ''] }) }));
     expect(s.status).toBe('skip');
     expect(s.detail).toContain('(got 401)');
     expect((await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [500, ''] }) }))).status).toBe('fail');
   });
   it('skips when /api/auth/mode is absent', async () => {
-    const r = await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [404, ''] }) }));
+    const r = await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [404, ''], '/api/status': [401, ''], 'http://x/': [200, ''] }) }));
     expect(r.status).toBe('skip');
     expect(r.detail).toContain('8C dashboard login not merged');
+  });
+  it('does not skip when / is broken or status is open while the auth route is absent', async () => {
+    const bad1 = await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [404, ''], '/api/status': [401, ''], 'http://x/': [500, ''] }) }));
+    expect(bad1.status).toBe('fail');
+    const bad2 = await S.dashboardLogin.run(mk({ fetch: resp({ '/api/auth/mode': [404, ''], '/api/status': [200, '{}'], 'http://x/': [200, ''] }) }));
+    expect(bad2.status).toBe('fail');
   });
   it('fails when the server cannot start', async () => {
     const r = await S.dashboardLogin.run(mk({ startWeb: async () => { throw new Error('needs OIDC'); } }));
@@ -178,10 +184,28 @@ describe('dashboard-login', () => {
 });
 
 describe('llm-hunt', () => {
+  const withEnv = (files: Record<string, string>) => ({
+    ...recFs,
+    exists: (p: string) => Object.keys(files).some((f) => p.endsWith(f)),
+    read: (p: string) => files[Object.keys(files).find((f) => p.endsWith(f))!]!,
+  });
+  const DRY = 'JOBBER_DRY_RUN=1\nSCHEDULER_DRY_RUN=true\nLINKEDIN_DRY_RUN=true\n';
   it('is skipped unless llm is set', async () => {
     expect((await S.llmHunt.run(mk())).status).toBe('skip');
-    expect((await S.llmHunt.run(mk({ llm: true, run: async () => ({ stdout: 'a\nREPORT done', code: 0 }) }))).status).toBe('pass');
-    expect((await S.llmHunt.run(mk({ llm: true, run: async () => ({ stdout: '', code: 2 }) }))).status).toBe('fail');
+    expect((await S.llmHunt.run(mk({ llm: true, fs: withEnv({ '.env': DRY }), run: async () => ({ stdout: 'a\nREPORT done', code: 0 }) }))).status).toBe('pass');
+    expect((await S.llmHunt.run(mk({ llm: true, fs: withEnv({ '.env': DRY }), run: async () => ({ stdout: '', code: 2 }) }))).status).toBe('fail');
+  });
+  it('refuses and never runs when .env is live', async () => {
+    let ran = 0;
+    const run = async () => { ran++; return { stdout: 'x', code: 0 }; };
+    const live = 'JOBBER_DRY_RUN=0\nSCHEDULER_DRY_RUN=false\nLINKEDIN_DRY_RUN=false\n';
+    const r = await S.llmHunt.run(mk({ llm: true, fs: withEnv({ '.env': live }), run }));
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain('--llm refused: .env is not dry');
+    expect(ran).toBe(0);
+    const r2 = await S.llmHunt.run(mk({ llm: true, fs: withEnv({ '.env': DRY, '.env.ccr': 'SCHEDULER_DRY_RUN=false\nLINKEDIN_DRY_RUN=false\n' }), run }));
+    expect(r2.status).toBe('fail');
+    expect(ran).toBe(0);
   });
 });
 

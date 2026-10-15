@@ -37,6 +37,8 @@ export interface VerifyFs {
   mkdir(path: string): void;
   write(path: string, data: string): void;
   exists(path: string): boolean;
+  /** Optional: read a text file (used by the llm-hunt dry check). */
+  read?(path: string): string;
   rm(path: string): void;
 }
 

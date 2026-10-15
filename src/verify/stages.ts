@@ -3,6 +3,7 @@
 // real project state (real .jobber/STOP, data.sqlite, tmux, claude, network).
 import { createRequire } from 'node:module';
 import { join, resolve, sep } from 'node:path';
+import { parseEnv } from '../platform/envFile.js';
 import { isDryRun, recordDryRun } from '../safety/dryRun.js';
 import { applyResume, applyStop, defaultDeps, readControl } from '../scheduler/control.js';
 import { saveJob, saveMatchResult, setJobExcluded, enqueueOutreach, getExcludedReason } from '../db.js';
@@ -217,6 +218,12 @@ const dashboardLogin: Stage = {
     try {
       const mode = await get(`${srv.url}/api/auth/mode`);
       if (mode.status === 404 || mode.status === 401) {
+        // TODO: remove this skip branch when plan 8C (dashboard login) merges.
+        // Even without the auth route, the server must serve / and must not expose /api/status unauthenticated.
+        const r0 = await get(`${srv.url}/`);
+        if (r0.status !== 200 && r0.status !== 401) return fail(`GET / returned ${r0.status} while /api/auth/mode is absent`, fix);
+        const s0 = await get(`${srv.url}/api/status`);
+        if (s0.status === 200) return fail('/api/status returned 200 without a session while /api/auth/mode is absent', fix);
         return skip(`8C dashboard login not merged: /api/auth/mode absent (got ${mode.status})`);
       }
       if (mode.status !== 200) return fail(`/api/auth/mode returned ${mode.status}`, fix);
@@ -240,6 +247,26 @@ const llmHunt: Stage = {
   id: 'llm-hunt', title: 'LLM hunt in dry mode', skippable: true,
   async run(ctx) {
     if (!ctx.llm) return skip('off unless --llm');
+    // The hunt profile passes only the parsed .env values to the child (env_mode dotenv_all), so the forced
+    // dry flags in ctx.env never reach it. Refuse unless the files themselves are dry.
+    for (const name of ['.env', '.env.ccr']) {
+      const p = join(ctx.root, name);
+      let values: Record<string, string> = {};
+      try {
+        if (ctx.fs.exists(p)) {
+          if (!ctx.fs.read) throw new Error('no reader');
+          values = parseEnv(ctx.fs.read(p));
+        }
+      } catch {
+        return fail(`--llm refused: cannot read ${name}`, 'fix the file, then rerun');
+      }
+      if (!isDryRun(values as NodeJS.ProcessEnv, { linkedin: true })) {
+        return fail(
+          '--llm refused: .env is not dry; set JOBBER_DRY_RUN=1, SCHEDULER_DRY_RUN=true and LINKEDIN_DRY_RUN=true in .env first',
+          'set JOBBER_DRY_RUN=1, SCHEDULER_DRY_RUN=true and LINKEDIN_DRY_RUN=true in .env first',
+        );
+      }
+    }
     const r = await ctx.run('./run-hunt.sh', ['run the hunt in dry mode: report only'], { cwd: ctx.root, env: runEnv(ctx) });
     if (r.code !== 0) return fail(`exit ${r.code}`, `exit code ${r.code}; see docs/operations`);
     const last = r.stdout.trim().split('\n').filter(Boolean).pop();

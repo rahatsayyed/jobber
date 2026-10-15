@@ -42,6 +42,14 @@ describe('interactive Bash exact allowlist', () => {
     ];
     for (const c of bad) expect(bash(c).allow, JSON.stringify(c)).toBe(false);
   });
+  it('denies unicode and control whitespace around an entry (only space, tab, CR, LF are stripped)', () => {
+    const c = CMDS[0]!;
+    for (const w of [' ', '﻿', '\f', ' ', '\v']) {
+      expect(bash(`${w}${c}`).allow, JSON.stringify(w)).toBe(false);
+      expect(bash(`${c}${w}`).allow, JSON.stringify(w)).toBe(false);
+    }
+    expect(bash(`\t ${c} \r\n`).allow).toBe(true);
+  });
   it('denies background and sandbox override, missing or odd tool_input', () => {
     expect(bash(CMDS[0], { run_in_background: true }).allow).toBe(false);
     expect(bash(CMDS[0], { dangerouslyDisableSandbox: true }).allow).toBe(false);

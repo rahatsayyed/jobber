@@ -117,7 +117,7 @@ function decide(event, profile, opts) {
       if (!input || typeof input !== 'object' || Array.isArray(input)) return deny('Bash command not allowed');
       if (typeof input.command !== 'string') return deny('Bash command not allowed');
       if (input.run_in_background || input.dangerouslyDisableSandbox) return deny('Bash command not allowed');
-      if (!profile.bash_exact.includes(input.command.trim())) return deny('Bash command not allowed');
+      if (!profile.bash_exact.includes(input.command.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, ''))) return deny('Bash command not allowed');
       return { allow: true, reason: '' };
     }
     let allowed = new Set([...allowList, ...builtins]);
