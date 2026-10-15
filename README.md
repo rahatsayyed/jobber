@@ -12,25 +12,26 @@ Jobber is an autonomous job-hunting agent. It discovers new job postings, scores
 
 ## Prerequisites
 
-- **Node 20+** (matches `engines` in `package.json`).
-- **Git**.
-- **Claude Code CLI** (`claude`), logged in. Every stage runs through it.
-- **Google Chrome**: needed for Naukri headless search and for capturing LinkedIn and Naukri sessions.
-- **tmux** and **ccgram** (installed with `uv` and Python): needed only for Telegram sessions. The exact ccgram version is pinned in `config/ccgram.pin.json`; the start script refuses to run on any other version.
+Git and a shell. `bash scripts/bootstrap.sh` installs the rest (macOS with Homebrew first, with an Ubuntu variant): Node 20+, the Claude Code CLI, Google Chrome, tmux, ccgram and the browser binaries. The exact ccgram version is pinned in `config/ccgram.pin.json`; the start script refuses to run on any other version. You still log in to `claude` yourself.
 
 ---
 
 ## Quick start
 
 ```bash
-npm install
-npm run setup
-npm run doctor
+bash scripts/bootstrap.sh        # 1. install and validate everything missing (asks before each action)
+npm run setup                    # 2. keys, accounts, sessions, limits; optional guided Claude session
+npm run dry-run                  # 3. end-to-end smoke in dry mode only, PASS/FAIL per stage
+npm run up                       # 4. start bridge, windows, scheduler, dashboard (and: npm run down)
 ```
 
-- `npm install` installs dependencies.
-- `npm run setup` is a guided wizard that writes `.env`, captures accounts and sessions, converts your resume, and chooses limits and a permission set. It needs a real terminal and exits with code 2 when stdin is not a TTY (a pipe or CI).
-- `npm run doctor` checks the result. Each check reports ok, warn, fail or skipped (for pieces that a later plan installs).
+- `bash scripts/bootstrap.sh` detects what is missing and asks before every install (sudo steps and downloaded scripts are always shown first). Rerunning is safe. `--check` and `--plan` only report.
+- `npm run setup` is the guided wizard that writes `.env`, captures accounts and sessions, converts your resume, and chooses limits and a permission set. It needs a real terminal and exits with code 2 when stdin is not a TTY. `npm run setup -- --no-guide` skips the guided Claude session.
+- `npm run dry-run` runs an end-to-end smoke test against fixtures and a temporary database, prints PASS, FAIL or SKIP per stage and writes nothing live (only `.jobber/verify.json`).
+- `npm run up` runs the doctor first, starts the stack, and prints `MODE: DRY RUN` or `MODE: LIVE` at the top and bottom. It never changes the mode: your `.env` decides. `npm run down` stops it again without touching data.
+- `npm run doctor` can be run at any time to check the result. Each check reports ok, warn, fail or skipped.
+
+None of these four commands has been run end to end against a real machine yet; treat the first run as supervised.
 
 Setup is resumable and safe to rerun: a step whose checks already pass skips itself, and it never overwrites an existing resume, answers file or `.env` value without a confirm and a backup. Useful flags: `npm run setup -- --list` (print step ids), `npm run setup -- --step <id>` (run one step), `npm run setup -- --redo` (run steps again even when they pass).
 
@@ -102,6 +103,7 @@ bash scripts/ccgram/start.sh    # start the Telegram bridge (ccgram) in its own 
 bash scripts/ccgram/stop.sh     # stop the bridge; Claude windows it created keep running
 ```
 
+- `npm run up` starts all of this in order (bridge, named windows, scheduler, dashboard; `npm run up -- --status` is read-only) and `npm run down` stops it (`--keep-bridge` leaves the bridge running). The commands above and `./run-hunt.sh` remain the building blocks and the manual route.
 - The Telegram topic bound to the manager session lists, reads, starts and stops the named windows in `config/manager-windows.json` (`hunt` and `followups`). The `manager` window and the bridge are protected and cannot be stopped from Telegram. The manager never types into another window and never runs outreach itself. See [the manager skill](.claude/skills/manager/SKILL.md).
 - A headless, cron-friendly hunt runs with `./run-hunt.sh "run the hunt"`. It uses the restricted launcher `scripts/run-claude.sh`, profile `hunt` in `config/run-profiles.json`: the tool list comes from the `outreach_send` set, and permission checks are never skipped.
 - The older route, a single `claude --channels plugin:telegram@claude-plugins-official` session, is documented in `CLAUDE.md`; the ccgram route above is the one setup configures.

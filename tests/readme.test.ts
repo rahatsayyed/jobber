@@ -130,4 +130,37 @@ describe('README', () => {
     for (const re of need) expect(heads.some((h) => re.test(h)), String(re)).toBe(true);
     expect(readme).toContain('Status web page');
   });
+
+  it('pins the four-command quick start and checks each command exists', () => {
+    const body = section(/Quick start/i);
+    const block = body.match(/```bash\n([\s\S]*?)```/)?.[1] ?? '';
+    const cmds = block
+      .split('\n')
+      .filter((l) => l.trim())
+      .map((l) => l.replace(/\s+#.*$/, '').trim());
+    expect(cmds).toEqual(['bash scripts/bootstrap.sh', 'npm run setup', 'npm run dry-run', 'npm run up']);
+    for (const m of body.matchAll(/npm run ([A-Za-z0-9:_-]+)/g)) {
+      expect(pkg.scripts[m[1]], `npm run ${m[1]}`).toBeDefined();
+    }
+    for (const m of body.matchAll(/bash (scripts\/[A-Za-z0-9_./-]+)/g)) {
+      expect(existsSync(resolve(root, m[1])), m[1]).toBe(true);
+    }
+  });
+
+  it('documents --no-guide, dry-run, up and down', () => {
+    const quick = section(/Quick start/i);
+    const sessions = section(/Starting and stopping sessions/i);
+    expect(quick).toContain('--no-guide');
+    expect(quick).toContain('npm run dry-run');
+    expect(quick).toContain('npm run up');
+    expect(sessions).toContain('npm run up');
+    expect(sessions).toContain('npm run down');
+  });
+
+  it('never recommends skipping permissions or piping curl to a shell', () => {
+    for (const l of readme.split('\n')) {
+      if (/skip-permissions/i.test(l)) expect(l, l).toMatch(/\bno\b|never|not/i);
+    }
+    expect(readme).not.toMatch(/curl[^\n]*\|\s*(sudo\s+)?(ba)?sh/);
+  });
 });
