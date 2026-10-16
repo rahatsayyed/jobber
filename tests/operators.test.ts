@@ -52,8 +52,8 @@ const profiles = loadProfiles('config/run-profiles.json', 'config/permission-set
 const wake = profiles.outreach_wake;
 
 describe('platform operators', () => {
-  it('worker-tools.json has exactly the two operators', () => {
-    expect(Object.keys(cfg).sort()).toEqual(['linkedin-operator', 'naukri-operator']);
+  it('worker-tools.json has exactly the three operators', () => {
+    expect(Object.keys(cfg).sort()).toEqual(['linkedin-operator', 'naukri-operator', 'source-operator']);
   });
   it('the four old worker files are gone', () => {
     for (const w of Object.keys(OLD_WORKER_TOOLS)) expect(existsSync(`.claude/agents/${w}.md`)).toBe(false);

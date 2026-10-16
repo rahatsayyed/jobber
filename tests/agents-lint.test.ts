@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { loadProfiles } from '../src/platform/runner.js';
 
-const WORKERS = ['linkedin-operator', 'naukri-operator'] as const;
+const WORKERS = ['linkedin-operator', 'naukri-operator', 'source-operator'] as const;
 
 const FORBIDDEN_EXACT = [
   'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Agent', 'Task',
@@ -60,6 +60,8 @@ function realTools(): Set<string> {
   all.add('mcp__gmail__send_email');
   const nk = readFileSync('src/mcp/naukri.ts', 'utf8');
   for (const m of nk.matchAll(/'(naukri_[a-z_]+)'/g)) all.add(`mcp__naukri__${m[1]}`);
+  const sc = readFileSync('src/mcp/scout.ts', 'utf8');
+  for (const m of /TOOL_NAMES = \[([\s\S]*?)\]/.exec(sc)![1].matchAll(/'([a-z_]+)'/g)) all.add(`mcp__scout__${m[1]}`);
   return all;
 }
 
@@ -112,7 +114,8 @@ describe('worker agents', () => {
       it('has no type tool, and click only for the LinkedIn inbox reader', () => {
         for (const t of tools) {
           expect(t.endsWith('_type')).toBe(false);
-          if (name !== 'linkedin-operator') expect(t.endsWith('_click')).toBe(false);
+          // scout_click refuses submit-like controls in code (tests/scout-tools.test.ts)
+          if (name !== 'linkedin-operator' && t !== 'mcp__scout__scout_click') expect(t.endsWith('_click')).toBe(false);
         }
       });
       it('has no mcp__connect reference', () => {
@@ -120,7 +123,7 @@ describe('worker agents', () => {
       });
     });
   }
-  it('worker-tools.json has exactly the two operators', () => {
+  it('worker-tools.json has exactly the three operators', () => {
     expect(Object.keys(config).sort()).toEqual([...WORKERS].sort());
   });
   it('per-operator body contracts', () => {

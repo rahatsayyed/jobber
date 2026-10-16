@@ -155,7 +155,7 @@ describe('registration and source hygiene', () => {
     expect(cfg.linkedin.args).toContain('src/mcp/linkedin.ts');
     expect(Object.keys(cfg).sort()).toEqual([
       'job-fetch', 'resume', 'contacts', 'db', 'gates', 'gmail', 'apply', 'discover', 'naukri',
-      'linkedin', 'outreach',
+      'linkedin', 'outreach', 'scout',
     ].sort());
   });
 

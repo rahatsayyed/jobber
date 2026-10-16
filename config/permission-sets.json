@@ -90,7 +90,8 @@
       "mcp__apply",
       "mcp__discover",
       "mcp__naukri",
-      "mcp__gmail"
+      "mcp__gmail",
+      "mcp__scout"
     ]
   }
 }

@@ -76,6 +76,10 @@ export const SCREENED_SURFACES: ReadonlyArray<{ id: string; file: string }> = [
   { id: 'naukri_read_thread', file: 'src/mcp/naukri.ts' },
   { id: 'naukri_inbound_classify', file: 'src/naukri/inbound.ts' },
   { id: 'outreach_escalate', file: 'src/mcp/outreach.ts' },
+  { id: 'scout_search', file: 'src/scout/tools/search.ts' },
+  { id: 'scout_state', file: 'src/scout/tools/browse.ts' },
+  { id: 'scout_extract_jobs', file: 'src/scout/tools/jobs.ts' },
+  { id: 'site_state', file: 'src/mcp/scout.ts' },
 ];
 
 /**

@@ -57,3 +57,12 @@ export function createDorkProvider(exec: DorkExecutor): SearchProvider {
     },
   };
 }
+
+/**
+ * The browser-dork provider backed by the scout engine (src/scout/engine.ts, which goes through the
+ * shared web runtime). The engine is built on first use, so nothing launches a browser before a search.
+ */
+export function createBrowserDorkProvider(makeEngine: () => DorkExecutor): SearchProvider {
+  let exec: DorkExecutor | null = null;
+  return createDorkProvider((q, o) => (exec ??= makeEngine())(q, o));
+}

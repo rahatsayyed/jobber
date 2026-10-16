@@ -141,6 +141,8 @@ describe('rendered settings and committed settings.json', () => {
     for (const m of arr.matchAll(/'([a-z_]+)'/g)) all.add(`mcp__linkedin__${m[1]}`);
     for (const m of readFileSync(join(ROOT, 'src/mcp/naukri.ts'), 'utf8').matchAll(/'(naukri_[a-z_]+)'/g)) all.add(`mcp__naukri__${m[1]}`);
     for (const t of registered('src/mcp/apply.ts')) all.add(`mcp__apply__${t}`);
+    const sc = readFileSync(join(ROOT, 'src/mcp/scout.ts'), 'utf8');
+    for (const m of /TOOL_NAMES = \[([\s\S]*?)\]/.exec(sc)![1].matchAll(/'([a-z_]+)'/g)) all.add(`mcp__scout__${m[1]}`);
     // apply.ts registers greenhouse/lever/workday/ashby through a loop over a literal list
     for (const p of ['greenhouse', 'lever', 'workday', 'ashby']) all.add(`mcp__apply__${p}`);
     return all;
@@ -163,6 +165,13 @@ describe('rendered settings and committed settings.json', () => {
       expect(real.has(t), `${t} is not a registered tool`).toBe(true);
       expect(re.test(t), `${t} not matched`).toBe(true);
     }
+  });
+
+  it('every scout tool (TOOL_NAMES) is matched by the kill-switch matcher', () => {
+    const re = new RegExp('^(?:' + entry!.matcher + ')$');
+    const scoutTools = [...realTools()].filter((t) => t.startsWith('mcp__scout__'));
+    expect(scoutTools.length).toBeGreaterThanOrEqual(14);
+    for (const t of scoutTools) expect(re.test(t), `${t} not matched`).toBe(true);
   });
 
   it('every outreach_send tool on a platform server that looks like a send is covered', () => {
