@@ -1,7 +1,7 @@
 # Operations
 
 Audience: owner
-Last verified against: ca7200a
+Last verified against: 384fcd7
 Source files: scripts/jobber-control.ts, src/scheduler/control.ts, .claude/hooks/kill-switch.cjs, run-hunt.sh, scripts/linkedin-clear-halt.ts, scripts/layout.ts, src/safety/dryRun.ts, scripts/dry-run-report.ts, scripts/status.ts, src/status/render.ts, src/scheduler/plan.ts, src/scheduler/runLog.ts, src/scheduler/notify.ts, src/scheduler/launch.ts, scripts/stack.ts, src/stack/up.ts, src/stack/down.ts, src/verify/cli.ts, src/platform/checksSetup.ts, src/platform/checksLayout.ts, src/platform/checksScheduler.ts
 
 Day-to-day running of Jobber: stop it, resume it, read its state, find its files, fix common failures.
@@ -122,6 +122,8 @@ Order: kill-switch check, doctor gate, then bridge, windows, scheduler and dashb
 | 1 | Doctor has failures (nothing started), or a start failed (full table is printed first) |
 | 2 | Usage error (unknown argument) |
 | 4 | Kill switch is on; run `npm run jobber:control -- resume` when you are sure |
+
+`npm start`, `npm stop`, `npm run doctor` and `npm run dry-run` colour their tables on a terminal; add `--no-color` to turn that off.
 
 Features you skipped in setup print as `bridge: skipped (setup)`, `windows: skipped (setup)` or `web: skipped (setup)`.
 

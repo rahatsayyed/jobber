@@ -1,7 +1,7 @@
 # Start here: from clone to first supervised send
 
 Audience: owner
-Last verified against: cc51247
+Last verified against: 384fcd7
 Source files: package.json, scripts/setup.ts, scripts/bootstrap.sh, scripts/stack.ts, scripts/dry-run.ts, scripts/dry-run-report.ts, scripts/linkedin-seed-person.ts, src/setup/steps/index.ts, src/setup/skips.ts, README.md
 
 This page is the ordered map. Each row points to the page that holds the detail; it does not
@@ -42,6 +42,9 @@ before you flip anything live. Nothing on this path flips a dry-run flag for you
   `classifier`, `dashboard`, `final`. Run one with `npm run setup -- --step <id>`; list them with
   `npm run setup -- --list`. `telegram`, `dashboard`, `gmail` and `apikeys` can be skipped
   (`src/setup/skips.ts`); a skip is recorded, never silent.
+- Step 4: rerunning a step keeps your earlier answers: Enter on a blank prompt keeps the stored
+  value (secrets show `keep existing (set)`). See [setup-modes.md](setup-modes.md) for the editing
+  keys and the colour switches (`--no-color`).
 - Step 5: the doctor never prints secret values. Safety checks (classifier, permission set,
   hooks, limits, kill switch, halts) are never skipped.
 - Step 8: dry run uses fixtures and a temporary database and sends nothing.
