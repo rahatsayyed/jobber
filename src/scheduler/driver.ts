@@ -285,7 +285,6 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       id: runId, at: startAt, trigger, dryRun: dry, burst: decision.burst, tasks: decision.tasks, status: 'running',
     });
     started = true;
-    tracker = new BudgetTracker(budget, startAt);
     // Stage 1 runs in code, before the model session: failures are noticed but never stop the wake.
     let codePass: CodePassResult | null = null;
     if (decision.stages?.some((s) => s.kind === 'discover_scripts') && d.codePass) {
@@ -296,6 +295,8 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
         await say(d, { level: 'warn', title: 'scheduler code pass failed', detail: safeMsg(e), runId });
       }
     }
+    // The wall budget starts after the code pass: that time is not the model session's.
+    tracker = new BudgetTracker(budget, d.now());
     const order = decision.stages?.length ? stepOrder(decision) : undefined;
     const prompt = buildWakePrompt({
       runId, dryRun: dry, burst: decision.burst, tasks: decision.tasks, budget, allowed: control.allowed, now: startAt,

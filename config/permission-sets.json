@@ -13,6 +13,7 @@
       "mcp__db__list_skipped_outreach",
       "mcp__db__list_stale",
       "mcp__db__list_threads",
+      "mcp__db__list_unscored_jobs",
       "mcp__db__list_followup_candidates",
       "mcp__db__list_approved_followups",
       "mcp__job-fetch__board_status",

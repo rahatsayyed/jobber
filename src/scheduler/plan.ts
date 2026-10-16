@@ -39,6 +39,8 @@ export const NAUKRI_DETAIL_QUOTA = 5;
 export const LINKEDIN_DISCOVER_EVERY_HOURS = 6;
 /** Hours between code passes over the script providers (a constant, no env key). */
 export const SCRIPT_DISCOVER_EVERY_HOURS = 6;
+/** Most unscored jobs one wake's pipeline stage takes (a constant, no env key); the rest wait for the next wake. */
+export const PIPELINE_MAX_JOBS_PER_WAKE = 25;
 /** Most source_tasks one source-operator task may work per wake. */
 export const SOURCE_TASK_QUOTA = 10;
 
@@ -162,7 +164,7 @@ export function planWake(i: {
   const unmatched = due.unmatchedJobs ?? 0;
   // Email follow-ups need the reply check the pipeline stage starts with (step 0b), so they pull the stage in.
   const pipelineDue = unmatched > 0 || newJobsExpected || (due.emailFollowupsReady ?? 0) > 0;
-  if (pipelineDue) stages.push({ operator: 'pipeline', kind: 'pipeline', quota: unmatched });
+  if (pipelineDue) stages.push({ operator: 'pipeline', kind: 'pipeline', quota: Math.min(unmatched, PIPELINE_MAX_JOBS_PER_WAKE) });
   const emailWork = (due.emailQueued ?? 0) + (due.emailFollowupsReady ?? 0);
   if (emailWork > 0 || pipelineDue) stages.push({ operator: 'mail-operator', kind: 'mail', quota: emailWork });
 

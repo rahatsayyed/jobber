@@ -31,7 +31,7 @@ const WAKE_ALLOW = [
   'mcp__scout__scout_tasks', 'mcp__scout__scout_task_update', 'mcp__scout__site_login', 'mcp__scout__site_signup',
   'mcp__scout__scout_layout', 'mcp__scout__scout_close',
   // pipeline and mail (task 13)
-  'mcp__db__sweep_deadlines', 'mcp__db__save_match_result', 'mcp__db__mark_excluded', 'mcp__db__enqueue_outreach',
+  'mcp__db__sweep_deadlines', 'mcp__db__list_unscored_jobs', 'mcp__db__save_match_result', 'mcp__db__mark_excluded', 'mcp__db__enqueue_outreach',
   'mcp__gates__apply_vetoes', 'mcp__gates__check_liveness',
   'mcp__job-fetch__source_status', 'mcp__job-fetch__board_status',
   'mcp__linkedin__linkedin_find_profiles', 'mcp__contacts__find_company_emails',

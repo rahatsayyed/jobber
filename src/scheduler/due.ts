@@ -1,5 +1,6 @@
 // src/scheduler/due.ts
 import type BetterSqlite3 from 'better-sqlite3';
+import { MATCH_FAIL_LIMIT } from '../db.js';
 import { followupMode, listApprovedFollowups, listFollowupCandidates } from '../followups.js';
 import { dueTouchesFor } from '../outreach/dueTouches.js';
 import { normalizeProfileKey } from '../outreach/people.js';
@@ -115,7 +116,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
     linkedinDiscoverLastHoursAgo: discover === null ? null : discover / 3600000,
     scriptDiscoverLastHoursAgo: script === null ? null : script / 3600000,
     sourceTasksQueued: n("SELECT COUNT(*) AS n FROM source_tasks WHERE state = 'queued' AND NOT (reason = 'error' AND company IS NOT NULL)"),
-    unmatchedJobs: n('SELECT COUNT(*) AS n FROM jobs WHERE score IS NULL AND excluded_reason IS NULL'),
+    unmatchedJobs: n(`SELECT COUNT(*) AS n FROM jobs WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ${MATCH_FAIL_LIMIT}`),
     emailQueued: n(
       `SELECT COUNT(*) AS n FROM outreach_queue q
         WHERE q.status = 'queued' AND q.email_to IS NOT NULL AND (q.email_status IS NULL OR q.email_status = 'queued')

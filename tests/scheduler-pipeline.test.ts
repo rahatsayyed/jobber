@@ -1,17 +1,17 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, type Job } from '../src/db.js';
+import { openDb, listUnscoredJobs, saveMatchResultsChecked, MATCH_FAIL_LIMIT, type Job } from '../src/db.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
 import type { PacingConfig } from '../src/outreach/pacing.js';
 import type { CeilingStatus, LimitKey } from '../src/outreach/limits.js';
 import type { ControlState } from '../src/scheduler/control.js';
 import { countDue, SCRIPT_DISCOVER_KEY, type DueCounts } from '../src/scheduler/due.js';
-import { planWake, stepOrder, type PlanKnobs, type WakeDecision } from '../src/scheduler/plan.js';
+import { planWake, stepOrder, PIPELINE_MAX_JOBS_PER_WAKE, type PlanKnobs, type WakeDecision } from '../src/scheduler/plan.js';
 import { buildWakePrompt } from '../src/scheduler/prompt.js';
-import { runCodePass, statusLines, pipelineLines, targetRegionsLine, type CodePassResult } from '../src/scheduler/pipeline.js';
+import { runCodePass, statusLines, pipelineLines, targetRegionsLine, loadHuntPreferences, DEFAULT_HUNT_ROLE, DEFAULT_HUNT_LOCATION, type CodePassResult } from '../src/scheduler/pipeline.js';
 import { wakeOnce, type DriverDeps } from '../src/scheduler/driver.js';
 import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
 import { getState } from '../src/scheduler/runLog.js';
@@ -197,8 +197,89 @@ describe('prompt', () => {
     expect(t).toContain('legacy mode');
     expect(pipelineLines({ ...pipe, followupsAutonomous: true }).join('\n')).toContain('followup-drafter');
   });
-  it('target regions line falls back to defaults for a missing file', () => {
-    expect(targetRegionsLine(join(tmpdir(), 'jobber-no-such-dir'))).toMatch(/^Target regions: home=India/);
+  it('target regions line says so for a missing file', () => {
+    expect(targetRegionsLine(join(tmpdir(), 'jobber-no-such-dir'))).toContain('missing or invalid');
+  });
+});
+
+describe('list_unscored_jobs', () => {
+  const add = (db: ReturnType<typeof openDb>, id: string, o: Record<string, unknown> = {}) => {
+    db.prepare("INSERT INTO jobs (id, source, title, company, url, apply_url, description, created_at) VALUES (?,?,?,?,?,?,?,?)")
+      .run(id, o.source ?? 'greenhouse', 'React Dev', o.company ?? 'Acme', 'https://x.test/u', o.apply_url ?? 'https://boards.greenhouse.io/a/jobs/1', 'Location: Remote\n\nbody', o.at ?? '2026-10-01 10:00:00');
+  };
+  it('returns full rows oldest first, skipping scored, excluded and given-up jobs', () => {
+    const db = openDb(':memory:');
+    add(db, 'new', { at: '2026-10-03 10:00:00' });
+    add(db, 'old', { at: '2026-10-01 10:00:00' });
+    add(db, 'scored'); db.prepare("UPDATE jobs SET score = 70 WHERE id = 'scored'").run();
+    add(db, 'vetoed'); db.prepare("UPDATE jobs SET excluded_reason = 'x' WHERE id = 'vetoed'").run();
+    add(db, 'gaveup');
+    for (let i = 0; i < MATCH_FAIL_LIMIT; i++) saveMatchResultsChecked(db, [{ job_id: 'gaveup', error: 'overflow' } as never]);
+    const rows = listUnscoredJobs(db, { limit: 25 });
+    expect(rows.map((r) => r.id)).toEqual(['old', 'new']);
+    expect(rows[0]).toMatchObject({ source: 'greenhouse', company: 'Acme', apply_url: 'https://boards.greenhouse.io/a/jobs/1', description: 'Location: Remote\n\nbody', url: 'https://x.test/u' });
+    expect(countDue(db, NOW, loadTuning({}), {}).unmatchedJobs).toBe(2);
+    expect(listUnscoredJobs(db, { limit: 1 })).toHaveLength(1);
+  });
+  it('one rejection is not enough to give up', () => {
+    const db = openDb(':memory:');
+    add(db, 'a');
+    saveMatchResultsChecked(db, [{ job_id: 'a', error: 'overflow' } as never]);
+    expect(listUnscoredJobs(db)).toHaveLength(1);
+  });
+  it('apply_class is deterministic from channelsFor', () => {
+    const db = openDb(':memory:');
+    add(db, 'gh');
+    add(db, 'wd', { source: 'workday', apply_url: 'https://t.myworkdayjobs.com/x' });
+    add(db, 'odd', { source: 'adzuna', apply_url: 'https://acme.example/j' });
+    const by = Object.fromEntries(listUnscoredJobs(db).map((r) => [r.id, r.apply_class]));
+    expect(by).toEqual({ gh: 'apply_capable', wd: 'discover_only_source', odd: 'apply_tier:unknown_host' });
+    expect(listUnscoredJobs(db)[0].channels.map((c) => c.channel)).toEqual(['email', 'linkedin', 'naukri', 'apply']);
+  });
+  it('the pipeline quota is capped per wake', () => {
+    const d = run(plan({ due: due({ unmatchedJobs: 400, inboxLastCheckedMinAgo: 1 }) }));
+    expect(d.stages?.find((s) => s.kind === 'pipeline')?.quota).toBe(PIPELINE_MAX_JOBS_PER_WAKE);
+    expect(PIPELINE_MAX_JOBS_PER_WAKE).toBe(25);
+  });
+  it('P1 names the tool, the cap and apply_class; the direct-call list names every tool used', () => {
+    const t = pipelineLines({ matchThreshold: 60, sendLimit: 1, targetRegions: 'T', followupsAutonomous: false }).join('\n');
+    expect(t).toContain('`db.list_unscored_jobs({limit: 25})`');
+    expect(t).toContain('apply_class');
+    for (const c of ['db.sweep_deadlines', 'db.list_unscored_jobs', 'db.save_match_result', 'gates.apply_vetoes', 'db.mark_excluded', 'job-fetch.source_status', 'job-fetch.board_status']) {
+      expect(t.split('\n')[0]).toContain(`\`${c}\``);
+    }
+  });
+});
+
+describe('preferences and target regions from files', () => {
+  const tmp = () => { const d = mkdtempSync(join(tmpdir(), 'pipe-pref-')); return d; };
+  it('reads Role and Location from the CLAUDE.md bullets, constants otherwise', () => {
+    const d = tmp();
+    try {
+      expect(loadHuntPreferences(d)).toEqual({ role: DEFAULT_HUNT_ROLE, location: DEFAULT_HUNT_LOCATION });
+      writeFileSync(join(d, 'CLAUDE.md'), '- **Role**: `backend engineer`\n- **Location**: `germany`\n');
+      expect(loadHuntPreferences(d)).toEqual({ role: 'backend engineer', location: 'germany' });
+      writeFileSync(join(d, 'CLAUDE.md'), '- **Role**: `staff dev`\n');
+      expect(loadHuntPreferences(d)).toEqual({ role: 'staff dev', location: DEFAULT_HUNT_LOCATION });
+    } finally { rmSync(d, { recursive: true, force: true }); }
+  });
+  it('the code pass hands the file preferences to the runner', async () => {
+    const d = tmp();
+    try {
+      writeFileSync(join(d, 'CLAUDE.md'), '- **Role**: `qa lead`\n- **Location**: `spain`\n');
+      let seen: { role?: string; location?: string } = {};
+      await runCodePass({ db: openDb(':memory:'), projectRoot: d, run: async (_db, o) => { seen = o; return { jobs: [], rows: [], outcomes: [] }; } });
+      expect(seen).toMatchObject({ role: 'qa lead', location: 'spain' });
+    } finally { rmSync(d, { recursive: true, force: true }); }
+  });
+  it('target regions come from config/target-regions.json, with no hidden default list', () => {
+    const d = tmp();
+    try {
+      expect(targetRegionsLine(d)).toContain('missing or invalid');
+      mkdirSync(join(d, 'config'));
+      writeFileSync(join(d, 'config', 'target-regions.json'), JSON.stringify({ home: ['Peru'], targets: ['Lima'], remote: true, remote_anywhere: false }));
+      expect(targetRegionsLine(d)).toBe('Target regions: home=Peru; targets=Lima; remote OK=true; remote anywhere=false');
+    } finally { rmSync(d, { recursive: true, force: true }); }
   });
 });
 
@@ -226,6 +307,7 @@ describe('driver runs the code pass before the model session', () => {
     const launcher = new Fake(log);
     const notices: string[] = [];
     let t = NOW.getTime();
+    const advance = (ms: number): void => { t += ms; };
     const d: DriverDeps = {
       db: openDb(':memory:'), now: () => new Date(t), rng: () => 0.5, sleep: async (ms) => { t += ms; },
       cfg: loadOutreachConfig({}), tuning: loadTuning({}), env: {}, lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'),
@@ -233,7 +315,7 @@ describe('driver runs the code pass before the model session', () => {
       newRunId: () => 'runpipe00000001', pollMs: 5000,
       codePass: codePass ? async () => { log.push('code'); return codePass(); } : undefined,
     };
-    return { d, log, launcher, notices };
+    return { d, log, launcher, notices, advance };
   }
   const okPass = async (): Promise<CodePassResult> => ({ ok: true, fetched: 3, newJobs: 2, outcomes: [], boardStatusLine: 'BOARD_STATUS: {"x":1}', sourceStatusLine: 'SOURCE_STATUS: {"y":2}' });
 
@@ -246,6 +328,11 @@ describe('driver runs the code pass before the model session', () => {
     expect(prompt).toContain('Wake order');
     expect(prompt).toContain('Code pass result: ok=true, fetched 3, new 2');
     expect(prompt).toContain('SOURCE_STATUS: {"y":2}');
+  });
+  it('the wall budget starts after the code pass', async () => {
+    const h = harness(async () => { h.advance(3 * 3600_000); return okPass(); });
+    const r = await wakeOnce(h.d);
+    expect(r.status).toBe('ok');
   });
   it('a failing or throwing code pass is noticed and the wake still runs', async () => {
     const h = harness(async () => { throw new Error('nope'); });

@@ -126,7 +126,7 @@ async function main(): Promise<void> {
     newRunId: () => randomBytes(8).toString('hex'),
     session: env.SCHEDULER_TMUX_SESSION || undefined,
     discoverSearches: discoverNames(),
-    codePass: () => runCodePass({ db, now }),
+    codePass: () => runCodePass({ db, now, projectRoot }),
     afterWake: makeAfterWakeHooks({
       db, env, projectRoot, now, pacing: pacingFromConfig(cfg, tuning), notifier,
     }),

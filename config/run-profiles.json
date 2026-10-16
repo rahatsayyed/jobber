@@ -57,6 +57,7 @@
         "mcp__scout__scout_layout",
         "mcp__scout__scout_close",
         "mcp__db__sweep_deadlines",
+        "mcp__db__list_unscored_jobs",
         "mcp__db__save_match_result",
         "mcp__db__mark_excluded",
         "mcp__db__enqueue_outreach",
