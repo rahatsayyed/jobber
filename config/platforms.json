@@ -1,0 +1,21 @@
+{
+  "platforms": [
+    { "id": "greenhouse", "kind": "board", "label": "Greenhouse boards", "provider": "boards/greenhouse", "tier": "script", "enabled": true, "stability": "unverified" },
+    { "id": "lever", "kind": "board", "label": "Lever boards", "provider": "boards/lever", "tier": "script", "enabled": true, "stability": "unverified" },
+    { "id": "ashby", "kind": "board", "label": "Ashby boards", "provider": "boards/ashby", "tier": "script", "enabled": true, "stability": "unverified" },
+    { "id": "workable", "kind": "board", "label": "Workable boards", "provider": "boards/workable", "tier": "script", "enabled": true, "stability": "fixture" },
+    { "id": "recruitee", "kind": "board", "label": "Recruitee boards", "provider": "boards/recruitee", "tier": "script", "enabled": true, "stability": "fixture" },
+    { "id": "personio", "kind": "board", "label": "Personio boards", "provider": "boards/personio", "tier": "script", "enabled": true, "stability": "fixture" },
+    { "id": "smartrecruiters", "kind": "board", "label": "SmartRecruiters boards", "provider": "boards/smartrecruiters", "tier": "script", "enabled": true, "stability": "fixture" },
+    { "id": "workday", "kind": "board", "label": "Workday boards", "provider": "boards/workday", "tier": "script", "enabled": true, "stability": "fixture" },
+    { "id": "hackernews", "kind": "aggregator", "label": "Hacker News Who is hiring", "provider": "boards/hackernews", "tier": "script", "enabled": false, "stability": "fixture" },
+    { "id": "himalayas", "kind": "aggregator", "label": "Himalayas", "provider": "boards/himalayas", "tier": "script", "enabled": false, "stability": "fixture" },
+    { "id": "weworkremotely", "kind": "aggregator", "label": "We Work Remotely", "provider": "boards/weworkremotely", "tier": "script", "enabled": false, "stability": "fixture" },
+    { "id": "adzuna", "kind": "api", "label": "Adzuna", "provider": "adzuna", "tier": "script", "enabled": true, "stability": "live_ok" },
+    { "id": "remotive", "kind": "api", "label": "Remotive", "provider": "remotive", "tier": "script", "enabled": true, "stability": "live_ok" },
+    { "id": "remoteok", "kind": "api", "label": "RemoteOK", "provider": "remoteok", "tier": "script", "enabled": true, "stability": "live_ok" },
+    { "id": "naukri", "kind": "naukri", "label": "Naukri search", "provider": "naukri", "tier": "script", "enabled": true, "stability": "unverified" },
+    { "id": "linkedin-jobs", "kind": "linkedin", "label": "LinkedIn job search (operator)", "provider": null, "tier": "agent", "enabled": true, "stability": "unverified" },
+    { "id": "linkedin-posts", "kind": "linkedin", "label": "LinkedIn hiring posts (operator)", "provider": null, "tier": "agent", "enabled": true, "stability": "unverified" }
+  ]
+}

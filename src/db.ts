@@ -180,6 +180,19 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
       previous_reason TEXT,
       cleared_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS platform_status (
+      id TEXT PRIMARY KEY,
+      last_run_at TEXT,
+      last_status TEXT,
+      fetched INTEGER NOT NULL DEFAULT 0,
+      kept INTEGER NOT NULL DEFAULT 0,
+      new_count INTEGER NOT NULL DEFAULT 0,
+      error TEXT,
+      fallback_used INTEGER NOT NULL DEFAULT 0,
+      streak_fail INTEGER NOT NULL DEFAULT 0,
+      shape_hash TEXT,
+      note TEXT
+    );
   `);
 
   // Migration: older databases created before `method`/`account` existed on

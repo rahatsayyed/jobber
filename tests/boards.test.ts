@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { boardStatusPayload, dropBoardDuplicates, dropBoardDuplicatesDetailed, recordDroppedDuplicates, fetchBoards, getLastBoardsResult } from '../src/sources/boards/index.js';
 import { companyKey, titleIdentityKey } from '../src/reposts.js';
+import { boardStatusAlias } from '../src/sources/status.js';
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
@@ -155,6 +156,9 @@ describe('boardStatusPayload', () => {
     expect(f).not.toHaveBeenCalled();
     const p = boardStatusPayload({ jobs: [], errors: ['e'], stats: [], at: '2026-01-01T00:00:00.000Z' });
     expect(p).toEqual({ ran: true, at: '2026-01-01T00:00:00.000Z', errors: ['e'], stats: [] });
+  });
+  it('the board_status tool wraps it with a deprecation pointer to source_status and keeps the old fields', () => {
+    expect(boardStatusAlias(boardStatusPayload(null))).toEqual({ ran: false, errors: [], stats: [], note: 'no board fetch has run in this session', deprecated: 'use source_status' });
   });
 });
 

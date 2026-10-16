@@ -3,8 +3,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { openDb, isSeen, saveJob } from '../db.js';
 import { dbPath } from '../dbPath.js';
-import { fetchAllJobs } from '../sources/index.js';
+import { fetchAllJobs, fetchAllJobsDetailed } from '../sources/index.js';
 import { boardStatusPayload, dropBoardDuplicatesDetailed, recordDroppedDuplicates, type SeenRow } from '../sources/boards/index.js';
+import { boardStatusAlias, finishRun, setDroppedDuplicates, sourceStatusPayload } from '../sources/status.js';
 
 const db = openDb(dbPath());
 
@@ -38,17 +39,20 @@ server.registerTool(
     },
   },
   async ({ role, location }) => {
-    const jobs = await fetchAllJobs({ role, location, isKnown: (id) => isSeen(db, id) });
+    const { jobs, outcomes } = await fetchAllJobsDetailed({ role, location, isKnown: (id) => isSeen(db, id) });
     const fresh = jobs.filter((job) => !isSeen(db, job.id));
     const recent = db
       .prepare("SELECT id, source, company_key, title_key FROM jobs WHERE created_at >= datetime('now', '-30 days') AND company_key IS NOT NULL AND title_key IS NOT NULL")
       .all() as SeenRow[];
     const { kept: newJobs, dropped } = dropBoardDuplicatesDetailed(fresh, recent);
     recordDroppedDuplicates(dropped);
+    setDroppedDuplicates(dropped);
     if (newJobs.length < fresh.length) console.error(`[boards] dropped ${fresh.length - newJobs.length} board job(s) duplicating a recently seen posting`);
     for (const job of newJobs) {
       saveJob(db, job);
     }
+    // Status never fails the fetch: a status write error is logged and the jobs are still returned.
+    try { finishRun(db, outcomes, newJobs); } catch (e) { console.error('[job-fetch] source status not recorded:', e); }
     return {
       content: [{ type: 'text', text: JSON.stringify(newJobs) }],
     };
@@ -59,11 +63,23 @@ server.registerTool(
   'board_status',
   {
     description:
-      'Read-only: per-company counts and errors from the most recent company-board fetch (call it after list_new_jobs; it never fetches, and returns ran:false when no fetch has run in this session). Never writes to the db.',
+      'DEPRECATED, use source_status. Read-only: per-company counts and errors from the most recent company-board fetch (call it after list_new_jobs; it never fetches, and returns ran:false when no fetch has run in this session). Never writes to the db.',
     inputSchema: {},
   },
   async () => {
-    return { content: [{ type: 'text', text: JSON.stringify(boardStatusPayload()) }] };
+    return { content: [{ type: 'text', text: JSON.stringify(boardStatusAlias(boardStatusPayload())) }] };
+  }
+);
+
+server.registerTool(
+  'source_status',
+  {
+    description:
+      'Read-only: one row per discovery source from the most recent list_new_jobs run: fetched, kept, new (saved in that call), redacted error, fallback_used. Call it after list_new_jobs; it never fetches and returns ran:false when no run has been stored.',
+    inputSchema: {},
+  },
+  async () => {
+    return { content: [{ type: 'text', text: JSON.stringify(sourceStatusPayload(db)) }] };
   }
 );
 
