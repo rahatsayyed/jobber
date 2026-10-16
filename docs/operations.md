@@ -109,8 +109,10 @@ End-to-end smoke test in dry mode against fixtures and a temporary database. Wri
 ## Bring the stack up and down
 
 ```bash
-npm run up
+npm start
 ```
+
+`npm start` is the same as `npm run up`, and `npm stop` is the same as `npm run down`. Extra flags go after `--`, for example `npm start -- --status`.
 
 Order: kill-switch check, doctor gate, then bridge, windows, scheduler and dashboard. Exit codes:
 
@@ -124,9 +126,9 @@ Order: kill-switch check, doctor gate, then bridge, windows, scheduler and dashb
 Features you skipped in setup print as `bridge: skipped (setup)`, `windows: skipped (setup)` or `web: skipped (setup)`.
 
 ```bash
-npm run down
-npm run down -- --keep-bridge
-npm run down -- --force --yes
+npm stop
+npm stop -- --keep-bridge
+npm stop -- --force --yes
 ```
 
 Stops the windows and scheduler this stack started. A scheduler that belongs to a launchd or systemd unit is not stopped here; the command prints the unload or disable line to run yourself. Without `--force` a scheduler finishing a wake is left to finish: re-run `npm run down`. It asks before stopping the `hunt` and `followups` windows; without a terminal they are left running unless you pass `--yes`. It does not touch the scheduler's wake session (`jobber-runs`; the STOP file is what kills a wake window), and it does not stop a hunt you started from a shell with `./run-hunt.sh`. Exit codes: 0 ok, 1 a stop failed, 2 usage error (unknown flag).

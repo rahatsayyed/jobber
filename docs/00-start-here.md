@@ -29,7 +29,7 @@ before you flip anything live. Nothing on this path flips a dry-run flag for you
 | 12 | Dashboard sign-in ([dashboard-login.md](dashboard-login.md)) | `npm run dashboard -- token` | 5 min | owner only | you can sign in on loopback |
 | 13 | Canary send, supervised, low ceilings | `npm run linkedin:seed` with `--url`, `--name`, `--company`, `--category`, then one send you watch | 30 to 60 min | owner only (you watch it) | the one message arrived at the person you chose and a row exists in the DB |
 | 14 | First supervised `/runhunt` | `/runhunt` in the hunt window | 20 to 60 min | owner only (read resumes, emails, ATS lines yourself) | summary arrives on Telegram and you reviewed the first outputs |
-| 15 | Start the stack | `npm run up` | 5 min | agent can run | the table shows every started component; `MODE:` line is the one you intended |
+| 15 | Start the stack | `npm start` (same as `npm run up`) | 5 min | agent can run | the table shows every started component; `MODE:` line is the one you intended |
 | 16 | Install the scheduler units ([scheduler-install.md](scheduler-install.md)) | `npm run scheduler:units` and the printed install commands | 10 to 20 min | owner only (installs system units) | units listed by launchd or systemd |
 | 17 | Walk the rollout phases ([rollout.md](rollout.md)) | per phase | days (rollout is phased over days) | owner only (you raise ceilings) | each phase's exit criteria are met before the next |
 
@@ -52,7 +52,7 @@ before you flip anything live. Nothing on this path flips a dry-run flag for you
   `npm run status -- limits`, not repeated here). Live LinkedIn and Naukri paths are
   live-unverified (see `CLAUDE.md` section `Known limits and not yet live-verified`), which is
   why this step is supervised.
-- Step 15: `npm run down` stops the stack. `up` refuses while the kill switch is set.
+- Step 15: `npm stop` (same as `npm run down`) stops the stack. `up` refuses while the kill switch is set.
 
 ## If something is red
 

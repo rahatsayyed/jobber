@@ -13,7 +13,7 @@ step is named by its id, and the wizard explains it on screen.
 bash scripts/bootstrap.sh
 npm run setup
 npm run dry-run
-npm run up
+npm start
 ```
 
 1. `bootstrap` installs what is missing (Node, dependencies, tmux, browser binaries, ccgram, the
@@ -21,8 +21,8 @@ npm run up
 2. `setup` is the guided wizard. It writes `.env`, `user-data/` and `secrets/` files, and records
    progress so you can stop and resume.
 3. `dry-run` is an end-to-end check against fixtures and a temporary database. It sends nothing.
-4. `up` runs the doctor, then starts the bridge, windows, scheduler and dashboard. `npm run down`
-   stops them.
+4. `up` runs the doctor, then starts the bridge, windows, scheduler and dashboard. `npm stop`
+   stops them. `npm start` and `npm stop` are the same as `npm run up` and `npm run down`.
 
 Nothing here flips a dry-run flag for you. `up` prints the mode; you alone change the flags in
 `.env`.
@@ -249,10 +249,12 @@ Naukri or Gmail.
 ## up and down
 
 ```bash
-npm run up
-npm run up -- --status
-npm run down
+npm start
+npm start -- --status
+npm stop
 ```
+
+`npm run up` and `npm run down` are equivalent.
 
 `up` order: print the mode banner, check the kill switch, run the doctor, then start the bridge,
 the ccgram windows, the scheduler and the dashboard, each only if not already running. It is
@@ -276,7 +278,7 @@ or the kill variable): `up` refuses; clear it yourself with `npm run jobber:cont
 What it prints: a component table (bridge, windows, scheduler, web, with `skipped (setup)` for
 skipped features), the dashboard URL and auth mode, the tmux attach commands, whether the
 auto-update and backup ticks are on, the last dry-run result, a `STACK: skipped by choice: ...`
-line when features were skipped, and `Stop: npm run down   Emergency: npm run jobber:control -- stop`.
+line when features were skipped, and `Stop: npm stop (or npm run down)   Emergency: npm run jobber:control -- stop`.
 It skips the scheduler when `SCHEDULER_ENABLED=false` or an installed unit already runs it.
 
 `down` flags:

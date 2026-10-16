@@ -10,7 +10,7 @@ This page lists every owner doc in `docs/`. Start with the ordered list, then us
 
 1. [Start here](00-start-here.md): the ordered path from clone to first supervised send.
 2. [Prerequisites](prerequisites.md): what you need on the machine and in your accounts before you begin.
-3. [Setup modes](setup-modes.md): bootstrap, setup (agent or terminal), dry-run, up and down.
+3. [Setup modes](setup-modes.md): bootstrap, setup (agent or terminal), dry-run, start and stop (`npm start`, `npm stop`).
 4. [API keys](api-keys.md): which keys and credentials exist and where each goes.
 5. [Config reference](config-reference.md): what lives in `config/`, `user-data/` and the env catalog.
 6. [Rollout](rollout.md): the five phases from dry run to autonomous.
