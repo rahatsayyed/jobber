@@ -9,7 +9,7 @@
 import path from 'node:path';
 import { z } from 'zod';
 import type { FormField, RawField } from '../../webcore/formModel.js';
-import { isSafeSelector } from '../../lib/safeSelector.js';
+import { isSafeSelector } from './safeSelector.js';
 import type { ConfirmSignals } from '../confirm.js';
 import { confirmSignals } from './autofill.js';
 import {

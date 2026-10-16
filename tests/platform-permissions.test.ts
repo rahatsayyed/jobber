@@ -42,7 +42,7 @@ describe('shipped permission sets', () => {
   });
   it('full adds whole-server entries and never an unscoped shell or file tool', () => {
     const full = resolveSet(real, 'full');
-    for (const s of ['mcp__gmail', 'mcp__apply', 'mcp__naukri', 'mcp__db']) expect(full).toContain(s);
+    for (const s of ['mcp__gmail', 'mcp__applier', 'mcp__scout', 'mcp__naukri', 'mcp__db']) expect(full).toContain(s);
     expect(full.filter((e) => !e.startsWith('mcp__')).sort()).toEqual([
       'Bash(npx tsx scripts/status.ts health)',
       'Bash(npx tsx scripts/status.ts limits)',

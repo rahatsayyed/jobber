@@ -3,6 +3,7 @@
 import { join } from 'node:path';
 import type { Snapshot } from '../status/snapshot.js';
 import { cleanText } from './clean.js';
+import type { EnvSpec } from '../settings/types.js';
 
 export interface ConfigItem {
   name: string;
@@ -40,6 +41,14 @@ export function maskValue(name: string, value: string | undefined): ConfigItem {
   return { name, value: isSet ? 'set' : 'unset', masked: false };
 }
 
+// Catalog path: the explicit `secret` flag decides masking, non-secret keys show their value, and names that are
+// not in the catalog are listed by name only (set/unset), never with a value.
+export function catalogItem(spec: EnvSpec, value: string | undefined): ConfigItem {
+  const isSet = value !== undefined && value !== '';
+  if (spec.secret || spec.type === 'secret') return { name: spec.key, value: isSet ? 'set' : 'unset', masked: true };
+  return { name: spec.key, value: isSet ? cleanText(value, 200) : 'unset', masked: false };
+}
+
 export const CONFIG_FILES = [
   'config/portals.json',
   'config/target-regions.json',
@@ -69,6 +78,7 @@ export function buildConfigView(deps: {
   env: NodeJS.ProcessEnv;
   read: (p: string) => string | null;
   snapshot: Snapshot;
+  catalog?: readonly EnvSpec[];
 }): ConfigView {
   const names: string[] = [];
   const example = deps.read(join(deps.root, '.env.example'));
@@ -78,7 +88,18 @@ export function buildConfigView(deps: {
       if (m && !names.includes(m[1])) names.push(m[1]);
     }
   }
-  const env = names.map((n) => maskValue(n, deps.env[n]));
+  let env: ConfigItem[];
+  if (deps.catalog && deps.catalog.length > 0) {
+    const known = new Set(deps.catalog.map((c) => c.key));
+    env = deps.catalog.map((c) => catalogItem(c, deps.env[c.key]));
+    for (const n of names) {
+      if (known.has(n)) continue;
+      const isSet = deps.env[n] !== undefined && deps.env[n] !== '';
+      env.push({ name: n, value: isSet ? 'set' : 'unset', masked: false });
+    }
+  } else {
+    env = names.map((n) => maskValue(n, deps.env[n]));
+  }
   const files = CONFIG_FILES.map((path) => {
     const raw = deps.read(join(deps.root, path));
     if (raw === null) return { path, summary: { missing: true } as Record<string, unknown> };

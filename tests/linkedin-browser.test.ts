@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { launchRealChrome, LINKEDIN_LAUNCH_OPTIONS, LINKEDIN_HEADED_LAUNCH_OPTIONS, LINKEDIN_CONTEXT_OPTIONS } from '../src/linkedin/browser.js';
-import { HEADLESS_CONTEXT_OPTIONS } from '../src/sources/naukri.js';
+import { HEADLESS_CONTEXT_OPTIONS } from '../src/linkedin/browser.js';
 import type { LiBrowser, LiLauncher } from '../src/linkedin/types.js';
 import { linkedinBrowserChecks } from '../src/linkedin/chromeCheck.js';
 import type { DoctorContext } from '../src/platform/doctor.js';

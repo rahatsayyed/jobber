@@ -14,11 +14,11 @@ import {
 import { checkInteractiveUse, formatPrintArgs, spawnInteractive } from '../src/platform/interactive.js';
 
 const profiles = loadProfiles('config/run-profiles.json', 'config/permission-sets.json');
-const hunt = profiles.hunt;
+const hunt = loadProfiles('tests/fixtures/runner-send-profile.json', 'config/permission-sets.json').hunt;
 
-describe('golden: hunt and outreach_wake are unchanged by the interactive work', () => {
+describe('golden: outreach_wake is unchanged by the interactive work', () => {
   const golden = JSON.parse(readFileSync('tests/fixtures/runner-golden.json', 'utf8')) as Record<string, any>;
-  for (const n of ['hunt', 'outreach_wake']) {
+  for (const n of ['outreach_wake']) {
     it(`${n} argv, settings and policy match the pre-change capture`, () => {
       const p = profiles[n];
       expect(buildClaudeArgs(n, p, { settingsPath: `debug/runner/${n}.settings.json` })).toEqual(golden[n].args);

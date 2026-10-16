@@ -5,8 +5,9 @@ import { classifyDeadlines, type DeadlineSweep } from './freshness.js';
 import type { Legitimacy } from './legitimacy.js';
 import { dbPath } from './dbPath.js';
 import { companyKey, repostCount, titleIdentityKey } from './reposts.js';
-import { isDiscoverOnlySource } from './lib/discoverOnly.js';
+import { isDiscoverOnlySource, isHeldSource } from './lib/discoverOnly.js';
 import { classifyApplyUrl } from './apply/registry.js';
+import { channelsFor, type ChannelVerdict } from './lib/channels.js';
 import { migrateOutreachTables } from './outreach/schema.js';
 import { migrateSchedulerTables } from './scheduler/runLog.js';
 
@@ -205,6 +206,18 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    -- Declarative generated providers (plan 8G task 8): state candidate, validated, trusted; approved is the owner's release of held outreach.
+    CREATE TABLE IF NOT EXISTS generated_providers (
+      id TEXT PRIMARY KEY,
+      state TEXT NOT NULL,
+      approved INTEGER NOT NULL DEFAULT 0,
+      clean_runs INTEGER NOT NULL DEFAULT 0,
+      run_ids TEXT NOT NULL DEFAULT '[]',
+      task_id INTEGER,
+      reason TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
     -- Search quota and cache (plan 8G task 3). search_cache also holds dork block cooldown rows (qhash 'cooldown:<provider>').
     CREATE TABLE IF NOT EXISTS search_usage (
       day TEXT NOT NULL,
@@ -262,6 +275,8 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
     'title_key', 'company_key', 'legitimacy', 'legitimacy_signals', 'gate_flags', 'jd_snapshot', 'jd_snapshot_at', 'score_cap_reason']) {
     if (!jobCols.has(col)) db.exec(`ALTER TABLE jobs ADD COLUMN ${col} TEXT`);
   }
+  // Count of match-save rejections per job: after MATCH_FAIL_LIMIT the wake pipeline stops re-offering it (plan 8G task 13).
+  if (!jobCols.has('match_fails')) db.exec('ALTER TABLE jobs ADD COLUMN match_fails INTEGER NOT NULL DEFAULT 0');
   if (!outreachQueueColumnNames.has('resume_json')) db.exec('ALTER TABLE outreach_queue ADD COLUMN resume_json TEXT');
   for (const [col, type] of [['ats_coverage', 'INTEGER'], ['ats_gaps', 'TEXT'], ['fact_warnings', 'TEXT'], ['review_applied', 'INTEGER'], ['review_rejected', 'INTEGER']] as const) {
     if (!outreachQueueColumnNames.has(col)) db.exec(`ALTER TABLE outreach_queue ADD COLUMN ${col} ${type}`);
@@ -660,13 +675,16 @@ export function enqueueOutreach(
   // the sender away from the shared daily apply counter while email and connect outreach on the same row still run.
   const source = (db.prepare('SELECT source FROM jobs WHERE id = ?').get(item.job_id) as { source: string | null } | undefined)?.source;
   const applyPlatform = isDiscoverOnlySource(source) ? 'none' : item.apply_platform;
+  // Generated-provider jobs (source gen:*) are matched and listed, but their outreach rows wait for the owner (plan 8G D7): held_review
+  // until `npm run providers -- approve <id>` releases them. list_queued_outreach returns only status 'queued', so a held row is never sent.
+  const held = isHeldSource(source) && !(db.prepare('SELECT approved FROM generated_providers WHERE id = ?').get(String(source).slice(4)) as { approved: number } | undefined)?.approved;
   const result = db.prepare(`
     INSERT INTO outreach_queue (
       job_id, resume_pdf_path, email_subject, email_body, email_to,
       connect_note, connect_profile_url, connect_category, connect_company,
       apply_platform, apply_tier, apply_url, resume_json,
-      ats_coverage, ats_gaps, fact_warnings, review_applied, review_rejected
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ats_coverage, ats_gaps, fact_warnings, review_applied, review_rejected, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     item.job_id,
     item.resume_pdf_path,
@@ -685,7 +703,8 @@ export function enqueueOutreach(
     item.ats_gaps ? JSON.stringify(item.ats_gaps) : null,
     item.fact_warnings ? JSON.stringify(item.fact_warnings) : null,
     item.review_applied ?? null,
-    item.review_rejected ?? null
+    item.review_rejected ?? null,
+    held ? 'held_review' : 'queued'
   );
   return Number(result.lastInsertRowid);
 }
@@ -790,6 +809,7 @@ export function saveMatchResultsChecked(
   const upd = db.prepare(`UPDATE jobs SET score = ?, match_reasons = ?, match_missing = ?, location_verdict = ?, language_gate = ?,
     language_note = ?, score_dims = ?, requirements = ?, strengths = ?, gaps = ?, hard_stops = ?, confidence = ?,
     deadline = COALESCE(?, deadline), score_cap_reason = ? WHERE id = ?`);
+  const failed = db.prepare('UPDATE jobs SET match_fails = match_fails + 1 WHERE id = ?');
   const seen = new Set<string>();
   db.transaction(() => {
     for (const r of rows as unknown[]) {
@@ -802,12 +822,12 @@ export function saveMatchResultsChecked(
       // First occurrence of a job_id wins (an error row counts as an occurrence); later ones are duplicates.
       if (seen.has(row.job_id)) { errors.push({ job_id: row.job_id, error: 'duplicate job_id' }); continue; }
       seen.add(row.job_id);
-      if (typeof row.error === 'string') { errors.push({ job_id: row.job_id, error: row.error }); continue; }
+      if (typeof row.error === 'string') { errors.push({ job_id: row.job_id, error: row.error }); failed.run(row.job_id); continue; }
       const found = descOf.get(row.job_id) as { d: string | null } | undefined;
       if (!found) { errors.push({ job_id: row.job_id, error: 'unknown job_id' }); continue; }
       const desc = found.d ?? undefined;
       const n = normalizeMatchRow(row, desc);
-      if (!n.ok) { errors.push({ job_id: row.job_id, error: n.error }); continue; }
+      if (!n.ok) { errors.push({ job_id: row.job_id, error: n.error }); failed.run(row.job_id); continue; }
       const x = n.row;
       const res = upd.run(x.score, x.reasons, JSON.stringify(x.missing_keywords ?? []), x.location_verdict ?? null, x.language_gate ?? null,
         x.language_note, x.score_dims ? JSON.stringify(x.score_dims) : null, JSON.stringify(x.requirements), JSON.stringify(x.strengths),
@@ -820,6 +840,38 @@ export function saveMatchResultsChecked(
     }
   })();
   return { saved, errors, hard_stops: stops, injection_suspects: suspects, scores };
+}
+
+/** Rejected match saves after which a job is no longer offered to the wake pipeline. */
+export const MATCH_FAIL_LIMIT = 2;
+
+export interface UnscoredJob extends Job {
+  /** `apply_capable`, or the closed reason code from channelsFor (`discover_only_source`, `apply_tier:<tier>`, `held_review`). */
+  apply_class: string;
+  channels: ChannelVerdict[];
+}
+
+/**
+ * Jobs saved but not scored, not excluded and not given up on, oldest first, as full Job rows plus the channelsFor result
+ * (computed without a Hacker News domain check, so an HN job shows hn_gate_pending until the contact stage). Read-only.
+ */
+export function listUnscoredJobs(db: BetterSqlite3.Database, opts: { limit?: number } = {}): UnscoredJob[] {
+  const limit = Math.max(1, Math.min(100, Math.floor(opts.limit ?? 25)));
+  const rows = db.prepare(
+    `SELECT id, source, title, company, url, apply_url, description, posted_at FROM jobs
+      WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ?
+      ORDER BY created_at ASC, rowid ASC LIMIT ?`,
+  ).all(MATCH_FAIL_LIMIT, limit) as Array<Record<string, string | null>>;
+  return rows.map((r) => {
+    const job: Job = {
+      id: r.id as string, source: (r.source ?? '') as string, title: (r.title ?? '') as string, company: (r.company ?? '') as string,
+      url: (r.url ?? '') as string, apply_url: (r.apply_url ?? '') as string, description: (r.description ?? '') as string,
+      ...(r.posted_at ? { posted_at: r.posted_at } : {}),
+    };
+    const channels = channelsFor(job);
+    const apply = channels.find((c) => c.channel === 'apply');
+    return { ...job, apply_class: apply?.eligible ? 'apply_capable' : (apply?.reason ?? 'apply_tier:none'), channels };
+  });
 }
 
 export function markExcluded(

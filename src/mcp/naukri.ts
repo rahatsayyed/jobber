@@ -1,7 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { chromium as patchrightChromium } from 'patchright';
 import type BetterSqlite3 from 'better-sqlite3';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -10,7 +9,10 @@ import { openDb, saveApplication } from '../db.js';
 import { dbPath } from '../dbPath.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
 import { hostMatches } from '../lib/hostClass.js';
-import { HEADLESS_CONTEXT_OPTIONS, extractNaukriJobId } from '../sources/naukri.js';
+import { extractNaukriJobId } from '../sources/naukri.js';
+import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS, type LiLauncher } from '../webcore/launch.js';
+import { slugify, buildSearchUrl } from '../naukri/url.js';
+import { runNaukriDiscover, type DiscoverIo, type NaukriDiscoverResult } from '../naukri/discover.js';
 import { gateInput } from '../safety/inputGate.js';
 import { isDryRun } from '../safety/dryRun.js';
 import { checkStyle, loadStyleConfigSafe } from '../safety/styleGate.js';
@@ -93,8 +95,8 @@ export interface Candidate {
 
 export interface NaukriDeps {
   db?: BetterSqlite3.Database;
-  /** Injectable patchright `chromium` launcher, for testing without a real browser. */
-  chromium?: { launch: (opts: any) => Promise<any> };
+  /** Injectable launcher handed to the shared real-Chrome launcher, for testing without a real browser. */
+  chromium?: LiLauncher;
   sessionStatePath?: string;
   maxAppliesPerDay?: number;
   /** Wait after navigation/click before reading the page. Injectable so tests do not sleep. */
@@ -481,11 +483,10 @@ export function naukriOpen({ url }: { url: string }, deps: NaukriDeps = {}): Pro
     const statePath = deps.sessionStatePath ?? DEFAULT_STATE_PATH;
     if (!existsSync(statePath)) return 'failed: naukri session state not found (secrets/naukri-state.json)';
     await closeSession();
-    const launcher = deps.chromium ?? (patchrightChromium as unknown as { launch: (o: any) => Promise<any> });
     let browser: any;
     try {
-      // Headless only, never headed: Akamai passes real Chrome + real UA under --headless=new.
-      browser = await launcher.launch({ channel: 'chrome', headless: true, args: ['--headless=new'] });
+      // Headless only, never headed: Akamai passes real Chrome + real UA under --headless=new (shared launcher).
+      browser = await launchRealChrome({ launcher: deps.chromium });
       const context = await browser.newContext({ ...HEADLESS_CONTEXT_OPTIONS, storageState: statePath });
       const page = await context.newPage();
       session = { browser, context, page, countedJobs: new Set(), idleTimer: null, layout: makeObserver(deps) };
@@ -711,9 +712,17 @@ export const SEARCH_SRC = `(() => {
       experience: pick('.expwdth, [class*="exp"]'),
       salary: pick('.sal-wrap, [class*="sal"]'),
       postedText: pick('.job-post-day, [class*="job-post-day"]'),
+      snippet: pick('.job-desc, [class*="job-desc"]'),
     });
   });
   return out.slice(0, 40);
+})()`;
+
+/** Fixed in-page extractor for one job page's description (read-only; selectors unverified live). */
+export const DETAIL_SRC = `(() => {
+  const txt = (e) => ((e && (e.innerText || e.textContent)) || '').replace(/\\s+/g, ' ').trim();
+  const el = document.querySelector('[class*="dang-inner-html"], .job-desc, [class*="JDC"], section[class*="job-desc"]');
+  return txt(el).slice(0, 12000);
 })()`;
 
 export const INBOX_SRC = `(() => {
@@ -754,24 +763,7 @@ export interface RawThreadPage {
   messages: Array<{ from: 'me' | 'them'; text: string; at?: string }>;
 }
 
-/** Lowercase ascii slug; anything outside [a-z0-9] collapses to one dash. Never carries quotes or markup. */
-export function slugify(s: string, max = 60): string {
-  return String(s ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, max)
-    .replace(/-+$/g, '');
-}
-
-/** Search URL built in code only: https://www.naukri.com/<query>-jobs[-in-<location>][-<page>]. */
-export function buildSearchUrl(query: string, location?: string, page = 1): string | null {
-  const q = slugify(query, 60);
-  if (!q) return null;
-  const l = location ? slugify(location, 40) : '';
-  const p = Math.min(3, Math.max(1, Math.trunc(Number.isFinite(page) ? page : 1)));
-  return `https://www.naukri.com/${q}-jobs${l ? `-in-${l}` : ''}${p > 1 ? `-${p}` : ''}`;
-}
+export { slugify, buildSearchUrl };
 
 function sanitizeRef(s: string): string {
   return s.replace(/[^A-Za-z0-9_:./-]/g, '_').replace(/^\.+/, '').slice(0, 100);
@@ -895,6 +887,48 @@ export function naukriSearch(
         `${r.salary ? ` | ${clip(r.salary, 40)}` : ''}${r.posted ? ` | ${clip(r.posted, 40)}` : ''}`
     );
     return emit(untrustedBlock(`status=ok count=${results.length} search_url=${url}`, lines), deps);
+  });
+}
+
+/**
+ * Typed discovery: runs ONE named search from config/naukri-discovery.json on the open session and persists the
+ * new jobs in code. Page text never reaches the result (counts and job ids only). Needs naukri_open first.
+ */
+export function naukriDiscover(
+  { search, detail_quota }: { search: string; detail_quota?: number },
+  deps: NaukriDeps = {}
+): Promise<string> {
+  return serial(async () => {
+    if (typeof search !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,48}$/.test(search)) {
+      return jsonOut({ status: 'failed', code: 'unknown_search' });
+    }
+    if (!session) return jsonOut({ status: 'no_session', hint: 'call naukri_open first' });
+    const io: DiscoverIo = {
+      load: async (url) => {
+        const refused = await loadPage(url, deps);
+        if (!refused) return 'ok';
+        return (JSON.parse(refused) as { status?: string }).status === 'login_required' ? 'login_required' : 'failed';
+      },
+      cards: async () => ((await session!.page.evaluate(SEARCH_SRC)) as unknown[]) ?? [],
+      detail: async (url) => {
+        if (!isNaukriUrl(url)) return null;
+        if (await loadPage(url, deps)) return null;
+        const d = await session!.page.evaluate(DETAIL_SRC);
+        return typeof d === 'string' ? d : null;
+      },
+    };
+    let result: NaukriDiscoverResult;
+    try {
+      result = await runNaukriDiscover(
+        { search, detail_quota },
+        io,
+        { db: getDb(deps), env: deps.env ?? process.env, now: deps.now ?? (() => new Date()), screen: screenFn(deps) },
+      );
+    } catch (err) {
+      void err; // exception text can carry page content
+      return jsonOut({ status: 'failed', code: 'discover_error' });
+    }
+    return jsonOut(result);
   });
 }
 
@@ -1245,6 +1279,18 @@ server.registerTool(
     inputSchema: { query: z.string().max(100), location: z.string().max(60).optional(), page: z.number().int().min(1).max(3).optional() },
   },
   async ({ query, location, page }) => text(await naukriSearch({ query, location, page }))
+);
+
+server.registerTool(
+  'naukri_discover',
+  {
+    description:
+      'Runs ONE named job search from config/naukri-discovery.json on the open session and saves new jobs in code (source naukri). ' +
+      'You supply only the search name; the URL is built in code. Description-less cards get their job page read, at most detail_quota pages ' +
+      '(max 10). Needs naukri_open first. Returns {status: ok|dry_run|halted|failed, code, fetched, new, skipped, seen, details, job_ids}; never page text.',
+    inputSchema: { search: z.string().max(49), detail_quota: z.number().int().min(0).max(10).optional() },
+  },
+  async ({ search, detail_quota }) => text(await naukriDiscover({ search, detail_quota }))
 );
 
 server.registerTool(

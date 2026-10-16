@@ -139,19 +139,18 @@ export function sourcesChecks(deps: SourcesCheckDeps = {}): Check[] {
       id: 'generated_providers',
       title: 'generated providers: validation and review queue',
       async run(ctx) {
-        // The generated-provider module and its table come from the 8G-1 branch; absent here means n/a, not a failure.
-        const modulePresent = ctx.fs.exists(join(ctx.root, 'src', 'sources', 'generated')) || ctx.fs.exists(join(ctx.root, 'src', 'sources', 'generated.ts'));
         const rows = withDb(deps, (db) => {
           if (!hasTable(db, 'generated_providers')) return null;
-          return db.prepare('SELECT status, COUNT(*) AS n, SUM(CASE WHEN validated = 0 THEN 1 ELSE 0 END) AS bad FROM generated_providers GROUP BY status').all() as Array<{ status: string; n: number; bad: number | null }>;
+          return db.prepare("SELECT state, COUNT(*) AS n, SUM(CASE WHEN reason IS NOT NULL THEN 1 ELSE 0 END) AS bad FROM generated_providers GROUP BY state").all() as Array<{ state: string; n: number; bad: number | null }>;
         });
-        if (!rows) return skip(modulePresent ? 'n/a: no generated_providers table yet' : 'n/a: not installed (generated providers arrive with the 8G-1 branch)');
-        const failing = rows.filter((r) => (r.status === 'approved' || r.status === 'trusted') && (r.bad ?? 0) > 0);
-        if (failing.length) return fail(`a trusted provider fails validation (${failing.map((r) => `${r.status}: ${r.bad}`).join(', ')})`, 'revalidate or revoke the provider');
-        const waiting = rows.filter((r) => r.status === 'candidate' || r.status === 'pending_review').reduce((a, r) => a + r.n, 0);
-        if (waiting > 0) return warn(`${waiting} candidate provider${waiting === 1 ? '' : 's'} waiting for review`, 'review them in the dashboard');
+        if (!rows) return skip('n/a: no generated_providers table or database');
+        // A validated or trusted provider whose last validation left a reason (store.ts sets `reason` on a failed revalidation) is a failure.
+        const failing = rows.filter((r) => (r.state === 'validated' || r.state === 'trusted') && (r.bad ?? 0) > 0);
+        if (failing.length) return fail(`a validated or trusted provider fails validation (${failing.map((r) => `${r.state}: ${r.bad}`).join(', ')})`, 'revalidate or remove the provider: npm run providers');
+        const waiting = rows.filter((r) => r.state === 'candidate').reduce((a, r) => a + r.n, 0);
+        if (waiting > 0) return warn(`${waiting} candidate provider${waiting === 1 ? '' : 's'} waiting for validation or review`, 'npm run providers -- list');
         const total = rows.reduce((a, r) => a + r.n, 0);
-        return pass(total === 0 ? 'none' : `${total} provider${total === 1 ? '' : 's'}, all validated or approved`);
+        return pass(total === 0 ? 'none' : `${total} provider${total === 1 ? '' : 's'}, none failing validation`);
       },
     },
   ];

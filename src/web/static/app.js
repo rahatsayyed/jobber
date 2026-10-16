@@ -1,7 +1,7 @@
 // src/web/static/app.js
 // Hash router, top nav and view lifecycle. Views export render(ctx); ctx.onCleanup(fn) registers a teardown
 // (polling timers) that runs before the next view renders.
-import { post, session } from './api.js';
+import { getSettingsMeta, post, session } from './api.js';
 import { button, clear, el, showError } from './dom.js';
 import * as login from './views/login.js';
 import * as overview from './views/overview.js';
@@ -14,14 +14,17 @@ import * as runs from './views/runs.js';
 import * as config from './views/config.js';
 import * as audit from './views/audit.js';
 import * as chat from './views/chat.js';
+import * as settings from './views/settings.js';
 
 const VIEWS = [
   ['overview', 'Overview', overview], ['jobs', 'Jobs', jobs], ['people', 'People', people], ['mail', 'Mail', mail],
   ['outcomes', 'Outcomes', outcomes], ['sessions', 'Sessions', sessions], ['runs', 'Runs', runs],
-  ['config', 'Config', config], ['audit', 'Audit', audit], ['chat', 'Chat', chat],
+  ['config', 'Config', config], ['settings', 'Settings', settings], ['audit', 'Audit', audit], ['chat', 'Chat', chat],
 ];
 
 const root = document.getElementById('app');
+const banner = document.getElementById('banner'); // lives outside #app, so a view render never removes it
+let bannerTimer = null;
 let cleanups = [];
 let current = null; // session info once signed in
 let renderToken = 0;
@@ -51,7 +54,44 @@ function parseHash() {
   return { name: parts[0] || '', arg: parts[1] || null, reauth };
 }
 
+function stopBanner() {
+  if (bannerTimer !== null) clearInterval(bannerTimer);
+  bannerTimer = null;
+  banner.hidden = true;
+  clear(banner);
+}
+
+function paintBanner(mode, meta) {
+  const m = mode && mode.mode === 'LIVE' ? 'LIVE' : mode && mode.mode === 'DRY RUN' ? 'DRY RUN' : null;
+  const kind = m === 'LIVE' ? 'banner-live' : m === 'DRY RUN' ? 'banner-dry' : 'banner-unknown';
+  const icon = m === 'LIVE' ? '⚠' : m === 'DRY RUN' ? '◌' : '?';
+  banner.className = kind;
+  clear(banner).append(el('span', { class: 'banner-mode' }, `${icon} ${m || 'MODE UNKNOWN'}`));
+  const restarts = meta && Array.isArray(meta.pendingRestart) ? meta.pendingRestart.length : 0;
+  if (restarts > 0) banner.append(el('span', { class: 'banner-note' }, `${restarts} ${restarts === 1 ? 'change needs' : 'changes need'} a restart`));
+  if (meta && meta.modeChangedSinceStart === true) banner.append(el('span', { class: 'banner-note' }, 'changed since the dashboard started'));
+  banner.hidden = false;
+  document.documentElement.style.setProperty('--banner-h', `${banner.offsetHeight}px`);
+}
+
+async function refreshBanner(fresh) {
+  if (!current) return;
+  try {
+    if (fresh) current = await session();
+    let meta = null;
+    try {
+      meta = await getSettingsMeta();
+    } catch {
+      meta = null; // settings off or unavailable: the mode still shows
+    }
+    if (current) paintBanner(current.mode, meta);
+  } catch {
+    // a 401 already moved the hash to the login view, which hides the banner
+  }
+}
+
 async function signOut() {
+  stopBanner();
   try {
     await post('/api/logout', {});
   } catch {
@@ -77,6 +117,7 @@ async function route() {
   const { name, arg, reauth } = parseHash();
   clear(root);
   if (name === 'denied' || name === 'login') {
+    stopBanner();
     login.render({
       root, mode: name, reauth, returnTo: lastAppHash, onCleanup: (f) => cleanups.push(f),
     });
@@ -97,6 +138,8 @@ async function route() {
     return;
   }
   rememberTab(name);
+  refreshBanner(false);
+  if (bannerTimer === null) bannerTimer = setInterval(() => { if (!document.hidden) refreshBanner(true); }, 60000);
   const main = el('main', { id: 'main', 'aria-live': 'polite' });
   root.append(el('header', null, el('h1', null, 'Jobber'), nav(name)), main);
   try {

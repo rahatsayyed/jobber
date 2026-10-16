@@ -274,11 +274,11 @@ describe('gmail tools and the apply-operator (plan 8G-2 task 22)', () => {
   });
 });
 
-describe('applier MCP tools in the hunt profile (plan 8G-2 task 20)', () => {
+describe('applier MCP tools in the wake profile (plan 8G-2 task 20)', () => {
   it('are allowed, and screened tools refuse secret-shaped arguments', async () => {
     const { loadProfiles } = await import('../src/platform/runner.js');
-    const hunt = loadProfiles(resolve(ROOT, 'config/run-profiles.json'), resolve(ROOT, 'config/permission-sets.json')).hunt as never;
-    const d = (tool_name: string, tool_input: object = {}) => hook.decide({ tool_name, tool_input }, hunt, { root: ROOT });
+    const wake = loadProfiles(resolve(ROOT, 'config/run-profiles.json'), resolve(ROOT, 'config/permission-sets.json')).outreach_wake as never;
+    const d = (tool_name: string, tool_input: object = {}) => hook.decide({ tool_name, tool_input }, wake, { root: ROOT });
     expect(d('mcp__applier__apply_open', { job_id: 'job-1' }).allow).toBe(true);
     expect(d('mcp__applier__apply_escalate', { job_id: 'job-1', reason: 'other', detail: 'needs a look' }).allow).toBe(true);
     expect(d('mcp__applier__apply_escalate', { job_id: 'job-1', reason: 'other', detail: 'see secrets/webcore.lock' }).allow).toBe(false);

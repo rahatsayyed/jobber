@@ -15,7 +15,8 @@ export interface PendingLogin {
 export type AuditKind =
   | 'login_ok' | 'login_denied' | 'login_error' | 'sub_pinned' | 'allow_changed' | 'lockout'
   | 'logout' | 'session_expired' | 'reauth_ok' | 'chat_prepare' | 'chat_send' | 'chat_reject'
-  | 'token_created' | 'token_rotated' | 'token_login_ok' | 'token_login_denied' | 'mode_changed';
+  | 'token_created' | 'token_rotated' | 'token_login_ok' | 'token_login_denied' | 'mode_changed'
+  | 'settings_env_apply' | 'settings_file_apply' | 'settings_rollback' | 'settings_reject';
 
 const NOTE_MAX = 200;
 const ID_HINT_MAX = 12;
@@ -50,6 +51,10 @@ export function openAuthStore(path: string): AuthDb {
     );
     CREATE TABLE IF NOT EXISTS chat_pending (
       token_hash TEXT PRIMARY KEY, session_hash TEXT, text_hash TEXT, expires_at TEXT, used_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS settings_pending (
+      token_hash TEXT PRIMARY KEY, session_hash TEXT NOT NULL, plan_hash TEXT NOT NULL,
+      etag TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT
     );
     CREATE TABLE IF NOT EXISTS access_token (
       id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -119,6 +124,48 @@ export function takePendingLogin(db: AuthDb, stateHash: string, now: Date): Pend
     return {
       stateHash: r.state_hash, nonce: r.nonce, verifier: r.verifier, reauth: r.reauth === 1,
       sessionHash: r.session_hash, createdAt: r.created_at, expiresAt: r.expires_at,
+    };
+  })();
+}
+
+// ---- settings editor one-time tokens (plan 8H D7). Only hashes are stored: the token itself never is.
+export interface SettingsPending {
+  tokenHash: string; sessionHash: string; planHash: string; etag: string; expiresAt: string;
+  /** true when the row had already been used before this take */
+  used: boolean;
+}
+const SETTINGS_PENDING_CAP = 200;
+const SETTINGS_GRACE_MS = 10 * 60_000;
+
+export function savePendingSettings(
+  db: AuthDb, p: { tokenHash: string; sessionHash: string; planHash: string; etag: string; expiresAt: string }, now: Date,
+): void {
+  db.transaction(() => {
+    db.prepare('DELETE FROM settings_pending WHERE expires_at <= ?').run(new Date(now.getTime() - SETTINGS_GRACE_MS).toISOString());
+    db.prepare(
+      `DELETE FROM settings_pending WHERE token_hash IN (
+         SELECT token_hash FROM settings_pending ORDER BY expires_at ASC, rowid ASC
+         LIMIT MAX(0, (SELECT COUNT(*) FROM settings_pending) - ?))`,
+    ).run(SETTINGS_PENDING_CAP - 1);
+    db.prepare(
+      'INSERT OR REPLACE INTO settings_pending (token_hash, session_hash, plan_hash, etag, expires_at, used_at) VALUES (?, ?, ?, ?, ?, NULL)',
+    ).run(p.tokenHash, p.sessionHash, p.planHash, p.etag, p.expiresAt);
+  })();
+}
+
+/** Loads the row and marks it used in one transaction (consumed even if the caller then rejects it). */
+export function takePendingSettings(db: AuthDb, tokenHash: string, now: Date): SettingsPending | null {
+  return db.transaction((): SettingsPending | null => {
+    const r = db.prepare(
+      'SELECT token_hash, session_hash, plan_hash, etag, expires_at, used_at FROM settings_pending WHERE token_hash = ?',
+    ).get(tokenHash) as {
+      token_hash: string; session_hash: string; plan_hash: string; etag: string; expires_at: string; used_at: string | null;
+    } | undefined;
+    if (!r) return null;
+    if (r.used_at === null) db.prepare('UPDATE settings_pending SET used_at = ? WHERE token_hash = ?').run(now.toISOString(), tokenHash);
+    return {
+      tokenHash: r.token_hash, sessionHash: r.session_hash, planHash: r.plan_hash, etag: r.etag,
+      expiresAt: r.expires_at, used: r.used_at !== null,
     };
   })();
 }

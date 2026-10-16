@@ -10,6 +10,7 @@ import { runChecks, type CheckOutcome, type DoctorContext } from '../src/platfor
 import { defaultRun } from '../src/platform/tmux.js';
 import { runDown, type DownOpts } from '../src/stack/down.js';
 import { runUp } from '../src/stack/up.js';
+import { initTerm } from '../src/ui/term.js';
 
 export type Parsed =
   | { cmd: 'up'; status: boolean }
@@ -46,6 +47,7 @@ export async function loopbackProbe(url: string): Promise<boolean> {
 }
 
 async function main(): Promise<number> {
+  const term = initTerm(); // strips --no-color before the parser sees it
   const p = parseArgs(process.argv.slice(2));
   if (p.cmd === 'error') {
     console.error(p.message);
@@ -58,7 +60,7 @@ async function main(): Promise<number> {
     run: defaultRun,
     fs: { exists: (x: string) => existsSync(x), read: (x: string) => readFileSync(x, 'utf8') },
     now: () => new Date(),
-    say: (l: string) => console.log(l),
+    say: (l: string) => console.log(term.paint(l)),
     sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
     probe: loopbackProbe,
     authTokenSet: (p: string): boolean | null => {

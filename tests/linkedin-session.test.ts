@@ -3,7 +3,6 @@ import { mkdtempSync, mkdirSync, symlinkSync, existsSync, writeFileSync, chmodSy
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { checkSessionFile, acquireLock, saveStateAtomic } from '../src/linkedin/session.js';
-import { loginAllowed } from '../scripts/linkedin-login.js';
 import { openDb } from '../src/db.js';
 import { haltPlatform, haltReason } from '../src/outreach/limits.js';
 import { run } from '../scripts/linkedin-clear-halt.js';
@@ -72,11 +71,6 @@ describe('saveStateAtomic', () => {
 });
 
 describe('owner scripts', () => {
-  it('login refuses unless account is main', () => {
-    expect(loginAllowed({})).toBe(false);
-    expect(loginAllowed({ LINKEDIN_LOGIN_ACCOUNT: 'burner' })).toBe(false);
-    expect(loginAllowed({ LINKEDIN_LOGIN_ACCOUNT: 'main' })).toBe(true);
-  });
   it('clear-halt needs --yes', () => {
     const db = openDb(':memory:');
     haltPlatform(db, 'linkedin', 'captcha', new Date());

@@ -5,7 +5,7 @@
 Jobber is an autonomous job-hunting agent. It discovers new job postings, scores each one against your base resume, tailors the resume for good matches, finds a verified contact at the hiring company, drafts a cold outreach email, and sends it. It also applies through LinkedIn Easy Apply and external ATS forms and sends LinkedIn connection requests. It sends real email and takes real LinkedIn actions on your own accounts, always inside daily caps that the code enforces.
 
 **Phase 1 (complete):** cold-email discovery and outreach.
-**Phase 2 (substantially complete):** LinkedIn Easy Apply (burner account, `apply.linkedin`, the one remaining use of the burner), external ATS apply and LinkedIn connection requests and messages (main account, typed `linkedin` tools). See [Phase 2 known issues](docs/phase2-known-issues.md) before treating it as fully production-proven.
+**Phase 2 (substantially complete):** browser apply through the `applier` MCP (typed tools, refs only, ATS recipes, answer book; LinkedIn Easy Apply with the burner account is off by default), external ATS apply and LinkedIn connection requests and messages (main account, typed `linkedin` tools). See [Phase 2 known issues](docs/phase2-known-issues.md) before treating it as fully production-proven.
 **Phase 3 (in progress):** reply detection, email follow-ups (autonomous mode is built but ships off, see `FOLLOWUPS_AUTONOMOUS` in `.env.example`) and the funnel report.
 
 ---
@@ -24,7 +24,7 @@ New here? Read [docs/00-start-here.md](docs/00-start-here.md) first; the order i
 bash scripts/bootstrap.sh        # 1. install and validate everything missing (asks before each action)
 npm run setup                    # 2. keys, accounts, sessions, limits; optional guided Claude session
 npm run dry-run                  # 3. end-to-end smoke in dry mode only, PASS/FAIL per stage
-npm run up                       # 4. start bridge, windows, scheduler, dashboard (and: npm run down)
+npm start                        # 4. start bridge, windows, scheduler, dashboard (stop: npm stop)
 ```
 
 - `bash scripts/bootstrap.sh` detects what is missing and asks before every install (sudo steps and downloaded scripts are always shown first). Rerunning is safe. `--check` and `--plan` only report. `--yes` accepts plain actions only; a sudo step is asked about even with `--allow-sudo` unless `--yes` is also given. Installs run with their own output on your terminal (up to 30 minutes each); the result table shows only the exit code.
@@ -32,7 +32,7 @@ npm run up                       # 4. start bridge, windows, scheduler, dashboar
 - Setup has two modes, chosen once and remembered in `user-data/.setup-state.json`: agent (a guided Claude session in a detached tmux window beside the wizard; it is launched only when the Claude CLI, its login, the guide profile and `tmux -V` all pass, otherwise the wizard says why and continues in terminal text) and terminal (plain walkthroughs for every step, no guide). The first interactive run asks which you want, with the default chosen from that readiness. Set or switch it with `npm run setup -- --mode agent|terminal`; `--status` shows the stored mode.
 - Telegram and the dashboard (both labelled RECOMMENDED), Gmail (NEEDED FOR EMAIL OUTREACH) and each API key (OPTIONAL) may be skipped; a skipped step shows as skipped (not failed) in `npm run doctor`, and you add it later with `npm run setup -- --step telegram` (or `dashboard`, `gmail`, `apikeys`). Skipping never changes a permission set or a dry-run flag.
 - `npm run dry-run` runs an end-to-end smoke test against fixtures and a temporary database, prints PASS, FAIL or SKIP per stage and touches no live state: it writes `.jobber/verify.json` and idempotently rewrites the launcher's `debug/runner/<profile>.settings.json` and `.policy.json` (via `run-claude --print-args`). `--llm` adds a real hunt run and only runs when `.env` itself is dry (it uses subscription usage).
-- `npm run up` runs the doctor first, starts the stack, and prints `MODE: DRY RUN` or `MODE: LIVE` at the top and bottom. It never changes the mode: your `.env` decides. `npm run down` stops it again without touching data.
+- `npm start` (the same as `npm run up`) runs the doctor first, starts the stack, and prints `MODE: DRY RUN` or `MODE: LIVE` at the top and bottom. It never changes the mode: your `.env` decides. `npm stop` (the same as `npm run down`) stops it again without touching data.
 - `npm run doctor` can be run at any time to check the result. Each check reports ok, warn, fail or skipped.
 
 None of these four commands has been run end to end against a real machine yet; treat the first run as supervised.
@@ -50,7 +50,7 @@ In this order:
 - `telegram`: walks you through creating a bot with @BotFather, tells you to enable Topics and turn Group Privacy off, stores the bot token in `.env` (never echoed), asks you to confirm Threaded Mode (topics) is on, records your numeric Telegram ID in `ALLOWED_USERS` (a comma-separated list of numeric IDs; each extra ID needs an explicit extra confirmation), and sends a test message. Skippable (RECOMMENDED): without it there is no phone control, no Telegram alerts and no approved email follow-ups, and `npm run up` starts no bridge or ccgram windows.
 - `gmail`: guides you through creating a Desktop OAuth client in your own Google Cloud project, then runs the consent screen so the send token stays on this machine. Skippable (NEEDED FOR EMAIL OUTREACH): without it there is no cold email, no email follow-ups and no reply watching; LinkedIn and Naukri outreach still run.
 - `apikeys`: optional Adzuna, Serper and Hunter keys, each skippable; Hunter stays off unless you confirm. Skipping it leaves those sources off (OPTIONAL).
-- `sessions`: opens a browser so you log in once to the burner LinkedIn account (applying), the main LinkedIn account (people search, connection requests and messages) and Naukri; the saved sessions live in `secrets/`.
+- `sessions`: opens real Chrome so you log in once to the main LinkedIn account (people search, connection requests and messages) and Naukri (`npm run linkedin:login -- --account main`, `npm run naukri:login -- --account main`); the saved sessions live in `secrets/`.
 - `resume`: has a model transcribe your resume text into `user-data/resume.json`, rejects any number that is not in your source text, and writes nothing until you confirm.
 - `profile`: asks for roles, locations, remote preference, salary floors and targets, notice period and work authorization, and writes `user-data/profile.json`, the application answers file and the language list.
 - `limits`: shows every daily cap, quiet hour and pacing value with its default and an explanation, and writes the ones you choose to `.env`.
@@ -106,7 +106,7 @@ bash scripts/ccgram/start.sh    # start the Telegram bridge (ccgram) in its own 
 bash scripts/ccgram/stop.sh     # stop the bridge; Claude windows it created keep running
 ```
 
-- `npm run up` starts all of this in order (bridge, named windows, scheduler, dashboard; `npm run up -- --status` is read-only) and `npm run down` stops it (`--keep-bridge` leaves the bridge running). The commands above and `./run-hunt.sh` remain the building blocks and the manual route.
+- `npm start` starts all of this in order (bridge, named windows, scheduler, dashboard; `npm start -- --status` is read-only) and `npm stop` stops it (`--keep-bridge` leaves the bridge running). The commands above and `./run-hunt.sh` remain the building blocks and the manual route.
 - The Telegram topic bound to the manager session lists, reads, starts and stops the named windows in `config/manager-windows.json` (`hunt` and `followups`). The `manager` window and the bridge are protected and cannot be stopped from Telegram. The manager never types into another window and never runs outreach itself. See [the manager skill](.claude/skills/manager/SKILL.md).
 - A headless, cron-friendly hunt runs with `./run-hunt.sh "run the hunt"`. It uses the restricted launcher `scripts/run-claude.sh`, profile `hunt` in `config/run-profiles.json`: the tool list comes from the `outreach_send` set, and permission checks are never skipped.
 - The older route, a single `claude --channels plugin:telegram@claude-plugins-official` session, is documented in `CLAUDE.md`; the ccgram route above is the one setup configures.

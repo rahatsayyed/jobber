@@ -1,7 +1,7 @@
 # Start here: from clone to first supervised send
 
 Audience: owner
-Last verified against: cc51247
+Last verified against: 384fcd7
 Source files: package.json, scripts/setup.ts, scripts/bootstrap.sh, scripts/stack.ts, scripts/dry-run.ts, scripts/dry-run-report.ts, scripts/linkedin-seed-person.ts, src/setup/steps/index.ts, src/setup/skips.ts, README.md
 
 This page is the ordered map. Each row points to the page that holds the detail; it does not
@@ -25,11 +25,11 @@ before you flip anything live. Nothing on this path flips a dry-run flag for you
 | 8 | Dry-run end to end | `npm run dry-run` | 5 to 15 min | agent can run | it ends without a failed stage |
 | 9 | Read the dry-run report | `npm run dry-run:report` | 10 to 20 min | owner only (you judge the output) | you read every recorded action and nothing surprised you |
 | 10 | Fetch and verify the classifier, then set `CLASSIFIER_MODEL` ([classifier-models.md](classifier-models.md); pin and fit only for a profile that is not already pinned and fitted) | `npm run setup -- --step classifier` | download depends on network, fit 5 to 15 min | owner only (licence, pin review) | doctor checks `classifier_model` and `classifier_smoke` are ok |
-| 11 | Enable sessions ([telegram-bot-setup.md](telegram-bot-setup.md), [gmail-mcp-setup.md](gmail-mcp-setup.md), [linkedin-sessions-setup.md](linkedin-sessions-setup.md), [naukri-session-setup.md](naukri-session-setup.md)) | `npm run setup -- --step sessions`, `npm run linkedin:login` | 20 to 60 min | owner only (QR, password, consent) | doctor session checks are ok |
+| 11 | Enable sessions ([telegram-bot-setup.md](telegram-bot-setup.md), [gmail-mcp-setup.md](gmail-mcp-setup.md), [linkedin-sessions-setup.md](linkedin-sessions-setup.md), [naukri-session-setup.md](naukri-session-setup.md)) | `npm run setup -- --step sessions`, `npm run linkedin:login -- --account main`, `npm run naukri:login -- --account main` | 20 to 60 min | owner only (QR, password, consent) | doctor session checks are ok |
 | 12 | Dashboard sign-in ([dashboard-login.md](dashboard-login.md)) | `npm run dashboard -- token` | 5 min | owner only | you can sign in on loopback |
 | 13 | Canary send, supervised, low ceilings | `npm run linkedin:seed` with `--url`, `--name`, `--company`, `--category`, then one send you watch | 30 to 60 min | owner only (you watch it) | the one message arrived at the person you chose and a row exists in the DB |
 | 14 | First supervised `/runhunt` | `/runhunt` in the hunt window | 20 to 60 min | owner only (read resumes, emails, ATS lines yourself) | summary arrives on Telegram and you reviewed the first outputs |
-| 15 | Start the stack | `npm run up` | 5 min | agent can run | the table shows every started component; `MODE:` line is the one you intended |
+| 15 | Start the stack | `npm start` (same as `npm run up`) | 5 min | agent can run | the table shows every started component; `MODE:` line is the one you intended |
 | 16 | Install the scheduler units ([scheduler-install.md](scheduler-install.md)) | `npm run scheduler:units` and the printed install commands | 10 to 20 min | owner only (installs system units) | units listed by launchd or systemd |
 | 17 | Walk the rollout phases ([rollout.md](rollout.md)) | per phase | days (rollout is phased over days) | owner only (you raise ceilings) | each phase's exit criteria are met before the next |
 
@@ -42,6 +42,9 @@ before you flip anything live. Nothing on this path flips a dry-run flag for you
   `classifier`, `dashboard`, `final`. Run one with `npm run setup -- --step <id>`; list them with
   `npm run setup -- --list`. `telegram`, `dashboard`, `gmail` and `apikeys` can be skipped
   (`src/setup/skips.ts`); a skip is recorded, never silent.
+- Step 4: rerunning a step keeps your earlier answers: Enter on a blank prompt keeps the stored
+  value (secrets show `keep existing (set)`). See [setup-modes.md](setup-modes.md) for the editing
+  keys and the colour switches (`--no-color`).
 - Step 5: the doctor never prints secret values. Safety checks (classifier, permission set,
   hooks, limits, kill switch, halts) are never skipped.
 - Step 8: dry run uses fixtures and a temporary database and sends nothing.
@@ -52,7 +55,7 @@ before you flip anything live. Nothing on this path flips a dry-run flag for you
   `npm run status -- limits`, not repeated here). Live LinkedIn and Naukri paths are
   live-unverified (see `CLAUDE.md` section `Known limits and not yet live-verified`), which is
   why this step is supervised.
-- Step 15: `npm run down` stops the stack. `up` refuses while the kill switch is set.
+- Step 15: `npm stop` (same as `npm run down`) stops the stack. `up` refuses while the kill switch is set.
 
 ## If something is red
 

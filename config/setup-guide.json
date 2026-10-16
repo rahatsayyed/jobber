@@ -388,7 +388,7 @@
           "entered_in": "owner edits .env"
         }
       ],
-      "explain": "Jobber uses a saved browser login for the main LinkedIn account, a separate burner LinkedIn account for Easy Apply, and a Naukri login. You log in yourself in a browser window the scripts open; passwords and QR codes stay with you.",
+      "explain": "Jobber uses a saved browser login for the main LinkedIn account, and a Naukri login. You log in yourself in a real Chrome window that npm run linkedin:login and npm run naukri:login open (each takes --account main); passwords and QR codes stay with you.",
       "fixes": {
         "sessions": "Run the wizard sessions step and log in when the browser window opens, see docs/linkedin-sessions-setup.md and docs/naukri-session-setup.md.",
         "linkedin.chrome-installed": "Install Google Chrome, then run the doctor again.",
@@ -535,9 +535,9 @@
           "entered_in": "owner edits .env"
         },
         {
-          "name": "NAUKRI_SEARCH_EVERY_HOURS",
+          "name": "NAUKRI_DISCOVER_EVERY_HOURS",
           "secret": false,
-          "purpose": "hours between Naukri searches",
+          "purpose": "hours between Naukri discover runs",
           "where": "src/setup/limitsCatalog.ts",
           "entered_in": "owner edits .env"
         },
@@ -891,7 +891,7 @@
       "owner_command": "npm run doctor",
       "doctor_checks": [],
       "keys": [],
-      "explain": "The last stage reruns the doctor and then a dry run that reports PASS or FAIL per stage. Nothing is sent in a dry run. Going live is your own decision, made in your own terminal.",
+      "explain": "The last stage reruns the doctor and then a dry run that reports PASS or FAIL per stage. Nothing is sent in a dry run. Going live is your own decision, made in your own terminal. When the dry run is clean, the owner starts the stack with npm start (the same as npm run up) and stops it with npm stop (the same as npm run down).",
       "fixes": {}
     }
   ],

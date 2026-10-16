@@ -16,7 +16,7 @@ const js = files.filter((f) => f.endsWith('.js'));
 describe('static frontend lint', () => {
   it('has the expected files', () => {
     for (const n of ['index.html', 'style.css', 'app.js', 'api.js', 'dom.js']) expect(existsSync(join(ROOT, n)), n).toBe(true);
-    for (const v of ['login', 'overview', 'jobs', 'people', 'mail', 'outcomes', 'sessions', 'runs', 'config', 'chat', 'audit']) {
+    for (const v of ['login', 'overview', 'jobs', 'people', 'mail', 'outcomes', 'sessions', 'runs', 'config', 'chat', 'audit', 'settings']) {
       expect(existsSync(join(ROOT, 'views', `${v}.js`)), v).toBe(true);
     }
   });

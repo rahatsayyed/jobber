@@ -22,6 +22,9 @@ import { connectSend } from '../linkedin/connectSend.js';
 import { sendMessage } from '../linkedin/sendMessage.js';
 import { acceptInvite } from '../linkedin/acceptInvite.js';
 import { findProfiles } from '../linkedin/findProfiles.js';
+import { searchJobs } from '../linkedin/searchJobs.js';
+import { searchPosts } from '../linkedin/searchPosts.js';
+import { SEARCH_NAME_RE, type DiscoveryConfig } from '../linkedin/discoveryConfig.js';
 import { loadLayoutConfig, type LayoutConfig } from '../layout/config.js';
 import { actionLabelId, createLayoutObserver, resolveRunId } from '../layout/runtime.js';
 
@@ -39,7 +42,7 @@ export const TOOL_NAMES = [
   'linkedin_open', 'linkedin_state', 'linkedin_click', 'linkedin_type', 'linkedin_scroll',
   'linkedin_screenshot', 'linkedin_close', 'linkedin_limits', 'linkedin_check_connection_status',
   'linkedin_connect_send', 'linkedin_send_message', 'linkedin_accept_invite', 'linkedin_find_profiles',
-  'linkedin_layout',
+  'linkedin_layout', 'linkedin_search_jobs', 'linkedin_search_posts',
 ] as const;
 type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -69,6 +72,9 @@ export const schemas = {
     company: z.string().min(1).max(100), role_hint: z.string().max(100).optional(),
     category: z.enum(['recruiter', 'hiring_manager', 'peer']),
   },
+  // Discovery takes only the NAME of a search in config/linkedin-discovery.json: no URL, no keywords.
+  linkedin_search_jobs: { search: z.string().regex(SEARCH_NAME_RE) },
+  linkedin_search_posts: { search: z.string().regex(SEARCH_NAME_RE) },
 } as const;
 
 export interface HandlerDeps {
@@ -82,6 +88,8 @@ export interface HandlerDeps {
   /** Layout memory settings; defaults to loadLayoutConfig(env). Tests pass a temp dir here. */
   layoutCfg?: LayoutConfig;
   sessionPath?: string;
+  /** Discovery searches; defaults to config/linkedin-discovery.json. Tests pass an inline config. */
+  discoveryConfig?: DiscoveryConfig;
   /** Test seam: replaces the default classifier loader. */
   classifier?: ClassifierPort | (() => Promise<ClassifierPort>);
 }
@@ -286,6 +294,8 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
     linkedin_send_message: safe(async (a) => json(await sendMessage(a, toolDeps()))),
     linkedin_accept_invite: safe(async (a) => json(await acceptInvite(a, toolDeps()))),
     linkedin_find_profiles: safe(async (a) => json(await findProfiles(a, toolDeps()))),
+    linkedin_search_jobs: safe(async (a) => json(await searchJobs(a, toolDeps(), { config: deps.discoveryConfig }))),
+    linkedin_search_posts: safe(async (a) => json(await searchPosts(a, toolDeps(), { config: deps.discoveryConfig }))),
   };
   lifecycles.set(handlers, {
     close: async () => {
@@ -309,6 +319,8 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   linkedin_connect_send: 'TYPED, irreversible: sends a connection request with a note (max 300 chars) through fail-closed gates. Dry run unless LINKEDIN_DRY_RUN=false. ' + UNTRUSTED,
   linkedin_send_message: 'TYPED, irreversible: sends a message to an existing connection through fail-closed gates. kind is one of role_ask, rapport, referral_ask, followup, feedback. Dry run unless LINKEDIN_DRY_RUN=false. ' + UNTRUSTED,
   linkedin_find_profiles: 'TYPED, read-only toward LinkedIn: searches people by company (and optional role_hint) and returns at most 3 verified profile candidates (canonical profile_url, name, headline), registering them as people rows for the given category. Shares the daily search ceiling. Never clicks or sends. ' + UNTRUSTED,
+  linkedin_search_jobs: 'TYPED, read-only toward LinkedIn: runs ONE named jobs search from config/linkedin-discovery.json (pass only its name), saves new jobs in code and returns counts and new job ids, never page text. Shares the daily search ceiling plus the discover ceiling. Dry run saves nothing. ' + UNTRUSTED,
+  linkedin_search_posts: 'TYPED, read-only toward LinkedIn: runs ONE named hiring-post search from config/linkedin-discovery.json (pass only its name), saves hiring posts as jobs in code and returns counts and new job ids, never page text. Shares the daily search ceiling plus the discover ceiling. Dry run saves nothing. ' + UNTRUSTED,
   linkedin_accept_invite: 'TYPED, irreversible: accepts a pending invitation from a known sender only. Dry run unless LINKEDIN_DRY_RUN=false. ' + UNTRUSTED,
 };
 

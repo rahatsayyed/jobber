@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isSafeSelector } from '../src/lib/safeSelector.js';
+import { isSafeSelector } from '../src/applier/recipes/safeSelector.js';
 import { validateRecipe, type Recipe, type RecipeField } from '../src/applier/recipes/schema.js';
 import { DEFAULT_LEARNED_DIR, PROJECT_ROOT, getRecipe, readSmallFile, saveLearnedRecipe } from '../src/applier/recipes/store.js';
 

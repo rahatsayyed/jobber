@@ -7,7 +7,8 @@ import { TOOL_REQUIRES } from '../layout/vocab.js';
 import type { Runtime } from './runtime.js';
 import type { ToolDeps } from './toolDeps.js';
 
-export type LayoutTool = 'connect_send' | 'send_message' | 'accept_invite' | 'check_connection_status';
+export type LayoutTool =
+  | 'connect_send' | 'send_message' | 'accept_invite' | 'check_connection_status' | 'search_jobs' | 'search_posts';
 export type LayoutDecision =
   | { ok: true; note?: string }
   | { ok: false; status: 'refused'; code: 'layout_drift' | 'layout_unverified'; reason: string };

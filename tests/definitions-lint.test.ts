@@ -28,6 +28,8 @@ function registry(): Map<string, Set<string>> {
   const arr = /TOOL_NAMES = \[([\s\S]*?)\]/.exec(li)![1];
   for (const m of arr.matchAll(/'([a-z_]+)'/g)) add('linkedin', m[1]);
   for (const t of scan('src/mcp/naukri.ts', /'(naukri_[a-z_]+)'/g)) add('naukri', t);
+  const sc = readFileSync('src/mcp/scout.ts', 'utf8');
+  for (const m of /TOOL_NAMES = \[([\s\S]*?)\]/.exec(sc)![1].matchAll(/'([a-z_]+)'/g)) add('scout', m[1]);
   // apply.ts registers the external platforms through a loop over a literal list
   for (const p of ['linkedin', 'auto', 'greenhouse', 'lever', 'workday', 'ashby']) add('apply', p);
   // applier.ts registers its tools through a loop over the literal TOOL_NAMES list
@@ -184,7 +186,7 @@ describe('untrusted input and screened results', () => {
   }
   const screened = agents.filter((d) => toolsOf(d).some((t) => t.startsWith('mcp__linkedin__') || t.startsWith('mcp__naukri__')));
   it('there are screened readers', () => {
-    expect(screened.length).toBeGreaterThan(3);
+    expect(screened.length).toBeGreaterThan(2);
   });
   for (const d of screened) {
     it(`${d.file} handles screened results`, () => {

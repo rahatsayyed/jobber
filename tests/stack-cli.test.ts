@@ -29,6 +29,8 @@ describe('stack CLI parse', () => {
     const s = (JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> }).scripts;
     expect(s.up).toBe('tsx scripts/stack.ts up');
     expect(s.down).toBe('tsx scripts/stack.ts down');
+    expect(s.start).toBe(s.up);
+    expect(s.stop).toBe(s.down);
     const argv = [...s.up.split(' ').slice(2), '--status'];
     expect(argv).toEqual(['up', '--status']);
     expect(parseArgs(argv)).toEqual({ cmd: 'up', status: true });

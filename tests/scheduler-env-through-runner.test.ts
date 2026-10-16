@@ -7,6 +7,8 @@ import { buildRunnerArgv } from '../src/scheduler/launch.js';
 import { buildClaudeArgs, buildEnv, loadProfiles } from '../src/platform/runner.js';
 
 const profiles = loadProfiles('config/run-profiles.json', 'config/permission-sets.json');
+// Send-capable fixture profile (the real `hunt` profile was removed in plan 8G Task 14).
+const hunt = loadProfiles('tests/fixtures/runner-send-profile.json', 'config/permission-sets.json').hunt;
 
 function childEnv(dryRun: boolean, extra: Record<string, string>): Record<string, string> {
   const argv = buildRunnerArgv({
@@ -37,9 +39,9 @@ describe('wake env survives the runner allowlist', () => {
     });
   }
   it('the hunt profile is unaffected (dotenv_all, json output)', () => {
-    expect(profiles.hunt.env_mode).toBe('dotenv_all');
-    expect(profiles.hunt.output_format).toBeUndefined();
-    const out = buildEnv(profiles.hunt, { JOBBER_RUN_ID: 'x', SOME_API_KEY: 's' }, {});
+    expect(hunt.env_mode).toBe('dotenv_all');
+    expect(hunt.output_format).toBeUndefined();
+    const out = buildEnv(hunt, { JOBBER_RUN_ID: 'x', SOME_API_KEY: 's' }, {});
     expect(out.JOBBER_RUN_ID).toBeUndefined();
     expect(out.SOME_API_KEY).toBeUndefined();
   });
@@ -54,11 +56,11 @@ describe('output_format', () => {
     expect(a.slice(i, i + 3)).toEqual(['--output-format', 'stream-json', '--verbose']);
   });
   it('json stays the default and adds no --verbose (golden)', () => {
-    const a = buildClaudeArgs('hunt', profiles.hunt, paths);
+    const a = buildClaudeArgs('hunt', hunt, paths);
     const i = a.indexOf('--output-format');
     expect(a.slice(i, i + 3)).toEqual(['--output-format', 'json', '--permission-mode']);
     expect(a).not.toContain('--verbose');
-    expect(buildClaudeArgs('x', { ...profiles.hunt, output_format: 'json' }, paths)).toEqual(a);
+    expect(buildClaudeArgs('x', { ...hunt, output_format: 'json' }, paths)).toEqual(a);
   });
   it('loadProfiles rejects an unknown output_format', () => {
     const dir = '.tmp-output-format-test';

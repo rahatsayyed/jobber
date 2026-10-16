@@ -26,7 +26,7 @@ beforeEach(() => {
 afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
 const profiles = loadProfiles(join(ROOT, 'config/run-profiles.json'), join(ROOT, 'config/permission-sets.json'));
-const hunt = profiles.hunt;
+const hunt = loadProfiles(join(ROOT, 'tests/fixtures/runner-send-profile.json'), join(ROOT, 'config/permission-sets.json')).hunt;
 
 const SEND_TOOLS = [
   'mcp__gmail__send_email',
@@ -122,6 +122,9 @@ describe('rendered settings and committed settings.json', () => {
   const COVERED = [
     ...SEND_TOOLS,
     'mcp__linkedin__linkedin_accept_invite',
+    'mcp__linkedin__linkedin_search_jobs',
+    'mcp__linkedin__linkedin_search_posts',
+    'mcp__naukri__naukri_discover',
     'mcp__naukri__naukri_click',
     'mcp__naukri__naukri_type',
   ];
@@ -139,6 +142,8 @@ describe('rendered settings and committed settings.json', () => {
     for (const m of readFileSync(join(ROOT, 'src/mcp/naukri.ts'), 'utf8').matchAll(/'(naukri_[a-z_]+)'/g)) all.add(`mcp__naukri__${m[1]}`);
     const ap = readFileSync(join(ROOT, 'src/mcp/applier.ts'), 'utf8');
     for (const m of /TOOL_NAMES = \[([\s\S]*?)\] as const/.exec(ap)![1].matchAll(/'([a-z_]+)'/g)) all.add(`mcp__applier__${m[1]}`);
+    const sc = readFileSync(join(ROOT, 'src/mcp/scout.ts'), 'utf8');
+    for (const m of /TOOL_NAMES = \[([\s\S]*?)\]/.exec(sc)![1].matchAll(/'([a-z_]+)'/g)) all.add(`mcp__scout__${m[1]}`);
     return all;
   }
 
@@ -159,6 +164,13 @@ describe('rendered settings and committed settings.json', () => {
       expect(real.has(t), `${t} is not a registered tool`).toBe(true);
       expect(re.test(t), `${t} not matched`).toBe(true);
     }
+  });
+
+  it('every scout tool (TOOL_NAMES) is matched by the kill-switch matcher', () => {
+    const re = new RegExp('^(?:' + entry!.matcher + ')$');
+    const scoutTools = [...realTools()].filter((t) => t.startsWith('mcp__scout__'));
+    expect(scoutTools.length).toBeGreaterThanOrEqual(14);
+    for (const t of scoutTools) expect(re.test(t), `${t} not matched`).toBe(true);
   });
 
   it('every outreach_send tool on a platform server that looks like a send is covered', () => {

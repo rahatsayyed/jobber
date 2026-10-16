@@ -1,36 +1,41 @@
-# LinkedIn session setup (Phase 2)
+# LinkedIn session setup
 
-Phase 2 uses two separate, never-shared LinkedIn browser sessions:
+The `linkedin` MCP (`linkedin_find_profiles`, connection requests, messages, invitations) uses ONE
+saved session for the MAIN account at `secrets/linkedin-main-state.json`, in one locked headless
+Chrome session at a time. The path is hardcoded, which is a structural safeguard.
 
-- **Burner account** — used only by the applier (LinkedIn Easy Apply, off by default) and the `discover.linkedin_*` tools. Never used for the `linkedin` MCP.
-- **Main account** — used only by the `linkedin` MCP (`linkedin_find_profiles`, connection requests, messages; the `connect` MCP no longer exists). Never used for Easy Apply.
-
-Each MCP server loads its session from a hardcoded path — this is a structural safeguard, not just convention, so the two accounts can't accidentally get cross-wired.
+The burner account's session file (`secrets/linkedin-burner-state.json`) is used only by the
+`applier` MCP for LinkedIn Easy Apply (`APPLY_LINKEDIN_EASY`, off by default; the scripted
+`apply.linkedin` is gone). There is no login command for it any more: an existing file keeps
+working until it expires. Never use the burner session for the `linkedin` MCP.
 
 ## One-time login procedure
 
 Run from the repo root:
 
 ```bash
-npx tsx scripts/save-linkedin-session.ts burner
+npm run linkedin:login -- --account main
 ```
 
-1. A real Chrome window opens to LinkedIn's login page.
-2. Log in manually with the burner account (2FA/CAPTCHA/device-verification prompts are expected — handle them as you normally would).
-3. Once you land on your feed, return to the terminal and press Enter.
-4. The script saves the session to `secrets/linkedin-burner-state.json` and closes the browser.
+Without `--account main` the command asks `Log in the MAIN LinkedIn account? (y/N)` and needs a
+terminal. It never reads an environment variable for this (the old `LINKEDIN_LOGIN_ACCOUNT` gate
+is gone).
 
-Repeat with `main` instead of `burner` to save `secrets/linkedin-main-state.json`.
+1. A real, visible Google Chrome window opens on LinkedIn's login page (patchright, installed
+   Chrome, the same browser settings as the headless runtime).
+2. Log in yourself (2FA, CAPTCHA and device-verification prompts are expected).
+3. When you see your feed, return to the terminal and press Enter.
+4. The command saves the session to `secrets/linkedin-main-state.json` (mode 600, written
+   atomically, refused if it has no `li_at` cookie), prints `Saved session (N cookies)` and closes
+   Chrome.
 
-Both files are gitignored (`secrets/` is fully excluded) and must never be committed.
+`secrets/` is fully gitignored. These files must never be committed.
 
 ## Re-running later
 
-LinkedIn sessions expire periodically. If `apply.linkedin` or the `linkedin` MCP starts failing with a login/redirect error, re-run the relevant `save-linkedin-session.ts <account>` command to refresh that session file.
-
-## Before applying for real
-
-Applying is part of every hunt run (there is no `AUTO_APPLY_ENABLED` switch). Fill in real values in `user-data/easy-apply-answers.json` (years of experience, work authorization, sponsorship needs, relocation, etc.) — the placeholder defaults in that file are not safe to submit as-is.
+LinkedIn sessions expire periodically. If the `linkedin` MCP fails with a login or redirect error,
+or `npm run doctor` (check `sessions`) says the session is missing or expired, run
+`npm run linkedin:login -- --account main` again.
 
 ## Before live LinkedIn reads or sends
 

@@ -13,9 +13,11 @@
       "mcp__db__list_skipped_outreach",
       "mcp__db__list_stale",
       "mcp__db__list_threads",
+      "mcp__db__list_unscored_jobs",
       "mcp__db__list_followup_candidates",
       "mcp__db__list_approved_followups",
       "mcp__job-fetch__board_status",
+      "mcp__job-fetch__source_status",
       "mcp__job-fetch__search_jobs",
       "mcp__resume__get_base_resume",
       "mcp__resume__check_text",
@@ -40,8 +42,6 @@
     "extends": "read_only",
     "allow": [
       "mcp__job-fetch__list_new_jobs",
-      "mcp__discover__linkedin_jobs",
-      "mcp__discover__linkedin_posts",
       "mcp__resume__render_resume",
       "mcp__resume__apply_review_edits",
       "mcp__db__check_and_increment",
@@ -68,7 +68,10 @@
       "mcp__linkedin__linkedin_send_message",
       "mcp__linkedin__linkedin_check_connection_status",
       "mcp__linkedin__linkedin_find_profiles",
+      "mcp__linkedin__linkedin_search_jobs",
+      "mcp__linkedin__linkedin_search_posts",
       "mcp__naukri__naukri_send_message",
+      "mcp__naukri__naukri_discover",
       "mcp__applier__apply_open",
       "mcp__applier__apply_autofill",
       "mcp__applier__apply_fill",
@@ -98,11 +101,10 @@
       "mcp__resume",
       "mcp__contacts",
       "mcp__gates",
-      "mcp__apply",
       "mcp__applier",
-      "mcp__discover",
       "mcp__naukri",
-      "mcp__gmail"
+      "mcp__gmail",
+      "mcp__scout"
     ]
   }
 }

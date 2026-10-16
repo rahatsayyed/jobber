@@ -76,11 +76,12 @@ describe('site_accounts', () => {
 });
 
 describe('web_wired', () => {
-  const REAL = ['.claude/settings.json', 'config/worker-tools.json', '.claude/agents/apply-operator.md', 'src/applier/tools/state.ts', 'src/applier/escalate.ts', 'src/mcp/applier.ts'];
+  const REAL = ['.claude/settings.json', 'config/worker-tools.json', '.claude/agents/apply-operator.md', 'src/applier/tools/state.ts', 'src/applier/escalate.ts', 'src/mcp/applier.ts',
+    'src/scout/tools/search.ts', 'src/scout/tools/browse.ts', 'src/scout/tools/jobs.ts', 'src/mcp/scout.ts'];
   it('passes on the committed tree', async () => {
     const r = await run('web_wired', ctxFor(REPO));
     expect(r.status).toBe('pass');
-    expect(r.detail).toMatch(/scout: n\/a/);
+    expect(r.detail).toMatch(/scout surfaces checked/);
   });
   it('fails when a mutating tool is outside the kill-switch matcher', async () => {
     const root = tempRoot();
@@ -132,11 +133,16 @@ describe('legacy_removed', () => {
     expect((await run('legacy_removed', on(tempRoot({ 'config/permission-sets.json': '"mcp__apply__linkedin"' })))).status).toBe('fail');
     expect((await run('legacy_removed', on(tempRoot({ 'src/apply/linkedin.ts': '' })))).status).toBe('fail');
   });
-  it('only warns for the discoverer and sender agents and mcp__discover__ (removed by 8G-1 Task 14)', async () => {
-    const root = tempRoot({ '.claude/agents/sender.md': 'tools: mcp__apply__linkedin', '.claude/agents/discoverer.md': 'x', 'config/permission-sets.json': '"mcp__discover__linkedin_jobs"' });
-    const r = await run('legacy_removed', on(root));
-    expect(r.status).toBe('warn');
-    expect(r.detail).toMatch(/Task 14/);
+  it('fails on the retired discoverer and sender agents and on mcp__discover__ (removed with the batch hunt)', async () => {
+    for (const files of <Record<string, string>[]>[
+      { '.claude/agents/sender.md': 'x' },
+      { '.claude/agents/discoverer.md': 'x' },
+      { 'config/permission-sets.json': '"mcp__discover__linkedin_jobs"' },
+      { 'src/mcp/discover.ts': '' },
+    ]) {
+      const r = await run('legacy_removed', on(tempRoot(files)));
+      expect(r.status, JSON.stringify(files)).toBe('fail');
+    }
   });
 });
 
@@ -145,11 +151,10 @@ describe('login_commands', () => {
   it('passes with both scripts and no env read', async () => {
     expect((await run('login_commands', on(tempRoot({ 'package.json': pkg, 'scripts/naukri-login.ts': 'export {}' })))).status).toBe('pass');
   });
-  it('warns when a script is missing or the legacy linkedin-login still reads the env', async () => {
-    expect((await run('login_commands', on(tempRoot({ 'package.json': JSON.stringify({ scripts: { 'linkedin:login': 'y' } }) })))).status).toBe('warn');
+  it('fails when a script is missing or the linkedin-login script reads the retired env gate', async () => {
+    expect((await run('login_commands', on(tempRoot({ 'package.json': JSON.stringify({ scripts: { 'linkedin:login': 'y' } }) })))).status).toBe('fail');
     const r = await run('login_commands', on(tempRoot({ 'package.json': pkg, 'scripts/linkedin-login.ts': 'process.env.LINKEDIN_LOGIN_ACCOUNT' })));
-    expect(r.status).toBe('warn');
-    expect(r.detail).toMatch(/Task 12/);
+    expect(r.status).toBe('fail');
   });
   it('fails on an env read in any other script', async () => {
     const r = await run('login_commands', on(tempRoot({ 'package.json': pkg, 'scripts/other.ts': 'env.LINKEDIN_LOGIN_ACCOUNT' })));

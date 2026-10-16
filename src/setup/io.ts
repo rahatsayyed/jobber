@@ -4,6 +4,7 @@
 // re-prompt message or an error string (the redacting wrapper and the loops below enforce it).
 import { createInterface } from 'node:readline';
 import { Writable } from 'node:stream';
+import { PLAIN, type Term } from '../ui/term.js';
 
 export interface ChoiceOption<T extends string> {
   value: T;
@@ -17,8 +18,13 @@ export interface SetupIO {
     prompt: string,
     opts?: { default?: string; validate?: (v: string) => string | null },
   ): Promise<string>;
-  /** No echo; the value is auto-registered as a secret by redactingIO. */
-  askSecret(prompt: string, opts?: { validate?: (v: string) => string | null }): Promise<string>;
+  /** No echo; the value is auto-registered as a secret by redactingIO. With `existing` (a value
+   *  already stored) the prompt says "keep existing (set)" and a blank answer returns it; the
+   *  stored value itself is never printed. */
+  askSecret(
+    prompt: string,
+    opts?: { validate?: (v: string) => string | null; existing?: string },
+  ): Promise<string>;
   confirm(prompt: string, defaultYes?: boolean): Promise<boolean>;
   choose<T extends string>(
     prompt: string,
@@ -89,6 +95,10 @@ export function redactingIO(
     ask: (prompt, opts) =>
       inner.ask(red(prompt), opts ? { ...opts, validate: wrapValidate(opts.validate, false) } : opts),
     async askSecret(prompt, opts) {
+      if (opts?.existing) {
+        registered.add(opts.existing);
+        if (opts.existing.trim()) registered.add(opts.existing.trim());
+      }
       const v = await inner.askSecret(
         red(prompt),
         opts ? { ...opts, validate: wrapValidate(opts.validate, true) } : opts,
@@ -166,7 +176,7 @@ export function scriptedIO(script: ScriptItem[]): SetupIO & {
     transcript,
     say: (line) => void transcript.push(`say: ${line}`),
     ask: (prompt, opts) => loop('ask', prompt, opts?.validate, opts?.default),
-    askSecret: (prompt, opts) => loop('secret', prompt, opts?.validate, undefined),
+    askSecret: (prompt, opts) => loop('secret', prompt, opts?.validate, opts?.existing || undefined),
     async confirm(prompt, defaultYes = true) {
       transcript.push(`confirm: ${prompt}`);
       const item = next('confirm', prompt) as { confirm?: boolean };
@@ -201,7 +211,7 @@ export function scriptedIO(script: ScriptItem[]): SetupIO & {
 export function ttyIO(
   input: NodeJS.ReadableStream,
   output: NodeJS.WritableStream,
-  opts?: { terminal?: boolean },
+  opts?: { terminal?: boolean; term?: Term },
 ): SetupIO & {
   close(): void;
   history(): readonly string[];
@@ -212,6 +222,8 @@ export function ttyIO(
   resume(): void;
 } {
   let muted = false;
+  // Colour only when the entry script passes a coloured term; tests get the no-op PLAIN one.
+  const T = opts?.term ?? PLAIN;
   const sink = new Writable({
     write(chunk, _enc, cb) {
       if (!muted) output.write(chunk);
@@ -266,8 +278,24 @@ export function ttyIO(
     output.write(s);
   }
 
+  // The label is a protected prefix: readline owns it (setPrompt + prompt), so its line
+  // refresh (backspace, kill-line, cursor moves) redraws the label instead of erasing it. Any
+  // text before the last newline is plain output; only the last line is the readline prompt.
   async function line(prompt: string, secret: boolean): Promise<string> {
-    write(prompt);
+    const nl = prompt.lastIndexOf('\n');
+    if (nl >= 0) write(prompt.slice(0, nl + 1));
+    const tail = prompt.slice(nl + 1);
+    const queued = lines.shift();
+    if (queued !== undefined) {
+      write(tail);
+      if (secret) write('\n');
+      return queued;
+    }
+    if (closed) throw new Error('Input closed before an answer was given');
+    rl.setPrompt(tail);
+    rl.prompt();
+    // Mute only after the label is on screen; typed characters then never reach the output
+    // while editing (backspace and cursor keys still work on the hidden buffer).
     muted = secret;
     try {
       return await readLine();
@@ -283,13 +311,14 @@ export function ttyIO(
     validate: ((v: string) => string | null) | undefined,
     dflt: string | undefined,
   ): Promise<string> {
-    const shown = dflt ? `${prompt} [${dflt}] ` : `${prompt} `;
+    const q = T.question(prompt);
+    const shown = dflt ? `${q} ${T.defaultHint(secret ? 'keep existing (set)' : dflt)} ` : `${q} `;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const raw = await line(shown, secret);
       const value = raw === '' && dflt !== undefined ? dflt : raw;
       const msg = safeValidate(validate, value);
       if (msg === null) return value;
-      write(`${secret ? stripValue(msg, value) : msg}\n`);
+      write(`${T.red(secret ? stripValue(msg, value) : msg)}\n`);
     }
     throw new Error(TOO_MANY);
   }
@@ -311,38 +340,38 @@ export function ttyIO(
       suspended = false;
     },
     history: () => ((rl as unknown as { history?: string[] }).history ?? []),
-    say: (l) => write(`${l}\n`),
+    say: (l) => write(`${T.paint(l)}\n`),
     ask: (prompt, opts) => loop(prompt, false, opts?.validate, opts?.default),
-    askSecret: (prompt, opts) => loop(prompt, true, opts?.validate, undefined),
+    askSecret: (prompt, opts) => loop(prompt, true, opts?.validate, opts?.existing || undefined),
     async confirm(prompt, defaultYes = true) {
       const hint = defaultYes ? '[Y/n]' : '[y/N]';
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        const a = (await line(`${prompt} ${hint} `, false)).trim().toLowerCase();
+        const a = (await line(`${T.question(prompt)} ${T.dim(hint)} `, false)).trim().toLowerCase();
         if (a === '') return defaultYes;
         if (a === 'y' || a === 'yes') return true;
         if (a === 'n' || a === 'no') return false;
-        write('Please answer y or n.\n');
+        write(`${T.red('Please answer y or n.')}\n`);
       }
       throw new Error(TOO_MANY);
     },
     async choose<T extends string>(prompt: string, options: ChoiceOption<T>[], defaultValue?: T) {
-      write(`${prompt}\n`);
-      options.forEach((o, i) => write(`  ${i + 1}) ${o.label}\n`));
+      write(`${T.question(prompt)}\n`);
+      options.forEach((o, i) => write(`  ${T.cyan(`${i + 1})`)} ${o.label}\n`));
       const dIdx = defaultValue ? options.findIndex((o) => o.value === defaultValue) : -1;
       const hint = dIdx >= 0 ? ` [${dIdx + 1}]` : '';
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        const a = (await line(`Choose 1-${options.length}${hint}: `, false)).trim();
+        const a = (await line(`${T.dim(`Choose 1-${options.length}${hint}:`)} `, false)).trim();
         if (a === '' && dIdx >= 0) return options[dIdx].value;
         const n = Number(a);
         if (Number.isInteger(n) && n >= 1 && n <= options.length) return options[n - 1].value;
         const byValue = options.find((o) => o.value === a);
         if (byValue) return byValue.value;
-        write('Not a valid choice.\n');
+        write(`${T.red('Not a valid choice.')}\n`);
       }
       throw new Error(TOO_MANY);
     },
     async pause(prompt) {
-      await line(`${prompt} `, false);
+      await line(`${T.question(prompt)} `, false);
     },
   };
 }

@@ -1,0 +1,16 @@
+{
+  "jobs": [
+    {
+      "jobTitle": "Node Engineer",
+      "url": "https://jobicy.com/jobs/1-node-engineer",
+      "companyName": "Gamma",
+      "jobGeo": "Anywhere",
+      "pubDate": "2025-10-02T10:00:00Z"
+    },
+    {
+      "jobTitle": "Plain Http",
+      "url": "http://jobicy.com/jobs/2",
+      "companyName": "G"
+    }
+  ]
+}

@@ -7,14 +7,8 @@ import { describe, expect, it } from 'vitest';
 const ROOT = join(import.meta.dirname, '..');
 const HOME = 'src/linkedin/browser.ts';
 
-/** Files that still launch directly. Tasks 11, 12 and 14 (8G-1 branch) delete the remaining entries; the apply entries went in task 23. */
+/** Files that still launch directly. Empty since Task 23 (every browser launch goes through the shared launcher). */
 export const LEGACY_LAUNCH_ALLOWLIST: string[] = [
-  'scripts/save-linkedin-session.ts',
-  'scripts/save-naukri-session.ts',
-  'src/sources/naukri.ts',
-  'src/mcp/naukri.ts',
-  'src/discover/linkedin-jobs.ts',
-  'src/discover/linkedin-posts.ts',
 ];
 
 /** Permanent, commented exceptions. chromeCheck.ts only import()s patchright to see it resolves. */
@@ -78,8 +72,8 @@ describe('browser launch lint', () => {
     expect(bad, `launch through src/webcore/launch.ts: ${JSON.stringify(bad)}`).toEqual([]);
   });
 
-  it('no scripted-apply file is allowlisted any more (task 23); the empty-list assertion is deferred to the merge', () => {
-    expect(LEGACY_LAUNCH_ALLOWLIST.filter((f) => f.startsWith('src/apply/') || f.startsWith('src/ats/'))).toEqual([]);
+  it('the legacy launch allowlist is empty (task 23)', () => {
+    expect(LEGACY_LAUNCH_ALLOWLIST).toEqual([]);
   });
 
   it('every allowlisted legacy file still exists and still launches directly', () => {

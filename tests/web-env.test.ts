@@ -221,3 +221,27 @@ describe('auth mode validation', () => {
     });
   });
 });
+
+describe('settings editor keys', () => {
+  it('defaults to false, false and 10', () => {
+    const r = validateRunnerConfig(GOOD, { accountStored: false });
+    expect(r.ok && r.config).toMatchObject({ settingsEdit: false, settingsRemoteSafety: false, settingsBackupKeep: 10 });
+  });
+  it('accepts valid values', () => {
+    const r = validateRunnerConfig(
+      { ...GOOD, WEB_SETTINGS_EDIT: 'true', WEB_SETTINGS_REMOTE_SAFETY: 'TRUE', SETTINGS_BACKUP_KEEP: '100' },
+      { accountStored: false },
+    );
+    expect(r.ok && r.config).toMatchObject({ settingsEdit: true, settingsRemoteSafety: true, settingsBackupKeep: 100 });
+  });
+  it('rejects bad values under scope web', () => {
+    for (const env of [
+      { WEB_SETTINGS_EDIT: 'yes' }, { WEB_SETTINGS_REMOTE_SAFETY: '1' },
+      { SETTINGS_BACKUP_KEEP: '0' }, { SETTINGS_BACKUP_KEEP: '101' }, { SETTINGS_BACKUP_KEEP: 'x' },
+    ]) {
+      const r = validateRunnerConfig({ ...GOOD, ...env }, { accountStored: false });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.errors.every((e) => e.scope === 'web')).toBe(true);
+    }
+  });
+});

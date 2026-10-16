@@ -480,29 +480,27 @@ describe('sessions', () => {
   const past = Math.floor(new Date('2026-01-01T00:00:00Z').getTime() / 1000);
   const future = Math.floor(new Date('2027-01-01T00:00:00Z').getTime() / 1000);
   const st = (cookies: unknown) => JSON.stringify({ cookies });
-  const B = '/proj/secrets/linkedin-burner-state.json';
   const M = '/proj/secrets/linkedin-main-state.json';
   const N = '/proj/secrets/naukri-state.json';
   const good: F = {
-    [B]: { text: st([{ name: 'li_at', value: 'V', expires: future }]) },
     [M]: { text: st([{ name: 'li_at', value: 'V', expires: future }]) },
     [N]: { text: st([{ name: 'nauk_at', value: 'V', expires: future }]) },
   };
   const go = (files: F) => acct('sessions', { ...makeCtx({ files }), now });
-  it('passes when all three are healthy', async () => {
+  it('passes when both are healthy', async () => {
     expect((await go(good)).status).toBe('pass');
   });
   it('warns on missing files with commands', async () => {
     const r = await go({});
     expect(r.status).toBe('warn');
-    expect(r.fix).toContain('save-linkedin-session.ts burner');
-    expect(r.fix).toContain('save-linkedin-session.ts main');
-    expect(r.fix).toContain('save-naukri-session.ts');
+    expect(r.fix).toContain('npm run linkedin:login -- --account main');
+    expect(r.fix).toContain('npm run naukri:login -- --account main');
+    expect(r.fix).not.toContain('save-');
   });
   it('fails on loose mode, empty cookies and expiry without showing values', async () => {
     expect((await go({ ...good, [N]: { text: good[N].text, mode: 0o644 } })).status).toBe('fail');
     expect((await go({ ...good, [M]: { text: st([]) } })).status).toBe('fail');
-    const e = await go({ ...good, [B]: { text: st([{ name: 'li_at', value: 'V', expires: past }]) } });
+    const e = await go({ ...good, [M]: { text: st([{ name: 'li_at', value: 'V', expires: past }]) } });
     expect(e.status).toBe('fail');
     expect(e.detail).toContain('expired');
     const n = await go({ ...good, [N]: { text: st([{ name: 'nauk_at', value: 'V', expires: past }]) } });

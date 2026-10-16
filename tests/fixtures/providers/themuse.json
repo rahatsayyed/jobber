@@ -1,0 +1,29 @@
+{
+  "page_count": 1,
+  "results": [
+    {
+      "name": "Software Engineer",
+      "refs": {
+        "landing_page": "https://www.themuse.com/jobs/epsilon/software-engineer"
+      },
+      "company": {
+        "name": "Epsilon"
+      },
+      "locations": [
+        {
+          "name": "Flexible / Remote"
+        }
+      ]
+    },
+    {
+      "name": "Off Host",
+      "refs": {
+        "landing_page": "https://evil.example.com/x"
+      },
+      "company": {
+        "name": "E"
+      },
+      "locations": []
+    }
+  ]
+}

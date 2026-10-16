@@ -26,7 +26,7 @@ const clean = (s: unknown): string =>
 const fail = (code: string): FindProfilesResult => ({ status: 'failed', code, candidates: [] });
 
 /** Canonical https://www.linkedin.com/in/<slug>, or null when the href is not a clean profile link. */
-function canonicalProfile(href: string): string | null {
+export function canonicalProfile(href: string): string | null {
   const abs = href.startsWith('/') && !href.startsWith('//') ? `https://www.linkedin.com${href}` : href;
   if (!isLinkedInUrl(abs) || !isProfileUrl(abs) || isBlockedPath(abs).blocked) return null;
   let path: string;

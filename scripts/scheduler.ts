@@ -14,13 +14,17 @@ import { loadTuning } from '../src/outreach/tuning.js';
 import { ceilings } from '../src/outreach/limits.js';
 import { pacingFromConfig } from '../src/outreach/pacing.js';
 import { daemonLoop, wakeOnce, type DriverDeps } from '../src/scheduler/driver.js';
+import { runCodePass } from '../src/scheduler/pipeline.js';
 import { defaultDeps as controlDefaults, readControl } from '../src/scheduler/control.js';
 import { countDue } from '../src/scheduler/due.js';
 import { tmuxLauncher } from '../src/scheduler/launch.js';
 import { fileNotifier } from '../src/scheduler/notify.js';
-import { loadPlanKnobs, planWake } from '../src/scheduler/plan.js';
+import { loadPlanKnobs, planWake, type DiscoverSearches } from '../src/scheduler/plan.js';
+import { loadDiscoveryConfig } from '../src/linkedin/discoveryConfig.js';
+import { loadNaukriDiscoveryConfig } from '../src/naukri/discover.js';
 import { getState, listRuns } from '../src/scheduler/runLog.js';
 import { makeAfterWakeHooks } from '../src/scheduler/hooks.js';
+import { parseSchedulerArgs } from '../src/scheduler/args.js';
 
 const projectRoot = resolve(process.cwd());
 const root = join(projectRoot, '.jobber');
@@ -64,6 +68,12 @@ function status(env: NodeJS.ProcessEnv): void {
   db.close();
 }
 
+/** Search names only (never definitions) from config/linkedin-discovery.json and config/naukri-discovery.json, for the discover tasks. */
+function discoverNames(): DiscoverSearches {
+  const c = loadDiscoveryConfig();
+  return { jobs: c.jobs.map((j) => j.name), posts: c.posts.map((p) => p.name), naukri: loadNaukriDiscoveryConfig().searches.map((s) => s.name) };
+}
+
 function dryRunPlan(env: NodeJS.ProcessEnv): void {
   const db = openReadOnly();
   const now = new Date();
@@ -77,20 +87,22 @@ function dryRunPlan(env: NodeJS.ProcessEnv): void {
     ceilings: ceilings(db, cfg, now),
     due: countDue(db, now, tuning),
     knobs: loadPlanKnobs(env),
+    discoverSearches: discoverNames(),
+    codePassEnabled: true,
   });
   console.log(JSON.stringify(decision, null, 2));
   db.close();
 }
 
 async function main(): Promise<void> {
-  const args = new Set(process.argv.slice(2));
+  const args = parseSchedulerArgs(process.argv.slice(2));
   const env = loadEnv();
-  if (args.has('--status')) return status(env);
-  if (args.has('--dry-run-plan')) return dryRunPlan(env);
-  if (!args.has('--daemon') && !args.has('--once')) {
-    console.log('usage: scheduler --daemon | --once | --status | --dry-run-plan | --help');
+  if (args.mode === 'status') return status(env);
+  if (args.mode === 'dry-run-plan') return dryRunPlan(env);
+  if (args.mode === 'usage') {
+    console.log('usage: scheduler --daemon | --once | --now | --status | --dry-run-plan | --help');
     console.log('note: environment and .env changes are read once at start; restart the daemon to apply them.');
-    process.exitCode = args.has('--help') ? 0 : 2;
+    process.exitCode = args.help ? 0 : 2;
     return;
   }
   const db = openDb();
@@ -114,6 +126,8 @@ async function main(): Promise<void> {
     notifier,
     newRunId: () => randomBytes(8).toString('hex'),
     session: env.SCHEDULER_TMUX_SESSION || undefined,
+    discoverSearches: discoverNames(),
+    codePass: () => runCodePass({ db, now, projectRoot }),
     afterWake: makeAfterWakeHooks({
       db, env, projectRoot, now, pacing: pacingFromConfig(cfg, tuning), notifier,
     }),
@@ -124,7 +138,7 @@ async function main(): Promise<void> {
   };
   process.on('SIGINT', halt);
   process.on('SIGTERM', halt);
-  if (args.has('--once')) {
+  if (args.mode === 'once') {
     const r = await wakeOnce(deps, { force: true, abort: () => stop.stopped });
     console.log(`run ${r.runId}: ${r.status}${r.reason ? ` (${safe(r.reason)})` : ''}; next wake ${r.nextWakeAt}`);
     db.close();

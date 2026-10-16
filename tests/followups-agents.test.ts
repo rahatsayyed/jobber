@@ -19,17 +19,17 @@ function dbTools(): Set<string> {
   return out;
 }
 
-const sender = agent('sender');
+const mailer = agent('mail-operator');
 const watcher = agent('reply-watcher');
 const drafter = agent('followup-drafter');
-const followupSection = sender.body.slice(sender.body.indexOf('## Follow-up mode'));
+const followupSection = mailer.body.slice(mailer.body.indexOf('## Part 2: follow-up mode'));
 
 // Ruling R4 (8G-2 task 23): sender.md still names the retired apply server until the 8G-1 branch removes the agent (task 14).
 const RETIRED_SERVERS = ['apply'];
 const retired = (t: string): boolean => RETIRED_SERVERS.includes(/^mcp__([a-z0-9-]+)__/.exec(t)?.[1] ?? '');
 
 describe('follow-up agents: autonomous wiring', () => {
-  it('sender follow-up section approves, then claims before sending, with no check_and_increment instruction', () => {
+  it('mail-operator follow-up section approves, then claims before sending, with no check_and_increment instruction', () => {
     expect(followupSection).toContain('approve_drafted_followups');
     const claim = followupSection.indexOf('claim_followup_for_send');
     const send = followupSection.indexOf('gmail.send_email({');
@@ -42,7 +42,7 @@ describe('follow-up agents: autonomous wiring', () => {
     expect(autonomous.replace(/(do NOT|never|not) call `?db\.check_and_increment`?/gi, '')).not.toContain('check_and_increment');
     expect(followupSection).toContain('no_clean_reply_check');
     expect(followupSection).toContain('no fresh clean reply check');
-    expect(sender.tools).toContain('mcp__db__approve_drafted_followups');
+    expect(mailer.tools).toContain('mcp__db__approve_drafted_followups');
   });
 
   it('legacy path: reply-check gate precedes the claim step, check_and_increment precedes claim', () => {
@@ -74,8 +74,8 @@ describe('follow-up agents: autonomous wiring', () => {
 
   it('every tool named in the three agents is registered and allowed for profile hunt', () => {
     const real = dbTools();
-    const hunt = loadProfiles('config/run-profiles.json', 'config/permission-sets.json').hunt;
-    for (const [name, a] of [['sender', sender], ['reply-watcher', watcher], ['followup-drafter', drafter]] as const) {
+    const hunt = loadProfiles('tests/fixtures/runner-send-profile.json', 'config/permission-sets.json').hunt;
+    for (const [name, a] of [['mail-operator', mailer], ['reply-watcher', watcher], ['followup-drafter', drafter]] as const) {
       for (const t of a.tools) {
         if (t === 'Skill' || retired(t)) continue;
         if (t.startsWith('mcp__db__')) expect(real.has(t), `${name}: ${t} not registered`).toBe(true);

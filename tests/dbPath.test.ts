@@ -28,8 +28,7 @@ describe('dbPath (final review I4)', () => {
     expect(stat(real)).toBe(before);
   });
   it('no source module hardcodes the data.sqlite default except dbPath itself', () => {
-    const files = ['src/mcp/db.ts', 'src/mcp/gates.ts', 'src/mcp/job-fetch.ts', 'src/mcp/contacts.ts',
-      'src/discover/linkedin-jobs.ts', 'src/discover/linkedin-posts.ts'];
+    const files = ['src/mcp/db.ts', 'src/mcp/gates.ts', 'src/mcp/job-fetch.ts', 'src/mcp/contacts.ts', 'src/mcp/applier.ts'];
     for (const f of files) {
       const src = readFileSync(path.join(root, f), 'utf8');
       expect(src, f).not.toMatch(/openDb\('data\.sqlite'\)/);

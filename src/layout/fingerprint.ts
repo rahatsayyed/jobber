@@ -59,7 +59,7 @@ export function observeLinkedin(
       lm.add(actionLabelFor('linkedin', label));
     }
   }
-  if (raw.results.length > 0) lm.add('results.cards');
+  if (raw.results.length > 0 || (raw.jobCards?.length ?? 0) > 0 || (raw.postCards?.length ?? 0) > 0) lm.add('results.cards');
   if (raw.invitations.length > 0) lm.add('invitations.rows');
   if (raw.messages.length > 0) lm.add('messages.thread');
   if (raw.messageHeaderName?.trim()) lm.add('message.header');

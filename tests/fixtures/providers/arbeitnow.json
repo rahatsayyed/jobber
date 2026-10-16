@@ -1,0 +1,23 @@
+{
+  "data": [
+    {
+      "slug": "full-stack-engineer-beta",
+      "title": "Full Stack Engineer",
+      "company_name": "Beta GmbH",
+      "description": "<p>Build <b>invented</b> things</p>",
+      "remote": true,
+      "url": "https://www.arbeitnow.com/jobs/companies/beta/full-stack-engineer-beta",
+      "location": "Munich",
+      "created_at": 1759400000
+    },
+    {
+      "slug": "x",
+      "title": "Off Host",
+      "company_name": "E",
+      "url": "https://evil.example.com/x",
+      "location": "Nowhere"
+    }
+  ],
+  "links": {},
+  "meta": {}
+}

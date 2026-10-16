@@ -1,76 +1,32 @@
-// Minimal CSS selector validator (plan 8G-2 task 19, ruling R2). A recipe selector is data that code may
-// later hand to a page locator, so only plain id, class, attribute and tag selectors pass. Everything
-// else fails closed: pseudo-classes, script-ish text, braces, angle brackets, semicolons, url(),
-// expression, escapes, backticks, at-rules, long input and long lists.
-// The Task 8 version of this module (other branch) replaces this file at merge; the signature is the same.
+// The one strict selector validator for declarative, agent-proposed specs (generated providers, Task 8) and, later, apply recipes (Task 19).
+// Selectors are DATA interpreted by a fixed matcher, never handed to a browser or eval. Grammar: up to two compounds joined by ONE space
+// (descendant); a compound is an optional lower-case tag plus any of #id, .class, [attr] or [attr=value] with attr from a closed list.
+// No pseudo-classes (:has, :not, :nth-*), no child/sibling/group combinators, no wildcards, no escapes, at most 160 chars.
+const NAME = '[A-Za-z_][A-Za-z0-9_-]{0,63}';
+const ATTR_NAME = '(?:id|name|class|href|type|role|itemprop|itemtype|rel|title|(?:data|aria)-[a-z0-9-]{1,40})';
+const VALUE = '(?:"[A-Za-z0-9_.-]{1,60}"|\'[A-Za-z0-9_.-]{1,60}\'|[A-Za-z0-9_.-]{1,60})';
+const PART = `(?:#${NAME}|\\.${NAME}|\\[${ATTR_NAME}(?:=${VALUE})?\\])`;
+const COMPOUND = new RegExp(`^(?:[a-z][a-z0-9]{0,15})?${PART}*$`);
 
-const MAX_LEN = 200;
-const MAX_ALTERNATIVES = 3;   // comma list entries
-const MAX_COMPOUNDS = 4;      // parts joined by a descendant or child combinator
-const IDENT = '-?[A-Za-z_][A-Za-z0-9_-]{0,63}';
-// Quoted attribute values keep to a conservative alphabet; brackets are fine inside the quotes.
-const QUOTED = '"[A-Za-z0-9_ .:#@\\[\\]()/+=,-]{0,80}"|\'[A-Za-z0-9_ .:#@\\[\\]()/+=,-]{0,80}\'';
-const ATTR = `\\[\\s*${IDENT}(?:\\s*[~|^$*]?=\\s*(?:${QUOTED}|${IDENT}))?\\s*\\]`;
-const COMPOUND = `(?:(?:${IDENT}|\\*)(?:#${IDENT}|\\.${IDENT}|${ATTR})*|(?:#${IDENT}|\\.${IDENT}|${ATTR})+)`;
-const COMPOUND_RE = new RegExp(`^${COMPOUND}$`);
+export const MAX_SELECTOR_CHARS = 160;
 
-// Words that must never appear anywhere, even inside a quoted value.
-const FORBIDDEN = /javascript:|vbscript:|data:|expression\s*\(|url\s*\(|@import|<|>\s*\/|[{};`\\]|\/\*|--\s*>/i;
-
-/** Splits on top-level separators (outside quotes and attribute brackets). */
-function splitTop(sel: string, sep: (ch: string) => boolean): string[] | null {
-  const out: string[] = [];
-  let cur = '';
-  let quote = '';
-  let depth = 0;
-  for (const ch of sel) {
-    if (quote) {
-      cur += ch;
-      if (ch === quote) quote = '';
-      continue;
-    }
-    if (ch === '"' || ch === '\'') { quote = ch; cur += ch; continue; }
-    if (ch === '[') depth++;
-    if (ch === ']') { depth--; if (depth < 0) return null; }
-    if (depth === 0 && sep(ch)) { out.push(cur); cur = ''; continue; }
-    cur += ch;
-  }
-  if (quote || depth !== 0) return null;
-  out.push(cur);
-  return out;
+export function isSafeSelector(s: unknown): s is string {
+  if (typeof s !== 'string' || s.length === 0 || s.length > MAX_SELECTOR_CHARS) return false;
+  const parts = s.split(' ');
+  if (parts.length > 2) return false;
+  return parts.every((p) => p.length > 0 && COMPOUND.test(p));
 }
 
-function compoundOk(part: string): boolean {
-  return part.length > 0 && COMPOUND_RE.test(part);
+const BAD_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const SEGMENT = /^(?:[A-Za-z0-9_-]{1,64}|\[\d{1,3}\])$/;
+
+/** A JSON path such as `data.jobs`, `title`, `locations[0].name`: dot-separated keys with optional numeric indexes, at most 160 chars. */
+export function isSafeJsonPath(s: unknown): s is string {
+  if (typeof s !== 'string' || s.length === 0 || s.length > MAX_SELECTOR_CHARS) return false;
+  const segs = s.replace(/\[(\d{1,3})\]/g, '.[$1]').split('.');
+  return segs.every((g) => g.length > 0 && SEGMENT.test(g) && !BAD_KEYS.has(g));
 }
 
-function alternativeOk(alt: string): boolean {
-  const trimmed = alt.trim();
-  if (!trimmed) return false;
-  // Child combinators are written with spaces around them; normalise them to plain spaces first.
-  const flat = splitTop(trimmed, (ch) => ch === '>');
-  if (!flat) return false;
-  let count = 0;
-  for (const seg of flat) {
-    const parts = splitTop(seg.trim(), (ch) => /\s/.test(ch));
-    if (!parts) return false;
-    for (const p of parts) {
-      if (p === '') continue;
-      if (!compoundOk(p)) return false;
-      count++;
-    }
-  }
-  if (flat.length > 1 && flat.some((s) => s.trim() === '')) return false;
-  return count >= 1 && count <= MAX_COMPOUNDS;
-}
-
-export function isSafeSelector(sel: string): boolean {
-  if (typeof sel !== 'string') return false;
-  if (sel.length === 0 || sel.length > MAX_LEN) return false;
-  if (sel !== sel.trim()) return false;
-  if (/[\u0000-\u001f\u007f]/.test(sel)) return false;
-  if (FORBIDDEN.test(sel)) return false;
-  const alts = splitTop(sel, (ch) => ch === ',');
-  if (!alts || alts.length > MAX_ALTERNATIVES) return false;
-  return alts.every(alternativeOk);
+export function jsonPathSegments(s: string): Array<string | number> {
+  return s.replace(/\[(\d{1,3})\]/g, '.[$1]').split('.').filter(Boolean).map((g) => (g.startsWith('[') ? Number(g.slice(1, -1)) : g));
 }

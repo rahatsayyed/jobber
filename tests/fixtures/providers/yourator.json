@@ -1,0 +1,23 @@
+{
+  "payload": {
+    "jobs": [
+      {
+        "name": "Frontend Engineer",
+        "path": "/companies/iota/jobs/1",
+        "company": {
+          "brand": "Iota"
+        },
+        "location": "Taipei",
+        "thirdPartyUrl": "https://evil.example.com/x"
+      },
+      {
+        "name": "Bad Path",
+        "path": "//evil.example.com/x",
+        "company": {
+          "brand": "B"
+        }
+      }
+    ],
+    "hasMore": false
+  }
+}

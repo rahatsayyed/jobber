@@ -143,6 +143,57 @@ const script = (opts: { confirmLangs?: boolean; sponsorship?: boolean } = {}): S
   { confirm: opts.confirmLangs ?? false },
 ];
 
+describe('profileStep keeps existing values on blank answers', () => {
+  // every prompt answered with Enter; confirm and choose fall back to the stored value
+  const blanks = (): ScriptItem[] => [
+    { ask: '' }, // roles
+    { ask: '' }, // locations
+    { confirm: undefined }, // remote ok
+    { confirm: undefined }, // remote anywhere
+    { ask: '' }, // currencies
+    { ask: '' }, // INR floor
+    { ask: '' }, // INR target
+    { ask: '' }, // notice
+    { confirm: undefined }, // india
+    { choose: '' }, // other
+    { ask: '' }, // expected salary text
+    { confirm: false }, // add a language
+    { confirm: false }, // confirm the language list
+  ];
+
+  it('leaves a valid profile.json byte-identical', async () => {
+    const full = { ...GOOD, remote_ok: false, remote_anywhere: true, notice_period_days: 45 };
+    const text = `${JSON.stringify(full, null, 2)}\n`;
+    const t = setup(blanks(), { ...files(), [`${D}/profile.json`]: text });
+    expect(await profileStep.run(t.ctx)).toBe('done');
+    expect(t.store.get(`${D}/profile.json`)).toBe(text);
+    expect(t.writes.filter((w) => w.includes('profile.json'))).toEqual([]);
+    t.sio.assertDone();
+  });
+
+  it('keeps every usable field of a hand-written file that fails full validation', async () => {
+    // no version, no languages, no work_authorization: validateProfile rejects it as a whole
+    const handwritten = {
+      roles: ['react developer'],
+      locations: ['India', 'UAE'],
+      remote_ok: false,
+      salary: { INR: { floor: 2000000, target: 3000000 } },
+      notice_period_days: 45,
+    };
+    expect(validateProfile(handwritten).length).toBeGreaterThan(0);
+    const t = setup(blanks(), { ...files(), [`${D}/profile.json`]: JSON.stringify(handwritten) });
+    expect(await profileStep.run(t.ctx)).toBe('done');
+    const p = JSON.parse(t.store.get(`${D}/profile.json`) ?? '');
+    expect(p.roles).toEqual(['react developer']);
+    expect(p.locations).toEqual(['India', 'UAE']);
+    expect(p.remote_ok).toBe(false);
+    expect(p.salary).toEqual({ INR: { floor: 2000000, target: 3000000 } });
+    expect(p.notice_period_days).toBe(45);
+    expect(validateProfile(p)).toEqual([]);
+    t.sio.assertDone();
+  });
+});
+
 describe('profileStep', () => {
   it('writes the three files, preserving custom, phone and url', async () => {
     const t = setup(script(), files());

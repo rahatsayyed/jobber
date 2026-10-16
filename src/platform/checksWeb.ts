@@ -186,30 +186,23 @@ export function webChecks(deps: WebCheckDeps = {}): Check[] {
       title: 'scripted apply and legacy discovery removed',
       async run(ctx) {
         const hard: string[] = [];
-        const soft: string[] = [];
         const exists = (rel: string) => ctx.fs.exists(join(ctx.root, rel));
-        for (const f of ['src/mcp/apply.ts', 'src/mcp/applyAutoRouter.ts', 'src/apply/linkedin.ts', 'src/apply/external.ts', 'src/ats']) {
+        for (const f of ['src/mcp/apply.ts', 'src/mcp/applyAutoRouter.ts', 'src/apply/linkedin.ts', 'src/apply/external.ts', 'src/ats', 'src/mcp/discover.ts', 'src/discover', '.claude/agents/sender.md', '.claude/agents/discoverer.md']) {
           if (exists(f)) hard.push(`${f} still present`);
         }
         const read = (rel: string): string => {
           try { return exists(rel) ? ctx.fs.read(join(ctx.root, rel)) : ''; } catch { return ''; }
         };
-        // sender.md and discoverer.md carry the retired tool names until 8G-1 task 14 removes them: soft only.
-        const retiredAgents = ['sender', 'discoverer'].filter((a) => exists(`.claude/agents/${a}.md`));
         const files = ['.mcp.json', '.claude/settings.json', 'config/permission-sets.json', 'config/run-profiles.json', 'config/worker-tools.json'];
         for (const f of ctx.fs.list?.(join(ctx.root, 'config', 'runner')) ?? []) files.push(`config/runner/${f}`);
-        for (const f of ctx.fs.list?.(join(ctx.root, '.claude', 'agents')) ?? []) {
-          if (!retiredAgents.includes(f.replace(/\.md$/, ''))) files.push(`.claude/agents/${f}`);
-        }
+        for (const f of ctx.fs.list?.(join(ctx.root, '.claude', 'agents')) ?? []) files.push(`.claude/agents/${f}`);
         for (const f of files) {
           const text = read(f);
           if (text.includes('mcp__apply__')) hard.push(`mcp__apply__ in ${f}`);
-          if (text.includes('mcp__discover__')) soft.push(`mcp__discover__ in ${f}`);
-          if (/"(discoverer|sender)"/.test(text)) soft.push(`discoverer/sender in ${f}`);
+          if (text.includes('mcp__discover__')) hard.push(`mcp__discover__ in ${f}`);
+          if (/"(discoverer|sender)"/.test(text)) hard.push(`discoverer/sender in ${f}`);
         }
-        if (hard.length) return fail(hard.slice(0, 4).join('; '), 'task 23 removed the scripted apply; delete the leftovers');
-        for (const a of retiredAgents) soft.push(`${a} agent present`);
-        if (soft.length) return warn(`${soft.slice(0, 4).join('; ')}: removed by 8G-1 Task 14`);
+        if (hard.length) return fail(hard.slice(0, 4).join('; '), 'the scripted apply (8G-2) and the batch hunt (8G-1) were removed; delete the leftovers');
         return pass('no mcp__apply__, mcp__discover__, discoverer or sender left');
       },
     },
@@ -221,17 +214,14 @@ export function webChecks(deps: WebCheckDeps = {}): Check[] {
         if (!pkg) return skip('package.json not readable');
         const scripts = pkg.scripts ?? {};
         const missing = ['naukri:login', 'linkedin:login'].filter((s) => !(s in scripts));
-        // A script that reads LINKEDIN_LOGIN_ACCOUNT is the retired account switch. scripts/linkedin-login.ts still reads it
-        // until 8G-1 task 12 rewrites it, so that one file is a warning here; any other script that reads it fails.
+        // A script that reads LINKEDIN_LOGIN_ACCOUNT is the retired account switch.
         const reads: string[] = [];
         for (const f of ctx.fs.list?.(join(ctx.root, 'scripts')) ?? []) {
           if (!/\.(ts|sh|cjs|mjs|js)$/.test(f)) continue;
           try { if (/LINKEDIN_LOGIN_ACCOUNT/.test(ctx.fs.read(join(ctx.root, 'scripts', f)))) reads.push(`scripts/${f}`); } catch { /* unreadable */ }
         }
-        const hardReads = reads.filter((f) => f !== 'scripts/linkedin-login.ts');
-        if (hardReads.length) return fail(`LINKEDIN_LOGIN_ACCOUNT is read in ${hardReads.join(', ')}`, 'the login commands take no account switch; remove the env read');
-        const soft = [...missing.map((s) => `npm script ${s} missing`), ...reads.map((f) => `${f} still reads LINKEDIN_LOGIN_ACCOUNT`)];
-        if (soft.length) return warn(`${soft.join('; ')}: replaced by 8G-1 Task 12`);
+        if (reads.length) return fail(`LINKEDIN_LOGIN_ACCOUNT is read in ${reads.join(', ')}`, 'the login commands take no account switch; remove the env read');
+        if (missing.length) return fail(missing.map((s) => `npm script ${s} missing`).join('; '), 'add the login scripts back to package.json');
         return pass('naukri:login and linkedin:login exist; no LINKEDIN_LOGIN_ACCOUNT env read');
       },
     },

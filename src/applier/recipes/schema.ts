@@ -3,7 +3,7 @@
 // typed values. Everything that reaches disk or a model passes validateRecipe.
 import { z } from 'zod';
 import { FIELD_ROLES, type FieldRole } from '../../webcore/formModel.js';
-import { isSafeSelector } from '../../lib/safeSelector.js';
+import { isSafeSelector } from './safeSelector.js';
 import { RefSchema, checkRoleRef } from '../refs.js';
 import type { AnswerRef } from '../../apply/answers.js';
 

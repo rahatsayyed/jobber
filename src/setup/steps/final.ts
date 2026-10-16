@@ -103,7 +103,7 @@ export const finalStep: SetupStep = {
     }
     if (!skipped.includes('dashboard')) next.push('npm run dashboard -- token (sign-in link for the status page)');
     next.push('npm run dry-run (end-to-end check in dry mode, sends nothing)');
-    next.push('npm run up (starts the bridge, windows, scheduler and dashboard after the doctor gate)');
+    next.push('npm start, same as npm run up (starts the bridge, windows, scheduler and dashboard after the doctor gate)');
     next.push('Run the first supervised /runhunt and read the outputs');
     io.say('Next, yourself:');
     next.forEach((l, i) => io.say(`  ${i + 1}. ${l}`));

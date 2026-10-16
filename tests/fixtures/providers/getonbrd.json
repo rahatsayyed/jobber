@@ -1,0 +1,32 @@
+{
+  "data": [
+    {
+      "attributes": {
+        "title": "Full Stack Developer",
+        "remote": true,
+        "countries": [
+          "Chile"
+        ],
+        "published_at": 1759400000,
+        "company": {
+          "data": {
+            "attributes": {
+              "name": "Kappa"
+            }
+          }
+        }
+      },
+      "links": {
+        "public_url": "https://www.getonbrd.com/jobs/programming/full-stack-kappa"
+      }
+    },
+    {
+      "attributes": {
+        "title": "Off Host"
+      },
+      "links": {
+        "public_url": "https://evil.example.com/x"
+      }
+    }
+  ]
+}

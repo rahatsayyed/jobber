@@ -95,32 +95,30 @@ describe('search_providers', () => {
 });
 
 describe('generated_providers', () => {
-  it('skips with an n/a note when the module and table are not installed', async () => {
-    const r = await run('generated_providers', goodRoot(), {}, openDb(':memory:'));
+  it('skips with an n/a note when there is no database', async () => {
+    const r = await run('generated_providers', goodRoot(), {}, null);
     expect(r.status).toBe('skip');
-    expect(r.detail).toMatch(/n\/a: not installed/);
+    expect(r.detail).toMatch(/n\/a/);
   });
 
-  describe('with a generated_providers table', () => {
-    const mk = () => {
+  describe('with the generated_providers table', () => {
+    const ins = (db: ReturnType<typeof openDb>, id: string, state: string, reason: string | null = null) =>
+      db.prepare("INSERT INTO generated_providers (id, state, reason, created_at, updated_at) VALUES (?, ?, ?, 'x', 'x')").run(id, state, reason);
+    it('passes with none and with validated, trusted or approved providers', async () => {
       const db = openDb(':memory:');
-      db.exec('CREATE TABLE generated_providers (id TEXT PRIMARY KEY, status TEXT NOT NULL, validated INTEGER NOT NULL DEFAULT 1)');
-      return db;
-    };
-    it('passes with none and with all approved', async () => {
-      const db = mk();
       expect((await run('generated_providers', goodRoot(), {}, db)).detail).toBe('none');
-      db.prepare("INSERT INTO generated_providers VALUES ('a','approved',1)").run();
+      ins(db, 'a', 'trusted');
+      ins(db, 'b', 'validated');
       expect((await run('generated_providers', goodRoot(), {}, db)).status).toBe('pass');
     });
     it('warns on candidates waiting for review', async () => {
-      const db = mk();
-      db.prepare("INSERT INTO generated_providers VALUES ('a','candidate',1)").run();
+      const db = openDb(':memory:');
+      ins(db, 'a', 'candidate');
       expect((await run('generated_providers', goodRoot(), {}, db)).status).toBe('warn');
     });
     it('fails on a trusted provider with failing validation', async () => {
-      const db = mk();
-      db.prepare("INSERT INTO generated_providers VALUES ('a','approved',0)").run();
+      const db = openDb(':memory:');
+      ins(db, 'a', 'trusted', 'selector_drift');
       expect((await run('generated_providers', goodRoot(), {}, db)).status).toBe('fail');
     });
   });

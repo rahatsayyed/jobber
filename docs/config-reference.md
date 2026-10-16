@@ -2,7 +2,7 @@
 
 Audience: owner
 Last verified against: cc51247
-Source files: src/sources/boards/filters.ts, src/targetRegions.ts, src/vetoes.ts, src/replies.ts, src/discover/linkedin-jobs.ts, src/safety/styleGate.ts, src/lib/userData.ts, src/languageGate.ts, src/resumeFacts.ts, src/platform/permissions.ts, scripts/permissions.ts, scripts/models.ts, scripts/check-portal.ts, scripts/user-data.ts, .env.example, src/setup/limitsCatalog.ts
+Source files: src/sources/boards/filters.ts, src/targetRegions.ts, src/vetoes.ts, src/replies.ts, src/linkedin/discoveryConfig.ts, src/safety/styleGate.ts, src/lib/userData.ts, src/languageGate.ts, src/resumeFacts.ts, src/platform/permissions.ts, scripts/permissions.ts, scripts/models.ts, scripts/check-portal.ts, scripts/user-data.ts, .env.example, src/setup/limitsCatalog.ts
 
 This page lists every file you may edit in `config/` and `user-data/`, what reads it, whether a restart is needed, and how to check an edit. It does not repeat safety rules or caps: those live in `CLAUDE.md` (sections "Safety" and "Outreach safety layers"). All example values below are synthetic.
 
@@ -14,7 +14,7 @@ Restart rule of thumb: an MCP server keeps what it loaded at start. After you ch
 |---|---|---|---|---|
 | `config/portals.json` | Which company boards and aggregator feeds to fetch, plus the title and location filters | `src/sources/boards/filters.ts` (`loadPortals`), used by `job-fetch.list_new_jobs` | per fetch; a restart is needed only if the server was started before the file existed (unverified) | `npm run doctor` check `config-files` (parses and needs a `tracked_companies` array); slugs: `npx tsx scripts/check-portal.ts` |
 | `config/target-regions.json` | Home region, target regions (Gulf), remote and `remote_anywhere` switches for the location gate | `src/targetRegions.ts`, called by `gates.apply_vetoes` | per call | `npm run doctor` check `config-files` (needs `home` and `targets` arrays) |
-| `config/discover-linkedin.json` | LinkedIn job searches and the hiring-post search | `src/discover/linkedin-jobs.ts`, `src/discover/linkedin-posts.ts` | read with each discover call (unverified for posts) | `npm run doctor` check `config-files` (parses, must be a JSON object only) |
+| `config/linkedin-discovery.json` | Named LinkedIn job searches and hiring-post searches | `src/linkedin/discoveryConfig.ts` | read with each search call (unverified for posts) | `npm run doctor` check `config-files` (parses, must be a JSON object only) |
 | `config/deal-breakers.json` | Keywords that exclude a job | `src/vetoes.ts` (`loadDealBreakers`) | per call | `npm run doctor` check `config-files` (parses, must be a JSON object; it does not check `keywords`) |
 | `config/replies.json` | Whether detected replies may be auto-recorded | `src/replies.ts` (`loadRepliesConfig`) | per call | `npm run doctor` check `config-files` (parses, must be a JSON object) |
 | `user-data/resume.json` | Base resume the agent tailors (the agent never edits it) | resume MCP, matcher | restart after a change (unverified inference: MCP servers keep what they loaded) | none found |
@@ -72,22 +72,11 @@ Schema pointer: `loadTargetRegionsStatus` in `src/targetRegions.ts`. Missing fil
 
 `remote_anywhere` is on only for the boolean `true`; anything else is off. Its meaning (and the restriction markers that override it) is in `CLAUDE.md` "Target regions". The same switch also lives under `location_filter` in `config/portals.json`; keep both equal.
 
-### config/discover-linkedin.json
+### config/linkedin-discovery.json
 
-Purpose: LinkedIn job searches (`jobs[]`) and the hiring-post search (`posts`) for the `discover` MCP. Burner account, selectors live-unverified (see `CLAUDE.md` "Running the hunt" step 1).
+Purpose: named LinkedIn job searches (`jobs[]`) and hiring-post searches (`posts[]`) for the typed `linkedin_search_jobs` and `linkedin_search_posts` tools (main account, selectors live-unverified). It replaced the old discover config file (plan 8G Task 14); the typed tools take only a search name and the URL is built in code.
 
-Schema pointer: `src/discover/linkedin-jobs.ts` (`loadDiscoverConfig`, a plain `JSON.parse`, so a syntax error surfaces as a parse error). An entry is either a `search_url` or a `keyword` plus optional `location`, `posted_within_seconds`, `remote_only`, `easy_apply_only`, `experience_level` and `limit`.
-
-```json
-{
-  "jobs": [
-    { "name": "gulf-react", "keyword": "react developer", "location": "United Arab Emirates", "remote_only": false, "limit": 10 }
-  ],
-  "posts": { "role": "react developer", "geo": "in", "limit": 10 }
-}
-```
-
-The shipped file has an entry whose `search_url` is a `REPLACE_WITH_...` placeholder; replace or remove it. `linkedin_posts` takes its `geo` from the `location` the discoverer is given (see `CLAUDE.md`).
+Schema pointer: `src/linkedin/discoveryConfig.ts`. A job entry is `name`, `keyword`, plus optional `location`, `posted_within_seconds`, `remote_only`, `easy_apply_only`, `experience_level` and `limit`; a post entry is `name`, `role`, `geo` and `limit`.
 
 ### config/deal-breakers.json
 
@@ -134,7 +123,7 @@ Written by the setup wizard (`profile` step; `npm run setup -- --step profile`).
 
 ### user-data/easy-apply-answers.json
 
-Purpose: truthful answers for LinkedIn Easy Apply screening questions. Shape: see `user-data.example/easy-apply-answers.json` (fixed fields plus a `custom` object keyed by the question text verbatim). Re-read from disk on every `apply.linkedin` call, so no restart.
+Purpose: truthful answers for LinkedIn Easy Apply screening questions. Shape: see `user-data.example/easy-apply-answers.json` (fixed fields plus a `custom` object keyed by the question text verbatim). Re-read from disk on every `applier` answer lookup (`src/apply/answers.ts`), so no restart.
 
 Never invent a value. Rules for filling `custom` are in `CLAUDE.md` "Applying", step 2a.
 

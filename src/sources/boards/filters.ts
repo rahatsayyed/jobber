@@ -257,6 +257,7 @@ export function loadPortals(file: string = defaultPath): { config: PortalsConfig
       .filter((c: any, i: number) => {
         const label = `config/portals.json: tracked_companies[${i}]${c && typeof c.name === 'string' ? ` (${c.name.slice(0, 60)})` : ''} skipped`;
         if (!c || typeof c.name !== 'string') { warnings.push(`${label}: missing name`); return false; }
+        if (c.ats === 'custom') return false; // owner-listed site read by the scout (src/scout/targets.ts), not a script board
         if (!(COMPANY_ATS as readonly string[]).includes(c.ats)) { warnings.push(`${label}: unknown ats ${JSON.stringify(c.ats)}`); return false; }
         const sp = typeof c.slug === 'string' ? slugProblem(c.ats, c.slug.trim()) : 'invalid slug';
         if (sp) { warnings.push(`${label}: ${sp}`); return false; }

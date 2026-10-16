@@ -1,0 +1,6 @@
+{
+  "allow_facts": ["fixture fact one"],
+  "allow_metrics": [],
+  "forbidden_phrases": ["fixture forbidden"],
+  "warn_phrases": []
+}

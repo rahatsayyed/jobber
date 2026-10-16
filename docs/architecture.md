@@ -141,7 +141,7 @@ Email follow-ups never come from the scheduler. Stage order and names: CLAUDE.md
 
 The `linkedin` MCP (search, check status, connect, message, accept invite, layout) uses
 the main account only, in one locked headless session. The burner account is used only
-by `apply.linkedin` (Easy Apply) and `discover.linkedin_*`. Never swap them. Authority:
+by the `applier` MCP for LinkedIn Easy Apply (`APPLY_LINKEDIN_EASY`, off by default). Never swap them. Authority:
 CLAUDE.md, "Safety" rule 6. Session setup: [linkedin-sessions-setup.md](linkedin-sessions-setup.md).
 
 ## When X breaks, look here
@@ -155,15 +155,15 @@ Start with `npm run doctor` and `npm run status -- health`, then use the row tha
 | All jobs excluded | `config/deal-breakers.json`, `config/target-regions.json` | `src/remotePolicy.ts`, `src/mcp/gates.ts` | [config-reference.md](config-reference.md) |
 | Everything scores below threshold | `.claude/agents/matcher.md` | `src/mcp/db.ts` (`save_match_result` caps) | [operations.md](operations.md) |
 | No contacts found | `.claude/agents/contact-finder.md` | `src/mcp/contacts.ts`, `src/lib/discoverOnly.ts` | [api-keys.md](api-keys.md) |
-| Email not sent | `npm run status -- limits` | `.claude/agents/sender.md`, `.claude/hooks/kill-switch.cjs` | [operations.md](operations.md) |
+| Email not sent | `npm run status -- limits` | `.claude/agents/mail-operator.md`, `.claude/hooks/kill-switch.cjs` | [operations.md](operations.md) |
 | Nothing leaves in a "live" run | `src/safety/dryRun.ts` (flag precedence) | `npm run dry-run:report` | [operations.md](operations.md) |
 | Resume or email blocked by fact gate | `src/resumeFacts.ts` | `user-data.example/` shapes, `src/mcp/resume.ts` | [config-reference.md](config-reference.md) |
 | Style gate rejects outreach text | `src/safety/styleGate.ts` | `config/ai-tells.json` | [config-reference.md](config-reference.md) |
 | LinkedIn action refused | `src/mcp/linkedin.ts` | `src/linkedin/verify.ts`, `npm run status -- working` | [operations.md](operations.md) |
-| LinkedIn session locked or expired | `src/platform/lock.ts` | `scripts/save-linkedin-session.ts` | [linkedin-sessions-setup.md](linkedin-sessions-setup.md) |
+| LinkedIn session locked or expired | `src/platform/lock.ts` | `scripts/linkedin-login.ts` (`npm run linkedin:login`) | [linkedin-sessions-setup.md](linkedin-sessions-setup.md) |
 | LinkedIn checkpoint or CAPTCHA halt | `npm run status -- working` | `scripts/linkedin-clear-halt.ts` (owner only) | [operations.md](operations.md) |
 | Layout drift halt | `npm run layout -- status` | `src/layout/store.ts`, `src/layout/classify.ts` | [layout-memory.md](layout-memory.md) |
-| Naukri blocked or empty | `src/sources/naukri.ts` | `src/mcp/naukri.ts`, `scripts/save-naukri-session.ts` | [naukri-session-setup.md](naukri-session-setup.md) |
+| Naukri blocked or empty | `src/sources/naukri.ts` | `src/mcp/naukri.ts`, `scripts/naukri-login.ts` (`npm run naukri:login`) | [naukri-session-setup.md](naukri-session-setup.md) |
 | Classifier blocked a read or send | `src/safety/screen.ts` | `config/classifier-models.json`, `npm run models -- list` | [classifier-models.md](classifier-models.md) |
 | Tool denied by hook | `.claude/hooks/tool-allowlist.cjs` | `config/run-profiles.json`, `config/worker-tools.json` | [operations.md](operations.md) |
 | Path denied outside project | `.claude/hooks/block-outside-project.cjs` | `.claude/settings.json` | [operations.md](operations.md) |
@@ -171,7 +171,7 @@ Start with `npm run doctor` and `npm run status -- health`, then use the row tha
 | Scheduler never wakes | `npm run scheduler -- --status` | `src/scheduler/plan.ts` (skip reasons), `src/scheduler/due.ts` | [scheduler-install.md](scheduler-install.md) |
 | Scheduler run stops early | `src/scheduler/budget.ts` | `src/scheduler/runLog.ts` | [operations.md](operations.md) |
 | Replies not detected | `.claude/agents/reply-watcher.md` | `config/replies.json`, `src/mcp/db.ts` | [operations.md](operations.md) |
-| Follow-up not claimed | `.claude/agents/followup-drafter.md`, `.claude/agents/sender.md` | `src/mcp/db.ts` (`claim_followup_for_send`) | [operations.md](operations.md) |
+| Follow-up not claimed | `.claude/agents/followup-drafter.md`, `.claude/agents/mail-operator.md` | `src/mcp/db.ts` (`claim_followup_for_send`) | [operations.md](operations.md) |
 | Apply returns manual_review | `src/applier/tools/open.ts` | `src/mcp/applier.ts` | [operations.md](operations.md) |
 | Dashboard login fails | `src/dash/authStore.ts` | `src/web/server.ts`, `npm run dashboard -- status` | [dashboard-login.md](dashboard-login.md) |
 | Setup or bring-up step fails | `npm run doctor` | `src/setup/steps/`, `scripts/stack.ts` | [setup-modes.md](setup-modes.md) |

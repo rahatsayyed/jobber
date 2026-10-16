@@ -1,0 +1,10 @@
+{
+  "searches": [
+    {
+      "name": "full-stack-react-india",
+      "query": "full stack developer react",
+      "location": "india",
+      "limit": 20
+    }
+  ]
+}

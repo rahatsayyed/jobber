@@ -4,7 +4,7 @@ import { upsertPerson } from '../src/outreach/people.js';
 import { TUNING_DEFAULTS } from '../src/outreach/tuning.js';
 import { setState } from '../src/scheduler/runLog.js';
 import { countDue, type DueCounts } from '../src/scheduler/due.js';
-import { planWake, loadPlanKnobs, type PlanKnobs } from '../src/scheduler/plan.js';
+import { planWake, stepOrder, loadPlanKnobs, type PlanKnobs } from '../src/scheduler/plan.js';
 import type { PacingConfig } from '../src/outreach/pacing.js';
 import type { ControlState } from '../src/scheduler/control.js';
 import type { CeilingStatus, LimitKey } from '../src/outreach/limits.js';
@@ -17,7 +17,8 @@ const pacing: PacingConfig = {
   minBurst: 1, maxBurst: 4, minActionGapSec: 120, maxActionGapSec: 360,
   minWaitMin: 8, maxWaitMin: 40, jitter: 0.25,
 };
-const knobs: PlanKnobs = { inboxEveryMin: 60, naukriSearchEveryHours: 6 };
+const knobs: PlanKnobs = { inboxEveryMin: 60, naukriDiscoverEveryHours: 6 };
+const NAUKRI_NAMES = { jobs: [], posts: [], naukri: ['react-india'] };
 const ctl = (o: Partial<ControlState> = {}): ControlState => ({
   killed: false, killReason: null, halted: { linkedin: null, naukri: null },
   allowed: ['linkedin', 'naukri'], readError: null, ...o,
@@ -46,7 +47,7 @@ function counted(value: number) {
 }
 const plan = (o: Partial<Parameters<typeof planWake>[0]> = {}, rngValue = 0.99) => {
   const r = counted(rngValue);
-  const d = planWake({ now: NOW, rng: r.rng, pacing, control: ctl(), ceilings: ceil(), due: due(), knobs, ...o });
+  const d = planWake({ now: NOW, rng: r.rng, pacing, control: ctl(), ceilings: ceil(), due: due(), knobs, discoverSearches: NAUKRI_NAMES, ...o });
   return { d, calls: r.calls() };
 };
 
@@ -82,7 +83,7 @@ describe('planWake', () => {
       expect(spent).toBe(d.burst);
     }
   });
-  it('emits linkedin before naukri, one assignment per platform, tasks ordered inbox, followups, new_outreach, search', () => {
+  it('emits linkedin before naukri, one assignment per platform, tasks ordered inbox, followups, new_outreach, discover', () => {
     const { d } = plan({
       due: due({ followupsDue: 1, newOutreachReady: 1, inboxLastCheckedMinAgo: null, naukriSearchLastHoursAgo: null }),
     });
@@ -91,7 +92,7 @@ describe('planWake', () => {
       ['linkedin-operator', 'linkedin'], ['naukri-operator', 'naukri'],
     ]);
     expect(d.tasks[0].tasks.map((t) => t.kind)).toEqual(['inbox', 'followups', 'new_outreach']);
-    expect(d.tasks[1].tasks.map((t) => t.kind)).toEqual(['inbox', 'followups', 'new_outreach', 'search']);
+    expect(d.tasks[1].tasks.map((t) => t.kind)).toEqual(['inbox', 'followups', 'new_outreach', 'discover']);
   });
   it('splits quotas per platform in stable order from the remaining burst', () => {
     // rng 0.99 -> burst 4: linkedin takes 3 of its 3 followups, naukri gets the 1 left
@@ -104,10 +105,16 @@ describe('planWake', () => {
     expect(q('naukri', 'followups')).toBe(1);
     expect(q('linkedin', 'new_outreach')).toBeUndefined();
   });
-  it('search belongs to naukri only', () => {
+  it('the naukri discover task carries the named searches and the detail-page quota', () => {
     const { d } = plan({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: null }) });
     if (d.kind !== 'run') throw new Error('expected run');
-    const withSearch = d.tasks.filter((a) => a.tasks.some((t) => t.kind === 'search'));
+    const t = d.tasks.find((a) => a.platform === 'naukri')!.tasks.find((x) => x.kind === 'discover');
+    expect(t).toEqual({ kind: 'discover', quota: 5, searches: { jobs: ['react-india'], posts: [] } });
+  });
+  it('discover belongs to naukri only (linkedin has its own, named separately)', () => {
+    const { d } = plan({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: null }) });
+    if (d.kind !== 'run') throw new Error('expected run');
+    const withSearch = d.tasks.filter((a) => a.tasks.some((t) => t.kind === 'discover'));
     expect(withSearch.map((a) => a.platform)).toEqual(['naukri']);
   });
   it('assigns inbox when never checked or 61 min ago, not at 30', () => {
@@ -167,14 +174,15 @@ describe('planWake', () => {
     const { d } = plan({ due: due() });
     expect(d).toMatchObject({ kind: 'skip', reason: 'nothing_due' });
   });
-  it('naukri-search needs naukri_apply ok and an old enough last search', () => {
+  it('naukri discover needs a named search, naukri_apply ok and an old enough last run', () => {
     const run = (o: Partial<Parameters<typeof planWake>[0]>) => {
       const { d } = plan({ due: due({ followupsDue: 1 }), ...o });
-      return d.kind === 'run' && d.tasks.some((a) => a.tasks.some((t) => t.kind === 'search'));
+      return d.kind === 'run' && d.tasks.some((a) => a.tasks.some((t) => t.kind === 'discover'));
     };
     expect(run({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: 7 }) })).toBe(true);
     expect(run({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: 2 }) })).toBe(false);
     expect(run({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: 7 }), ceilings: ceil(['naukri_apply']) })).toBe(false);
+    expect(run({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: 7 }), discoverSearches: { jobs: [], posts: [], naukri: [] } })).toBe(false);
   });
   it('plans nothing when only a halted platform has work (I4, M1)', () => {
     const { d } = plan({
@@ -198,15 +206,17 @@ describe('planWake', () => {
     expect(d.tasks[0].tasks.find((t) => t.kind === 'followups')).toEqual({ kind: 'followups', quota: 1 });
   });
   it('loadPlanKnobs defaults and overrides', () => {
-    expect(loadPlanKnobs({})).toEqual({ inboxEveryMin: 60, naukriSearchEveryHours: 6 });
-    expect(loadPlanKnobs({ INBOX_EVERY_MIN: '15', NAUKRI_SEARCH_EVERY_HOURS: 'x' } as NodeJS.ProcessEnv))
-      .toEqual({ inboxEveryMin: 15, naukriSearchEveryHours: 6 });
+    expect(loadPlanKnobs({})).toEqual({ inboxEveryMin: 60, naukriDiscoverEveryHours: 6 });
+    expect(loadPlanKnobs({ INBOX_EVERY_MIN: '15', NAUKRI_DISCOVER_EVERY_HOURS: 'x' } as NodeJS.ProcessEnv))
+      .toEqual({ inboxEveryMin: 15, naukriDiscoverEveryHours: 6 });
+    expect(loadPlanKnobs({ NAUKRI_DISCOVER_EVERY_HOURS: '3', NAUKRI_SEARCH_EVERY_HOURS: '9' } as NodeJS.ProcessEnv).naukriDiscoverEveryHours).toBe(3);
+    expect(loadPlanKnobs({ NAUKRI_SEARCH_EVERY_HOURS: '9' } as NodeJS.ProcessEnv).naukriDiscoverEveryHours).toBe(6);
   });
 });
 
 describe('apply task (8G-2 task 21)', () => {
   const asg = (d: ReturnType<typeof plan>['d']) =>
-    d.kind === 'run' ? d.tasks.find((a) => a.operator === 'apply-operator') : undefined;
+    d.kind === 'run' ? d.stages?.find((a) => a.operator === 'apply-operator') : undefined;
   const ceilApply = (used: number, limit: number): Record<LimitKey, CeilingStatus> => ({
     ...ceil(), apply_attempt: { used, limit, ok: used < limit },
   });
@@ -215,17 +225,18 @@ describe('apply task (8G-2 task 21)', () => {
     expect(asg(plan({ due: due({ applyQueued: 0, appliesLeftToday: 5 }) }).d)).toBeUndefined();
     expect(asg(plan({ due: due() }).d)).toBeUndefined(); // fields absent: nothing queued
     const a = asg(plan({ due: due({ applyQueued: 3, appliesLeftToday: 5 }), ceilings: ceilApply(0, 30) }).d);
-    expect(a).toMatchObject({ operator: 'apply-operator', platform: 'apply', tasks: [{ kind: 'apply', quota: 5 }] });
+    expect(a).toEqual({ operator: 'apply-operator', kind: 'apply', quota: 5 });
     expect(asg(plan({ due: due({ applyQueued: 3, appliesLeftToday: 0 }) }).d)).toBeUndefined();
     expect(asg(plan({ due: due({ applyQueued: 3, appliesLeftToday: 5 }), ceilings: ceilApply(30, 30) }).d)).toBeUndefined();
     // apply is listed after linkedin and naukri
     const d = plan({ due: due({ followupsDue: 1, applyQueued: 1, appliesLeftToday: 2 }), ceilings: ceilApply(0, 30) }).d;
-    expect(d.kind === 'run' && d.tasks.map((t) => t.operator)).toEqual(['linkedin-operator', 'naukri-operator', 'apply-operator']);
+    expect(d.kind === 'run' && d.tasks.map((t) => t.operator)).not.toContain('apply-operator');
+    expect(d.kind === 'run' && stepOrder(d).map((t) => t.operator).slice(-1)).toEqual(['apply-operator']);
   });
 
   it('apply quota is the smaller of remaining MAX_APPLIES_PER_DAY and remaining APPLY_MAX_ATTEMPTS_PER_DAY', () => {
-    expect(asg(plan({ due: due({ applyQueued: 9, appliesLeftToday: 4 }), ceilings: ceilApply(20, 30) }).d)!.tasks[0].quota).toBe(4);
-    expect(asg(plan({ due: due({ applyQueued: 9, appliesLeftToday: 8 }), ceilings: ceilApply(28, 30) }).d)!.tasks[0].quota).toBe(2);
+    expect(asg(plan({ due: due({ applyQueued: 9, appliesLeftToday: 4 }), ceilings: ceilApply(20, 30) }).d)!.quota).toBe(4);
+    expect(asg(plan({ due: due({ applyQueued: 9, appliesLeftToday: 8 }), ceilings: ceilApply(28, 30) }).d)!.quota).toBe(2);
   });
 
   it('apply alone yields a run; exhausted quota with rows is ceilings_exhausted', () => {
@@ -379,5 +390,42 @@ describe('countDue', () => {
     expect(c.inboxLastCheckedMinAgo).toBeNull();
     expect(c.naukriSearchLastHoursAgo).toBeNull();
     expect(c.followupsDue + c.newOutreachReady).toBe(0);
+  });
+});
+
+describe('planWake: linkedin discover task', () => {
+  const names = { jobs: ['react-india'], posts: ['default'] };
+  const withDiscover = (keys: LimitKey[] = [], used = 0) => {
+    const c = ceil();
+    for (const k of keys) c[k] = { used: 5, limit: 5, ok: false };
+    c.linkedin_discover = keys.includes('linkedin_discover') ? { used: 12, limit: 12, ok: false } : { used, limit: 12, ok: true };
+    return c;
+  };
+  const discover = (o: Partial<Parameters<typeof planWake>[0]>) => {
+    const { d } = plan({ due: due({ linkedinDiscoverLastHoursAgo: null }), ceilings: withDiscover(), discoverSearches: names, ...o });
+    return d.kind === 'run' ? d.tasks.flatMap((a) => a.tasks.map((t) => ({ ...t, platform: a.platform }))).find((t) => t.kind === 'discover') : undefined;
+  };
+  it('is planned for linkedin when named searches exist and it never ran', () => {
+    expect(discover({})).toMatchObject({ kind: 'discover', platform: 'linkedin', quota: 2, searches: names });
+  });
+  it('quota is capped by what is left of the daily discover ceiling', () => {
+    expect(discover({ ceilings: withDiscover([], 11) })?.quota).toBe(1);
+  });
+  it('waits for the interval, needs names, an open ceiling and an unhalted platform', () => {
+    expect(discover({ due: due({ linkedinDiscoverLastHoursAgo: 2 }) })).toBeUndefined();
+    expect(discover({ due: due({ linkedinDiscoverLastHoursAgo: 7 }) })).toBeDefined();
+    expect(discover({ discoverSearches: { jobs: [], posts: [] } })).toBeUndefined();
+    expect(discover({ discoverSearches: undefined })).toBeUndefined();
+    expect(discover({ ceilings: withDiscover(['linkedin_discover']) })).toBeUndefined();
+    expect(discover({ control: ctl({ allowed: ['naukri'], halted: { linkedin: 'x', naukri: null } }) })).toBeUndefined();
+  });
+  it('an untracked last-run age (field absent) never plans discover', () => {
+    expect(discover({ due: due() })).toBeUndefined();
+  });
+  it('countDue reads the last-run state key written by the discovery tools', () => {
+    const db = openDb(':memory:');
+    expect(countDue(db, NOW, TUNING_DEFAULTS).linkedinDiscoverLastHoursAgo).toBeNull();
+    setState(db, 'linkedin_discover_last_at', new Date(NOW.getTime() - 3 * 3600_000).toISOString(), NOW);
+    expect(countDue(db, NOW, TUNING_DEFAULTS).linkedinDiscoverLastHoursAgo).toBeCloseTo(3);
   });
 });

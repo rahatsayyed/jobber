@@ -70,8 +70,11 @@ export const SCREENED_SURFACES: ReadonlyArray<{ id: string; file: string }> = [
   { id: 'linkedin_send_message', file: 'src/linkedin/sendMessage.ts' },
   { id: 'linkedin_accept_invite', file: 'src/linkedin/acceptInvite.ts' },
   { id: 'linkedin_find_profiles', file: 'src/linkedin/findProfiles.ts' },
+  { id: 'linkedin_search_jobs', file: 'src/linkedin/discoverCommon.ts' },
+  { id: 'linkedin_search_posts', file: 'src/linkedin/discoverCommon.ts' },
   { id: 'naukri_state', file: 'src/mcp/naukri.ts' },
   { id: 'naukri_search', file: 'src/mcp/naukri.ts' },
+  { id: 'naukri_discover', file: 'src/naukri/discover.ts' },
   { id: 'naukri_inbox', file: 'src/mcp/naukri.ts' },
   { id: 'naukri_read_thread', file: 'src/mcp/naukri.ts' },
   { id: 'naukri_inbound_classify', file: 'src/naukri/inbound.ts' },
@@ -79,6 +82,10 @@ export const SCREENED_SURFACES: ReadonlyArray<{ id: string; file: string }> = [
   { id: 'apply_state', file: 'src/applier/tools/state.ts' },
   { id: 'apply_escalate', file: 'src/applier/escalate.ts' },
   { id: 'applier_site_state', file: 'src/mcp/applier.ts' },
+  { id: 'scout_search', file: 'src/scout/tools/search.ts' },
+  { id: 'scout_state', file: 'src/scout/tools/browse.ts' },
+  { id: 'scout_extract_jobs', file: 'src/scout/tools/jobs.ts' },
+  { id: 'site_state', file: 'src/mcp/scout.ts' },
 ];
 
 /**

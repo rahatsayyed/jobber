@@ -8,7 +8,17 @@ import { fetchBoards, type BoardSample, type FetchBoardsOptions } from './boards
 import { BOARD_PROVIDERS } from './boards/providers.js';
 import type { Ats } from './boards/filters.js';
 import type { Provider } from './provider.js';
+import { IMPORTED_LOADERS } from './providers/index.js';
 import { loadRegistry } from './registry.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { loadPortals, titlePasses } from './boards/filters.js';
+import { createGeneratedProvider, type TextFetcher } from './generated/engine.js';
+import type { ProviderSpec } from './generated/spec.js';
+import { loadRunnable, recordProviderRun } from './generated/store.js';
+import { createBrowserTextFetcher } from './generated/browser.js';
+import { createWebRuntime, type WebRuntime } from '../webcore/runtime.js';
+import { genPromoteN } from './generated/validate.js';
 import { checkShape, type ShapeReport } from './shape.js';
 import { redactError, statsToOutcomes, type SourceOutcome, type SourceStatusRow } from './status.js';
 
@@ -36,7 +46,19 @@ export interface RunOptions {
   providerTimeoutMs?: number;
   /** Extra fetchBoards limits (concurrency, per-company cap, budgets). */
   boardOpts?: Omit<FetchBoardsOptions, 'isKnown' | 'configPath'>;
+  /** Root of the git-ignored generated directory (generated provider specs); tests pass a temp dir. */
+  generatedRoot?: string;
+  /** Page fetcher per generated spec (tests, fakes); the default is the hardened board transport limited to the spec hosts. */
+  generatedFetch?: (spec: ProviderSpec) => TextFetcher | undefined;
+  /** Run id for the promotion count (default JOBBER_RUN_ID, SCHEDULER_RUN_ID, else one per process). */
+  runId?: string;
+  /** Web runtime for html_list generated providers (tests inject a fake-browser runtime; default: a new locked session closed after the pass). */
+  webRuntime?: WebRuntime;
+  env?: NodeJS.ProcessEnv;
 }
+
+const GENERATED_ROOT = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'), 'generated');
+const PROCESS_RUN_ID = `proc-${process.pid}-${Date.now()}`;
 
 // API and search sources are loaded from a fixed map (registry strings select, they never become import paths).
 const API_LOADERS: Record<string, () => Promise<{ provider: Provider }>> = {
@@ -44,6 +66,7 @@ const API_LOADERS: Record<string, () => Promise<{ provider: Provider }>> = {
   remotive: () => import('./remotive.js'),
   remoteok: () => import('./remoteok.js'),
   naukri: () => import('./naukri.js'),
+  ...IMPORTED_LOADERS,
 };
 
 interface Failure { platform: string; company: string | null; reason: FailureReason }
@@ -120,6 +143,57 @@ export async function runScriptSources(db: Db | null, opts: RunOptions): Promise
     outcomes.push(o);
   }
 
+  // 1b. Generated providers (declarative specs run by the fixed engine): validated or trusted ones run like any provider, source gen:<id>.
+  // Their jobs pass the owner's title filter; a clean run (shape ok, kept > 0, no error) counts toward promotion to trusted.
+  const genSpecs = db ? loadRunnable(db, opts.generatedRoot ?? GENERATED_ROOT) : [];
+  if (db && genSpecs.length) {
+    const env = opts.env ?? process.env;
+    const runId = opts.runId ?? env.JOBBER_RUN_ID ?? env.SCHEDULER_RUN_ID ?? PROCESS_RUN_ID;
+    const portals = loadPortals(opts.portalsPath).config;
+    // html_list pages load in the shared locked web session (O-browser), one provider at a time; json_api uses the board transport.
+    let runtime: WebRuntime | null = opts.webRuntime ?? null;
+    const genResults: Array<{ spec: ProviderSpec; id: string; provider: Provider; r: { jobs: Job[]; sample: unknown[] } } | { spec: ProviderSpec; id: string; error: string }> = [];
+    for (const spec of genSpecs) {
+      const id = `gen:${spec.id}`;
+      try {
+        let fetcher = opts.generatedFetch?.(spec);
+        if (!fetcher && spec.kind === 'html_list') fetcher = createBrowserTextFetcher((runtime ??= createWebRuntime({ db, env })), spec);
+        const provider = createGeneratedProvider(spec, fetcher);
+        const r = await withTimeout(provider.fetch({ params: { role: opts.role, location: opts.location }, isKnown: opts.isKnown }), timeoutMs);
+        genResults.push({ spec, id, provider, r });
+      } catch (e) {
+        console.error(`[sources] ${id} failed:`, redactError(e));
+        genResults.push({ spec, id, error: redactError(e) });
+      }
+    }
+    if (runtime && !opts.webRuntime) await (runtime as WebRuntime).close().catch(() => undefined);
+    for (const x of genResults) {
+      const platform = x.spec.id;
+      let clean = false;
+      if ('error' in x) {
+        outcomes.push({ id: x.id, fetched: 0, kept: 0, error: x.error, fallback_used: true, note: 'generated' });
+        failures.push({ platform, company: null, reason: 'error' });
+      } else {
+        const kept = portals ? x.r.jobs.filter((j) => titlePasses(j.title, portals.title_filter)) : x.r.jobs;
+        jobs.push(...kept);
+        const shape = checkShape(x.provider.shapeSpec, x.r.sample);
+        const o: SourceOutcome = { id: x.id, fetched: x.r.jobs.length, kept: kept.length, note: 'generated' };
+        if (!shape.ok) {
+          o.error = redactError(shapeText(shape)); o.fallback_used = true;
+          failures.push({ platform, company: null, reason: 'shape' });
+        } else if (isDrift(prevOf(x.id), shape, x.r.sample.length, o.kept)) {
+          o.error = 'drift: the page shape changed and nothing was kept'; o.fallback_used = true;
+          failures.push({ platform, company: null, reason: 'drift' });
+        } else {
+          if (shape.hash) o.shape_hash = shape.hash;
+          clean = o.kept > 0;
+        }
+        outcomes.push(o);
+      }
+      try { recordProviderRun(db, x.spec.id, { runId, clean, promoteN: genPromoteN(env), now }); } catch (e) { console.error('[sources] could not record a generated run:', redactError(e)); }
+    }
+  }
+
   // 2. Company boards and aggregators: one fetchBoards call (filters, caps and the 120 s budget stay in there).
   try {
     const r = await fetchBoards({ ...opts.boardOpts, isKnown: opts.isKnown, configPath: opts.portalsPath });
@@ -181,7 +255,7 @@ export async function runScriptSources(db: Db | null, opts: RunOptions): Promise
     const def = defs.get(o.id);
     const fresh = jobs.filter((j) => j.source === o.id && !(opts.isKnown?.(j.id))).length;
     return {
-      source: o.id, kind: def?.tier ?? 'script', group: def?.kind ?? 'board',
+      source: o.id, kind: def?.tier ?? 'script', group: def?.kind ?? (o.id.startsWith('gen:') ? 'generated' : 'board'),
       fetched: o.fetched, kept: o.kept, new: fresh,
       ...(o.error ? { error: o.error } : {}), fallback_used: o.fallback_used === true,
       ...(o.note ? { note: o.note } : {}), ...(o.flaky ? { flaky: true } : {}),

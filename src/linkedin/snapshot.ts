@@ -1,7 +1,7 @@
 // Two builders of the same RawSnapshot: SNAPSHOT_SRC runs inside the page (real computed styles),
 // buildSnapshotFromHtml builds it from fixtures through htmlVisible.ts. Hidden text never reaches
 // any field, bodyText included. Keep the section rules identical on both sides.
-import type { RawSnapshot, RawProfile, RawResult, RawInvitation, RawMessage } from './types.js';
+import type { RawSnapshot, RawProfile, RawResult, RawInvitation, RawMessage, RawJobCard, RawPostCard } from './types.js';
 import { parseHtml, findAll, visibleText, type HtmlNode } from './htmlVisible.js';
 import { extractAboutText } from './verify.js';
 
@@ -220,6 +220,34 @@ export const SNAPSHOT_SRC = String.raw`(function () {
       results.push({ name: cap(nm, 200), headline: cap(hd, 300), href: cap(link.getAttribute('href') || '', 500) });
     }
 
+    var jobCards, postCards;
+    if (pathname.indexOf('/jobs/search') === 0) {
+      jobCards = [];
+      var jcs = qs(document, '.job-card-container,.jobs-search-results__list-item');
+      for (var jci = 0; jci < jcs.length && jobCards.length < 50; jci++) {
+        var jt = qs(jcs[jci], 'a.job-card-list__title,a.job-card-container__link')[0] || null;
+        if (!jt) continue;
+        var jco = qs(jcs[jci], '.job-card-container__primary-description,.artdeco-entity-lockup__subtitle')[0] || null;
+        var jsn = qs(jcs[jci], '.job-card-list__insight,.job-card-container__metadata-wrapper')[0] || null;
+        var jea = qs(jcs[jci], '[aria-label*="Easy Apply"],[aria-label*="easy apply"]').length > 0;
+        jobCards.push({ title: cap(jt.getAttribute('aria-label') || lines(jt)[0] || '', 200), company: cap(jco ? flat(jco) : '', 200),
+          href: cap(jt.getAttribute('href') || '', 500), snippet: cap(jsn ? flat(jsn) : '', 2000), easyApply: jea });
+      }
+    }
+    if (pathname.indexOf('/search/results/content') === 0) {
+      postCards = [];
+      var pcs = qs(document, '[role=listitem]');
+      for (var pci = 0; pci < pcs.length && postCards.length < 50; pci++) {
+        var pls = qs(pcs[pci], 'a'), plink = null;
+        for (var pli = 0; pli < pls.length; pli++) {
+          if ((pls[pli].getAttribute('href') || '').indexOf('/in/') >= 0) { plink = pls[pli]; break; }
+        }
+        if (!plink) continue;
+        postCards.push({ text: cap(flat(pcs[pci]), 3000), authorName: cap(lines(plink)[0] || '', 200),
+          profileHref: cap(plink.getAttribute('href') || '', 500) });
+      }
+    }
+
     var rows = [], lis = qs(document, 'li');
     for (var ri = 0; ri < lis.length; ri++) {
       var btns = qs(lis[ri], 'a,button'), hasAccept = false;
@@ -279,7 +307,7 @@ export const SNAPSHOT_SRC = String.raw`(function () {
     } catch (se) { structure = undefined; }
     return { url: url, title: title, profile: profile, results: results, invitations: invitations, messages: messages,
       messageHeaderName: messageHeaderName, notices: notices, dialogText: dialogText, hasPasswordInput: pw.length > 0, bodyText: bodyText,
-      structure: structure };
+      structure: structure, jobCards: jobCards, postCards: postCards };
   } catch (err) {
     return empty(title, url);
   }
@@ -359,6 +387,33 @@ export function buildSnapshotFromHtml(html: string, url: string): RawSnapshot {
       results.push({ name: cap(nm, 200), headline: cap(hd, 300), href: cap(link.attrs['href'] ?? '', 500) });
     }
     out.results = results;
+
+    if (pathname.startsWith('/jobs/search')) {
+      const jobCards: RawJobCard[] = [];
+      for (const c of vq(root, (n) => cls(n).includes('job-card-container') || cls(n).includes('jobs-search-results__list-item'))) {
+        if (jobCards.length >= 50) break;
+        const t = vq(c, (n) => n.tag === 'a' && (cls(n).includes('job-card-list__title') || cls(n).includes('job-card-container__link')))[0];
+        if (!t) continue;
+        const co = vq(c, (n) => cls(n).includes('job-card-container__primary-description') || cls(n).includes('artdeco-entity-lockup__subtitle'))[0];
+        const sn = vq(c, (n) => cls(n).includes('job-card-list__insight') || cls(n).includes('job-card-container__metadata-wrapper'))[0];
+        const easy = vq(c, (n) => /easy apply/i.test(n.attrs['aria-label'] ?? '')).length > 0;
+        jobCards.push({
+          title: cap(t.attrs['aria-label'] ?? linesOf(t)[0] ?? '', 200), company: cap(co ? flat(co) : '', 200),
+          href: cap(t.attrs['href'] ?? '', 500), snippet: cap(sn ? flat(sn) : '', 2000), easyApply: easy,
+        });
+      }
+      out.jobCards = jobCards;
+    }
+    if (pathname.startsWith('/search/results/content')) {
+      const postCards: RawPostCard[] = [];
+      for (const c of vq(root, (n) => n.attrs['role'] === 'listitem')) {
+        if (postCards.length >= 50) break;
+        const link = vq(c, (n) => n.tag === 'a' && (n.attrs['href'] ?? '').includes('/in/'))[0];
+        if (!link) continue;
+        postCards.push({ text: cap(flat(c), 3000), authorName: cap(linesOf(link)[0] ?? '', 200), profileHref: cap(link.attrs['href'] ?? '', 500) });
+      }
+      out.postCards = postCards;
+    }
 
     const rows = vq(root, tagIn('li')).filter((li) => vq(li, tagIn('a', 'button')).some((b) => flat(b).toLowerCase() === 'accept'));
     const invitations: RawInvitation[] = [];

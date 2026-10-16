@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isSafeSelector } from '../src/lib/safeSelector.js';
+import { isSafeSelector } from '../src/applier/recipes/safeSelector.js';
 import { validateRecipe, defaultRefFor, type Recipe } from '../src/applier/recipes/schema.js';
 import { getRecipe, loadShippedRecipe, shippedRecipeIds, saveLearnedRecipe } from '../src/applier/recipes/store.js';
 import { ATS_REGISTRY } from '../src/apply/registry.js';

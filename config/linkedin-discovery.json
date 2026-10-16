@@ -1,0 +1,22 @@
+{
+  "jobs": [
+    {
+      "name": "full-stack-remote-india",
+      "keyword": "full stack developer react",
+      "location": "India",
+      "posted_within_seconds": 86400,
+      "remote_only": true,
+      "easy_apply_only": false,
+      "experience_level": "mid-senior",
+      "limit": 25
+    }
+  ],
+  "posts": [
+    {
+      "name": "default",
+      "role": "full stack developer / react",
+      "geo": "in",
+      "limit": 25
+    }
+  ]
+}

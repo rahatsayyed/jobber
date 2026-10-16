@@ -406,3 +406,23 @@ describe('static frontend', () => {
     }
   });
 });
+
+describe('session payload mode', () => {
+  it('carries mode only when settings deps provide it', async () => {
+    const { setupSettings } = await import('./helpers/settingsHarness.js');
+    const x = await setupSettings({ currentMode: () => ({ mode: 'DRY RUN', flags: { JOBBER_DRY_RUN: '1' } }) });
+    try {
+      const j = JSON.parse((await x.get('/api/session')).body);
+      expect(j.mode).toEqual({ mode: 'DRY RUN', flags: { JOBBER_DRY_RUN: '1' } });
+      expect(Object.keys(j).sort()).toEqual(['authAt', 'chatEnabled', 'csrf', 'expiresAt', 'mode', 'reauthRequired']);
+    } finally {
+      await x.h.close();
+    }
+    const y = await setupSettings();
+    try {
+      expect(JSON.parse((await y.get('/api/session')).body).mode).toBeUndefined();
+    } finally {
+      await y.h.close();
+    }
+  });
+});

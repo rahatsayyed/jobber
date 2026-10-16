@@ -15,7 +15,7 @@ export interface SourceProvider {
 }
 export interface SourceStatusRow {
   source: string; kind: 'script' | 'agent'; group: PlatformKind;
-  fetched: number; kept: number; new: number; error?: string; fallback_used: boolean; note?: string; flaky?: boolean;
+  fetched: number; kept: number; new: number; error?: string; fallback_used: boolean; note?: string; flaky?: boolean; last_run_at?: string;
 }
 
 const SECRET_PARAM = /([?&;]|\b)(app_?key|app_?id|api_?key|key|token|access_token|secret|client_secret|password|auth|sig|signature)=[^&\s"']*/gi;
@@ -88,12 +88,21 @@ export function sourceStatusPayload(db: Db): { ran: boolean; at?: string; rows: 
     const def = reg.get(r.id);
     return {
       source: r.id, kind: def?.tier ?? 'script', group: def?.kind ?? 'board',
-      fetched: r.fetched, kept: r.kept, new: r.new_count,
+      fetched: r.fetched, kept: r.kept, new: r.new_count, ...(r.last_run_at ? { last_run_at: r.last_run_at } : {}),
       ...(r.error ? { error: r.error } : {}), fallback_used: r.fallback_used === 1, ...(r.note ? { note: r.note } : {}), ...(r.streak_fail >= 3 ? { flaky: true } : {}),
     };
   });
   const at = recs.map((r) => r.last_run_at as string).sort().at(-1);
   return { ran: true, at, rows, ...(dropped ? { dropped_duplicates: dropped } : {}) };
+}
+
+export type ToolReply = { content: { type: 'text'; text: string }[] };
+/** The tool replies as pure functions, so they can be tested without opening the real database. */
+export function sourceStatusReply(db: Db): ToolReply {
+  return { content: [{ type: 'text', text: JSON.stringify(sourceStatusPayload(db)) }] };
+}
+export function boardStatusReply(payload: object): ToolReply {
+  return { content: [{ type: 'text', text: JSON.stringify(boardStatusAlias(payload)) }] };
 }
 
 /** `board_status` kept as an alias for one release: the old payload plus a pointer to `source_status`. */

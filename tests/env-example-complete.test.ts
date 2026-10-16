@@ -18,6 +18,8 @@ const INTERNAL: Record<string, string> = {
   TZ: 'OS timezone, passed through to wakes',
   TERM: 'terminal type passed to interactive profiles',
   COLORTERM: 'terminal colour support passed to interactive profiles',
+  NO_COLOR: 'standard terminal convention (no-color.org), read by src/ui/term.ts; documented in docs/setup-modes.md',
+  FORCE_COLOR: 'standard terminal convention, read by src/ui/term.ts; documented in docs/setup-modes.md',
   VITEST: 'set by the test runner',
   JOBAPPLIER_DB: 'test harness only (vitest.config.ts points it at an in-memory database)',
   JOBBER_RUN_ID: 'set by the scheduler launcher per wake',
