@@ -131,14 +131,14 @@ describe('fromLimit', () => {
     const s = fromLimit({ ...base, raiseNote: 'More is risky.' });
     expect(s).toMatchObject({ key: 'X_CAP', type: 'int', default: '5', min: 0, max: 9, tier: 'guarded', weakens: 'increase', note: 'More is risky.' });
     expect(s.about).toContain('Things per day.');
-    expect(fromLimit(base).tier).toBe('normal');
+    expect(fromLimit(base).tier).toBe('guarded');
   });
   it('makes a comma list an intList with its item count', () => {
     const s = fromLimit({ ...base, key: 'X_GAPS_DAYS', default: '3,4,5', min: 1, max: 365 });
     expect(s).toMatchObject({ type: 'intList', itemCount: 3, default: '3,4,5', auditValue: false });
   });
   it('picks the weakening direction from a small override map', () => {
-    for (const k of ['MATCH_THRESHOLD', 'PACING_MIN_ACTION_GAP_SEC', 'COOLDOWN_NOT_NOW_DAYS', 'EMAIL_FOLLOWUP_GAPS_DAYS', 'CADENCE_GAPS_DAYS']) {
+    for (const k of ['MATCH_THRESHOLD', 'PACING_MIN_ACTION_GAP_SEC', 'PACING_JITTER_PCT','COOLDOWN_NOT_NOW_DAYS', 'EMAIL_FOLLOWUP_GAPS_DAYS', 'CADENCE_GAPS_DAYS']) {
       expect(limitWeakens(k), k).toBe('decrease');
     }
     for (const k of ['QUIET_HOURS_START', 'QUIET_HOURS_END']) expect(limitWeakens(k), k).toBe('any');
@@ -165,8 +165,13 @@ describe('rules (D22) over the whole catalog', () => {
     expect(hit.length).toBeGreaterThan(8);
     for (const s of hit) expect(s.tier, s.key).toBe('never');
   });
-  it('every LIMITS key with a raiseNote is guarded or stricter', () => {
-    for (const l of LIMITS.filter((x) => x.raiseNote)) expect(RANK[spec(l.key).tier]!, l.key).toBeGreaterThanOrEqual(RANK.guarded!);
+  it('every LIMITS key is guarded or stricter, with a weakening direction', () => {
+    for (const l of LIMITS) {
+      expect(RANK[spec(l.key).tier]!, l.key).toBeGreaterThanOrEqual(RANK.guarded!);
+      expect(spec(l.key).weakens, l.key).not.toBeNull();
+    }
+    expect(spec('PACING_MAX_WAIT_MIN').weakens).toBe('increase');
+    expect(spec('PACING_MAX_BURST').weakens).toBe('increase');
   });
   it('no never key has a weakening direction', () => {
     for (const s of ENV_CATALOG.filter((x) => x.tier === 'never')) expect(s.weakens, s.key).toBeNull();
