@@ -327,6 +327,7 @@ export function createWebServer(deps: WebDeps): http.Server {
       authAt: s.authAt,
       chatEnabled: deps.chat.enabled,
       reauthRequired: !isFresh(s, now(), reauthMaxAgeSec),
+      ...(deps.settings?.currentMode ? { mode: deps.settings.currentMode() } : {}),
     });
   });
 
@@ -520,6 +521,7 @@ export function createWebServer(deps: WebDeps): http.Server {
         }
       },
       snapshot,
+      ...(deps.settings ? { catalog: deps.settings.catalog } : {}),
     });
     c.res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     c.res.end(redact(JSON.stringify(view)));

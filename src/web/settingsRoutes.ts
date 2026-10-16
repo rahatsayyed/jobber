@@ -44,6 +44,8 @@ export interface SettingsDeps {
   /** process env of the dashboard, only used to report shellOverride (never values) */
   shellEnv?: NodeJS.ProcessEnv;
   pendingRestart?: PendingRestartSeam;
+  /** run mode derived from the .env FILE (not the process env); shown in /api/session */
+  currentMode?: () => { mode: 'DRY RUN' | 'LIVE'; flags: Record<string, string> };
 }
 
 export interface SettingsRouteEnv {

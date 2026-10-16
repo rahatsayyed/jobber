@@ -7,7 +7,11 @@ import { loadOutreachConfig } from '../src/outreach/config.js';
 import { defaultRun, assertClaudePane, sendText } from '../src/platform/tmux.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { secretValuesFromEnv } from '../src/safety/outputGate.js';
-import { validateRunnerConfig } from '../src/web/env.js';
+import { validateRunnerConfig, isLoopbackBind } from '../src/web/env.js';
+import { nodeAtomicFs } from '../src/settings/atomic.js';
+import { currentMode, fileFlags } from '../src/stack/mode.js';
+import type { EnvSpec } from '../src/settings/types.js';
+import type { SettingsDeps } from '../src/web/settingsRoutes.js';
 import { redactSecrets, startWebServer } from '../src/web/server.js';
 import { openAuthStore, getAllowedAccount, recordAuthMode } from '../src/dash/authStore.js';
 import { allowAccount } from '../src/dash/account.js';
@@ -117,8 +121,41 @@ async function main(): Promise<number> {
     console.error('web: no access token yet: run npm run dashboard -- token');
   }
 
+  // Settings editor wiring. The catalog file may not exist yet (then the list is empty).
+  let catalog: readonly EnvSpec[] = [];
+  try {
+    const catalogPath = '../src/settings/envCatalog.js';
+    const mod = (await import(catalogPath)) as { ENV_CATALOG?: readonly EnvSpec[] };
+    if (Array.isArray(mod.ENV_CATALOG)) catalog = mod.ENV_CATALOG;
+  } catch {
+    /* no catalog yet */
+  }
+  const root = process.cwd();
+  const modeNow = (): { mode: 'DRY RUN' | 'LIVE'; flags: Record<string, string> } => {
+    const m = currentMode(fileFlags(existsSync(envFile) ? parseEnv(readFileSync(envFile, 'utf8')) : {}));
+    return { mode: m.mode, flags: m.flags };
+  };
+  const allSecrets: string[] = [...secrets, cfg.clientSecret, ...(desktop ? [desktop.clientSecret] : [])].filter(Boolean);
+  const settings: SettingsDeps = {
+    root,
+    envPath: envFile,
+    backupDir: join(root, '.jobber', 'settings-backups'),
+    userDataDir: join(root, 'user-data'),
+    catalog,
+    fs: nodeAtomicFs,
+    editEnabled: cfg.settingsEdit,
+    remoteExposure: !isLoopbackBind(cfg.bind) || cfg.trustProxy,
+    remoteSafetyAllowed: cfg.settingsRemoteSafety,
+    backupKeep: cfg.settingsBackupKeep,
+    startMode: modeNow(),
+    secrets: allSecrets,
+    shellEnv: process.env,
+    currentMode: modeNow,
+  };
+
   try {
     await startWebServer({
+      settings,
       port: cfg.port,
       bind: cfg.bind,
       allowRemoteBind: cfg.allowRemoteBind,
@@ -135,7 +172,7 @@ async function main(): Promise<number> {
       cfg: loadOutreachConfig(),
       run: defaultRun,
       sessionsToShow: [cfg.session],
-      secrets: [...secrets, cfg.clientSecret, ...(desktop ? [desktop.clientSecret] : [])].filter(Boolean),
+      secrets: allSecrets,
       chat: {
         enabled: cfg.chatEnabled,
         session: cfg.session,

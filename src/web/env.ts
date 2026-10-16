@@ -30,6 +30,9 @@ export interface WebConfig {
   authModeImplicit: boolean;
   googleKeysPath: string;
   googleRedirectShape: RedirectShape;
+  settingsEdit: boolean;
+  settingsRemoteSafety: boolean;
+  settingsBackupKeep: number;
 }
 
 export type ErrorScope = 'web' | 'oidc' | 'account' | 'token' | 'google';
@@ -127,6 +130,14 @@ export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: bool
   const trustProxy = bool(env, 'WEB_TRUST_PROXY', errs);
   const chatEnabled = bool(env, 'WEB_CHAT_ENABLED', errs);
   const authDb = authDbPathFromEnv(env);
+  const settingsEdit = bool(env, 'WEB_SETTINGS_EDIT', errs);
+  const settingsRemoteSafety = bool(env, 'WEB_SETTINGS_REMOTE_SAFETY', errs);
+  let settingsBackupKeep = 10;
+  const rawKeep = val(env, 'SETTINGS_BACKUP_KEEP');
+  if (rawKeep !== '') {
+    if (!/^\d+$/.test(rawKeep) || Number(rawKeep) < 1 || Number(rawKeep) > 100) web('SETTINGS_BACKUP_KEEP must be an integer from 1 to 100');
+    else settingsBackupKeep = Number(rawKeep);
+  }
 
   const session = val(env, 'WEB_TMUX_SESSION') || 'ccgram';
   const window = val(env, 'WEB_TMUX_WINDOW') || 'JobApplier';
@@ -208,6 +219,7 @@ export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: bool
       issuer, clientId, clientSecret,
       redirectUri: authMode === 'google_desktop' ? redirectFor(googleRedirectShape, port) : redirectUri,
       reauthPrompt, reauthMaxAgeSec, allowedEmail, authMode, authModeImplicit, googleKeysPath, googleRedirectShape,
+      settingsEdit, settingsRemoteSafety, settingsBackupKeep,
     },
   };
 }
