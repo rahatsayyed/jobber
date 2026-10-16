@@ -209,8 +209,9 @@ describe('modeAfter', () => {
 });
 
 describe('friction seam and newText', () => {
-  it('defaults to no friction', () => {
-    expect(plan([set('FX_MAX_PER_DAY', '6')]).friction).toEqual({ reauth: false, phrase: null });
+  it('defaults to the real policy: none for a normal key, reauth for a weakened guarded key', () => {
+    expect(plan([set('FX_MIN_GAP', '31')]).friction).toEqual({ reauth: false, phrase: null });
+    expect(plan([set('FX_MAX_PER_DAY', '6')]).friction).toEqual({ reauth: true, phrase: null });
   });
   it('passes resolved changes and both modes to the injected function', () => {
     let seen: Parameters<FrictionFn>[0] | null = null;

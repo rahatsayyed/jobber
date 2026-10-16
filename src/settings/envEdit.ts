@@ -11,6 +11,7 @@ import { validateRunnerConfig } from '../web/env.js';
 import { type AtomicFs, SettingsError, etagOf, writeWithBackup } from './atomic.js';
 import { ENV_BACKUP_ID_RE, readBackup } from './backups.js';
 import type { ChangeOp, EnvSpec, FieldDiff, Friction, PolicyCtx, RestartScope } from './types.js';
+import { frictionFor } from './policy.js';
 import { validateCross, validateEnvValue } from './valueCheck.js';
 
 export const MAX_OPS = 50;
@@ -45,9 +46,8 @@ export interface FrictionInput {
   modeBefore: 'DRY RUN' | 'LIVE';
   modeAfter: 'DRY RUN' | 'LIVE';
 }
-/** Task 6 supplies the real policy (requiredFriction); the default asks for nothing. */
+/** The default is the real policy (src/settings/policy.ts). */
 export type FrictionFn = (input: FrictionInput, ctx: PolicyCtx) => Friction;
-const noFriction: FrictionFn = () => ({ reauth: false, phrase: null });
 
 export interface EnvPlan {
   etag: string;
@@ -254,7 +254,7 @@ function finish(
     .sort();
   const modeBefore = modeOf(state.text);
   const modeAfter = modeOf(newText);
-  const friction = (deps?.frictionFn ?? noFriction)({ changes: resolved, modeBefore, modeAfter }, ctx);
+  const friction = (deps?.frictionFn ?? frictionFor)({ changes: resolved, modeBefore, modeAfter }, ctx);
   return withNewText(
     { etag: state.etag, changes, diffs, errors, warnings, friction, restart, unknownKeys, modeAfter },
     errors.length > 0 ? state.text : newText,
@@ -280,7 +280,7 @@ export function planEnvChange(
         diffs: [],
         errors: v.errors,
         warnings: [],
-        friction: noFriction({ changes: [], modeBefore: modeOf(state.text), modeAfter: modeOf(state.text) }, ctx),
+        friction: (deps?.frictionFn ?? frictionFor)({ changes: [], modeBefore: modeOf(state.text), modeAfter: modeOf(state.text) }, ctx),
         restart: [],
         unknownKeys: Object.keys(before).filter((k) => !known.has(k)).sort(),
         modeAfter: modeOf(state.text),
