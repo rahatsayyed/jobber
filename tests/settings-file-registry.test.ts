@@ -15,7 +15,7 @@ const obj = (name: string): Record<string, any> => JSON.parse(fx(name));
 
 const DISCOVERY = JSON.stringify({
   jobs: [{ name: 'a', keyword: 'react', location: 'India', limit: 25 }],
-  posts: { role: 'react', geo: 'in', limit: 25 },
+  posts: [{ name: 'p', role: 'react', geo: 'in', limit: 25 }],
 });
 
 describe('allowlist', () => {
@@ -41,7 +41,7 @@ describe('allowlist', () => {
 
   it('keeps every rel a constant under config/ or user-data/ with no traversal', () => {
     for (const e of allEntries()) {
-      for (const rel of [e.rel, e.altRel].filter(Boolean) as string[]) {
+      for (const rel of [e.rel]) {
         expect(rel).toMatch(/^(config|user-data)\/[a-z0-9.-]+\.json$/);
         expect(rel).not.toContain('..');
       }
@@ -83,7 +83,7 @@ describe('fixtures validate', () => {
     expect(check('linkedin-discovery', DISCOVERY).ok).toBe(true);
   });
   it('the shipped config files validate too', () => {
-    for (const [id, rel] of [['portals', 'config/portals.json'], ['target-regions', 'config/target-regions.json'], ['deal-breakers', 'config/deal-breakers.json'], ['replies', 'config/replies.json'], ['linkedin-discovery', 'config/discover-linkedin.json']]) {
+    for (const [id, rel] of [['portals', 'config/portals.json'], ['target-regions', 'config/target-regions.json'], ['deal-breakers', 'config/deal-breakers.json'], ['replies', 'config/replies.json'], ['linkedin-discovery', 'config/linkedin-discovery.json']]) {
       const r = check(id, readFileSync(join(__dirname, '..', rel), 'utf8'));
       expect(r.errors, id).toEqual([]);
     }
@@ -129,13 +129,13 @@ describe('broken variants (one per rule)', () => {
   });
 
   it('linkedin-discovery', () => {
-    expect(check('linkedin-discovery', JSON.stringify({ jobs: [{ name: 'a', limit: 5 }], posts: { role: 'r', geo: 'in', limit: 5 } })).ok).toBe(false);
-    expect(check('linkedin-discovery', JSON.stringify({ jobs: [{ name: 'a', keyword: 'k', limit: 'x' }], posts: { role: 'r', geo: 'in', limit: 5 } })).errors[0]).toMatch(/^jobs\[0\]\.limit/);
-    expect(check('linkedin-discovery', JSON.stringify({ jobs: [{ name: 'a', keyword: 'k', limit: 5, experience_level: 'god' }], posts: { role: 'r', geo: 'in', limit: 5 } })).ok).toBe(false);
-    expect(check('linkedin-discovery', '{"jobs":[]}').ok).toBe(false);
-    const ph = check('linkedin-discovery', JSON.stringify({ jobs: [{ name: 'a', search_url: 'REPLACE_WITH_X', limit: 5 }], posts: { role: 'r', geo: 'in', limit: 5 } }));
-    expect(ph.ok).toBe(true);
-    expect(ph.warnings.length).toBe(1);
+    const post = { name: 'p', role: 'r', geo: 'in', limit: 5 };
+    expect(check('linkedin-discovery', JSON.stringify({ jobs: [{ name: 'a', limit: 5 }], posts: [post] })).ok).toBe(false);
+    expect(check('linkedin-discovery', JSON.stringify({ jobs: [{ name: 'a', keyword: 'k', limit: 'x' }], posts: [post] })).errors[0]).toMatch(/^jobs\[0\]\.limit/);
+    expect(check('linkedin-discovery', JSON.stringify({ jobs: [{ name: 'a', keyword: 'k', limit: 5, experience_level: 'god' }], posts: [post] })).ok).toBe(false);
+    expect(check('linkedin-discovery', JSON.stringify({ jobs: [{ name: 'bad name', keyword: 'k', limit: 5 }] })).ok).toBe(false);
+    expect(check('linkedin-discovery', JSON.stringify({ jobs: [], posts: { role: 'r' } })).ok).toBe(false);
+    expect(check('linkedin-discovery', '{"jobs":[]}').ok).toBe(true);
   });
 
   it('languages', () => {

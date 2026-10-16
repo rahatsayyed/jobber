@@ -31,8 +31,6 @@ export interface ValidateResult {
 export interface FileEntry {
   id: string;
   rel: string;
-  /** linkedin-discovery only: used instead of `rel` when this file exists */
-  altRel?: string;
   area: 'config' | 'user-data';
   edit: boolean;
   maxBytes: number;
@@ -229,7 +227,7 @@ const ENTRIES: FileEntry[] = [
   make({ id: 'target-regions', rel: 'config/target-regions.json', area: 'config', tier: 'normal', weakTier: 'guarded', weakens: weakTargetRegions, restart: 'next_run' }, targetRegions),
   make({ id: 'deal-breakers', rel: 'config/deal-breakers.json', area: 'config', tier: 'normal', weakTier: 'guarded', weakens: weakDealBreakers, restart: 'next_run' }, (v) => validateDealBreakers(v)),
   make({ id: 'replies', rel: 'config/replies.json', area: 'config', tier: 'normal', weakTier: 'safety', weakens: weakReplies, restart: 'next_run' }, (v) => validateReplies(v)),
-  make({ id: 'linkedin-discovery', rel: 'config/discover-linkedin.json', altRel: 'config/linkedin-discovery.json', area: 'config', tier: 'normal', restart: 'next_run' }, (v) => validateDiscovery(v)),
+  make({ id: 'linkedin-discovery', rel: 'config/linkedin-discovery.json', area: 'config', tier: 'normal', restart: 'next_run' }, (v) => validateDiscovery(v)),
   make({ id: 'languages', rel: 'user-data/languages.json', area: 'user-data', tier: 'normal', weakTier: 'guarded', weakens: weakLanguages, restart: 'next_run' }, languages),
   make({ id: 'easy-apply-answers', rel: 'user-data/easy-apply-answers.json', area: 'user-data', tier: 'normal', restart: 'none' }, (v) => validateAnswers(v)),
   make({ id: 'profile', rel: 'user-data/profile.json', area: 'user-data', tier: 'normal', restart: 'next_run' }, (v) => profile(v)),

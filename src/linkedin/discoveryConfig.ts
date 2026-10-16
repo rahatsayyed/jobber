@@ -25,11 +25,11 @@ const postDef = z.object({
   geo: z.string().max(60).default(''),
   limit: z.number().int().min(1).max(50).default(25),
 });
-const configSchema = z.object({ jobs: z.array(jobDef).default([]), posts: z.array(postDef).default([]) });
+export const discoveryConfigSchema = z.object({ jobs: z.array(jobDef).default([]), posts: z.array(postDef).default([]) });
 
 export type JobSearchDef = z.infer<typeof jobDef>;
 export type PostSearchDef = z.infer<typeof postDef>;
-export type DiscoveryConfig = z.infer<typeof configSchema>;
+export type DiscoveryConfig = z.infer<typeof discoveryConfigSchema>;
 
 const EXPERIENCE_CODES: Record<(typeof EXPERIENCE)[number], string> = {
   internship: '1', entry: '2', associate: '3', 'mid-senior': '4', director: '5', executive: '6',
@@ -41,7 +41,7 @@ export const DISCOVERY_CONFIG_PATH = path.join(projectRoot, 'config', 'linkedin-
 /** Parse and validate; a missing or invalid file yields an empty config (the tools then report unknown_search). */
 export function loadDiscoveryConfig(file: string = DISCOVERY_CONFIG_PATH): DiscoveryConfig {
   try {
-    return configSchema.parse(JSON.parse(readFileSync(file, 'utf8')));
+    return discoveryConfigSchema.parse(JSON.parse(readFileSync(file, 'utf8')));
   } catch (e) {
     console.error(`[linkedin] discovery config unusable: ${String((e as Error)?.message ?? e).replace(/\s+/g, ' ').slice(0, 160)}`);
     return { jobs: [], posts: [] };

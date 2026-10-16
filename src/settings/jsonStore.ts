@@ -98,7 +98,6 @@ export function createJsonStore(deps: JsonStoreDeps): JsonStore {
 
   function targetPath(e: FileEntry): string {
     if (e.area === 'user-data') return join(udir, basename(e.rel));
-    if (e.altRel && fs.lstat(join(deps.root, e.altRel))) return join(deps.root, e.altRel);
     return join(deps.root, e.rel);
   }
 

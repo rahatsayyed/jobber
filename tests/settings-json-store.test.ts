@@ -88,10 +88,8 @@ describe('read, list and path safety', () => {
     expect(store.read('languages').exists).toBe(true);
   });
 
-  it('linkedin-discovery uses the successor file when it exists', () => {
-    const { fs, store } = setup({ files: { [`${ROOT}/config/discover-linkedin.json`]: '{}' } });
-    expect(store.pathOf('linkedin-discovery')).toBe('/proj/config/discover-linkedin.json');
-    fs.put(`${ROOT}/config/linkedin-discovery.json`, '{}');
+  it('linkedin-discovery resolves to config/linkedin-discovery.json', () => {
+    const { store } = setup();
     expect(store.pathOf('linkedin-discovery')).toBe('/proj/config/linkedin-discovery.json');
   });
 
@@ -317,10 +315,10 @@ describe('user-data realpath and file modes', () => {
     expect(fs.modeOf(`${ROOT}/config/replies.json`)).toBe(0o600);
     const t = fx('replies.json');
     const s2 = createJsonStore({ fs, root: ROOT, userDataDir: UD, backupDir: BK, keep: 10, now });
-    fs.put(`${ROOT}/config/discover-linkedin.json`, '{}', 0o640);
-    const d = JSON.stringify({ jobs: [], posts: { role: 'r', geo: 'in', limit: 5 } });
+    fs.put(`${ROOT}/config/linkedin-discovery.json`, '{}', 0o640);
+    const d = JSON.stringify({ jobs: [], posts: [] });
     s2.apply(s2.plan('linkedin-discovery', d, s2.read('linkedin-discovery').etag), d);
-    expect(fs.modeOf(`${ROOT}/config/discover-linkedin.json`)).toBe(0o640);
+    expect(fs.modeOf(`${ROOT}/config/linkedin-discovery.json`)).toBe(0o640);
     expect(t).toBeTruthy();
     const f2 = memFs({ '/proj/config/x': '' });
     const s3 = createJsonStore({ fs: f2, root: ROOT, userDataDir: UD, backupDir: BK, keep: 10, now });
