@@ -927,7 +927,7 @@ home IP; Akamai may treat a datacenter/VPS IP harder, so re-run the check from t
   `apply_url` falls back to the Naukri listing URL).
 - **Apply** (`naukri` MCP, `src/mcp/naukri.ts`, tools `naukri_open`, `naukri_state`,
   `naukri_click`, `naukri_type`, `naukri_screenshot`, `naukri_close`): ONE persistent headless
-  session (saved login in `secrets/naukri-state.json`, refresh with `npm run naukri:login -- --account main`,
+  session (saved login in `secrets/naukri-state.json`, refresh with `npm run naukri:login`,
   which opens headed real Chrome for a manual login), closed after ~10 min idle. It is hands and
   eyes only: you read `naukri_state` (a compact text state, about 100-200 tokens: buttons, the
   recruiter chatbot's last messages, input, options, `applied_confirmation_seen`) and decide every

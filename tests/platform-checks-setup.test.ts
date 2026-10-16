@@ -493,8 +493,9 @@ describe('sessions', () => {
   it('warns on missing files with commands', async () => {
     const r = await go({});
     expect(r.status).toBe('warn');
-    expect(r.fix).toContain('npm run linkedin:login -- --account main');
-    expect(r.fix).toContain('npm run naukri:login -- --account main');
+    expect(r.fix).toContain('npm run linkedin:login');
+    expect(r.fix).toContain('npm run naukri:login');
+    expect(r.fix).not.toContain('--account');
     expect(r.fix).not.toContain('save-');
   });
   it('fails on loose mode, empty cookies and expiry without showing values', async () => {

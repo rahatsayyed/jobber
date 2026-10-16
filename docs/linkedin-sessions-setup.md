@@ -14,12 +14,11 @@ working until it expires. Never use the burner session for the `linkedin` MCP.
 Run from the repo root:
 
 ```bash
-npm run linkedin:login -- --account main
+npm run linkedin:login
 ```
 
-Without `--account main` the command asks `Log in the MAIN LinkedIn account? (y/N)` and needs a
-terminal. It never reads an environment variable for this (the old `LINKEDIN_LOGIN_ACCOUNT` gate
-is gone).
+The command takes no flag and asks no question: there is only the main account now. It prints a
+short instruction and opens the browser.
 
 1. A real, visible Google Chrome window opens on LinkedIn's login page (patchright, installed
    Chrome, the same browser settings as the headless runtime).
@@ -35,7 +34,7 @@ is gone).
 
 LinkedIn sessions expire periodically. If the `linkedin` MCP fails with a login or redirect error,
 or `npm run doctor` (check `sessions`) says the session is missing or expired, run
-`npm run linkedin:login -- --account main` again.
+`npm run linkedin:login` again.
 
 ## Before live LinkedIn reads or sends
 
