@@ -17,7 +17,7 @@ import { applyEnvPlan, planEnvChange, planRollback, readEnvState, type EnvPlan }
 import { resolveEntry, type FileEntry } from '../settings/fileRegistry.js';
 import { createJsonStore, type FilePlan } from '../settings/jsonStore.js';
 import { phraseMatches } from '../settings/policy.js';
-import type { ChangeOp, EnvSpec, Friction, PolicyCtx, RestartScope, SectionId } from '../settings/types.js';
+import { isSecret, type ChangeOp, type EnvSpec, type Friction, type PolicyCtx, type RestartScope, type SectionId } from '../settings/types.js';
 
 export interface PendingRestartSeam {
   mark(entries: { key: string; scope: RestartScope }[]): void;
@@ -94,6 +94,7 @@ const SECTION_TITLES: Record<SectionId, string> = {
   layout: 'Layout memory',
   'update-backup': 'Update and backup',
   advanced: 'Advanced',
+  'contact-finding': 'Contact finding',
   'web-core': 'Core',
   search: 'Search',
   apply: 'Apply',
@@ -268,7 +269,7 @@ export function createSettingsRoutes(deps: SettingsDeps, env: SettingsRouteEnv):
     const pairs: string[] = [];
     for (const d of plan.diffs) {
       const spec = bySpec.get(d.key);
-      if (!spec || spec.secret || d.secret || !spec.auditValue || !NOTE_PAIR_TYPES.has(spec.type)) continue;
+      if (!spec || isSecret(spec) || d.secret || !spec.auditValue || !NOTE_PAIR_TYPES.has(spec.type)) continue;
       pairs.push(`${d.key}:${d.before}->${d.after}`);
     }
     return [keys.join(','), `n=${keys.length}`, ...pairs].join(' ');
@@ -277,7 +278,7 @@ export function createSettingsRoutes(deps: SettingsDeps, env: SettingsRouteEnv):
   function pushSecrets(plan: EnvPlan): void {
     const env2 = parseEnv(plan.newText);
     for (const spec of catalog) {
-      if (!spec.secret) continue;
+      if (!isSecret(spec)) continue;
       const v = env2[spec.key];
       if (v && v.length >= 8 && !deps.secrets.includes(v)) deps.secrets.push(v);
     }
@@ -468,7 +469,7 @@ export function createSettingsRoutes(deps: SettingsDeps, env: SettingsRouteEnv):
       if (q && !`${s.key} ${s.about} ${s.feature}`.toLowerCase().includes(q)) continue;
       const raw = file[s.key];
       const isSet = raw !== undefined && raw.trim() !== '';
-      const secret = s.secret || s.type === 'secret';
+      const secret = isSecret(s);
       const shell = deps.shellEnv?.[s.key];
       const item = {
         key: s.key, about: s.about, feature: s.feature, type: s.type, default: s.default, min: s.min, max: s.max,

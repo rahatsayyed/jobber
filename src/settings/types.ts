@@ -17,7 +17,8 @@ export type SectionId =
   | 'advanced'
   | 'web-core'
   | 'search'
-  | 'apply';
+  | 'apply'
+  | 'contact-finding';
 
 export type EnvType = 'bool' | 'int' | 'enum' | 'string' | 'path' | 'url' | 'email' | 'list' | 'intList' | 'secret';
 export type EditTier = 'never' | 'safety' | 'guarded' | 'normal';
@@ -49,6 +50,11 @@ export interface EnvSpec {
   note?: string;
   docs?: string;
   auditValue: boolean;
+}
+
+/** The one secrecy test: every place that masks a value, hides a diff or refuses a reset asks this. */
+export function isSecret(spec: Pick<EnvSpec, 'secret' | 'type'>): boolean {
+  return spec.secret || spec.type === 'secret';
 }
 
 export type ChangeOp =

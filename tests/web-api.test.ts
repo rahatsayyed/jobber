@@ -373,7 +373,11 @@ describe('data routes', () => {
     expect(r.body).not.toContain('planted-oidc-secret-77');
     expect(r.body).not.toContain('planted-gmail-pw-88');
     const v = JSON.parse(r.body);
-    expect(v.env.find((e: { name: string }) => e.name === 'MATCH_THRESHOLD').value).toBe('61');
+    // No settings catalog is wired in this harness: the catalog is the only source of values, so every name from
+    // .env.example is listed by name with set/unset only (the catalog-backed view is tested in dash-panels).
+    const row = (n: string): { value: string; masked: boolean } => v.env.find((e: { name: string }) => e.name === n);
+    expect(row('MATCH_THRESHOLD')).toMatchObject({ value: 'set', masked: false });
+    expect(row('WEB_OIDC_CLIENT_SECRET')).toMatchObject({ value: 'set' });
   });
 
   it('a handler failure is 500 internal with no detail', async () => {

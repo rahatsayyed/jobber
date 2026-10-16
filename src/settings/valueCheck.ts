@@ -3,13 +3,13 @@
 // Reasons never echo the rejected value for secret specs.
 import { normaliseEmail } from '../dash/account.js';
 import { validatePairs } from '../setup/limitsCatalog.js';
-import type { EnvSpec } from './types.js';
+import { isSecret, type EnvSpec } from './types.js';
 
 const DEFAULT_MAX_LEN = 2000;
 const PATH_MAX = 1024;
 
 function show(spec: EnvSpec, v: string): string {
-  return spec.secret || spec.type === 'secret' ? 'value' : `"${v.length > 60 ? v.slice(0, 60) + '...' : v}"`;
+  return isSecret(spec) ? 'value' : `"${v.length > 60 ? v.slice(0, 60) + '...' : v}"`;
 }
 
 function intIn(spec: EnvSpec, raw: string): string | null {

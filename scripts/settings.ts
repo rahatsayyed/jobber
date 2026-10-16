@@ -9,7 +9,7 @@ import { nodeAtomicFs, type AtomicFs } from '../src/settings/atomic.js';
 import { listBackups, readBackup } from '../src/settings/backups.js';
 import { lineDiff } from '../src/settings/diff.js';
 import { validateCross, validateEnvValue } from '../src/settings/valueCheck.js';
-import type { EnvSpec } from '../src/settings/types.js';
+import { isSecret, type EnvSpec } from '../src/settings/types.js';
 
 export interface CliDeps {
   catalog: readonly EnvSpec[];
@@ -59,7 +59,7 @@ export function runCli(argv: readonly string[], d: CliDeps): CliResult {
       return out(1);
     }
     const v = parseEnv(envText(d))[arg];
-    if (spec.secret || spec.type === 'secret') lines.push(`secret: ${isSet(v) ? 'set' : 'not set'}`);
+    if (isSecret(spec)) lines.push(`secret: ${isSet(v) ? 'set' : 'not set'}`);
     else lines.push(isSet(v) ? `${arg}=${v}` : `${arg}: unset${spec.default !== null ? ` (default ${spec.default})` : ''}`);
     return out(0);
   }
@@ -119,7 +119,7 @@ export function runCli(argv: readonly string[], d: CliDeps): CliResult {
       const m = /^(\s*(?:#\s*)?(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
       if (!m) return line;
       const spec = by.get(m[2]);
-      if (spec && !spec.secret && spec.type !== 'secret') return line;
+      if (spec && !isSecret(spec)) return line;
       return `${m[1]}${m[2]}=<hidden>`;
     };
     const diff = lineDiff(old, envText(d));

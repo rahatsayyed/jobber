@@ -6,40 +6,14 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LIMITS } from '../src/setup/limitsCatalog.js';
+import { ENV_CATALOG, INTERNAL_NAMES } from '../src/settings/envCatalog.js';
 
 const ROOT = join(import.meta.dirname, '..');
 const example = readFileSync(join(ROOT, '.env.example'), 'utf8');
 const lines = example.split(/\r?\n/);
 
-/** Names that are read by the code but are NOT owner configuration, each with the reason. */
-const INTERNAL: Record<string, string> = {
-  HOME: 'OS variable',
-  PATH: 'OS variable',
-  TZ: 'OS timezone, passed through to wakes',
-  TERM: 'terminal type passed to interactive profiles',
-  COLORTERM: 'terminal colour support passed to interactive profiles',
-  NO_COLOR: 'standard terminal convention (no-color.org), read by src/ui/term.ts; documented in docs/setup-modes.md',
-  FORCE_COLOR: 'standard terminal convention, read by src/ui/term.ts; documented in docs/setup-modes.md',
-  VITEST: 'set by the test runner',
-  JOBAPPLIER_DB: 'test harness only (vitest.config.ts points it at an in-memory database)',
-  JOBBER_RUN_ID: 'set by the scheduler launcher per wake',
-  SCHEDULER_RUN_ID: 'set by the scheduler per run',
-  JOBBER_RUN_PROFILE: 'set by the restricted runner to the profile name',
-  IS_SANDBOX: 'refused if set; never a configuration value',
-  CCGRAM_CLAUDE_COMMAND: 'set by scripts/ccgram/run.sh for the bridge',
-  HOOK_NO_LOG: 'set by the doctor when it probes the allowlist hook',
-  HOOK_PROBE_NO_LOG: 'set by the hook probe test',
-  COPYFILE_DISABLE: 'set by the restore code for tar',
-  LINKEDIN_NO_MAIN: 'import guard so tests can load the linkedin MCP module',
-  APPLIER_NO_MAIN: 'import guard so tests can load the applier MCP module',
-  SCOUT_NO_MAIN: 'import guard so tests can load the scout MCP module',
-  NAUKRI_NO_MAIN: 'import guard so tests can load the naukri MCP module',
-  OUTREACH_NO_MAIN: 'import guard so tests can load the outreach MCP module',
-  CLAUDE_PROJECT_DIR: 'set by Claude Code for hooks',
-  PLAYWRIGHT_BROWSERS_PATH: 'third-party Playwright variable, read only to locate browsers',
-  CAND: 'local shell variable in scripts/bootstrap.sh',
-  KEY: 'placeholder in a generic helper',
-};
+/** Names that are read by the code but are NOT owner configuration, each with the reason (the catalog owns the list). */
+const INTERNAL: Record<string, string> = INTERNAL_NAMES;
 
 function exampleKeys(): Set<string> {
   const keys = new Set<string>();
@@ -111,6 +85,13 @@ describe('.env.example completeness', () => {
       // The line right above must be a comment (the key's own description), never blank.
       expect(lines[i - 1]?.startsWith('#'), `line ${i + 1} (${l.split('=')[0]}) needs a comment above`).toBe(true);
     });
+  });
+
+  it('ships every secret key of the settings catalog blank', () => {
+    for (const s of ENV_CATALOG.filter((x) => x.secret)) {
+      const line = lines.find((l) => l.startsWith(`${s.key}=`));
+      if (line !== undefined) expect(line, s.key).toBe(`${s.key}=`);
+    }
   });
 
   it('lists every limits catalog key', () => {

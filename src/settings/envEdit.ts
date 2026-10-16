@@ -10,7 +10,7 @@ import { envEntries, updateEnvText, type EnvFs } from '../setup/envWriter.js';
 import { validateRunnerConfig } from '../web/env.js';
 import { type AtomicFs, SettingsError, etagOf, writeWithBackup } from './atomic.js';
 import { ENV_BACKUP_ID_RE, readBackup } from './backups.js';
-import type { ChangeOp, EnvSpec, FieldDiff, Friction, PolicyCtx, RestartScope } from './types.js';
+import { isSecret, type ChangeOp, type EnvSpec, type FieldDiff, type Friction, type PolicyCtx, type RestartScope } from './types.js';
 import { frictionFor } from './policy.js';
 import { validateCross, validateEnvValue } from './valueCheck.js';
 
@@ -82,7 +82,7 @@ function diffFor(spec: EnvSpec, op: ChangeOp['op'], before: string | null, after
   const b = before ?? '';
   const a = after ?? '';
   if (b === a) return null;
-  if (spec.secret) {
+  if (isSecret(spec)) {
     const wasSet = b !== '';
     const nowSet = a !== '';
     return {
@@ -102,7 +102,7 @@ function redactChanges(changes: ChangeOp[], bySpec: Map<string, EnvSpec>): Chang
   return changes.map((c) => {
     if (c?.op !== 'set') return c;
     const spec = typeof c.key === 'string' ? bySpec.get(c.key) : undefined;
-    return spec && !spec.secret && spec.tier !== 'never' ? c : { key: safeKey(c.key), op: 'set', value: '' };
+    return spec && !isSecret(spec) && spec.tier !== 'never' ? c : { key: safeKey(c.key), op: 'set', value: '' };
   });
 }
 
@@ -178,7 +178,7 @@ function validateOps(changes: ChangeOp[], bySpec: Map<string, EnvSpec>): Validat
         if (why) errors.push(`invalid_value: ${key}: ${why}`);
       }
     } else if (c.op === 'reset') {
-      if (spec.secret) errors.push(`secret_reset: ${key} is a secret: use clear or replace`);
+      if (isSecret(spec)) errors.push(`secret_reset: ${key} is a secret: use clear or replace`);
     } else if (c.op !== 'clear') {
       errors.push(`bad_op: ${key}`);
     }
@@ -367,7 +367,7 @@ export function planRollback(state: EnvState, backupId: string, deps: RollbackDe
     const b = cur[spec.key] ?? null;
     const a = bak[spec.key] ?? null;
     if ((b ?? '') === (a ?? '') && (b === null) === (a === null)) continue;
-    const op: ChangeOp = a === null ? (spec.secret ? { key: spec.key, op: 'clear' } : { key: spec.key, op: 'reset' }) : { key: spec.key, op: 'set', value: a };
+    const op: ChangeOp = a === null ? (isSecret(spec) ? { key: spec.key, op: 'clear' } : { key: spec.key, op: 'reset' }) : { key: spec.key, op: 'set', value: a };
     if (spec.tier === 'never') errors.push(`tier_never: ${spec.key} cannot be changed from the dashboard`);
     changes.push(op);
     resolved.push({ op, spec, before: b, after: a });

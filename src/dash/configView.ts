@@ -1,9 +1,10 @@
 // src/dash/configView.ts
-// Masked, read-only config view. Env names come from .env.example (names only), never from .env.
+// Masked, read-only config view. Known keys come from the settings catalog (the only source of truth for what is
+// secret); names found only in .env.example are listed by name, never with a value.
 import { join } from 'node:path';
 import type { Snapshot } from '../status/snapshot.js';
 import { cleanText } from './clean.js';
-import type { EnvSpec } from '../settings/types.js';
+import { isSecret, type EnvSpec } from '../settings/types.js';
 
 export interface ConfigItem {
   name: string;
@@ -17,35 +18,11 @@ export interface ConfigView {
   ceilings: Snapshot['ceilings'];
 }
 
-const SECRET_RE = /TOKEN|SECRET|PASS|KEY|COOKIE|CREDENTIAL|AUTH/i;
-const ALLOW_EXACT = new Set([
-  'MATCH_THRESHOLD',
-  'SEND_LIMIT_PER_RUN',
-  'WEB_PORT',
-  'WEB_TMUX_SESSION',
-  'WEB_TMUX_WINDOW',
-  'WEB_CHAT_ENABLED',
-  'AUTO_UPDATE',
-  'NAUKRI_HEADLESS',
-]);
-const ALLOW_PATTERNS = [/^MAX_/, /_PER_DAY$/, /_PER_WEEK$/];
-
-function allowed(name: string): boolean {
-  return ALLOW_EXACT.has(name) || ALLOW_PATTERNS.some((r) => r.test(name));
-}
-
-export function maskValue(name: string, value: string | undefined): ConfigItem {
-  const isSet = value !== undefined && value !== '';
-  if (SECRET_RE.test(name)) return { name, value: isSet ? 'set' : 'unset', masked: true };
-  if (allowed(name) && isSet) return { name, value: cleanText(value, 200), masked: false };
-  return { name, value: isSet ? 'set' : 'unset', masked: false };
-}
-
-// Catalog path: the explicit `secret` flag decides masking, non-secret keys show their value, and names that are
-// not in the catalog are listed by name only (set/unset), never with a value.
+// isSecret(spec) decides masking, non-secret keys show their value, and names that are not in the catalog are
+// listed by name only (set/unset), never with a value.
 export function catalogItem(spec: EnvSpec, value: string | undefined): ConfigItem {
   const isSet = value !== undefined && value !== '';
-  if (spec.secret || spec.type === 'secret') return { name: spec.key, value: isSet ? 'set' : 'unset', masked: true };
+  if (isSecret(spec)) return { name: spec.key, value: isSet ? 'set' : 'unset', masked: true };
   return { name: spec.key, value: isSet ? cleanText(value, 200) : 'unset', masked: false };
 }
 
@@ -78,7 +55,7 @@ export function buildConfigView(deps: {
   env: NodeJS.ProcessEnv;
   read: (p: string) => string | null;
   snapshot: Snapshot;
-  catalog?: readonly EnvSpec[];
+  catalog: readonly EnvSpec[];
 }): ConfigView {
   const names: string[] = [];
   const example = deps.read(join(deps.root, '.env.example'));
@@ -88,17 +65,12 @@ export function buildConfigView(deps: {
       if (m && !names.includes(m[1])) names.push(m[1]);
     }
   }
-  let env: ConfigItem[];
-  if (deps.catalog && deps.catalog.length > 0) {
-    const known = new Set(deps.catalog.map((c) => c.key));
-    env = deps.catalog.map((c) => catalogItem(c, deps.env[c.key]));
-    for (const n of names) {
-      if (known.has(n)) continue;
-      const isSet = deps.env[n] !== undefined && deps.env[n] !== '';
-      env.push({ name: n, value: isSet ? 'set' : 'unset', masked: false });
-    }
-  } else {
-    env = names.map((n) => maskValue(n, deps.env[n]));
+  const known = new Set(deps.catalog.map((c) => c.key));
+  const env: ConfigItem[] = deps.catalog.map((c) => catalogItem(c, deps.env[c.key]));
+  for (const n of names) {
+    if (known.has(n)) continue;
+    const isSet = deps.env[n] !== undefined && deps.env[n] !== '';
+    env.push({ name: n, value: isSet ? 'set' : 'unset', masked: false });
   }
   const files = CONFIG_FILES.map((path) => {
     const raw = deps.read(join(deps.root, path));

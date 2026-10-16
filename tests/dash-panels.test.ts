@@ -1,8 +1,8 @@
 // tests/dash-panels.test.ts
 import { describe, it, expect } from 'vitest';
 import { sessionsPanel } from '../src/dash/sessionsPanel.js';
-import { buildConfigView, maskValue } from '../src/dash/configView.js';
-import { FIXTURE_CATALOG } from './fixtures/settings/catalog.fixture.js';
+import { buildConfigView, catalogItem } from '../src/dash/configView.js';
+import { FIXTURE_CATALOG, specOf } from './fixtures/settings/catalog.fixture.js';
 import type { Run } from '../src/platform/tmux.js';
 import type { Snapshot } from '../src/status/snapshot.js';
 
@@ -49,20 +49,15 @@ describe('sessionsPanel', () => {
   });
 });
 
-describe('maskValue', () => {
-  it('masks secrets even if allowlisted', () => {
-    expect(maskValue('GMAIL_APP_PASSWORD', 'hunter2')).toEqual({ name: 'GMAIL_APP_PASSWORD', value: 'set', masked: true });
-    expect(maskValue('TELEGRAM_BOT_TOKEN', undefined)).toEqual({ name: 'TELEGRAM_BOT_TOKEN', value: 'unset', masked: true });
-    expect(maskValue('MAX_AUTH_PER_DAY', '3').masked).toBe(true);
+describe('catalogItem', () => {
+  it('masks exactly what isSecret says, shows other values, reports unset', () => {
+    expect(catalogItem(specOf('FX_API_KEY'), 'FIXTURE-SECRET-1')).toEqual({ name: 'FX_API_KEY', value: 'set', masked: true });
+    expect(catalogItem(specOf('FX_BOT_TOKEN'), undefined)).toEqual({ name: 'FX_BOT_TOKEN', value: 'unset', masked: true });
+    expect(catalogItem(specOf('FX_MAX_PER_DAY'), '5')).toEqual({ name: 'FX_MAX_PER_DAY', value: '5', masked: false });
+    expect(catalogItem(specOf('FX_MAX_PER_DAY'), '')).toEqual({ name: 'FX_MAX_PER_DAY', value: 'unset', masked: false });
   });
-  it('shows allowlisted values', () => {
-    expect(maskValue('MATCH_THRESHOLD', '60')).toEqual({ name: 'MATCH_THRESHOLD', value: '60', masked: false });
-    expect(maskValue('MAX_APPLIES_PER_DAY', '5').value).toBe('5');
-    expect(maskValue('NAUKRI_HEADLESS', 'true').value).toBe('true');
-  });
-  it('shows only set for unknown names', () => {
-    expect(maskValue('SOME_UNKNOWN', 'abc')).toEqual({ name: 'SOME_UNKNOWN', value: 'set', masked: false });
-    expect(maskValue('SOME_UNKNOWN', '')).toEqual({ name: 'SOME_UNKNOWN', value: 'unset', masked: false });
+  it('masks a key by its type even when the secret flag is missing', () => {
+    expect(catalogItem({ ...specOf('FX_API_KEY'), secret: false }, 'FIXTURE-SECRET-2').masked).toBe(true);
   });
 });
 
@@ -71,29 +66,30 @@ describe('buildConfigView', () => {
   it('reads only allowed paths and summarizes', () => {
     const reads: string[] = [];
     const files: Record<string, string> = {
-      '.env.example': 'MATCH_THRESHOLD=60 # c\nGMAIL_APP_PASSWORD=\n# comment\nFOO=1\n',
+      '.env.example': 'FX_MAX_PER_DAY=60\nFX_API_KEY=\n# comment\nFOO=1\n',
       'config/portals.json': JSON.stringify({ tracked_companies: [1, 2, 3], enabled: true, n: 4, s: 'secretish', o: { a: 1 } }),
     };
     const v = buildConfigView({
       root: 'ROOT',
-      env: { MATCH_THRESHOLD: '70', GMAIL_APP_PASSWORD: 'pw', FOO: 'bar' },
+      env: { FX_MAX_PER_DAY: '70', FX_API_KEY: 'FIXTURE-SECRET-3', FOO: 'bar' },
       read: (p) => {
         reads.push(p);
         return files[p.replace(/^ROOT[\\/]/, '')] ?? null;
       },
       snapshot,
+      catalog: FIXTURE_CATALOG,
     });
     expect(reads.length).toBeGreaterThan(0);
     for (const p of reads) expect(p).not.toMatch(/user-data|secrets|\.dashboard|\.env(?!\.example)/);
-    expect(v.env.find((e) => e.name === 'MATCH_THRESHOLD')?.value).toBe('70');
-    expect(v.env.find((e) => e.name === 'GMAIL_APP_PASSWORD')).toMatchObject({ value: 'set', masked: true });
+    expect(v.env.find((e) => e.name === 'FX_MAX_PER_DAY')?.value).toBe('70');
+    expect(v.env.find((e) => e.name === 'FX_API_KEY')).toMatchObject({ value: 'set', masked: true });
     expect(v.env.find((e) => e.name === 'FOO')?.value).toBe('set');
     const p = v.files.find((f) => f.path === 'config/portals.json')!;
     expect(p.summary).toMatchObject({ tracked_companies: 3, enabled: true, n: 4 });
     expect(JSON.stringify(p.summary)).not.toContain('secretish');
     expect(v.files.find((f) => f.path === 'config/replies.json')?.summary).toEqual({ missing: true });
     expect(v.halts).toBe(snapshot.halts);
-    expect(JSON.stringify(v)).not.toContain('"pw"');
+    expect(JSON.stringify(v)).not.toContain('FIXTURE-SECRET');
   });
 });
 
