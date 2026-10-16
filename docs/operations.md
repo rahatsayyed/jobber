@@ -1,7 +1,7 @@
 # Operations
 
 Audience: owner
-Last verified against: ca7200a
+Last verified against: 384fcd7
 Source files: scripts/jobber-control.ts, src/scheduler/control.ts, .claude/hooks/kill-switch.cjs, run-hunt.sh, scripts/linkedin-clear-halt.ts, scripts/layout.ts, src/safety/dryRun.ts, scripts/dry-run-report.ts, scripts/status.ts, src/status/render.ts, src/scheduler/plan.ts, src/scheduler/runLog.ts, src/scheduler/notify.ts, src/scheduler/launch.ts, scripts/stack.ts, src/stack/up.ts, src/stack/down.ts, src/verify/cli.ts, src/platform/checksSetup.ts, src/platform/checksLayout.ts, src/platform/checksScheduler.ts
 
 Day-to-day running of Jobber: stop it, resume it, read its state, find its files, fix common failures.
@@ -109,8 +109,10 @@ End-to-end smoke test in dry mode against fixtures and a temporary database. Wri
 ## Bring the stack up and down
 
 ```bash
-npm run up
+npm start
 ```
+
+`npm start` is the same as `npm run up`, and `npm stop` is the same as `npm run down`. Extra flags go after `--`, for example `npm start -- --status`.
 
 Order: kill-switch check, doctor gate, then bridge, windows, scheduler and dashboard. Exit codes:
 
@@ -121,12 +123,14 @@ Order: kill-switch check, doctor gate, then bridge, windows, scheduler and dashb
 | 2 | Usage error (unknown argument) |
 | 4 | Kill switch is on; run `npm run jobber:control -- resume` when you are sure |
 
+`npm start`, `npm stop`, `npm run doctor` and `npm run dry-run` colour their tables on a terminal; add `--no-color` to turn that off.
+
 Features you skipped in setup print as `bridge: skipped (setup)`, `windows: skipped (setup)` or `web: skipped (setup)`.
 
 ```bash
-npm run down
-npm run down -- --keep-bridge
-npm run down -- --force --yes
+npm stop
+npm stop -- --keep-bridge
+npm stop -- --force --yes
 ```
 
 Stops the windows and scheduler this stack started. A scheduler that belongs to a launchd or systemd unit is not stopped here; the command prints the unload or disable line to run yourself. Without `--force` a scheduler finishing a wake is left to finish: re-run `npm run down`. It asks before stopping the `hunt` and `followups` windows; without a terminal they are left running unless you pass `--yes`. It does not touch the scheduler's wake session (`jobber-runs`; the STOP file is what kills a wake window), and it does not stop a hunt you started from a shell with `./run-hunt.sh`. Exit codes: 0 ok, 1 a stop failed, 2 usage error (unknown flag).

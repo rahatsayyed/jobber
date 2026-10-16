@@ -202,7 +202,7 @@ describe('up', () => {
     expect(await runUp(d, { status: false })).toBe(1);
     expect(d.out.join('\n')).toContain('warning: window scheduler exited immediately');
     expect(d.out.some((l) => /scheduler\s+not running/.test(l))).toBe(true);
-    expect(d.out.join('\n')).toContain('Stop: npm run down');
+    expect(d.out.join('\n')).toContain('Stop: npm stop (or npm run down)');
   });
 
   it('a bridge start failure exits 1 but still prints the table; --status stays 0', async () => {

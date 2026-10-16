@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { sessionsPanel } from '../src/dash/sessionsPanel.js';
 import { buildConfigView, maskValue } from '../src/dash/configView.js';
+import { FIXTURE_CATALOG } from './fixtures/settings/catalog.fixture.js';
 import type { Run } from '../src/platform/tmux.js';
 import type { Snapshot } from '../src/status/snapshot.js';
 
@@ -93,5 +94,23 @@ describe('buildConfigView', () => {
     expect(v.files.find((f) => f.path === 'config/replies.json')?.summary).toEqual({ missing: true });
     expect(v.halts).toBe(snapshot.halts);
     expect(JSON.stringify(v)).not.toContain('"pw"');
+  });
+});
+
+describe('buildConfigView with a catalog', () => {
+  const snapshot = { halts: [], ceilings: {} } as unknown as Snapshot;
+  const secretKeys = FIXTURE_CATALOG.filter((c) => c.secret || c.type === 'secret').map((c) => c.key);
+  it('masks exactly the secret keys, shows other values, lists unknown names by name only', () => {
+    const env: Record<string, string> = { FX_PORT: '9000', UNKNOWN_EXAMPLE_NAME: 'FIXTURE-SECRET-9' };
+    secretKeys.forEach((k, i) => { env[k] = `FIXTURE-SECRET-${i}`; });
+    const v = buildConfigView({
+      root: 'ROOT', env, snapshot, catalog: FIXTURE_CATALOG,
+      read: (p) => (p.endsWith('.env.example') ? 'UNKNOWN_EXAMPLE_NAME=\nFX_PORT=1\n' : null),
+    });
+    expect(secretKeys.length).toBeGreaterThan(0);
+    expect(v.env.filter((e) => e.masked).map((e) => e.name).sort()).toEqual([...secretKeys].sort());
+    expect(v.env.find((e) => e.name === 'FX_PORT')?.value).toBe('9000');
+    expect(v.env.find((e) => e.name === 'UNKNOWN_EXAMPLE_NAME')).toEqual({ name: 'UNKNOWN_EXAMPLE_NAME', value: 'set', masked: false });
+    expect(JSON.stringify(v)).not.toContain('FIXTURE-SECRET');
   });
 });

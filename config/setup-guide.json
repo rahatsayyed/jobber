@@ -835,7 +835,7 @@
       "owner_command": "npm run doctor",
       "doctor_checks": [],
       "keys": [],
-      "explain": "The last stage reruns the doctor and then a dry run that reports PASS or FAIL per stage. Nothing is sent in a dry run. Going live is your own decision, made in your own terminal.",
+      "explain": "The last stage reruns the doctor and then a dry run that reports PASS or FAIL per stage. Nothing is sent in a dry run. Going live is your own decision, made in your own terminal. When the dry run is clean, the owner starts the stack with npm start (the same as npm run up) and stops it with npm stop (the same as npm run down).",
       "fixes": {}
     }
   ],

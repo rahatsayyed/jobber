@@ -1,8 +1,8 @@
 # Setup modes and the bring-up commands
 
 Audience: owner
-Last verified against: cc51247
-Source files: scripts/bootstrap.sh, scripts/bootstrap.ts, scripts/setup.ts, scripts/stack.ts, scripts/dry-run.ts, src/setup/cli.ts, src/setup/mode.ts, src/setup/guide.ts, src/setup/skips.ts, src/setup/state.ts, src/setup/runner.ts, src/setup/steps/index.ts, src/setup/steps/final.ts, src/bootstrap/exec.ts, src/bootstrap/catalog.ts, src/stack/up.ts, src/stack/down.ts, src/stack/mode.ts, src/verify/cli.ts, src/verify/stages.ts
+Last verified against: 384fcd7
+Source files: src/setup/io.ts, src/ui/term.ts, scripts/bootstrap.sh, scripts/bootstrap.ts, scripts/setup.ts, scripts/stack.ts, scripts/dry-run.ts, src/setup/cli.ts, src/setup/mode.ts, src/setup/guide.ts, src/setup/skips.ts, src/setup/state.ts, src/setup/runner.ts, src/setup/steps/index.ts, src/setup/steps/final.ts, src/bootstrap/exec.ts, src/bootstrap/catalog.ts, src/stack/up.ts, src/stack/down.ts, src/stack/mode.ts, src/verify/cli.ts, src/verify/stages.ts
 
 This page is the map of the owner path. It does not repeat the wizard's prompt wording: each
 step is named by its id, and the wizard explains it on screen.
@@ -13,7 +13,7 @@ step is named by its id, and the wizard explains it on screen.
 bash scripts/bootstrap.sh
 npm run setup
 npm run dry-run
-npm run up
+npm start
 ```
 
 1. `bootstrap` installs what is missing (Node, dependencies, tmux, browser binaries, ccgram, the
@@ -21,8 +21,8 @@ npm run up
 2. `setup` is the guided wizard. It writes `.env`, `user-data/` and `secrets/` files, and records
    progress so you can stop and resume.
 3. `dry-run` is an end-to-end check against fixtures and a temporary database. It sends nothing.
-4. `up` runs the doctor, then starts the bridge, windows, scheduler and dashboard. `npm run down`
-   stops them.
+4. `up` runs the doctor, then starts the bridge, windows, scheduler and dashboard. `npm stop`
+   stops them. `npm start` and `npm stop` are the same as `npm run up` and `npm run down`.
 
 Nothing here flips a dry-run flag for you. `up` prints the mode; you alone change the flags in
 `.env`.
@@ -71,6 +71,28 @@ Each line above is a separate invocation. Their effects:
 - `--guide-only`: start only the guided session in this terminal.
 - The wizard needs a real terminal (stdin and stdout are TTYs); otherwise it exits 2 with a message.
   Bad arguments also exit 2.
+
+### Typing in the wizard
+
+Each prompt shows its label (a question, an example or an explanation, then a `[default]` in
+brackets). The label is protected: Backspace, Delete and the line-editing keys only change what
+you typed. Left, Right, Home, End, Ctrl-A, Ctrl-E, Ctrl-U and Ctrl-W work, and pasting a value
+works. Secret prompts (API keys, the bot token) show nothing while you type, but editing keys
+still work.
+
+Running a step again keeps what you already entered. Press Enter on a blank answer and the
+stored value stays: the prompt shows the current value as the default (`--step profile` offers
+every field of `user-data/profile.json`, even from a hand-written file that is missing some
+fields). For a secret the stored value is never printed; the prompt says `keep existing (set)`
+and Enter keeps it.
+
+### Colour
+
+Setup, `npm run doctor`, `npm run dry-run` and `npm start` / `npm stop` use colour and aligned
+PASS, WARN, FAIL and SKIP badges when the output is a terminal. It is off when the output is
+piped or captured, when NO_COLOR is set to anything, when TERM is `dumb`, and with `--no-color`
+on any of those commands. Setting FORCE_COLOR=1 turns it on even when piped. `--json` output and
+the Telegram status commands never contain escape codes.
 
 ### How the mode is chosen
 
@@ -249,10 +271,12 @@ Naukri or Gmail.
 ## up and down
 
 ```bash
-npm run up
-npm run up -- --status
-npm run down
+npm start
+npm start -- --status
+npm stop
 ```
+
+`npm run up` and `npm run down` are equivalent.
 
 `up` order: print the mode banner, check the kill switch, run the doctor, then start the bridge,
 the ccgram windows, the scheduler and the dashboard, each only if not already running. It is
@@ -276,7 +300,7 @@ or the kill variable): `up` refuses; clear it yourself with `npm run jobber:cont
 What it prints: a component table (bridge, windows, scheduler, web, with `skipped (setup)` for
 skipped features), the dashboard URL and auth mode, the tmux attach commands, whether the
 auto-update and backup ticks are on, the last dry-run result, a `STACK: skipped by choice: ...`
-line when features were skipped, and `Stop: npm run down   Emergency: npm run jobber:control -- stop`.
+line when features were skipped, and `Stop: npm stop (or npm run down)   Emergency: npm run jobber:control -- stop`.
 It skips the scheduler when `SCHEDULER_ENABLED=false` or an installed unit already runs it.
 
 `down` flags:

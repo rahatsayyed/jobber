@@ -29,6 +29,7 @@ import { parseEnv } from '../src/platform/envFile.js';
 import { resolveMode, startGuideForMode } from '../src/setup/mode.js';
 import { loadState, saveState } from '../src/setup/state.js';
 import { ALL_STEPS } from '../src/setup/steps/index.js';
+import { initTerm } from '../src/ui/term.js';
 
 interface SqliteDb {
   prepare(sql: string): { all(): unknown[] };
@@ -36,6 +37,7 @@ interface SqliteDb {
 }
 type SqliteCtor = new (path: string, opts: { readonly: boolean; fileMustExist: boolean }) => SqliteDb;
 
+const term = initTerm(); // strips --no-color before the parser sees it
 const args = parseArgs(process.argv.slice(2));
 if (args.error) {
   console.error(args.error);
@@ -183,7 +185,7 @@ const envPath = join(root, '.env');
 const examplePath = join(root, '.env.example');
 ensureEnvFile(fs, envPath, examplePath, now);
 
-const tty = ttyIO(process.stdin, process.stdout);
+const tty = ttyIO(process.stdin, process.stdout, { term });
 const statePath = join(dataDir, '.setup-state.json');
 const ctx: SetupContext = {
   io: redactingIO(tty),

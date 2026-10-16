@@ -1,0 +1,6 @@
+{
+  "home": ["India"],
+  "targets": ["Dubai", "Riyadh", "Doha"],
+  "remote": true,
+  "remote_anywhere": true
+}

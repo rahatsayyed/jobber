@@ -297,7 +297,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
   if (skipped.length > 0) {
     say(`STACK: skipped by choice: ${skipped.join(', ')}. Re-enable: npm run setup -- --step <id>`);
   }
-  say('Stop: npm run down   Emergency: npm run jobber:control -- stop');
+  say('Stop: npm stop (or npm run down)   Emergency: npm run jobber:control -- stop');
   return !status && startFailed ? 1 : 0;
 }
 

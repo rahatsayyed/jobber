@@ -183,6 +183,31 @@ describe('apikeysStep', () => {
     expect(out).not.toContain('left unset');
   });
 
+  it('replacing a key: a blank answer keeps the stored value and it is never shown', async () => {
+    const e0 = `ADZUNA_APP_ID=${ADZ_ID}\nADZUNA_APP_KEY=${ADZ_KEY}\n`;
+    const t = mk({
+      env: e0,
+      script: [{ confirm: false }, { secret: '' }, { secret: '' }, { choose: 'later' }, { choose: 'later' }],
+    });
+    expect(await apikeysStep.run(t.ctx)).toBe('done');
+    expect(env(t)).toBe(e0);
+    const out = t.sio.transcript.join('\n');
+    expect(out).not.toContain(ADZ_ID);
+    expect(out).not.toContain(ADZ_KEY);
+    t.sio.assertDone();
+  });
+
+  it('a half-set pair: a blank keeps the stored half, the typed half is written', async () => {
+    const t = mk({
+      env: `ADZUNA_APP_ID=${ADZ_ID}\n`,
+      script: [{ choose: 'now' }, { secret: '' }, { secret: ADZ_KEY }, { choose: 'later' }, { choose: 'later' }],
+    });
+    expect(await apikeysStep.run(t.ctx)).toBe('done');
+    expect(env(t)).toContain(`ADZUNA_APP_ID=${ADZ_ID}`);
+    expect(env(t)).toContain(`ADZUNA_APP_KEY=${ADZ_KEY}`);
+    t.sio.assertDone();
+  });
+
   it('partly set Adzuna names the missing variable and is treated as not configured', async () => {
     const t = mk({
       env: `ADZUNA_APP_ID=${ADZ_ID}\n`,

@@ -8,7 +8,10 @@ import { allDoctorChecks } from '../src/platform/checkLists.js';
 import { runChecks, type DoctorContext } from '../src/platform/doctor.js';
 import { defaultRun } from '../src/platform/tmux.js';
 import { openDb } from '../src/db.js';
+import { initTerm } from '../src/ui/term.js';
 import { realStartWeb, runCli } from '../src/verify/cli.js';
+
+const term = initTerm(); // strips --no-color from process.argv; colour only on a terminal
 
 const root = resolve(import.meta.dirname, '..');
 const env = process.env;
@@ -50,7 +53,7 @@ const dctx: DoctorContext = {
 
 const code = await runCli(process.argv.slice(2), {
   root, env,
-  out: (s) => console.log(s),
+  out: (s) => console.log(term.paint(s)),
   err: (s) => console.error(s),
   parts: {
     run,

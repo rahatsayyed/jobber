@@ -24,7 +24,7 @@ New here? Read [docs/00-start-here.md](docs/00-start-here.md) first; the order i
 bash scripts/bootstrap.sh        # 1. install and validate everything missing (asks before each action)
 npm run setup                    # 2. keys, accounts, sessions, limits; optional guided Claude session
 npm run dry-run                  # 3. end-to-end smoke in dry mode only, PASS/FAIL per stage
-npm run up                       # 4. start bridge, windows, scheduler, dashboard (and: npm run down)
+npm start                        # 4. start bridge, windows, scheduler, dashboard (stop: npm stop)
 ```
 
 - `bash scripts/bootstrap.sh` detects what is missing and asks before every install (sudo steps and downloaded scripts are always shown first). Rerunning is safe. `--check` and `--plan` only report. `--yes` accepts plain actions only; a sudo step is asked about even with `--allow-sudo` unless `--yes` is also given. Installs run with their own output on your terminal (up to 30 minutes each); the result table shows only the exit code.
@@ -32,7 +32,7 @@ npm run up                       # 4. start bridge, windows, scheduler, dashboar
 - Setup has two modes, chosen once and remembered in `user-data/.setup-state.json`: agent (a guided Claude session in a detached tmux window beside the wizard; it is launched only when the Claude CLI, its login, the guide profile and `tmux -V` all pass, otherwise the wizard says why and continues in terminal text) and terminal (plain walkthroughs for every step, no guide). The first interactive run asks which you want, with the default chosen from that readiness. Set or switch it with `npm run setup -- --mode agent|terminal`; `--status` shows the stored mode.
 - Telegram and the dashboard (both labelled RECOMMENDED), Gmail (NEEDED FOR EMAIL OUTREACH) and each API key (OPTIONAL) may be skipped; a skipped step shows as skipped (not failed) in `npm run doctor`, and you add it later with `npm run setup -- --step telegram` (or `dashboard`, `gmail`, `apikeys`). Skipping never changes a permission set or a dry-run flag.
 - `npm run dry-run` runs an end-to-end smoke test against fixtures and a temporary database, prints PASS, FAIL or SKIP per stage and touches no live state: it writes `.jobber/verify.json` and idempotently rewrites the launcher's `debug/runner/<profile>.settings.json` and `.policy.json` (via `run-claude --print-args`). `--llm` adds a real hunt run and only runs when `.env` itself is dry (it uses subscription usage).
-- `npm run up` runs the doctor first, starts the stack, and prints `MODE: DRY RUN` or `MODE: LIVE` at the top and bottom. It never changes the mode: your `.env` decides. `npm run down` stops it again without touching data.
+- `npm start` (the same as `npm run up`) runs the doctor first, starts the stack, and prints `MODE: DRY RUN` or `MODE: LIVE` at the top and bottom. It never changes the mode: your `.env` decides. `npm stop` (the same as `npm run down`) stops it again without touching data.
 - `npm run doctor` can be run at any time to check the result. Each check reports ok, warn, fail or skipped.
 
 None of these four commands has been run end to end against a real machine yet; treat the first run as supervised.
@@ -106,7 +106,7 @@ bash scripts/ccgram/start.sh    # start the Telegram bridge (ccgram) in its own 
 bash scripts/ccgram/stop.sh     # stop the bridge; Claude windows it created keep running
 ```
 
-- `npm run up` starts all of this in order (bridge, named windows, scheduler, dashboard; `npm run up -- --status` is read-only) and `npm run down` stops it (`--keep-bridge` leaves the bridge running). The commands above and `./run-hunt.sh` remain the building blocks and the manual route.
+- `npm start` starts all of this in order (bridge, named windows, scheduler, dashboard; `npm start -- --status` is read-only) and `npm stop` stops it (`--keep-bridge` leaves the bridge running). The commands above and `./run-hunt.sh` remain the building blocks and the manual route.
 - The Telegram topic bound to the manager session lists, reads, starts and stops the named windows in `config/manager-windows.json` (`hunt` and `followups`). The `manager` window and the bridge are protected and cannot be stopped from Telegram. The manager never types into another window and never runs outreach itself. See [the manager skill](.claude/skills/manager/SKILL.md).
 - A headless, cron-friendly hunt runs with `./run-hunt.sh "run the hunt"`. It uses the restricted launcher `scripts/run-claude.sh`, profile `hunt` in `config/run-profiles.json`: the tool list comes from the `outreach_send` set, and permission checks are never skipped.
 - The older route, a single `claude --channels plugin:telegram@claude-plugins-official` session, is documented in `CLAUDE.md`; the ccgram route above is the one setup configures.

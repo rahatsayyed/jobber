@@ -138,7 +138,7 @@ describe('README', () => {
       .split('\n')
       .filter((l) => l.trim())
       .map((l) => l.replace(/\s+#.*$/, '').trim());
-    expect(cmds).toEqual(['bash scripts/bootstrap.sh', 'npm run setup', 'npm run dry-run', 'npm run up']);
+    expect(cmds).toEqual(['bash scripts/bootstrap.sh', 'npm run setup', 'npm run dry-run', 'npm start']);
     for (const m of body.matchAll(/npm run ([A-Za-z0-9:_-]+)/g)) {
       expect(pkg.scripts[m[1]], `npm run ${m[1]}`).toBeDefined();
     }
@@ -152,9 +152,10 @@ describe('README', () => {
     const sessions = section(/Starting and stopping sessions/i);
     expect(quick).toContain('--no-guide');
     expect(quick).toContain('npm run dry-run');
+    expect(quick).toContain('npm start');
     expect(quick).toContain('npm run up');
-    expect(sessions).toContain('npm run up');
-    expect(sessions).toContain('npm run down');
+    expect(sessions).toContain('npm start');
+    expect(sessions).toContain('npm stop');
   });
 
   it('documents setup modes and optional steps (plan 8F)', () => {

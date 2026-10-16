@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dashboard": "tsx scripts/dashboard.ts",
+    "settings": "tsx scripts/settings.ts",
     "test": "vitest run",
     "doctor": "tsx scripts/doctor.ts",
     "auto-update": "tsx scripts/auto-update.ts",
@@ -45,6 +46,8 @@
     "jobber:control": "tsx scripts/jobber-control.ts",
     "scheduler": "tsx scripts/scheduler.ts",
     "scheduler:units": "tsx scripts/scheduler-units.ts",
+    "start": "tsx scripts/stack.ts up",
+    "stop": "tsx scripts/stack.ts down",
     "up": "tsx scripts/stack.ts up",
     "down": "tsx scripts/stack.ts down",
     "dry-run": "tsx scripts/dry-run.ts",

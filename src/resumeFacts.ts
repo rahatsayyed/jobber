@@ -95,17 +95,21 @@ const defaultFactGatePath = userDataPath('fact-gate.json');
 /** Read fresh on every call (like easy-apply-answers.json). Missing file = reported, invalid file = throws (fail closed). */
 export function loadFactGateConfig(file: string = defaultFactGatePath): { config: FactGateConfig; missing: boolean } {
   if (!existsSync(file)) return { config: { ...EMPTY_FACT_GATE }, missing: true };
-  const raw = JSON.parse(readFileSync(file, 'utf8'));
+  return { config: validateFactGateObject(JSON.parse(readFileSync(file, 'utf8'))), missing: false };
+}
+
+/** Pure shape check of a parsed fact-gate.json; throws on the first problem (same messages as the loader). */
+export function validateFactGateObject(raw: unknown): FactGateConfig {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('user-data/fact-gate.json: top level must be an object');
   for (const k of Object.keys(raw)) if (!(k in EMPTY_FACT_GATE)) throw new Error(`user-data/fact-gate.json: unknown key "${k}"`);
   const config: FactGateConfig = { ...EMPTY_FACT_GATE };
   for (const k of Object.keys(EMPTY_FACT_GATE) as Array<keyof FactGateConfig>) {
-    const v = raw?.[k];
+    const v = (raw as Record<string, unknown>)[k];
     if (v == null) continue;
     if (!Array.isArray(v) || !v.every((x: unknown) => typeof x === 'string')) throw new Error(`user-data/fact-gate.json: ${k} must be an array of strings`);
-    config[k] = v;
+    config[k] = v as string[];
   }
-  return { config, missing: false };
+  return config;
 }
 
 export interface FactReport {

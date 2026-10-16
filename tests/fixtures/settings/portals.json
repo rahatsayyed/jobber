@@ -1,0 +1,21 @@
+{
+  "tracked_companies": [
+    { "name": "Fixture Alpha", "ats": "greenhouse", "slug": "fixture-alpha", "enabled": true },
+    { "name": "Fixture Beta", "ats": "lever", "slug": "fixture-beta", "enabled": false },
+    { "name": "Fixture Gamma", "ats": "ashby", "slug": "fixture-gamma", "enabled": false }
+  ],
+  "aggregators": {
+    "hackernews": { "enabled": false },
+    "himalayas": { "enabled": false, "max_pages": 3 },
+    "weworkremotely": { "enabled": false }
+  },
+  "title_filter": {
+    "positive": ["frontend", "full stack", "react"],
+    "negative": ["word:intern", "director"]
+  },
+  "location_filter": {
+    "allow": ["india", "bengaluru", "dubai"],
+    "global": ["remote", "anywhere", "worldwide"],
+    "remote_anywhere": true
+  }
+}
