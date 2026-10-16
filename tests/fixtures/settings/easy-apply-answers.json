@@ -1,0 +1,11 @@
+{
+  "years_experience": 3,
+  "authorized_to_work": true,
+  "requires_sponsorship": false,
+  "willing_to_relocate": true,
+  "notice_period_days": 30,
+  "expected_salary": "Negotiable",
+  "phone": "+00 0000000000",
+  "linkedin_profile_url": "linkedin.com/in/fixture-person",
+  "custom": { "Do you like fixtures?": "Yes" }
+}
