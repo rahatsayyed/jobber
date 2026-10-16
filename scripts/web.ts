@@ -9,6 +9,7 @@ import { parseEnv } from '../src/platform/envFile.js';
 import { secretValuesFromEnv } from '../src/safety/outputGate.js';
 import { validateRunnerConfig, isLoopbackBind } from '../src/web/env.js';
 import { nodeAtomicFs } from '../src/settings/atomic.js';
+import { createPendingSeam } from '../src/settings/pendingRestart.js';
 import { currentMode, fileFlags } from '../src/stack/mode.js';
 import type { EnvSpec } from '../src/settings/types.js';
 import type { SettingsDeps } from '../src/web/settingsRoutes.js';
@@ -151,6 +152,7 @@ async function main(): Promise<number> {
     secrets: allSecrets,
     shellEnv: process.env,
     currentMode: modeNow,
+    pendingRestart: createPendingSeam({ root, fs: nodeAtomicFs }),
   };
 
   try {

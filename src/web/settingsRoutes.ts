@@ -16,7 +16,8 @@ import { listBackups, readBackup, type BackupTarget } from '../settings/backups.
 import { applyEnvPlan, planEnvChange, planRollback, readEnvState, type EnvPlan } from '../settings/envEdit.js';
 import { resolveEntry, type FileEntry } from '../settings/fileRegistry.js';
 import { createJsonStore, type FilePlan } from '../settings/jsonStore.js';
-import { phraseMatches } from '../settings/policy.js';
+import { PENDING_COMMANDS } from '../settings/pendingRestart.js';
+import { phraseMatches } from'../settings/policy.js';
 import { isSecret, type ChangeOp, type EnvSpec, type Friction, type PolicyCtx, type RestartScope, type SectionId } from '../settings/types.js';
 
 export interface PendingRestartSeam {
@@ -71,14 +72,7 @@ const LOCK_MS = 5 * 60_000;
 const AUDIT_GAP_MS = 60_000;
 const NOTE_PAIR_TYPES = new Set(['bool', 'int', 'enum']);
 
-export const RESTART_COMMANDS: Record<RestartScope, string> = {
-  none: '',
-  next_run: 'none needed: takes effect on the next run',
-  dashboard: 'restart the dashboard (npm run web, or npm run down && npm run up)',
-  scheduler: 'restart the scheduler (npm run down && npm run up)',
-  mcp: 'fully quit and restart the Claude sessions',
-  stack: 'npm run down && npm run up',
-};
+export const RESTART_COMMANDS: Record<RestartScope, string> = PENDING_COMMANDS;
 
 const SECTION_TITLES: Record<SectionId, string> = {
   'credentials-sources': 'Credentials: job sources',
@@ -419,7 +413,7 @@ export function createSettingsRoutes(deps: SettingsDeps, env: SettingsRouteEnv):
       p.afterApply?.();
       if (p.restart.length > 0) deps.pendingRestart?.mark(p.restart);
       auditRow(p.kind, c, p.note, planHash); // (11)
-      reply(c, 200, { ok: true, backupId: out.backupId, newEtag: out.newEtag, restart: p.restart });
+      reply(c, 200, { ok: true, backupId: out.backupId, newEtag: out.newEtag, restart: p.restart, pendingRestart: deps.pendingRestart ? deps.pendingRestart.list() : [] });
     } catch (e) {
       let r: Refuse;
       if (e instanceof Refuse) r = e;

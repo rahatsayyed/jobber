@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CheckOutcome } from '../src/platform/doctor.js';
 import type { Run } from '../src/platform/tmux.js';
 import { runUp, type StackDeps } from '../src/stack/up.js';
+import { markPending, readPending } from '../src/settings/pendingRestart.js';
+import { MemFs } from './helpers/memFs.js';
 
 let root: string;
 const SECRET = 'sk-invented-secret-value-123';
@@ -301,5 +303,40 @@ describe('mode immutability', () => {
     expect(assign.test('env.SCHEDULER_DRY_RUN = "false"')).toBe(true);
     expect(procAssign.test("process.env['X'] = 'y'")).toBe(true);
     expect(assign.test('env.SCHEDULER_DRY_RUN ?? 1')).toBe(false);
+  });
+});
+
+describe('pending restart list', () => {
+  const seed = (): MemFs => {
+    const fs = new MemFs();
+    markPending({ root, fs }, [
+      { key: 'WEB_X', scope: 'dashboard' }, { key: 'SCH_X', scope: 'scheduler' },
+      { key: 'MCP_X', scope: 'mcp' }, { key: 'STK_X', scope: 'stack' },
+    ]);
+    return fs;
+  };
+  const left = (fs: MemFs): string[] => readPending({ root, fs }).map((e) => e.key).sort();
+
+  it('a full start clears dashboard, scheduler and stack, never mcp', async () => {
+    const fs = seed();
+    expect(await runUp(deps(fake(), { pendingFs: fs }), { status: false })).toBe(0);
+    expect(left(fs)).toEqual(['MCP_X']);
+  });
+
+  it('clears only the scope of the component it started', async () => {
+    const fs = seed();
+    const f = fake({ preSessions: { 'jobber-stack': ['scheduler'] } });
+    const d = deps(f, { pendingFs: fs }, { STACK_TMUX_SESSION: 'jobber-stack' });
+    expect(await runUp(d, { status: false })).toBe(0);
+    expect(left(fs)).toEqual(['MCP_X', 'SCH_X', 'STK_X']);
+  });
+
+  it('clears nothing when the start is refused or status only', async () => {
+    const fs = seed();
+    writeFileSync(join(root, '.jobber', 'STOP'), 'x');
+    expect(await runUp(deps(fake(), { pendingFs: fs }), { status: false })).toBe(4);
+    rmSync(join(root, '.jobber', 'STOP'));
+    expect(await runUp(deps(fake(), { pendingFs: fs }), { status: true })).toBe(0);
+    expect(left(fs)).toEqual(['MCP_X', 'SCH_X', 'STK_X', 'WEB_X']);
   });
 });

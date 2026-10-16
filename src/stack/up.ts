@@ -10,6 +10,9 @@ import { assertName, hasSession, listWindows, newWindow, type Run } from '../pla
 import { stopActive } from '../../scripts/killSwitch.js';
 import { DEFAULT_LABEL, SERVICE_NAME } from '../scheduler/units.js';
 import { skippedForRoot, type SkippableId } from '../setup/skips.js';
+import { nodeAtomicFs, type AtomicFs } from '../settings/atomic.js';
+import { clearForScopes } from '../settings/pendingRestart.js';
+import type { RestartScope } from '../settings/types.js';
 import { currentMode, fileFlags, shellDivergence } from './mode.js';
 import { cleanEnvArgv, DEFAULT_STACK_SESSION, SCHEDULER_CMD, WEB_CMD, type UpPlan } from './plan.js';
 
@@ -34,6 +37,23 @@ export interface StackDeps {
   probe(url: string): Promise<boolean>;
   // Offline read of whether the dashboard auth db holds an access token; null when unreadable. Optional.
   authTokenSet?(path: string): boolean | null;
+  // Optional fs for the pending-restart list (tests); the real one is used when absent.
+  pendingFs?: AtomicFs;
+}
+
+/**
+ * Scopes a successful start covers: `dashboard` when the web window was started, `scheduler` when the
+ * scheduler window was started, `stack` only when both were started. `mcp` is never cleared here: it
+ * needs a full Claude Code restart that `up` cannot do. Components already running are not restarted.
+ */
+export function scopesCovered(startedOk: readonly string[]): RestartScope[] {
+  const out: RestartScope[] = [];
+  const web = startedOk.includes('web');
+  const sched = startedOk.includes('scheduler');
+  if (web) out.push('dashboard');
+  if (sched) out.push('scheduler');
+  if (web && sched) out.push('stack');
+  return out;
 }
 
 const PROBE_SECONDS = 20;
@@ -257,6 +277,15 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
       if (!stackNames.has(n)) {
         warnings.push(`window ${n} exited immediately`);
         startFailed = true;
+      }
+    }
+    // Pending-restart list: clear what this start covered. Never touches modes, flags or halts.
+    if (!startFailed) {
+      try {
+        const cleared = clearForScopes({ root: deps.root, fs: deps.pendingFs ?? nodeAtomicFs, now: deps.now }, scopesCovered(started));
+        if (cleared.length > 0) say(`pending restart cleared: ${cleared.length} setting${cleared.length === 1 ? '' : 's'}`);
+      } catch (e) {
+        warnings.push(`pending restart list not updated: ${(e as Error).message}`);
       }
     }
   }
