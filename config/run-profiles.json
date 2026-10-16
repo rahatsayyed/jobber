@@ -137,35 +137,6 @@
       "output_format": "stream-json",
       "max_turns": 40
     },
-    "hunt": {
-      "description": "The existing hunt pipeline, without bypassPermissions.",
-      "mcp_config": ".mcp.json",
-      "builtin_tools": [
-        "Skill",
-        "Agent",
-        "Task",
-        "Read"
-      ],
-      "allow_from_permission_set": "outreach_send",
-      "path_rules": {
-        "Read": {
-          "prefixes": [
-            "config/"
-          ]
-        }
-      },
-      "screen_args": [
-        "mcp__gmail__send_email",
-        "mcp__linkedin__linkedin_connect_send",
-        "mcp__linkedin__linkedin_send_message"
-      ],
-      "env_mode": "dotenv_all",
-      "env_files": [
-        ".env",
-        ".env.ccr"
-      ],
-      "max_turns": 200
-    },
     "setup_guide": {
       "description": "Interactive setup coach: reads docs and doctor output only; no MCP tools, no secrets in env.",
       "interactive": true,

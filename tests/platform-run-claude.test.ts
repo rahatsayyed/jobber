@@ -43,7 +43,7 @@ const DRY = { JOBBER_DRY_RUN: '1' };
 
 describe('run-claude spawn path (fake claude)', () => {
   it('(a) argv is restricted, never has the prompt; stdin is the prompt exactly', { timeout: T }, () => {
-    const r = run(['hunt', '--no-classifier', 'the prompt'], DRY);
+    const r = run(['outreach_wake','--no-classifier', 'the prompt'], DRY);
     expect(r.status, r.stderr).toBe(0);
     const argv = read('argv').split('\n').filter(Boolean);
     expect(argv).toContain('dontAsk');
@@ -54,18 +54,18 @@ describe('run-claude spawn path (fake claude)', () => {
 
   it('(b) propagates the child exit code', { timeout: T }, () => {
     writeFileSync(join(dir, 'exit'), '7');
-    const r = run(['hunt', '--no-classifier', 'the prompt'], DRY);
+    const r = run(['outreach_wake','--no-classifier', 'the prompt'], DRY);
     expect(r.status, r.stderr).toBe(7);
   });
 
   it('(c) empty prompt exits 2 without invoking claude', { timeout: T }, () => {
-    const r = run(['hunt', '   ']);
+    const r = run(['outreach_wake','   ']);
     expect(r.status).toBe(2);
     expect(invoked()).toBe(false);
   });
 
   it('(c2) kill switch active: hunt exits 4 and claude is not invoked', { timeout: T }, () => {
-    const r = run(['hunt', '--no-classifier', 'the prompt'], { ...DRY, JOBBER_KILL: '1' });
+    const r = run(['outreach_wake','--no-classifier', 'the prompt'], { ...DRY, JOBBER_KILL: '1' });
     expect(r.status, r.stderr).toBe(4);
     expect(r.stderr).toContain('kill switch active');
     expect(invoked()).toBe(false);
@@ -84,16 +84,16 @@ describe('run-claude spawn path (fake claude)', () => {
   });
 
   it('(f) rendered files are private and contain both hooks and no set reference', { timeout: T }, () => {
-    const r = run(['hunt', '--no-classifier', 'the prompt'], DRY);
+    const r = run(['outreach_wake','--no-classifier', 'the prompt'], DRY);
     expect(r.status, r.stderr).toBe(0);
     const out = join(root, 'debug', 'runner');
     expect(statSync(out).mode & 0o777).toBe(0o700);
-    for (const f of ['hunt.settings.json', 'hunt.policy.json']) {
+    for (const f of ['outreach_wake.settings.json', 'outreach_wake.policy.json']) {
       expect(statSync(join(out, f)).mode & 0o777, f).toBe(0o600);
     }
-    const policy = readFileSync(join(out, 'hunt.policy.json'), 'utf8');
+    const policy = readFileSync(join(out, 'outreach_wake.policy.json'), 'utf8');
     expect(policy).not.toContain('allow_from_permission_set');
-    const settings = readFileSync(join(out, 'hunt.settings.json'), 'utf8');
+    const settings = readFileSync(join(out, 'outreach_wake.settings.json'), 'utf8');
     expect(settings).toContain('tool-allowlist.cjs');
     expect(settings).toContain('block-outside-project.cjs');
   });
@@ -110,30 +110,30 @@ describe('run-claude spawn path (fake claude)', () => {
   });
 
   it('--interactive on a non-interactive profile exits 2, claude not invoked', { timeout: T }, () => {
-    const r = run(['hunt', '--interactive', '--no-classifier', 'p'], DRY);
+    const r = run(['outreach_wake','--interactive', '--no-classifier', 'p'], DRY);
     expect(r.status, r.stderr).toBe(2);
     expect(r.stderr).toContain('--interactive');
     expect(invoked()).toBe(false);
   });
 
   it('kill switch exits 4 before the --interactive check', { timeout: T }, () => {
-    const r = run(['hunt', '--interactive', '--no-classifier', 'p'], { ...DRY, JOBBER_KILL: '1' });
+    const r = run(['outreach_wake','--interactive', '--no-classifier', 'p'], { ...DRY, JOBBER_KILL: '1' });
     expect(r.status, r.stderr).toBe(4);
     expect(invoked()).toBe(false);
   });
 
-  it('hunt --print-args prints the golden argv and env key names only', { timeout: T }, () => {
-    const r = run(['hunt', '--print-args'], { GMAIL_APP_PASSWORD: 'synthetic-secret-value-123' });
+  it('outreach_wake --print-args prints the golden argv and env key names only', { timeout: T }, () => {
+    const r = run(['outreach_wake','--print-args'], { GMAIL_APP_PASSWORD: 'synthetic-secret-value-123' });
     expect(r.status, r.stderr).toBe(0);
     const golden = JSON.parse(readFileSync(join(root, 'tests/fixtures/runner-golden.json'), 'utf8')) as any;
     const printed = JSON.parse(r.stdout.split('\n')[0]) as string[];
-    expect(printed).toEqual(['claude', ...golden.hunt.args.map((a: string) => (a.startsWith('debug/runner/') ? join(root, a) : a))]);
+    expect(printed).toEqual(['claude', ...golden.outreach_wake.args.map((a: string) => (a.startsWith('debug/runner/') ? join(root, a) : a))]);
     expect(r.stdout).toContain('env keys: ');
     expect(r.stdout).not.toContain('synthetic-secret-value-123');
   });
 
   it('flags after "--" are prompt text', { timeout: T }, () => {
-    const r = run(['hunt', '--no-classifier', '--', '--print-args'], DRY);
+    const r = run(['outreach_wake','--no-classifier', '--', '--print-args'], DRY);
     expect(r.status, r.stderr).toBe(0);
     expect(read('stdin')).toBe('--print-args');
   });

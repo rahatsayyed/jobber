@@ -2,7 +2,7 @@
   "session": "ccgram",
   "protected": ["manager", "ccgram-daemon"],
   "windows": {
-    "hunt": { "argv": ["bash", "scripts/ccgram/claude-session.sh"], "description": "Claude session for a hunt run (no prompt is preloaded)" },
+    "hunt": { "argv": ["bash", "scripts/ccgram/claude-session.sh"], "description": "Interactive read-only Claude session (shim window; /runhunt runs one pipeline wake now via the scheduler)" },
     "followups": { "argv": ["bash", "scripts/ccgram/claude-session.sh"], "description": "Claude session for follow-up review" }
   }
 }

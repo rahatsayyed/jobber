@@ -44,7 +44,7 @@ export interface CodePassResult {
 const MAX_STATUS_CHARS = 3000;
 const clip = (s: string): string => (s.length > MAX_STATUS_CHARS ? `${s.slice(0, MAX_STATUS_CHARS)}...` : s);
 
-/** The `BOARD_STATUS:` and `SOURCE_STATUS:` lines for the wake summary (the second is new; the first keeps the discoverer's old shape). */
+/** The `BOARD_STATUS:` and `SOURCE_STATUS:` lines for the wake summary (the second is new; the first keeps the old hunt discoverer's shape). */
 export function statusLines(db: Db): { boardStatusLine: string; sourceStatusLine: string } {
   let boardStatusLine = '';
   let sourceStatusLine = '';

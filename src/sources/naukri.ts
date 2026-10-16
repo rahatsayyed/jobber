@@ -72,7 +72,7 @@ export interface NaukriParseResult {
 /**
  * Parses raw scraped card data into Job objects. A malformed card (missing title/href, or an
  * href with no extractable job id) is skipped and logged, never thrown — matches
- * `parseLinkedInJobCards`'s existing convention in `src/discover/linkedin-jobs.ts`.
+ * the old `parseLinkedInJobCards` convention (the deleted discover/linkedin-jobs module).
  */
 export function parseNaukriCards(rawCards: RawNaukriCard[]): NaukriParseResult {
   let parsed = 0;

@@ -24,6 +24,7 @@ import { loadDiscoveryConfig } from '../src/linkedin/discoveryConfig.js';
 import { loadNaukriDiscoveryConfig } from '../src/naukri/discover.js';
 import { getState, listRuns } from '../src/scheduler/runLog.js';
 import { makeAfterWakeHooks } from '../src/scheduler/hooks.js';
+import { parseSchedulerArgs } from '../src/scheduler/args.js';
 
 const projectRoot = resolve(process.cwd());
 const root = join(projectRoot, '.jobber');
@@ -94,14 +95,14 @@ function dryRunPlan(env: NodeJS.ProcessEnv): void {
 }
 
 async function main(): Promise<void> {
-  const args = new Set(process.argv.slice(2));
+  const args = parseSchedulerArgs(process.argv.slice(2));
   const env = loadEnv();
-  if (args.has('--status')) return status(env);
-  if (args.has('--dry-run-plan')) return dryRunPlan(env);
-  if (!args.has('--daemon') && !args.has('--once')) {
-    console.log('usage: scheduler --daemon | --once | --status | --dry-run-plan | --help');
+  if (args.mode === 'status') return status(env);
+  if (args.mode === 'dry-run-plan') return dryRunPlan(env);
+  if (args.mode === 'usage') {
+    console.log('usage: scheduler --daemon | --once | --now | --status | --dry-run-plan | --help');
     console.log('note: environment and .env changes are read once at start; restart the daemon to apply them.');
-    process.exitCode = args.has('--help') ? 0 : 2;
+    process.exitCode = args.help ? 0 : 2;
     return;
   }
   const db = openDb();
@@ -137,7 +138,7 @@ async function main(): Promise<void> {
   };
   process.on('SIGINT', halt);
   process.on('SIGTERM', halt);
-  if (args.has('--once')) {
+  if (args.mode === 'once') {
     const r = await wakeOnce(deps, { force: true, abort: () => stop.stopped });
     console.log(`run ${r.runId}: ${r.status}${r.reason ? ` (${safe(r.reason)})` : ''}; next wake ${r.nextWakeAt}`);
     db.close();

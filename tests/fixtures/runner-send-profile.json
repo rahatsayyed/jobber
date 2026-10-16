@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "profiles": {
+    "hunt": {
+      "description": "Test-only send-capable non-interactive profile (the removed batch hunt profile, kept to exercise the generic runner code).",
+      "mcp_config": ".mcp.json",
+      "builtin_tools": [
+        "Skill",
+        "Agent",
+        "Task",
+        "Read"
+      ],
+      "allow_from_permission_set": "outreach_send",
+      "path_rules": {
+        "Read": {
+          "prefixes": [
+            "config/"
+          ]
+        }
+      },
+      "screen_args": [
+        "mcp__gmail__send_email",
+        "mcp__linkedin__linkedin_connect_send",
+        "mcp__linkedin__linkedin_send_message"
+      ],
+      "env_mode": "dotenv_all",
+      "env_files": [
+        ".env",
+        ".env.ccr"
+      ],
+      "max_turns": 200
+    }
+  }
+}

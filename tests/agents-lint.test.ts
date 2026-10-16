@@ -14,9 +14,7 @@ const FORBIDDEN_PREFIX = ['mcp__playwright__', 'mcp__claude-in-chrome__', 'mcp__
 
 // Snapshot of the agents' tool lines.
 const SNAPSHOT: Record<string, string> = {
-  discoverer: 'mcp__job-fetch__list_new_jobs, mcp__job-fetch__board_status, mcp__discover__linkedin_jobs, mcp__discover__linkedin_posts',
   'contact-finder': 'mcp__contacts__find_company_emails, mcp__linkedin__linkedin_find_profiles',
-  sender: 'mcp__db__list_queued_outreach, mcp__db__list_skipped_outreach, mcp__db__update_outreach_status, mcp__db__record_email_sent, mcp__db__check_and_increment, mcp__gmail__send_email, mcp__apply__linkedin, mcp__apply__greenhouse, mcp__apply__lever, mcp__apply__workday, mcp__apply__ashby, mcp__db__approve_drafted_followups, mcp__db__list_followup_candidates, mcp__db__list_approved_followups, mcp__db__claim_followup_for_send, mcp__db__mark_followup_sent, mcp__db__mark_followup_failed, mcp__linkedin__linkedin_connect_send, mcp__linkedin__linkedin_send_message, mcp__linkedin__linkedin_check_connection_status, mcp__naukri__naukri_send_message',
   'followup-drafter': 'Skill, mcp__db__list_followup_candidates, mcp__db__save_followup_draft',
   'outreach-preparer': 'Skill, mcp__resume__get_base_resume, mcp__resume__render_resume, mcp__resume__check_text, mcp__resume__apply_review_edits, mcp__db__enqueue_outreach',
   matcher: 'Skill, mcp__resume__get_base_resume, mcp__gates__check_liveness',
@@ -152,19 +150,6 @@ describe('existing agents are unchanged', () => {
       expect(toolsOf(name).join(', ')).toBe(line);
     });
   }
-  it('sender holds the typed message tools', () => {
-    const t = toolsOf('sender');
-    for (const need of [
-      'mcp__linkedin__linkedin_connect_send',
-      'mcp__linkedin__linkedin_send_message',
-      'mcp__linkedin__linkedin_check_connection_status',
-      'mcp__naukri__naukri_send_message',
-    ]) expect(t).toContain(need);
-  });
-  it('sender holds no Bash, Read, Write or WebFetch', () => {
-    const t = toolsOf('sender');
-    for (const bad of ['Bash', 'Read', 'Write', 'WebFetch']) expect(t).not.toContain(bad);
-  });
 });
 
 describe('legacy connect MCP is not referenced by agents, skills, commands or config', () => {
@@ -181,10 +166,10 @@ describe('legacy connect MCP is not referenced by agents, skills, commands or co
   }
 });
 
-describe('contact-finder and sender tools are registered and allowed for the hunt profile', () => {
+describe('contact-finder tools are registered and allowed for a send-capable profile', () => {
   const real = realTools();
-  const hunt = loadProfiles('config/run-profiles.json', 'config/permission-sets.json').hunt;
-  for (const name of ['contact-finder', 'sender']) {
+  const hunt = loadProfiles('tests/fixtures/runner-send-profile.json', 'config/permission-sets.json').hunt;
+  for (const name of ['contact-finder']) {
     for (const t of toolsOf(name)) {
       it(`${name}: ${t}`, () => {
         expect(real.has(t), `${t} is not a registered tool`).toBe(true);
@@ -195,12 +180,6 @@ describe('contact-finder and sender tools are registered and allowed for the hun
 });
 
 describe('Hacker News manual-review rule is retired (automated domain check)', () => {
-  it('discoverer no longer asks for user review of Hacker News outreach', () => {
-    const { body } = frontmatter('discoverer');
-    expect(body).not.toContain('should be reviewed by the');
-    expect(body).toContain('untrusted comment text');
-    expect(body).toContain('`hackernews`');
-  });
   it('contact-finder uses hn_check, passes job_id and skips profile searches', () => {
     const { body } = frontmatter('contact-finder');
     expect(body).toContain('hn_check');

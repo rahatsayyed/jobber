@@ -13,7 +13,8 @@ import {
 
 const profiles = loadProfiles('config/run-profiles.json', 'config/permission-sets.json');
 const wake = profiles.outreach_wake;
-const hunt = profiles.hunt;
+// A send-capable non-interactive profile for the generic runner code; the real `hunt` profile was removed (plan 8G Task 14).
+const hunt = loadProfiles('tests/fixtures/runner-send-profile.json', 'config/permission-sets.json').hunt;
 
 describe('shipped profiles', () => {
   it('never contain raw_query, wildcards or dangerous built-ins', () => {

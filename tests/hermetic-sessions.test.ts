@@ -6,8 +6,6 @@ import path from 'node:path';
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const FILES = [
   'linkedin-apply.test.ts',
-  'discover-linkedin-jobs.test.ts',
-  'discover-linkedin-posts.test.ts',
 ];
 
 describe('hermetic LinkedIn session tests', () => {
@@ -18,7 +16,6 @@ describe('hermetic LinkedIn session tests', () => {
     });
     it(`${f} uses a temp session`, () => {
       expect(src).toMatch(/makeTempSession/);
-      if (f.startsWith('discover-')) expect(src).toMatch(/burnerStatePath/);
     });
   }
 });

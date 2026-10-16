@@ -13,7 +13,6 @@ import { createHash } from 'node:crypto';
 import { searchPosts, mentionsRole, parsePostCards } from '../src/linkedin/searchPosts.js';
 import { buildPostsSearchUrl, type DiscoveryConfig } from '../src/linkedin/discoveryConfig.js';
 import { buildSyntheticPostId } from '../src/linkedin/jobIds.js';
-import { buildSyntheticPostId as oldPostId } from '../src/discover/linkedin-posts.js';
 import type { LayoutObserver } from '../src/layout/runtime.js';
 import type { ToolDeps, Screen } from '../src/linkedin/toolDeps.js';
 import { makeFakeLauncher, type FakeSite } from './helpers/fakeLinkedin.js';
@@ -103,8 +102,8 @@ describe('searchPosts', () => {
     const p = parsePostCards(snap, 25, 'react developer');
     expect(p.jobs[0].url).toBe('https://www.linkedin.com/in/jane-recruiter/');
     expect(p.jobs[0].id).toBe(old('https://www.linkedin.com/in/jane-recruiter/', text));
-    // helper itself still matches the old exported function
-    expect(buildSyntheticPostId('https://www.linkedin.com/in/x/', 'hi')).toBe(oldPostId('https://www.linkedin.com/in/x/', 'hi'));
+    // fixed vector computed from the old derivation before the old module was deleted
+    expect(buildSyntheticPostId('https://www.linkedin.com/in/x/', 'hi')).toBe('li-post:77a2c642b1f9e3ab');
   });
 
   it('role match is a word check on the definition', () => {

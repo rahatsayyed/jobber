@@ -26,7 +26,7 @@ beforeEach(() => {
 afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
 const profiles = loadProfiles(join(ROOT, 'config/run-profiles.json'), join(ROOT, 'config/permission-sets.json'));
-const hunt = profiles.hunt;
+const hunt = loadProfiles(join(ROOT, 'tests/fixtures/runner-send-profile.json'), join(ROOT, 'config/permission-sets.json')).hunt;
 
 const SEND_TOOLS = [
   'mcp__gmail__send_email',

@@ -1,5 +1,5 @@
-// Id derivation for LinkedIn discovery, moved from src/discover/linkedin-jobs.ts and
-// src/discover/linkedin-posts.ts with the SAME rules (the old modules re-export these until Task 14).
+// Id derivation for LinkedIn discovery, moved from the old src/discover/linkedin-jobs.ts and
+// src/discover/linkedin-posts.ts (deleted in plan 8G Task 14) with the SAME rules, so stored rows still dedupe.
 import { createHash } from 'node:crypto';
 
 /** LinkedIn numeric job id from a /jobs/view/<id> href, or null. */

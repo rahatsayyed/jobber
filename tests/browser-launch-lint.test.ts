@@ -7,12 +7,10 @@ import { describe, expect, it } from 'vitest';
 const ROOT = join(import.meta.dirname, '..');
 const HOME = 'src/linkedin/browser.ts';
 
-/** Files that still launch directly. Tasks 11, 12, 14 and 23 delete their entries; Task 23 makes it []. */
+/** Files that still launch directly. Tasks 11, 12 and 23 delete their entries; Task 23 makes it []. */
 export const LEGACY_LAUNCH_ALLOWLIST: string[] = [
   'scripts/save-linkedin-session.ts',
   'scripts/save-naukri-session.ts',
-  'src/discover/linkedin-jobs.ts',
-  'src/discover/linkedin-posts.ts',
   'src/apply/linkedin.ts',
   'src/apply/external.ts',
 ];

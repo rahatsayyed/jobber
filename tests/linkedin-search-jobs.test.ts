@@ -13,7 +13,6 @@ import { buildHandlers, schemas, TOOL_NAMES } from '../src/mcp/linkedin.js';
 import { searchJobs } from '../src/linkedin/searchJobs.js';
 import { buildJobsSearchUrl, loadDiscoveryConfig, type DiscoveryConfig } from '../src/linkedin/discoveryConfig.js';
 import { canonicalJobUrl, extractLinkedInJobId, linkedInJobDbId } from '../src/linkedin/jobIds.js';
-import { parseLinkedInJobCards, extractLinkedInJobId as oldExtract } from '../src/discover/linkedin-jobs.js';
 import { SCREENED_SURFACES, callsScreen } from '../src/safety/screen.js';
 import type { LayoutObserver } from '../src/layout/runtime.js';
 import type { ToolDeps, Screen } from '../src/linkedin/toolDeps.js';
@@ -64,7 +63,7 @@ const counter = (db: ReturnType<typeof openDb>, key: string) =>
 const events = (db: ReturnType<typeof openDb>) => (db.prepare('SELECT COUNT(*) c FROM rate_events').get() as { c: number }).c;
 const opened = (log: string[]) => log.filter((l) => l.startsWith('goto:'));
 
-describe('job id derivation (moved from src/discover/linkedin-jobs.ts)', () => {
+describe('job id derivation (moved from the deleted src/discover/linkedin-jobs.ts)', () => {
   const HREFS = [
     'https://www.linkedin.com/jobs/view/3891234567/',
     'https://www.linkedin.com/jobs/view/3891234567/?refId=abc&trackingId=xyz',
@@ -73,17 +72,11 @@ describe('job id derivation (moved from src/discover/linkedin-jobs.ts)', () => {
     'https://www.linkedin.com/jobs/view/senior-engineer-at-acme-3900000009/',
     '',
   ];
-  it('matches the old derivation on every vector', () => {
-    for (const h of HREFS) expect(extractLinkedInJobId(h)).toBe(oldExtract(h));
-    expect(extractLinkedInJobId(HREFS[0])).toBe('3891234567');
-    expect(extractLinkedInJobId(HREFS[3])).toBeNull();
-    expect(extractLinkedInJobId(HREFS[4])).toBeNull();
+  it('matches the old derivation on every vector (expected values fixed from the old module)', () => {
+    expect(HREFS.map((h) => extractLinkedInJobId(h))).toEqual(['3891234567', '3891234567', '3900000001', null, null, null]);
   });
-  it('yields the same jobs-table id as the old card parser', () => {
-    for (const h of HREFS.slice(0, 3)) {
-      const old = parseLinkedInJobCards([{ titleText: 'T', companyText: 'C', hrefRaw: h, snippetText: '', easyApply: false }]);
-      expect(old.jobs[0].id).toBe(linkedInJobDbId(extractLinkedInJobId(h)!));
-    }
+  it('yields the old jobs-table id form li-job:<numeric id>', () => {
+    expect(HREFS.slice(0, 3).map((h) => linkedInJobDbId(extractLinkedInJobId(h)!))).toEqual(['li-job:3891234567', 'li-job:3891234567', 'li-job:3900000001']);
     expect(canonicalJobUrl('3900000001')).toBe('https://www.linkedin.com/jobs/view/3900000001/');
   });
 });

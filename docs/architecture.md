@@ -155,7 +155,7 @@ Start with `npm run doctor` and `npm run status -- health`, then use the row tha
 | All jobs excluded | `config/deal-breakers.json`, `config/target-regions.json` | `src/remotePolicy.ts`, `src/mcp/gates.ts` | [config-reference.md](config-reference.md) |
 | Everything scores below threshold | `.claude/agents/matcher.md` | `src/mcp/db.ts` (`save_match_result` caps) | [operations.md](operations.md) |
 | No contacts found | `.claude/agents/contact-finder.md` | `src/mcp/contacts.ts`, `src/lib/discoverOnly.ts` | [api-keys.md](api-keys.md) |
-| Email not sent | `npm run status -- limits` | `.claude/agents/sender.md`, `.claude/hooks/kill-switch.cjs` | [operations.md](operations.md) |
+| Email not sent | `npm run status -- limits` | `.claude/agents/mail-operator.md`, `.claude/hooks/kill-switch.cjs` | [operations.md](operations.md) |
 | Nothing leaves in a "live" run | `src/safety/dryRun.ts` (flag precedence) | `npm run dry-run:report` | [operations.md](operations.md) |
 | Resume or email blocked by fact gate | `src/resumeFacts.ts` | `user-data.example/` shapes, `src/mcp/resume.ts` | [config-reference.md](config-reference.md) |
 | Style gate rejects outreach text | `src/safety/styleGate.ts` | `config/ai-tells.json` | [config-reference.md](config-reference.md) |
@@ -171,7 +171,7 @@ Start with `npm run doctor` and `npm run status -- health`, then use the row tha
 | Scheduler never wakes | `npm run scheduler -- --status` | `src/scheduler/plan.ts` (skip reasons), `src/scheduler/due.ts` | [scheduler-install.md](scheduler-install.md) |
 | Scheduler run stops early | `src/scheduler/budget.ts` | `src/scheduler/runLog.ts` | [operations.md](operations.md) |
 | Replies not detected | `.claude/agents/reply-watcher.md` | `config/replies.json`, `src/mcp/db.ts` | [operations.md](operations.md) |
-| Follow-up not claimed | `.claude/agents/followup-drafter.md`, `.claude/agents/sender.md` | `src/mcp/db.ts` (`claim_followup_for_send`) | [operations.md](operations.md) |
+| Follow-up not claimed | `.claude/agents/followup-drafter.md`, `.claude/agents/mail-operator.md` | `src/mcp/db.ts` (`claim_followup_for_send`) | [operations.md](operations.md) |
 | Apply returns manual_review | `src/apply/external.ts` | `src/apply/linkedin.ts`, `src/mcp/applyAutoRouter.ts` | [operations.md](operations.md) |
 | Dashboard login fails | `src/dash/authStore.ts` | `src/web/server.ts`, `npm run dashboard -- status` | [dashboard-login.md](dashboard-login.md) |
 | Setup or bring-up step fails | `npm run doctor` | `src/setup/steps/`, `scripts/stack.ts` | [setup-modes.md](setup-modes.md) |

@@ -43,7 +43,7 @@ export function parsePostCards(snap: RawSnapshot, limit: number, role: string): 
     const author = gateCardField(c.authorName, 80);
     if (body.blocked || author.blocked) { injection = true; skipped++; continue; }
     if (!body.text || !isHiringIntent(body.text)) { skipped++; continue; }
-    // Same inputs as the old code (src/discover/linkedin-posts.ts): the stored profile url form
+    // Same inputs as the old code (the old discover/linkedin-posts module, deleted in Task 14): the stored profile url form
     // (`.../in/<slug>/`, trailing slash) and the raw card text, so old rows dedupe.
     const storedUrl = `${profile}/`;
     const id = buildSyntheticPostId(storedUrl, String(c.text ?? ''));

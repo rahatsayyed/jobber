@@ -183,7 +183,7 @@ describe('untrusted input and screened results', () => {
   }
   const screened = agents.filter((d) => toolsOf(d).some((t) => t.startsWith('mcp__linkedin__') || t.startsWith('mcp__naukri__')));
   it('there are screened readers', () => {
-    expect(screened.length).toBeGreaterThan(3);
+    expect(screened.length).toBeGreaterThan(2);
   });
   for (const d of screened) {
     it(`${d.file} handles screened results`, () => {

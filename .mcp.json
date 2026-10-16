@@ -14,7 +14,6 @@
       }
     },
     "apply": { "command": "npx", "args": ["tsx", "src/mcp/apply.ts"] },
-    "discover": { "command": "npx", "args": ["tsx", "src/mcp/discover.ts"] },
     "naukri": { "command": "npx", "args": ["tsx", "src/mcp/naukri.ts"] },
     "linkedin": { "command": "npx", "args": ["tsx", "src/mcp/linkedin.ts"] },
     "scout": { "command": "npx", "args": ["tsx", "src/mcp/scout.ts"] },

@@ -22,7 +22,7 @@ describe('runner never bypasses permissions', () => {
   });
 
   it('--print-args prints a dontAsk argv for both profiles and no prompt or env value', { timeout: 60000 }, () => {
-    for (const profile of ['outreach_wake', 'hunt']) {
+    for (const profile of ['outreach_wake']) {
       const r = spawnSync('npx', ['tsx', 'scripts/run-claude.ts', profile, '--print-args'], {
         encoding: 'utf8',
         env: { ...process.env, GMAIL_APP_PASSWORD: 'synthetic-secret-value-123' },

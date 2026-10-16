@@ -254,7 +254,7 @@ export const setupToolingChecks: Check[] = [
           return false;
         }
       });
-      for (const name of ['deal-breakers.json', 'replies.json', 'discover-linkedin.json']) {
+      for (const name of ['deal-breakers.json', 'replies.json', 'linkedin-discovery.json']) {
         checkFile(name, (v) => v !== null && typeof v === 'object');
       }
       return problems.length ? fail(problems.join('; '), 'restore the file from git or fix the JSON') : pass('all present config files parse');

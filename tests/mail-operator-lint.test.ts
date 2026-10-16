@@ -84,11 +84,6 @@ describe('mail-operator definition', () => {
     const body = norm(d.body);
     for (const s of MOVED) expect(body, s).toContain(norm(s));
   });
-  it('while the sender still exists it holds the same sentences', () => {
-    if (!existsSync('.claude/agents/sender.md')) return;
-    const sender = norm(def('sender').body);
-    for (const s of MOVED) expect(sender, s).toContain(norm(s));
-  });
   it('does not send, connect or apply on any non-email channel', () => {
     expect(d.body).not.toMatch(/linkedin_connect_send|linkedin_send_message|naukri_send_message|apply\.(linkedin|greenhouse|lever|workday|ashby)/);
   });

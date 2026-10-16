@@ -39,8 +39,6 @@
     "extends": "read_only",
     "allow": [
       "mcp__job-fetch__list_new_jobs",
-      "mcp__discover__linkedin_jobs",
-      "mcp__discover__linkedin_posts",
       "mcp__resume__render_resume",
       "mcp__resume__apply_review_edits",
       "mcp__db__check_and_increment",
@@ -93,7 +91,6 @@
       "mcp__contacts",
       "mcp__gates",
       "mcp__apply",
-      "mcp__discover",
       "mcp__naukri",
       "mcp__gmail",
       "mcp__scout"
