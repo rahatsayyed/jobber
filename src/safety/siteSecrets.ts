@@ -17,6 +17,9 @@ export function setSiteAccountsPathForTests(p: string | null | undefined): void 
 export interface SiteLiterals { emails: string[]; passwords: string[] }
 const EMPTY: SiteLiterals = { emails: [], passwords: [] };
 let cache: { key: string; value: SiteLiterals } | null = null;
+let warned = false;
+/** Test seam: forget that the loose-file warning was printed. */
+export function resetSiteSecretsWarningForTests(): void { warned = false; }
 
 export function siteAccountLiterals(env: NodeJS.ProcessEnv = process.env): SiteLiterals {
   // Under vitest the default path is never read unless a test sets one (env override or setter).
@@ -25,7 +28,13 @@ export function siteAccountLiterals(env: NodeJS.ProcessEnv = process.env): SiteL
   if (!p) return EMPTY;
   try {
     const st = lstatSync(p);
-    if (st.isSymbolicLink() || !st.isFile() || (process.platform !== 'win32' && (st.mode & 0o077) !== 0)) return EMPTY;
+    if (st.isSymbolicLink() || !st.isFile() || (process.platform !== 'win32' && (st.mode & 0o077) !== 0)) {
+      if (!warned) {
+        warned = true;
+        console.error('[safety] WARNING: the site accounts file is a symlink, not a regular file, or readable by others (chmod 600). It is NOT being read, so site account passwords and emails are NOT masked in logs and outbound checks. Fix it with: chmod 600 secrets/site-accounts.json');
+      }
+      return EMPTY;
+    }
     const key = `${p}|${st.mtimeMs}|${st.size}`;
     if (cache?.key === key) return cache.value;
     const j = JSON.parse(readFileSync(p, 'utf8')) as Record<string, { email?: unknown; password?: unknown }>;

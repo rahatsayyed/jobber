@@ -38,6 +38,18 @@ export interface SiteResult {
 
 export const FIXED_FAIL = 'page interaction failed';
 
+export class HostChanged extends Error {
+  constructor() { super('host_changed'); }
+}
+
+// Types a credential-bearing value only if the page is still on the host that was checked: the URL is
+// re-read immediately before the fill, so a redirect between the check and the fill types nothing.
+export async function fillGuarded(page: LiPage, expectedHost: string, fieldId: string, value: string): Promise<void> {
+  const now = hostOfUrl(page.url());
+  if (!now || now !== expectedHost || !hostMatchesAccount(now, expectedHost)) throw new HostChanged();
+  await fillField(page, fieldId, value);
+}
+
 export async function readPage(page: LiPage): Promise<{ raw: RawFormSnapshot; model: FormModel }> {
   const raw = await page.evaluate<RawFormSnapshot>(FORM_SNAPSHOT_SCRIPT);
   return { raw, model: extractFormModel(raw) };
@@ -128,8 +140,13 @@ export async function siteLogin(_input: { host?: string }, deps: SiteDeps): Prom
       const pw = vis.find((f) => f.role === 'password');
       const btn = first.model.controls.find((c) => c.kind === 'sign_in');
       if (!email || !pw || !btn) return { status: 'refused', code: 'unsupported_form', state: formatState(first.model) };
-      await fillField(page, email.id, hit.account.email);
-      await fillField(page, pw.id, hit.account.password);
+      try {
+        await fillGuarded(page, host, email.id, hit.account.email);
+        await fillGuarded(page, host, pw.id, hit.account.password);
+      } catch (e) {
+        if (e instanceof HostChanged) return { status: 'refused', code: 'host_changed', reason: 'the page moved to another host; nothing was typed' };
+        throw e;
+      }
       await clickControl(page, btn.id);
       await page.waitForTimeout(cfg.settleMs).catch(() => undefined);
       const after = await readPage(page);

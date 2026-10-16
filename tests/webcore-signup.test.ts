@@ -229,6 +229,54 @@ describe('host binding', () => {
   });
 });
 
+describe('redirect between check and fill', () => {
+  // The page reports another host after its first snapshot read, i.e. after the host check.
+  const flipAfterFirstRead = (s: Awaited<ReturnType<typeof setup>>) => {
+    const page = s.runtime.page() as unknown as { url: () => string; evaluate: (src: string) => Promise<unknown> };
+    const origUrl = page.url.bind(page);
+    const origEval = page.evaluate.bind(page);
+    let flipped = false;
+    page.url = () => (flipped ? 'https://evil.example.test/login' : origUrl());
+    page.evaluate = async (src: string) => { const r = await origEval(src); flipped = true; return r; };
+  };
+  it('site_login types nothing when the host changed after the check', async () => {
+    saveAccount(HOST, { email: 'me@example.test', password: CANARY, created_at: 'now', source: 'agent', verified: true }, accountsPath);
+    const s = await setup({ start: 'wd-signin.html' });
+    flipAfterFirstRead(s);
+    expect(await siteLogin({}, s.deps)).toMatchObject({ status: 'refused', code: 'host_changed' });
+    expect(s.site.fills).toEqual([]);
+  });
+  it('site_signup types nothing, clicks nothing and drops the credential when the host changed', async () => {
+    const s = await setup();
+    flipAfterFirstRead(s);
+    expect(await run(s)).toMatchObject({ status: 'refused', code: 'host_changed' });
+    expect(s.site.fills).toEqual([]);
+    expect(s.site.events).not.toContain(`click:control:${CREATE}`);
+    expect(loadAccounts(accountsPath)).toEqual({ ok: true, accounts: {} });
+  });
+});
+
+describe('throwing policy retry', () => {
+  it('restores the earlier credential when a fill in the strict retry throws', async () => {
+    const s = await setup({
+      transitions: { [CREATE]: [{ fixture: 'wd-account.html', notices: ['Password must be at least 12 characters'] }] },
+    });
+    const page = s.runtime.page()!;
+    const origLocator = page.locator.bind(page);
+    (page as unknown as { locator: unknown }).locator = (sel: string) => {
+      const l = origLocator(sel);
+      const fill = l.fill.bind(l);
+      l.fill = async (t: string, o?: { timeout?: number }) => { if (t === CANARY_STRICT) throw new Error(`boom ${t}`); await fill(t, o); };
+      return l;
+    };
+    const r = await run(s);
+    expect(r).toMatchObject({ status: 'failed', code: 'error' });
+    expect(JSON.stringify(r)).not.toContain(CANARY_STRICT);
+    const l = loadAccounts(accountsPath);
+    expect(l.ok && l.accounts[HOST].password).toBe(CANARY);
+  });
+});
+
 describe('final-snapshot and cleanup rules', () => {
   const acctForm = (extraBox: string) => `<html><body><h1>Create Account</h1><form>
 <label for="em">Email Address *</label><input id="em" type="email" required>

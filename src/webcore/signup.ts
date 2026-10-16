@@ -4,7 +4,7 @@
 // solves a CAPTCHA, enters an MFA or phone code, or retries a block in the same run.
 import type { LiPage } from './launch.js';
 import {
-  clickControl, clickField, fillField, FIXED_FAIL, haltedWeb, hostBlockedThisRun, hostCoolingDown, hostOfUrl, noteBlock,
+  clickControl, clickField, fillGuarded, FIXED_FAIL, HostChanged, haltedWeb, hostBlockedThisRun, hostCoolingDown, hostOfUrl, noteBlock,
   readPage, scrubSecrets, type SiteDeps, type SiteResult,
 } from './login.js';
 import type { FormModel } from './formModel.js';
@@ -124,9 +124,14 @@ export async function siteSignup(input: { host?: string; purpose: SignupPurpose 
       // Credential first, atomically, then the click.
       saveAccount(host, { email, password, created_at: now().toISOString(), source: 'agent', verified: false }, path);
       saved = true;
-      await fillField(page, emailF.id, email);
-      await fillField(page, pwF.id, password);
-      if (pw2F) await fillField(page, pw2F.id, password);
+      try {
+        await fillGuarded(page, host, emailF.id, email);
+        await fillGuarded(page, host, pwF.id, password);
+        if (pw2F) await fillGuarded(page, host, pw2F.id, password);
+      } catch (e) {
+        if (e instanceof HostChanged) { unsave(); return { status: 'refused', code: 'host_changed', reason: 'the page moved to another host; nothing more was typed' }; }
+        throw e;
+      }
       // Last look immediately before the create click: block check and the whole checkbox gate again
       // on this final snapshot (a page can change after the fills).
       const pre = await enforceCheckboxGate(page, { acceptLegal: acceptLegalRequired(env) });
@@ -157,16 +162,24 @@ export async function siteSignup(input: { host?: string; purpose: SignupPurpose 
         const p1 = again.fields.find((f) => !f.hidden && f.role === 'password');
         const p2 = again.fields.find((f) => !f.hidden && f.role === 'password_confirm');
         if (!e2 || !p1) { restore(); return { status: 'failed', code: 'create_failed', reason: 'the account form changed', state: formatState(again) }; }
-        await fillField(page, e2.id, email);
-        await fillField(page, p1.id, password);
-        if (p2) await fillField(page, p2.id, password);
-        const g2 = await enforceCheckboxGate(page, { acceptLegal: acceptLegalRequired(env) });
-        if (g2.model.block) { restore(); noteBlock(host); deps.escalate?.('block', `${g2.model.block} on ${host}`); return { status: 'blocked', code: g2.model.block, state: formatState(g2.model) }; }
-        const c3 = g2.model.controls.find((c) => c.kind === 'create_account');
-        if (!g2.ok || !c3) { restore(); return { status: 'needs_owner', code: g2.ok ? 'unsupported_form' : g2.code, state: formatState(g2.model) }; }
-        await clickControl(page, c3.id);
-        await page.waitForTimeout(cfg.settleMs).catch(() => undefined);
-        after = await readPage(page);
+        // Any throw in the retry puts the earlier credential back before it propagates, so the store
+        // never keeps a password the site has not accepted.
+        try {
+          await fillGuarded(page, host, e2.id, email);
+          await fillGuarded(page, host, p1.id, password);
+          if (p2) await fillGuarded(page, host, p2.id, password);
+          const g2 = await enforceCheckboxGate(page, { acceptLegal: acceptLegalRequired(env) });
+          if (g2.model.block) { restore(); noteBlock(host); deps.escalate?.('block', `${g2.model.block} on ${host}`); return { status: 'blocked', code: g2.model.block, state: formatState(g2.model) }; }
+          const c3 = g2.model.controls.find((c) => c.kind === 'create_account');
+          if (!g2.ok || !c3) { restore(); return { status: 'needs_owner', code: g2.ok ? 'unsupported_form' : g2.code, state: formatState(g2.model) }; }
+          await clickControl(page, c3.id);
+          await page.waitForTimeout(cfg.settleMs).catch(() => undefined);
+          after = await readPage(page);
+        } catch (e) {
+          restore();
+          if (e instanceof HostChanged) return { status: 'refused', code: 'host_changed', reason: 'the page moved to another host; nothing more was typed' };
+          throw e;
+        }
       }
 
       if (after.model.block) {

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,7 +7,7 @@ import {
 } from '../src/webcore/accounts.js';
 import { redactSecrets } from '../src/safety/redact.js';
 import { gateOutbound, secretValuesFromEnv } from '../src/safety/outputGate.js';
-import { setSiteAccountsPathForTests, siteAccountLiterals } from '../src/safety/siteSecrets.js';
+import { resetSiteSecretsWarningForTests, setSiteAccountsPathForTests, siteAccountLiterals } from '../src/safety/siteSecrets.js';
 import { loadLinkedinConfig } from '../src/linkedin/config.js';
 import { profileKeyOf } from '../src/linkedin/urls.js';
 import { outputGateContext } from '../src/linkedin/guard.js';
@@ -120,6 +120,20 @@ describe('literal secrets', () => {
       setSiteAccountsPathForTests(undefined);
       expect(siteAccountLiterals({})).toEqual({ emails: [], passwords: [] }); // VITEST: default path not read
     } finally { setSiteAccountsPathForTests(undefined); }
+  });
+  it('warns loudly on stderr, once, without values, when a loose account file is skipped', () => {
+    saveAccount('a.example.test', acct({ password: 'Warn-pw-1234567' }), file);
+    fs.chmodSync(file, 0o644);
+    resetSiteSecretsWarningForTests();
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    setSiteAccountsPathForTests(file);
+    try {
+      siteAccountLiterals({}); siteAccountLiterals({});
+      expect(err).toHaveBeenCalledTimes(1);
+      const msg = String(err.mock.calls[0][0]);
+      expect(msg).toMatch(/NOT masked/);
+      expect(msg).not.toContain('Warn-pw-1234567');
+    } finally { err.mockRestore(); setSiteAccountsPathForTests(undefined); resetSiteSecretsWarningForTests(); }
   });
   it('regression: outbound text with the owner email still passes the LinkedIn output gate when the account file exists', () => {
     saveAccount('a.example.test', acct({ email: 'owner.person@example.test', password: 'Zx-canary-9981-QQ' }), file);
