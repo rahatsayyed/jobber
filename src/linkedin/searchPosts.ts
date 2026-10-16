@@ -43,12 +43,15 @@ export function parsePostCards(snap: RawSnapshot, limit: number, role: string): 
     const author = gateCardField(c.authorName, 80);
     if (body.blocked || author.blocked) { injection = true; skipped++; continue; }
     if (!body.text || !isHiringIntent(body.text)) { skipped++; continue; }
-    const id = buildSyntheticPostId(profile, body.text);
+    // Same inputs as the old code (src/discover/linkedin-posts.ts): the stored profile url form
+    // (`.../in/<slug>/`, trailing slash) and the raw card text, so old rows dedupe.
+    const storedUrl = `${profile}/`;
+    const id = buildSyntheticPostId(storedUrl, String(c.text ?? ''));
     if (ids.has(id)) { skipped++; continue; }
     ids.add(id);
     jobs.push({
       id, source: 'linkedin-posts', title: author.text || 'LinkedIn hiring post', company: '',
-      url: profile, apply_url: profile, description: body.text,
+      url: storedUrl, apply_url: storedUrl, description: body.text,
     });
     text.push(`${author.text}\n${body.text}`);
     if (author.text && mentionsRole(body.text, role) && verifyProfileUrl(profile, absolute(String(c.profileHref))).ok) {

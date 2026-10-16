@@ -9,7 +9,8 @@ import { loadLinkedinConfig } from '../src/linkedin/config.js';
 import { loadLayoutConfig } from '../src/layout/config.js';
 import { DEFAULT_STYLE_CONFIG } from '../src/safety/styleGate.js';
 import { haltPlatform } from '../src/outreach/limits.js';
-import { searchPosts, mentionsRole } from '../src/linkedin/searchPosts.js';
+import { createHash } from 'node:crypto';
+import { searchPosts, mentionsRole, parsePostCards } from '../src/linkedin/searchPosts.js';
 import { buildPostsSearchUrl, type DiscoveryConfig } from '../src/linkedin/discoveryConfig.js';
 import { buildSyntheticPostId } from '../src/linkedin/jobIds.js';
 import { buildSyntheticPostId as oldPostId } from '../src/discover/linkedin-posts.js';
@@ -74,10 +75,9 @@ describe('searchPosts', () => {
     for (const j of rows) {
       expect(j).toMatchObject({ source: 'linkedin-posts', company: '' });
       expect(j.url).toBe(j.apply_url);
-      expect(j.url).toMatch(/^https:\/\/www\.linkedin\.com\/in\/[a-z-]+$/);
-      expect(j.id).toBe(buildSyntheticPostId(j.url, j.description));
+      expect(j.url).toMatch(/^https:\/\/www\.linkedin\.com\/in\/[a-z-]+\/$/);
     }
-    const jane = rows.find((j) => j.url.endsWith('/jane-recruiter'))!;
+    const jane = rows.find((j) => j.url.endsWith('/jane-recruiter/'))!;
     expect(jane.title).toBe('Jane Recruiter');
     expect(jane.description).toContain('React developer');
     expect(people(db)).toEqual([{ profile_key: 'linkedin.com/in/jane-recruiter', name: 'Jane Recruiter', category: 'peer', company: '' }]);
@@ -91,10 +91,20 @@ describe('searchPosts', () => {
     expect(people(db)).toHaveLength(1);
   });
 
-  it('post ids keep the old synthetic-id rule', () => {
-    const u = 'https://www.linkedin.com/in/jane-recruiter/';
-    expect(buildSyntheticPostId(u, "We're hiring!")).toBe(oldPostId(u, "We're hiring!"));
-    expect(buildSyntheticPostId(u, "We're hiring!")).toMatch(/^li-post:[0-9a-f]{16}$/);
+  it('post ids equal the old algorithm on the old stored-url form and the card text', () => {
+    // old algorithm inlined: sha256(href + textContent.slice(0, 100)) first 16 hex chars
+    const old = (href: string, text: string) =>
+      `li-post:${createHash('sha256').update(href + text.slice(0, 100)).digest('hex').slice(0, 16)}`;
+    const text = 'Jane Recruiter We are hiring a React developer for our Pune team. Remote friendly, message me.';
+    const snap = {
+      ...buildSnapshotFromHtml('<html><body><main>x</main></body></html>', POSTS_URL),
+      postCards: [{ text, authorName: 'Jane Recruiter', profileHref: 'https://www.linkedin.com/in/jane-recruiter/?trk=abc' }],
+    };
+    const p = parsePostCards(snap, 25, 'react developer');
+    expect(p.jobs[0].url).toBe('https://www.linkedin.com/in/jane-recruiter/');
+    expect(p.jobs[0].id).toBe(old('https://www.linkedin.com/in/jane-recruiter/', text));
+    // helper itself still matches the old exported function
+    expect(buildSyntheticPostId('https://www.linkedin.com/in/x/', 'hi')).toBe(oldPostId('https://www.linkedin.com/in/x/', 'hi'));
   });
 
   it('role match is a word check on the definition', () => {

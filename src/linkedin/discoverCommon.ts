@@ -115,8 +115,12 @@ export async function runDiscovery(o: {
     return empty('dry_run', 'dry_run', { ...base, seen });
   }
   // A page that cleared only as "unscreened" never reaches a live save (screenUntrusted already blocks live).
-  if (!tryConsume(db, 'linkedin_discover', loadOutreachConfig(env), now())) return empty('rate_limited', 'discover_limit');
   if (!checkAndIncrement(db, 'linkedin_search', deps.cfg.maxSearchesPerDay)) return empty('rate_limited', 'search_limit');
+  if (!tryConsume(db, 'linkedin_discover', loadOutreachConfig(env), now())) {
+    // Refund the search slot just taken, so a refusal costs nothing.
+    db.prepare("UPDATE daily_counters SET count = count - 1 WHERE day = date('now') AND key = 'linkedin_search' AND count > 0").run();
+    return empty('rate_limited', 'discover_limit');
+  }
 
   const ids: string[] = [];
   for (const j of fresh) {
