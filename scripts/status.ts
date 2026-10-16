@@ -7,9 +7,10 @@ import { loadLayoutConfig, loadLayoutEnv } from '../src/layout/config.js';
 import { renderSummary, summarize } from '../src/layout/summary.js';
 import { buildSnapshot } from '../src/status/snapshot.js';
 import { renderHealth, renderLimits, renderWorking } from '../src/status/render.js';
+import { buildSourceRows, renderSources } from '../src/status/sources.js';
 import { defaultRun, listWindows } from '../src/platform/tmux.js';
 
-const USAGE = 'usage: npm run status -- <limits|working|health|json|layout>';
+const USAGE = 'usage: npm run status -- <limits|working|health|json|layout|sources>';
 const cmd = process.argv[2];
 
 // Read-only layout memory summary (plan 8B). Works without a database; halts are read when one exists.
@@ -30,7 +31,7 @@ function layoutStatus(): number {
 }
 
 async function main(): Promise<number> {
-  if (!cmd || !['limits', 'working', 'health', 'json', 'layout'].includes(cmd)) {
+  if (!cmd || !['limits', 'working', 'health', 'json', 'layout', 'sources'].includes(cmd)) {
     console.error(USAGE);
     return 2;
   }
@@ -43,6 +44,10 @@ async function main(): Promise<number> {
   let db: Database.Database | undefined;
   try {
     db = new Database(path, { readonly: true, fileMustExist: true });
+    if (cmd === 'sources') {
+      console.log(renderSources(buildSourceRows(db)));
+      return 0;
+    }
     const snap = buildSnapshot(db, loadOutreachConfig(), new Date());
     if (cmd === 'limits') console.log(renderLimits(snap));
     else if (cmd === 'working') console.log(renderWorking(snap));

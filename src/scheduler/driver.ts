@@ -13,6 +13,7 @@ import { BudgetTracker, loadBudget, type StopReason } from './budget.js';
 import { readControl, statExists, type ControlDeps, type ControlState } from './control.js';
 import { countDue } from './due.js';
 import type { LaunchHandle, Launcher } from './launch.js';
+import { sourcesNotice } from '../status/sources.js';
 import type { Notice, Notifier } from './notify.js';
 import { loadPlanKnobs, planWake, stepOrder, type DiscoverSearches, type WakeDecision } from './plan.js';
 import { targetRegionsLine, type CodePassResult } from './pipeline.js';
@@ -291,6 +292,8 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       try {
         codePass = await d.codePass();
         if (!codePass.ok) await say(d, { level: 'warn', title: 'scheduler code pass failed', detail: codePass.error, runId });
+        const sn = sourcesNotice(d.db, runId);
+        if (sn) await say(d, sn);
       } catch (e) {
         await say(d, { level: 'warn', title: 'scheduler code pass failed', detail: safeMsg(e), runId });
       }
