@@ -32,5 +32,30 @@
     "mcp__db__list_jobs",
     "mcp__db__list_queued_outreach",
     "mcp__db__update_outreach_status"
+  ],
+  "apply-operator": [
+    "mcp__db__list_queued_outreach",
+    "mcp__db__update_outreach_status",
+    "mcp__applier__apply_open",
+    "mcp__applier__apply_state",
+    "mcp__applier__apply_autofill",
+    "mcp__applier__apply_fill",
+    "mcp__applier__apply_choose",
+    "mcp__applier__apply_upload",
+    "mcp__applier__apply_next",
+    "mcp__applier__apply_submit",
+    "mcp__applier__apply_escalate",
+    "mcp__applier__apply_recipe",
+    "mcp__applier__apply_propose_recipe",
+    "mcp__applier__apply_limits",
+    "mcp__applier__apply_close",
+    "mcp__applier__site_login",
+    "mcp__applier__site_signup",
+    "mcp__applier__site_open_link",
+    "mcp__naukri__naukri_open",
+    "mcp__naukri__naukri_state",
+    "mcp__naukri__naukri_click",
+    "mcp__naukri__naukri_type",
+    "mcp__naukri__naukri_layout"
   ]
 }

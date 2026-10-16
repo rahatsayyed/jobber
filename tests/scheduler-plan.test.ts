@@ -23,7 +23,7 @@ const ctl = (o: Partial<ControlState> = {}): ControlState => ({
   allowed: ['linkedin', 'naukri'], readError: null, ...o,
 });
 const ceil = (bad: LimitKey[] = []): Record<LimitKey, CeilingStatus> => {
-  const keys: LimitKey[] = ['linkedin_invite', 'linkedin_message', 'naukri_apply', 'naukri_message'];
+  const keys: LimitKey[] = ['linkedin_invite', 'linkedin_message', 'naukri_apply', 'naukri_message', 'apply_attempt'];
   return Object.fromEntries(
     keys.map((k) => [k, bad.includes(k) ? { used: 5, limit: 5, ok: false } : { used: 0, limit: 5, ok: true }]),
   ) as Record<LimitKey, CeilingStatus>;
@@ -201,6 +201,59 @@ describe('planWake', () => {
     expect(loadPlanKnobs({})).toEqual({ inboxEveryMin: 60, naukriSearchEveryHours: 6 });
     expect(loadPlanKnobs({ INBOX_EVERY_MIN: '15', NAUKRI_SEARCH_EVERY_HOURS: 'x' } as NodeJS.ProcessEnv))
       .toEqual({ inboxEveryMin: 15, naukriSearchEveryHours: 6 });
+  });
+});
+
+describe('apply task (8G-2 task 21)', () => {
+  const asg = (d: ReturnType<typeof plan>['d']) =>
+    d.kind === 'run' ? d.tasks.find((a) => a.operator === 'apply-operator') : undefined;
+  const ceilApply = (used: number, limit: number): Record<LimitKey, CeilingStatus> => ({
+    ...ceil(), apply_attempt: { used, limit, ok: used < limit },
+  });
+
+  it('apply task emitted only when rows exist and quota remains', () => {
+    expect(asg(plan({ due: due({ applyQueued: 0, appliesLeftToday: 5 }) }).d)).toBeUndefined();
+    expect(asg(plan({ due: due() }).d)).toBeUndefined(); // fields absent: nothing queued
+    const a = asg(plan({ due: due({ applyQueued: 3, appliesLeftToday: 5 }), ceilings: ceilApply(0, 30) }).d);
+    expect(a).toMatchObject({ operator: 'apply-operator', platform: 'apply', tasks: [{ kind: 'apply', quota: 5 }] });
+    expect(asg(plan({ due: due({ applyQueued: 3, appliesLeftToday: 0 }) }).d)).toBeUndefined();
+    expect(asg(plan({ due: due({ applyQueued: 3, appliesLeftToday: 5 }), ceilings: ceilApply(30, 30) }).d)).toBeUndefined();
+    // apply is listed after linkedin and naukri
+    const d = plan({ due: due({ followupsDue: 1, applyQueued: 1, appliesLeftToday: 2 }), ceilings: ceilApply(0, 30) }).d;
+    expect(d.kind === 'run' && d.tasks.map((t) => t.operator)).toEqual(['linkedin-operator', 'naukri-operator', 'apply-operator']);
+  });
+
+  it('apply quota is the smaller of remaining MAX_APPLIES_PER_DAY and remaining APPLY_MAX_ATTEMPTS_PER_DAY', () => {
+    expect(asg(plan({ due: due({ applyQueued: 9, appliesLeftToday: 4 }), ceilings: ceilApply(20, 30) }).d)!.tasks[0].quota).toBe(4);
+    expect(asg(plan({ due: due({ applyQueued: 9, appliesLeftToday: 8 }), ceilings: ceilApply(28, 30) }).d)!.tasks[0].quota).toBe(2);
+  });
+
+  it('apply alone yields a run; exhausted quota with rows is ceilings_exhausted', () => {
+    const only = plan({ due: due({ applyQueued: 2, appliesLeftToday: 3 }), ceilings: ceilApply(0, 30) }).d;
+    expect(only.kind).toBe('run');
+    const none = plan({ due: due({ applyQueued: 2, appliesLeftToday: 0 }) }).d;
+    expect(none).toMatchObject({ kind: 'skip', reason: 'ceilings_exhausted' });
+  });
+
+  it('countDue counts queued apply rows and the remaining daily apply budget', () => {
+    const db = openDb(':memory:');
+    db.prepare("INSERT INTO jobs (id, source, title, company, url) VALUES ('j1','t','T','C','u')").run();
+    db.prepare("INSERT INTO jobs (id, source, title, company, url, excluded_reason) VALUES ('j2','t','T','C','u','x')").run();
+    db.prepare("INSERT INTO jobs (id, source, title, company, url) VALUES ('j3','t','T','C','u')").run();
+    const ins = db.prepare('INSERT INTO outreach_queue (job_id, apply_platform, apply_status, status) VALUES (?, ?, ?, ?)');
+    ins.run('j1', 'greenhouse', null, 'queued'); // counted
+    ins.run('j3', 'browser', 'queued', 'queued'); // counted (one per job)
+    ins.run('j1', 'none', null, 'queued'); // not an apply row
+    ins.run('j1', null, null, 'queued'); // not an apply row
+    ins.run('j1', 'lever', 'submitted', 'queued'); // already done
+    ins.run('j2', 'ashby', null, 'queued'); // excluded job
+    ins.run('j1', 'lever', null, 'done'); // not queued
+    db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply', 2)").run();
+    const c = countDue(db, NOW, TUNING_DEFAULTS, { MAX_APPLIES_PER_DAY: '7' });
+    expect(c.applyQueued).toBe(2);
+    expect(c.appliesLeftToday).toBe(5);
+    expect(countDue(db, NOW, TUNING_DEFAULTS, {}).appliesLeftToday).toBe(3); // default 5
+    expect(countDue(openDb(':memory:'), NOW, TUNING_DEFAULTS, {}).applyQueued).toBe(0);
   });
 });
 

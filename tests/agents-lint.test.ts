@@ -57,6 +57,9 @@ function realTools(): Set<string> {
   }
   // apply.ts registers the external platforms through a loop over a literal list
   for (const p of ['greenhouse', 'lever', 'workday', 'ashby']) all.add(`mcp__apply__${p}`);
+  // applier.ts registers its tools through a loop over the literal TOOL_NAMES list
+  const ap = /TOOL_NAMES = \[([\s\S]*?)\]/.exec(readFileSync('src/mcp/applier.ts', 'utf8'))![1];
+  for (const m of ap.matchAll(/'([a-z_]+)'/g)) all.add(`mcp__applier__${m[1]}`);
   all.add('mcp__gmail__send_email');
   const nk = readFileSync('src/mcp/naukri.ts', 'utf8');
   for (const m of nk.matchAll(/'(naukri_[a-z_]+)'/g)) all.add(`mcp__naukri__${m[1]}`);
@@ -120,8 +123,8 @@ describe('worker agents', () => {
       });
     });
   }
-  it('worker-tools.json has exactly the two operators', () => {
-    expect(Object.keys(config).sort()).toEqual([...WORKERS].sort());
+  it('worker-tools.json has the two platform operators and the apply operator', () => {
+    expect(Object.keys(config).sort()).toEqual([...WORKERS, 'apply-operator'].sort());
   });
   it('per-operator body contracts', () => {
     const li = frontmatter('linkedin-operator').body;

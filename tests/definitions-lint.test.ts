@@ -30,6 +30,9 @@ function registry(): Map<string, Set<string>> {
   for (const t of scan('src/mcp/naukri.ts', /'(naukri_[a-z_]+)'/g)) add('naukri', t);
   // apply.ts registers the external platforms through a loop over a literal list
   for (const p of ['linkedin', 'auto', 'greenhouse', 'lever', 'workday', 'ashby']) add('apply', p);
+  // applier.ts registers its tools through a loop over the literal TOOL_NAMES list
+  const ap = /TOOL_NAMES = \[([\s\S]*?)\]/.exec(readFileSync('src/mcp/applier.ts', 'utf8'))![1];
+  for (const m of ap.matchAll(/'([a-z_]+)'/g)) add('applier', m[1]);
   for (const t of ['send_email', 'search_emails', 'read_email']) add('gmail', t);
   return reg;
 }
@@ -41,7 +44,7 @@ for (const [s, tools] of REG) for (const t of tools) REAL.add(`mcp__${s}__${t}`)
 // Backticked identifiers of the form `word.word` or `word_word` that are not tools.
 const NON_TOOL_ALLOW = new Set<string>([
   'linkedin_url', 'linkedin_profiles', 'linkedin_search', 'linkedin_jobs', 'linkedin_posts',
-  'linkedin_reply_needed', 'linkedin_invite', 'linkedin_message', 'naukri_apply', 'naukri_message', 'naukri_job_id', 'db.sqlite', 'data.sqlite', 'db.ts',
+  'linkedin_reply_needed', 'linkedin_invite', 'linkedin_message', 'naukri_apply', 'naukri_message', 'naukri_job_id', 'linkedin_easy', 'db.sqlite', 'data.sqlite', 'db.ts',
 ]);
 
 const SERVERS = [...REG.keys()];

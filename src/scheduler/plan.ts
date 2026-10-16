@@ -4,10 +4,11 @@ import { drawBurstSize, inQuietHours, type PacingConfig, type Rng } from '../out
 import type { ControlState, Platform } from './control.js';
 import type { DueCounts } from './due.js';
 
-export type Operator = 'linkedin-operator' | 'naukri-operator';
-export type TaskKind = 'inbox' | 'followups' | 'new_outreach' | 'search';
+export type Operator = 'linkedin-operator' | 'naukri-operator' | 'apply-operator';
+export type TaskKind = 'inbox' | 'followups' | 'new_outreach' | 'search' | 'apply';
 export interface OperatorTask { kind: TaskKind; quota: number }
-export interface Assignment { operator: Operator; platform: Platform; tasks: OperatorTask[] }
+// 'apply' is not a platform: the apply operator routes per queued row (plan 8G-2 task 21).
+export interface Assignment { operator: Operator; platform: Platform | 'apply'; tasks: OperatorTask[] }
 export type SkipReason = 'killed' | 'halted' | 'quiet_hours' | 'ceilings_exhausted' | 'nothing_due';
 export type WakeDecision =
   | { kind: 'skip'; reason: SkipReason; detail?: string }
@@ -105,12 +106,22 @@ export function planWake(i: {
     tasks: byPlatform[p],
   }));
 
+  // Apply: its own quota (not the burst) = the smaller of what is left of MAX_APPLIES_PER_DAY and of
+  // APPLY_MAX_ATTEMPTS_PER_DAY. Emitted last, only when queued apply rows exist and quota remains.
+  const applyQueued = due.applyQueued ?? 0;
+  const attempt = ceilings.apply_attempt;
+  const applyQuota = Math.min(due.appliesLeftToday ?? 0, attempt ? Math.max(0, attempt.limit - attempt.used) : 0);
+  if (applyQueued > 0 && applyQuota > 0) {
+    tasks.push({ operator: 'apply-operator', platform: 'apply', tasks: [{ kind: 'apply', quota: applyQuota }] });
+  }
+
   if (tasks.length > 0) return { kind: 'run', burst, tasks };
 
   const allowedTotal = (by: Record<Platform, number>): number => control.allowed.reduce((n, p) => n + by[p], 0);
   const workExists =
     allowedTotal(due.followupsDueByPlatform) > 0 ||
     allowedTotal(due.newOutreachReadyByPlatform) > 0 ||
-    (searchDue && allowed.has('naukri'));
+    (searchDue && allowed.has('naukri')) ||
+    applyQueued > 0;
   return { kind: 'skip', reason: workExists ? 'ceilings_exhausted' : 'nothing_due' };
 }
