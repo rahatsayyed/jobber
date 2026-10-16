@@ -12,10 +12,11 @@ export async function scoutSearch(a: { kind: SearchKind; params?: DorkParams }, 
   if (out.results.length === 0) {
     return json({ ok: true, provider: out.provider, ...(out.reason ? { reason: out.reason } : {}), count: 0 });
   }
-  const lines = out.results.slice(0, 10).map((r, i) => `${i + 1}. ${r.title} | ${r.url} | ${r.snippet}`);
+  const shown = out.results.slice(0, 10);
+  const lines = shown.map((r, i) => `${i + 1}. ${r.title} | ${r.url} | ${r.snippet}`);
   const v = await deps.screen(lines.join('\n'), 'read');
   if (v.blocked) return blockedJson(v);
-  for (const r of out.results) {
+  for (const r of shown) {
     const n = normalizeUrl(r.url);
     if (n) deps.seenUrls.add(n);
   }

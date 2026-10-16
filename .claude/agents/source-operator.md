@@ -19,7 +19,7 @@ You are the source operator for one scheduled wake. The wake prompt gives you a 
 
 1. `mcp__scout__scout_tasks` lists open tasks. Work the rows whose reason is not `new_site` and that have `has_target: true`, at most `quota` of them. A row with `has_target: false` is marked `failed` with `scout_task_update`.
 2. For each row: `scout_open({url, task_id})` using the row's `url`, then `scout_state`. If the page is a listing, `scout_extract_jobs({task_id})`; scroll or click "load more" at most twice if the count looks truncated, extracting again after each.
-3. `scout_save_jobs({task_id, source: "gen:<platform>"})` where `<platform>` is the row's platform. Then `scout_task_update({task_id, state: "done"})`. When extraction finds nothing, or the page cannot be read, mark `failed`. Optionally call `scout_capture_fixture({task_id})` once for a failed row so a generated provider can be authored later.
+3. `scout_save_jobs({task_id, source: "gen:<platform>"})` where `<platform>` is the row's platform. If `scout_save_jobs` returns `status: "dry_run"`, leave the task queued (do not call `scout_task_update`; in a dry run it records and changes nothing). Otherwise `scout_task_update({task_id, state: "done"})`. When extraction finds nothing, or the page cannot be read, mark `failed`. Optionally call `scout_capture_fixture({task_id})` once for a failed row so a generated provider can be authored later.
 
 ## Task: new_site
 
