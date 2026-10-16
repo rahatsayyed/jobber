@@ -35,6 +35,9 @@ const OLD_PREFIX_ALLOWED = new Set([
   '.claude/agents/sender.md',
   'tests/agents-lint.test.ts',
   'tests/apply-operator-lint.test.ts',
+  // The legacy_removed doctor check (and its test) must name the retired prefix to detect it.
+  'src/platform/checksWeb.ts',
+  'tests/platform-checks-web.test.ts',
   'tests/legacy-apply-removed.test.ts',
 ]);
 
@@ -76,7 +79,7 @@ describe('legacy scripted apply is removed', () => {
     const files = gitGrepFiles(
       "applyEasyApply|applyExternal|bootstrapFieldMap|detectAts|learned-ats-platforms|atsBootstrap|domSnapshot|domFallback|applyAutoRouter|from '[./]+/(apply/(linkedin|external)|ats/)",
       ['src', 'scripts', 'config', '.claude', 'tests', '.env.example'],
-    ).filter((f) => !['tests/legacy-apply-removed.test.ts', 'scripts/migrate-learned-ats.ts', 'tests/applier-recipes.test.ts'].includes(f));
+    ).filter((f) => !['tests/legacy-apply-removed.test.ts', 'scripts/migrate-learned-ats.ts', 'tests/applier-recipes.test.ts', 'src/platform/checksWeb.ts' /* legacy_removed check names the deleted paths */].includes(f));
     expect(files).toEqual([]);
   });
 
