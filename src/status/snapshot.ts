@@ -42,7 +42,7 @@ export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, n
   const section = makeSection(degraded);
   // Fail-safe: if the counters cannot be read, report every ceiling as not ok rather than a fabricated safe state.
   const zeroCeilings = Object.fromEntries(
-    (['linkedin_invite', 'linkedin_message', 'naukri_apply', 'naukri_message'] as LimitKey[]).map((k) => [
+    (['linkedin_invite', 'linkedin_message', 'naukri_apply', 'naukri_message', 'apply_attempt', 'site_account', 'linkedin_discover'] as LimitKey[]).map((k) => [
       k,
       { used: 0, limit: 0, ok: false },
     ]),

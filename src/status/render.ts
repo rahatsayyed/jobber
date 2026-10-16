@@ -13,6 +13,9 @@ const PERIOD: Record<LimitKey, string> = {
   linkedin_message: 'week',
   naukri_apply: 'day',
   naukri_message: 'day',
+  apply_attempt: 'day',
+  site_account: 'day',
+  linkedin_discover: 'day',
 };
 
 /** ISO instant to `YYYY-MM-DD HH:MM IST` (Asia/Kolkata); unparseable input is returned as is. */

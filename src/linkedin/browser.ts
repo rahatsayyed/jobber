@@ -1,8 +1,17 @@
 // The ONLY place in src/linkedin/* and scripts/linkedin-*.ts that launches a browser: real
 // installed Google Chrome through patchright (the Naukri headless recipe), never bundled Chromium.
 import { chromium as patchrightChromium } from 'patchright';
-import { HEADLESS_CONTEXT_OPTIONS } from '../sources/naukri.js'; // reuse, do not duplicate the UA
 import type { LiBrowser, LiLauncher } from './types.js';
+
+/** Akamai blocks the `HeadlessChrome` UA token; a real Chrome UA with en-IN/Asia/Kolkata passes. */
+export const HEADLESS_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
+export const HEADLESS_CONTEXT_OPTIONS = {
+  userAgent: HEADLESS_USER_AGENT,
+  locale: 'en-IN',
+  timezoneId: 'Asia/Kolkata',
+  viewport: { width: 1440, height: 900 },
+};
 
 export const LINKEDIN_LAUNCH_OPTIONS = { channel: 'chrome', headless: true, args: ['--headless=new'] } as const;
 /** Owner login script only. */

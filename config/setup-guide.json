@@ -241,6 +241,27 @@
           "entered_in": "owner edits .env"
         },
         {
+          "name": "WEB_DRY_RUN",
+          "secret": false,
+          "purpose": "company-site and ATS browser actions are only recorded unless exactly false",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "APPLY_DRY_RUN",
+          "secret": false,
+          "purpose": "browser applications are only recorded unless exactly false",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "SCOUT_DRY_RUN",
+          "secret": false,
+          "purpose": "source scouting actions are only recorded unless exactly false",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
           "name": "LINKEDIN_ACCEPT_UNKNOWN",
           "secret": false,
           "purpose": "whether invitations from unknown people may be accepted",
@@ -349,6 +370,13 @@
           "name": "MAX_LINKEDIN_SEARCHES_PER_DAY",
           "secret": false,
           "purpose": "LinkedIn people searches per day",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "wizard"
+        },
+        {
+          "name": "APPLY_MAX_PER_HOST",
+          "secret": false,
+          "purpose": "applications per day to one host (APPLY_MAX_PER_HOST_<PLATFORM> overrides it)",
           "where": "src/setup/limitsCatalog.ts",
           "entered_in": "wizard"
         },

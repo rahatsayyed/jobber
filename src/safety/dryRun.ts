@@ -5,10 +5,12 @@ import { secretValuesFromEnv } from './outputGate.js';
 
 type Db = BetterSqlite3.Database;
 
-export function isDryRun(env: NodeJS.ProcessEnv = process.env, opts: { linkedin?: boolean } = {}): boolean {
+export function isDryRun(env: NodeJS.ProcessEnv = process.env, opts: { linkedin?: boolean; web?: boolean } = {}): boolean {
   if (env.JOBBER_DRY_RUN === '1') return true;
   if (env.SCHEDULER_DRY_RUN !== 'false') return true;
   if (opts.linkedin && env.LINKEDIN_DRY_RUN !== 'false') return true;
+  // Web actions (login, sign-up, upload, typing, next/submit) need every web flag explicitly live.
+  if (opts.web && (env.WEB_DRY_RUN !== 'false' || env.APPLY_DRY_RUN !== 'false' || env.SCOUT_DRY_RUN !== 'false')) return true;
   return false;
 }
 

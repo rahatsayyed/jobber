@@ -3,6 +3,9 @@
 // (src/outreach/config.ts, src/outreach/tuning.ts, src/outreach/cadence.ts and the direct
 // process.env readers); tests/setup-limits-catalog.test.ts fails if they drift.
 import { GAPS_DAYS } from '../outreach/cadence.js';
+import {
+  APPLY_HOST_PLATFORM_IDS, DEFAULT_HOST_CAP, MAX_HOST_CAP, MIN_HOST_CAP, TOP_LEVEL_KEY, hostCapKey,
+} from '../webcore/hostCaps.js';
 
 export type LimitGroup =
   | 'daily-caps'
@@ -62,6 +65,22 @@ export const LIMITS: LimitSpec[] = [
     what: 'Naukri applications per day.' },
   { key: 'NAUKRI_MAX_MESSAGES_PER_DAY', group: 'daily-caps', default: 40, min: 0, max: 100000, unit: 'per day',
     what: 'Naukri recruiter messages per day.' },
+  { key: 'APPLY_MAX_ATTEMPTS_PER_DAY', group: 'daily-caps', default: 30, min: 0, max: 100000, unit: 'per day',
+    what: 'Browser application attempts per day across all company sites and ATS hosts (submitted or not).',
+    raiseNote: 'Keep it above the per-host cap, or it undercuts it.' },
+  { key: 'SITE_MAX_ACCOUNTS_PER_DAY', group: 'daily-caps', default: 2, min: 0, max: 100000, unit: 'per day',
+    what: 'New accounts created on company sites and ATS hosts per day.',
+    raiseNote: 'Many new accounts in a day look automated and get blocked.' },
+  { key: 'LINKEDIN_MAX_DISCOVER_PER_DAY', group: 'daily-caps', default: 12, min: 0, max: 100000, unit: 'per day',
+    what: 'LinkedIn job and post discovery searches per day from the main account.',
+    raiseNote: 'Heavy searching is a common trigger for LinkedIn rate limits.' },
+  { key: TOP_LEVEL_KEY, group: 'daily-caps', default: DEFAULT_HOST_CAP, min: MIN_HOST_CAP, max: MAX_HOST_CAP, unit: 'per host per day',
+    what: 'Applications per day to one company or ATS host, used for every platform without its own APPLY_MAX_PER_HOST_<ID> value.',
+    raiseNote: 'Many applications to one host in a day can get the account flagged.' },
+  ...APPLY_HOST_PLATFORM_IDS.map((id): LimitSpec => ({
+    key: hostCapKey(id), group: 'daily-caps', default: DEFAULT_HOST_CAP, min: MIN_HOST_CAP, max: MAX_HOST_CAP, unit: 'per host per day',
+    what: `Applications per day to one ${id} host. Unset or invalid falls back to APPLY_MAX_PER_HOST, then ${DEFAULT_HOST_CAP}.`,
+  })),
   { key: 'COMPANY_CONTACT_LIMIT', group: 'per-company', default: 5, min: 0, max: 100000, unit: 'people',
     what: 'Most people contacted at one company, so a team is not flooded.' },
   { key: 'SPECULATIVE_COMPANY_LIMIT', group: 'per-company', default: 2, min: 0, max: 100000, unit: 'people',

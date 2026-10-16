@@ -217,6 +217,13 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
       result TEXT,
       at TEXT
     );
+    -- Per-host daily apply counter (plan 8G task 4; consumed by task 18).
+    CREATE TABLE IF NOT EXISTS apply_host_day (
+      host TEXT NOT NULL,
+      day TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (host, day)
+    );
   `);
 
   // Migration: older databases created before `method`/`account` existed on

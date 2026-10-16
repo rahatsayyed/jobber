@@ -4,6 +4,9 @@ export interface OutreachConfig {
   linkedinMaxMessagesPerWeek: number;
   naukriMaxAppliesPerDay: number;
   naukriMaxMessagesPerDay: number;
+  applyMaxAttemptsPerDay: number;
+  siteMaxAccountsPerDay: number;
+  linkedinMaxDiscoverPerDay: number;
   companyContactLimit: number;
   speculativeCompanyLimit: number;
   quietStartHour: number;
@@ -15,6 +18,9 @@ const DEFAULTS: OutreachConfig = {
   linkedinMaxMessagesPerWeek: 100,
   naukriMaxAppliesPerDay: 30,
   naukriMaxMessagesPerDay: 40,
+  applyMaxAttemptsPerDay: 30,
+  siteMaxAccountsPerDay: 2,
+  linkedinMaxDiscoverPerDay: 12,
   companyContactLimit: 5,
   speculativeCompanyLimit: 2,
   quietStartHour: 1,
@@ -26,6 +32,9 @@ const ENV_KEYS: Record<keyof OutreachConfig, string> = {
   linkedinMaxMessagesPerWeek: 'LINKEDIN_MAX_MESSAGES_PER_WEEK',
   naukriMaxAppliesPerDay: 'NAUKRI_MAX_APPLIES_PER_DAY',
   naukriMaxMessagesPerDay: 'NAUKRI_MAX_MESSAGES_PER_DAY',
+  applyMaxAttemptsPerDay: 'APPLY_MAX_ATTEMPTS_PER_DAY',
+  siteMaxAccountsPerDay: 'SITE_MAX_ACCOUNTS_PER_DAY',
+  linkedinMaxDiscoverPerDay: 'LINKEDIN_MAX_DISCOVER_PER_DAY',
   companyContactLimit: 'COMPANY_CONTACT_LIMIT',
   speculativeCompanyLimit: 'SPECULATIVE_COMPANY_LIMIT',
   quietStartHour: 'QUIET_HOURS_START',

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import { chromium as patchrightChromium } from 'patchright';
+import { HEADLESS_USER_AGENT, HEADLESS_CONTEXT_OPTIONS } from '../linkedin/browser.js';
 
 /**
  * Headless mode (`NAUKRI_HEADLESS=true`): Patchright driving the installed Google Chrome with a
@@ -13,14 +14,9 @@ import { chromium as patchrightChromium } from 'patchright';
  * unblocks it. Off by default: headed Playwright is
  * the known-good path.
  */
-export const HEADLESS_USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
-export const HEADLESS_CONTEXT_OPTIONS = {
-  userAgent: HEADLESS_USER_AGENT,
-  locale: 'en-IN',
-  timezoneId: 'Asia/Kolkata',
-  viewport: { width: 1440, height: 900 },
-};
+// The constants live in src/linkedin/browser.ts (the shared launcher's home); re-exported here
+// until Task 11 migrates the remaining importers.
+export { HEADLESS_USER_AGENT, HEADLESS_CONTEXT_OPTIONS };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..', '..');
