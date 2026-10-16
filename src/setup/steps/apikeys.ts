@@ -137,7 +137,7 @@ export const apikeysStep: SetupStep = {
       for (let attempt = 0; attempt < 2 && !accepted; attempt++) {
         const values: Record<string, string> = {};
         for (const k of p.keys) {
-          const v = (await io.askSecret(k.prompt, { validate: keyValidate })).trim();
+          const v = (await io.askSecret(k.prompt, { validate: keyValidate, existing: existing[k.env] || undefined })).trim();
           io.registerSecret(v);
           values[k.env] = v;
         }

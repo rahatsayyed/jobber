@@ -133,6 +133,7 @@ export const dashboardStep: SetupStep = {
     if (!(email && EMAIL_RE.test(email) && (await io.confirm(`Keep the allowed account ${email}?`, true)))) {
       email = (
         await io.ask('The one Google account allowed to sign in (email)', {
+          default: email && EMAIL_RE.test(email) ? email : undefined,
           validate: (v) => (EMAIL_RE.test(v.trim()) ? null : 'That does not look like an email address'),
         })
       )

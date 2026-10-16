@@ -180,7 +180,10 @@ export const telegramStep: SetupStep = {
         id = await idFromUpdates(ctx, token);
         if (!id) io.say('No message found. Enter the ID by hand.');
       }
-      if (!id) id = await io.ask('Your numeric Telegram user ID', { validate: idValidate });
+      if (!id) id = await io.ask('Your numeric Telegram user ID', {
+          validate: idValidate,
+          default: existingIds.length === 1 && ID_RE.test(existingIds[0]) ? existingIds[0] : undefined,
+        });
       ids = [id.trim()];
       while (await io.confirm('Allow another person?', false)) {
         io.say('Warning: every allowed ID can drive Claude on this machine.');

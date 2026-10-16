@@ -80,9 +80,52 @@ function suggestCurrencies(locations: string[], remote: boolean): string[] {
   return out;
 }
 
-function existingBand(prev: Profile | null, cur: string): SalaryBand | null {
-  const b = prev?.salary?.[cur];
+function existingBand(prev: Partial<Profile>, cur: string): SalaryBand | null {
+  const b = prev.salary?.[cur];
   return b && typeof b.floor === 'number' && typeof b.target === 'number' ? b : null;
+}
+
+// What an existing profile.json already says, field by field. A hand-written or older file
+// that fails full validation still supplies every field that is individually usable, so
+// re-running the step offers those values as defaults and Enter keeps them.
+function looseProfile(raw: Json | null): Partial<Profile> {
+  if (!raw) return {};
+  const out: Partial<Profile> = {};
+  const strs = (v: unknown): string[] | undefined => {
+    if (!Array.isArray(v)) return undefined;
+    const list = v.filter((x): x is string => typeof x === 'string' && x.trim() !== '');
+    return list.length > 0 ? list : undefined;
+  };
+  const roles = strs(raw.roles);
+  if (roles) out.roles = roles;
+  const locations = strs(raw.locations);
+  if (locations) out.locations = locations;
+  if (typeof raw.remote_ok === 'boolean') out.remote_ok = raw.remote_ok;
+  if (typeof raw.remote_anywhere === 'boolean') out.remote_anywhere = raw.remote_anywhere;
+  if (isObj(raw.salary)) {
+    const salary: Record<string, SalaryBand> = {};
+    for (const [cur, v] of Object.entries(raw.salary)) {
+      if (!/^[A-Z]{3}$/.test(cur) || !isObj(v)) continue;
+      if (typeof v.floor === 'number' && v.floor > 0 && typeof v.target === 'number' && v.target > 0) {
+        salary[cur] = { floor: v.floor, target: v.target };
+      }
+    }
+    out.salary = salary;
+  }
+  const n = raw.notice_period_days;
+  if (typeof n === 'number' && Number.isInteger(n) && n >= 0) out.notice_period_days = n;
+  const wa = raw.work_authorization;
+  if (isObj(wa)) {
+    const india = typeof wa.india === 'boolean' ? wa.india : undefined;
+    const other = wa.other;
+    if (india !== undefined || typeof other === 'string') {
+      out.work_authorization = {
+        india: india ?? true,
+        other: other === 'needs_sponsorship' || other === 'authorized' ? other : 'unknown',
+      };
+    }
+  }
+  return out;
 }
 
 export const profileStep: SetupStep = {
@@ -97,31 +140,31 @@ export const profileStep: SetupStep = {
     const langPath = path.join(dir, 'languages.json');
 
     const prevRaw = readJson(ctx, profilePath);
-    const prev = prevRaw && validateProfile(prevRaw).length === 0 ? (prevRaw as unknown as Profile) : null;
+    const prev = looseProfile(prevRaw);
     const answers = load(ctx, dir, 'easy-apply-answers.json');
     const langs = load(ctx, dir, 'languages.json');
 
     // 1. What to hunt
     const roles = csv(
       await io.ask('Roles you want, comma separated', {
-        default: prev ? prev.roles.join(', ') : undefined,
+        default: prev.roles ? prev.roles.join(', ') : undefined,
         validate: (v) => (csv(v).length > 0 ? null : 'Enter at least one role'),
       }),
     );
     const locations = csv(
       await io.ask('Locations you want, comma separated (for example India, UAE)', {
-        default: prev ? prev.locations.join(', ') : undefined,
+        default: prev.locations ? prev.locations.join(', ') : undefined,
         validate: (v) => (csv(v).length > 0 ? null : 'Enter at least one location'),
       }),
     );
-    const remote_ok = await io.confirm('Are remote roles acceptable?', prev?.remote_ok ?? true);
+    const remote_ok = await io.confirm('Are remote roles acceptable?', prev.remote_ok ?? true);
     io.say('Remote anywhere allows remote roles based in other countries, unless the posting restricts who may apply.');
-    const remote_anywhere = await io.confirm('Allow remote roles based anywhere?', prev?.remote_anywhere ?? false);
+    const remote_anywhere = await io.confirm('Allow remote roles based anywhere?', prev.remote_anywhere ?? false);
 
     // 2. Salary floors and targets, per currency
     io.say('A floor is a never-go-below yearly amount and a target is what you hope for. Nothing is filled in for you.');
     const suggested = suggestCurrencies(locations, remote_ok);
-    const curDefault = prev ? Object.keys(prev.salary).join(', ') : suggested.join(', ');
+    const curDefault = prev.salary ? Object.keys(prev.salary).join(', ') : suggested.join(', ');
     const curRaw = await io.ask(
       'Currencies to set salary for (ISO codes such as INR, AED, USD; blank for none)',
       {
@@ -157,11 +200,11 @@ export const profileStep: SetupStep = {
     // 3. Notice period and work authorization
     const notice_period_days = Number(
       await io.ask('Notice period in days', {
-        default: prev ? String(prev.notice_period_days) : undefined,
+        default: prev.notice_period_days !== undefined ? String(prev.notice_period_days) : undefined,
         validate: (v) => (/^\d{1,4}$/.test(v.trim()) ? null : 'Enter whole days, 0 or more'),
       }),
     );
-    const india = await io.confirm('Are you authorized to work in India without sponsorship?', prev?.work_authorization.india ?? true);
+    const india = await io.confirm('Are you authorized to work in India without sponsorship?', prev.work_authorization?.india ?? true);
     const other = await io.choose(
       'Elsewhere (outside India)',
       [
@@ -169,7 +212,7 @@ export const profileStep: SetupStep = {
         { value: 'authorized', label: 'I am already authorized' },
         { value: 'unknown', label: 'Not sure or it depends' },
       ],
-      prev?.work_authorization.other ?? 'unknown',
+      prev.work_authorization?.other ?? 'unknown',
     );
 
     const next: Json = answers ? { ...answers } : {};
