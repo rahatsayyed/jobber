@@ -6,7 +6,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { existsSync } from 'node:fs';
 import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS, type LiBrowser, type LiContext, type LiLauncher, type LiPage } from './launch.js';
 import { loadWebConfig, type WebConfig } from './config.js';
-import { acquireLock, checkSiteSessionFile, siteSessionPath, DEFAULT_SITE_SESSION_DIR, DEFAULT_WEB_LOCK_PATH, type LockHandle } from './session.js';
+import { acquireLock, checkSiteSessionDir, checkSiteSessionFile, siteSessionPath, DEFAULT_SITE_SESSION_DIR, DEFAULT_WEB_LOCK_PATH, type LockHandle } from './session.js';
 import { haltReason } from '../outreach/limits.js';
 
 type Db = BetterSqlite3.Database;
@@ -43,10 +43,18 @@ export interface WebRuntime {
   page(): LiPage | null;
   context(): LiContext | null;
   close(): Promise<boolean>;
+  /**
+   * Queue page work behind every other call. Callers MUST do all page interaction through serial():
+   * each call resets the idle timer, so a long interaction is never closed underneath itself.
+   */
   serial<T>(fn: () => Promise<T>): Promise<T>;
 }
 
-/** http(s) only, no embedded credentials, host equal to or a subdomain of an allowed host. */
+/**
+ * http(s) only, no embedded credentials, host equal to or a subdomain of an allowed host.
+ * Callers must pass validated registrable-host suffixes; a suffix that is empty or has no dot
+ * (a bare TLD such as "com") is rejected here so it can never widen the set to a whole TLD.
+ */
 export function hostAllowed(url: string, allowedHosts: string[]): boolean {
   let u: URL;
   try { u = new URL(url); } catch { return false; }
@@ -55,7 +63,7 @@ export function hostAllowed(url: string, allowedHosts: string[]): boolean {
   const h = u.hostname.toLowerCase();
   return allowedHosts.some((a) => {
     const x = a.trim().toLowerCase();
-    return x !== '' && (h === x || h.endsWith(`.${x}`));
+    return x !== '' && x.includes('.') && !x.startsWith('.') && !x.endsWith('.') && (h === x || h.endsWith(`.${x}`));
   });
 }
 
@@ -85,18 +93,23 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
   const lastNav = new Map<string, number>();
   let chain: Promise<unknown> = Promise.resolve();
 
-  const serial = <T,>(fn: () => Promise<T>): Promise<T> => {
+  const enqueue = <T,>(fn: () => Promise<T>): Promise<T> => {
     const run = chain.then(fn, fn);
     chain = run.catch(() => undefined);
     return run;
   };
+  const serial = <T,>(fn: () => Promise<T>): Promise<T> =>
+    enqueue(async () => {
+      touch();
+      try { return await fn(); } finally { touch(); }
+    });
   const halted = (): string | null => haltReason(deps.db, 'web') ?? haltReason(deps.db, 'apply');
   const fail = (code: string, reason: string): NavResult => ({ ok: false, code, reason });
 
   function touch(): void {
     if (!session) return;
     if (session.idle) clearTimeout(session.idle);
-    session.idle = setTimeout(() => { void serial(() => closeSession()); }, idleMs);
+    session.idle = setTimeout(() => { void enqueue(() => closeSession()); }, idleMs);
     session.idle.unref?.();
   }
 
@@ -154,6 +167,8 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
     const blocked = await gate(url, opts.allowedHosts);
     if (blocked) return blocked;
     await closeSession();
+    const dirChk = checkSiteSessionDir(sessionDir);
+    if (!dirChk.ok) return fail('session_invalid', dirChk.reason ?? 'session directory invalid');
     const sessionFile = siteSessionPath(opts.sessionHost ?? hostOf(url), sessionDir);
     let storageState: string | undefined;
     if (existsSync(sessionFile)) {
@@ -177,7 +192,9 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
       session = { browser, context, page, lock: lock.handle, idle: null, allowedHosts: opts.allowedHosts };
       process.once('beforeExit', onExit);
       touch();
-      return await go(page, url, opts.allowedHosts);
+      const r = await go(page, url, opts.allowedHosts);
+      if (!r.ok) await closeSession(); // never leave the lock and idle timer behind a failed open
+      return r;
     } catch (e) {
       if (session) await closeSession();
       else { await browser.close().catch(() => undefined); lock.handle.release(); }
@@ -199,7 +216,7 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
     navigate: (url) => serial(() => navigate(url)),
     page: () => session?.page ?? null,
     context: () => session?.context ?? null,
-    close: () => serial(() => closeSession()),
+    close: () => enqueue(() => closeSession()),
     serial,
   };
 }

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -74,6 +74,9 @@ describe('hostAllowed', () => {
     expect(hostAllowed('javascript:alert(1)', ['example.com'])).toBe(false);
     expect(hostAllowed('https://user:pw@example.com', ['example.com'])).toBe(false);
     expect(hostAllowed('not a url', ['example.com'])).toBe(false);
+    expect(hostAllowed('https://evil.com', ['com'])).toBe(false);
+    expect(hostAllowed('https://evil.com', [''])).toBe(false);
+    expect(hostAllowed('https://evil.com', ['.com'])).toBe(false);
   });
 });
 
@@ -100,15 +103,98 @@ describe('web runtime', () => {
   });
 
   it('closes after the idle time and releases the lock', async () => {
+    vi.useFakeTimers();
+    try {
+      const f = fake();
+      const { rt } = mk(f, { idleMs: 30000 });
+      await rt.open('https://boards.example.com/a', OPEN);
+      await vi.advanceTimersByTimeAsync(31000);
+      expect(f.closes).toBe(1);
+      expect(rt.page()).toBeNull();
+      const probe = acquireLock(path.join(dir, 'webcore.lock'));
+      expect(probe.ok).toBe(true);
+      if (probe.ok) probe.handle.release();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('every serial() call resets the idle timer', async () => {
+    vi.useFakeTimers();
+    try {
+      const f = fake();
+      const { rt } = mk(f, { idleMs: 30000 });
+      await rt.open('https://boards.example.com/a', OPEN);
+      await vi.advanceTimersByTimeAsync(20000);
+      await rt.serial(async () => undefined);
+      await vi.advanceTimersByTimeAsync(20000);
+      expect(f.closes).toBe(0);
+      await vi.advanceTimersByTimeAsync(11000);
+      expect(f.closes).toBe(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('a failed first navigation closes the session and releases the lock', async () => {
     const f = fake();
-    const { rt } = mk(f, { idleMs: 30 });
-    await rt.open('https://boards.example.com/a', OPEN);
-    await new Promise((r) => setTimeout(r, 120));
+    const orig = f.launcher.launch.bind(f.launcher);
+    f.launcher.launch = async (o) => {
+      const b = await orig(o);
+      const nc = b.newContext.bind(b);
+      b.newContext = async (x) => {
+        const c = await nc(x);
+        const np = c.newPage.bind(c);
+        c.newPage = async () => { const pg = await np(); pg.goto = async () => { throw new Error('boom'); }; return pg; };
+        return c;
+      };
+      return b;
+    };
+    const { rt } = mk(f);
+    const r = await rt.open('https://boards.example.com/a', OPEN);
+    expect(r).toMatchObject({ ok: false, code: 'failed' });
+    expect(JSON.stringify(r)).not.toContain('boom');
     expect(f.closes).toBe(1);
     expect(rt.page()).toBeNull();
     const probe = acquireLock(path.join(dir, 'webcore.lock'));
     expect(probe.ok).toBe(true);
     if (probe.ok) probe.handle.release();
+  });
+
+  it('reports chrome_unavailable and holds no lock', async () => {
+    const f = fake();
+    f.launcher.launch = async () => { throw new Error('no chrome'); };
+    const { rt } = mk(f);
+    expect(await rt.open('https://boards.example.com/a', OPEN)).toMatchObject({ ok: false, code: 'chrome_unavailable' });
+    const probe = acquireLock(path.join(dir, 'webcore.lock'));
+    expect(probe.ok).toBe(true);
+    if (probe.ok) probe.handle.release();
+  });
+
+  it('navigate without a session is no_session', async () => {
+    const { rt } = mk(fake());
+    expect(await rt.navigate('https://boards.example.com/a')).toMatchObject({ ok: false, code: 'no_session' });
+  });
+
+  it('refuses a session directory that is open, or a symlink', async () => {
+    const f = fake();
+    const sdir = path.join(dir, 'site-sessions');
+    fs.mkdirSync(sdir, { mode: 0o755 });
+    fs.chmodSync(sdir, 0o755);
+    const { rt } = mk(f);
+    expect(await rt.open('https://boards.example.com/a', OPEN)).toMatchObject({ ok: false, code: 'session_invalid' });
+    fs.rmSync(sdir, { recursive: true });
+    fs.mkdirSync(path.join(dir, 'real'), { mode: 0o700 });
+    fs.symlinkSync(path.join(dir, 'real'), sdir);
+    expect(await rt.open('https://boards.example.com/a', OPEN)).toMatchObject({ ok: false, code: 'session_invalid' });
+    expect(f.launches).toBe(0);
+  });
+
+  it('saveSiteStateAtomic tightens an existing wide directory and refuses a symlink', () => {
+    const sdir = path.join(dir, 'ss');
+    fs.mkdirSync(sdir, { mode: 0o755 });
+    fs.chmodSync(sdir, 0o755);
+    saveSiteStateAtomic(path.join(sdir, 'a.json'), { cookies: [] });
+    expect(fs.statSync(sdir).mode & 0o777).toBe(0o700);
+    fs.mkdirSync(path.join(dir, 'real2'), { mode: 0o700 });
+    fs.symlinkSync(path.join(dir, 'real2'), path.join(dir, 'link'));
+    expect(() => saveSiteStateAtomic(path.join(dir, 'link', 'a.json'), { cookies: [] })).toThrow();
   });
 
   it('returns session_locked when another process holds the lock', async () => {
