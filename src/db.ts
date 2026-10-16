@@ -6,6 +6,7 @@ import type { Legitimacy } from './legitimacy.js';
 import { dbPath } from './dbPath.js';
 import { companyKey, repostCount, titleIdentityKey } from './reposts.js';
 import { isDiscoverOnlySource } from './lib/discoverOnly.js';
+import { classifyApplyUrl } from './apply/registry.js';
 import { migrateOutreachTables } from './outreach/schema.js';
 import { migrateSchedulerTables } from './scheduler/runLog.js';
 
@@ -118,6 +119,7 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
       connect_company TEXT,
       connect_status TEXT,
       apply_platform TEXT,
+      apply_tier TEXT,
       apply_url TEXT,
       apply_status TEXT,
       ats_coverage INTEGER,
@@ -256,7 +258,7 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   for (const [col, type] of [['ats_coverage', 'INTEGER'], ['ats_gaps', 'TEXT'], ['fact_warnings', 'TEXT'], ['review_applied', 'INTEGER'], ['review_rejected', 'INTEGER']] as const) {
     if (!outreachQueueColumnNames.has(col)) db.exec(`ALTER TABLE outreach_queue ADD COLUMN ${col} ${type}`);
   }
-  for (const col of ['email_sent_at', 'email_message_id', 'email_thread_id']) {
+  for (const col of ['email_sent_at', 'email_message_id', 'email_thread_id', 'apply_tier']) {
     if (!outreachQueueColumnNames.has(col)) db.exec(`ALTER TABLE outreach_queue ADD COLUMN ${col} TEXT`);
   }
   // Migration: processed_messages.candidates (JSON array of job ids) for an ambiguous reply/bounce, so follow-ups are blocked for every candidate.
@@ -597,6 +599,21 @@ export interface OutreachQueueItem {
   updated_at: string;
 }
 
+// Code-authoritative apply classification for a queue row. The model's platform is ignored unless it is 'none' (an opt-out);
+// everything else is decided from the job's stored source and the apply_url by classifyApplyUrl (src/apply/registry.ts).
+export function classifyQueueApply(
+  db: BetterSqlite3.Database,
+  jobId: string,
+  modelPlatform: string | null | undefined,
+  applyUrl: string | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): { apply_platform: string; apply_tier: string } {
+  if (modelPlatform === 'none') return { apply_platform: 'none', apply_tier: 'never' };
+  const source = (db.prepare('SELECT source FROM jobs WHERE id = ?').get(jobId) as { source: string | null } | undefined)?.source ?? null;
+  const c = classifyApplyUrl(applyUrl ?? null, source, env);
+  return { apply_platform: c.platform, apply_tier: c.tier };
+}
+
 export function enqueueOutreach(
   db: BetterSqlite3.Database,
   item: {
@@ -610,6 +627,7 @@ export function enqueueOutreach(
     connect_category: string | null;
     connect_company: string | null;
     apply_platform: string | null;
+    apply_tier?: string | null;
     apply_url: string | null;
     resume_json?: string | null;
     ats_coverage?: number | null;
@@ -627,9 +645,9 @@ export function enqueueOutreach(
     INSERT INTO outreach_queue (
       job_id, resume_pdf_path, email_subject, email_body, email_to,
       connect_note, connect_profile_url, connect_category, connect_company,
-      apply_platform, apply_url, resume_json,
+      apply_platform, apply_tier, apply_url, resume_json,
       ats_coverage, ats_gaps, fact_warnings, review_applied, review_rejected
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     item.job_id,
     item.resume_pdf_path,
@@ -641,6 +659,7 @@ export function enqueueOutreach(
     item.connect_category,
     item.connect_company,
     applyPlatform,
+    applyPlatform === 'none' ? 'never' : (item.apply_tier ?? null),
     item.apply_url,
     item.resume_json ?? null,
     item.ats_coverage ?? null,

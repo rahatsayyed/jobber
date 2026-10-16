@@ -269,6 +269,20 @@
           "entered_in": "owner edits .env"
         },
         {
+          "name": "APPLY_ALLOW_UNKNOWN_HOSTS",
+          "secret": false,
+          "purpose": "whether the applier may drive a host that is not a known ATS (ships false)",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "APPLY_LINKEDIN_EASY",
+          "secret": false,
+          "purpose": "whether LinkedIn Easy Apply through the burner account is allowed (ships false)",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
           "name": "SCOUT_ALLOW_SIGNUP",
           "secret": false,
           "purpose": "whether the scout may create accounts on discovery sites (ships false)",

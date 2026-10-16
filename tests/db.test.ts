@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { openDb, isSeen, saveJob, getJob, saveContact, saveOutreach, enqueueOutreach, listQueuedOutreach, listExcludedQueuedOutreach, updateOutreachStatus, type OutreachQueueItem } from '../src/db.js';
+import { openDb, isSeen, saveJob, getJob, saveContact, saveOutreach, enqueueOutreach, classifyQueueApply, listQueuedOutreach, listExcludedQueuedOutreach, updateOutreachStatus, type OutreachQueueItem } from '../src/db.js';
 import type Database from 'better-sqlite3';
 
 describe('db', () => {
@@ -213,5 +213,47 @@ describe('outreach_queue', () => {
       'connect_profile_url', 'connect_status', 'created_at', 'email_body', 'email_status', 'email_subject',
       'email_to', 'id', 'job_id', 'resume_pdf_path', 'status', 'updated_at',
     ]);
+  });
+});
+
+describe('enqueue_outreach apply classification', () => {
+  const base = { resume_pdf_path: null, email_subject: 'S', email_body: 'B', email_to: 'a@b.co', connect_note: null, connect_profile_url: null, connect_category: null, connect_company: null };
+  const E = {} as NodeJS.ProcessEnv;
+  const seed = (db: ReturnType<typeof openDb>, id: string, source: string) => saveJob(db, { id, source, title: 'Dev', company: 'Co', url: `https://example.test/${id}`, apply_url: null, description: 'd', posted_at: null } as any);
+  const row = (db: ReturnType<typeof openDb>, id: number) => db.prepare('SELECT apply_platform, apply_tier FROM outreach_queue WHERE id = ?').get(id) as { apply_platform: string; apply_tier: string };
+
+  it('enqueue_outreach ignores a model-supplied apply_platform and stores the classified one', () => {
+    const db = openDb(':memory:');
+    seed(db, 'j1', 'remotive');
+    const url = 'https://jobs.lever.co/acme/1';
+    const cls = classifyQueueApply(db, 'j1', 'greenhouse', url, E);
+    expect(cls).toEqual({ apply_platform: 'lever', apply_tier: 'fast' });
+    const id = enqueueOutreach(db, { ...base, job_id: 'j1', apply_platform: cls.apply_platform, apply_tier: cls.apply_tier, apply_url: url });
+    expect(row(db, id)).toEqual({ apply_platform: 'lever', apply_tier: 'fast' });
+    expect(classifyQueueApply(db, 'j1', 'workday', 'https://careers.acme.example/1', E)).toEqual({ apply_platform: 'none', apply_tier: 'never' });
+  });
+
+  it('enqueue_outreach keeps none when the model says none', () => {
+    const db = openDb(':memory:');
+    seed(db, 'j2', 'remotive');
+    const cls = classifyQueueApply(db, 'j2', 'none', 'https://jobs.lever.co/acme/1', E);
+    expect(cls).toEqual({ apply_platform: 'none', apply_tier: 'never' });
+    const id = enqueueOutreach(db, { ...base, job_id: 'j2', apply_platform: cls.apply_platform, apply_tier: cls.apply_tier, apply_url: 'https://jobs.lever.co/acme/1' });
+    expect(row(db, id)).toEqual({ apply_platform: 'none', apply_tier: 'never' });
+  });
+
+  it('classifies none for a discover-only source and uses the URL alone for an unknown job id', () => {
+    const db = openDb(':memory:');
+    seed(db, 'j3', 'hackernews');
+    expect(classifyQueueApply(db, 'j3', 'lever', 'https://jobs.lever.co/a/1', E).apply_platform).toBe('none');
+    expect(classifyQueueApply(db, 'missing', 'lever', 'https://jobs.lever.co/a/1', E).apply_platform).toBe('lever');
+  });
+
+  it('old rows with apply_platform agent_naukri still load', () => {
+    const db = openDb(':memory:');
+    seed(db, 'j4', 'naukri');
+    db.prepare("INSERT INTO outreach_queue (job_id, email_to, apply_platform, apply_url) VALUES ('j4', 'a@b.co', 'agent_naukri', 'https://www.naukri.com/x')").run();
+    const [r] = listQueuedOutreach(db);
+    expect(r.apply_platform).toBe('agent_naukri');
   });
 });

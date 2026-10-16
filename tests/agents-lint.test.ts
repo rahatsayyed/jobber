@@ -208,4 +208,11 @@ describe('Hacker News manual-review rule is retired (automated domain check)', (
     expect(body).toContain('NO `hn_check`');
     expect(body).not.toContain('accept both');
   });
+  it('outreach-preparer leaves apply platform classification to code', () => {
+    const { body } = frontmatter('outreach-preparer');
+    expect(body).toContain('classified in code');
+    expect(body).toContain('pass `apply_url`');
+    expect(body).toContain('`"none"` only to opt out');
+    expect(body).not.toContain('Determine `apply_platform`');
+  });
 });

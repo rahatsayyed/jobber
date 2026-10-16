@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { DISCOVER_ONLY_SOURCES, isDiscoverOnlySource } from '../src/lib/discoverOnly.js';
+import { DISCOVER_ONLY_SOURCES, isApplyBlockedSource, isDiscoverOnlySource } from '../src/lib/discoverOnly.js';
 import { applyExternal } from '../src/apply/external.js';
 import { applyEasyApply } from '../src/apply/linkedin.js';
 import { enqueueOutreach, openDb, saveJob, saveOutreach } from '../src/db.js';
@@ -14,6 +14,13 @@ const queueItem = (job_id: string, apply_platform: string | null) => ({
 });
 const job = (id: string, source: string, apply_url: string) =>
   ({ id, source, title: 'Frontend Engineer', company: 'Acme', url: apply_url, apply_url, description: 'React' });
+
+describe('isApplyBlockedSource', () => {
+  it('blocks discover-only, aggregator and gen sources, not board or search sources', () => {
+    for (const s of ['workday', 'hackernews', 'himalayas', 'weworkremotely', 'gen:acme', 'GEN:Acme']) expect(isApplyBlockedSource(s)).toBe(true);
+    for (const s of ['greenhouse', 'lever', 'ashby', 'adzuna', 'naukri', '', null, undefined]) expect(isApplyBlockedSource(s)).toBe(false);
+  });
+});
 
 describe('isDiscoverOnlySource', () => {
   it('lists exactly the new vendors and aggregators', () => {
