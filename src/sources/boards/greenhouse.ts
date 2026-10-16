@@ -5,6 +5,8 @@ import { assertSlug, htmlToPlain, MAX_DESCRIPTION_CHARS, safeVendorUrl, type Tra
 // The hardened transport now lives in ./transport.ts; these re-exports keep every existing import working.
 export { BOARD_HEADERS, BOARD_TIMEOUT_MS, MAX_BODY_BYTES, getJson, getText, postJson } from './transport.js';
 import { getJson } from './transport.js';
+import { z } from 'zod';
+import { listAt, makeBoardProvider } from './provider.js';
 
 export interface BoardJob extends Job { locations: string[]; remote: boolean }
 
@@ -18,6 +20,10 @@ export interface FetchCtx {
   isKnown?: (id: string) => boolean;
   /** Epoch ms after which a provider must stop starting requests and return what it has. */
   deadlineAt?: number;
+  /** The tracked company being fetched (set by Provider.fetch callers). */
+  company?: TrackedCompany;
+  /** Role and location for the search-style API providers (Adzuna, Remotive, Naukri); boards ignore them. */
+  params?: { role: string; location?: string };
   /** Non-fatal notes (partial results, skipped postings) that end up in board_status errors. */
   warn?: (message: string) => void;
 }
@@ -82,3 +88,7 @@ export async function fetchGreenhouse(c: TrackedCompany): Promise<BoardJob[]> {
   const raw = await getJson(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(c.slug)}/jobs?content=true`, `greenhouse ${c.slug}`);
   return normalizeGreenhouse(raw, c);
 }
+
+// Script-first runner contract (plan 8G task 2): the raw items checked against `shapeSpec`, see src/sources/shape.ts.
+export const shapeSpec = z.object({ id: z.union([z.number(), z.string()]), title: z.string() }).passthrough();
+export const provider = makeBoardProvider('greenhouse', fetchGreenhouse, shapeSpec, (r) => listAt(r[0], 'jobs'));

@@ -2,6 +2,8 @@
 import { toIsoDay } from '../../db.js';
 import { assertSlug, type TrackedCompany } from './filters.js';
 import { boardUrl, capDescription, clip, getJson, MAX_ID_CHARS, MAX_JOBS_PER_BOARD, stripQuery, type BoardJob } from './greenhouse.js';
+import { z } from 'zod';
+import { listAt, makeBoardProvider } from './provider.js';
 
 export function normalizeAshby(raw: any, c: TrackedCompany): BoardJob[] {
   const jobs = (Array.isArray(raw?.jobs) ? raw.jobs : []).slice(0, MAX_JOBS_PER_BOARD);
@@ -35,3 +37,7 @@ export async function fetchAshby(c: TrackedCompany): Promise<BoardJob[]> {
   const raw = await getJson(`https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(c.slug)}?includeCompensation=true`, `ashby ${c.slug}`);
   return normalizeAshby(raw, c);
 }
+
+// Script-first runner contract (plan 8G task 2): the raw items checked against `shapeSpec`, see src/sources/shape.ts.
+export const shapeSpec = z.object({ id: z.string(), title: z.string() }).passthrough();
+export const provider = makeBoardProvider('ashby', fetchAshby, shapeSpec, (r) => listAt(r[0], 'jobs'));

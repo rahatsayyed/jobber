@@ -11,6 +11,8 @@ import { assertVendorSlug, htmlToPlain, type TrackedCompany } from './filters.js
 import { capDescription, clip, MAX_ID_CHARS, MAX_JOBS_PER_BOARD, type BoardJob, type FetchCtx } from './greenhouse.js';
 import { exactHosts, getText } from './transport.js';
 import { childOf, childrenOf, descendantsOf, parseXml, textOf } from './xml.js';
+import { z } from 'zod';
+import { makeBoardProvider } from './provider.js';
 
 const hostOf = (c: TrackedCompany): string => `${c.slug}.jobs.personio.${c.domain === 'com' ? 'com' : 'de'}`;
 
@@ -61,3 +63,11 @@ export async function fetchPersonio(c: TrackedCompany, ctx: FetchCtx = {}): Prom
     throw new Error(m.startsWith('personio ') ? m : `personio ${c.slug}: ${m}`);
   }
 }
+
+// Script-first runner contract (plan 8G task 2): the raw items checked against `shapeSpec`, see src/sources/shape.ts.
+export const shapeSpec = z.object({ id: z.string().min(1), name: z.string().min(1) }).passthrough();
+export const provider = makeBoardProvider('personio', fetchPersonio, shapeSpec, (r) => {
+  const node = childOf(parseXml(String(r[0])), 'workzag-jobs');
+  if (!node) return [{ envelope: 'missing' }];
+  return childrenOf(node, 'position').slice(0, 5).map((p) => ({ id: textOf(p, 'id'), name: textOf(p, 'name') }));
+});

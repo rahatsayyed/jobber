@@ -6,8 +6,12 @@ import { companyKey, titleIdentityKey } from '../../reposts.js';
 import { AGGREGATOR_ATS, COMPANY_ATS, loadPortals, locationAllowed, titlePasses, type Ats, type TrackedCompany } from './filters.js';
 import { settleBoard, type BoardJob, type FetchCtx } from './greenhouse.js';
 import { FETCHERS } from './registry.js';
+import { BOARD_PROVIDERS } from './providers.js';
+import { withRawSink } from './transport.js';
 
-export interface BoardsResult { jobs: Job[]; errors: string[]; stats: Array<{ company: string; ats: Ats; fetched: number; kept: number }> }
+// One company fetch as the shape check sees it: up to 5 raw vendor items (never stored), and the error when the fetch itself failed.
+export interface BoardSample { ats: Ats; company: string; slug: string; sample: unknown[]; error?: string }
+export interface BoardsResult { jobs: Job[]; errors: string[]; stats: Array<{ company: string; ats: Ats; fetched: number; kept: number }>; samples?: BoardSample[] }
 
 export const DESCRIPTION_CAP = 8000;
 export const MAX_CONCURRENCY = 3;
@@ -61,7 +65,7 @@ export function boardStatusPayload(r: (BoardsResult & { at: string }) | null = l
   };
 }
 
-type Slot = { c: TrackedCompany; jobs?: BoardJob[]; error?: string; warnings?: string[] };
+type Slot = { c: TrackedCompany; jobs?: BoardJob[]; error?: string; warnings?: string[]; sample?: unknown[] };
 
 async function runBoards(opts: FetchBoardsOptions): Promise<BoardsResult> {
   lastNote = undefined;
@@ -97,9 +101,12 @@ async function runBoards(opts: FetchBoardsOptions): Promise<BoardsResult> {
         // Collected here (not only inside settleBoard) so warnings survive a per-board timeout or a thrown error.
         warn: (m) => { if (collected.length < 20) collected.push(String(m).slice(0, 300)); },
       };
+      // The transport feeds the first raw payloads into `raws`; only the 5-item sample is kept after the fetch (the payload is dropped).
+      const raws: unknown[] = [];
       try {
-        const r = await Promise.race([settleBoard(FETCHERS[c.ats], c, ctx), timeout]);
-        slots[i] = r.error ? { c, error: r.error.startsWith(`${label}:`) ? r.error : `${label}: ${r.error}`, warnings: collected } : { c, jobs: r.jobs, warnings: collected };
+        const r = await Promise.race([withRawSink(raws, () => settleBoard(FETCHERS[c.ats], c, ctx)), timeout]);
+        const sample = BOARD_PROVIDERS[c.ats]?.sampleOf(raws) ?? [];
+        slots[i] = r.error ? { c, error: r.error.startsWith(`${label}:`) ? r.error : `${label}: ${r.error}`, warnings: collected, sample } : { c, jobs: r.jobs, warnings: collected, sample };
       } catch (e: any) {
         slots[i] = { c, error: `${label}: ${String(e?.message ?? e).slice(0, 300)}`, warnings: collected };
       } finally {
@@ -110,10 +117,11 @@ async function runBoards(opts: FetchBoardsOptions): Promise<BoardsResult> {
   const n = Math.max(1, Math.min(Math.floor(opts.concurrency ?? MAX_CONCURRENCY) || 1, MAX_CONCURRENCY, companies.length));
   await Promise.all(Array.from({ length: companies.length ? n : 0 }, worker));
 
-  const out: BoardsResult = { jobs: [], errors: [...(warnings ?? [])], stats: [] };
+  const out: BoardsResult = { jobs: [], errors: [...(warnings ?? [])], stats: [], samples: [] };
   const seen = new Set<string>();
   for (const s of slots) {
     for (const w of s.warnings ?? []) out.errors.push(`${s.c.ats} ${s.c.slug}: ${w}`);
+    if (s.error || s.sample?.length) out.samples!.push({ ats: s.c.ats, company: s.c.name, slug: s.c.slug, sample: s.sample ?? [], ...(s.error ? { error: s.error } : {}) });
     if (s.error) { out.errors.push(s.error); continue; }
     const fetched = s.jobs ?? [];
     const kept = fetched

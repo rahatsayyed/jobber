@@ -1,35 +1,23 @@
+import type BetterSqlite3 from 'better-sqlite3';
 import type { Job } from '../db.js';
-import { fetchAdzuna } from './adzuna.js';
-import { fetchRemotive } from './remotive.js';
-import { fetchRemoteok } from './remoteok.js';
-import { fetchNaukri } from './naukri.js';
-import { fetchBoards } from './boards/index.js';
-import { collectSources, statsToOutcomes, type SourceOutcome, type SourceProvider } from './status.js';
+import { runScriptSources } from './runner.js';
+import type { SourceOutcome } from './status.js';
 
-export interface FetchParams { role: string; location?: string; isKnown?: (id: string) => boolean }
+export interface FetchParams {
+  role: string;
+  location?: string;
+  isKnown?: (id: string) => boolean;
+  /** When given, the runner also compares against the stored per-source state and queues agent fallback tasks (source_tasks). */
+  db?: BetterSqlite3.Database;
+}
 
 /**
- * Runs every source. One failing source (sync or async throw) contributes no jobs and an error outcome (redacted, logged to stderr)
- * instead of losing every other source. `outcomes` feeds the per-source status (src/sources/status.ts).
+ * Runs every source through the script-first runner (src/sources/runner.ts). One failing source contributes no jobs and an error
+ * outcome (redacted, logged to stderr) instead of losing every other source. `outcomes` feeds the per-source status (src/sources/status.ts).
+ * Boards ignore role/location on purpose: only the filters in config/portals.json apply to them.
  */
 export async function fetchAllJobsDetailed(params: FetchParams): Promise<{ jobs: Job[]; outcomes: SourceOutcome[] }> {
-  const providers: SourceProvider[] = [
-    { id: 'adzuna', run: () => fetchAdzuna({ role: params.role, location: params.location }) },
-    { id: 'remotive', run: () => fetchRemotive({ role: params.role }) },
-    { id: 'remoteok', run: () => fetchRemoteok() },
-    { id: 'naukri', run: () => fetchNaukri({ role: params.role, location: params.location }) },
-    // Boards ignore role/location on purpose: only the filters in config/portals.json apply to them.
-    // A board failure (or a missing/invalid portals.json) never loses the other sources.
-    {
-      id: 'boards',
-      run: async () => {
-        const r = await fetchBoards({ isKnown: params.isKnown });
-        return { jobs: r.jobs, outcomes: statsToOutcomes(r.stats, r.errors) };
-      },
-    },
-  ];
-  const { jobs, outcomes } = await collectSources(providers);
-  // Source order is stable (adzuna, remotive, remoteok, naukri, boards) because collectSources keeps provider order.
+  const { jobs, outcomes } = await runScriptSources(params.db ?? null, { role: params.role, location: params.location, isKnown: params.isKnown });
   return { jobs, outcomes };
 }
 

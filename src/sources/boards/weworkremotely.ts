@@ -16,6 +16,8 @@ import { capDescription, clip, MAX_JOBS_PER_BOARD, MAX_URL_CHARS, type BoardJob,
 import { exactHosts, getText } from './transport.js';
 import { hasPlainAuthority, shortHash } from './util.js';
 import { childOf, childrenOf, parseXml, textOf } from './xml.js';
+import { z } from 'zod';
+import { makeBoardProvider } from './provider.js';
 
 const HOSTS = exactHosts('weworkremotely.com');
 const FEED = 'https://weworkremotely.com/remote-jobs.rss';
@@ -85,3 +87,11 @@ export async function fetchWeWorkRemotely(c: TrackedCompany, ctx: FetchCtx = {})
   if (r.noDescription) ctx.warn?.(`${r.noDescription} posting(s) skipped: no description in the feed`);
   return r.jobs;
 }
+
+// Script-first runner contract (plan 8G task 2): the raw items checked against `shapeSpec`, see src/sources/shape.ts.
+export const shapeSpec = z.object({ title: z.string().min(1), link: z.string().min(1) }).passthrough();
+export const provider = makeBoardProvider('weworkremotely', fetchWeWorkRemotely, shapeSpec, (r) => {
+  const channel = childOf(childOf(parseXml(String(r[0])), 'rss'), 'channel');
+  if (!channel) return [{ envelope: 'missing' }];
+  return childrenOf(channel, 'item').slice(0, 5).map((it) => ({ title: textOf(it, 'title'), link: textOf(it, 'link') }));
+});

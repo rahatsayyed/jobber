@@ -15,6 +15,8 @@ import { htmlToPlain, type TrackedCompany } from './filters.js';
 import { capDescription, clip, MAX_JOBS_PER_BOARD, MAX_URL_CHARS, type BoardJob, type FetchCtx } from './greenhouse.js';
 import { exactHosts, getJson } from './transport.js';
 import { hasPlainAuthority, pastDeadline, shortHash } from './util.js';
+import { z } from 'zod';
+import { listAt, makeBoardProvider } from './provider.js';
 
 const HOSTS = exactHosts('himalayas.app');
 export const HIMALAYAS_PAGE_SIZE = 50;
@@ -97,3 +99,7 @@ export async function fetchHimalayas(c: TrackedCompany, ctx: FetchCtx = {}): Pro
   if (notes.length) ctx.warn?.(notes.join('; '));
   return out;
 }
+
+// Script-first runner contract (plan 8G task 2): the raw items checked against `shapeSpec`, see src/sources/shape.ts.
+export const shapeSpec = z.object({ title: z.string(), companyName: z.string() }).passthrough();
+export const provider = makeBoardProvider('himalayas', fetchHimalayas, shapeSpec, (r) => listAt(r[0], 'jobs'));

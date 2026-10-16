@@ -9,6 +9,8 @@ import { assertVendorSlug, htmlToPlain, type TrackedCompany } from './filters.js
 import { boardUrl, capDescription, clip, MAX_ID_CHARS, MAX_JOBS_PER_BOARD, type BoardJob } from './greenhouse.js';
 import { exactHosts, getJson } from './transport.js';
 import { hasPlainAuthority } from './util.js';
+import { z } from 'zod';
+import { listAt, makeBoardProvider } from './provider.js';
 
 const HOSTS = exactHosts('apply.workable.com');
 const SHORTCODE_RE = /^[A-Za-z0-9]{1,40}$/;
@@ -65,3 +67,7 @@ export async function fetchWorkable(c: TrackedCompany): Promise<BoardJob[]> {
   if (!raw || !Array.isArray(raw.jobs)) throw new Error(`${label}: unexpected response shape (no jobs array)`);
   return normalizeWorkable(raw, c);
 }
+
+// Script-first runner contract (plan 8G task 2): the raw items checked against `shapeSpec`, see src/sources/shape.ts.
+export const shapeSpec = z.object({ title: z.string(), shortcode: z.string() }).passthrough();
+export const provider = makeBoardProvider('workable', fetchWorkable, shapeSpec, (r) => listAt(r[0], 'jobs'));

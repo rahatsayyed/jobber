@@ -1,4 +1,6 @@
+import { z } from 'zod';
 import type { Job } from '../db.js';
+import type { Provider } from './provider.js';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -193,6 +195,34 @@ export async function fetchNaukri(
   params: { role: string; location?: string },
   deps: NaukriDeps = {}
 ): Promise<Job[]> {
+  try {
+    return (await searchNaukri(params, deps)).jobs;
+  } catch (err) {
+    console.error('[naukri] fetch failed:', err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
+// What one scraped card must look like: all four keys present (null when the selector matched nothing). A changed card selector
+// shows up as a missing key; per-card nulls are handled by parseNaukriCards.
+export const shapeSpec = z.object({
+  titleText: z.string().nullable(),
+  companyText: z.string().nullable(),
+  hrefRaw: z.string().nullable(),
+  descriptionText: z.string().nullable(),
+}).passthrough();
+
+// Throws on any failure (the runner records it); fetchNaukri keeps the old never-throw contract.
+export const provider: Provider = {
+  id: 'naukri',
+  shapeSpec,
+  fetch: (ctx) => searchNaukri({ role: ctx.params?.role ?? '', location: ctx.params?.location }),
+};
+
+export async function searchNaukri(
+  params: { role: string; location?: string },
+  deps: NaukriDeps = {}
+): Promise<{ jobs: Job[]; sample: unknown[] }> {
   const headless = process.env.NAUKRI_HEADLESS === 'true';
   const browserLauncher = deps.chromium ?? (headless ? (patchrightChromium as unknown as typeof chromium) : chromium);
   const contextOptions = headless ? HEADLESS_CONTEXT_OPTIONS : {};
@@ -207,6 +237,7 @@ export async function fetchNaukri(
     );
 
     let jobs: Job[] = [];
+    let sample: unknown[] = [];
     const searchContext = await browser.newContext(contextOptions);
     try {
       const page = await searchContext.newPage();
@@ -230,9 +261,10 @@ export async function fetchNaukri(
       const parseResult = parseNaukriCards(rawCards);
       console.error(`[naukri] ${parseResult.parsed}/${parseResult.found} parsed, ${parseResult.skipped} skipped (malformed)`);
       jobs = parseResult.jobs;
+      sample = rawCards.slice(0, 5);
     } catch (err) {
       console.error('[naukri] search fetch failed:', err instanceof Error ? err.message : err);
-      return [];
+      throw err;
     } finally {
       await searchContext.close();
     }
@@ -262,10 +294,7 @@ export async function fetchNaukri(
       );
     }
 
-    return jobs;
-  } catch (err) {
-    console.error('[naukri] fetch failed:', err instanceof Error ? err.message : err);
-    return [];
+    return { jobs, sample };
   } finally {
     await browser?.close();
   }

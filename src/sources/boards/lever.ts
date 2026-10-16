@@ -2,6 +2,8 @@
 import { toIsoDay } from '../../db.js';
 import { assertSlug, type TrackedCompany } from './filters.js';
 import { boardUrl, capDescription, clip, getJson, MAX_ID_CHARS, MAX_JOBS_PER_BOARD, stripQuery, type BoardJob } from './greenhouse.js';
+import { z } from 'zod';
+import { makeBoardProvider } from './provider.js';
 
 export function normalizeLever(raw: any, c: TrackedCompany): BoardJob[] {
   const list = (Array.isArray(raw) ? raw : []).slice(0, MAX_JOBS_PER_BOARD);
@@ -38,3 +40,7 @@ export async function fetchLever(c: TrackedCompany): Promise<BoardJob[]> {
   const raw = await getJson(`https://${host}/v0/postings/${encodeURIComponent(c.slug)}?mode=json`, `lever ${c.slug}`);
   return normalizeLever(raw, c);
 }
+
+// Script-first runner contract (plan 8G task 2): the raw items checked against `shapeSpec`, see src/sources/shape.ts.
+export const shapeSpec = z.object({ id: z.string(), text: z.string() }).passthrough();
+export const provider = makeBoardProvider('lever', fetchLever, shapeSpec, (r) => (Array.isArray(r[0]) ? r[0] : [r[0]]));

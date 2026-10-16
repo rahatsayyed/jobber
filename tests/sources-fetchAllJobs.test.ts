@@ -11,22 +11,26 @@ import { openDb, isSeen, saveJob } from '../src/db.js';
 // All four source modules are mocked here (network/browser-free) so this test exercises only
 // the seam contract: what `fetchAllJobs` returns must survive a `list_new_jobs`-shaped
 // isSeen-filter-then-saveJob pass, for every source including Naukri.
-vi.mock('../src/sources/adzuna.js', () => ({
-  fetchAdzuna: vi.fn().mockResolvedValue([
+// The runner (src/sources/runner.ts) loads each source's `provider` export, so each mock exposes one that forwards to the mocked fetch function.
+vi.mock('../src/sources/adzuna.js', () => {
+  const fetchAdzuna = vi.fn().mockResolvedValue([
     { id: 'adzuna:1', source: 'adzuna', title: 'A', company: 'Co', url: 'u1', apply_url: 'u1', description: '' },
-  ]),
-}));
-vi.mock('../src/sources/remotive.js', () => ({
-  fetchRemotive: vi.fn().mockResolvedValue([]),
-}));
-vi.mock('../src/sources/remoteok.js', () => ({
-  fetchRemoteok: vi.fn().mockResolvedValue([]),
-}));
+  ]);
+  return { fetchAdzuna, provider: { id: 'adzuna', shapeSpec: {}, fetch: async () => ({ jobs: await fetchAdzuna(), sample: [] }) } };
+});
+vi.mock('../src/sources/remotive.js', () => {
+  const fetchRemotive = vi.fn().mockResolvedValue([]);
+  return { fetchRemotive, provider: { id: 'remotive', shapeSpec: {}, fetch: async () => ({ jobs: await fetchRemotive(), sample: [] }) } };
+});
+vi.mock('../src/sources/remoteok.js', () => {
+  const fetchRemoteok = vi.fn().mockResolvedValue([]);
+  return { fetchRemoteok, provider: { id: 'remoteok', shapeSpec: {}, fetch: async () => ({ jobs: await fetchRemoteok(), sample: [] }) } };
+});
 vi.mock('../src/sources/boards/index.js', () => ({
   fetchBoards: vi.fn().mockResolvedValue({ jobs: [], errors: [], stats: [] }),
 }));
-vi.mock('../src/sources/naukri.js', () => ({
-  fetchNaukri: vi.fn().mockResolvedValue([
+vi.mock('../src/sources/naukri.js', () => {
+  const fetchNaukri = vi.fn().mockResolvedValue([
     {
       id: 'naukri:12345',
       source: 'naukri',
@@ -36,8 +40,9 @@ vi.mock('../src/sources/naukri.js', () => ({
       apply_url: 'https://acme.com/careers/apply/123',
       description: '',
     },
-  ]),
-}));
+  ]);
+  return { fetchNaukri, provider: { id: 'naukri', shapeSpec: {}, fetch: async () => ({ jobs: await fetchNaukri(), sample: [] }) } };
+});
 
 describe('fetchAllJobs resilience', () => {
   it('a throwing source contributes nothing but keeps the other sources and the boards', async () => {

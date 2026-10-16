@@ -193,6 +193,16 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
       shape_hash TEXT,
       note TEXT
     );
+    -- Work the script-first source runner could not do (shape change, error, drift): an agent operator picks these up (plan 8G task 2).
+    CREATE TABLE IF NOT EXISTS source_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      platform TEXT NOT NULL,
+      company TEXT,
+      reason TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'queued',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   // Migration: older databases created before `method`/`account` existed on

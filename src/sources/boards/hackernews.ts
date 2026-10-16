@@ -14,6 +14,8 @@ import { normalizeText } from '../../atsText.js';
 import { htmlToPlain, type TrackedCompany } from './filters.js';
 import { capDescription, clip, MAX_ID_CHARS, MAX_JOBS_PER_BOARD, type BoardJob, type FetchCtx } from './greenhouse.js';
 import { exactHosts, getJson } from './transport.js';
+import { z } from 'zod';
+import { listAt, makeBoardProvider } from './provider.js';
 
 const HOSTS = exactHosts('hn.algolia.com');
 const SEARCH_URL = 'https://hn.algolia.com/api/v1/search_by_date?tags=story,author_whoishiring&hitsPerPage=5';
@@ -125,3 +127,7 @@ export async function fetchHackerNews(c: TrackedCompany, ctx: FetchCtx = {}): Pr
   else if (item.children.length > 10 && (item.children.length - jobs.length) / item.children.length > 0.5) ctx.warn?.(`${item.children.length - jobs.length} of ${item.children.length} top-level comments were not parsed as postings (header format changed?)`);
   return jobs;
 }
+
+// Script-first runner contract (plan 8G task 2): the raw items checked against `shapeSpec`, see src/sources/shape.ts.
+export const shapeSpec = z.object({ objectID: z.string(), title: z.string() }).passthrough();
+export const provider = makeBoardProvider('hackernews', fetchHackerNews, shapeSpec, (r) => listAt(r[0], 'hits'));

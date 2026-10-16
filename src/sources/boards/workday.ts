@@ -13,6 +13,8 @@ import { assertVendorSlug, htmlToPlain, SITE_RE, WD_RE, type TrackedCompany } fr
 import { boardUrl, capDescription, clip, MAX_ID_CHARS, MAX_JOBS_PER_BOARD, type BoardJob, type FetchCtx } from './greenhouse.js';
 import { exactHosts, getJson, postJson } from './transport.js';
 import { pastDeadline, shortHash } from './util.js';
+import { z } from 'zod';
+import { listAt, makeBoardProvider } from './provider.js';
 
 export const WORKDAY_PAGE_SIZE = 20;
 export const DEFAULT_MAX_PAGES = 10;
@@ -144,3 +146,7 @@ export async function fetchWorkday(c: TrackedCompany, ctx: FetchCtx = {}): Promi
   if (notes.length) ctx.warn?.(`partial: listed ${candidates.length}, ${wanted.length} passed the prefilter, ${out.length} returned; ${notes.join('; ')}`);
   return out;
 }
+
+// Script-first runner contract (plan 8G task 2): the raw items checked against `shapeSpec`, see src/sources/shape.ts.
+export const shapeSpec = z.object({ title: z.string(), externalPath: z.string() }).passthrough();
+export const provider = makeBoardProvider('workday', fetchWorkday, shapeSpec, (r) => listAt(r[0], 'jobPostings'));

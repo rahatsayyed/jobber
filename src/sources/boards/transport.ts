@@ -1,6 +1,7 @@
 // Shared hardened HTTP transport for board providers (moved out of greenhouse.ts; greenhouse.ts re-exports it).
 // Every request: https only, host policy (fixed set or predicate), no embedded credentials, isSafeFetchUrl, no redirects,
 // 20 s timeout, 15 MB body cap that REJECTS (a truncated body is useless), descriptive user-agent that callers cannot override.
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { isSafeFetchUrl } from '../../liveness.js';
 import { hostMatches } from '../../lib/hostClass.js';
 
@@ -9,6 +10,13 @@ export const MAX_BODY_BYTES = 15 * 1024 * 1024;
 export const MAX_REQUEST_BODY_CHARS = 20_000;
 export const BOARD_USER_AGENT = 'jobber/1.0 (personal job search; contact via repo owner)';
 export const BOARD_HEADERS = { 'User-Agent': BOARD_USER_AGENT, Accept: 'application/json' };
+
+// Raw-response sink for shape checks (src/sources/shape.ts). Whoever wraps a provider call in withRawSink() receives the first few
+// parsed payloads (JSON values, or the text of an XML/text response) without any provider having to hand them over.
+const MAX_RAW_PAYLOADS = 3;
+const rawSink = new AsyncLocalStorage<unknown[]>();
+export function withRawSink<T>(sink: unknown[], fn: () => Promise<T>): Promise<T> { return rawSink.run(sink, fn); }
+function offerRaw(v: unknown): void { const s = rawSink.getStore(); if (s && s.length < MAX_RAW_PAYLOADS) s.push(v); }
 
 /** A fixed hostname set, or a predicate over the lower-cased hostname (per-tenant vendor hosts). */
 export type HostPolicy = ReadonlySet<string> | ((hostname: string) => boolean);
@@ -88,7 +96,10 @@ async function requestText(url: string, label: string, method: 'GET' | 'POST', b
 }
 
 function parseJson(text: string, label: string): any {
-  try { return JSON.parse(text); } catch { throw new Error(`${label}: invalid JSON`); }
+  let v: any;
+  try { v = JSON.parse(text); } catch { throw new Error(`${label}: invalid JSON`); }
+  offerRaw(v);
+  return v;
 }
 
 /** GET a JSON document. */
@@ -98,7 +109,9 @@ export async function getJson(url: string, label: string, opts: RequestOptions =
 
 /** GET a text document (XML, RSS, plain text). */
 export async function getText(url: string, label: string, opts: RequestOptions = {}): Promise<string> {
-  return requestText(url, label, 'GET', undefined, 'application/xml, text/xml, application/rss+xml, text/plain;q=0.8, */*;q=0.5', opts);
+  const text = await requestText(url, label, 'GET', undefined, 'application/xml, text/xml, application/rss+xml, text/plain;q=0.8, */*;q=0.5', opts);
+  offerRaw(text);
+  return text;
 }
 
 /** POST a JSON payload and parse the JSON answer (Workday CXS). */

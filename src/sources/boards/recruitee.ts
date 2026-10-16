@@ -9,6 +9,8 @@ import { assertVendorSlug, htmlToPlain, type TrackedCompany } from './filters.js
 import { boardUrl, capDescription, clip, MAX_ID_CHARS, MAX_JOBS_PER_BOARD, type BoardJob, type FetchCtx } from './greenhouse.js';
 import { apexHosts, getJson } from './transport.js';
 import { hasPlainAuthority, shortHash } from './util.js';
+import { z } from 'zod';
+import { listAt, makeBoardProvider } from './provider.js';
 
 const HOSTS = apexHosts('recruitee.com');
 const OFFER_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,99}$/;
@@ -76,3 +78,7 @@ export async function fetchRecruitee(c: TrackedCompany, ctx: FetchCtx = {}): Pro
   if (!raw || !Array.isArray(raw.offers)) throw new Error(`${label}: unexpected response shape (no offers array)`);
   return normalizeRecruitee(raw, c, ctx);
 }
+
+// Script-first runner contract (plan 8G task 2): the raw items checked against `shapeSpec`, see src/sources/shape.ts.
+export const shapeSpec = z.object({ title: z.string() }).passthrough();
+export const provider = makeBoardProvider('recruitee', fetchRecruitee, shapeSpec, (r) => listAt(r[0], 'offers'));

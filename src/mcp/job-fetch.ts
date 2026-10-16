@@ -39,7 +39,7 @@ server.registerTool(
     },
   },
   async ({ role, location }) => {
-    const { jobs, outcomes } = await fetchAllJobsDetailed({ role, location, isKnown: (id) => isSeen(db, id) });
+    const { jobs, outcomes } = await fetchAllJobsDetailed({ role, location, isKnown: (id) => isSeen(db, id), db });
     const fresh = jobs.filter((job) => !isSeen(db, job.id));
     const recent = db
       .prepare("SELECT id, source, company_key, title_key FROM jobs WHERE created_at >= datetime('now', '-30 days') AND company_key IS NOT NULL AND title_key IS NOT NULL")

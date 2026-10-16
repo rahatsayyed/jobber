@@ -7,7 +7,7 @@ import { loadRegistry, type PlatformDef, type PlatformKind } from './registry.js
 
 type Db = BetterSqlite3.Database;
 
-export interface SourceOutcome { id: string; fetched: number; kept: number; error?: string; fallback_used?: boolean; shape_hash?: string; note?: string }
+export interface SourceOutcome { id: string; fetched: number; kept: number; error?: string; fallback_used?: boolean; shape_hash?: string; note?: string; flaky?: boolean }
 export interface SourceProvider {
   id: string;
   /** Plain jobs, or jobs plus per-source outcomes (one fetch that covers several sources, such as the boards). */
@@ -15,7 +15,7 @@ export interface SourceProvider {
 }
 export interface SourceStatusRow {
   source: string; kind: 'script' | 'agent'; group: PlatformKind;
-  fetched: number; kept: number; new: number; error?: string; fallback_used: boolean; note?: string;
+  fetched: number; kept: number; new: number; error?: string; fallback_used: boolean; note?: string; flaky?: boolean;
 }
 
 const SECRET_PARAM = /([?&;]|\b)(app_?key|app_?id|api_?key|key|token|access_token|secret|client_secret|password|auth|sig|signature)=[^&\s"']*/gi;
@@ -77,11 +77,11 @@ export function finishRun(db: Db, outcomes: SourceOutcome[], newJobs: Job[]): vo
   for (const o of outcomes) recordRun(db, o.id, { fetched: o.fetched, kept: o.kept, new: fresh.get(o.id) ?? 0, error: o.error, fallback_used: o.fallback_used, shape_hash: o.shape_hash, note: o.note });
 }
 
-interface StatusRecord { id: string; last_run_at: string | null; fetched: number; kept: number; new_count: number; error: string | null; fallback_used: number; note: string | null }
+interface StatusRecord { id: string; last_run_at: string | null; fetched: number; kept: number; new_count: number; error: string | null; fallback_used: number; note: string | null; streak_fail: number }
 
 /** Read-only: the last stored run of every source. Never fetches. */
 export function sourceStatusPayload(db: Db): { ran: boolean; at?: string; rows: SourceStatusRow[]; dropped_duplicates?: { count: number; ids: string[] }; note?: string } {
-  const recs = db.prepare('SELECT id, last_run_at, fetched, kept, new_count, error, fallback_used, note FROM platform_status WHERE last_run_at IS NOT NULL ORDER BY id').all() as StatusRecord[];
+  const recs = db.prepare('SELECT id, last_run_at, fetched, kept, new_count, error, fallback_used, note, streak_fail FROM platform_status WHERE last_run_at IS NOT NULL ORDER BY id').all() as StatusRecord[];
   if (!recs.length) return { ran: false, rows: [], note: 'no source fetch has run yet' };
   const reg = new Map<string, PlatformDef>(loadRegistry().platforms.map((p) => [p.id, p]));
   const rows = recs.map((r): SourceStatusRow => {
@@ -89,7 +89,7 @@ export function sourceStatusPayload(db: Db): { ran: boolean; at?: string; rows: 
     return {
       source: r.id, kind: def?.tier ?? 'script', group: def?.kind ?? 'board',
       fetched: r.fetched, kept: r.kept, new: r.new_count,
-      ...(r.error ? { error: r.error } : {}), fallback_used: r.fallback_used === 1, ...(r.note ? { note: r.note } : {}),
+      ...(r.error ? { error: r.error } : {}), fallback_used: r.fallback_used === 1, ...(r.note ? { note: r.note } : {}), ...(r.streak_fail >= 3 ? { flaky: true } : {}),
     };
   });
   const at = recs.map((r) => r.last_run_at as string).sort().at(-1);

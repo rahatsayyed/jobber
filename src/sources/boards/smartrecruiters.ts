@@ -12,6 +12,8 @@ import { assertVendorSlug, htmlToPlain, type TrackedCompany } from './filters.js
 import { boardUrl, capDescription, clip, MAX_ID_CHARS, MAX_JOBS_PER_BOARD, type BoardJob, type FetchCtx } from './greenhouse.js';
 import { exactHosts, getJson } from './transport.js';
 import { pastDeadline } from './util.js';
+import { z } from 'zod';
+import { listAt, makeBoardProvider } from './provider.js';
 
 const HOSTS = exactHosts('api.smartrecruiters.com');
 export const SR_PAGE_SIZE = 100;
@@ -118,3 +120,7 @@ export async function fetchSmartRecruiters(c: TrackedCompany, ctx: FetchCtx = {}
   if (notes.length) ctx.warn?.(`partial: listed ${candidates.length}, ${wanted.length} passed the prefilter, ${out.length} returned; ${notes.join('; ')}`);
   return out;
 }
+
+// Script-first runner contract (plan 8G task 2): the raw items checked against `shapeSpec`, see src/sources/shape.ts.
+export const shapeSpec = z.object({ id: z.string(), name: z.string() }).passthrough();
+export const provider = makeBoardProvider('smartrecruiters', fetchSmartRecruiters, shapeSpec, (r) => listAt(r[0], 'content'));
