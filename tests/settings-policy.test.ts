@@ -2,8 +2,9 @@
 // Friction policy by tier x direction, remote exposure, phrase rules and preflight (plan 8H, Task 6). Hermetic.
 import { describe, expect, it } from 'vitest';
 import { etagOf } from '../src/settings/atomic.js';
-import { type EnvState, type ResolvedChange, planEnvChange } from '../src/settings/envEdit.js';
-import { frictionFor, phraseFor, phraseMatches, preflight, requiredFriction } from '../src/settings/policy.js';
+import { type EnvState, type ResolvedChange, planEnvChange, planRollback } from '../src/settings/envEdit.js';
+import { memFs } from './helpers/memFs.js';
+import { type Mode, frictionFor, phraseFor, phraseMatches, preflight, requiredFriction as rawFriction } from '../src/settings/policy.js';
 import type { ChangeOp, EnvSpec, PolicyCtx } from '../src/settings/types.js';
 import { FIXTURE_CATALOG } from './fixtures/settings/catalog.fixture.js';
 
@@ -21,6 +22,9 @@ const ch = (key: string, before: string | null, after: string | null): ResolvedC
 });
 const D = 'DRY RUN' as const;
 const L = 'LIVE' as const;
+// Default: the file mode does not change; flip tests pass the modes explicitly.
+const requiredFriction = (cs: ResolvedChange[], ctx: PolicyCtx, modeBefore: Mode = D, modeAfter: Mode = D) =>
+  rawFriction(cs, ctx, { modeBefore, modeAfter });
 
 // safety weakening: FX_DRY_RUN true -> false ; safety strengthening: false -> true
 const safetyWeak = () => ch('FX_DRY_RUN', 'true', 'false');
@@ -202,5 +206,53 @@ describe('preflight', () => {
   });
   it('already live is not a flip', () => {
     expect(preflight(L, { ...base, classifierReady: () => false, sendLimitPerRun: '0' }, L)).toEqual([]);
+  });
+});
+
+describe('computed DRY RUN to LIVE flip is guarded whatever the key tiers', () => {
+  const FLAGS = ['JOBBER_DRY_RUN', 'SCHEDULER_DRY_RUN', 'LINKEDIN_DRY_RUN'];
+  const flagSpec = (key: string, over: Partial<EnvSpec>): EnvSpec => ({ ...spec('FX_DRY_RUN'), key, allowed: ['0', '1', 'true', 'false'], ...over });
+  // dry = JOBBER_DRY_RUN=1 or any other flag not exactly "false"; live = JOBBER_DRY_RUN=0, others "false"
+  const val = (k: string, live: boolean): string => (k === 'JOBBER_DRY_RUN' ? (live ? '0' : '1') : live ? 'false' : 'true');
+  const flagText = (live: boolean) => FLAGS.map((k) => `${k}=${val(k, live)}\n`).join('');
+  const state = (text: string): EnvState => ({ text, etag: etagOf(text), exists: true });
+  const setAll = (): ChangeOp[] => FLAGS.map((k) => ({ key: k, op: 'set', value: val(k, true) }));
+  const flip = { modeBefore: D, modeAfter: L };
+
+  it.each([['guarded'], ['normal']] as const)('flags catalogued as %s still need reauth and GO LIVE', (tier) => {
+    const catalog = FLAGS.map((k) => flagSpec(k, { tier }));
+    const p = planEnvChange(state(flagText(false)), setAll(), catalog, CTX);
+    expect(p.modeAfter).toBe('LIVE');
+    expect(p.friction).toEqual({ reauth: true, phrase: 'GO LIVE' });
+  });
+  it('unset -> 0 with a null default still counts (unset reads as dry)', () => {
+    const catalog = FLAGS.map((k) => flagSpec(k, { default: null }));
+    const p = planEnvChange(state(''), setAll(), catalog, CTX);
+    expect(p.modeAfter).toBe('LIVE');
+    expect(p.friction).toEqual({ reauth: true, phrase: 'GO LIVE' });
+  });
+  it('an empty change list with a mode flip is guarded', () => {
+    expect(rawFriction([], CTX, flip)).toEqual({ reauth: true, phrase: 'GO LIVE' });
+    expect(frictionFor({ changes: [], ...flip }, CTX)).toEqual({ reauth: true, phrase: 'GO LIVE' });
+  });
+  it('remote exposure refuses a computed flip, unless overridden', () => {
+    expect(rawFriction([], { ...CTX, remoteExposure: true }, flip).refuse).toBe('remote_exposure');
+    expect(rawFriction([], { ...CTX, remoteExposure: true, remoteSafetyAllowed: true }, flip)).toEqual({ reauth: true, phrase: 'GO LIVE' });
+  });
+  it('never and disabled still win over the flip', () => {
+    expect(rawFriction([ch('FX_KILL', 'false', 'true')], CTX, flip).refuse).toBe('tier_never');
+    expect(rawFriction([], { ...CTX, editEnabled: false }, flip).refuse).toBe('settings_disabled');
+  });
+  it('phraseFor and requiredFriction agree on the flip', () => {
+    expect(phraseFor([], D, L)).toBe('GO LIVE');
+    expect(rawFriction([], CTX, flip).phrase).toBe('GO LIVE');
+  });
+  it('rollback to a LIVE backup with uncatalogued flags asks for reauth and GO LIVE', () => {
+    const fs = memFs({ '/p/.env': flagText(false) });
+    const id = '20261016T120000Z-abcdef12';
+    fs.put(`/p/bk/env/${id}.env`, flagText(true));
+    const p = planRollback(state(flagText(false)), id, { fs, backupDir: '/p/bk', catalog: FIXTURE_CATALOG, ctx: CTX });
+    expect(p.modeAfter).toBe('LIVE');
+    expect(p.friction).toEqual({ reauth: true, phrase: 'GO LIVE' });
   });
 });

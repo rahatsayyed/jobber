@@ -37,11 +37,13 @@ export function phraseMatches(typed: unknown, expected: string | null): boolean 
 export function requiredFriction(
   changes: ResolvedChange[],
   ctx: PolicyCtx,
-  modes: { modeBefore: Mode; modeAfter: Mode } = { modeBefore: 'DRY RUN', modeAfter: 'DRY RUN' },
+  modes: { modeBefore: Mode; modeAfter: Mode },
 ): Friction {
   if (!ctx.editEnabled) return { refuse: 'settings_disabled', reauth: false, phrase: null };
   if (changes.some((c) => c.spec.tier === 'never')) return { refuse: 'tier_never', reauth: false, phrase: null };
-  const safetyWeak = changes.some((c) => c.spec.tier === 'safety' && isWeakening(c));
+  // A computed DRY RUN -> LIVE flip is always safety-weakening, whatever the tiers of the keys in the set.
+  const flip = modes.modeBefore === 'DRY RUN' && modes.modeAfter === 'LIVE';
+  const safetyWeak = flip || changes.some((c) => c.spec.tier === 'safety' && isWeakening(c));
   if (safetyWeak && ctx.remoteExposure && !ctx.remoteSafetyAllowed) {
     return { refuse: 'remote_exposure', reauth: false, phrase: null };
   }
