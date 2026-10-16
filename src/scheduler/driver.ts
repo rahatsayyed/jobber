@@ -254,6 +254,8 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
   let tracker: BudgetTracker | null = null;
   let nextWakeAt = '';
   let skippedResult: WakeResult | null = null;
+  let wakeStartIso = '';
+  let codePassNote: string | undefined;
 
   try {
     // (4) plan
@@ -286,16 +288,19 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       id: runId, at: startAt, trigger, dryRun: dry, burst: decision.burst, tasks: decision.tasks, status: 'running',
     });
     started = true;
+    wakeStartIso = startAt.toISOString();
     // Stage 1 runs in code, before the model session: failures are noticed but never stop the wake.
     let codePass: CodePassResult | null = null;
     if (decision.stages?.some((s) => s.kind === 'discover_scripts') && d.codePass) {
       try {
         codePass = await d.codePass();
-        if (!codePass.ok) await say(d, { level: 'warn', title: 'scheduler code pass failed', detail: codePass.error, runId });
-        const sn = sourcesNotice(d.db, runId);
-        if (sn) await say(d, sn);
+        if (!codePass.ok) {
+          codePassNote = codePass.error;
+          await say(d, { level: 'warn', title: 'scheduler code pass failed', detail: codePass.error, runId });
+        }
       } catch (e) {
-        await say(d, { level: 'warn', title: 'scheduler code pass failed', detail: safeMsg(e), runId });
+        codePassNote = safeMsg(e);
+        await say(d, { level: 'warn', title: 'scheduler code pass failed', detail: codePassNote, runId });
       }
     }
     // The wall budget starts after the code pass: that time is not the model session's.
@@ -426,6 +431,11 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
     if (!skippedResult) nextWakeAt = drawNext();
   }
   if (skippedResult) return skippedResult;
+  // Source summary after the whole wake (code pass and model session), so agent rows are in it too.
+  if (started && wakeStartIso) {
+    const sn = sourcesNotice(d.db, { runId, sinceIso: wakeStartIso, note: codePassNote });
+    if (sn) await say(d, sn);
+  }
   if (status === 'failed' || status === 'killed' || status === 'budget_exceeded' || status === 'usage_limit') {
     await say(d, {
       level: status === 'failed' ? 'warn' : 'info', title: `scheduler run ${status}`,

@@ -11,6 +11,7 @@ import { daemonLoop, wakeOnce, wakeIsDry, type DriverDeps, type WakeResult } fro
 import { fileNotifier, type Notice } from '../src/scheduler/notify.js';
 import { tmuxLauncher, type FsOps, type LaunchHandle, type LaunchPlan, type Launcher, type PollResult } from '../src/scheduler/launch.js';
 import type { Run } from '../src/platform/tmux.js';
+import { recordRun } from '../src/sources/status.js';
 import { getState, listRuns, setState, startRun } from '../src/scheduler/runLog.js';
 
 const NOON_IST = new Date('2026-10-15T08:00:00.000Z'); // 13:30 IST, outside quiet hours
@@ -94,6 +95,60 @@ describe('wakeIsDry', () => {
     expect(wakeIsDry({ SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false' })).toBe(false);
     expect(wakeIsDry({ SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false', JOBBER_DRY_RUN: '1' })).toBe(true);
     expect(wakeIsDry({ SCHEDULER_DRY_RUN: 'FALSE', LINKEDIN_DRY_RUN: 'false' })).toBe(true);
+  });
+});
+
+describe('wakeOnce sources notice', () => {
+  const sourceTitle = (n: Notice) => n.title.startsWith('sources:');
+
+  it('is written after the model session, with agent rows and the numbers, not before', async () => {
+    const s = setup();
+    const order: string[] = [];
+    s.d.notifier = { notify: async (n) => void (s.notices.push(n), order.push(n.title)) };
+    // The fake session stores an agent-run source row while it runs.
+    class Recording extends FakeLauncher {
+      async poll(): Promise<PollResult> {
+        order.push('session');
+        recordRun(s.db, 'naukri-agent', { fetched: 7, kept: 3, new: 3 });
+        return super.poll();
+      }
+    }
+    s.d.launcher = new Recording();
+    const r = await wakeOnce(s.d);
+    expect(r.status).toBe('ok');
+    const i = order.findIndex((t) => t.startsWith('sources:'));
+    expect(i).toBeGreaterThan(order.lastIndexOf('session'));
+    const n = s.notices.find(sourceTitle)!;
+    expect(n.title).toBe('sources: 1 ran, fetched 7, new 3, errors 0, fallback 0');
+    expect(n.runId).toBe(r.runId);
+  });
+
+  it('ignores rows from before the wake started', async () => {
+    const s = setup();
+    recordRun(s.db, 'old-src', { fetched: 9, kept: 9, new: 9 });
+    s.db.prepare("UPDATE platform_status SET last_run_at = '2020-01-01T00:00:00.000Z'").run();
+    await wakeOnce(s.d);
+    expect(s.notices.find(sourceTitle)).toBeUndefined();
+  });
+
+  it('notes a code pass that threw', async () => {
+    const s = setup();
+    s.d.codePass = async () => {
+      throw new Error('code pass exploded');
+    };
+    await wakeOnce(s.d);
+    const failed = s.notices.some((n) => n.title === 'scheduler code pass failed');
+    const n = s.notices.find(sourceTitle);
+    expect(failed).toBe(true);
+    expect(n?.detail).toContain('code pass exploded');
+  });
+
+  it('is not written when the wake is skipped', async () => {
+    const s = setup({ stopExists: () => true });
+    recordRun(s.db, 'fresh', { fetched: 1, kept: 1, new: 1 });
+    const r = await wakeOnce(s.d);
+    expect(r.status).toBe('skipped');
+    expect(s.notices.find(sourceTitle)).toBeUndefined();
   });
 });
 

@@ -25,10 +25,15 @@ function tableExists(db: Db, name: string): boolean {
   return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?").get(name);
 }
 
-export function buildSourceRows(db: Db): SourceTableRow[] {
+export const DEFAULT_WINDOW_HOURS = 24;
+const NOTICE_DETAIL_BUDGET = 900;
+
+/** Rows of every known source. A stored row counts as ran only when its last run is at or after `sinceIso`; older numbers are hidden (ran:no). */
+export function buildSourceRows(db: Db, sinceIso: string): SourceTableRow[] {
   const stored = tableExists(db, 'platform_status') ? sourceStatusPayload(db).rows : [];
   const byId = new Map<string, SourceTableRow>();
   for (const r of stored) {
+    if (!r.last_run_at || r.last_run_at < sinceIso) continue;
     byId.set(r.source, {
       id: r.source, kind: r.kind, ran: true, fetched: r.fetched, kept: r.kept, new: r.new,
       errors: r.error ? 1 : 0, ...(r.error ? { error: r.error } : {}), fallback_used: r.fallback_used,
@@ -53,30 +58,40 @@ function cells(r: SourceTableRow): string[] {
   return [r.id, r.kind, String(r.fetched), String(r.kept), String(r.new), String(r.errors), r.fallback_used ? 'yes' : 'no'];
 }
 
-export function renderSources(rows: SourceTableRow[]): string {
+export function renderSources(rows: SourceTableRow[], header?: string): string {
   if (!rows.length) return 'no sources';
-  const lines = [SOURCE_COLUMNS.join(' | '), ...rows.map((r) => cells(r).join(' | '))];
+  const lines = [...(header ? [header] : []), SOURCE_COLUMNS.join(' | '), ...rows.map((r) => cells(r).join(' | '))];
   for (const r of rows) if (r.error) lines.push(`error ${r.id}: ${r.error}`);
   return lines.join('\n');
 }
 
 /** End-of-wake notice: the same numbers as the table (counts per row, fallbacks, errors). Never throws; null when nothing ran. */
-export function sourcesNotice(db: Db, runId?: string): Notice | null {
+export function sourcesNotice(db: Db, o: { runId?: string; sinceIso: string; note?: string }): Notice | null {
+  const runId = o.runId;
   try {
-    const rows = buildSourceRows(db);
+    const rows = buildSourceRows(db, o.sinceIso);
     const ran = rows.filter((r) => r.ran);
-    if (!ran.length) return null;
+    if (!ran.length && !o.note) return null;
     const errors = ran.reduce((n, r) => n + r.errors, 0);
     const fallbacks = ran.filter((r) => r.fallback_used).length;
     const fetched = ran.reduce((n, r) => n + r.fetched, 0);
     const fresh = ran.reduce((n, r) => n + r.new, 0);
+    // The notifier keeps 1000 characters of detail: list ran rows only and summarize what does not fit.
+    const head = `${o.note ? `code pass: ${o.note}\n` : ''}`;
+    let shown = ran;
+    let detail = head + renderSources(shown);
+    while (detail.length > NOTICE_DETAIL_BUDGET && shown.length > 1) {
+      shown = shown.slice(0, -1);
+      detail = `${head}${renderSources(shown)}\n+${ran.length - shown.length} more rows (npm run status -- sources)`;
+    }
     return {
-      level: errors > 0 ? 'warn' : 'info',
+      level: errors > 0 || o.note ? 'warn' : 'info',
       title: `sources: ${ran.length} ran, fetched ${fetched}, new ${fresh}, errors ${errors}, fallback ${fallbacks}`,
-      detail: renderSources(rows),
+      detail: ran.length ? detail : head.trim(),
       ...(runId ? { runId } : {}),
     };
-  } catch {
+  } catch (e) {
+    console.error('[status] sources notice failed:', e instanceof Error ? e.message : String(e));
     return null;
   }
 }

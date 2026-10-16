@@ -5,7 +5,7 @@ import { openDb, isSeen, saveJob } from '../db.js';
 import { dbPath } from '../dbPath.js';
 import { fetchAllJobs, fetchAllJobsDetailed } from '../sources/index.js';
 import { boardStatusPayload, dropBoardDuplicatesDetailed, recordDroppedDuplicates, type SeenRow } from '../sources/boards/index.js';
-import { boardStatusAlias, finishRun, setDroppedDuplicates, sourceStatusPayload } from '../sources/status.js';
+import { boardStatusReply, finishRun, setDroppedDuplicates, sourceStatusReply } from '../sources/status.js';
 
 const db = openDb(dbPath());
 
@@ -67,7 +67,7 @@ server.registerTool(
     inputSchema: {},
   },
   async () => {
-    return { content: [{ type: 'text', text: JSON.stringify(boardStatusAlias(boardStatusPayload())) }] };
+    return boardStatusReply(boardStatusPayload());
   }
 );
 
@@ -79,7 +79,7 @@ server.registerTool(
     inputSchema: {},
   },
   async () => {
-    return { content: [{ type: 'text', text: JSON.stringify(sourceStatusPayload(db)) }] };
+    return sourceStatusReply(db);
   }
 );
 

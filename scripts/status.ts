@@ -7,7 +7,7 @@ import { loadLayoutConfig, loadLayoutEnv } from '../src/layout/config.js';
 import { renderSummary, summarize } from '../src/layout/summary.js';
 import { buildSnapshot } from '../src/status/snapshot.js';
 import { renderHealth, renderLimits, renderWorking } from '../src/status/render.js';
-import { buildSourceRows, renderSources } from '../src/status/sources.js';
+import { buildSourceRows, DEFAULT_WINDOW_HOURS, renderSources } from '../src/status/sources.js';
 import { defaultRun, listWindows } from '../src/platform/tmux.js';
 
 const USAGE = 'usage: npm run status -- <limits|working|health|json|layout|sources>';
@@ -45,7 +45,8 @@ async function main(): Promise<number> {
   try {
     db = new Database(path, { readonly: true, fileMustExist: true });
     if (cmd === 'sources') {
-      console.log(renderSources(buildSourceRows(db)));
+      const since = new Date(Date.now() - DEFAULT_WINDOW_HOURS * 3600_000).toISOString();
+      console.log(renderSources(buildSourceRows(db, since), `ran in last ${DEFAULT_WINDOW_HOURS}h (since ${since})`));
       return 0;
     }
     const snap = buildSnapshot(db, loadOutreachConfig(), new Date());
