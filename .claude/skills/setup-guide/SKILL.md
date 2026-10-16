@@ -76,4 +76,5 @@ command or another tool.
 
 These are done by the owner in the owner's own terminal or browser, never by you: OAuth consent,
 QR or password logins, bot creation, any key creation, any sudo, `npm run setup`, model fetch
-and pin, permission set changes, `jobber:control stop|resume`, and going live.
+(and pin and fit, only for a profile that is not already pinned and fitted; the shipped default needs just
+fetch, verify and the `CLASSIFIER_MODEL` line), permission set changes, `jobber:control stop|resume`, and going live.

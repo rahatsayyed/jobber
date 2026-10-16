@@ -100,7 +100,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
   if (cmd === 'pin') {
     try {
       const r = await pinProfile(p, deps.root, deps.registryPath);
-      if (r.written.length === 0) out(`${p.id}: nothing to pin`);
+      if (r.written.length === 0) out(`${p.id}: already pinned, nothing written`);
       else {
         for (const f of r.written) out(`pinned: ${f}`);
         out(`Read the diff of ${deps.registryPath} and commit it (config/classifier-models.json).`);

@@ -63,7 +63,11 @@ Each line above is a separate invocation. Their effects:
 - `--redo`: run steps even when their doctor checks already pass; also lets the guide be offered
   again.
 - `--list`: print the step ids and exit.
-- `--status`: print each step as done, skipped or pending, with its time, and exit.
+- `--status`: print each step as done, skipped or pending, with its time, and exit. A step that setup
+  never recorded but that is configured already (done by hand: the matching doctor checks pass, or the
+  skippable feature is configured) shows `configured (not via setup)` instead of `pending`. This is only a
+  display: the state file is not written. It runs the cheap doctor checks (the Telegram check makes one
+  request when a bot token is set; the classifier smoke is not run).
 - `--guide-only`: start only the guided session in this terminal.
 - The wizard needs a real terminal (stdin and stdout are TTYs); otherwise it exits 2 with a message.
   Bad arguments also exit 2.
@@ -128,7 +132,11 @@ Notes:
 
 Only four features are skippable as a recorded choice (catalog in `src/setup/skips.ts`). A skip is
 a state entry `steps.<id>.status: skipped`. It never writes `.env`, a dry-run flag, a permission
-set or a halt.
+set or a halt. Only a deliberate choice records a skip (answering "Skip for now", or choosing skip
+when a confirmation is offered). A step that simply did not finish (a failed token or consent
+command, a declined sign-in method, the dashboard script not installed yet) ends `pending`: nothing
+is recorded, a skip recorded earlier is cleared, and the doctor, `npm run up` and the dry-run
+`dashboard-login` stage keep treating the feature as not skipped.
 
 | Skip id | Label | What you lose |
 |---|---|---|

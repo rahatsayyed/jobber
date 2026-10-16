@@ -6,6 +6,8 @@ import { join, resolve, sep } from 'node:path';
 import { parseEnv } from '../platform/envFile.js';
 import { skippedForRoot } from '../setup/skips.js';
 import { isDryRun, recordDryRun } from '../safety/dryRun.js';
+import { secretValuesFromEnv } from '../safety/outputGate.js';
+import { redactSecrets } from '../safety/redact.js';
 import { applyResume, applyStop, defaultDeps, readControl } from '../scheduler/control.js';
 import { saveJob, saveMatchResult, setJobExcluded, enqueueOutreach, getExcludedReason } from '../db.js';
 import { vetoResults } from '../vetoes.js';
@@ -257,6 +259,7 @@ const dashboardLogin: Stage = {
   },
 };
 
+const LLM_RUN_TIMEOUT_MS = 9 * 60_000;
 const llmHunt: Stage = {
   id: 'llm-hunt', title: 'LLM hunt in dry mode', skippable: true,
   async run(ctx) {
@@ -282,8 +285,27 @@ const llmHunt: Stage = {
         'set JOBBER_DRY_RUN=1, SCHEDULER_DRY_RUN=true and LINKEDIN_DRY_RUN=true in .env first',
       );
     }
-    const r = await ctx.run('./run-hunt.sh', ['run the hunt in dry mode: report only'], { cwd: ctx.root, env: runEnv(ctx) });
-    if (r.code !== 0) return fail(`exit ${r.code}`, `exit code ${r.code}; see docs/operations`);
+    // PATH and HOME are passed explicitly (the launcher and claude need them), like the other stages' runEnv.
+    const env = runEnv(ctx);
+    for (const k of ['PATH', 'HOME']) {
+      const v = ctx.env[k] ?? process.env[k];
+      if (env[k] === undefined && typeof v === 'string') env[k] = v;
+    }
+    const r = await ctx.run('./run-hunt.sh', ['run the hunt in dry mode: report only'], { cwd: ctx.root, env, timeoutMs: LLM_RUN_TIMEOUT_MS });
+    if (r.code !== 0) {
+      const errTail = (r.stderr ?? '').split('\n').filter((l) => l.trim() !== '').slice(-20);
+      const outLast = r.stdout.trim().split('\n').filter(Boolean).pop();
+      const lines = [`exit ${r.code}`];
+      // Redact each part on its own: redactSecrets joins lines to catch wrapped secrets, so a secret at the end
+      // of the stderr tail would otherwise swallow the start of the next line.
+      const secrets = secretValuesFromEnv(ctx.env);
+      const clean = (t: string) => redactSecrets(t, secrets);
+      if (errTail.length) lines.push('stderr (last 20 lines):', clean(errTail.map((l) => `  ${l}`).join('\n')));
+      else lines.push('stderr: (empty)');
+      if (outLast) lines.push(`last stdout line: ${clean(outLast)}`);
+      const detail = lines.join('\n');
+      return fail(detail, `exit code ${r.code}; run ./run-hunt.sh by hand for the full log, or see docs/operations`);
+    }
     const last = r.stdout.trim().split('\n').filter(Boolean).pop();
     if (!last) return fail('no final report line', 'no final report; see docs/operations');
     return pass(`final report: ${last.slice(0, 120)}`);

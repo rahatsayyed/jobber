@@ -377,3 +377,32 @@ describe('terminal-mode coaching (plan 8F task 8)', () => {
     expect(t.sio.transcript.filter((l) => !want.some((w) => l.includes(w)))).toEqual(a.sio.transcript);
   });
 });
+
+describe('already pinned and fitted profile', () => {
+  const fitted = () => {
+    const reg = JSON.parse(JSON.stringify(REGISTRY));
+    reg.profiles['tiny-open'].fit = { threshold: 0.93, model_sha256: sha(BYTES['onnx/model.onnx']) };
+    return reg;
+  };
+  it('does only fetch and verify and prints the one remaining owner action', async () => {
+    const { ctx, sio, root } = setup([{ choose: '' }, { confirm: true }]);
+    ctx.mode = 'terminal';
+    writeFileSync(path.join(root, 'config', 'classifier-models.json'), JSON.stringify(fitted()));
+    const step = createClassifierStep({ fetchDeps: fakeFetch().deps, smoke: OK_SMOKE });
+    expect(await step.run(ctx)).toBe('done');
+    const t = sio.transcript.join('\n');
+    expect(t).toContain('already pinned and fitted');
+    expect(t).toContain('  CLASSIFIER_MODEL=tiny-open');
+    expect(t).not.toContain('npm run models -- pin');
+    expect(t).not.toContain('classifier:fit');
+    expect(t).not.toContain('Remaining steps');
+    expect(envText(root)).toContain('CLASSIFIER_MODEL=tiny-open');
+  });
+  it('an unfitted profile still tells the owner to pin and fit', async () => {
+    const { ctx, sio } = setup([{ choose: '' }, { confirm: true }]);
+    ctx.mode = 'terminal';
+    const step = createClassifierStep({ fetchDeps: fakeFetch().deps, smoke: OK_SMOKE });
+    expect(await step.run(ctx)).toBe('done');
+    expect(sio.transcript.join('\n')).toContain('npm run classifier:fit -- --profile tiny-open --write');
+  });
+});

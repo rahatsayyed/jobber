@@ -42,7 +42,10 @@ export interface SetupStep {
   checkIds: string[];
   /** Runs every time: no pre-check, no "already done", never recorded in state or the totals. */
   always?: boolean;
-  run(ctx: SetupContext): Promise<'done' | 'skipped'>;
+  // 'done'; 'skipped' only for a deliberate choice of the owner (recorded, and the doctor then turns that
+  // feature's fail or warn into a skip); 'pending' for a step that did not finish (nothing is recorded, a
+  // recorded skip from an earlier run is cleared, and the doctor keeps reporting the real state).
+  run(ctx: SetupContext): Promise<'done' | 'skipped' | 'pending'>;
 }
 
 export interface RunOptions {
@@ -56,6 +59,17 @@ export interface RunOptions {
 function record(ctx: SetupContext, id: string, status: 'done' | 'skipped'): void {
   if (ctx.state.steps[id]?.status === status) return;
   ctx.state.steps[id] = { status, at: ctx.now().toISOString() };
+  try {
+    ctx.fs.mkdirp(path.dirname(ctx.statePath), 0o700);
+    saveState(ctx.statePath, ctx.state, ctx.fs, ctx.now);
+  } catch {
+    ctx.io.say('warning: could not save setup state');
+  }
+}
+
+function unrecordSkip(ctx: SetupContext, id: string): void {
+  if (ctx.state.steps[id]?.status !== 'skipped') return;
+  delete ctx.state.steps[id];
   try {
     ctx.fs.mkdirp(path.dirname(ctx.statePath), 0o700);
     saveState(ctx.statePath, ctx.state, ctx.fs, ctx.now);
@@ -110,9 +124,9 @@ export async function runSetup(
       }
     }
 
-    let outcome: 'done' | 'skipped' | 'failed' = 'failed';
+    let outcome: 'done' | 'skipped' | 'pending' | 'failed' = 'failed';
     for (;;) {
-      let result: 'done' | 'skipped';
+      let result: 'done' | 'skipped' | 'pending';
       try {
         result = await step.run(ctx);
       } catch (e) {
@@ -122,8 +136,8 @@ export async function runSetup(
         if (await io.confirm('Skip this step?', false)) outcome = 'skipped';
         break;
       }
-      if (result === 'skipped') {
-        outcome = 'skipped';
+      if (result === 'skipped' || result === 'pending') {
+        outcome = result;
         break;
       }
       let post: CheckOutcome[] = [];
@@ -143,7 +157,8 @@ export async function runSetup(
     if (outcome === 'failed') {
       failed++;
     } else if (!always) {
-      record(ctx, step.id, outcome);
+      if (outcome === 'pending') unrecordSkip(ctx, step.id);
+      else record(ctx, step.id, outcome);
       if (outcome === 'done') done++;
       else skipped++;
     }

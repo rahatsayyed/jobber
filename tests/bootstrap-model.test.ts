@@ -123,6 +123,19 @@ describe('classifier-model item', () => {
     expect(r[0]!.note).toContain('accept the licence');
     expect(s.net.calls).toBe(0);
   });
+  it('a pinned and fitted profile only needs CLASSIFIER_MODEL, not pin or fit', async () => {
+    const s = setup();
+    const reg = JSON.parse(readFileSync(s.registryPath, 'utf8'));
+    for (const f of reg.profiles.good.files) { f.sha256 = SHA; f.git_blob_sha1 = null; }
+    reg.profiles.good.fit = { threshold: 0.9, model_sha256: SHA };
+    writeFileSync(s.registryPath, JSON.stringify(reg));
+    s.put();
+    const r = await runBootstrap(item(s.cli, 'good'), mkExec(s.root, [], []), O({ yes: true }));
+    expect(r[0]!.outcome).toBe('ok');
+    expect(r[0]!.note).toContain('CLASSIFIER_MODEL=good');
+    expect(r[0]!.note).not.toContain('models -- pin');
+    expect(r[0]!.note).not.toContain('classifier:fit');
+  });
   it('never rewrites the registry', async () => {
     const s = setup();
     const before = readFileSync(s.registryPath, 'utf8');

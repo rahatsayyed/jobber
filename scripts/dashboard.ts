@@ -5,6 +5,7 @@ import { isAbsolute, join } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { authUrlFor, keysFailureMessage, loadDesktopKeys, redirectFor } from '../src/dash/desktopClient.js';
 import { createInterface } from 'node:readline';
+import { connect } from 'node:net';
 import { parseEnv } from '../src/platform/envFile.js';
 import { authDbPathFromEnv, resolveAuthMode, validateRunnerConfig, type RunnerEnv } from '../src/web/env.js';
 import { pathToFileURL } from 'node:url';
@@ -71,7 +72,20 @@ function confirm(question: string): Promise<boolean> {
   });
 }
 
+/** Quick loopback probe: true when something accepts a connection on 127.0.0.1:port. */
+export function probeLoopback(port: number, timeoutMs = 500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const sock = connect({ host: '127.0.0.1', port });
+    const done = (ok: boolean) => { sock.destroy(); resolve(ok); };
+    sock.setTimeout(timeoutMs, () => done(false));
+    sock.once('connect', () => done(true));
+    sock.once('error', () => done(false));
+  });
+}
+
 export interface CliIo {
+  /** Loopback probe seam (default: a real connect to 127.0.0.1:port). */
+  probe?: (port: number) => Promise<boolean>;
   env?: RunnerEnv;
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
@@ -139,6 +153,10 @@ export async function main(argv: string[], io: CliIo = {}): Promise<number> {
       audit(db, p.cmd === 'token' ? 'token_created' : 'token_rotated', { note: 'owner cli' }, now);
       out('Dashboard access token (shown once, not stored anywhere readable):');
       out(`http://127.0.0.1:${port}/#token=${token}`);
+      out('This command does not start the dashboard. Start the dashboard: npm run web (or npm run up)');
+      let listening = false;
+      try { listening = await (io.probe ?? probeLoopback)(port); } catch { listening = false; }
+      if (!listening) out(`Nothing is listening on 127.0.0.1:${port}: the dashboard is not running right now.`);
       return 0;
     }
     if (p.cmd === 'allow') {

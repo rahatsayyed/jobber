@@ -101,7 +101,7 @@ export const gmailStep: SetupStep = {
       const check = setupChecks.find((c) => c.id === 'gmail-oauth');
       if (!check) {
         io.say('Gmail could not be verified (the gmail-oauth check is missing); run npm run doctor.');
-        return 'skipped';
+        return 'pending';
       }
       const [r] = await runChecks([check], ctx.doctor);
       if (r.result.status === 'pass') {
@@ -109,11 +109,11 @@ export const gmailStep: SetupStep = {
       } else {
         io.say('Gmail is not authorised yet; run this step again.');
         if (r.result.fix) io.say(`  fix: ${r.result.fix}`);
-        return 'skipped';
+        return 'pending';
       }
     } else {
       io.say('Skipped the consent screen; run this step again with npm run setup -- --step gmail');
-      return 'skipped';
+      return 'pending';
     }
     return 'done';
   },

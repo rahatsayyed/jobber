@@ -73,7 +73,7 @@ const WITH_DASH = { 'proj/scripts/dashboard.ts': '// stub' };
 describe('dashboardStep', () => {
   it('is skipped when scripts/dashboard.ts is absent, after writing local settings', async () => {
     const { ctx, sio, fs } = makeCtx([]);
-    expect(await dashboardStep.run(ctx)).toBe('skipped');
+    expect(await dashboardStep.run(ctx)).toBe('pending');
     expect(sio.transcript.join('\n')).toContain('skipped until installed (plan 7C)');
     const env = fs.files.get('proj/.env') ?? '';
     expect(env).toContain('WEB_TMUX_SESSION=ccgram');
@@ -106,7 +106,7 @@ describe('dashboardStep', () => {
 
   it('declining token and Google spawns nothing', async () => {
     const { ctx, spawns } = makeCtx([{ choose: 'now' }, { confirm: false }, { confirm: false }], WITH_DASH);
-    expect(await dashboardStep.run(ctx)).toBe('skipped');
+    expect(await dashboardStep.run(ctx)).toBe('pending');
     expect(spawns).toHaveLength(0);
   });
 
@@ -129,7 +129,7 @@ describe('dashboardStep', () => {
   it('generic token CLI failure: neutral message, skipped so the step resumes', async () => {
     const { ctx, sio } = makeCtx([{ choose: 'now' }, { confirm: true }], WITH_DASH);
     ctx.spawnInteractive = async () => 1;
-    expect(await dashboardStep.run(ctx)).toBe('skipped');
+    expect(await dashboardStep.run(ctx)).toBe('pending');
     const out = sio.transcript.join('\n');
     expect(out).toContain('did not finish (exit 1)');
     expect(out).not.toContain('token already set');
@@ -197,7 +197,20 @@ describe('runner with real steps', () => {
     const code = await runSetup([dashboardStep], ctx, { checks: [] });
     expect(code).toBe(0);
     expect(sio.transcript.join('\n')).toContain('skipped until installed (plan 7C)');
-    expect(ctx.state.steps.dashboard?.status).toBe('skipped');
+    expect(ctx.state.steps.dashboard?.status).toBeUndefined();
+  });
+  it('a pending result is never recorded as a skip and clears an earlier recorded skip', async () => {
+    const { ctx } = makeCtx([]);
+    ctx.state.steps.dashboard = { status: 'skipped', at: '2026-10-15T00:00:00Z' };
+    const half = { id: 'dashboard', title: 'half done', checkIds: [], run: async () => 'pending' as const };
+    expect(await runSetup([half], ctx, { checks: [] })).toBe(0);
+    expect(ctx.state.steps.dashboard).toBeUndefined();
+    const fresh = makeCtx([]);
+    expect(await runSetup([half], fresh.ctx, { checks: [] })).toBe(0);
+    expect(fresh.ctx.state.steps.dashboard).toBeUndefined();
+    const deliberate = { ...half, run: async () => 'skipped' as const };
+    expect(await runSetup([deliberate], fresh.ctx, { checks: [] })).toBe(0);
+    expect(fresh.ctx.state.steps.dashboard?.status).toBe('skipped');
   });
   it('an always step runs every time and is not recorded', async () => {
     let n = 0;

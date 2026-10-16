@@ -2,6 +2,7 @@
 import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { safeFile, type ClassifierPin, type PinEntry } from './classifierModel.js';
+import { patchJsonText } from './jsonPatch.js';
 
 export interface ProfileFile {
   remote: string;
@@ -194,8 +195,9 @@ export function loadRegistry(path = 'config/classifier-models.json'): Classifier
 }
 
 /** Replace only profiles[id].fit; validates the result and writes atomically (temp file + rename). */
-export function writeFit(path: string, id: string, fit: ProfileFit): void {
-  const raw = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+export function writeFit(path: string, id: string, fit: ProfileFit): boolean {
+  const text = readFileSync(path, 'utf8');
+  const raw = JSON.parse(text) as unknown;
   const before = validateRegistry(raw);
   if (before.length) throw new Error(`${path} is invalid: ${before.join('; ')}`);
   const reg = raw as ClassifierRegistry;
@@ -203,14 +205,18 @@ export function writeFit(path: string, id: string, fit: ProfileFit): void {
   reg.profiles[id].fit = fit;
   const problems = validateRegistry(reg);
   if (problems.length) throw new Error(`refusing to write an invalid fit: ${problems.join('; ')}`);
+  // Patch only the changed values in the original text (minimal git diff); nothing is written when unchanged.
+  const patched = patchJsonText(text, ['profiles', id, 'fit'], fit);
+  if (patched === text) return false;
   const tmp = `${path}.tmp`;
   try {
-    writeFileSync(tmp, JSON.stringify(reg, null, 2) + '\n');
+    writeFileSync(tmp, patched);
     renameSync(tmp, path);
   } catch (e) {
     rmSync(tmp, { force: true });
     throw e;
   }
+  return true;
 }
 
 export function resolveProfile(reg: ClassifierRegistry, env: NodeJS.ProcessEnv): ClassifierProfile {
@@ -242,6 +248,17 @@ export function isFullyPinned(p: ClassifierProfile): boolean {
     p.files.every((f) => f.sha256 !== null && HEX64.test(f.sha256)) &&
     p.revision !== '0123456789abcdef0123456789abcdef01234567'
   );
+}
+
+/** A fit record exists and is bound to the model file's pinned sha256 (the loader's own condition). */
+export function isFitted(p: ClassifierProfile): boolean {
+  const model = p.files.find((f) => f.role === 'model');
+  return typeof p.fit.threshold === 'number' && !!model?.sha256 && p.fit.model_sha256 === model.sha256;
+}
+
+/** Pinned and fitted already: only fetch, verify and setting CLASSIFIER_MODEL remain. */
+export function isPinnedAndFitted(p: ClassifierProfile): boolean {
+  return isFullyPinned(p) && isFitted(p);
 }
 
 export function pinFromProfile(p: ClassifierProfile): ClassifierPin {

@@ -219,6 +219,27 @@ describe('llm-hunt', () => {
     expect((await S.llmHunt.run(mk({ llm: true, fs: withEnv({ '.env': DRY }), run: async () => ({ stdout: 'a\nREPORT done', code: 0 }) }))).status).toBe('pass');
     expect((await S.llmHunt.run(mk({ llm: true, fs: withEnv({ '.env': DRY }), run: async () => ({ stdout: '', code: 2 }) }))).status).toBe('fail');
   });
+  it('on a non-zero exit shows the redacted stderr tail, the last stdout line and passes PATH and HOME', async () => {
+    const secret = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789';
+    const err = Array.from({ length: 30 }, (_, i) => `err line ${i + 1}`).concat(`auth failed with ${secret}`).join('\n');
+    let seenEnv: Record<string, string> | undefined;
+    const run = async (_c: string, _a: string[], o?: { env?: Record<string, string> }) => {
+      seenEnv = o?.env;
+      return { stdout: 'start\nlast stdout words', code: 1, stderr: err };
+    };
+    const r = await S.llmHunt.run(mk({ llm: true, env: { PATH: '/usr/bin', HOME: '/home/x' }, fs: withEnv({ '.env': DRY }), run }));
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain('exit 1');
+    expect(r.detail).toContain('err line 30');
+    expect(r.detail).not.toContain('err line 10\n');
+    expect(r.detail).not.toContain('err line 1\n');
+    expect(r.detail).toContain('last stdout line: last stdout words');
+    expect(r.detail).not.toContain(secret);
+    expect(r.detail).toContain('[redacted]');
+    expect(r.fix).toContain('run-hunt.sh');
+    expect(seenEnv?.PATH).toBe('/usr/bin');
+    expect(seenEnv?.HOME).toBe('/home/x');
+  });
   it('refuses and never runs when .env is live', async () => {
     let ran = 0;
     const run = async () => { ran++; return { stdout: 'x', code: 0 }; };

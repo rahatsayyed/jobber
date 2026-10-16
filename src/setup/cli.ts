@@ -109,7 +109,7 @@ export const USAGE =`Usage: npm run setup -- [--step <id>] [--redo] [--list] [--
   --step <id>  run only that step
   --redo       run steps even when their checks already pass
   --list       print the step ids and exit
-  --status     print each step as done|skipped|pending with its time and exit
+  --status     print each step as done|skipped|configured (not via setup)|pending and exit
   --mode <m>   agent (guided session) or terminal (walkthrough here); remembered
   --no-guide   do not offer the guided setup session
   --guide-only start only the guided setup session in this terminal

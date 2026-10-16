@@ -7,6 +7,7 @@ import { createReadStream } from 'node:fs';
 import { chmod, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { safeFile, sha256File } from './classifierModel.js';
+import { patchJsonText } from './jsonPatch.js';
 import {
   isFullyPinned,
   modelDir,
@@ -448,7 +449,8 @@ export async function pinProfile(
   }
 
   if (updates.size === 0) return { written: [] };
-  const raw = JSON.parse(await readFile(registryPath, 'utf8')) as ClassifierRegistry;
+  const text = await readFile(registryPath, 'utf8');
+  const raw = JSON.parse(text) as ClassifierRegistry;
   const target = raw.profiles?.[p.id];
   if (!target) throw new Error(`profile ${p.id} is not in ${registryPath}`);
   const written: string[] = [];
@@ -458,8 +460,10 @@ export async function pinProfile(
     Object.assign(f, u);
     written.push(f.local);
   }
+  // Patch only the changed values in the original text, so the file keeps its formatting (minimal git diff).
+  const patched = patchJsonText(text, ['profiles', p.id, 'files'], target.files);
   const tmp = join(dirname(registryPath), `.${p.id}.registry.tmp`);
-  await writeFile(tmp, `${JSON.stringify(raw, null, 2)}\n`, { mode: 0o644 });
+  await writeFile(tmp, patched.endsWith('\n') ? patched : `${patched}\n`, { mode: 0o644 });
   await rename(tmp, registryPath);
   return { written };
 }

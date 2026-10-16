@@ -83,6 +83,10 @@ export const COACH_TEXT: Record<string, string[]> = {
     '  2. npm run classifier:fit -- --profile <profile> --write',
     '  3. npm run doctor',
   ],
+  'classifier.commands.ready': [
+    'This model is already pinned and fitted in the shipped registry, so there is no pin or fit to run.',
+    'After the download and hash check, one thing remains: the CLASSIFIER_MODEL line in .env, then npm run doctor.',
+  ],
   'classifier.skip': [
     'Skipped: live LinkedIn and Naukri actions stay refused until the model is fetched and pinned.',
   ],

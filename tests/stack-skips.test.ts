@@ -225,6 +225,50 @@ describe('dashboard-login stage with a skipped dashboard', () => {
   });
 });
 
+describe('dashboard-login stage with a pending (never skipped) dashboard', () => {
+  const run = async (): Promise<{ status: string; detail: string; started: number }> => {
+    let started = 0;
+    const ctx = buildCtx({
+      root, env: { PATH: 'p' }, run: async () => ({ stdout: '', code: 0 }),
+      fs: {
+        mkdtemp: (p: string) => mkdtempSync(join(tmpdir(), p)),
+        mkdir: (p: string) => { mkdirSync(p, { recursive: true }); },
+        write: (p: string, d: string) => writeFileSync(p, d),
+        read: (p: string) => readFileSync(p, 'utf8'),
+        exists: (p: string) => existsSync(p),
+        rm: (p: string) => rmSync(p, { recursive: true, force: true }),
+      },
+      now: () => new Date(),
+      doctor: async () => [],
+      openDb: (() => { throw new Error('unused'); }) as never,
+      startWeb: async () => { started++; throw new Error('server stub'); },
+      fixtures: (() => { throw new Error('unused'); }) as never,
+    });
+    const r = await dashboardLogin.run(ctx);
+    rmSync(ctx.tmp, { recursive: true, force: true });
+    return { status: r.status, detail: r.detail, started };
+  };
+  it('no state entry: the stage runs (starts the server), it is not skipped', async () => {
+    setup({ env: '' });
+    const r = await run();
+    expect(r.detail).not.toContain('skipped in setup');
+    expect(r.started).toBe(1);
+  });
+  it('other features skipped, dashboard pending: the stage still runs', async () => {
+    setup({ env: '', skipped: ['telegram', 'gmail', 'apikeys'] });
+    const r = await run();
+    expect(r.detail).not.toContain('skipped in setup');
+    expect(r.started).toBe(1);
+  });
+  it('a hand-edited pending entry is not a skip', async () => {
+    setup({ env: '' });
+    writeFileSync(join(root, 'user-data', '.setup-state.json'), JSON.stringify({ version: 1, steps: { dashboard: { status: 'pending', at: '2026-10-15T00:00:00Z' } }, answers: {} }));
+    const r = await run();
+    expect(r.detail).not.toContain('skipped in setup');
+    expect(r.started).toBe(1);
+  });
+});
+
 describe('one definition of skipped', () => {
   it('src/stack and src/verify use skips.ts and do not re-derive skipped from state', () => {
     const files = ['src/stack', 'src/verify']
