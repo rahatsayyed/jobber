@@ -61,7 +61,7 @@ describe('propose and validate', () => {
     fixture();
     expect(propose(db, baseSpec(), 4).ok).toBe(false);
     expect(propose(db).ok).toBe(true);
-    approveProvider(db, 'acme', NOW);
+    approveProvider(db, 'acme', NOW, { force: true });
     expect(propose(db)).toMatchObject({ ok: false, code: 'exists' });
   });
 });
@@ -124,7 +124,7 @@ describe('held outreach for generated sources', () => {
     const status = (id: number) => (db.prepare('SELECT status FROM outreach_queue WHERE id = ?').get(id) as { status: string }).status;
     expect([status(held), status(normal), status(unknown)]).toEqual(['held_review', 'queued', 'held_review']);
     expect(listQueuedOutreach(db).map((r) => r.id)).toEqual([normal]);
-    expect(approveProvider(db, 'acme', NOW)).toEqual({ ok: true, released: 1 });
+    expect(approveProvider(db, 'acme', NOW, { force: true })).toEqual({ ok: true, released: 1 });
     expect(listQueuedOutreach(db).map((r) => r.id).sort()).toEqual([held, normal].sort());
     expect(status(unknown)).toBe('held_review');
     // after approval new rows are queued straight away
@@ -135,7 +135,7 @@ describe('held outreach for generated sources', () => {
   it('a candidate cannot be approved; reject deletes the spec and skips held rows', () => {
     const db = openDb(':memory:');
     fixture(); propose(db, baseSpec(), 9);
-    expect(approveProvider(db, 'acme', NOW)).toMatchObject({ ok: false, code: 'not_validated' });
+    expect(approveProvider(db, 'acme', NOW, { force: true })).toMatchObject({ ok: false, code: 'not_validated' });
     expect(approveProvider(db, 'nope', NOW)).toMatchObject({ ok: false, code: 'unknown_provider' });
     propose(db);
     saveJob(db, job('gen:acme:1', 'gen:acme'));
@@ -197,9 +197,9 @@ describe('providers CLI', () => {
     expect(providersCli(['list'], deps).lines[0]).toMatch(/^acme  validated  held  clean 0\/3/);
     expect(providersCli(['show', 'acme'], deps).lines.join('\n')).toContain('"hosts"');
     expect(providersCli(['validate', 'acme'], deps)).toMatchObject({ code: 0 });
-    const ap = providersCli(['approve', 'acme', '--promote'], deps);
+    const ap = providersCli(['approve', 'acme', '--promote', '--force'], deps);
     expect(ap.code).toBe(0);
-    expect(ap.lines[0]).toContain('1 held outreach row(s) released');
+    expect(ap.lines[1]).toContain('1 held outreach row(s) released');
     expect(ap.lines.join('\n')).toContain('"kind": "generated"');
     expect(providersCli(['approve', 'nope'], deps).code).toBe(1);
     expect(providersCli(['approve', '../x'], deps).code).toBe(2);

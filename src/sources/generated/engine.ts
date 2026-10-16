@@ -208,7 +208,10 @@ const pageUrlFor = (base: string, spec: ProviderSpec, n: number): string => {
 
 /** A Provider that runs `spec` like any other source: same Job shape, same shape check, source `gen:<id>`. */
 export function createGeneratedProvider(spec: ProviderSpec, fetchText?: TextFetcher): Provider {
-  const fetcher: TextFetcher = fetchText ?? ((url) => getText(url, `gen:${spec.id}`, { hosts: apexHosts(...spec.hosts), accept: spec.kind === 'json_api' ? 'application/json' : 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5' }));
+  // html_list pages come from the browser fetcher the caller injects (browser.ts); only json_api may use the plain board transport.
+  const fetcher: TextFetcher = fetchText ?? (spec.kind === 'json_api'
+    ? (url) => getText(url, `gen:${spec.id}`, { hosts: apexHosts(...spec.hosts), accept: 'application/json' })
+    : async () => { throw new Error(`gen:${spec.id}: html_list needs the browser fetcher`); });
   return {
     id: `gen:${spec.id}`,
     shapeSpec,

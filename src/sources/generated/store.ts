@@ -111,10 +111,12 @@ export function recordProviderRun(db: Db, id: string, o: { runId: string; clean:
 }
 
 /** Owner approval: needs validated or trusted. Releases the provider's held_review outreach rows to queued. */
-export function approveProvider(db: Db, id: string, now: Date): { ok: boolean; code?: string; released?: number } {
+export function approveProvider(db: Db, id: string, now: Date, o: { force?: boolean } = {}): { ok: boolean; code?: string; released?: number } {
   const row = getProvider(db, id);
   if (!row) return { ok: false, code: 'unknown_provider' };
   if (row.state === 'candidate') return { ok: false, code: 'not_validated' };
+  // Only a trusted provider (clean runs over distinct run ids) is approvable; the owner can override with an explicit force.
+  if (row.state !== 'trusted' && !o.force) return { ok: false, code: 'not_trusted' };
   const tx = db.transaction(() => {
     db.prepare('UPDATE generated_providers SET approved=1, updated_at=? WHERE id=?').run(now.toISOString(), id);
     return db.prepare(`UPDATE outreach_queue SET status='queued', updated_at=datetime('now') WHERE status='held_review'

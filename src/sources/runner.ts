@@ -15,6 +15,8 @@ import { loadPortals, titlePasses } from './boards/filters.js';
 import { createGeneratedProvider, type TextFetcher } from './generated/engine.js';
 import type { ProviderSpec } from './generated/spec.js';
 import { loadRunnable, recordProviderRun } from './generated/store.js';
+import { createBrowserTextFetcher } from './generated/browser.js';
+import { createWebRuntime, type WebRuntime } from '../webcore/runtime.js';
 import { genPromoteN } from './generated/validate.js';
 import { checkShape, type ShapeReport } from './shape.js';
 import { redactError, statsToOutcomes, type SourceOutcome, type SourceStatusRow } from './status.js';
@@ -49,6 +51,8 @@ export interface RunOptions {
   generatedFetch?: (spec: ProviderSpec) => TextFetcher | undefined;
   /** Run id for the promotion count (default JOBBER_RUN_ID, SCHEDULER_RUN_ID, else one per process). */
   runId?: string;
+  /** Web runtime for html_list generated providers (tests inject a fake-browser runtime; default: a new locked session closed after the pass). */
+  webRuntime?: WebRuntime;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -144,17 +148,23 @@ export async function runScriptSources(db: Db | null, opts: RunOptions): Promise
     const env = opts.env ?? process.env;
     const runId = opts.runId ?? env.JOBBER_RUN_ID ?? env.SCHEDULER_RUN_ID ?? PROCESS_RUN_ID;
     const portals = loadPortals(opts.portalsPath).config;
-    const genResults = await Promise.all(genSpecs.map(async (spec) => {
+    // html_list pages load in the shared locked web session (O-browser), one provider at a time; json_api uses the board transport.
+    let runtime: WebRuntime | null = opts.webRuntime ?? null;
+    const genResults: Array<{ spec: ProviderSpec; id: string; provider: Provider; r: { jobs: Job[]; sample: unknown[] } } | { spec: ProviderSpec; id: string; error: string }> = [];
+    for (const spec of genSpecs) {
       const id = `gen:${spec.id}`;
       try {
-        const provider = createGeneratedProvider(spec, opts.generatedFetch?.(spec));
+        let fetcher = opts.generatedFetch?.(spec);
+        if (!fetcher && spec.kind === 'html_list') fetcher = createBrowserTextFetcher((runtime ??= createWebRuntime({ db, env })), spec);
+        const provider = createGeneratedProvider(spec, fetcher);
         const r = await withTimeout(provider.fetch({ params: { role: opts.role, location: opts.location }, isKnown: opts.isKnown }), timeoutMs);
-        return { spec, id, provider, r };
+        genResults.push({ spec, id, provider, r });
       } catch (e) {
         console.error(`[sources] ${id} failed:`, redactError(e));
-        return { spec, id, error: redactError(e) };
+        genResults.push({ spec, id, error: redactError(e) });
       }
-    }));
+    }
+    if (runtime && !opts.webRuntime) await (runtime as WebRuntime).close().catch(() => undefined);
     for (const x of genResults) {
       const platform = x.spec.id;
       let clean = false;

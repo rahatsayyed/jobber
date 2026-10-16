@@ -51,9 +51,13 @@ export function run(argv: string[], deps: CliDeps = {}): { code: number; lines: 
       return { code: r.ok ? 0 : 1, lines: [r.ok ? `ok: ${r.validation?.jobs ?? 0} job(s) reproduced, state ${r.state}` : `failed: ${r.code}${r.validation?.detail ? ` (${r.validation.detail})` : ''}, state ${r.state}`] };
     }
     if (cmd === 'approve') {
-      const r = approveProvider(db, id, now);
-      if (!r.ok) return { code: 1, lines: [`not approved: ${r.code}`] };
-      const lines = [`approved ${id}: ${r.released ?? 0} held outreach row(s) released`];
+      const force = flags.includes('--force');
+      const r = approveProvider(db, id, now, { force });
+      if (!r.ok) return { code: 1, lines: [`not approved: ${r.code}${r.code === 'not_trusted' ? ' (needs clean runs first; pass --force to override)' : ''}`] };
+      const lines = [
+        ...(force && row.state !== 'trusted' ? [`WARNING: ${id} is ${row.state}, not trusted; approved with --force before its clean runs`] : []),
+        `approved ${id}: ${r.released ?? 0} held outreach row(s) released`,
+      ];
       if (flags.includes('--promote')) {
         const spec = readSpecFile(root, id);
         lines.push('Registry row (commit it into config/platforms.json yourself; nothing is written automatically):', spec ? JSON.stringify(registryRowFor(spec), null, 2) : 'spec file missing');
