@@ -28,4 +28,4 @@ models/
 .jobber/
 .update/
 .backups/
-generated/
+/generated/

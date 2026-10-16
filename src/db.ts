@@ -5,7 +5,7 @@ import { classifyDeadlines, type DeadlineSweep } from './freshness.js';
 import type { Legitimacy } from './legitimacy.js';
 import { dbPath } from './dbPath.js';
 import { companyKey, repostCount, titleIdentityKey } from './reposts.js';
-import { isDiscoverOnlySource } from './lib/discoverOnly.js';
+import { isDiscoverOnlySource, isHeldSource } from './lib/discoverOnly.js';
 import { migrateOutreachTables } from './outreach/schema.js';
 import { migrateSchedulerTables } from './scheduler/runLog.js';
 
@@ -200,6 +200,18 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
       company TEXT,
       reason TEXT NOT NULL,
       state TEXT NOT NULL DEFAULT 'queued',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    -- Declarative generated providers (plan 8G task 8): state candidate, validated, trusted; approved is the owner's release of held outreach.
+    CREATE TABLE IF NOT EXISTS generated_providers (
+      id TEXT PRIMARY KEY,
+      state TEXT NOT NULL,
+      approved INTEGER NOT NULL DEFAULT 0,
+      clean_runs INTEGER NOT NULL DEFAULT 0,
+      run_ids TEXT NOT NULL DEFAULT '[]',
+      task_id INTEGER,
+      reason TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -623,13 +635,16 @@ export function enqueueOutreach(
   // the sender away from the shared daily apply counter while email and connect outreach on the same row still run.
   const source = (db.prepare('SELECT source FROM jobs WHERE id = ?').get(item.job_id) as { source: string | null } | undefined)?.source;
   const applyPlatform = isDiscoverOnlySource(source) ? 'none' : item.apply_platform;
+  // Generated-provider jobs (source gen:*) are matched and listed, but their outreach rows wait for the owner (plan 8G D7): held_review
+  // until `npm run providers -- approve <id>` releases them. list_queued_outreach returns only status 'queued', so a held row is never sent.
+  const held = isHeldSource(source) && !(db.prepare('SELECT approved FROM generated_providers WHERE id = ?').get(String(source).slice(4)) as { approved: number } | undefined)?.approved;
   const result = db.prepare(`
     INSERT INTO outreach_queue (
       job_id, resume_pdf_path, email_subject, email_body, email_to,
       connect_note, connect_profile_url, connect_category, connect_company,
       apply_platform, apply_url, resume_json,
-      ats_coverage, ats_gaps, fact_warnings, review_applied, review_rejected
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ats_coverage, ats_gaps, fact_warnings, review_applied, review_rejected, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     item.job_id,
     item.resume_pdf_path,
@@ -647,7 +662,8 @@ export function enqueueOutreach(
     item.ats_gaps ? JSON.stringify(item.ats_gaps) : null,
     item.fact_warnings ? JSON.stringify(item.fact_warnings) : null,
     item.review_applied ?? null,
-    item.review_rejected ?? null
+    item.review_rejected ?? null,
+    held ? 'held_review' : 'queued'
   );
   return Number(result.lastInsertRowid);
 }

@@ -54,7 +54,7 @@ describe('tool surface', () => {
     expect([...TOOL_NAMES].sort()).toEqual(Object.keys(schemas).sort());
     expect(() => buildServer(h)).not.toThrow();
     for (const needed of ['scout_capture_fixture', 'site_login', 'site_signup', 'scout_close', 'scout_layout']) expect(TOOL_NAMES).toContain(needed);
-    expect(TOOL_NAMES).not.toContain('scout_propose_provider');
+    expect(TOOL_NAMES).toContain('scout_propose_provider');
   });
 });
 

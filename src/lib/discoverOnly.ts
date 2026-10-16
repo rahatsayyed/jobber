@@ -6,6 +6,11 @@ export const DISCOVER_ONLY_SOURCES: ReadonlySet<string> = new Set([
   'workable', 'recruitee', 'personio', 'workday', 'smartrecruiters', 'hackernews', 'himalayas', 'weworkremotely',
 ]);
 
+/** Sources whose outreach rows are held for owner review: generated providers (gen:id), until `providers approve id` (plan 8G D7). */
+export function isHeldSource(source: string | null | undefined): boolean {
+  return typeof source === 'string' && /^gen:[a-z0-9][a-z0-9-]{0,39}$/.test(source.trim().toLowerCase());
+}
+
 export function isDiscoverOnlySource(source: string | null | undefined): boolean {
   return typeof source === 'string' && DISCOVER_ONLY_SOURCES.has(source.trim().toLowerCase());
 }

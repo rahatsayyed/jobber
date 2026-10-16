@@ -17,7 +17,7 @@
         "mcp__naukri__naukri_search", "mcp__naukri__naukri_inbox", "mcp__naukri__naukri_read_thread",
         "mcp__naukri__naukri_send_message", "mcp__db__list_jobs", "mcp__db__update_outreach_status",
         "mcp__linkedin__linkedin_layout", "mcp__naukri__naukri_layout",
-        "mcp__scout__scout_search", "mcp__scout__scout_open", "mcp__scout__scout_state", "mcp__scout__scout_scroll", "mcp__scout__scout_click", "mcp__scout__scout_extract_jobs", "mcp__scout__scout_save_jobs", "mcp__scout__scout_capture_fixture", "mcp__scout__scout_tasks", "mcp__scout__scout_task_update", "mcp__scout__site_login", "mcp__scout__site_signup", "mcp__scout__scout_layout", "mcp__scout__scout_close"
+        "mcp__scout__scout_search", "mcp__scout__scout_open", "mcp__scout__scout_state", "mcp__scout__scout_scroll", "mcp__scout__scout_click", "mcp__scout__scout_extract_jobs", "mcp__scout__scout_save_jobs", "mcp__scout__scout_capture_fixture", "mcp__scout__scout_propose_provider", "mcp__scout__scout_tasks", "mcp__scout__scout_task_update", "mcp__scout__site_login", "mcp__scout__site_signup", "mcp__scout__scout_layout", "mcp__scout__scout_close"
       ],
       "screen_args": [
         "mcp__outreach__escalate", "mcp__outreach__record_inbound",

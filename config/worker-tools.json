@@ -42,6 +42,7 @@
     "mcp__scout__scout_extract_jobs",
     "mcp__scout__scout_save_jobs",
     "mcp__scout__scout_capture_fixture",
+    "mcp__scout__scout_propose_provider",
     "mcp__scout__scout_tasks",
     "mcp__scout__scout_task_update",
     "mcp__scout__site_login",
