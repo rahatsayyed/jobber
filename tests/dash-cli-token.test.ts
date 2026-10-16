@@ -10,7 +10,8 @@ import { main, parseArgs } from '../scripts/dashboard.js';
 
 const now = new Date('2026-10-15T10:00:00Z');
 
-function harness(extraEnv: Record<string, string> = {}) {
+function harness(extraEnv: Record<string, string> = {}, listening = false) {
+  const probed: number[] = [];
   const dir = mkdtempSync(join(tmpdir(), 'jobber-'));
   const dbPath = join(dir, 'auth.sqlite');
   const out: string[] = [];
@@ -20,12 +21,13 @@ function harness(extraEnv: Record<string, string> = {}) {
     main(argv, {
       env, stdout: (l) => out.push(l), stderr: (l) => errs.push(l),
       isTTY: o.isTTY ?? true, now: () => now, confirm: async () => o.yes ?? true,
+      probe: async (port) => { probed.push(port); return listening; },
     });
   const tokenFrom = (lines: string[]) => {
     const m = lines.join('\n').match(/#token=([A-Za-z0-9_-]{43})\b/);
     return m ? m[1] : null;
   };
-  return { dbPath, out, errs, run, tokenFrom };
+  return { dbPath, out, errs, run, tokenFrom, probed };
 }
 
 describe('parseArgs token/rotate', () => {
@@ -52,6 +54,21 @@ describe('dashboard token / rotate / status', () => {
     expect(tokenStatus(db).set).toBe(true);
     expect(verifyToken(db, h.tokenFrom(h.out))).toBe(true);
     db.close();
+  });
+  it('token and rotate say the server is not started and, when nothing listens, not running right now', async () => {
+    const h = harness({ WEB_PORT: '9100' });
+    await h.run(['token']);
+    expect(h.out).toContain('This command does not start the dashboard. Start the dashboard: npm run web (or npm run up)');
+    expect(h.out.join('\n')).toContain('the dashboard is not running right now');
+    expect(h.probed).toEqual([9100]);
+    h.out.length = 0;
+    await h.run(['rotate']);
+    expect(h.out.join('\n')).toContain('Start the dashboard: npm run web (or npm run up)');
+    expect(h.out.join('\n')).toContain('not running right now');
+    const up = harness({}, true);
+    await up.run(['token']);
+    expect(up.out.join('\n')).toContain('Start the dashboard: npm run web (or npm run up)');
+    expect(up.out.join('\n')).not.toContain('not running right now');
   });
   it('uses --port, then WEB_PORT, and never WEB_BIND', async () => {
     const a = harness({ WEB_PORT: '9100', WEB_BIND: '0.0.0.0' });
