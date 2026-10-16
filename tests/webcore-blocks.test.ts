@@ -21,6 +21,17 @@ describe('detectBlock', () => {
       expect(detectBlock(loadFixture(f)), f).toBeNull();
     }
   });
+  it('widget-only captcha (no text) is detected', () => {
+    expect(detectBlock(loadFixture('captcha-widget-only.html'))).toBe('captcha');
+  });
+  it('phone + postal code + promo code form is not a verification block', () => {
+    expect(detectBlock(loadFixture('form-codes.html'))).toBeNull();
+    expect(extractFormModel(loadFixture('form-codes.html')).stepKind).toBe('form');
+  });
+  it('autocomplete one-time-code alone suffices for mfa', () => {
+    const s = snapshotFromHtml('<html><body><p>Two-factor</p><label for="a">Code</label><input id="a" autocomplete="one-time-code"></body></html>');
+    expect(detectBlock(s)).toBe('mfa');
+  });
   it('blocked pages get stepKind blocked', () => {
     expect(extractFormModel(loadFixture('captcha-wall.html')).stepKind).toBe('blocked');
   });

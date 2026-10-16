@@ -1,6 +1,6 @@
 // Form model (plan 8G task 5): pure extraction from a raw snapshot. The snapshot comes from the
 // in-page script below (live) or from tests/helpers/fixtureSite.ts (hermetic fixtures).
-import { classifyCheckbox } from './checkboxes.js';
+import { classifyCheckbox, type CheckboxClass } from './checkboxes.js';
 import { detectBlock, type BlockKind } from './blocks.js';
 
 export const FIELD_ROLES = [
@@ -36,7 +36,7 @@ export interface RawFormSnapshot {
 
 export interface FormField {
   id: string; role: FieldRole; label: string; type: string; required: boolean; filled: boolean;
-  checked?: boolean; options?: string[]; hidden: boolean;
+  checked?: boolean; options?: string[]; hidden: boolean; consentClass?: CheckboxClass;
 }
 export interface FormControl { id: string; kind: ControlKind; label: string }
 export interface FormModel {
@@ -79,7 +79,7 @@ export function classifyControl(label: string): ControlKind {
   if (/save and continue|^next\b|^continue\b/i.test(l)) return 'next';
   if (/^(back|previous)\b/i.test(l)) return 'back';
   if (/^save( draft| for later)?$/i.test(l)) return 'save';
-  if (/^apply\b/i.test(l)) return 'apply';
+  if (/^apply\b/i.test(l) && !/\bwith\b/i.test(l)) return 'apply';
   return 'other';
 }
 
@@ -92,16 +92,21 @@ function roleOf(f: RawField): FieldRole {
     if (c === 'marketing') return 'marketing';
     return c === 'other' ? 'unknown' : 'consent';
   }
-  if (f.type === 'file') return /cover/i.test(key) ? 'cover_letter' : 'resume';
+  if (f.type === 'file') return /cover/i.test(key) ? 'cover_letter' : /resume|\bcv\b|curriculum/i.test(key) ? 'resume' : 'unknown';
   if (f.autocomplete === 'one-time-code' || /\b(otp|verification code|security code|enter code)\b/i.test(label)) return 'otp';
-  if (f.type === 'email' || /e-?mail/i.test(key)) return 'email';
-  if (f.type === 'tel' || /phone|mobile/i.test(key)) return 'phone';
-  if (/linkedin/i.test(key)) return 'linkedin_url';
+  // Keyword heuristics apply only to typed inputs or short, non-question labels; a long or
+  // question-style label ("Which mobile frameworks have you used?") is a custom question.
+  const short = label.length <= 40 && !label.includes('?');
+  if (f.type === 'email' || (short && /e-?mail/i.test(key))) return 'email';
+  if (f.type === 'tel' || (short && /phone|mobile/i.test(key))) return 'phone';
+  if ((f.type === 'url' || short) && /linkedin/i.test(key)) return 'linkedin_url';
   if (EEO_RE.test(key)) return 'eeo';
-  if (/first.?name|given name/i.test(key)) return 'name.first';
-  if (/last.?name|surname|family name/i.test(key)) return 'name.last';
-  if (/^\s*(full )?name\b|your name/i.test(label)) return 'name.full';
-  if (/location|city|where .* (based|located)/i.test(key)) return 'location';
+  if (short) {
+    if (/first.?name|given name/i.test(key)) return 'name.first';
+    if (/last.?name|surname|family name/i.test(key)) return 'name.last';
+    if (/^\s*(full )?name\b|your name/i.test(label)) return 'name.full';
+    if (/location|city|where .* (based|located)/i.test(key)) return 'location';
+  }
   if (f.type === 'textarea' || f.type === 'select' || f.type === 'radio' || label.includes('?')) return 'question';
   return 'unknown';
 }
@@ -115,6 +120,7 @@ export function extractFormModel(raw: RawFormSnapshot): FormModel {
       filled: !!f.filled, hidden: !!f.hidden,
     };
     if (f.checked !== undefined) out.checked = !!f.checked;
+    if (f.type === 'checkbox') out.consentClass = classifyCheckbox(f.label ?? '', !!f.required);
     if (f.options) out.options = f.options.slice(0, 30);
     return out;
   });
@@ -129,7 +135,7 @@ export function extractFormModel(raw: RawFormSnapshot): FormModel {
   else if (CONFIRM_RE.test(text) && !vis.some((f) => f.type !== 'checkbox')) stepKind = 'confirmation';
   else if (vis.some((f) => f.role === 'password_confirm') || (has('create_account') && !has('sign_in') && vis.some((f) => f.role === 'password'))) stepKind = 'account';
   else if (vis.some((f) => f.role === 'password')) stepKind = 'signin';
-  else if (vis.length === 0 && controls.filter((c) => c.kind === 'apply').length >= 2) stepKind = 'listing';
+  else if (vis.length === 0 && (raw.controls ?? []).filter((c) => c.tag === 'a').length >= 3) stepKind = 'listing';
   else if (vis.length === 0 && has('apply')) stepKind = 'landing';
   else if (REVIEW_RE.test(text) && vis.length === 0) stepKind = 'review';
   else if (vis.length > 0) stepKind = 'form';

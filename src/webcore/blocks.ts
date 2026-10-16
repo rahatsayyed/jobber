@@ -5,11 +5,11 @@ export type BlockKind = 'captcha' | 'mfa' | 'phone_verification' | 'bot_wall' | 
 
 const BOT_WALL = /access denied|unusual traffic|request blocked|checking your browser|pardon our interruption|are you a robot|automated (queries|requests)/i;
 const CAPTCHA = /captcha|verify you are (a )?human|i'?m not a robot|prove you are (a )?human/i;
-const PHONE = /(verify|confirm) your (phone|mobile)|text message|sms|phone number.{0,40}code|code.{0,40}(your )?(phone|mobile)/i;
+const PHONE = /(verify|confirm) your (phone|mobile)|text message/i;
 const MFA = /two-factor|2-step|two-step|multi-factor|authenticator app|one-time (code|password)|security code|verification code/i;
 const LOGIN_WALL = /(please )?(sign|log) ?in to (apply|continue|view)|you must (be )?(signed|logged) ?in|please (sign|log) ?in (first|again)|session (has )?expired/i;
 const CONSENT = /we use cookies|cookie (consent|preferences|settings)|manage cookies|accept (all )?cookies/i;
-const CODE_LABEL = /code|otp|one-time/i;
+const CODE_LABEL = /(verification|security|one-time|confirmation|sms|authenticator) code|\botp\b/i;
 
 export function detectBlock(raw: RawFormSnapshot): BlockKind | null {
   const text = `${raw.title ?? ''}\n${raw.text ?? ''}`.slice(0, 20000);

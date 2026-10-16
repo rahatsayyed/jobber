@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { loadFixture } from './helpers/fixtureSite.js';
 import { extractFormModel, FORM_SNAPSHOT_SCRIPT, FIELD_ROLES } from '../src/webcore/formModel.js';
 import { formatState } from '../src/webcore/state.js';
+import { snapshotFromHtml } from './helpers/fixtureSite.js';
+import type { RawFormSnapshot } from '../src/webcore/formModel.js';
 
 const model = (f: string) => extractFormModel(loadFixture(f));
 const roles = (f: string) => model(f).fields.map((x) => x.role);
@@ -49,7 +51,7 @@ describe('extractFormModel', () => {
     expect(model('wd-confirmation.html').stepKind).toBe('confirmation');
     expect(model('ats-a-confirmation.html').stepKind).toBe('confirmation');
     expect(model('ats-b-confirmation.html').stepKind).toBe('confirmation');
-    expect(model('listing-a.html').stepKind).toBe('unknown');
+    expect(model('listing-a.html').stepKind).toBe('listing');
   });
   it('account page: passwords, required privacy consent, PRE-CHECKED marketing box', () => {
     const m = model('wd-account.html');
@@ -99,9 +101,65 @@ describe('formatState', () => {
   });
   it('shows the pre-checked marketing box and step counters', () => {
     const out = formatState(extractFormModel(loadFixture('wd-account.html')), ['note: extra']);
-    expect(out).toMatch(/marketing checkbox \(checked\)/);
+    expect(out).toMatch(/marketing checkbox class=marketing \(checked\)/);
     expect(out).toContain('note: extra');
     expect(formatState(extractFormModel(loadFixture('wd-step1-personal.html')))).toContain('step=form 1/4');
+  });
+});
+
+describe('role heuristics (review fixes)', () => {
+  const one = (label: string, type = 'text') => {
+    const raw: RawFormSnapshot = { url: 'https://x.test/a', title: '', text: '', controls: [], notices: [], fields: [{ type, name: '', label, required: false, filled: false, hidden: false }] };
+    return extractFormModel(raw).fields[0].role;
+  };
+  it('long or question labels are questions, not phone/email/location', () => {
+    expect(one('Which mobile frameworks have you used?')).toBe('question');
+    expect(one('Have you used email marketing tools?')).toBe('question');
+    expect(one('Are you willing to relocate to this city?')).toBe('question');
+  });
+  it('short labels and typed inputs still map', () => {
+    expect(one('Mobile')).toBe('phone');
+    expect(one('Work email')).toBe('email');
+    expect(one('Anything', 'tel')).toBe('phone');
+    expect(one('City')).toBe('location');
+  });
+  it('file inputs are resume only when labelled so; Apply with LinkedIn is not apply', () => {
+    expect(one('Portfolio', 'file')).toBe('unknown');
+    expect(one('Curriculum vitae', 'file')).toBe('resume');
+    const raw = snapshotFromHtml('<html><body><a href="/x">Apply with LinkedIn</a><a href="/y">Apply</a></body></html>');
+    expect(extractFormModel(raw).controls.map((c) => c.kind)).toEqual(['other', 'apply']);
+  });
+  it('exposes the checkbox class and prints it', () => {
+    const m = extractFormModel(loadFixture('wd-account.html'));
+    expect(m.fields.map((f) => f.consentClass)).toEqual([undefined, undefined, undefined, 'legal_required', 'marketing']);
+    expect(formatState(m)).toContain('class=legal_required');
+  });
+});
+
+describe('formatState hardening (review fixes)', () => {
+  it('a filled password field leaks neither value nor secret-bearing names', () => {
+    const raw = loadFixture('wd-signin.html');
+    const pw = raw.fields[1] as unknown as Record<string, unknown>;
+    pw['filled'] = true; pw['value'] = 'S3cretPass!'; pw['name'] = 'S3cretPass!';
+    const out = formatState(extractFormModel(raw));
+    expect(out).not.toContain('S3cretPass');
+    expect(out).toMatch(/password password \(filled\)/);
+  });
+  it('strips U+2800 and tag characters', () => {
+    const raw = loadFixture('ats-a-form.html');
+    raw.fields[0].label = 'Fi⠀rst\u{e0041}\u{e0042} Name';
+    expect(formatState(extractFormModel(raw))).toContain('"First Name"');
+  });
+  it('caps options, notices and extra lines', () => {
+    const raw = loadFixture('ats-b-form.html');
+    raw.fields[5].options = Array.from({ length: 50 }, (_, i) => `opt${i}`);
+    raw.notices = Array.from({ length: 30 }, (_, i) => `n${i} ` + 'z'.repeat(400));
+    const out = formatState(extractFormModel(raw), ['e'.repeat(1000)]);
+    expect(out).toContain('opt11');
+    expect(out).not.toContain('opt12');
+    expect(out.match(/^notice /gm)).toHaveLength(10);
+    expect(out).not.toContain('z'.repeat(170));
+    expect(out).not.toContain('e'.repeat(210));
   });
 });
 
