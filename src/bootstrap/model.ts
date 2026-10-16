@@ -2,12 +2,15 @@
 // Classifier model item: detect and plan over scripts/models.ts (runCli, describeProfile).
 // Never pins, never fits, never writes .env or config; the owner steps are always printed.
 import { describeProfile, runCli, type CliDeps } from '../../scripts/models.js';
-import { loadRegistry, type ClassifierProfile } from '../safety/classifierRegistry.js';
+import { isPinnedAndFitted, loadRegistry, type ClassifierProfile } from '../safety/classifierRegistry.js';
 import type { Action, Detection, Plan } from './types.js';
 
 const mbOf = (p: ClassifierProfile): string => (p.files.reduce((n, f) => n + f.size, 0) / (1024 * 1024)).toFixed(1);
 
-export function ownerNote(id: string): string {
+export function ownerNote(id: string, p?: ClassifierProfile): string {
+  if (p && isPinnedAndFitted(p)) {
+    return `needs the owner: set the line \`CLASSIFIER_MODEL=${id}\` in .env (the profile is already pinned and fitted, nothing to pin or fit; the setup \`classifier\` step writes the line)`;
+  }
   return `needs the owner: \`npm run models -- pin ${id}\`, \`npm run classifier:fit -- --profile ${id} --write\`, set \`CLASSIFIER_MODEL\` (the setup \`classifier\` step does this)`;
 }
 
@@ -43,18 +46,18 @@ export function createModelParts(cli: CliDeps, id: string): { detect(): Promise<
         // A gated profile can still be present if the owner placed the files by hand.
         const v = await capture(['verify', id], cli);
         return v.code === 0
-          ? { present: true, detail: `${id}: files verified; ${ownerNote(id)}` }
+          ? { present: true, detail: `${id}: files verified; ${ownerNote(id, p)}` }
           : { present: false, detail: `${id}: gated, files not present` };
       }
       const v = await capture(['verify', id], cli);
-      if (v.code === 0) return { present: true, detail: `${id}: files present and verified; ${ownerNote(id)}` };
+      if (v.code === 0) return { present: true, detail: `${id}: files present and verified; ${ownerNote(id, p)}` };
       return { present: false, detail: `${id}: weights not downloaded or not verified (${mbOf(p)} MB)` };
     },
     plan() {
       const p = load();
       if (p.gated || !p.fetchable) {
         const steps = p.manual_steps?.length ? p.manual_steps : [`place the files in models/${id}/ yourself`];
-        return { kind: 'owner', message: `${id} is gated and is never fetched here; manual steps: ${steps.map((s, i) => `${i + 1}. ${s}`).join(' ')} then verify with npm run models -- verify ${id}; ${ownerNote(id)}` };
+        return { kind: 'owner', message: `${id} is gated and is never fetched here; manual steps: ${steps.map((s, i) => `${i + 1}. ${s}`).join(' ')} then verify with npm run models -- verify ${id}; ${ownerNote(id, p)}` };
       }
       const size = mbOf(p);
       const action: Action = {
@@ -67,7 +70,7 @@ export function createModelParts(cli: CliDeps, id: string): { detect(): Promise<
           ...describeProfile(p),
           `Weights download from Hugging Face (about ${size} MB); each file is hash-checked after download`,
           ...pinnedLines(p),
-          ownerNote(id),
+          ownerNote(id, p),
         ],
         fn: async () => {
           await capture(['fetch', id, '--yes'], cli);

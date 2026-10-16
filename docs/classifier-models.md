@@ -17,7 +17,7 @@ Rules that matter in practice:
 
 - **Exactly one classifier per process.** `CLASSIFIER_MODEL` picks the profile and it loads once. There is no fallback chain. Changing profile needs a restart of every MCP server and session that loaded the old one.
 - **`CLASSIFIER_MODEL` unset fails closed.** There is no implicit default; `resolveProfile` and the selector refuse with a message listing the known profile ids.
-- **The shipped default is not fully pinned yet.** Some files carry only a sha1 or no hash until the owner runs `npm run models -- pin <id>`. The loader refuses until the model is pinned.
+- **The shipped default is already pinned and fitted.** The registry carries sha256 digests for every file and a fitted threshold for `protectai-deberta-v3-base-v2`, so for it only fetch, verify and setting `CLASSIFIER_MODEL` remain. Any other or custom profile starts unpinned (some files carry only a sha1 or no hash) until the owner runs `npm run models -- pin <id>`, and the loader refuses until it is pinned. `models pin` is idempotent: when every digest is present and matches it writes nothing and says "already pinned"; when it must write, it changes only the missing values and keeps the file's formatting.
 - **An unfitted profile is refused in send paths.** It only runs, at a placeholder threshold of 0.5, in dry runs (`JOBBER_DRY_RUN=1`). Fit it with `npm run classifier:fit` first.
 - **A gated profile is never fetched** by this project.
 - **Downloads** come only from `huggingface.co` / `hf.co` hosts (including subdomains), over https, at the pinned revision, with no token.
@@ -47,6 +47,8 @@ Summary of what the cards and licence files say. Not legal advice. Read the lice
 
 ## 4. How to switch
 
+Shortest route, for the shipped default (already pinned and fitted): `npm run models -- fetch`, `npm run models -- verify`, set `CLASSIFIER_MODEL=protectai-deberta-v3-base-v2` in `.env`, `npm run doctor`, restart sessions. The steps below are for another or a custom profile.
+
 Manual route (works today):
 
 1. `npm run models -- list` shows the profiles and their state.
@@ -57,7 +59,7 @@ Manual route (works today):
 6. `npm run doctor` checks the selected profile, its hashes, the fit and a smoke inference (`classifier_model`, `classifier_smoke`).
 7. Restart the MCP servers and sessions; the model loads once per process.
 
-Guided route: `npm run setup -- --step classifier` does steps 2 to 4 for you. It shows the licence, attribution, limitations and size, downloads only after you answer yes (ungated profiles), verifies the files, runs a smoke inference (benign must score below 0.5, an injection at or above 0.5) and then writes `CLASSIFIER_MODEL` to `.env`. It never pins files for you: if it reports unpinned files, run `npm run models -- pin <id>` and review the registry diff, then rerun the step. Gated or owner-supplied profiles are never fetched and the step never asks for a token. The step does not fit a threshold; run step 5 afterwards (sends are refused until a fit exists, dry runs work).
+Guided route: `npm run setup -- --step classifier` does steps 2 to 4 for you. It shows the licence, attribution, limitations and size, downloads only after you answer yes (ungated profiles), verifies the files, runs a smoke inference (benign must score below 0.5, an injection at or above 0.5) and then writes `CLASSIFIER_MODEL` to `.env`. It never pins files for you: if it reports unpinned files, run `npm run models -- pin <id>` and review the registry diff, then rerun the step. Gated or owner-supplied profiles are never fetched and the step never asks for a token. The step does not fit a threshold; for a profile without a fit, run step 5 afterwards (sends are refused until a fit exists, dry runs work). When the active profile is already pinned and has a fit record (the shipped default), the step does only fetch and verify, then prints the one remaining action, the exact `CLASSIFIER_MODEL=<id>` line for `.env`, and no pin or fit commands. `npm run bootstrap` shows the same shorter owner note for such a profile. `npm run classifier:fit -- --write` likewise changes only the fit values that differ and writes nothing when the fit is unchanged.
 
 ## 5. Adding a profile
 

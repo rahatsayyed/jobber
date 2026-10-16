@@ -250,6 +250,17 @@ export function isFullyPinned(p: ClassifierProfile): boolean {
   );
 }
 
+/** A fit record exists and is bound to the model file's pinned sha256 (the loader's own condition). */
+export function isFitted(p: ClassifierProfile): boolean {
+  const model = p.files.find((f) => f.role === 'model');
+  return typeof p.fit.threshold === 'number' && !!model?.sha256 && p.fit.model_sha256 === model.sha256;
+}
+
+/** Pinned and fitted already: only fetch, verify and setting CLASSIFIER_MODEL remain. */
+export function isPinnedAndFitted(p: ClassifierProfile): boolean {
+  return isFullyPinned(p) && isFitted(p);
+}
+
 export function pinFromProfile(p: ClassifierProfile): ClassifierPin {
   if (!isFullyPinned(p)) {
     throw new Error(

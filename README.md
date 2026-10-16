@@ -55,7 +55,7 @@ In this order:
 - `profile`: asks for roles, locations, remote preference, salary floors and targets, notice period and work authorization, and writes `user-data/profile.json`, the application answers file and the language list.
 - `limits`: shows every daily cap, quiet hour and pacing value with its default and an explanation, and writes the ones you choose to `.env`.
 - `access`: asks which permission set sessions may use (default `read_only`), applies it and installs the ccgram hooks into `.claude/settings.local.json`.
-- `classifier`: downloads the prompt-injection classifier model (about 750 MB) only after you consent, then verifies its files. The default model is English-only; see [classifier models](docs/classifier-models.md) for licences, limitations and how to switch. The smoke test is skipped while the files are only pinned by a weaker hash. Live LinkedIn and Naukri reads and sends are refused (fail closed) until a model is downloaded, pinned and fitted and `CLASSIFIER_MODEL` is set; dry runs continue unscreened.
+- `classifier`: downloads the prompt-injection classifier model (about 750 MB) only after you consent, then verifies its files. The default model is English-only; see [classifier models](docs/classifier-models.md) for licences, limitations and how to switch. The smoke test is skipped while the files are only pinned by a weaker hash. Live LinkedIn and Naukri reads and sends are refused (fail closed) until a model is downloaded (pinned and fitted, which the default already is) and `CLASSIFIER_MODEL` is set; dry runs continue unscreened.
 - `dashboard`: sets up dashboard sign-in. The default is a one-time access token (`npm run dashboard -- token`, shown once, only its hash is stored); Google desktop and OIDC with one allowed Google account are options. The sign-in part is skipped only if `scripts/dashboard.ts` is missing (it is present in this repository). Skippable (RECOMMENDED): without it there is no browser status page, `npm run up` starts no `web` window, and `/limits`, `/working`, `/health` and `npm run status` still work.
 - `final`: runs the doctor once more, lists anything still open and prints the next steps.
 
@@ -63,16 +63,14 @@ In this order:
 
 ## Before going live: the classifier model
 
-Live LinkedIn and Naukri reads and sends fail closed until a classifier model is downloaded, pinned and fitted. Dry runs continue, with text marked unscreened. Nothing downloads automatically. The default model (ProtectAI DeBERTa, about 750 MB of disk) is English-only and does not detect jailbreaks. In order:
+Live LinkedIn and Naukri reads and sends fail closed until a classifier model is downloaded and `CLASSIFIER_MODEL` is set. Dry runs continue, with text marked unscreened. Nothing downloads automatically. The default model (ProtectAI DeBERTa, about 750 MB of disk) is English-only and does not detect jailbreaks. The shipped registry already carries the pinned digests and a fitted threshold for it, so the path is short:
 
 1. `npm run models -- fetch` (asks before downloading; the default profile).
 2. `npm run models -- verify`
-3. `npm run models -- pin protectai-deberta-v3-base-v2` (review the diff of `config/classifier-models.json`).
-4. `npm run classifier:fit -- --profile protectai-deberta-v3-base-v2 --write`
-5. Set `CLASSIFIER_MODEL=protectai-deberta-v3-base-v2` in `.env` (the setup `classifier` step does this for you).
-6. `npm run doctor` must show `classifier_wired` ok, then restart sessions.
+3. Set `CLASSIFIER_MODEL=protectai-deberta-v3-base-v2` in `.env` (the setup `classifier` step does this for you).
+4. `npm run doctor` must show `classifier_wired` ok, then restart sessions.
 
-`npm run setup -- --step classifier` covers fetch, verify and the `.env` line. To use Llama Prompt Guard 2 instead, see [classifier models](docs/classifier-models.md).
+`npm run setup -- --step classifier` covers fetch, verify and the `.env` line. For another or a custom profile that is not pinned and fitted yet, also run `npm run models -- pin <id>` (review the diff of `config/classifier-models.json`) and `npm run classifier:fit -- --profile <id> --write` before step 3; to use Llama Prompt Guard 2 instead, see [classifier models](docs/classifier-models.md).
 
 ---
 

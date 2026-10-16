@@ -4,7 +4,7 @@
 // state. Never reads a token variable; gated or owner-supplied profiles are never fetched.
 import path from 'node:path';
 import { loadClassifier } from '../../safety/classifierModel.js';
-import { isFullyPinned, loadRegistry, type ClassifierProfile, type ClassifierRegistry } from '../../safety/classifierRegistry.js';
+import { isFitted, isFullyPinned, isPinnedAndFitted, loadRegistry, type ClassifierProfile, type ClassifierRegistry } from '../../safety/classifierRegistry.js';
 import { defaultFetchDeps, fetchProfile, GatedProfileError, verifyProfile, type FetchDeps } from '../../safety/modelFetch.js';
 import { SMOKE_BENIGN, SMOKE_INJECTION } from '../../safety/smoke.js';
 import { updateEnvText, writeEnvFile } from '../envWriter.js';
@@ -66,10 +66,13 @@ function writeEnv(ctx: SetupContext, id: string): void {
 }
 
 function fitNotice(ctx: SetupContext, p: ClassifierProfile): void {
-  const model = p.files.find((f) => f.role === 'model');
-  const fitted =
-    typeof p.fit.threshold === 'number' && !!model?.sha256 && p.fit.model_sha256 === model.sha256;
-  if (!fitted) {
+  if (isPinnedAndFitted(p)) {
+    ctx.io.say(`Already pinned and fitted: nothing to pin or fit. The one remaining owner action is this line in .env (written above if it was missing):`);
+    ctx.io.say(`  CLASSIFIER_MODEL=${p.id}`);
+    ctx.io.say('Then run npm run doctor and restart your Claude sessions.');
+    return;
+  }
+  if (!isFitted(p)) {
     ctx.io.say(
       `Threshold is not fitted for this model: sends are refused until you run: npm run classifier:fit -- --profile ${p.id} --write (dry runs work now)`,
     );
@@ -111,7 +114,7 @@ export function createClassifierStep(deps: ClassifierStepDeps = {}): SetupStep {
       describe(ctx, p);
       say(ctx, 'classifier.intro');
       say(ctx, 'classifier.required');
-      say(ctx, 'classifier.commands');
+      say(ctx, isPinnedAndFitted(p) ? 'classifier.commands.ready' : 'classifier.commands');
 
       if (p.gated || !p.fetchable) {
         io.say('This profile is not downloaded automatically. Manual steps:');
