@@ -88,10 +88,11 @@ export function countDue(
         `SELECT COUNT(DISTINCT q.job_id) AS n FROM outreach_queue q
           WHERE q.status = 'queued'
             AND q.apply_platform IS NOT NULL AND q.apply_platform <> 'none'
+            AND (? = 1 OR q.apply_platform <> 'linkedin_easy')
             AND (q.apply_status IS NULL OR q.apply_status = 'queued')
             AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = q.job_id AND j.excluded_reason IS NULL)`,
       )
-      .get() as { n: number }
+      .get(env.APPLY_LINKEDIN_EASY === 'true' ? 1 : 0) as { n: number }
   ).n;
   const usedToday =
     (

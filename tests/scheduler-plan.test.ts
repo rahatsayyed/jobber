@@ -255,6 +255,22 @@ describe('apply task (8G-2 task 21)', () => {
     expect(countDue(db, NOW, TUNING_DEFAULTS, {}).appliesLeftToday).toBe(3); // default 5
     expect(countDue(openDb(':memory:'), NOW, TUNING_DEFAULTS, {}).applyQueued).toBe(0);
   });
+
+  it('linkedin_easy rows and already-actioned rows are not queued apply work', () => {
+    const db = openDb(':memory:');
+    for (const id of ['a', 'b', 'c', 'd', 'e']) {
+      db.prepare('INSERT INTO jobs (id, source, title, company, url) VALUES (?,?,?,?,?)').run(id, 't', 'T', 'C', 'u');
+    }
+    const ins = db.prepare('INSERT INTO outreach_queue (job_id, apply_platform, apply_status, status) VALUES (?, ?, ?, ?)');
+    ins.run('a', 'linkedin_easy', null, 'queued');
+    ins.run('b', 'naukri', null, 'queued');
+    ins.run('c', 'greenhouse', 'needs_owner', 'queued');
+    ins.run('d', 'greenhouse', 'held', 'queued');
+    ins.run('e', 'greenhouse', 'manual_review', 'queued');
+    expect(countDue(db, NOW, TUNING_DEFAULTS, {}).applyQueued).toBe(1);
+    expect(countDue(db, NOW, TUNING_DEFAULTS, { APPLY_LINKEDIN_EASY: 'yes' }).applyQueued).toBe(1);
+    expect(countDue(db, NOW, TUNING_DEFAULTS, { APPLY_LINKEDIN_EASY: 'true' }).applyQueued).toBe(2);
+  });
 });
 
 describe('countDue', () => {
