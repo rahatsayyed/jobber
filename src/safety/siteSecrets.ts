@@ -1,19 +1,40 @@
-// Literal secrets held in secrets/site-accounts.json (account emails and passwords), for redaction.
-// Lenient on purpose (no validation, never throws): redaction must work even on a damaged file.
-import { readFileSync } from 'node:fs';
+// Literal secrets held in secrets/site-accounts.json, for redaction. Passwords are secrets
+// everywhere (secretValuesFromEnv); account emails are redact-only (redactSecrets), because the
+// owner's own email is legitimate in outbound text. Lenient (never throws), cached by
+// (path, mtimeMs, size) with one lstat per call, and a file that is a symlink or readable by
+// group/other is not read at all.
+import { lstatSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const DEFAULT_PATH = path.join(ROOT, 'secrets', 'site-accounts.json');
+let pathOverride: string | null | undefined;
 
-export function siteAccountLiterals(env: NodeJS.ProcessEnv = process.env): string[] {
-  const p = env.SITE_ACCOUNTS_FILE || path.join(ROOT, 'secrets', 'site-accounts.json');
-  const out: string[] = [];
+/** Test seam: point the reader at a temp file (or at nothing with null). undefined restores the default. */
+export function setSiteAccountsPathForTests(p: string | null | undefined): void { pathOverride = p; cache = null; }
+
+export interface SiteLiterals { emails: string[]; passwords: string[] }
+const EMPTY: SiteLiterals = { emails: [], passwords: [] };
+let cache: { key: string; value: SiteLiterals } | null = null;
+
+export function siteAccountLiterals(env: NodeJS.ProcessEnv = process.env): SiteLiterals {
+  // Under vitest the default path is never read unless a test sets one (env override or setter).
+  const underTest = !!env.VITEST || !!process.env.VITEST;
+  const p = pathOverride !== undefined ? pathOverride : (env.SITE_ACCOUNTS_FILE || (underTest ? null : DEFAULT_PATH));
+  if (!p) return EMPTY;
   try {
+    const st = lstatSync(p);
+    if (st.isSymbolicLink() || !st.isFile() || (process.platform !== 'win32' && (st.mode & 0o077) !== 0)) return EMPTY;
+    const key = `${p}|${st.mtimeMs}|${st.size}`;
+    if (cache?.key === key) return cache.value;
     const j = JSON.parse(readFileSync(p, 'utf8')) as Record<string, { email?: unknown; password?: unknown }>;
+    const value: SiteLiterals = { emails: [], passwords: [] };
     for (const a of Object.values(j ?? {})) {
-      for (const v of [a?.email, a?.password]) if (typeof v === 'string' && v.length >= 8) out.push(v);
+      if (typeof a?.email === 'string' && a.email.length >= 8) value.emails.push(a.email);
+      if (typeof a?.password === 'string' && a.password.length >= 8) value.passwords.push(a.password);
     }
-  } catch { /* missing or unreadable: nothing to add */ }
-  return out;
+    cache = { key, value };
+    return value;
+  } catch { return EMPTY; }
 }

@@ -153,7 +153,8 @@ export function secretValuesFromEnv(env: NodeJS.ProcessEnv): string[] {
   for (const [key, value] of Object.entries(env)) {
     if (value && value.length >= 8 && /KEY|SECRET|TOKEN|PASS(WORD)?/i.test(key)) out.push(value);
   }
-  // Site account emails and passwords are literal secrets too (plan 8G task 6).
-  out.push(...siteAccountLiterals(env));
+  // Site account passwords are literal secrets too (plan 8G task 6). Emails are not: the owner's own
+  // address is legitimate outbound text; they are masked by redactSecrets only.
+  out.push(...siteAccountLiterals(env).passwords);
   return out;
 }

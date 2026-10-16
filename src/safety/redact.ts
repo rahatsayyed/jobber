@@ -32,7 +32,8 @@ export function redactSecrets(text: string, extra: string[] = [], opts: { tokenL
     }
   }
   // Site account emails and passwords are literal secrets (plan 8G task 6).
-  for (const lit of [...extra, ...siteAccountLiterals()]) {
+  const site = siteAccountLiterals();
+  for (const lit of [...extra, ...site.passwords, ...site.emails]) {
     if (lit.length < 8) continue;
     for (let i = stripped.indexOf(lit); i >= 0; i = stripped.indexOf(lit, i + lit.length)) add(i, i + lit.length);
   }

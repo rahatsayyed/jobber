@@ -21,10 +21,12 @@ export function verificationMode(env: NodeJS.ProcessEnv = process.env): VerifyMo
 
 const URL_RE = /https?:\/\/[^\s<>"')\]]{1,2048}/gi;
 const PATH_RE = /verify|confirm|activate|validate/i;
-const TOKEN_PARAM_RE = /^(token|t|code|key|vtoken|verification[_-]?(token|code)|confirmation[_-]?token|auth)$/i;
+const TOKEN_PARAM_RE = /^(token|verification_token|verify|confirmation|code)$/i;
 
 function fromAddress(text: string): string | null {
-  const m = /^\s*from:\s*(.{1,300})$/im.exec(text);
+  // Only the leading header block counts (lines before the first blank line), never quoted body text.
+  const head = text.split(/\r?\n[ \t]*\r?\n/, 1)[0] ?? '';
+  const m = /^\s*from:\s*(.{1,300})$/im.exec(head);
   if (!m) return null;
   const a = /<([^<>\s]+@[^<>\s]+)>/.exec(m[1]) ?? /([^\s<>,;"]+@[^\s<>,;"]+)/.exec(m[1]);
   return a ? a[1].toLowerCase() : null;
@@ -41,7 +43,8 @@ export function linkAcceptable(raw: string, hosts: string[]): boolean {
   if (u.protocol !== 'https:' || u.username || u.password) return false;
   if (!hostAllowed(raw, hosts)) return false;
   if (PATH_RE.test(u.pathname)) return true;
-  for (const k of u.searchParams.keys()) if (TOKEN_PARAM_RE.test(k)) return true;
+  // No verify-style path: only a long opaque value in a known token parameter counts.
+  for (const [k, v] of u.searchParams.entries()) if (TOKEN_PARAM_RE.test(k) && v.length >= 16) return true;
   return false;
 }
 

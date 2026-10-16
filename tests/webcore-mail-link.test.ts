@@ -32,7 +32,10 @@ describe('extractVerificationLinks', () => {
   const ok = 'https://login.acme.example.test/verify?x=1';
   const cases: Array<[string, string, string[]]> = [
     ['good link, allowlisted sender', mail('Acme <no-reply@acme.example.test>', `Click ${ok}.`), [ok]],
-    ['token parameter without a verify path', mail('no-reply@acme.example.test', 'go https://acme.example.test/a?token=abc123'), ['https://acme.example.test/a?token=abc123']],
+    ['long token parameter without a verify path', mail('no-reply@acme.example.test', 'go https://acme.example.test/a?token=abcdef0123456789abcd'), ['https://acme.example.test/a?token=abcdef0123456789abcd']],
+    ['short token parameter without a verify path', mail('no-reply@acme.example.test', 'go https://acme.example.test/a?token=abc123'), []],
+    ['unknown parameter name', mail('no-reply@acme.example.test', 'go https://acme.example.test/a?utm=abcdef0123456789abcd'), []],
+    ['From only in the body, not the header block', 'Subject: x\n\nFrom: no-reply@acme.example.test\nhttps://acme.example.test/verify', []],
     ['off-host', mail('no-reply@acme.example.test', 'https://evil.example.org/verify?x=1'), []],
     ['look-alike host', mail('no-reply@acme.example.test', 'https://evilacme.example.test/verify'), []],
     ['http', mail('no-reply@acme.example.test', 'http://acme.example.test/verify'), []],

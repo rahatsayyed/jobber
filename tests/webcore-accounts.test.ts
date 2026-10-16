@@ -7,6 +7,11 @@ import {
 } from '../src/webcore/accounts.js';
 import { redactSecrets } from '../src/safety/redact.js';
 import { gateOutbound, secretValuesFromEnv } from '../src/safety/outputGate.js';
+import { setSiteAccountsPathForTests, siteAccountLiterals } from '../src/safety/siteSecrets.js';
+import { loadLinkedinConfig } from '../src/linkedin/config.js';
+import { profileKeyOf } from '../src/linkedin/urls.js';
+import { outputGateContext } from '../src/linkedin/guard.js';
+import { loadProfiles, renderPolicy } from '../src/platform/runner.js';
 
 let dir: string;
 let file: string;
@@ -88,17 +93,80 @@ describe('generatePassword', () => {
 describe('literal secrets', () => {
   it('redactSecrets and secretValuesFromEnv mask the stored email and password', () => {
     saveAccount('a.example.test', acct({ email: 'secret.owner@example.test', password: 'Zx-canary-9981-QQ' }), file);
-    const env = { SITE_ACCOUNTS_FILE: file } as NodeJS.ProcessEnv;
-    expect(secretValuesFromEnv(env)).toEqual(expect.arrayContaining(['secret.owner@example.test', 'Zx-canary-9981-QQ']));
-    const prev = process.env.SITE_ACCOUNTS_FILE;
-    process.env.SITE_ACCOUNTS_FILE = file;
+    setSiteAccountsPathForTests(file);
     try {
+      // Only the password is an outbound "secret value"; the email is redact-only.
+      expect(secretValuesFromEnv({})).toContain('Zx-canary-9981-QQ');
+      expect(secretValuesFromEnv({})).not.toContain('secret.owner@example.test');
       const out = redactSecrets('mail secret.owner@example.test pw Zx-canary-9981-QQ end');
       expect(out).not.toContain('Zx-canary-9981-QQ');
       expect(out).not.toContain('secret.owner@example.test');
-    } finally {
-      if (prev === undefined) delete process.env.SITE_ACCOUNTS_FILE; else process.env.SITE_ACCOUNTS_FILE = prev;
-    }
+    } finally { setSiteAccountsPathForTests(undefined); }
+  });
+  it('is cached by mtime and size, skips a wide-mode file or a symlink, and never reads the default path under test', () => {
+    saveAccount('a.example.test', acct({ password: 'First-pw-123456' }), file);
+    setSiteAccountsPathForTests(file);
+    try {
+      expect(siteAccountLiterals({}).passwords).toEqual(['First-pw-123456']);
+      saveAccount('a.example.test', acct({ password: 'Second-pw-1234567' }), file);
+      expect(siteAccountLiterals({}).passwords).toEqual(['Second-pw-1234567']);
+      fs.chmodSync(file, 0o644);
+      expect(siteAccountLiterals({})).toEqual({ emails: [], passwords: [] });
+      fs.chmodSync(file, 0o600);
+      const link = path.join(dir, 'link.json');
+      fs.symlinkSync(file, link);
+      setSiteAccountsPathForTests(link);
+      expect(siteAccountLiterals({}).passwords).toEqual([]);
+      setSiteAccountsPathForTests(undefined);
+      expect(siteAccountLiterals({})).toEqual({ emails: [], passwords: [] }); // VITEST: default path not read
+    } finally { setSiteAccountsPathForTests(undefined); }
+  });
+  it('regression: outbound text with the owner email still passes the LinkedIn output gate when the account file exists', () => {
+    saveAccount('a.example.test', acct({ email: 'owner.person@example.test', password: 'Zx-canary-9981-QQ' }), file);
+    setSiteAccountsPathForTests(file);
+    try {
+      const env = { LINKEDIN_ALLOWED_EMAILS: 'owner.person@example.test' } as NodeJS.ProcessEnv;
+      const cfg = loadLinkedinConfig(env);
+      const ctx = outputGateContext({
+        person: { profile_key: profileKeyOf('https://www.linkedin.com/in/jane-doe'), name: 'Jane Doe' } as never, actualProfileUrl: 'https://www.linkedin.com/in/jane-doe',
+        rawPageText: '', cfg, env, factVerdict: 'pass',
+      });
+      expect(gateOutbound('Happy to talk, write to owner.person@example.test anytime.', ctx).reasons).toEqual([]);
+      expect(gateOutbound('The password is Zx-canary-9981-QQ', ctx).reasons).toContain('env_secret_value');
+    } finally { setSiteAccountsPathForTests(undefined); }
+  });
+});
+
+describe('runner profile key gmail_sender_allowlist', () => {
+  const write = (extra: unknown) => {
+    const pol = JSON.parse(fs.readFileSync('config/run-profiles.json', 'utf8')) as { profiles: Record<string, Record<string, unknown>> };
+    const p = pol.profiles;
+    p.mail_test = { ...p.outreach_wake, gmail_sender_allowlist: extra };
+    const f = path.join(dir, 'policy.json');
+    fs.writeFileSync(f, JSON.stringify(pol));
+    return f;
+  };
+  it('is accepted when boolean, carried into the rendered policy, and rejected otherwise', () => {
+    const ok = loadProfiles(write(true), 'config/permission-sets.json');
+    expect(ok.mail_test.gmail_sender_allowlist).toBe(true);
+    expect((renderPolicy('mail_test', ok.mail_test) as { profiles: Record<string, { gmail_sender_allowlist?: boolean }> }).profiles.mail_test.gmail_sender_allowlist).toBe(true);
+    expect(() => loadProfiles(write('yes'), 'config/permission-sets.json')).toThrow(/gmail_sender_allowlist/);
+  });
+});
+
+describe('scripts/site-account', () => {
+  it('add, list, status and remove never print the password', async () => {
+    const { run } = await import('../scripts/site-account.js');
+    const { scriptedIO } = await import('../src/setup/io.js');
+    const pw = 'Hidden-pw-98765-ZZ';
+    const io = scriptedIO([{ ask: 'owner.person@example.test' }, { secret: pw }]);
+    const lines: string[] = [];
+    lines.push(...(await run(['add', 'acme.example.test'], { path: file, io, env: {} as NodeJS.ProcessEnv })).lines);
+    lines.push(...(await run(['list'], { path: file })).lines);
+    lines.push(...(await run(['status'], { path: file, env: {} as NodeJS.ProcessEnv })).lines);
+    expect(lines.join('\n')).toContain('acme.example.test');
+    expect(lines.join('\n')).not.toContain(pw);
+    expect((await run(['remove', 'acme.example.test'], { path: file })).code).toBe(0);
   });
   it('the account email passes the outbound gate only in webcore scope', () => {
     const base = { recipientKey: 'r', expectedRecipientKey: 'r', factVerdict: 'pass' as const };

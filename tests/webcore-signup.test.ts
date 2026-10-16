@@ -190,9 +190,89 @@ describe('blocks', () => {
     expect(s.escalations[0][0]).toBe('block');
     expect(s.site.events.filter((e) => e.startsWith('click') || e.startsWith('fill'))).toEqual([]);
     s = await setup({ start: 'mfa-code.html' });
-    expect(await run(s)).toMatchObject({ status: 'blocked' });
+    expect(await run(s)).toMatchObject({ status: 'refused', code: 'blocked_this_run' });
     s = await setup();
-    expect(await run(s)).toMatchObject({ status: 'refused', code: 'host_cooldown' });
+    // any block makes the host off limits for the rest of the run
+    expect(await run(s)).toMatchObject({ status: 'refused', code: 'blocked_this_run' });
+    expect(s.site.events.filter((e) => e.startsWith('click') || e.startsWith('fill'))).toEqual([]);
+  });
+  it('site_login notes blocks too, and refuses without typing once the host is cooling down', async () => {
+    saveAccount(HOST, { email: 'me@example.test', password: CANARY, created_at: 'now', source: 'agent', verified: true }, accountsPath);
+    let s = await setup({ start: 'captcha-wall.html' });
+    expect(await siteLogin({}, s.deps)).toMatchObject({ status: 'blocked' });
+    s = await setup({ start: 'mfa-code.html' });
+    expect(await siteLogin({}, s.deps)).toMatchObject({ status: 'blocked' });
+    s = await setup({ start: 'wd-signin.html' });
+    expect(await siteLogin({}, s.deps)).toMatchObject({ status: 'refused', code: 'host_cooldown' });
+    expect(s.site.fills).toEqual([]);
+  });
+});
+
+describe('host binding', () => {
+  it('a caller-supplied host never redirects typing: the host comes from the open page', async () => {
+    saveAccount('other.example.test', { email: 'me@example.test', password: CANARY, created_at: 'now', source: 'owner', verified: true }, accountsPath);
+    const s = await setup({ start: 'wd-signin.html', transitions: { 'Sign In': [{ fixture: 'wd-step1-personal.html' }] } });
+    expect(await siteLogin({ host: 'other.example.test' }, s.deps)).toMatchObject({ status: 'needs_owner', code: 'no_account' });
+    expect(s.site.fills).toEqual([]);
+    const t = await setup({ start: 'wd-account.html' });
+    saveAccount('other.example.test', { email: 'me@example.test', password: 'Zz-other-pw-123456', created_at: 'now', source: 'owner', verified: true }, accountsPath);
+    expect(await siteSignup({ host: 'other.example.test', purpose: 'apply' }, t.deps)).toMatchObject({ status: 'needs_verification' });
+    const l = loadAccounts(accountsPath);
+    expect(l.ok && Object.keys(l.accounts).sort()).toEqual(['other.example.test', HOST].sort());
+  });
+  it('requires the page host to be the account key or a subdomain of it', async () => {
+    const { hostMatchesAccount } = await import('../src/webcore/login.js');
+    expect(hostMatchesAccount('wd.example.test', 'wd.example.test')).toBe(true);
+    expect(hostMatchesAccount('a.wd.example.test', 'wd.example.test')).toBe(true);
+    expect(hostMatchesAccount('evilwd.example.test', 'wd.example.test')).toBe(false);
+    expect(hostMatchesAccount('', '')).toBe(false);
+  });
+});
+
+describe('final-snapshot and cleanup rules', () => {
+  const acctForm = (extraBox: string) => `<html><body><h1>Create Account</h1><form>
+<label for="em">Email Address *</label><input id="em" type="email" required>
+<label for="pw">Password *</label><input id="pw" type="password" required>
+<label for="pw2">Verify New Password *</label><input id="pw2" type="password" required>${extraBox}
+<button type="submit">Create Account</button></form></body></html>`;
+  it('a hidden pre-checked marketing input needs the owner', async () => {
+    const s = await setup({ start: acctForm('<label><input type="checkbox" checked style="display:none"> Send me promotional emails</label>') });
+    expect(await run(s)).toMatchObject({ status: 'needs_owner', code: 'marketing_checkbox' });
+    expect(s.site.events).not.toContain(`click:control:${CREATE}`);
+  });
+  it('a page that grows a CAPTCHA after the fills is caught on the final snapshot: no create click, credential dropped', async () => {
+    let fills = 0;
+    const s = await setup({
+      start: 'wd-account.html',
+      onClick: () => undefined,
+    });
+    // swap the page to a blocked one once the password field has been typed into
+    const page = s.runtime.page()!;
+    const origLocator = page.locator.bind(page);
+    (page as unknown as { locator: unknown }).locator = (sel: string) => {
+      const l = origLocator(sel);
+      const fill = l.fill.bind(l);
+      l.fill = async (t: string, o?: { timeout?: number }) => { await fill(t, o); if (++fills === 3) s.site.current().captchaWidget = true; };
+      return l;
+    };
+    expect(await run(s)).toMatchObject({ status: 'blocked', code: 'captcha' });
+    expect(s.site.events).not.toContain(`click:control:${CREATE}`);
+    expect(loadAccounts(accountsPath)).toEqual({ ok: true, accounts: {} });
+  });
+  it('a policy retry that cannot proceed restores the earlier credential', async () => {
+    const s = await setup({
+      transitions: { [CREATE]: [{ fixture: acctForm('<label><input type="checkbox" required> I certify the information is true and complete</label>'), notices: ['Password must be at least 12 characters'] }] },
+    });
+    // the first page has no attestation; the retry page does, so the gate fails on the retry
+    const r = await run(s);
+    expect(r).toMatchObject({ status: 'needs_owner', code: 'consent' });
+    const l = loadAccounts(accountsPath);
+    expect(l.ok && l.accounts[HOST].password).toBe(CANARY);
+  });
+  it('the returned state never carries the account email', async () => {
+    const s = await setup({ start: acctForm(''), transitions: { [CREATE]: [{ fixture: acctForm(''), notices: ['Account me@example.test already pending'] }] } });
+    const r = await run(s);
+    expect(JSON.stringify(r)).not.toContain('me@example.test');
   });
 });
 
@@ -218,7 +298,7 @@ describe('credential leak tests (wd-landing -> wd-account -> verify stop)', () =
     const rt2 = createWebRuntime({ db, launcher: thrown.launcher, lockPath: path.join(dir, 'l2.lock'), sessionDir: path.join(dir, 's'), config: { minGapSec: 0, settleMs: 0 } });
     await runtime.close();
     await rt2.open(`https://${HOST}/careers`, { allowedHosts: ['example.test'], jobId: 'j2' });
-    const failed = await siteSignup({ host: 'fail.example.test', purpose: 'apply' }, { ...deps, runtime: rt2 });
+    const failed = await siteSignup({ host: 'fail.example.test', purpose: 'apply' }, { ...deps, runtime: rt2, accountsPath: path.join(dir, 'second-accounts.json') });
     results.push(failed);
     expect(results[0]).toMatchObject({ status: 'needs_verification' });
     expect(failed).toMatchObject({ status: 'failed', code: 'error' });
@@ -243,8 +323,10 @@ describe('site_login', () => {
     stored();
     let s = await setup({ start: 'wd-signin.html', transitions: { 'Sign In': [{ fixture: 'wd-signin.html', notices: ['Invalid credentials'] }] } });
     expect(await siteLogin({ host: HOST }, s.deps)).toMatchObject({ status: 'failed', code: 'login_failed' });
+    fs.rmSync(accountsPath);
     s = await setup({ start: 'wd-signin.html' });
     expect(await siteLogin({ host: 'other.example.test' }, s.deps)).toMatchObject({ status: 'needs_owner', code: 'no_account' });
+    stored();
     s = await setup({ start: 'captcha-wall.html' });
     expect(await siteLogin({ host: HOST }, s.deps)).toMatchObject({ status: 'blocked' });
     s = await setup({ start: 'wd-signin.html' }, { WEB_DRY_RUN: 'true' });

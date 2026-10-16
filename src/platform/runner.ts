@@ -12,6 +12,8 @@ export interface RunProfile {
   allow_extra?: string[];
   path_rules?: Record<string, { prefixes: string[] }>;
   screen_args?: string[];
+  // true: the allowlist hook limits gmail to search_emails pinned to SITE_MAIL_SENDERS plus read_email (plan 8G task 6).
+  gmail_sender_allowlist?: boolean;
   env_mode: 'allowlist' | 'dotenv_all';
   env_keys?: string[];
   env_prefixes?: string[];
@@ -151,6 +153,9 @@ export function loadProfiles(
     }
     if (p.env_mode === 'allowlist' && p.env_keys === undefined && p.env_prefixes === undefined) {
       throw new Error(`profile ${name}: allowlist env needs env_keys or env_prefixes`);
+    }
+    if (p.gmail_sender_allowlist !== undefined && typeof p.gmail_sender_allowlist !== 'boolean') {
+      throw new Error(`profile ${name}: gmail_sender_allowlist must be a boolean`);
     }
     if (p.interactive !== undefined && typeof p.interactive !== 'boolean') {
       throw new Error(`profile ${name}: interactive must be a boolean`);

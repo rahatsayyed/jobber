@@ -60,33 +60,68 @@ export async function clickControl(page: LiPage, controlId: string): Promise<voi
   try { await page.locator(`[data-jc="${idx(controlId)}"]`).first().click({ timeout: 10000 }); } catch { throw new Error(FIXED_FAIL); }
 }
 
+// Per-run block bookkeeping (in memory). Any block marks the host blocked for the rest of the run;
+// two blocks put it on cooldown.
+const blocksByHost = new Map<string, number>();
+export const BLOCK_COOLDOWN_AFTER = 2;
+export function resetSiteBlocks(): void { blocksByHost.clear(); }
+export function noteBlock(host: string): void { blocksByHost.set(host, (blocksByHost.get(host) ?? 0) + 1); }
+export function hostBlockedThisRun(host: string): boolean { return (blocksByHost.get(host) ?? 0) >= 1; }
+export function hostCoolingDown(host: string): boolean { return (blocksByHost.get(host) ?? 0) >= BLOCK_COOLDOWN_AFTER; }
+
+// Masks literal secrets (account email, password) in any text returned to a caller.
+export function scrubSecrets<T extends { state?: string; reason?: string }>(r: T, secrets: string[]): T {
+  const fix = (t: string | undefined): string | undefined => {
+    if (t === undefined) return t;
+    let o = t;
+    for (const x of secrets) if (x && x.length >= 4) o = o.split(x).join('[redacted]');
+    return o;
+  };
+  const out = { ...r };
+  if (r.state !== undefined) out.state = fix(r.state);
+  if (r.reason !== undefined) out.reason = fix(r.reason);
+  return out;
+}
+
+// The page host must be the account key or a subdomain of it before anything is typed.
+export function hostMatchesAccount(pageHost: string, key: string): boolean {
+  const h = pageHost.toLowerCase();
+  const k = key.toLowerCase();
+  return h !== '' && k !== '' && (h === k || h.endsWith(`.${k}`));
+}
+
 export const hostOfUrl = (u: string): string => { try { return new URL(u).hostname.toLowerCase(); } catch { return ''; } };
 
 export function haltedWeb(db: BetterSqlite3.Database): string | null {
   return haltReason(db, 'web') ?? haltReason(db, 'apply');
 }
 
-export async function siteLogin(input: { host?: string }, deps: SiteDeps): Promise<SiteResult> {
+// The host is always read from the open page; a caller-supplied host is ignored (it could only point
+// the password at a different site than the one that is open).
+export async function siteLogin(_input: { host?: string }, deps: SiteDeps): Promise<SiteResult> {
   const env = deps.env ?? process.env;
   const now = deps.now ?? (() => new Date());
   const cfg = loadWebConfig(env);
   try {
     const page0 = deps.runtime.page();
     if (!page0) return { status: 'refused', code: 'no_session', reason: 'open a page first' };
-    const host = (input.host ?? hostOfUrl(page0.url())).toLowerCase();
+    const host = hostOfUrl(page0.url());
     const h = haltedWeb(deps.db);
     if (h) return { status: 'refused', code: 'halted', reason: h };
     const hit = getAccount(host, deps.accountsPath ?? DEFAULT_ACCOUNTS_PATH);
     if (!hit) return { status: 'needs_owner', code: 'no_account', reason: `no stored account for ${host}` };
+    if (!hostMatchesAccount(host, hit.key)) return { status: 'refused', code: 'host_mismatch', reason: 'page host does not match the stored account' };
+    if (hostCoolingDown(host)) return { status: 'refused', code: 'host_cooldown', reason: 'host blocked twice this run' };
     if (isDryRun(env, { web: true })) {
       recordDryRun(deps.db, { runId: null, action: 'site_login', platform: 'web', payload: { host } }, now(), env);
       return { status: 'dry_run', code: 'dry_run' };
     }
-    return await deps.runtime.serial(async (): Promise<SiteResult> => {
+    const secrets = [hit.account.email, hit.account.password];
+    return scrubSecrets(await deps.runtime.serial(async (): Promise<SiteResult> => {
       const page = deps.runtime.page();
       if (!page) return { status: 'refused', code: 'no_session', reason: 'open a page first' };
       const first = await readPage(page);
-      if (first.model.block) return { status: 'blocked', code: first.model.block, state: formatState(first.model) };
+      if (first.model.block) { noteBlock(host); deps.escalate?.('block', `${first.model.block} on ${host}`); return { status: 'blocked', code: first.model.block, state: formatState(first.model) }; }
       if (first.model.stepKind !== 'signin') return { status: 'refused', code: 'not_signin_page', state: formatState(first.model) };
       const vis = first.model.fields.filter((f) => !f.hidden);
       const email = vis.find((f) => f.role === 'email');
@@ -98,7 +133,7 @@ export async function siteLogin(input: { host?: string }, deps: SiteDeps): Promi
       await clickControl(page, btn.id);
       await page.waitForTimeout(cfg.settleMs).catch(() => undefined);
       const after = await readPage(page);
-      if (after.model.block) return { status: 'blocked', code: after.model.block, state: formatState(after.model) };
+      if (after.model.block) { noteBlock(host); deps.escalate?.('block', `${after.model.block} on ${host}`); return { status: 'blocked', code: after.model.block, state: formatState(after.model) }; }
       if (after.model.stepKind === 'signin') return { status: 'failed', code: 'login_failed', reason: 'still on the sign-in page', state: formatState(after.model) };
       try {
         const dir = deps.sessionDir ?? DEFAULT_SITE_SESSION_DIR;
@@ -108,7 +143,7 @@ export async function siteLogin(input: { host?: string }, deps: SiteDeps): Promi
         }
       } catch { console.error('[webcore] site_login: session not saved'); }
       return { status: 'ok', code: 'logged_in', state: formatState(after.model) };
-    });
+    }), secrets);
   } catch {
     console.error('[webcore] site_login failed');
     return { status: 'failed', code: 'error', reason: FIXED_FAIL };
