@@ -32,6 +32,7 @@ export interface EnvSpec {
   type: EnvType;
   default: string | null; // what the code uses when blank/absent; null = no default
   exampleActive: boolean; // listed as KEY= (true) or # KEY= (false) in .env.example
+  exampleValue?: string; // value shown in .env.example when it differs from the code default (default null: blank)
   required: 'required' | 'optional' | 'conditional';
   requiredWhen?: string;
   min?: number;

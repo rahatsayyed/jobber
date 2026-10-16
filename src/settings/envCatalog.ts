@@ -1,7 +1,7 @@
 // src/settings/envCatalog.ts
 // The single catalog of every owner-settable environment key (plan 8H, Task 2). Numeric limits are COMPOSED from
 // LIMITS (src/setup/limitsCatalog.ts, which keeps its own drift test); everything else is authored here.
-// Seeded from .env.example with scripts/seed-env-catalog.ts, then reviewed by hand against the code.
+// .env.example is GENERATED from this list (npm run env:example, src/settings/exampleGen.ts); edit here, not there.
 // Rules a test enforces over the whole list (D22): *_DRY_RUN is `safety` with a direction and a non-null default,
 // type `path` and *_CMD/*_PATH/*_REMOTE/*_DIR are `never`, a LIMITS key with a raiseNote is `guarded` or stricter,
 // secret === (type === 'secret'), a restart scope other than `stack` names an existing reader file.
@@ -230,6 +230,7 @@ const hand: EnvSpec[] = [
     ...never('Disables a safety layer (the injection screen).'),
   }),
   e('DOCTOR_SKIP_SMOKE', 'classifier', 'doctor', 'bool', {
+    exampleValue: '1',
     allowed: ['1'],
     about: 'Doctor only. 1 skips the classifier smoke inference (a warning shows instead). Useful on a machine without the model weights.',
     restart: 'next_run',
@@ -403,6 +404,7 @@ const hand: EnvSpec[] = [
 
   // ---- Naukri
   e('NAUKRI_HEADLESS', 'naukri', 'Naukri', 'bool', {
+    exampleValue: 'true',
     allowed: ['true'],
     about: 'Run Naukri search with the headless recipe (patchright plus installed Google Chrome, real user agent). Unset: the old headed browser. Only the exact value true is read. Akamai blocks stock headless Chromium; re-check from a VPS IP before relying on it.',
     restart: 'mcp',
@@ -716,6 +718,7 @@ const hand: EnvSpec[] = [
     ...never(R_SESSION),
   }),
   e('MANAGER_TMUX_SESSION', 'telegram', 'Telegram bridge', 'string', {
+    exampleValue: 'ccgram',
     maxLen: 64,
     about: 'tmux session of the manager windows. Blank uses the session in config/manager-windows.json.',
     ...never(R_SESSION),
@@ -870,6 +873,7 @@ const hand: EnvSpec[] = [
 
   // ---- Advanced
   e('ANTHROPIC_DEFAULT_OPUS_MODEL', 'advanced', 'model routing', 'string', {
+    exampleValue: 'deepseek/deepseek-v4-pro',
     exampleActive: true,
     maxLen: 200,
     about: 'Model routing for the claude CLI (docs/model-auth-setup.md): heaviest-tier model name. Claude Code itself reads it; Jobber code does not. Remove the value to use the default.',

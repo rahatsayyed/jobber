@@ -1,3 +1,4 @@
+// .env.example is generated from the settings catalog (tests/settings-example-gen.test.ts guards the generation).
 // Guards .env.example against drifting from the code: every owner-settable environment variable
 // the project reads must be listed (as `KEY=` or `# KEY=`), no value line may carry an inline
 // comment (the loaders read it as part of the value), and every limits catalog key must be there.
@@ -98,6 +99,11 @@ describe('.env.example completeness', () => {
     const keys = exampleKeys();
     const missing = LIMITS.map((l) => l.key).filter((k) => !keys.has(k));
     expect(missing).toEqual([]);
+  });
+
+  it('the catalog contains every LIMITS key', () => {
+    const have = new Set(ENV_CATALOG.map((s) => s.key));
+    expect(LIMITS.map((l) => l.key).filter((k) => !have.has(k))).toEqual([]);
   });
 
   it('uses no em or en dashes', () => {

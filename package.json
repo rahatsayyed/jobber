@@ -9,6 +9,7 @@
   "scripts": {
     "dashboard": "tsx scripts/dashboard.ts",
     "settings": "tsx scripts/settings.ts",
+    "env:example": "tsx scripts/gen-env-example.ts",
     "test": "vitest run",
     "doctor": "tsx scripts/doctor.ts",
     "auto-update": "tsx scripts/auto-update.ts",

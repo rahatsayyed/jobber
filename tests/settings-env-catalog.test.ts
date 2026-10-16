@@ -41,8 +41,6 @@ function exampleKeys(): Map<string, boolean> {
   }
   return out;
 }
-// Introduced by plan 8H itself; .env.example gains them when Task 3 regenerates the file from this catalog.
-const NEW_IN_8H = ['WEB_SETTINGS_EDIT', 'WEB_SETTINGS_REMOTE_SAFETY', 'SETTINGS_BACKUP_KEEP'];
 
 const RANK: Record<string, number> = { normal: 0, guarded: 1, safety: 2, never: 3 };
 
@@ -81,11 +79,10 @@ describe('coverage', () => {
   it('every key in .env.example is in the catalog', () => {
     expect([...ex.keys()].filter((k) => !by.has(k))).toEqual([]);
   });
-  it('every catalog key is in .env.example, except the keys 8H introduced', () => {
-    expect(ENV_CATALOG.map((s) => s.key).filter((k) => !ex.has(k) && !NEW_IN_8H.includes(k)).sort()).toEqual([]);
-    for (const k of NEW_IN_8H) {
-      expect(by.has(k), k).toBe(true);
-      expect(ex.has(k), `${k} is now in .env.example: drop it from NEW_IN_8H`).toBe(false);
+  it('every catalog key is in .env.example (the file is generated from the catalog)', () => {
+    expect(ENV_CATALOG.map((s) => s.key).filter((k) => !ex.has(k)).sort()).toEqual([]);
+    for (const k of ['WEB_SETTINGS_EDIT', 'WEB_SETTINGS_REMOTE_SAFETY', 'SETTINGS_BACKUP_KEEP']) {
+      expect(ex.has(k), k).toBe(true);
     }
   });
   it('exampleActive matches the KEY= versus # KEY= marker', () => {
