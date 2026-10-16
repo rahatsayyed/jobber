@@ -621,7 +621,7 @@ section is the reference for what exists.
   `dashboard -- token|rotate|allow <email>|status|audit|google-url`, `models -- list|verify|fetch|pin`, `scheduler`,
   `scheduler:units`, `jobber:control -- stop|resume|status`, `dry-run:report`, `auto-update`
   (`--tick|--now|--dry-run|--status`), `backup` (`--tick|--now|--plan|--status`), `restore`,
-  `user-data -- init|migrate`, `linkedin:login`, `linkedin:clear-halt`, `linkedin:seed`,
+  `user-data -- init|migrate`, `linkedin:login`, `naukri:login`, `linkedin:clear-halt`, `linkedin:seed`,
   `classifier:fit`, `classifier:bench`, `report`, `build`, `test`, `eval:gen|metrics|judge`,
   `permissions`, `ccgram-hooks`, and `mcp:<name>` (job-fetch, resume, contacts, email, db, gates,
   apply, discover, outreach) to start one stdio server by hand; there is no `mcp:connect` (the
@@ -927,8 +927,8 @@ home IP; Akamai may treat a datacenter/VPS IP harder, so re-run the check from t
   `apply_url` falls back to the Naukri listing URL).
 - **Apply** (`naukri` MCP, `src/mcp/naukri.ts`, tools `naukri_open`, `naukri_state`,
   `naukri_click`, `naukri_type`, `naukri_screenshot`, `naukri_close`): ONE persistent headless
-  session (saved login in `secrets/naukri-state.json`, refresh with `scripts/save-naukri-session.ts`,
-  which opens a headed browser for a manual login), closed after ~10 min idle. It is hands and
+  session (saved login in `secrets/naukri-state.json`, refresh with `npm run naukri:login -- --account main`,
+  which opens headed real Chrome for a manual login), closed after ~10 min idle. It is hands and
   eyes only: you read `naukri_state` (a compact text state, about 100-200 tokens: buttons, the
   recruiter chatbot's last messages, input, options, `applied_confirmation_seen`) and decide every
   answer yourself; `naukri_screenshot` (900px PNG, far more tokens) is the emergency fallback only

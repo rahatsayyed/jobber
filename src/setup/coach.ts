@@ -57,15 +57,14 @@ export const COACH_TEXT: Record<string, string[]> = {
     'To log in, run claude in another terminal, follow the sign-in prompts, then come back here.',
   ],
   'sessions.why': [
-    'Three separate accounts keep risks apart: the burner applies, the main account sends connect requests.',
-    'Naukri has its own login. They are never swapped, so one flagged account cannot affect another.',
+    'Two logins: the main LinkedIn account sends connect requests and messages, and Naukri has its own login.',
+    'They are never swapped, so one flagged account cannot affect another.',
   ],
   'sessions.window': [
-    'A browser window opens for each account. Log in there as you normally would, then return here.',
+    'A Chrome window opens for each account. Log in there as you normally would, then return here.',
     'Press Enter when logged in; the session is saved and the window closes.',
     'How long a saved session lasts is unmeasured. Rerun this step if the doctor says one expired.',
   ],
-  'sessions.lose.linkedin_burner': ['If you skip this: LinkedIn Easy Apply stays off.'],
   'sessions.lose.linkedin_main': ['If you skip this: LinkedIn connection requests and messages stay off.'],
   'sessions.lose.naukri': ['If you skip this: Naukri search and recruiter replies stay off.'],
   'classifier.intro': [

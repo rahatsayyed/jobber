@@ -392,9 +392,8 @@ function resolvePath(ctx: DoctorContext, key: string, fallback: string): string 
 }
 
 const SESSIONS = [
-  { label: 'LinkedIn burner', file: 'linkedin-burner-state.json', cookie: 'li_at', exact: true, cmd: 'npx tsx scripts/save-linkedin-session.ts burner' },
-  { label: 'LinkedIn main', file: 'linkedin-main-state.json', cookie: 'li_at', exact: true, cmd: 'npx tsx scripts/save-linkedin-session.ts main' },
-  { label: 'Naukri', file: 'naukri-state.json', cookie: 'nauk', exact: false, cmd: 'npx tsx scripts/save-naukri-session.ts' },
+  { label: 'LinkedIn main', file: 'linkedin-main-state.json', cookie: 'li_at', exact: true, cmd: 'npm run linkedin:login -- --account main' },
+  { label: 'Naukri', file: 'naukri-state.json', cookie: 'nauk', exact: false, cmd: 'npm run naukri:login -- --account main' },
 ] as const;
 
 const placeholder = (id: string, title: string, detail: string): Check => ({
