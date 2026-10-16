@@ -24,7 +24,7 @@ export async function render({ root, onCleanup: addCleanup }) {
   const editable = meta.editEnabled === true;
   if (!editable) root.append(notice(READ_ONLY_TEXT, 'warn'));
 
-  const panel = el('section', { class: 'panel', 'aria-live': 'polite' });
+  const panel = el('section', { class: 'panel' });
   const tabs = el('div', { class: 'tabs', role: 'group', 'aria-label': 'Settings sections' });
   let tabCleanups = [];
   const runTabCleanups = () => { tabCleanups.forEach((f) => f()); tabCleanups = []; };

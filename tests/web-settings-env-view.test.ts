@@ -61,6 +61,20 @@ describe('search and grouping', () => {
   });
 });
 
+describe('errorKeys', () => {
+  it('links real server error strings to their key', () => {
+    const m = mod.errorKeys([
+      'invalid_value: SEND_LIMIT_PER_RUN: must be an integer',
+      'tier_never: JOBBER_DRY_RUN cannot be changed here',
+      'unknown_key: FOO_BAR',
+      'value_too_long: WEB_TOKEN: too long',
+      'MATCH_THRESHOLD: out of range',
+      'some other message',
+    ]);
+    expect([...m.keys()].sort()).toEqual(['FOO_BAR', 'JOBBER_DRY_RUN', 'MATCH_THRESHOLD', 'SEND_LIMIT_PER_RUN', 'WEB_TOKEN']);
+  });
+});
+
 describe('staged changes', () => {
   const staged = new Map([
     ['A', { op: 'set', value: '5', secret: false }],

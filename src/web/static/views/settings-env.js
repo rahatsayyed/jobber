@@ -83,10 +83,11 @@ const boolOf = (v) => /^(true|1|yes|on)$/i.test(String(v ?? '').trim());
 
 // ---- view ---------------------------------------------------------------------------------------------------
 
-function errorKeys(errors) {
+/** Server errors look like `invalid_value: KEY: why`; a bare leading KEY is also accepted. */
+export function errorKeys(errors) {
   const map = new Map();
   for (const e of errors || []) {
-    const m = /^([A-Z][A-Z0-9_]*)\b/.exec(String(e));
+    const m = /^[a-z_]+:\s*([A-Z][A-Z0-9_]*)\b/.exec(String(e)) || /^([A-Z][A-Z0-9_]*)\b/.exec(String(e));
     if (m) map.set(m[1], [...(map.get(m[1]) || []), String(e)]);
   }
   return map;
@@ -101,6 +102,8 @@ export async function renderEnv({ host, meta, onCleanup, gotoBackups }) {
   let sectionId = '';
   let preview = null; // {token, plan}
   let busy = false;
+  let applyBtn = null;
+  let applyDisabledBase = false;
 
   const status = el('div', { class: 'env-status', role: 'status', 'aria-live': 'polite', id: 'env-status' });
   status.tabIndex = -1;
@@ -116,7 +119,8 @@ export async function renderEnv({ host, meta, onCleanup, gotoBackups }) {
   function onKey(ev) {
     const t = ev.target;
     const tag = t && t.tagName ? t.tagName.toLowerCase() : '';
-    if (ev.key === '/' && tag !== 'input' && tag !== 'textarea' && tag !== 'select') {
+    const editable = tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable === true);
+    if (ev.key === '/' && !editable && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
       ev.preventDefault();
       search.focus();
     }
@@ -146,6 +150,7 @@ export async function renderEnv({ host, meta, onCleanup, gotoBackups }) {
   }
 
   function paintPending() {
+    if (applyBtn) applyBtn.disabled = busy || applyDisabledBase;
     clear(pendingBox);
     const rows = redactStagedForRender(staged);
     const n = rows.length;
@@ -281,7 +286,9 @@ export async function renderEnv({ host, meta, onCleanup, gotoBackups }) {
     const errBox = el('div', { class: 'row-error', 'aria-live': 'polite', id: `${id}-err` });
     rowRefs.get(spec.key).error = errBox;
     const row = el('div', { class: 'env-row', id: `${id}-row` },
-      el('label', { class: 'env-key', for: id }, el('code', null, spec.key)),
+      ['secret', 'readonly'].includes(controlKindFor(spec))
+        ? el('span', { class: 'env-key' }, el('code', null, spec.key))
+        : el('label', { class: 'env-key', for: id }, el('code', null, spec.key)),
       el('p', { class: 'env-about', id: aboutId }, spec.about),
       el('div', { class: 'badges' }, badges(spec)),
       el('p', { class: 'muted' }, rangeLine(spec)),
@@ -307,8 +314,10 @@ export async function renderEnv({ host, meta, onCleanup, gotoBackups }) {
 
   // ---- review and apply -----------------------------------------------------------------------------------
 
-  function reauthButton() {
-    return button('Needs a fresh sign-in', () => location.assign('/#/login?reauth=1'), { class: 'primary' });
+  function reauthButton(url) {
+    const ok = typeof url === 'string' && url.startsWith('/') && !url.startsWith('//') && url.length < 100;
+    const target = ok ? url : '/#/login?reauth=1';
+    return button('Needs a fresh sign-in', () => location.assign(target), { class: 'primary' });
   }
 
   function showErrors(e) {
@@ -321,13 +330,17 @@ export async function renderEnv({ host, meta, onCleanup, gotoBackups }) {
     return byKey;
   }
 
+  function reloadClick() {
+    load(true).catch(() => { clear(status).append(notice('Could not reload. Try again.', 'error')); status.focus(); });
+  }
+
   function failure(e) {
     clear(status);
     if (e.status === 401 && e.code === 'reauth_required') {
-      status.append(notice('This change needs a fresh sign-in first.', 'warn'), reauthButton());
+      status.append(notice('This change needs a fresh sign-in first.', 'warn'), reauthButton(e.data && e.data.url));
     } else if (e.status === 409 && e.code === 'stale_etag') {
       status.append(notice('The file changed on disk since you opened this page.', 'warn'),
-        button('Reload', () => load(true), { class: 'primary' }));
+        button('Reload', reloadClick, { class: 'primary' }));
     } else if (e.status === 422 && e.code === 'invalid_changes') {
       showErrors(e);
       const errs = (e.data && e.data.errors) || [];
@@ -369,7 +382,9 @@ export async function renderEnv({ host, meta, onCleanup, gotoBackups }) {
         controls.append(el('label', { for: 'env-phrase' }, `Type ${fr.phrase} to confirm`), phraseInput);
       }
       const hasErrors = (r.plan.errors || []).length > 0;
-      controls.append(button('Apply', () => apply(phraseInput ? phraseInput.value : undefined), { class: 'primary', disabled: hasErrors || (r.plan.diffs || []).length === 0 }));
+      applyDisabledBase = hasErrors || (r.plan.diffs || []).length === 0;
+      applyBtn = button('Apply', () => apply(phraseInput ? phraseInput.value : undefined), { class: 'primary', disabled: applyDisabledBase });
+      controls.append(applyBtn);
       clear(diffBox).append(node, controls);
       heading.focus();
     } catch (e) {
@@ -384,6 +399,7 @@ export async function renderEnv({ host, meta, onCleanup, gotoBackups }) {
     if (busy || !preview) return;
     busy = true;
     paintPending();
+    let applied = null;
     const body = { etag: data.etag, changes: buildChanges(staged), token: preview.token };
     if (phrase !== undefined) body.phrase = phrase;
     try {
@@ -398,14 +414,25 @@ export async function renderEnv({ host, meta, onCleanup, gotoBackups }) {
           el('ul', null, restarts.map((x) => el('li', null, restartLine(x, commands))))) : el('p', { class: 'muted' }, 'No restart needed.'),
         el('p', null, 'To undo this, open the Backups tab. ', button('Rollback', () => gotoBackups(), { class: 'link' })));
       status.focus();
-      await load(false);
+      applied = r;
     } catch (e) {
+      // Staged values are kept on purpose (a phrase typo should not force retyping, a staged secret included) but are
+      // never echoed: the list shows "new value staged (hidden)" and no failure message carries a value.
       preview = null; // the token is spent or refused: review again for a new one
       clear(diffBox);
       failure(e);
     } finally {
       busy = false;
       paintPending();
+    }
+    if (applied) {
+      try {
+        await load(false);
+      } catch {
+        // the save succeeded: keep the success state and only add the reload hint
+        status.append(notice(`Applied (backup ${applied.backupId}); reload failed, press Reload`, 'warn'),
+          button('Reload', reloadClick, { class: 'primary' }));
+      }
     }
   }
 
