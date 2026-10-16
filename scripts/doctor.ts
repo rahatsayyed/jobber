@@ -6,6 +6,9 @@ import { allDoctorChecks } from '../src/platform/checkLists.js';
 import { exitCode, formatJson, formatReport, runChecks, type DoctorContext } from '../src/platform/doctor.js';
 import { skipSummary, skippedFromContext, withSkips } from '../src/setup/skips.js';
 import { defaultRun } from '../src/platform/tmux.js';
+import { initTerm } from '../src/ui/term.js';
+
+const term = initTerm(); // strips --no-color from process.argv; colour only on a terminal
 
 interface SqliteDb {
   prepare(sql: string): { all(): unknown[]; get(): unknown };
@@ -80,6 +83,6 @@ if (process.argv.includes('--json')) {
   console.log(formatJson(results));
 } else {
   const summary = skipSummary(skippedFromContext(ctx));
-  console.log(formatReport(results) + (summary ? `\n${summary}` : ''));
+  console.log(term.paint(formatReport(results) + (summary ? `\n${summary}` : '')));
 }
 process.exit(exitCode(results));
