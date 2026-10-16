@@ -10,7 +10,7 @@ describe('buildWakePrompt', () => {
     },
     {
       operator: 'naukri-operator', platform: 'naukri',
-      tasks: [{ kind: 'inbox', quota: 5 }, { kind: 'search', quota: 1 }],
+      tasks: [{ kind: 'inbox', quota: 5 }, { kind: 'discover', quota: 5, searches: { jobs: ['react-india'], posts: [] } }],
     },
   ];
   const i = {
@@ -31,7 +31,7 @@ describe('buildWakePrompt', () => {
       'Dispatch operator `linkedin-operator` for platform linkedin with tasks: followups quota 2, new_outreach quota 1.',
     );
     expect(p).toContain(
-      'Dispatch operator `naukri-operator` for platform naukri with tasks: inbox quota 5, search quota 1.',
+      'Dispatch operator `naukri-operator` for platform naukri with tasks: inbox quota 5, discover quota 5 (searches: react-india; quota is the job pages you may open for descriptions).',
     );
     expect(p.indexOf('linkedin-operator')).toBeLessThan(p.indexOf('naukri-operator'));
     for (const old of ['due-followups', 'new-outreach', 'inbox-recruiter-replies', 'naukri-search', 'Dispatch worker']) {

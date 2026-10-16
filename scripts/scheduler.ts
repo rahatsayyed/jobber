@@ -20,6 +20,7 @@ import { tmuxLauncher } from '../src/scheduler/launch.js';
 import { fileNotifier } from '../src/scheduler/notify.js';
 import { loadPlanKnobs, planWake, type DiscoverSearches } from '../src/scheduler/plan.js';
 import { loadDiscoveryConfig } from '../src/linkedin/discoveryConfig.js';
+import { loadNaukriDiscoveryConfig } from '../src/naukri/discover.js';
 import { getState, listRuns } from '../src/scheduler/runLog.js';
 import { makeAfterWakeHooks } from '../src/scheduler/hooks.js';
 
@@ -65,10 +66,10 @@ function status(env: NodeJS.ProcessEnv): void {
   db.close();
 }
 
-/** Search names only (never definitions) from config/linkedin-discovery.json, for the discover task. */
+/** Search names only (never definitions) from config/linkedin-discovery.json and config/naukri-discovery.json, for the discover tasks. */
 function discoverNames(): DiscoverSearches {
   const c = loadDiscoveryConfig();
-  return { jobs: c.jobs.map((j) => j.name), posts: c.posts.map((p) => p.name) };
+  return { jobs: c.jobs.map((j) => j.name), posts: c.posts.map((p) => p.name), naukri: loadNaukriDiscoveryConfig().searches.map((s) => s.name) };
 }
 
 function dryRunPlan(env: NodeJS.ProcessEnv): void {

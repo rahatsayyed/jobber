@@ -5,10 +5,10 @@ import type { ControlState, Platform } from './control.js';
 import type { DueCounts } from './due.js';
 
 export type Operator = 'linkedin-operator' | 'naukri-operator';
-export type TaskKind = 'inbox' | 'followups' | 'new_outreach' | 'search' | 'discover';
-/** Names of the searches in config/linkedin-discovery.json the discover task may run. */
-export interface DiscoverSearches { jobs: string[]; posts: string[] }
-/** `quota` of a discover task is the number of searches it may run this wake; `searches` names them. */
+export type TaskKind = 'inbox' | 'followups' | 'new_outreach' | 'discover';
+/** Names of the searches the discover tasks may run: LinkedIn from config/linkedin-discovery.json, Naukri (`naukri`) from config/naukri-discovery.json. */
+export interface DiscoverSearches { jobs: string[]; posts: string[]; naukri?: string[] }
+/** `quota` of a LinkedIn discover task is the number of searches it may run this wake; of a Naukri one, the job pages it may open for descriptions. `searches` names them. */
 export interface OperatorTask { kind: TaskKind; quota: number; searches?: DiscoverSearches }
 export interface Assignment { operator: Operator; platform: Platform; tasks: OperatorTask[] }
 export type SkipReason = 'killed' | 'halted' | 'quiet_hours' | 'ceilings_exhausted' | 'nothing_due';
@@ -17,12 +17,13 @@ export type WakeDecision =
   | { kind: 'run'; burst: number; tasks: Assignment[] };
 export interface PlanKnobs {
   inboxEveryMin: number;
-  naukriSearchEveryHours: number;
+  naukriDiscoverEveryHours: number;
   /** Hours between LinkedIn discover tasks; absent means the default (a constant, no env key). */
   linkedinDiscoverEveryHours?: number;
 }
 
 export const INBOX_QUOTA = 5;
+export const NAUKRI_DETAIL_QUOTA = 5;
 export const LINKEDIN_DISCOVER_EVERY_HOURS = 6;
 
 function posInt(v: string | undefined, fallback: number): number {
@@ -34,7 +35,7 @@ function posInt(v: string | undefined, fallback: number): number {
 export function loadPlanKnobs(env: NodeJS.ProcessEnv = process.env): PlanKnobs {
   return {
     inboxEveryMin: posInt(env.INBOX_EVERY_MIN, 60),
-    naukriSearchEveryHours: posInt(env.NAUKRI_SEARCH_EVERY_HOURS, 6),
+    naukriDiscoverEveryHours: posInt(env.NAUKRI_DISCOVER_EVERY_HOURS, 6),
   };
 }
 
@@ -88,7 +89,8 @@ export function planWake(i: {
     ]),
     due.newOutreachReadyByPlatform,
   );
-  const searchPlats = plats([['naukri', ['naukri_apply']]]);
+  const naukriNames = i.discoverSearches?.naukri ?? [];
+  const discoverPlats = naukriNames.length > 0 ? plats([['naukri', ['naukri_apply']]]) : [];
 
   // Each platform takes min(its due, what is left of the burst), in stable order, so the total
   // spent equals the old single quota.
@@ -106,9 +108,11 @@ export function planWake(i: {
       remaining -= q;
     }
   }
-  const searchDue =
-    due.naukriSearchLastHoursAgo === null || due.naukriSearchLastHoursAgo >= knobs.naukriSearchEveryHours;
-  if (searchDue && searchPlats.length > 0) byPlatform.naukri.push({ kind: 'search', quota: 1 });
+  const naukriDiscoverDue =
+    due.naukriSearchLastHoursAgo === null || due.naukriSearchLastHoursAgo >= knobs.naukriDiscoverEveryHours;
+  if (naukriDiscoverDue && discoverPlats.length > 0) {
+    byPlatform.naukri.push({ kind: 'discover', quota: NAUKRI_DETAIL_QUOTA, searches: { jobs: naukriNames, posts: [] } });
+  }
 
   // Discovery reads and saves jobs, it sends nothing, so it does not spend the burst. It needs the
   // linkedin_discover ceiling, a named search and a last-run age (undefined: not tracked, never due).
@@ -134,6 +138,6 @@ export function planWake(i: {
   const workExists =
     allowedTotal(due.followupsDueByPlatform) > 0 ||
     allowedTotal(due.newOutreachReadyByPlatform) > 0 ||
-    (searchDue && allowed.has('naukri'));
+    (naukriDiscoverDue && naukriNames.length > 0 && allowed.has('naukri'));
   return { kind: 'skip', reason: workExists ? 'ceilings_exhausted' : 'nothing_due' };
 }

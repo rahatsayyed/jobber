@@ -4,7 +4,7 @@ import { gateInput } from '../safety/inputGate.js';
 
 export interface RawSearchCard {
   title: string; company: string; location: string; experience?: string; salary?: string;
-  href: string; postedText?: string;
+  href: string; postedText?: string; snippet?: string;
 }
 export interface SearchResult {
   job_id: string; url: string; title: string; company: string; location: string;

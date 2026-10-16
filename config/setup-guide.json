@@ -479,9 +479,9 @@
           "entered_in": "owner edits .env"
         },
         {
-          "name": "NAUKRI_SEARCH_EVERY_HOURS",
+          "name": "NAUKRI_DISCOVER_EVERY_HOURS",
           "secret": false,
-          "purpose": "hours between Naukri searches",
+          "purpose": "hours between Naukri discover runs",
           "where": "src/setup/limitsCatalog.ts",
           "entered_in": "owner edits .env"
         },

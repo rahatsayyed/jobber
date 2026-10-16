@@ -74,6 +74,7 @@ export const SCREENED_SURFACES: ReadonlyArray<{ id: string; file: string }> = [
   { id: 'linkedin_search_posts', file: 'src/linkedin/discoverCommon.ts' },
   { id: 'naukri_state', file: 'src/mcp/naukri.ts' },
   { id: 'naukri_search', file: 'src/mcp/naukri.ts' },
+  { id: 'naukri_discover', file: 'src/naukri/discover.ts' },
   { id: 'naukri_inbox', file: 'src/mcp/naukri.ts' },
   { id: 'naukri_read_thread', file: 'src/mcp/naukri.ts' },
   { id: 'naukri_inbound_classify', file: 'src/naukri/inbound.ts' },

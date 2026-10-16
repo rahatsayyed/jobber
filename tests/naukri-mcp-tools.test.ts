@@ -132,7 +132,7 @@ describe('tool surface', () => {
   it('registers the typed tools and the read-only naukri_layout', () => {
     const tools = Object.keys((naukriServer as unknown as { _registeredTools: Record<string, unknown> })._registeredTools).sort();
     expect(tools).toEqual([
-      'naukri_click', 'naukri_close', 'naukri_inbox', 'naukri_layout', 'naukri_open', 'naukri_read_thread',
+      'naukri_click', 'naukri_close', 'naukri_discover', 'naukri_inbox', 'naukri_layout', 'naukri_open', 'naukri_read_thread',
       'naukri_screenshot', 'naukri_search', 'naukri_send_message', 'naukri_state', 'naukri_type',
     ]);
   });

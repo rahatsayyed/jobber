@@ -25,7 +25,9 @@ export function buildWakePrompt(i: {
       .map((k) => {
         const s = k.searches;
         const names = s && k.kind === 'discover'
-          ? ` (job searches: ${s.jobs.join(', ') || 'none'}; post searches: ${s.posts.join(', ') || 'none'})`
+          ? t.platform === 'naukri'
+            ? ` (searches: ${s.jobs.join(', ') || 'none'}; quota is the job pages you may open for descriptions)`
+            : ` (job searches: ${s.jobs.join(', ') || 'none'}; post searches: ${s.posts.join(', ') || 'none'})`
           : '';
         return `${k.kind} quota ${k.quota}${names}`;
       })

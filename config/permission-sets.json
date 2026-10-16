@@ -68,6 +68,7 @@
       "mcp__linkedin__linkedin_search_jobs",
       "mcp__linkedin__linkedin_search_posts",
       "mcp__naukri__naukri_send_message",
+      "mcp__naukri__naukri_discover",
       "mcp__apply__auto",
       "mcp__apply__linkedin",
       "mcp__apply__greenhouse",

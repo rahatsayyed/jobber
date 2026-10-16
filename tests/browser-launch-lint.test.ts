@@ -11,8 +11,6 @@ const HOME = 'src/linkedin/browser.ts';
 export const LEGACY_LAUNCH_ALLOWLIST: string[] = [
   'scripts/save-linkedin-session.ts',
   'scripts/save-naukri-session.ts',
-  'src/sources/naukri.ts',
-  'src/mcp/naukri.ts',
   'src/discover/linkedin-jobs.ts',
   'src/discover/linkedin-posts.ts',
   'src/apply/linkedin.ts',

@@ -31,7 +31,7 @@ const OLD_WORKER_TOOLS: Record<string, string[]> = {
 const OLD_UNION = new Set(Object.values(OLD_WORKER_TOOLS).flat());
 const NEW_ALLOWED = new Set([
   'mcp__linkedin__linkedin_layout', 'mcp__naukri__naukri_layout',
-  'mcp__linkedin__linkedin_search_jobs', 'mcp__linkedin__linkedin_search_posts',
+  'mcp__linkedin__linkedin_search_jobs', 'mcp__linkedin__linkedin_search_posts', 'mcp__naukri__naukri_discover',
   'mcp__outreach__list_due_touches', 'mcp__outreach__next_contacts', 'mcp__outreach__record_inbound',
   'mcp__outreach__escalate', 'mcp__db__list_jobs', 'mcp__db__list_queued_outreach', 'mcp__db__update_outreach_status',
 ]);
@@ -73,8 +73,8 @@ describe('platform operators', () => {
     expect(cfg['naukri-operator']).toEqual([
       'Skill', 'mcp__outreach__list_due_touches', 'mcp__outreach__next_contacts', 'mcp__outreach__record_inbound',
       'mcp__outreach__escalate', 'mcp__naukri__naukri_layout', 'mcp__naukri__naukri_open',
-      'mcp__naukri__naukri_state', 'mcp__naukri__naukri_search', 'mcp__naukri__naukri_inbox',
-      'mcp__naukri__naukri_read_thread', 'mcp__naukri__naukri_send_message', 'mcp__db__list_jobs',
+      'mcp__naukri__naukri_state', 'mcp__naukri__naukri_search', 'mcp__naukri__naukri_discover',
+      'mcp__naukri__naukri_inbox', 'mcp__naukri__naukri_read_thread', 'mcp__naukri__naukri_send_message', 'mcp__db__list_jobs',
       'mcp__db__list_queued_outreach', 'mcp__db__update_outreach_status',
     ]);
   });
@@ -112,7 +112,7 @@ describe('platform operators', () => {
         expect(tools).toContain(`mcp__${platform}__${platform}_layout`);
       });
       it('carries the task sections, the shared rules and the layout memory protocol', () => {
-        for (const s of ['## Task: followups', '## Task: new_outreach', '## Task: inbox', '## Task: search']) {
+        for (const s of ['## Task: followups', '## Task: new_outreach', '## Task: inbox', '## Task: discover']) {
           expect(body).toContain(s);
         }
         expect(body).toContain('## Rules every worker follows');

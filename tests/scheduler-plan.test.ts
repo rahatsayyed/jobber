@@ -17,7 +17,8 @@ const pacing: PacingConfig = {
   minBurst: 1, maxBurst: 4, minActionGapSec: 120, maxActionGapSec: 360,
   minWaitMin: 8, maxWaitMin: 40, jitter: 0.25,
 };
-const knobs: PlanKnobs = { inboxEveryMin: 60, naukriSearchEveryHours: 6 };
+const knobs: PlanKnobs = { inboxEveryMin: 60, naukriDiscoverEveryHours: 6 };
+const NAUKRI_NAMES = { jobs: [], posts: [], naukri: ['react-india'] };
 const ctl = (o: Partial<ControlState> = {}): ControlState => ({
   killed: false, killReason: null, halted: { linkedin: null, naukri: null },
   allowed: ['linkedin', 'naukri'], readError: null, ...o,
@@ -46,7 +47,7 @@ function counted(value: number) {
 }
 const plan = (o: Partial<Parameters<typeof planWake>[0]> = {}, rngValue = 0.99) => {
   const r = counted(rngValue);
-  const d = planWake({ now: NOW, rng: r.rng, pacing, control: ctl(), ceilings: ceil(), due: due(), knobs, ...o });
+  const d = planWake({ now: NOW, rng: r.rng, pacing, control: ctl(), ceilings: ceil(), due: due(), knobs, discoverSearches: NAUKRI_NAMES, ...o });
   return { d, calls: r.calls() };
 };
 
@@ -82,7 +83,7 @@ describe('planWake', () => {
       expect(spent).toBe(d.burst);
     }
   });
-  it('emits linkedin before naukri, one assignment per platform, tasks ordered inbox, followups, new_outreach, search', () => {
+  it('emits linkedin before naukri, one assignment per platform, tasks ordered inbox, followups, new_outreach, discover', () => {
     const { d } = plan({
       due: due({ followupsDue: 1, newOutreachReady: 1, inboxLastCheckedMinAgo: null, naukriSearchLastHoursAgo: null }),
     });
@@ -91,7 +92,7 @@ describe('planWake', () => {
       ['linkedin-operator', 'linkedin'], ['naukri-operator', 'naukri'],
     ]);
     expect(d.tasks[0].tasks.map((t) => t.kind)).toEqual(['inbox', 'followups', 'new_outreach']);
-    expect(d.tasks[1].tasks.map((t) => t.kind)).toEqual(['inbox', 'followups', 'new_outreach', 'search']);
+    expect(d.tasks[1].tasks.map((t) => t.kind)).toEqual(['inbox', 'followups', 'new_outreach', 'discover']);
   });
   it('splits quotas per platform in stable order from the remaining burst', () => {
     // rng 0.99 -> burst 4: linkedin takes 3 of its 3 followups, naukri gets the 1 left
@@ -104,10 +105,16 @@ describe('planWake', () => {
     expect(q('naukri', 'followups')).toBe(1);
     expect(q('linkedin', 'new_outreach')).toBeUndefined();
   });
-  it('search belongs to naukri only', () => {
+  it('the naukri discover task carries the named searches and the detail-page quota', () => {
     const { d } = plan({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: null }) });
     if (d.kind !== 'run') throw new Error('expected run');
-    const withSearch = d.tasks.filter((a) => a.tasks.some((t) => t.kind === 'search'));
+    const t = d.tasks.find((a) => a.platform === 'naukri')!.tasks.find((x) => x.kind === 'discover');
+    expect(t).toEqual({ kind: 'discover', quota: 5, searches: { jobs: ['react-india'], posts: [] } });
+  });
+  it('discover belongs to naukri only (linkedin has its own, named separately)', () => {
+    const { d } = plan({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: null }) });
+    if (d.kind !== 'run') throw new Error('expected run');
+    const withSearch = d.tasks.filter((a) => a.tasks.some((t) => t.kind === 'discover'));
     expect(withSearch.map((a) => a.platform)).toEqual(['naukri']);
   });
   it('assigns inbox when never checked or 61 min ago, not at 30', () => {
@@ -167,14 +174,15 @@ describe('planWake', () => {
     const { d } = plan({ due: due() });
     expect(d).toMatchObject({ kind: 'skip', reason: 'nothing_due' });
   });
-  it('naukri-search needs naukri_apply ok and an old enough last search', () => {
+  it('naukri discover needs a named search, naukri_apply ok and an old enough last run', () => {
     const run = (o: Partial<Parameters<typeof planWake>[0]>) => {
       const { d } = plan({ due: due({ followupsDue: 1 }), ...o });
-      return d.kind === 'run' && d.tasks.some((a) => a.tasks.some((t) => t.kind === 'search'));
+      return d.kind === 'run' && d.tasks.some((a) => a.tasks.some((t) => t.kind === 'discover'));
     };
     expect(run({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: 7 }) })).toBe(true);
     expect(run({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: 2 }) })).toBe(false);
     expect(run({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: 7 }), ceilings: ceil(['naukri_apply']) })).toBe(false);
+    expect(run({ due: due({ followupsDue: 1, naukriSearchLastHoursAgo: 7 }), discoverSearches: { jobs: [], posts: [], naukri: [] } })).toBe(false);
   });
   it('plans nothing when only a halted platform has work (I4, M1)', () => {
     const { d } = plan({
@@ -198,9 +206,11 @@ describe('planWake', () => {
     expect(d.tasks[0].tasks.find((t) => t.kind === 'followups')).toEqual({ kind: 'followups', quota: 1 });
   });
   it('loadPlanKnobs defaults and overrides', () => {
-    expect(loadPlanKnobs({})).toEqual({ inboxEveryMin: 60, naukriSearchEveryHours: 6 });
-    expect(loadPlanKnobs({ INBOX_EVERY_MIN: '15', NAUKRI_SEARCH_EVERY_HOURS: 'x' } as NodeJS.ProcessEnv))
-      .toEqual({ inboxEveryMin: 15, naukriSearchEveryHours: 6 });
+    expect(loadPlanKnobs({})).toEqual({ inboxEveryMin: 60, naukriDiscoverEveryHours: 6 });
+    expect(loadPlanKnobs({ INBOX_EVERY_MIN: '15', NAUKRI_DISCOVER_EVERY_HOURS: 'x' } as NodeJS.ProcessEnv))
+      .toEqual({ inboxEveryMin: 15, naukriDiscoverEveryHours: 6 });
+    expect(loadPlanKnobs({ NAUKRI_DISCOVER_EVERY_HOURS: '3', NAUKRI_SEARCH_EVERY_HOURS: '9' } as NodeJS.ProcessEnv).naukriDiscoverEveryHours).toBe(3);
+    expect(loadPlanKnobs({ NAUKRI_SEARCH_EVERY_HOURS: '9' } as NodeJS.ProcessEnv).naukriDiscoverEveryHours).toBe(6);
   });
 });
 

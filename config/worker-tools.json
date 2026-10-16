@@ -28,6 +28,7 @@
     "mcp__naukri__naukri_open",
     "mcp__naukri__naukri_state",
     "mcp__naukri__naukri_search",
+    "mcp__naukri__naukri_discover",
     "mcp__naukri__naukri_inbox",
     "mcp__naukri__naukri_read_thread",
     "mcp__naukri__naukri_send_message",

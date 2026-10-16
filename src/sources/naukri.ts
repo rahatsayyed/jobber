@@ -4,19 +4,12 @@ import type { Provider } from './provider.js';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
-import { chromium as patchrightChromium } from 'patchright';
-import { HEADLESS_USER_AGENT, HEADLESS_CONTEXT_OPTIONS } from '../linkedin/browser.js';
+import type { Browser, BrowserContext, Page } from 'playwright';
+import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS, type LiLauncher } from '../webcore/launch.js';
 
-/**
- * Headless mode (`NAUKRI_HEADLESS=true`): Patchright driving the installed Google Chrome with a
- * real User-Agent. Akamai blocks on the `HeadlessChrome` UA token, so the UA override is what
- * unblocks it. Off by default: headed Playwright is
- * the known-good path.
- */
-// The constants live in src/linkedin/browser.ts (the shared launcher's home); re-exported here
-// until Task 11 migrates the remaining importers.
-export { HEADLESS_USER_AGENT, HEADLESS_CONTEXT_OPTIONS };
+// Browser launching goes through the shared launcher (patchright + installed Google Chrome, never bundled
+// Chromium or stock Playwright). `NAUKRI_HEADLESS=true` only chooses headless (with the real-UA context
+// Akamai needs) versus headed on the same installed Chrome.
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..', '..');
@@ -115,8 +108,8 @@ export function parseNaukriCards(rawCards: RawNaukriCard[]): NaukriParseResult {
 }
 
 export interface NaukriDeps {
-  /** Injectable Playwright `chromium` launcher, for testing without a real browser. */
-  chromium?: { launch: typeof chromium.launch };
+  /** Injectable launcher handed to the shared real-Chrome launcher, for testing without a real browser. */
+  chromium?: LiLauncher;
   /**
    * Injectable predicate deciding whether a job id is "new" — used ONLY to gate the expensive
    * apply-URL-resolution phase (skip re-resolving jobs the caller already knows about), never to
@@ -178,9 +171,9 @@ function isResolvedApplyUrl(url: string): boolean {
 /**
  * Scrapes Naukri's search-results page for a role/location, then (if a saved session exists)
  * resolves the real apply_url for up to `MAX_APPLY_URL_RESOLUTIONS_PER_FETCH` "new" jobs (per
- * `deps.isNewJob`) via `resolveApplyUrl`. One browser launch (headed by default, because Naukri's
- * Akamai bot protection blocks stock headless Chromium; `NAUKRI_HEADLESS=true` switches to
- * Patchright + real Chrome + a real UA, which passes), with two contexts:
+ * `deps.isNewJob`) via `resolveApplyUrl`. One browser launch on installed Chrome through the shared launcher (headed by default, because Naukri's
+ * Akamai bot protection blocks the stock headless UA; `NAUKRI_HEADLESS=true` switches to
+ * headless with a real UA, which passes), with two contexts:
  * an unauthenticated one for scraping the search-results page, and (if a saved session exists) an
  * authenticated one for the apply-url resolution phase.
  *
@@ -220,7 +213,6 @@ export async function searchNaukri(
   deps: NaukriDeps = {}
 ): Promise<{ jobs: Job[]; sample: unknown[] }> {
   const headless = process.env.NAUKRI_HEADLESS === 'true';
-  const browserLauncher = deps.chromium ?? (headless ? (patchrightChromium as unknown as typeof chromium) : chromium);
   const contextOptions = headless ? HEADLESS_CONTEXT_OPTIONS : {};
   const isNewJob = deps.isNewJob ?? (() => true);
   const sessionStatePath = deps.sessionStatePath ?? DEFAULT_SESSION_STATE_PATH;
@@ -228,9 +220,7 @@ export async function searchNaukri(
 
   let browser: Browser | undefined;
   try {
-    browser = await browserLauncher.launch(
-      headless ? { channel: 'chrome', headless: true, args: ['--headless=new'] } : { headless: false }
-    );
+    browser = (await launchRealChrome({ headed: !headless, launcher: deps.chromium })) as unknown as Browser;
 
     let jobs: Job[] = [];
     let sample: unknown[] = [];
