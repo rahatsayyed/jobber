@@ -28,14 +28,30 @@ function collectPaths(v: unknown, prefix: string, depth: number, out: Set<string
   }
 }
 
-/** Parses up to 5 raw items with `spec`; the hash is the sha256 of the sorted, de-duplicated key paths of those items ('' for an empty sample). */
+const typeOf = (v: unknown): string => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
+
+// The keys a spec requires (a plain zod object's shape), or null when the spec has no inspectable shape.
+function requiredKeys(spec: z.ZodTypeAny): string[] | null {
+  const shape = (spec as unknown as { shape?: Record<string, unknown> }).shape;
+  return shape && typeof shape === 'object' ? Object.keys(shape) : null;
+}
+
+/**
+ * Parses up to 5 raw items with `spec`. The hash is the sha256 of the sorted `key:type` pairs of the keys the spec REQUIRES
+ * (every value type seen across the sampled items), so optional fields and sample composition do not move it; a spec without an
+ * inspectable shape falls back to all key paths. '' for an empty sample.
+ */
 export function checkShape(spec: z.ZodTypeAny, sample: unknown[]): ShapeReport {
   const items = (Array.isArray(sample) ? sample : []).slice(0, MAX_ITEMS);
   if (!items.length) return { ok: true, hash: '', problems: [] };
   const paths = new Set<string>();
+  const keys = requiredKeys(spec);
   const problems: string[] = [];
   items.forEach((item, i) => {
-    collectPaths(item, '', 0, paths);
+    if (keys) {
+      const o = item && typeof item === 'object' && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
+      for (const k of keys) paths.add(`${k}:${k in o ? typeOf(o[k]) : 'missing'}`);
+    } else collectPaths(item, '', 0, paths);
     const r = spec.safeParse(item);
     if (r.success) return;
     for (const issue of r.error.issues) {

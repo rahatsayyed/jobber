@@ -242,7 +242,15 @@ export async function searchNaukri(
     try {
       const page = await searchContext.newPage();
       await page.goto(searchUrl, { waitUntil: 'domcontentloaded' });
-      await page.waitForSelector(CARD_SELECTOR, { timeout: 15000 });
+      // A timeout on a page that loaded and has no cards is an empty search (not an error); any other failure still throws.
+      try {
+        await page.waitForSelector(CARD_SELECTOR, { timeout: 15000 });
+      } catch (err) {
+        const timedOut = err instanceof Error && err.name === 'TimeoutError';
+        if (!timedOut || (await page.locator(CARD_SELECTOR).count()) !== 0) throw err;
+        console.error('[naukri] search returned no result cards');
+        return { jobs: [], sample: [] };
+      }
 
       const rawCards: RawNaukriCard[] = await page.locator(CARD_SELECTOR).evaluateAll((nodes: Element[]) =>
         nodes.map((n) => {

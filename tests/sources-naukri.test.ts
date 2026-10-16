@@ -4,6 +4,7 @@ import {
   extractNaukriJobId,
   parseNaukriCards,
   fetchNaukri,
+  searchNaukri,
   resolveApplyUrl,
 } from '../src/sources/naukri.js';
 import { openDb, isSeen } from '../src/db.js';
@@ -225,6 +226,38 @@ describe('fetchNaukri', () => {
 
     expect(jobs).toEqual([]);
     expect(browser.close).toHaveBeenCalled();
+  });
+
+  const fakeBrowser = (searchPage: object) => {
+    const searchContext = { newPage: vi.fn().mockResolvedValue(searchPage), close: vi.fn().mockResolvedValue(undefined) };
+    const browser = { newContext: vi.fn().mockResolvedValue(searchContext), close: vi.fn().mockResolvedValue(undefined) };
+    return { chromiumStub: { launch: vi.fn().mockResolvedValue(browser) }, browser };
+  };
+  const timeoutError = () => Object.assign(new Error('Timeout 15000ms exceeded'), { name: 'TimeoutError' });
+
+  it('an empty search (selector timeout, zero cards on a loaded page) is an empty result, not an error', async () => {
+    const searchPage = {
+      goto: vi.fn().mockResolvedValue(undefined),
+      waitForSelector: vi.fn().mockRejectedValue(timeoutError()),
+      locator: vi.fn().mockReturnValue({ count: vi.fn().mockResolvedValue(0) }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const { chromiumStub, browser } = fakeBrowser(searchPage);
+    const r = await searchNaukri({ role: 'x' }, { chromium: chromiumStub, sessionStatePath: '/nonexistent/naukri-state.json' });
+    expect(r).toEqual({ jobs: [], sample: [] });
+    expect(browser.close).toHaveBeenCalled();
+  });
+
+  it('a page that fails to load, or a non-timeout selector error, still throws from searchNaukri', async () => {
+    const goto = { goto: vi.fn().mockRejectedValue(new Error('net::ERR_CONNECTION_RESET')), waitForSelector: vi.fn(), locator: vi.fn(), close: vi.fn() };
+    await expect(searchNaukri({ role: 'x' }, { chromium: fakeBrowser(goto).chromiumStub, sessionStatePath: '/nonexistent/s.json' })).rejects.toThrow(/ERR_CONNECTION_RESET/);
+    const odd = { goto: vi.fn().mockResolvedValue(undefined), waitForSelector: vi.fn().mockRejectedValue(new Error('Target closed')), locator: vi.fn(), close: vi.fn() };
+    await expect(searchNaukri({ role: 'x' }, { chromium: fakeBrowser(odd).chromiumStub, sessionStatePath: '/nonexistent/s.json' })).rejects.toThrow(/Target closed/);
+  });
+
+  it('a selector timeout while cards ARE present is still an error', async () => {
+    const page = { goto: vi.fn().mockResolvedValue(undefined), waitForSelector: vi.fn().mockRejectedValue(timeoutError()), locator: vi.fn().mockReturnValue({ count: vi.fn().mockResolvedValue(3) }), close: vi.fn() };
+    await expect(searchNaukri({ role: 'x' }, { chromium: fakeBrowser(page).chromiumStub, sessionStatePath: '/nonexistent/s.json' })).rejects.toThrow(/Timeout/);
   });
 
   it('resolves apply_url via the company-site button when a session file exists', async () => {

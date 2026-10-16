@@ -57,9 +57,10 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 
 const shapeText = (r: ShapeReport): string => `shape: ${r.problems.slice(0, 3).join('; ')}`;
 
-/** Hash change plus zero kept after a run that kept jobs. Needs a stored baseline; a missing one (first run) is never drift. */
-function isDrift(prev: Prev | undefined, shape: ShapeReport, kept: number): boolean {
-  return !!prev && !!prev.shape_hash && !!shape.hash && shape.hash !== prev.shape_hash && kept === 0 && prev.kept > 0;
+// Drift needs ALL of: a stored baseline (a first run is never drift), a changed required-key hash, raw items actually fetched,
+// nothing kept now, and jobs kept in the previous run. Zero kept with an unchanged hash is just a strict filter.
+function isDrift(prev: Prev | undefined, shape: ShapeReport, rawFetched: number, kept: number): boolean {
+  return !!prev && !!prev.shape_hash && !!shape.hash && shape.hash !== prev.shape_hash && rawFetched > 0 && kept === 0 && prev.kept > 0;
 }
 
 function queueTask(db: Db, f: Failure, now: Date): boolean {
@@ -110,7 +111,7 @@ export async function runScriptSources(db: Db | null, opts: RunOptions): Promise
     if (!shape.ok) {
       o.error = redactError(shapeText(shape)); o.fallback_used = true;
       failures.push({ platform: id, company: null, reason: 'shape' });
-    } else if (isDrift(prevOf(id), shape, o.kept)) {
+    } else if (isDrift(prevOf(id), shape, x.r.sample.length, o.kept)) {
       o.error = 'drift: the response shape changed and nothing was kept'; o.fallback_used = true;
       failures.push({ platform: id, company: null, reason: 'drift' });
     } else if (shape.hash) {
@@ -146,7 +147,7 @@ export async function runScriptSources(db: Db | null, opts: RunOptions): Promise
         }
       }
       const combined = checkShape(bp.shapeSpec, mine.flatMap((s) => (s.error ? [] : s.sample)));
-      if (!failed && isDrift(prevOf(o.id), combined, o.kept)) {
+      if (!failed && isDrift(prevOf(o.id), combined, mine.reduce((n, s) => n + s.sample.length, 0), o.kept)) {
         failures.push({ platform: o.id, company: null, reason: 'drift' });
         notes.push('drift: the response shape changed and nothing was kept');
         failed = true;
@@ -158,7 +159,9 @@ export async function runScriptSources(db: Db | null, opts: RunOptions): Promise
     }
   } catch (e) {
     console.error('[sources] boards failed:', redactError(e));
-    outcomes.push({ id: 'boards', fetched: 0, kept: 0, error: redactError(e) });
+    // A fetchBoards throw is a failed provider like any other: fallback_used plus one task for the day.
+    outcomes.push({ id: 'boards', fetched: 0, kept: 0, error: redactError(e), fallback_used: true });
+    failures.push({ platform: 'boards', company: null, reason: 'error' });
   }
 
   // 3. Queue the agent fallback (one row per platform/company per day) and mark platforms that keep failing.
