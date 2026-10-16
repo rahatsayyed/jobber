@@ -9,6 +9,7 @@ import { checkAndIncrement } from '../lib/rateLimit.js';
 import { hostMatches } from '../lib/hostClass.js';
 import { isDiscoverOnlySource } from '../lib/discoverOnly.js';
 import { userDataPath } from '../lib/userData.js';
+import { findPreparedResumePath } from '../applier/resume.js';
 import {
   resolveControlWithFallback,
   resolveAnswerTopicWithFallback,
@@ -182,32 +183,8 @@ export interface ApplyEasyApplyResult {
   question?: string;
 }
 
-/**
- * Finds the tailored resume prepared for a job, checking both the legacy `outreach` table
- * (populated by the old direct-send email flow) and `outreach_queue` (populated by the
- * autonomous pipeline's outreach-preparer, which does not write to `outreach` at all) — a job
- * going through the autonomous pipeline would otherwise be invisible to this lookup even though
- * a real tailored resume exists for it. When both have a row for the job, the more recent one
- * wins.
- */
-export function findPreparedResumePath(
-  database: BetterSqlite3.Database,
-  job_id: string
-): string | undefined {
-  const legacy = database
-    .prepare('SELECT resume_path, created_at FROM outreach WHERE job_id = ? ORDER BY created_at DESC LIMIT 1')
-    .get(job_id) as { resume_path: string; created_at: string } | undefined;
-  const queued = database
-    .prepare(
-      'SELECT resume_pdf_path as resume_path, created_at FROM outreach_queue WHERE job_id = ? AND resume_pdf_path IS NOT NULL ORDER BY created_at DESC LIMIT 1'
-    )
-    .get(job_id) as { resume_path: string; created_at: string } | undefined;
-
-  if (!legacy && !queued) return undefined;
-  if (!legacy) return queued!.resume_path;
-  if (!queued) return legacy.resume_path;
-  return new Date(queued.created_at) >= new Date(legacy.created_at) ? queued.resume_path : legacy.resume_path;
-}
+// Moved to src/applier/resume.ts (plan 8G-2 task 18); re-exported here until this file is deleted in task 23.
+export { findPreparedResumePath };
 
 /**
  * Given a truthful answer that a numeric-only field just rejected as "Invalid input", returns

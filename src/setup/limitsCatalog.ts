@@ -91,6 +91,9 @@ export const LIMITS: LimitSpec[] = [
     what: 'Hour (local time) when quiet hours end and outreach may resume.' },
 
   // pacing
+  { key: 'APPLY_MAX_STEPS', group: 'pacing', default: 12, min: 1, max: 50, unit: 'steps',
+    what: 'Next, back and save clicks one browser application may make before the applier stops.',
+    raiseNote: 'A form that needs more steps than this is usually a loop or the wrong page.' },
   { key: 'PACING_MIN_BURST', group: 'pacing', default: 1, min: 1, max: 50, unit: 'actions',
     what: 'Fewest actions in one burst before a longer wait.' },
   { key: 'PACING_MAX_BURST', group: 'pacing', default: 4, min: 1, max: 50, unit: 'actions',

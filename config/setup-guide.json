@@ -283,6 +283,27 @@
           "entered_in": "owner edits .env"
         },
         {
+          "name": "APPLY_SUBMIT_MODE",
+          "secret": false,
+          "purpose": "hold (default) stops the browser applier at the review step; submit really clicks submit",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "APPLY_MAX_STEPS",
+          "secret": false,
+          "purpose": "most next, back and save clicks one browser application may make (default 12)",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "APPLY_SCREENSHOT",
+          "secret": false,
+          "purpose": "whether the applier offers a screenshot tool; its pixels are not injection-screened (ships false)",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
           "name": "SCOUT_ALLOW_SIGNUP",
           "secret": false,
           "purpose": "whether the scout may create accounts on discovery sites (ships false)",

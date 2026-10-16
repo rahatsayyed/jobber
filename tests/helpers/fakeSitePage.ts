@@ -8,6 +8,8 @@ export interface Step { fixture: string; notices?: string[] }
 export interface FakeSiteOpts {
   start: string;
   url?: string;
+  // when set, page.url() reads this ref (simulates a redirect to another host)
+  urlRef?: { value: string };
   /** control label -> next page(s); a list is consumed in order, the last entry repeats */
   transitions?: Record<string, Step[]>;
   /** a checkbox whose label matches re-checks itself after any click (hostile page) */
@@ -22,6 +24,9 @@ export interface FakeSite {
   events: string[];
   /** every typed value, in order: the leak tests search for the canary here and nowhere else */
   fills: Array<{ label: string; value: string }>;
+  // option selections and uploaded file paths, in order
+  selections: Array<{ label: string; option: string }>;
+  uploads: Array<{ label: string; path: string }>;
   current: () => RawFormSnapshot;
 }
 
@@ -32,6 +37,8 @@ export function createFakeSite(o: FakeSiteOpts): FakeSite {
   let cur: RawFormSnapshot = loadFixture(o.start, url);
   const events: string[] = [];
   const fills: Array<{ label: string; value: string }> = [];
+  const selections: Array<{ label: string; option: string }> = [];
+  const uploads: Array<{ label: string; path: string }> = [];
   const used: Record<string, number> = {};
   const loc = (sel: string): LiLocator => {
     const m = /^\[data-(jf|jc)="(\d+)"\]$/.exec(sel);
@@ -47,6 +54,20 @@ export function createFakeSite(o: FakeSiteOpts): FakeSite {
         f.filled = text !== '';
         fills.push({ label: f.label, value: text });
         events.push(`fill:${f.label}`);
+      },
+      async selectOption(v: { label: string }) {
+        const f = cur.fields[i];
+        if (kind !== 'jf' || !f || f.type !== 'select' || !(f.options ?? []).includes(v.label)) throw new Error('no select');
+        f.filled = true;
+        selections.push({ label: f.label, option: v.label });
+        events.push(`select:${f.label}`);
+      },
+      async setInputFiles(p: string) {
+        const f = cur.fields[i];
+        if (kind !== 'jf' || !f || f.type !== 'file') throw new Error('no file input');
+        f.filled = true;
+        uploads.push({ label: f.label, path: p });
+        events.push(`upload:${f.label}`);
       },
       async click() {
         if (kind === 'jf') {
@@ -75,7 +96,7 @@ export function createFakeSite(o: FakeSiteOpts): FakeSite {
   };
   const page = {
     async goto() { events.push('goto'); cur = loadFixture(o.start, url); },
-    url: () => url,
+    url: () => o.urlRef?.value ?? url,
     title: async () => cur.title,
     async evaluate() { return JSON.parse(JSON.stringify(cur)); },
     locator: (s: string) => loc(s),
@@ -83,5 +104,5 @@ export function createFakeSite(o: FakeSiteOpts): FakeSite {
   } as unknown as LiPage;
   const context = { newPage: async () => page, storageState: async () => ({ cookies: [] }), waitForEvent: async () => page } as unknown as LiContext;
   const browser: LiBrowser = { newContext: async () => context, close: async () => undefined };
-  return { launcher: { launch: async () => browser }, events, fills, current: () => cur };
+  return { launcher: { launch: async () => browser }, events, fills, selections, uploads, current: () => cur };
 }

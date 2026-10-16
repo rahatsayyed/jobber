@@ -47,6 +47,9 @@ export interface LiLocator {
   textContent(opts?: { timeout?: number }): Promise<string | null>;
   waitFor(opts?: { state?: 'visible' | 'hidden'; timeout?: number }): Promise<void>;
   evaluateAll<T>(fn: (els: any[]) => T): Promise<T>;
+  // Optional: used by the web applier (patchright locators have both).
+  selectOption?(value: { label: string }, opts?: { timeout?: number }): Promise<unknown>;
+  setInputFiles?(files: string, opts?: { timeout?: number }): Promise<void>;
 }
 export interface LiPage {
   goto(url: string, opts?: { timeout?: number; waitUntil?: string }): Promise<unknown>;
