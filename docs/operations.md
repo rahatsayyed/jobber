@@ -1,7 +1,7 @@
 # Operations
 
 Audience: owner
-Last verified against: cc51247
+Last verified against: ca7200a
 Source files: scripts/jobber-control.ts, src/scheduler/control.ts, .claude/hooks/kill-switch.cjs, run-hunt.sh, scripts/linkedin-clear-halt.ts, scripts/layout.ts, src/safety/dryRun.ts, scripts/dry-run-report.ts, scripts/status.ts, src/status/render.ts, src/scheduler/plan.ts, src/scheduler/runLog.ts, src/scheduler/notify.ts, src/scheduler/launch.ts, scripts/stack.ts, src/stack/up.ts, src/stack/down.ts, src/verify/cli.ts, src/platform/checksSetup.ts, src/platform/checksLayout.ts, src/platform/checksScheduler.ts
 
 Day-to-day running of Jobber: stop it, resume it, read its state, find its files, fix common failures.
@@ -229,6 +229,12 @@ Weekly:
 3. `/followups`: check the stale list and the mode in use.
 4. Review `config/portals.json` board errors from the last hunt report (dead slugs).
 5. Check backups (`docs/backup-and-restore.md`) if you enabled them, and `git status` before committing anything.
+
+## Common surprises
+
+- `npm run dashboard -- token` (and `rotate`) only creates the access token and prints the sign-in URL. It does not start the server. Start the dashboard with `npm run web` (or `npm run up`). The command probes the loopback port and says "not running right now" when nothing listens.
+- zsh may ask `correct 'x' to 'y' [nyae]?` for a path that starts with a dot (for example `.env`). Answer `n`, or add `setopt nocorrect` (or `unsetopt correct`) to your shell profile.
+- `npm run dry-run -- --llm` runs a real hunt and needs a dry `.env`: `JOBBER_DRY_RUN=1`, `SCHEDULER_DRY_RUN=true` and `LINKEDIN_DRY_RUN=true` set in the file itself. It refuses otherwise. When the hunt exits non-zero the stage now shows the last 20 stderr lines (secret shapes redacted) and the last stdout line.
 
 ## Common failures
 
