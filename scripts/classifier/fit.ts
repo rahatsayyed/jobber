@@ -85,8 +85,8 @@ async function main(): Promise<void> {
       seed,
       heldFrac,
     });
-    writeFit(REGISTRY_PATH, profileId, record);
-    console.log(`wrote fit for ${profileId} to ${REGISTRY_PATH}`);
+    const changed = writeFit(REGISTRY_PATH, profileId, record);
+    console.log(changed ? `wrote fit for ${profileId} to ${REGISTRY_PATH}` : `fit for ${profileId} unchanged, nothing written`);
   }
 }
 
