@@ -33,6 +33,13 @@ describe('lineDiff', () => {
     expect(mixed).toMatchObject({ added: 1, removed: 0, formattingOnly: 1 });
   });
 
+  it('whitespace inside a string literal is a real change', () => {
+    expect(lineDiff('  "city": "New York",\n', '  "city": "NewYork",\n')).toMatchObject({ added: 1, removed: 1, formattingOnly: 0 });
+    expect(lineDiff('["a b"]\n', '["ab"]\n')).toMatchObject({ added: 1, removed: 1, formattingOnly: 0 });
+    expect(lineDiff('"a\\" b"\n', '"a\\"b"\n')).toMatchObject({ added: 1, removed: 1, formattingOnly: 0 });
+    expect(lineDiff('{"a" : "x y"}\n', '{ "a":"x y" }\n')).toMatchObject({ added: 0, removed: 0, formattingOnly: 1 });
+  });
+
   it('treats CRLF like LF', () => {
     expect(lineDiff('a\r\nb', 'a\nb').unchanged).toBe(false);
     expect(lineDiff('a\r\nb', 'a\nb')).toMatchObject({ added: 0, removed: 0 });

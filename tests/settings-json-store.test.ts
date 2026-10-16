@@ -278,6 +278,57 @@ describe('apply', () => {
   });
 });
 
+describe('user-data realpath and file modes', () => {
+  it('follows a symlinked user-data directory consistently for existing and missing files', () => {
+    const fs = memFs({ '/real-ud/languages.json': fx('languages.json'), '/proj/config/replies.json': fx('replies.json') });
+    fs.symlink('/proj/user-data', '/real-ud');
+    const store = createJsonStore({ fs, root: ROOT, userDataDir: '/proj/user-data', backupDir: BK, keep: 10, now });
+    expect(store.pathOf('languages')).toBe('/real-ud/languages.json');
+    expect(store.pathOf('profile')).toBe('/real-ud/profile.json');
+    expect(store.read('languages').exists).toBe(true);
+    expect(store.read('profile').exists).toBe(false);
+    const text = fx('profile.json');
+    store.apply(store.plan('profile', text, store.read('profile').etag), text);
+    expect(fs.text('/real-ud/profile.json')).toBe(text);
+  });
+
+  it('JOBAPPLIER_USER_DATA through a symlink resolves to the real directory', () => {
+    const fs = memFs({ '/data/ud/fact-gate.json': fx('fact-gate.json') });
+    fs.symlink('/link-ud', '/data/ud');
+    const store = createJsonStore({ fs, root: ROOT, env: { JOBAPPLIER_USER_DATA: '/link-ud' }, backupDir: BK, keep: 10, now });
+    expect(store.pathOf('fact-gate')).toBe('/data/ud/fact-gate.json');
+    expect(store.read('fact-gate').exists).toBe(true);
+  });
+
+  it('a file symlink inside the directory is still refused', () => {
+    const fs = memFs({});
+    fs.mkdirp('/real-ud');
+    fs.symlink('/real-ud/profile.json', '/x.json');
+    fs.symlink('/ud', '/real-ud');
+    const store = createJsonStore({ fs, root: ROOT, userDataDir: '/ud', backupDir: BK, keep: 10, now });
+    expect(() => store.read('profile')).toThrow(/symbolic link/);
+  });
+
+  it('keeps an existing config file mode (0600 stays 0600); new config files get 0644', () => {
+    const { fs, store } = setup();
+    fs.chmod(`${ROOT}/config/replies.json`, 0o600);
+    const NEW = '{"auto_record_enabled": false, "x": 1}\n';
+    store.apply(store.plan('replies', NEW, store.read('replies').etag), NEW);
+    expect(fs.modeOf(`${ROOT}/config/replies.json`)).toBe(0o600);
+    const t = fx('replies.json');
+    const s2 = createJsonStore({ fs, root: ROOT, userDataDir: UD, backupDir: BK, keep: 10, now });
+    fs.put(`${ROOT}/config/discover-linkedin.json`, '{}', 0o640);
+    const d = JSON.stringify({ jobs: [], posts: { role: 'r', geo: 'in', limit: 5 } });
+    s2.apply(s2.plan('linkedin-discovery', d, s2.read('linkedin-discovery').etag), d);
+    expect(fs.modeOf(`${ROOT}/config/discover-linkedin.json`)).toBe(0o640);
+    expect(t).toBeTruthy();
+    const f2 = memFs({ '/proj/config/x': '' });
+    const s3 = createJsonStore({ fs: f2, root: ROOT, userDataDir: UD, backupDir: BK, keep: 10, now });
+    s3.apply(s3.plan('replies', t, s3.read('replies').etag), t);
+    expect(f2.modeOf(`${ROOT}/config/replies.json`)).toBe(0o644);
+  });
+});
+
 describe('writeWithBackup (generic, also used for .env)', () => {
   it('works for an .env style target with its own extension', () => {
     const fs = new MemFs({ '/p/.env': 'A=1\n' });

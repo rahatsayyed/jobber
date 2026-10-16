@@ -55,7 +55,7 @@ export function lineDiff(before: string, after: string): LineDiff {
   for (let i = endA, j = endB; i < a.length; i++, j++) out.push({ op: 'eq', text: a[i], oldLine: i + 1, newLine: j + 1 });
 
   // formatting-only pairing
-  const key = (s: string) => s.replace(/\s+/g, '');
+  const key = squeezeOutsideStrings;
   const dels = new Map<string, DiffLine[]>();
   for (const l of out) if (l.op === 'del') (dels.get(key(l.text)) ?? dels.set(key(l.text), []).get(key(l.text))!).push(l);
   let formattingOnly = 0;
@@ -79,6 +79,24 @@ export function lineDiff(before: string, after: string): LineDiff {
   const added = out.filter((l) => l.op === 'add' && !l.formatting).length;
   const removed = out.filter((l) => l.op === 'del' && !l.formatting).length;
   return { lines: out, added, removed, formattingOnly, truncated: false, unchanged: false };
+}
+
+// Remove whitespace outside double-quoted strings; whitespace inside a string literal is content and is kept.
+function squeezeOutsideStrings(s: string): string {
+  let out = '';
+  let inStr = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      out += c;
+      if (c === '\\' && i + 1 < s.length) out += s[++i];
+      else if (c === '"') inStr = false;
+    } else if (c === '"') {
+      inStr = true;
+      out += c;
+    } else if (!/\s/.test(c)) out += c;
+  }
+  return out;
 }
 
 function middleDiff(a: string[], b: string[], offset: number): DiffLine[] {

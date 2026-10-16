@@ -115,6 +115,19 @@ export class MemFs implements AtomicFs {
     const n = this.nodes.get(p);
     return n ? { kind: n.kind, mode: n.mode } : null;
   }
+  realpath(p: string): string {
+    let cur = '';
+    for (const seg of p.split('/').filter(Boolean)) {
+      cur = `${cur}/${seg}`;
+      for (let i = 0; i < 20; i++) {
+        const n = this.nodes.get(cur);
+        if (n && n.kind === 'symlink') cur = n.target;
+        else break;
+      }
+    }
+    if (cur !== '' && !this.nodes.has(cur)) throw new Error('ENOENT');
+    return cur || '/';
+  }
   list(dir: string): string[] {
     const prefix = dir.endsWith('/') ? dir : `${dir}/`;
     const out: string[] = [];

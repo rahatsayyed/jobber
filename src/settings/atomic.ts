@@ -4,7 +4,7 @@
 // A failed backup aborts before any change; a failed rename leaves the original and removes the temp file.
 // Error messages never contain file content.
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import type { EnvFs } from '../setup/envWriter.js';
 
 export type StatKind = 'file' | 'dir' | 'symlink' | 'other';
@@ -22,6 +22,8 @@ export interface AtomicFs extends EnvFs {
   lstat(p: string): StatLite | null;
   /** Entry names (not paths) of a directory; [] when it does not exist. */
   list(dir: string): string[];
+  /** Resolve symlinks of an existing path; throws when it does not exist. */
+  realpath(p: string): string;
 }
 
 export const nodeAtomicFs: AtomicFs = {
@@ -46,6 +48,7 @@ export const nodeAtomicFs: AtomicFs = {
       return null;
     }
   },
+  realpath: (p) => realpathSync(p),
   list: (dir) => {
     try {
       return readdirSync(dir);

@@ -101,6 +101,10 @@ describe('broken variants (one per rule)', () => {
     expect(check('portals', set('portals.json', (o) => delete o.tracked_companies)).errors.join()).toMatch(/tracked_companies/);
     expect(check('portals', set('portals.json', (o) => (o.tracked_companies[0].slug = 'bad slug!'))).ok).toBe(false);
     expect(check('portals', set('portals.json', (o) => (o.tracked_companies[0].ats = 'nonsense'))).errors.join()).toMatch(/tracked_companies\[0\]/);
+    const long = 'Z'.repeat(200);
+    const lr = check('portals', set('portals.json', (o) => (o.tracked_companies[0].ats = long)));
+    expect(lr.ok).toBe(false);
+    expect(lr.errors.join()).not.toContain('Z'.repeat(41));
     expect(check('portals', '[]').ok).toBe(false);
     expect(check('portals', set('portals.json', (o) => (o.tracked_companies[1].enabled = 'true'))).warnings.join()).toMatch(/tracked_companies\[1\]\.enabled/);
     expect(check('portals', set('portals.json', (o) => (o.location_filter.allow = []))).ok).toBe(false);

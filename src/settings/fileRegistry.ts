@@ -138,12 +138,15 @@ function remoteAnywhereWarning(ownFlag: boolean, ownName: string, ctx: ValidateC
 
 // ---------------------------------------------------------------- validators
 
+// Loader messages echo file values (unknown ats, slug); bound each quoted value.
+const boundQuoted = (m: string): string => m.replace(/"([^"]{40})[^"]*"/g, '"$1..."');
+
 function portals(value: unknown, text: string, ctx: ValidateCtx): SchemaResult {
   const r = viaTempFile('portals.json', text, (f) => loadPortals(f));
   const errors: string[] = [];
   const warnings: string[] = [];
-  if (r.error) errors.push(r.error.replace(/^config\/portals\.json: /, ''));
-  for (const w of r.warnings ?? []) errors.push(w.replace(/^config\/portals\.json: /, ''));
+  if (r.error) errors.push(boundQuoted(r.error.replace(/^config\/portals\.json: /, '')));
+  for (const w of r.warnings ?? []) errors.push(boundQuoted(w.replace(/^config\/portals\.json: /, '')));
   if (isObj(value) && Array.isArray(value.tracked_companies)) {
     value.tracked_companies.forEach((c, i) => {
       if (isObj(c) && c.enabled !== undefined && typeof c.enabled !== 'boolean') warnings.push(`tracked_companies[${i}].enabled: must be exactly true or false, anything else leaves the company off`);

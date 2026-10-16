@@ -84,7 +84,17 @@ export function countChangedPaths(a: unknown, b: unknown): number {
 
 export function createJsonStore(deps: JsonStoreDeps): JsonStore {
   const { fs } = deps;
-  const udir = deps.userDataDir ?? resolveUserDataDir(deps.env ?? process.env, deps.root);
+  const udirRaw = deps.userDataDir ?? resolveUserDataDir(deps.env ?? process.env, deps.root);
+  // Resolved once: a symlinked user-data directory (or JOBAPPLIER_USER_DATA through a symlink) is followed here, so
+  // existing and missing files are checked against the same real directory. A missing directory stays as given
+  // and is reported as parent_missing.
+  const udir = (() => {
+    try {
+      return fs.realpath(udirRaw);
+    } catch {
+      return udirRaw;
+    }
+  })();
 
   function targetPath(e: FileEntry): string {
     if (e.area === 'user-data') return join(udir, basename(e.rel));
@@ -188,7 +198,7 @@ export function createJsonStore(deps: JsonStoreDeps): JsonStore {
         backupExt: '.json',
         keep: deps.keep,
         now: deps.now,
-        mode: e.area === 'user-data' ? 0o600 : 0o644,
+        mode: e.area === 'user-data' ? 0o600 : (fs.lstat(p)?.mode ?? 0o644),
       });
     },
 
