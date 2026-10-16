@@ -92,3 +92,28 @@ header { top: var(--banner-h, 0px); }
   border: 1px solid var(--line); background: var(--card);
 }
 .login .notice[hidden] { display: none; }
+
+/* Settings: environment editor. Single column; the review bar sticks to the bottom; state is always in words. */
+.env-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.env-tools select, .env-row select, .env-row input[type="text"], .env-row input[type="number"], .env-row input[type="password"],
+.env-tools input[type="search"], #env-phrase {
+  min-height: 44px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); max-width: 100%;
+}
+.env-row input[type="text"], .env-row input[type="number"], .env-row input[type="password"] { width: 100%; }
+.env-row input[type="checkbox"] { width: 24px; height: 24px; vertical-align: middle; }
+.switch { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+.env-group { border: 1px solid var(--line); border-radius: 10px; margin: 8px 0; padding: 4px 12px; background: var(--card); }
+.env-group > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
+.env-row { padding: 12px 0; border-top: 1px solid var(--line); }
+.env-key { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.env-key code, .diff-row code, .pending-list code { font-family: ui-monospace, Menlo, monospace; }
+.env-about { margin: 4px 0; }
+.badges { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.badges .badge { overflow-wrap: anywhere; }
+.row-error:empty { display: none; }
+.env-row button { margin: 4px 4px 0 0; }
+.pending-list, .diff-list { padding-left: 0; list-style: none; display: grid; gap: 8px; }
+.diff-row { display: grid; gap: 2px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; overflow-wrap: anywhere; }
+.env-bar { position: sticky; bottom: 0; z-index: 1; display: flex; gap: 12px; align-items: center; justify-content: space-between;
+  padding: 8px 0; background: var(--bg); border-top: 1px solid var(--line); }
+.env-status:focus, .env-review h3:focus { outline: 3px solid var(--accent); outline-offset: 2px; }

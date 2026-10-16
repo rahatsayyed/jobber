@@ -64,6 +64,24 @@ describe('settings frontend lint', () => {
     }
   });
 
+  it('environment editor: secret input is password, no autofill, never rendered from state', () => {
+    const t = read('views', 'settings-env.js');
+    expect(t).toContain("type: 'password'");
+    expect(t).toMatch(/\.autocomplete = 'new-password'/);
+    expect(t).toMatch(/\.spellcheck = false/);
+    // no secret value reaches a value attribute, text node or URL: the secret path never reads state.value
+    expect(t).toMatch(/if \(isSecretSpec\(spec\)\) return '';/);
+    expect(t).not.toMatch(/value:\s*(s|st|staged\.get\([^)]*\))\.value/);
+    expect(t).not.toMatch(/location\.(hash|search)\s*=[^;]*value/);
+    // the API base comes from api.js (two pieces), never spelled out here
+    expect(t).toContain('SETTINGS_API');
+    expect(t).toContain('Type ${fr.phrase} to confirm');
+    expect(t).toContain('Needs a fresh sign-in');
+    expect(t).toContain('The file changed on disk since you opened this page.');
+    expect(t).toContain("role: 'status'");
+    expect(t).toContain('aria-live');
+  });
+
   it('css gives the banner distinct border styles and 44px targets', () => {
     const c = read('style.css');
     expect(c).toContain('#banner');
