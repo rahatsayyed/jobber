@@ -130,12 +130,19 @@ function resolveSponsorship(v: unknown, jobLocation: string | undefined): boolea
   const o = v as { india?: unknown; other?: unknown };
   const loc = (jobLocation ?? '').trim().toLowerCase();
   if (!loc) return null;
-  const hasIndia = /\bindia\b/.test(loc);
-  if (hasIndia) {
-    if (/\b(or|and)\b|\/|&/.test(loc)) return null;
-    return typeof o.india === 'boolean' ? o.india : null;
-  }
-  return typeof o.other === 'boolean' ? o.other : null;
+  // Split into separate locations on ; / & and the words or/and. A location is India only
+  // when its LAST comma part is India ("Pune, India"); one that mentions India elsewhere
+  // ("India, UAE", "Pune, India, Remote EMEA") is ambiguous. Mixed or ambiguous -> null.
+  const locs = loc.split(/[;/&]|\b(?:or|and)\b/).map((x) => x.trim()).filter(Boolean);
+  const kinds = locs.map((l) => {
+    const parts = l.split(',').map((x) => x.trim()).filter(Boolean);
+    if (parts[parts.length - 1] === 'india') return 'india';
+    return /\bindia\b/.test(l) ? 'mixed' : 'other';
+  });
+  if (kinds.length === 0) return null;
+  if (kinds.every((k) => k === 'india')) return typeof o.india === 'boolean' ? o.india : null;
+  if (kinds.every((k) => k === 'other')) return typeof o.other === 'boolean' ? o.other : null;
+  return null;
 }
 
 export function loadAnswerBook(deps: { answersPath?: string; profilePath?: string } = {}): AnswerBook {
@@ -159,7 +166,7 @@ export function loadAnswerBook(deps: { answersPath?: string; profilePath?: strin
   const customValue = (key: string): AnswerValue | undefined => {
     const c = answers.custom;
     if (!c || !Object.prototype.hasOwnProperty.call(c, key)) return undefined;
-    return c[key];
+    return c[key] === '' ? undefined : c[key];
   };
 
   function resolve(ref: AnswerRef, ctx: { jobLocation?: string }): AnswerValue | null {
@@ -170,7 +177,7 @@ export function loadAnswerBook(deps: { answersPath?: string; profilePath?: strin
     if (!FIXED_KEYS.has(key)) return null;
     if (key === 'requires_sponsorship') return resolveSponsorship(answers.requires_sponsorship, ctx.jobLocation);
     const v = (answers as Record<string, unknown>)[key];
-    return v === undefined || v === null ? null : (v as AnswerValue);
+    return v === undefined || v === null || v === '' ? null : (v as AnswerValue);
   }
 
   return {
@@ -179,10 +186,12 @@ export function loadAnswerBook(deps: { answersPath?: string; profilePath?: strin
       if (ref.kind !== 'answer') return false;
       const key = ref.key as string;
       if (key.startsWith('custom:')) return customValue(key.slice(7)) !== undefined;
-      return FIXED_KEYS.has(key) && (answers as Record<string, unknown>)[key] != null;
+      return FIXED_KEYS.has(key) && (answers as Record<string, unknown>)[key] != null && (answers as Record<string, unknown>)[key] !== '';
     },
     resolve,
     suggest(question) {
+      // Consent/attestation keywords are checked BEFORE the verbatim custom match and the
+      // known patterns, so such questions fail closed and never resolve.
       if (ATTESTATION.test(question)) return { ref: null, cls: 'legal_attestation' };
       if (CONSENT.test(question)) return { ref: null, cls: 'consent' };
       if (answers.custom) {

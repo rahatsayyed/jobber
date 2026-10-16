@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import path from 'node:path';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { loadAnswerBook, resolveAnswer, QUESTION_PATTERNS, type EasyApplyAnswers } from '../src/apply/answers.js';
 
@@ -47,6 +49,30 @@ describe('answer book', () => {
     expect(b.resolve(ref, { jobLocation: '' })).toBeNull();
     expect(b.resolve(ref, {})).toBeNull();
     expect(b.resolve(ref, { jobLocation: 'India or Dubai' })).toBeNull();
+  });
+
+  it('multi-location sponsorship with any non-India segment is null', () => {
+    const ref = { kind: 'answer', key: 'requires_sponsorship' } as const;
+    const b = book();
+    for (const l of ['Bangalore, India; Dubai, UAE', 'India, UAE', 'Pune, India, Remote EMEA', 'India / UAE', 'Pune, India; Dubai']) {
+      expect(b.resolve(ref, { jobLocation: l })).toBeNull();
+    }
+    expect(b.resolve(ref, { jobLocation: 'Pune, India; Mumbai, India' })).toBe(false);
+    expect(b.resolve(ref, { jobLocation: 'Dubai; Riyadh' })).toBe(true);
+  });
+
+  it('empty-string answers are missing', () => {
+    const ap = path.join(mkdtempSync(path.join(tmpdir(), 'ab-')), 'a.json');
+    writeFileSync(ap, JSON.stringify({ expected_salary: '', custom: { 'Q?': '' } }));
+    const b = loadAnswerBook({ answersPath: ap, profilePath: path.join(dir, 'resume.json') });
+    expect(b.has({ kind: 'answer', key: 'expected_salary' })).toBe(false);
+    expect(b.resolve({ kind: 'answer', key: 'expected_salary' }, {})).toBeNull();
+    expect(b.has({ kind: 'answer', key: 'custom:Q?' })).toBe(false);
+  });
+
+  it('attestation inside a known pattern is not resolved', () => {
+    const s = book().suggest('I certify I have the right to work and am authorized to work here');
+    expect(s).toEqual({ ref: null, cls: 'legal_attestation' });
   });
 
   it('missing answer returns null', () => {
