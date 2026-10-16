@@ -17,8 +17,13 @@ export interface SetupIO {
     prompt: string,
     opts?: { default?: string; validate?: (v: string) => string | null },
   ): Promise<string>;
-  /** No echo; the value is auto-registered as a secret by redactingIO. */
-  askSecret(prompt: string, opts?: { validate?: (v: string) => string | null }): Promise<string>;
+  /** No echo; the value is auto-registered as a secret by redactingIO. With `existing` (a value
+   *  already stored) the prompt says "keep existing (set)" and a blank answer returns it; the
+   *  stored value itself is never printed. */
+  askSecret(
+    prompt: string,
+    opts?: { validate?: (v: string) => string | null; existing?: string },
+  ): Promise<string>;
   confirm(prompt: string, defaultYes?: boolean): Promise<boolean>;
   choose<T extends string>(
     prompt: string,
@@ -89,6 +94,10 @@ export function redactingIO(
     ask: (prompt, opts) =>
       inner.ask(red(prompt), opts ? { ...opts, validate: wrapValidate(opts.validate, false) } : opts),
     async askSecret(prompt, opts) {
+      if (opts?.existing) {
+        registered.add(opts.existing);
+        if (opts.existing.trim()) registered.add(opts.existing.trim());
+      }
       const v = await inner.askSecret(
         red(prompt),
         opts ? { ...opts, validate: wrapValidate(opts.validate, true) } : opts,
@@ -166,7 +175,7 @@ export function scriptedIO(script: ScriptItem[]): SetupIO & {
     transcript,
     say: (line) => void transcript.push(`say: ${line}`),
     ask: (prompt, opts) => loop('ask', prompt, opts?.validate, opts?.default),
-    askSecret: (prompt, opts) => loop('secret', prompt, opts?.validate, undefined),
+    askSecret: (prompt, opts) => loop('secret', prompt, opts?.validate, opts?.existing || undefined),
     async confirm(prompt, defaultYes = true) {
       transcript.push(`confirm: ${prompt}`);
       const item = next('confirm', prompt) as { confirm?: boolean };
@@ -266,8 +275,24 @@ export function ttyIO(
     output.write(s);
   }
 
+  // The label is a protected prefix: readline owns it (setPrompt + prompt), so its line
+  // refresh (backspace, kill-line, cursor moves) redraws the label instead of erasing it. Any
+  // text before the last newline is plain output; only the last line is the readline prompt.
   async function line(prompt: string, secret: boolean): Promise<string> {
-    write(prompt);
+    const nl = prompt.lastIndexOf('\n');
+    if (nl >= 0) write(prompt.slice(0, nl + 1));
+    const tail = prompt.slice(nl + 1);
+    const queued = lines.shift();
+    if (queued !== undefined) {
+      write(tail);
+      if (secret) write('\n');
+      return queued;
+    }
+    if (closed) throw new Error('Input closed before an answer was given');
+    rl.setPrompt(tail);
+    rl.prompt();
+    // Mute only after the label is on screen; typed characters then never reach the output
+    // while editing (backspace and cursor keys still work on the hidden buffer).
     muted = secret;
     try {
       return await readLine();
@@ -283,7 +308,7 @@ export function ttyIO(
     validate: ((v: string) => string | null) | undefined,
     dflt: string | undefined,
   ): Promise<string> {
-    const shown = dflt ? `${prompt} [${dflt}] ` : `${prompt} `;
+    const shown = dflt ? `${prompt} [${secret ? 'keep existing (set)' : dflt}] ` : `${prompt} `;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const raw = await line(shown, secret);
       const value = raw === '' && dflt !== undefined ? dflt : raw;
@@ -313,7 +338,7 @@ export function ttyIO(
     history: () => ((rl as unknown as { history?: string[] }).history ?? []),
     say: (l) => write(`${l}\n`),
     ask: (prompt, opts) => loop(prompt, false, opts?.validate, opts?.default),
-    askSecret: (prompt, opts) => loop(prompt, true, opts?.validate, undefined),
+    askSecret: (prompt, opts) => loop(prompt, true, opts?.validate, opts?.existing || undefined),
     async confirm(prompt, defaultYes = true) {
       const hint = defaultYes ? '[Y/n]' : '[y/N]';
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
