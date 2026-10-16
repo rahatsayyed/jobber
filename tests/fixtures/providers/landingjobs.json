@@ -1,0 +1,18 @@
+[
+  {
+    "title": "Backend Dev",
+    "url": "https://landing.jobs/at/zeta-labs/backend-dev",
+    "locations": [
+      {
+        "city": "Lisbon",
+        "country_code": "PT"
+      }
+    ],
+    "remote": false,
+    "published_at": "2025-10-02T09:00:00Z"
+  },
+  {
+    "title": "Off Host",
+    "url": "https://example.org/at/x/y"
+  }
+]

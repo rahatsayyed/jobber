@@ -8,6 +8,7 @@ import { fetchBoards, type BoardSample, type FetchBoardsOptions } from './boards
 import { BOARD_PROVIDERS } from './boards/providers.js';
 import type { Ats } from './boards/filters.js';
 import type { Provider } from './provider.js';
+import { IMPORTED_LOADERS } from './providers/index.js';
 import { loadRegistry } from './registry.js';
 import { checkShape, type ShapeReport } from './shape.js';
 import { redactError, statsToOutcomes, type SourceOutcome, type SourceStatusRow } from './status.js';
@@ -44,6 +45,7 @@ const API_LOADERS: Record<string, () => Promise<{ provider: Provider }>> = {
   remotive: () => import('./remotive.js'),
   remoteok: () => import('./remoteok.js'),
   naukri: () => import('./naukri.js'),
+  ...IMPORTED_LOADERS,
 };
 
 interface Failure { platform: string; company: string | null; reason: FailureReason }
