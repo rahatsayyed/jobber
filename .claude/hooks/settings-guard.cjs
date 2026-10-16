@@ -12,7 +12,8 @@ const FORBIDDEN_MENTIONS = ['/api/settings', '.jobber/settings-backups', '.jobbe
 function isProtectedEnvName(name) {
   if (typeof name !== 'string') return false;
   const base = name.replace(/[\\/]+$/, '').split(/[\\/]/).pop().replace(/^["']+|["']+$/g, '');
-  return base === '.env' || /^\.env\.(?!example$)/.test(base);
+  const lower = base.toLowerCase(); // case-insensitive filesystems (macOS) resolve .ENV to .env
+  return lower === '.env' || /^\.env\.(?!example$)/.test(lower);
 }
 
 function serialize(input) {
@@ -24,8 +25,15 @@ function serialize(input) {
 }
 
 function mention(text) {
-  const t = text.toLowerCase().replace(/\\\\/g, '/').replace(/\\\//g, '/');
-  return FORBIDDEN_MENTIONS.find((m) => t.includes(m)) || null;
+  const norm = (x) => x.toLowerCase().replace(/\\\\/g, '/').replace(/\\\//g, '/');
+  const forms = [norm(text)];
+  try {
+    forms.push(norm(decodeURIComponent(text)));
+  } catch {
+    // malformed escape: lenient %XX decode instead
+    forms.push(norm(text.replace(/%([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))));
+  }
+  return FORBIDDEN_MENTIONS.find((m) => forms.some((t) => t.includes(m))) || null;
 }
 
 const WRITERS = new Set(['tee', 'cp', 'mv', 'install', 'truncate', 'dd', 'ln']);

@@ -230,6 +230,13 @@ describe('CLI', () => {
     expect(runCli(['diff'], d).code).toBe(1);
   });
 
+  it('check with no catalog loaded prints a notice and exits non-zero', () => {
+    const r = runCli(['check'], { ...mk(env), catalog: [] });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('no catalog loaded');
+    noSecret(r.out);
+  });
+
   it('unknown command prints usage; the read-only fs refuses every mutation', () => {
     expect(runCli(['nope'], mk(env)).code).toBe(1);
     expect(runCli([], mk(null)).code).toBe(1);

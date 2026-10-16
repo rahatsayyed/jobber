@@ -65,6 +65,10 @@ export function runCli(argv: readonly string[], d: CliDeps): CliResult {
   }
 
   if (cmd === 'check') {
+    if (d.catalog.length === 0) {
+      lines.push('check: no catalog loaded (the settings catalog is absent or empty); nothing was checked');
+      return out(1);
+    }
     const env = parseEnv(envText(d));
     let problems = 0;
     for (const s of d.catalog) {

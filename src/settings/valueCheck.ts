@@ -9,7 +9,7 @@ const DEFAULT_MAX_LEN = 2000;
 const PATH_MAX = 1024;
 
 function show(spec: EnvSpec, v: string): string {
-  return spec.secret ? 'value' : `"${v.length > 60 ? v.slice(0, 60) + '...' : v}"`;
+  return spec.secret || spec.type === 'secret' ? 'value' : `"${v.length > 60 ? v.slice(0, 60) + '...' : v}"`;
 }
 
 function intIn(spec: EnvSpec, raw: string): string | null {
