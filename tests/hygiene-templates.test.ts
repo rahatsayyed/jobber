@@ -4,12 +4,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { USER_FILES } from '../src/lib/userData.js';
 
 // Key paths up to and including `custom`; the contents of a `custom` map are the owner's own
-// screening questions (user-specific keys), so they are never compared.
+// screening questions, and the keys under `salary` are currency codes (user-specific), so neither is compared.
 const keysOf = (v: unknown, prefix = ''): string[] =>
   v && typeof v === 'object' && !Array.isArray(v)
     ? Object.entries(v as Record<string, unknown>).flatMap(([k, x]) => [
         prefix + k,
-        ...(k === 'custom' ? [] : keysOf(x, `${prefix}${k}.`)),
+        ...(k === 'custom' || k === 'salary' ? [] : keysOf(x, `${prefix}${k}.`)),
       ])
     : [];
 
