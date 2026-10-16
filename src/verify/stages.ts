@@ -16,6 +16,7 @@ import { buildSnapshot } from '../status/snapshot.js';
 import { renderHealth, renderLimits, renderWorking } from '../status/render.js';
 import { loadOutreachConfig } from '../outreach/config.js';
 import type { Stage, StageOutcome, VerifyCtx } from './engine.js';
+import { providerShapeBreak, scoutDork, applierFixture } from './stagesSources.js';
 
 const firstLine = (e: unknown): string => (e instanceof Error ? e.message : String(e)).split('\n')[0];
 const pass = (detail: string): StageOutcome => ({ status: 'pass', detail });
@@ -315,7 +316,7 @@ const llmHunt: Stage = {
 export function allStages(): Stage[] {
   return [
     envGuard, doctor, classifierSmoke, launcher, schedulerPlan, pipelineFixture,
-    killSwitchDrill, statusRender, dashboardLogin, llmHunt,
+    killSwitchDrill, statusRender, dashboardLogin, providerShapeBreak, scoutDork, applierFixture, llmHunt,
   ];
 }
 
