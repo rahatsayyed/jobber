@@ -128,7 +128,11 @@ Notes:
 
 Only four features are skippable as a recorded choice (catalog in `src/setup/skips.ts`). A skip is
 a state entry `steps.<id>.status: skipped`. It never writes `.env`, a dry-run flag, a permission
-set or a halt.
+set or a halt. Only a deliberate choice records a skip (answering "Skip for now", or choosing skip
+when a confirmation is offered). A step that simply did not finish (a failed token or consent
+command, a declined sign-in method, the dashboard script not installed yet) ends `pending`: nothing
+is recorded, a skip recorded earlier is cleared, and the doctor, `npm run up` and the dry-run
+`dashboard-login` stage keep treating the feature as not skipped.
 
 | Skip id | Label | What you lose |
 |---|---|---|

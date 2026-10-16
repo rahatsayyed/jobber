@@ -121,7 +121,7 @@ describe('gmailStep', () => {
 
   it('does not spawn when the user declines the consent screen', async () => {
     const t = setup([...PRE, { confirm: false }]);
-    expect(await gmailStep.run(t.ctx)).toBe('skipped');
+    expect(await gmailStep.run(t.ctx)).toBe('pending');
     expect(t.spawns).toEqual([]);
   });
 });

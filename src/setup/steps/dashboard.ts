@@ -82,7 +82,7 @@ export const dashboardStep: SetupStep = {
     if (!ctx.fs.exists(path.join(root, 'scripts', 'dashboard.ts'))) {
       localSettings(ctx);
       io.say('skipped until installed (plan 7C)');
-      return 'skipped';
+      return 'pending';
     }
 
     const envText = readEnvText(ctx);
@@ -119,14 +119,14 @@ export const dashboardStep: SetupStep = {
         io.say(
           `The token command did not finish (exit ${code}). Run npm run dashboard -- token yourself in a terminal; rotate if a token already exists.`,
         );
-        return 'skipped';
+        return 'pending';
       }
       io.say('Open that URL once; the token is not stored. Lost it? npm run dashboard -- rotate');
       return 'done';
     }
 
     if (!(await io.confirm('Use Google sign-in instead? (needs the Gmail OAuth client, see docs)', false))) {
-      return 'skipped';
+      return 'pending';
     }
     writeKeys(ctx, { WEB_AUTH_MODE: 'google_desktop' }, false);
     let email = envFileValue(envText, 'DASHBOARD_ALLOWED_EMAIL').toLowerCase();

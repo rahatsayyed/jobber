@@ -86,7 +86,7 @@ describe('gmail skip and confirms', () => {
         { confirm: false },
       ],
     });
-    expect(await gmailStep.run(t.ctx)).toBe('skipped');
+    expect(await gmailStep.run(t.ctx)).toBe('pending');
     const out = t.sio.transcript.join('\n');
     expect(out).toContain('must be named exactly secrets/gcp-oauth.keys.json');
     expect(out).toContain('Console path');
@@ -105,7 +105,7 @@ describe('gmail skip and confirms', () => {
     const [removed] = setupChecks.splice(i, 1);
     try {
       const t = mk({ script: [{ choose: 'now' }, ...CONFIRMS, { confirm: true }] });
-      expect(await gmailStep.run(t.ctx)).toBe('skipped');
+      expect(await gmailStep.run(t.ctx)).toBe('pending');
       expect(t.sio.transcript.join('\n')).toContain('could not be verified');
     } finally {
       setupChecks.splice(i, 0, removed);
@@ -128,7 +128,7 @@ describe('gmail skip and confirms', () => {
       script: [{ choose: 'now' }, ...CONFIRMS, { confirm: true }],
       files: { [KEYS]: '{}', [CREDS]: '{}' },
     });
-    expect(await gmailStep.run(t.ctx)).toBe('skipped');
+    expect(await gmailStep.run(t.ctx)).toBe('pending');
     expect(t.sio.transcript.join('\n')).toContain('Gmail is not authorised yet; run this step again');
   });
 });
