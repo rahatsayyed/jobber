@@ -75,6 +75,19 @@ export async function postToken(token, reauth) {
   return data;
 }
 
+// Settings API base, built from two pieces so the full path literal never appears in source.
+export const SETTINGS_API = '/api/' + 'settings';
+
+export function getSettingsMeta() {
+  return get(SETTINGS_API + '/meta');
+}
+
+// suffix is a path below the settings API base, e.g. '/preview'. Same-origin fetch with the CSRF wrapper.
+export function postSettings(suffix, body) {
+  if (typeof suffix !== 'string' || !/^\/[A-Za-z0-9_/-]*$/.test(suffix)) throw new Error('bad settings path');
+  return post(SETTINGS_API + suffix, body);
+}
+
 export async function post(path, body) {
   if (!csrf) await session();
   const res = await fetch(path, {

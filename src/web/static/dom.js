@@ -1,7 +1,7 @@
 // src/web/static/dom.js
 // DOM helpers. Everything is built with createElement and textContent; there is no markup parsing anywhere.
 // Only the attribute allowlist below can be set, so a stored value can never become a link or a handler.
-const ATTRS = new Set(['class', 'id', 'type', 'value', 'disabled', 'placeholder']);
+const ATTRS = new Set(['class', 'id', 'type', 'value', 'disabled', 'placeholder', 'role', 'for']);
 const attrOk = (k) => ATTRS.has(k) || k.startsWith('aria-') || k.startsWith('data-');
 
 function append(node, child) {

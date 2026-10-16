@@ -74,6 +74,18 @@ th { color: var(--muted); font-weight: 600; }
   td::before { content: attr(data-label); display: block; color: var(--muted); font-size: 0.8rem; }
 }
 
+/* Mode banner: sticky, outside the view root. Mode is shown by text, icon and border style, never colour alone. */
+#banner { position: sticky; top: 0; z-index: 2; min-height: 44px; display: flex; flex-wrap: wrap; align-items: center;
+  gap: 4px 12px; padding: 8px 16px; background: var(--card); color: var(--fg); overflow-wrap: anywhere; }
+#banner[hidden] { display: none; }
+#banner.banner-dry { border-bottom: 3px dashed var(--accent); }
+#banner.banner-live { border-bottom: 4px double var(--bad); }
+#banner.banner-unknown { border-bottom: 3px dotted var(--warn); }
+#banner .banner-mode { font-weight: 700; letter-spacing: 0.04em; }
+#banner .banner-note { font-size: 0.9rem; }
+header { top: var(--banner-h, 0px); }
+.tabs button { min-width: 44px; }
+
 .login form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .login input[type="password"] {
   flex: 1 1 200px; min-width: 0; min-height: 44px; padding: 8px 14px; border-radius: 8px;
