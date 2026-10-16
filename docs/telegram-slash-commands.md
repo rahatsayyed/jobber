@@ -12,11 +12,11 @@ Jobber uses explicit slash commands (`/runhunt`, `/status`, etc.) for reliable, 
 
 4. **Paste this command list** (one command per line):
    ```
-   runhunt - Discover jobs, match, find contacts, send cold emails
+   runhunt - Run one wake now: discover, match, contacts, send, apply
    status - Funnel, rates and benchmarks
    followups - Draft and send email follow-ups, resolve stale
-   apply - Apply to a job (Easy Apply or external ATS)
-   applyall - Apply to all of today's matched jobs
+   apply - Status of a job in the browser-apply queue
+   applyall - Apply queue and caps for today's matched jobs
    connect - Draft + send a LinkedIn connect request or message
    include - Un-exclude a vetoed job (manual override)
    outcome - Record a job outcome (replied/interview/offer/rejected...)
@@ -27,6 +27,7 @@ Jobber uses explicit slash commands (`/runhunt`, `/status`, etc.) for reliable, 
    limits - Today's send, apply and connect limits
    working - Queue, halts and funnel snapshot
    health - Platform and pipeline health
+   sources - Per-source status table
    ```
 
 5. **Save.** The commands are now registered for your bot.
@@ -37,10 +38,11 @@ In Telegram, when you open the chat with your Jobber bot, you'll see the slash c
 
 Examples:
 ```
-/runhunt          → starts the full hunt (discover → match → send)
+/runhunt          → runs one wake now (discover → match → contacts → send → apply)
 /status           → shows current job/outreach/thread counts
 /followups        → drafts and sends email follow-ups (needs your approval unless FOLLOWUPS_AUTONOMOUS=true)
-/apply #123       → applies to job #123
+/apply #123       → shows job #123 in the apply queue (applying happens in a wake)
+/sources          → the per-source status table
 ```
 
 ## Updating Commands
@@ -52,7 +54,7 @@ Never leave a command description saying "Phase X not implemented yet" once Phas
 ## Fallback (Natural Language)
 
 If a slash command doesn't work or you prefer natural language, the agent still understands:
-- "run hunt" → `/runhunt`
+- "run hunt" → `/runhunt` (one forced wake via `./run-hunt.sh`)
 - "show status" → `/status`
 - "send follow-ups" → `/followups`
 

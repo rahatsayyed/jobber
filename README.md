@@ -2,10 +2,10 @@
 
 ## What Jobber is
 
-Jobber is an autonomous job-hunting agent. It discovers new job postings, scores each one against your base resume, tailors the resume for good matches, finds a verified contact at the hiring company, drafts a cold outreach email, and sends it. It also applies through LinkedIn Easy Apply and external ATS forms and sends LinkedIn connection requests. It sends real email and takes real LinkedIn actions on your own accounts, always inside daily caps that the code enforces.
+Jobber is an autonomous job-hunting agent. A scheduler wake fetches new job postings from the sources listed in the platform registry, scores each one against your base resume, tailors the resume for good matches, finds a verified contact at the hiring company, drafts a cold outreach email, and sends it. The same wake sends LinkedIn connection requests and messages and applies through the browser. It sends real email and takes real LinkedIn and web actions on your own accounts, always inside daily caps that the code enforces, and everything ships in dry mode until you flip the dry-run flags yourself.
 
 **Phase 1 (complete):** cold-email discovery and outreach.
-**Phase 2 (substantially complete):** browser apply through the `applier` MCP (typed tools, refs only, ATS recipes, answer book; LinkedIn Easy Apply with the burner account is off by default), external ATS apply and LinkedIn connection requests and messages (main account, typed `linkedin` tools). See [Phase 2 known issues](docs/phase2-known-issues.md) before treating it as fully production-proven.
+**Phase 2 (substantially complete):** browser apply through the `applier` MCP (typed tools, refs only, ATS recipes, answer book, per-host caps; LinkedIn Easy Apply with the burner account is off by default; see [docs/apply.md](docs/apply.md)) and LinkedIn connection requests and messages (main account, typed `linkedin` tools). See [Phase 2 known issues](docs/phase2-known-issues.md) before treating it as fully production-proven.
 **Phase 3 (in progress):** reply detection, email follow-ups (autonomous mode is built but ships off, see `FOLLOWUPS_AUTONOMOUS` in `.env.example`) and the funnel report.
 
 ---
@@ -31,7 +31,7 @@ npm start                        # 4. start bridge, windows, scheduler, dashboar
 - `npm run setup` is the guided wizard that writes `.env`, captures accounts and sessions, converts your resume, and chooses limits and a permission set. It needs a real terminal and exits with code 2 when stdin is not a TTY. `npm run setup -- --no-guide` skips the guided Claude session for one run.
 - Setup has two modes, chosen once and remembered in `user-data/.setup-state.json`: agent (a guided Claude session in a detached tmux window beside the wizard; it is launched only when the Claude CLI, its login, the guide profile and `tmux -V` all pass, otherwise the wizard says why and continues in terminal text) and terminal (plain walkthroughs for every step, no guide). The first interactive run asks which you want, with the default chosen from that readiness. Set or switch it with `npm run setup -- --mode agent|terminal`; `--status` shows the stored mode.
 - Telegram and the dashboard (both labelled RECOMMENDED), Gmail (NEEDED FOR EMAIL OUTREACH) and each API key (OPTIONAL) may be skipped; a skipped step shows as skipped (not failed) in `npm run doctor`, and you add it later with `npm run setup -- --step telegram` (or `dashboard`, `gmail`, `apikeys`). Skipping never changes a permission set or a dry-run flag.
-- `npm run dry-run` runs an end-to-end smoke test against fixtures and a temporary database, prints PASS, FAIL or SKIP per stage and touches no live state: it writes `.jobber/verify.json` and idempotently rewrites the launcher's `debug/runner/<profile>.settings.json` and `.policy.json` (via `run-claude --print-args`). `--llm` adds a real hunt run and only runs when `.env` itself is dry (it uses subscription usage).
+- `npm run dry-run` runs an end-to-end smoke test against fixtures and a temporary database, prints PASS, FAIL or SKIP per stage and touches no live state: it writes `.jobber/verify.json` and idempotently rewrites the launcher's `debug/runner/<profile>.settings.json` and `.policy.json` (via `run-claude --print-args`). `--llm` adds the `llm-hunt` stage (an LLM run in dry mode) and only runs when `.env` itself is dry (it uses subscription usage).
 - `npm start` (the same as `npm run up`) runs the doctor first, starts the stack, and prints `MODE: DRY RUN` or `MODE: LIVE` at the top and bottom. It never changes the mode: your `.env` decides. `npm stop` (the same as `npm run down`) stops it again without touching data.
 - `npm run doctor` can be run at any time to check the result. Each check reports ok, warn, fail or skipped.
 
@@ -49,7 +49,7 @@ In this order:
 - `claude`: checks that the Claude Code CLI is installed and logged in, and tells you how to log in if it is not.
 - `telegram`: walks you through creating a bot with @BotFather, tells you to enable Topics and turn Group Privacy off, stores the bot token in `.env` (never echoed), asks you to confirm Threaded Mode (topics) is on, records your numeric Telegram ID in `ALLOWED_USERS` (a comma-separated list of numeric IDs; each extra ID needs an explicit extra confirmation), and sends a test message. Skippable (RECOMMENDED): without it there is no phone control, no Telegram alerts and no approved email follow-ups, and `npm run up` starts no bridge or ccgram windows.
 - `gmail`: guides you through creating a Desktop OAuth client in your own Google Cloud project, then runs the consent screen so the send token stays on this machine. Skippable (NEEDED FOR EMAIL OUTREACH): without it there is no cold email, no email follow-ups and no reply watching; LinkedIn and Naukri outreach still run.
-- `apikeys`: optional Adzuna, Serper and Hunter keys, each skippable; Hunter stays off unless you confirm. Skipping it leaves those sources off (OPTIONAL).
+- `apikeys`: optional keys, each skippable: Adzuna (a job source) and Serper and Hunter (contact finding only, not job sources); Hunter stays off unless you confirm. Skipping it leaves the matching feature off (OPTIONAL). See [docs/api-keys.md](docs/api-keys.md).
 - `sessions`: opens real Chrome so you log in once to the main LinkedIn account (people search, connection requests and messages) and Naukri (`npm run linkedin:login`, `npm run naukri:login`; each prints a short instruction, you log in, then press Enter); the saved sessions live in `secrets/`.
 - `resume`: has a model transcribe your resume text into `user-data/resume.json`, rejects any number that is not in your source text, and writes nothing until you confirm.
 - `profile`: asks for roles, locations, remote preference, salary floors and targets, notice period and work authorization, and writes `user-data/profile.json`, the application answers file and the language list.
@@ -108,7 +108,7 @@ bash scripts/ccgram/stop.sh     # stop the bridge; Claude windows it created kee
 
 - `npm start` starts all of this in order (bridge, named windows, scheduler, dashboard; `npm start -- --status` is read-only) and `npm stop` stops it (`--keep-bridge` leaves the bridge running). The commands above and `./run-hunt.sh` remain the building blocks and the manual route.
 - The Telegram topic bound to the manager session lists, reads, starts and stops the named windows in `config/manager-windows.json` (`hunt` and `followups`). The `manager` window and the bridge are protected and cannot be stopped from Telegram. The manager never types into another window and never runs outreach itself. See [the manager skill](.claude/skills/manager/SKILL.md).
-- A headless, cron-friendly hunt runs with `./run-hunt.sh "run the hunt"`. It uses the restricted launcher `scripts/run-claude.sh`, profile `hunt` in `config/run-profiles.json`: the tool list comes from the `outreach_send` set, and permission checks are never skipped.
+- `./run-hunt.sh` is a shim that runs one wake now: it execs `npm run scheduler -- --once --now` (it ignores arguments). The wake is planned and limited exactly like a scheduled one (kill switch, halts, quiet hours, caps and the dry-run flags apply) and the scheduler launches the restricted launcher `scripts/run-claude.sh` with profile `outreach_wake` in `config/run-profiles.json`; permission checks are never skipped. For unattended runs use the scheduler (`npm run scheduler -- --daemon`, units from `npm run scheduler:units`).
 - The older route, a single `claude --channels plugin:telegram@claude-plugins-official` session, is documented in `CLAUDE.md`; the ccgram route above is the one setup configures.
 - To route Claude Code through another Anthropic-compatible provider (for example the Claude Code Router), see [model auth setup](docs/model-auth-setup.md). If a `.env.ccr` file exists, the launcher reads it. It is optional.
 
@@ -118,16 +118,18 @@ bash scripts/ccgram/stop.sh     # stop the bridge; Claude windows it created kee
 
 - `npm run doctor`: environment and configuration checks.
 - `npm run status -- limits`, `npm run status -- working`, `npm run status -- health`: today's caps and usage, the queue and halts, and platform health. The same three are the `/limits`, `/working` and `/health` Telegram commands (see [slash commands](docs/telegram-slash-commands.md)).
+- `npm run status -- sources`: the per-source status table (fetched, kept, new, errors, fallback); the same as `/sources`.
 - `npm run report`: a self-contained HTML funnel report under `reports/`.
 - `npm run web`: the local status page, described in the next section.
 
 Commands you can send from Telegram (or type in a CLI session):
 
-- `/runhunt`: run the full pipeline (discover, match, contacts, drafts, send).
+- `/runhunt`: run one wake now (discover, match, contacts, drafts, send, apply) through the scheduler.
 - `/status`: funnel, reply and interview rates.
 - `/followups`: check replies, then draft email follow-ups; they wait for your approval unless `FOLLOWUPS_AUTONOMOUS=true` (ships off), in which case code approves and sends them under the shared daily send cap.
 - `/checkreplies`: detect replies in Gmail and propose outcomes.
-- `/apply #N`: apply to one matched job.
+- `/apply #N`: show a job's state in the apply queue (applying itself happens in a wake's apply stage).
+- `/sources`: the per-source status table.
 - `/limits`, `/working`, `/health`: caps and usage, queue and halts, platform health.
 
 ---
@@ -138,22 +140,23 @@ Start it with `npm run web`; on first run use `npm run dashboard -- token` (setu
 
 - The send box is off unless `WEB_CHAT_ENABLED=true`; when on, it types your text into a live Claude session after a two-step confirmation; the only slash commands it accepts are bare `/limits`, `/working` and `/health`. Keep the permission set at `read_only` unless you need more.
 - Text typed in the chat box also answers any pending permission or confirmation prompt in the Claude window, so only enable it for an account you trust and keep the permission set `read_only`.
+- The settings page is read-only unless `WEB_SETTINGS_EDIT=true` is set in `.env` and the dashboard is restarted; the editor UI is still in progress. `npm run settings` is the read-only CLI for the same values.
 - The page listens on localhost only. From another machine use an SSH tunnel (`ssh -L 8787:127.0.0.1:8787 host`); never open the port.
 - Exposure options and login recovery: [docs/dashboard-exposure.md](docs/dashboard-exposure.md).
 
 ---
 
-## The hunt pipeline
+## What a wake does
 
-"Run hunt" dispatches one subagent per stage and sees only each stage's compact result:
+There is no separate batch hunt any more. The scheduler plans each wake in code, runs the script providers itself, then launches one restricted `claude` run that executes these steps in order, one subagent or operator per step (see [docs/architecture.md](docs/architecture.md)):
 
-1. **Discover** (`discoverer`): new jobs from Adzuna, Remotive, RemoteOK, Naukri, company boards and LinkedIn.
-2. **Match** (`matcher`): scores each job against your base resume; code vetoes (location, language, deal-breakers, legitimacy) then apply.
-3. **Filter**: jobs below `MATCH_THRESHOLD` (default 60) are skipped.
-4. **Find contacts** (`contact-finder`): a verified email and up to two LinkedIn profiles per job.
-5. **Prepare** (`outreach-preparer`): tailors the resume, drafts the email and connect notes, reviews and fact-checks them, then queues them.
-6. **Execute** (`sender`): sends email, connection requests and applies from the queue, within the caps. Email follow-ups are not part of the hunt; they run from the follow-up command.
-7. **Report**: counts and flags to Telegram, or to the terminal when Telegram is not active.
+1. **Discover**: the code pass over the enabled sources (Adzuna, Remotive, RemoteOK, Naukri, company boards and any imported feeds you enabled; see [docs/sources-and-platforms.md](docs/sources-and-platforms.md)); the `source-operator` reads pages a script provider could not; the `linkedin-operator` and `naukri-operator` run their named searches.
+2. **Match** (`matcher`): scores each job against your base resume; code vetoes (location, language, deal-breakers, legitimacy) then apply. Jobs below `MATCH_THRESHOLD` (default 60) are skipped.
+3. **Find contacts** (`contact-finder`): a verified email and up to two LinkedIn profiles per job.
+4. **Prepare** (`outreach-preparer`): tailors the resume, drafts the email and connect notes, reviews and fact-checks them, then queues them.
+5. **Send**: the `mail-operator` sends queued email and email follow-ups; the `linkedin-operator` and `naukri-operator` send connects, messages and replies; the `apply-operator` applies through the browser ([docs/apply.md](docs/apply.md)). All within the caps.
+
+`/runhunt` and `./run-hunt.sh` run one such wake on demand.
 
 Tune the basics in the Preferences block of `CLAUDE.md` and the limits in `.env`:
 
@@ -169,6 +172,7 @@ SEND_LIMIT_PER_RUN=1      # max real emails per day (a daily counter, not per in
 - Email goes only to addresses marked verified; an unverified guess is never sent to.
 - Caps (daily emails and applies, weekly LinkedIn invites and messages) are enforced in code, not by prompts; items over a cap stay queued.
 - A fact gate blocks resumes and emails that contain claims not supported by your own resume.
+- The scout and the applier use typed tools only: they never type free text into a page, never solve a CAPTCHA, MFA or phone check, never tick a marketing box, and create accounts only when you allow it. Generated job-source providers stay held until you approve them.
 - Reply outcomes need your explicit approval; auto-recording of outcomes ships off. Email follow-ups need your approval by default; with `FOLLOWUPS_AUTONOMOUS=true` (ships `false`) they send without approval under four code guards (fresh clean reply check, claim step, block list, fact gate) and the same daily send cap.
 - The permission set is the ceiling, and no session skips permissions. Job posting text, board data and reply mail are untrusted input and never instructions.
 
@@ -186,10 +190,10 @@ npm run setup        # run it in a real terminal (ssh -t or tmux)
 bash scripts/ccgram/start.sh
 ```
 
-Capture the LinkedIn and Naukri sessions on a machine with a display, or run the `sessions` step over a forwarded display; `secrets/` is never committed, so copy only what you need. For scheduled runs add a crontab line such as:
+Capture the LinkedIn and Naukri sessions on a machine with a display, or run the `sessions` step over a forwarded display; `secrets/` is never committed, so copy only what you need. For scheduled runs use the scheduler daemon (`npm run scheduler -- --daemon`), or for one forced wake per day add a crontab line such as:
 
 ```
-0 9 * * * cd ~/jobber && ./run-hunt.sh "run the hunt" >> hunt.log 2>&1
+0 9 * * * cd ~/jobber && ./run-hunt.sh >> hunt.log 2>&1
 ```
 
 ---
@@ -201,6 +205,7 @@ Capture the LinkedIn and Naukri sessions on a machine with a display, or run the
 - **Gmail not authorized:** rerun `npm run setup -- --step gmail` (see [Gmail setup](docs/gmail-mcp-setup.md)).
 - **LinkedIn or Naukri session expired:** rerun `npm run setup -- --step sessions` (see [LinkedIn sessions](docs/linkedin-sessions-setup.md) and [Naukri session](docs/naukri-session-setup.md)).
 - **Playwright PDF rendering fails:** `npx playwright install --with-deps chromium`.
+- **A source returns nothing or errors:** `npm run status -- sources` shows the per-source table; see [docs/sources-and-platforms.md](docs/sources-and-platforms.md).
 - **Jobs found but no matches:** lower `MATCH_THRESHOLD` temporarily or add missing skills to `user-data/resume.json`.
 
 ---
@@ -211,6 +216,7 @@ Capture the LinkedIn and Naukri sessions on a machine with a display, or run the
 - [CLAUDE.md](CLAUDE.md): full orchestration spec and safety rules.
 - [Platform, sessions, dashboard and setup requirements](docs/superpowers/specs/2026-10-14-platform-sessions-dashboard-setup-requirements.md)
 - [Plans](docs/superpowers/plans/) and [design specs](docs/superpowers/specs/)
+- [Sources and platforms](docs/sources-and-platforms.md) and [Browser apply](docs/apply.md)
 - [Phase 2 known issues](docs/phase2-known-issues.md)
 - [Model auth setup](docs/model-auth-setup.md)
 - [Gmail setup](docs/gmail-mcp-setup.md)

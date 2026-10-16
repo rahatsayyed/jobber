@@ -131,22 +131,26 @@ set -a && source .env && source .env.ccr && set +a   # or your chosen provider's
 claude --mcp-config ./.mcp.json --strict-mcp-config
 ```
 
-- `--mcp-config ./.mcp.json` — load _this project's_ MCP servers (`job-fetch`, `resume`,
-  `contacts`, `gmail`).
+- `--mcp-config ./.mcp.json` — load _this project's_ MCP servers (every server in
+  `.mcp.json`).
 - `--strict-mcp-config` — load **only** those, ignoring your global `~/.claude` MCP servers
   (chrome-devtools, gitlab, telegram, etc.) so the tool list stays clean. Good for testing/dry
-  runs and for `run-hunt.sh`.
+  runs.
 
 ### Headless one-shot (cron / automation)
 
 ```bash
-./run-hunt.sh                      # runs "run the hunt" with the CLAUDE.md orchestration
-./run-hunt.sh "custom prompt here" # or a custom instruction
+./run-hunt.sh
 ```
 
-`run-hunt.sh` sources `.env` + `.env.ccr`, starts the CCR gateway if it isn't already running,
-then runs `claude -p "<prompt>" --mcp-config ./.mcp.json --strict-mcp-config
---permission-mode bypassPermissions` (no interactive prompts, safe for cron).
+`run-hunt.sh` is a shim: it execs `npm run scheduler -- --once --now`, one forced wake. It ignores
+arguments (a custom prompt is not accepted) and it no longer sources `.env.ccr` or starts the CCR
+gateway. The scheduler launches the restricted launcher (`scripts/run-claude.ts`, profile
+`outreach_wake` in `config/run-profiles.json`), which builds the `claude` command, passes an
+allowlisted child environment (`env_keys` and `env_prefixes` in that profile), always drops
+`ANTHROPIC_API_KEY`, and never uses bypass or skip-permissions. The allowlist does not contain
+`ANTHROPIC_BASE_URL` or `ANTHROPIC_AUTH_TOKEN`, so a wake uses your Claude Code login. Whether the
+env-based provider route in this page reaches a scheduler wake is unverified.
 
 ### With the Telegram channel
 

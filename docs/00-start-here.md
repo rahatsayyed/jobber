@@ -1,8 +1,8 @@
 # Start here: from clone to first supervised send
 
 Audience: owner
-Last verified against: 384fcd7
-Source files: package.json, scripts/setup.ts, scripts/bootstrap.sh, scripts/stack.ts, scripts/dry-run.ts, scripts/dry-run-report.ts, scripts/linkedin-seed-person.ts, src/setup/steps/index.ts, src/setup/skips.ts, README.md
+Last verified against: 37942b4
+Source files: package.json, scripts/setup.ts, scripts/bootstrap.sh, scripts/stack.ts, scripts/dry-run.ts, scripts/dry-run-report.ts, scripts/linkedin-seed-person.ts, src/setup/steps/index.ts, src/setup/skips.ts, README.md, config/platforms.json, run-hunt.sh
 
 This page is the ordered map. Each row points to the page that holds the detail; it does not
 repeat it. Time estimates are rough author ranges, labelled `estimate, not measured`.
@@ -21,17 +21,18 @@ before you flip anything live. Nothing on this path flips a dry-run flag for you
 | 4 | Run the wizard, agent or terminal mode ([setup-modes.md](setup-modes.md)) | `npm run setup` | 30 to 90 min | owner only (secrets, logins, consent) | `npm run setup -- --status` shows every step done, skipped, configured (not via setup) or pending |
 | 5 | Check health | `npm run doctor` | 1 to 3 min | agent can run | no `fail`; every `warn` is understood |
 | 6 | Create API keys ([api-keys.md](api-keys.md)) | `npm run setup -- --step apikeys` | 15 to 45 min | owner only (key creation) | the `api-keys` doctor check is ok or skipped by choice |
-| 7 | Edit config: portals, target regions, languages ([config-reference.md](config-reference.md)) | edit `config/portals.json`, `config/target-regions.json`, `user-data/languages.json` | 15 to 30 min | owner only (your choices) | `confirmed` is `true` in `user-data/languages.json` once the list is true |
+| 7 | Edit config: sources, portals, target regions, languages ([config-reference.md](config-reference.md), [sources-and-platforms.md](sources-and-platforms.md)) | edit `config/platforms.json` (imported feeds stay off until you enable them), `config/portals.json`, `config/target-regions.json`, `user-data/languages.json` | 15 to 30 min | owner only (your choices) | `confirmed` is `true` in `user-data/languages.json` once the list is true |
 | 8 | Dry-run end to end | `npm run dry-run` | 5 to 15 min | agent can run | it ends without a failed stage |
 | 9 | Read the dry-run report | `npm run dry-run:report` | 10 to 20 min | owner only (you judge the output) | you read every recorded action and nothing surprised you |
 | 10 | Fetch and verify the classifier, then set `CLASSIFIER_MODEL` ([classifier-models.md](classifier-models.md); pin and fit only for a profile that is not already pinned and fitted) | `npm run setup -- --step classifier` | download depends on network, fit 5 to 15 min | owner only (licence, pin review) | doctor checks `classifier_model` and `classifier_smoke` are ok |
 | 11 | Enable sessions ([telegram-bot-setup.md](telegram-bot-setup.md), [gmail-mcp-setup.md](gmail-mcp-setup.md), [linkedin-sessions-setup.md](linkedin-sessions-setup.md), [naukri-session-setup.md](naukri-session-setup.md)) | `npm run setup -- --step sessions`, `npm run linkedin:login`, `npm run naukri:login` | 20 to 60 min | owner only (QR, password, consent) | doctor session checks are ok |
 | 12 | Dashboard sign-in ([dashboard-login.md](dashboard-login.md)) | `npm run dashboard -- token` | 5 min | owner only | you can sign in on loopback |
 | 13 | Canary send, supervised, low ceilings | `npm run linkedin:seed` with `--url`, `--name`, `--company`, `--category`, then one send you watch | 30 to 60 min | owner only (you watch it) | the one message arrived at the person you chose and a row exists in the DB |
-| 14 | First supervised `/runhunt` | `/runhunt` in the hunt window | 20 to 60 min | owner only (read resumes, emails, ATS lines yourself) | summary arrives on Telegram and you reviewed the first outputs |
-| 15 | Start the stack | `npm start` (same as `npm run up`) | 5 min | agent can run | the table shows every started component; `MODE:` line is the one you intended |
-| 16 | Install the scheduler units ([scheduler-install.md](scheduler-install.md)) | `npm run scheduler:units` and the printed install commands | 10 to 20 min | owner only (installs system units) | units listed by launchd or systemd |
-| 17 | Walk the rollout phases ([rollout.md](rollout.md)) | per phase | days (rollout is phased over days) | owner only (you raise ceilings) | each phase's exit criteria are met before the next |
+| 14 | First supervised wake (`/runhunt` is a shim for one forced wake) | `./run-hunt.sh` (or `/runhunt` in the hunt window), with the dry-run flags still on | 20 to 60 min | owner only (read resumes, emails, ATS lines yourself) | the run prints its one-line result, `npm run status -- sources` shows the source table, and you reviewed the first outputs |
+| 15 | Optional: browser apply live checks ([apply.md](apply.md)) | follow the page; every apply and web flag stays off or dry until then | 1 to 3 hours per check | owner only (you watch each one) | each check on the page passed |
+| 16 | Start the stack | `npm start` (same as `npm run up`) | 5 min | agent can run | the table shows every started component; `MODE:` line is the one you intended |
+| 17 | Install the scheduler units ([scheduler-install.md](scheduler-install.md)) | `npm run scheduler:units` and the printed install commands | 10 to 20 min | owner only (installs system units) | units listed by launchd or systemd |
+| 18 | Walk the rollout phases ([rollout.md](rollout.md)) | per phase | days (rollout is phased over days) | owner only (you raise ceilings) | each phase's exit criteria are met before the next |
 
 ## Notes per step
 
@@ -55,7 +56,7 @@ before you flip anything live. Nothing on this path flips a dry-run flag for you
   `npm run status -- limits`, not repeated here). Live LinkedIn and Naukri paths are
   live-unverified (see `CLAUDE.md` section `Known limits and not yet live-verified`), which is
   why this step is supervised.
-- Step 15: `npm stop` (same as `npm run down`) stops the stack. `up` refuses while the kill switch is set.
+- Step 16: `npm stop` (same as `npm run down`) stops the stack. `up` refuses while the kill switch is set.
 
 ## If something is red
 
@@ -68,6 +69,8 @@ check. To stop everything at once, the kill switch is `npm run jobber:control --
 - [prerequisites.md](prerequisites.md): tools and versions, how to verify each.
 - [setup-modes.md](setup-modes.md): bootstrap, wizard modes, dry-run, up and down.
 - [api-keys.md](api-keys.md): Adzuna, Serper, Hunter, Gmail, Telegram, where each goes.
+- [sources-and-platforms.md](sources-and-platforms.md): the source registry, the source table, generated providers and imported feeds.
+- [apply.md](apply.md): how browser apply works, its caps, accounts, escalations and the live checks.
 - [config-reference.md](config-reference.md): every owner-edited file in `config/` and `user-data/`.
 - [dashboard-login.md](dashboard-login.md): dashboard sign-in modes and recovery.
 - [rollout.md](rollout.md): the five rollout phases with exit criteria.

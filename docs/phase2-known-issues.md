@@ -1,5 +1,10 @@
 # Phase 2 — known issues & live-test findings
 
+Historical record. The scripted apply flows, the `connect` MCP and the discovery tools named below were
+removed when apply moved to the browser applier and discovery to the operators (see
+[apply.md](apply.md) and [sources-and-platforms.md](sources-and-platforms.md)); the findings about
+LinkedIn's DOM and the burner/main session split stay useful background.
+
 Recorded 2026-07-11/12, after the Task 6 end-to-end live smoke test (see
 `docs/superpowers/plans/2026-07-07-jobapplier-phase2.md`, Task 6). This captures what a
 live LinkedIn session revealed that unit tests alone couldn't catch, since LinkedIn's DOM has

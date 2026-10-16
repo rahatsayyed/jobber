@@ -102,7 +102,7 @@ Warnings for `--apply`:
   (the old files are moved aside). Review both after a restore.
 - Restoring a stale database can make already-sent outreach look unsent, which risks duplicate
   sends. After any restore run `/checkreplies` and compare the Gmail Sent folder with
-  `outreach_queue` before the next hunt.
+  `outreach_queue` before the next wake.
 - A leaked private key makes every archive ever made readable. Rotate the recipient, make new
   backups and delete the old archives everywhere, including the rclone remote.
 

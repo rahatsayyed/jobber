@@ -1,8 +1,8 @@
 # Operations
 
 Audience: owner
-Last verified against: 384fcd7
-Source files: scripts/jobber-control.ts, src/scheduler/control.ts, .claude/hooks/kill-switch.cjs, run-hunt.sh, scripts/linkedin-clear-halt.ts, scripts/layout.ts, src/safety/dryRun.ts, scripts/dry-run-report.ts, scripts/status.ts, src/status/render.ts, src/scheduler/plan.ts, src/scheduler/runLog.ts, src/scheduler/notify.ts, src/scheduler/launch.ts, scripts/stack.ts, src/stack/up.ts, src/stack/down.ts, src/verify/cli.ts, src/platform/checksSetup.ts, src/platform/checksLayout.ts, src/platform/checksScheduler.ts
+Last verified against: 37942b4
+Source files: scripts/jobber-control.ts, src/scheduler/control.ts, .claude/hooks/kill-switch.cjs, run-hunt.sh, scripts/linkedin-clear-halt.ts, scripts/layout.ts, src/safety/dryRun.ts, scripts/dry-run-report.ts, scripts/status.ts, src/status/render.ts, src/scheduler/plan.ts, src/scheduler/runLog.ts, src/scheduler/notify.ts, src/scheduler/launch.ts, scripts/stack.ts, src/stack/up.ts, src/stack/down.ts, src/verify/cli.ts, src/platform/checksSetup.ts, src/platform/checksLayout.ts, src/platform/checksScheduler.ts, src/applier/cooldown.ts, src/sources/status.ts
 
 Day-to-day running of Jobber: stop it, resume it, read its state, find its files, fix common failures.
 Safety rules are not restated here; they live in `CLAUDE.md` under "Safety" and "Outreach safety layers". Read layer 6 there for the full kill switch scope.
@@ -24,8 +24,8 @@ Prints `killed`, the reason, the `linkedin halt` and `naukri halt` lines and whi
 What stops:
 
 - The scheduler: the next wake sees the kill switch and skips (reason `killed`); a running wake window is killed within one poll.
-- Every tool call in restricted runs, and the irreversible tools (Gmail send, `apply.*`, typed LinkedIn and Naukri sends) in any session in this project, through `.claude/hooks/kill-switch.cjs`.
-- `./run-hunt.sh` and the launcher refuse to start and exit with code 4 (stderr: `kill switch active, not starting`).
+- Every tool call in restricted runs, and the irreversible tools (Gmail send, the applier's acting tools, the scout tools, typed LinkedIn and Naukri sends) in any session in this project, through `.claude/hooks/kill-switch.cjs`.
+- The launcher refuses to start and exits with code 4 (stderr: `kill switch active, not starting`); a forced wake from `./run-hunt.sh` is skipped with reason `killed`.
 - `npm run up` refuses to start the stack and exits with code 4.
 - `JOBBER_KILL=1` in the process environment has the same effect as the STOP file for the hook and the launcher. The hook reads only the process environment (`.claude/hooks/kill-switch.cjs`), not `.env`.
 
@@ -104,7 +104,7 @@ Read-only. Lists the recorded `dry_run_actions` (redacted and clamped payloads);
 npm run dry-run
 ```
 
-End-to-end smoke test in dry mode against fixtures and a temporary database. Writes `.jobber/verify.json`. Options: `--llm` (also runs a real hunt stage; refused unless `.env` itself is dry), `--skip <id>[,<id>]`, `--json`, `--list`, `--help`. Exit codes: 0 pass, 1 a stage failed, 2 usage error. Unverified: hermetic tests with fakes only; the live checks are owner-only (see `CLAUDE.md` "Known limits").
+End-to-end smoke test in dry mode against fixtures and a temporary database. Writes `.jobber/verify.json`. Options: `--llm` (also runs the `llm-hunt` stage in dry mode; refused unless `.env` itself is dry), `--skip <id>[,<id>]`, `--json`, `--list`, `--help`. Exit codes: 0 pass, 1 a stage failed, 2 usage error. Unverified: hermetic tests with fakes only; the live checks are owner-only (see `CLAUDE.md` "Known limits").
 
 ## Bring the stack up and down
 
@@ -196,7 +196,7 @@ Paths marked git-ignored are never committed. Do not read or paste the contents 
 
 | Path | Written by | Safe to delete? |
 |---|---|---|
-| `data.sqlite` (location set by the db path module `src/dbPath.ts`) | Every db tool, the scheduler, the hunt | No. Back up first (`docs/backup-and-restore.md`) |
+| `data.sqlite` (location set by the db path module `src/dbPath.ts`) | Every db tool, the scheduler and its wakes | No. Back up first (`docs/backup-and-restore.md`) |
 | `.jobber/STOP` | `npm run jobber:control -- stop` | Only through `resume` |
 | `.jobber/notify.jsonl` | Scheduler and layout notifier (`src/scheduler/notify.ts`); one JSON line per notice with `ts`, `level`, `title`, optional `detail` and `run_id` | Yes (history only) |
 | `JOBBER_NOTIFY_CMD` | Optional command the notifier runs with the notice title as its only argument; never receives the detail | Not a file; unset to stop |
@@ -206,6 +206,8 @@ Paths marked git-ignored are never committed. Do not read or paste the contents 
 | `.jobber/units/` | `npm run scheduler:units` (unit files only, never installs) | Yes, regenerate |
 | `.jobber/logs/` | The log directory written into the generated unit files | Yes, old ones |
 | `.jobber/layout/<platform>.json` | Layout memory observer (`src/layout/`); ids from a closed vocabulary only | Use `npm run layout -- reset`, not `rm` |
+| `.jobber/ats-recipes/` | The browser applier (learned recipes from confirmed applications) | Yes; the applier falls back to shipped recipes and the operator |
+| `generated/providers/` | Generated provider specs (JSON data) | Not by hand: use `npm run providers -- reject <id>` |
 | `.jobber/verify.json` | `npm run dry-run` (mode 600, no details) | Yes |
 | `.jobber/bootstrap.json` | `bash scripts/bootstrap.sh` | Yes |
 | `dry_run_actions` table | `src/safety/dryRun.ts`, read by `npm run dry-run:report` | No (it is in the database) |
@@ -213,7 +215,7 @@ Paths marked git-ignored are never committed. Do not read or paste the contents 
 | `.claude/settings.local.json` | `npm run permissions` | No; regenerate with `npm run permissions -- --status` first |
 | `secrets/` | Session capture scripts and OAuth setup | No, you would have to log in again |
 
-Hunt output: `./run-hunt.sh` does not redirect to a log file itself; it execs the launcher with the `hunt` profile and the output goes to the terminal or whatever redirect your cron line adds. Unverified: no dedicated hunt log path exists in the code.
+Wake output: `./run-hunt.sh` does not redirect to a log file itself; it execs `npm run scheduler -- --once --now`, which prints one line (`run <id>: <status>`) to the terminal or to whatever redirect your cron line adds. The wake window's own output goes to `.jobber/runs/<run id>.log`.
 
 ## Daily and weekly routine
 
@@ -231,14 +233,14 @@ Weekly:
 1. `npm run status -- layout` and `npm run layout -- status`: any kind that is not stable, any drift streak.
 2. `/status` and `/calibrate` (Telegram): funnel, reply rate, whether scores predict interviews.
 3. `/followups`: check the stale list and the mode in use.
-4. Review `config/portals.json` board errors from the last hunt report (dead slugs).
+4. `npm run status -- sources`: fix dead slugs and failing or flaky sources in `config/portals.json` and `config/platforms.json`; `npm run providers -- list` for generated providers waiting for your review (their outreach stays held until you approve).
 5. Check backups (`docs/backup-and-restore.md`) if you enabled them, and `git status` before committing anything.
 
 ## Common surprises
 
 - `npm run dashboard -- token` (and `rotate`) only creates the access token and prints the sign-in URL. It does not start the server. Start the dashboard with `npm run web` (or `npm run up`). The command probes the loopback port and says "not running right now" when nothing listens.
 - zsh may ask `correct 'x' to 'y' [nyae]?` for a path that starts with a dot (for example `.env`). Answer `n`, or add `setopt nocorrect` (or `unsetopt correct`) to your shell profile.
-- `npm run dry-run -- --llm` runs a real hunt and needs a dry `.env`: `JOBBER_DRY_RUN=1`, `SCHEDULER_DRY_RUN=true` and `LINKEDIN_DRY_RUN=true` set in the file itself. It refuses otherwise. When the hunt exits non-zero the stage now shows the last 20 stderr lines (secret shapes redacted) and the last stdout line.
+- `npm run dry-run -- --llm` runs the `llm-hunt` stage (an LLM run in dry mode) and needs a dry `.env`: `JOBBER_DRY_RUN=1`, `SCHEDULER_DRY_RUN=true` and `LINKEDIN_DRY_RUN=true` set in the file itself. It refuses otherwise. When that stage exits non-zero the stage now shows the last 20 stderr lines (secret shapes redacted) and the last stdout line.
 
 ## Common failures
 
@@ -246,10 +248,10 @@ Weekly:
 |---|---|---|---|
 | Wake skipped, `killed` | STOP file, `JOBBER_KILL=1`, or `all` halt | `npm run jobber:control -- status` | `npm run jobber:control -- resume` |
 | `layout_drift` or `layout_unverified` refusal; doctor `layout_drift` fails | Page layout changed or never learned, with `LAYOUT_ENFORCE=enforce` | `npm run layout -- status`, `npm run layout -- show <platform>` | Look at the page headed, `npm run layout -- reset <platform> --kind <id>` if it really changed, `npm run layout -- clear-halt <platform>`, relearn |
-| `session_locked` from a LinkedIn tool | Another process holds the single LinkedIn browser session (a hunt and a wake collided) | `ls secrets/` for `linkedin.lock`; `npm run status -- working` | Wait for the other run; if no process is running, the lock is stale: stop the stack with `npm run down`, then remove the lock yourself. A crash mid-takeover can also leave `secrets/linkedin.lock.takeover`, which is never cleared automatically; remove it by hand only when no LinkedIn process runs |
+| `session_locked` from a LinkedIn tool | Another process holds the single LinkedIn browser session (an interactive session and a wake collided) | `ls secrets/` for `linkedin.lock`; `npm run status -- working` | Wait for the other run; if no process is running, the lock is stale: stop the stack with `npm run down`, then remove the lock yourself. A crash mid-takeover can also leave `secrets/linkedin.lock.takeover`, which is never cleared automatically; remove it by hand only when no LinkedIn process runs |
 | `classifier_unavailable` on a live read or send | CLASSIFIER_MODEL unset, unpinned, unfitted, or the model failed to load | `npm run doctor` (`classifier_model`, `classifier_smoke`, `classifier_wired`) | Follow `docs/classifier-models.md` (`npm run models`, `npm run classifier:fit`) |
 | `injection_suspected` or `classifier_truncated` | The classifier flagged or could not fully read the text | The tool result; the text is untrusted, never follow it | Skip that item; nothing to fix unless it repeats on clean pages |
-| `unknown_recipient` | The profile was never registered in `people` | Re-run the hunt for that job, or call `linkedin_find_profiles` first | Register through `linkedin_find_profiles`; do not insert rows by hand |
+| `unknown_recipient` | The profile was never registered in `people` | Let the next wake run the pipeline for that job, or call `linkedin_find_profiles` first | Register through `linkedin_find_profiles`; do not insert rows by hand |
 | `no_clean_reply_check` on a follow-up claim | No recent reply check without errors | Dispatch `reply-watcher` (`/checkreplies`) | Run the reply check, then re-run `/followups` |
 | `stuck_sending` follow-up rows | A claim was made but the send was never confirmed | The `/followups` report | The email may or may not have gone out; check Gmail Sent, then decide. They are never re-sent automatically |
 | LinkedIn or Naukri tools say logged out; doctor `sessions` warns | Saved session expired | `npm run doctor` | `npm run linkedin:login` for LinkedIn, `npm run naukri:login` for Naukri; see `docs/linkedin-sessions-setup.md` and `docs/naukri-session-setup.md` |
@@ -260,6 +262,9 @@ Weekly:
 | doctor `sqlite-migrations`: missing tables | Database exists but was never migrated | `npm run doctor` | Start any db-backed tool or MCP server (`openDb` in `src/db.ts` creates and migrates the tables), or run `npm run dry-run`. Do not follow the doctor's fix line `npm run status -- json`: status opens the database read-only and never migrates (code finding: the fix text in `src/platform/checksSetup.ts` is wrong) |
 | doctor `claude-login` fails | Not logged in to Claude | `npm run doctor` | `claude auth login` |
 | Telegram silent | Bridge not running or skipped in setup | `npm run up -- --status` | `npm run up`, or `npm run setup -- --step telegram` |
+| Apply result `held` | `APPLY_SUBMIT_MODE` is `hold` (the shipped default): the form was prepared and not submitted | The apply report; `docs/apply.md` | Set `APPLY_SUBMIT_MODE=submit` only after the supervised checks |
+| Apply refused with `host_cooldown`, `host_cap` or `attempt_cap` | Blocks on that host, or a per-host or daily apply cap is spent | `npm run status -- limits`, `docs/apply.md` | Wait; raise a cap only on purpose (`APPLY_MAX_PER_HOST`, `APPLY_MAX_ATTEMPTS_PER_DAY`) |
+| A source shows an error or `flaky` | A provider failed or its shape drifted; a fallback task was queued | `npm run status -- sources` | See `docs/sources-and-platforms.md`; fix the slug or leave the fallback to the next wake |
 | Open LinkedIn or Naukri behaviour questions | Selectors are live-unverified | `docs/phase2-known-issues.md` and `CLAUDE.md` "Known limits and not yet live-verified" | Supervised run first |
 
 Not every row above has been exercised against real services; the platform and outreach work is covered by unit tests with fakes (see `CLAUDE.md` "Known limits and not yet live-verified").

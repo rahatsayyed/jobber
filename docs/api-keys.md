@@ -1,8 +1,8 @@
 # API keys and credentials
 
 Audience: owner
-Last verified against: cc51247
-Source files: .env.example, src/setup/steps/apikeys.ts, src/setup/skips.ts, src/platform/checksApiKeys.ts, src/sources/adzuna.ts, src/mcp/contacts.ts, src/lib/hunter.ts, docs/gmail-mcp-setup.md, docs/telegram-bot-setup.md
+Last verified against: 37942b4
+Source files: .env.example, src/setup/steps/apikeys.ts, src/setup/skips.ts, src/platform/checksApiKeys.ts, src/sources/adzuna.ts, src/mcp/contacts.ts, src/lib/hunter.ts, docs/gmail-mcp-setup.md, docs/telegram-bot-setup.md, src/search/index.ts, src/search/serper.ts, src/search/budget.ts
 
 This page lists every key Jobber can use, what degrades without it, where it goes and how to
 check it. Provider free tiers, limits and prices change: each section says `check upstream`
@@ -17,7 +17,7 @@ spaces.
 | Credential | Needed for a first dry run | Without it |
 |---|---|---|
 | `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` | No | One job source returns nothing |
-| `SERPER_API_KEY` | No | Fewer verified contacts |
+| `SERPER_API_KEY` | No | Fewer verified contacts (the cache and the browser dork still run first) |
 | `HUNTER_API_KEY`, `HUNTER_ENABLED` | No | Last-resort email lookup stays off |
 | Gmail OAuth file | No for a dry run; yes for real email | No cold email, follow-ups or reply watching |
 | `TELEGRAM_BOT_TOKEN`, `ALLOWED_USERS` | No | No phone control or alerts |
@@ -64,30 +64,32 @@ unset variables (never values).
 
 ## Adzuna
 
-- What it is: a job-search API, one of the sources `job-fetch.list_new_jobs` queries.
+- What it is: a job-search API, one job source (registry row `adzuna` in `config/platforms.json`), fetched by the code pass of each wake.
 - Variables: `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` (both needed).
-- Used by: discover stage, `fetchAdzuna` in `src/sources/adzuna.ts`.
+- Used by: the code pass (`src/sources/adzuna.ts`).
 - Without it: the request is sent with empty values, fails, is logged to stderr and returns
   no jobs. Company boards, Remotive and Naukri still run.
 - Set by: the wizard (`apikeys` step) or by editing `.env`.
-- Verify: `npm run doctor` (`api-keys`), or a dry-run hunt and read the discoverer's
-  `BOARD_STATUS:` line and the `[adzuna]` stderr log.
+- Verify: `npm run doctor` (`api-keys`), or `npm run status -- sources` after a wake and read the `adzuna` row.
 - Provider: developer.adzuna.com. check upstream: free tier, limits and price.
 
 ## Serper
 
-- What it is: a Google search API.
+- What it is: a Google search API. It is a contact-finding service, not a job source.
 - Variable: `SERPER_API_KEY`.
-- Used by: contact stage, `serperSearch` in `src/mcp/contacts.ts` (the only reader of the key
-  outside the setup check and doctor), to find the company's official domain (`findDomain`)
-  and to search for `@domain` emails (`searchDomainEmails`). Nothing in code runs other
-  searches with it. The `.env.example` comment says "dorks + contact search"; that wording is
-  broader than the code, which only does these two lookups.
-- Without it: the search returns nothing, so domain resolution and search-based emails are
-  skipped and fewer contacts are found. Nothing errors.
+- Used by: the search layer (`src/search/`, the only reader of the key outside the setup check and
+  the doctor). A search tries the cache first (reused for `SEARCH_CACHE_TTL_DAYS`), then a browser
+  dork (`DORK_ENABLED`, `DORK_DAILY_BUDGET`, off for `DORK_BLOCK_COOLDOWN_HOURS` after a search engine
+  blocks it), then Serper under `SERPER_DAILY_BUDGET` and `SERPER_MONTHLY_BUDGET`. Callers:
+  company-domain resolution and `@domain` email search in `contacts.find_company_emails`, and the
+  `source-operator`'s careers-page lookups.
+- Without it: the cache and the browser dork still run. If both miss or are blocked, domain
+  resolution and search-based emails are skipped and fewer contacts are found. Nothing errors.
 - Set by: the wizard or editing `.env`.
-- Verify: `npm run doctor` (`api-keys`), or a dry-run hunt and read the contact-finder notes.
-- Provider: serper.dev. check upstream: free tier, limits and price.
+- Verify: `npm run doctor` (`api-keys` and `search_providers`), or a dry wake and read the
+  contact-finder notes.
+- Provider: serper.dev. check upstream: free tier, limits and price. The terms of the search engine
+  used by the browser dork are unreviewed.
 
 ## Hunter
 
@@ -105,7 +107,7 @@ unset variables (never values).
   unauthenticated request. The counter file is relative to where the process was started, so a
   process started from another directory uses a separate counter, which acts as a reset.
 - Set by: the wizard (key and the enable question) or editing `.env`.
-- Verify: `npm run doctor` (`api-keys`), or a dry-run hunt and read the contact-finder notes.
+- Verify: `npm run doctor` (`api-keys`), or a dry wake and read the contact-finder notes.
 - Provider: hunter.io. check upstream: free tier, credits and price.
 
 ## Gmail
