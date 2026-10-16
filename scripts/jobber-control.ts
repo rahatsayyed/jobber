@@ -6,6 +6,8 @@ import {
   readControl,
   applyStop,
   applyResume,
+  activeApplyHalt,
+  clearApplyHalt,
   defaultDeps,
   projectRootFromScriptDir,
   stopFileForRoot,
@@ -33,6 +35,21 @@ function main(): void {
       );
       for (const [p, why] of Object.entries(r.remaining)) console.log(`still halted ${p}: ${why}`);
       if (process.env.JOBBER_KILL === '1') console.log('note: JOBBER_KILL=1 is still set in this environment');
+    } else if (cmd === 'clear-halt') {
+      if (rest[0] !== 'apply') {
+        console.error('usage: jobber-control clear-halt apply [--yes]');
+        process.exitCode = 2;
+      } else if (!rest.includes('--yes')) {
+        const r = readControl(db, deps);
+        console.log(`apply halt: ${activeApplyHalt(db) ?? 'none'}`);
+        if (r.killed) console.log(`note: the control state is killed (${r.killReason})`);
+        console.log('re-run with --yes to clear it');
+        process.exitCode = 1;
+      } else {
+        const r = clearApplyHalt(db, now);
+        console.log(r.cleared === null ? 'no apply halt was active' : `cleared apply halt: ${r.cleared}`);
+        if (r.globalHalt !== null) console.log(`global halt (all) is also active and is not cleared here: ${r.globalHalt}`);
+      }
     } else if (cmd === 'status') {
       const s = readControl(db, deps);
       console.log(`killed: ${s.killed}`);
@@ -40,9 +57,10 @@ function main(): void {
       if (s.readError) console.log(`read error: ${s.readError}`);
       console.log(`linkedin halt: ${s.halted.linkedin ?? 'none'}`);
       console.log(`naukri halt: ${s.halted.naukri ?? 'none'}`);
+      console.log(`apply halt: ${activeApplyHalt(db) ?? 'none'}`);
       console.log(`allowed: ${s.allowed.join(', ') || 'none'}`);
     } else {
-      console.error('usage: jobber-control <stop [reason...] | resume | status>');
+      console.error('usage: jobber-control <stop [reason...] | resume | status | clear-halt apply [--yes]>');
       process.exitCode = 2;
     }
   } finally {

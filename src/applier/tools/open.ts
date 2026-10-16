@@ -10,6 +10,7 @@ import { loadWebConfig } from '../../webcore/config.js';
 import { loadOutreachConfig } from '../../outreach/config.js';
 import { ceilings, tryConsume } from '../../outreach/limits.js';
 import { hostCoolingDown, hostOfUrl, readPage } from '../../webcore/login.js';
+import { hostCooledDown } from '../cooldown.js';
 import { findPreparedResumePath, validateResumePath, DEFAULT_RESUME_ROOT } from '../resume.js';
 import {
   blockedResult, envOf, failedResult, hostDayCount, nowOf, preflight, refuse, type ApplierDeps, type ApplyResult,
@@ -76,7 +77,8 @@ async function open(input: OpenInputT, deps: ApplierDeps): Promise<ApplyResult> 
   if (g) return g;
 
   const host = hostOfUrl(url);
-  if (hostCoolingDown(host)) return refuse('host_cooldown', 'the host blocked twice this run');
+  if (deps.state.escalated?.has(jobId)) return refuse('escalated_this_run', 'this job was handed to the owner; it is not retried in this run');
+  if (hostCoolingDown(host) || hostCooledDown(db, host, env, now)) return refuse('host_cooldown', 'the host is cooling down after blocks');
   const gapSec = loadWebConfig(env).minGapSec;
   const last = deps.state.lastOpen.get(host);
   if (last !== undefined && gapSec > 0) {

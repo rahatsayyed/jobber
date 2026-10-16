@@ -39,7 +39,7 @@
       "builtin_tools": ["Skill", "Agent", "Task", "Read"],
       "allow_from_permission_set": "outreach_send",
       "path_rules": { "Read": { "prefixes": ["config/"] } },
-      "screen_args": ["mcp__gmail__send_email", "mcp__linkedin__linkedin_connect_send", "mcp__linkedin__linkedin_send_message"],
+      "screen_args": ["mcp__gmail__send_email", "mcp__linkedin__linkedin_connect_send", "mcp__linkedin__linkedin_send_message", "mcp__applier__apply_escalate", "mcp__applier__site_open_link"],
       "env_mode": "dotenv_all",
       "env_files": [".env", ".env.ccr"],
       "max_turns": 200

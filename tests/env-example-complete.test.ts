@@ -29,6 +29,8 @@ const INTERNAL: Record<string, string> = {
   HOOK_PROBE_NO_LOG: 'set by the hook probe test',
   COPYFILE_DISABLE: 'set by the restore code for tar',
   LINKEDIN_NO_MAIN: 'import guard so tests can load the linkedin MCP module',
+  APPLIER_NO_MAIN: 'import guard so tests can load the applier MCP module',
+  SCOUT_NO_MAIN: 'import guard so tests can load the scout MCP module',
   NAUKRI_NO_MAIN: 'import guard so tests can load the naukri MCP module',
   OUTREACH_NO_MAIN: 'import guard so tests can load the outreach MCP module',
   CLAUDE_PROJECT_DIR: 'set by Claude Code for hooks',

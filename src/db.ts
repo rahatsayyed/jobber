@@ -226,6 +226,14 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
       count INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (host, day)
     );
+    -- Persisted block events per host (plan 8G-2 task 20): host cooldown and the bot_wall halt streak.
+    CREATE TABLE IF NOT EXISTS apply_host_blocks (
+      host TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      at TEXT NOT NULL,
+      run_id TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_apply_host_blocks_host ON apply_host_blocks (host, at);
   `);
 
   // Migration: older databases created before `method`/`account` existed on

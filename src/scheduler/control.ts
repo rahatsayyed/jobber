@@ -172,6 +172,32 @@ export function applyResume(db: Db, stopFile: string, now: Date): ResumeResult {
   return { stopFileRemoved, cleared, remaining };
 }
 
+/** The active `apply` halt reason, or null. */
+export function activeApplyHalt(db: Db): string | null {
+  return activeHalt(db, 'apply');
+}
+
+export interface ClearApplyResult {
+  /** The apply halt reason that was cleared, or null when none was active. */
+  cleared: string | null;
+  /** A global `all` halt is not cleared here; its reason is reported when active. */
+  globalHalt: string | null;
+}
+
+/**
+ * Owner-only: clears the `apply` halt (set by the bot_wall streak in the browser applier, or by anything
+ * else). No tool calls this. It never touches `all`, `linkedin` or `naukri`, and it also forgets the
+ * persisted bot_wall events so the next block cannot re-halt at once.
+ */
+export function clearApplyHalt(db: Db, now: Date): ClearApplyResult {
+  const own = activeHalt(db, 'apply');
+  const globalHalt = activeHalt(db, 'all');
+  if (own === null) return { cleared: null, globalHalt };
+  clearHalt(db, 'apply', now);
+  try { db.prepare("DELETE FROM apply_host_blocks WHERE kind = 'bot_wall'").run(); } catch { /* table absent in an old db */ }
+  return { cleared: own, globalHalt };
+}
+
 /** true if a file was removed, false if it was absent (ENOENT); other errors are rethrown. */
 export function clearStop(stopFile: string): boolean {
   if (!statExists(stopFile)) return false;

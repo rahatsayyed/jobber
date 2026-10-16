@@ -66,8 +66,10 @@ export interface ApplierSessionState {
   cur: OpenJob | null;
   /** Last open per host, epoch ms (the per-host gap). */
   lastOpen: Map<string, number>;
+  /** Job ids escalated to the owner in this run: never opened again, never retried (task 20). */
+  escalated: Set<string>;
 }
-export const createApplierState = (): ApplierSessionState => ({ cur: null, lastOpen: new Map() });
+export const createApplierState = (): ApplierSessionState => ({ cur: null, lastOpen: new Map(), escalated: new Set() });
 
 export interface ApplierDeps {
   db: Db;

@@ -311,6 +311,13 @@
           "entered_in": "owner edits .env"
         },
         {
+          "name": "APPLY_HOST_COOLDOWN_DAYS",
+          "secret": false,
+          "purpose": "days a host is not opened by the browser applier after two blocks within 7 days (default 7)",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
           "name": "APPLY_SCREENSHOT",
           "secret": false,
           "purpose": "whether the applier offers a screenshot tool; its pixels are not injection-screened (ships false)",

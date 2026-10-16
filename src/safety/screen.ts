@@ -77,6 +77,8 @@ export const SCREENED_SURFACES: ReadonlyArray<{ id: string; file: string }> = [
   { id: 'naukri_inbound_classify', file: 'src/naukri/inbound.ts' },
   { id: 'outreach_escalate', file: 'src/mcp/outreach.ts' },
   { id: 'apply_state', file: 'src/applier/tools/state.ts' },
+  { id: 'apply_escalate', file: 'src/applier/escalate.ts' },
+  { id: 'applier_site_state', file: 'src/mcp/applier.ts' },
 ];
 
 /**

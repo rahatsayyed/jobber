@@ -243,3 +243,15 @@ describe('gmail sender allowlist rule (plan 8G task 6)', () => {
     expect(hook.decide({ tool_name: 'mcp__gmail__search_emails', tool_input: { query: 'anything' } }, p, { root: ROOT }).allow).toBe(true);
   });
 });
+
+describe('applier MCP tools in the hunt profile (plan 8G-2 task 20)', () => {
+  it('are allowed, and screened tools refuse secret-shaped arguments', async () => {
+    const { loadProfiles } = await import('../src/platform/runner.js');
+    const hunt = loadProfiles(resolve(ROOT, 'config/run-profiles.json'), resolve(ROOT, 'config/permission-sets.json')).hunt as never;
+    const d = (tool_name: string, tool_input: object = {}) => hook.decide({ tool_name, tool_input }, hunt, { root: ROOT });
+    expect(d('mcp__applier__apply_open', { job_id: 'job-1' }).allow).toBe(true);
+    expect(d('mcp__applier__apply_escalate', { job_id: 'job-1', reason: 'other', detail: 'needs a look' }).allow).toBe(true);
+    expect(d('mcp__applier__apply_escalate', { job_id: 'job-1', reason: 'other', detail: 'see secrets/webcore.lock' }).allow).toBe(false);
+    expect(d('mcp__applier__not_a_tool').allow).toBe(false);
+  });
+});

@@ -39,6 +39,9 @@ const SEND_TOOLS = [
   'mcp__linkedin__linkedin_connect_send',
   'mcp__linkedin__linkedin_send_message',
   'mcp__naukri__naukri_send_message',
+  'mcp__applier__apply_open',
+  'mcp__applier__apply_submit',
+  'mcp__applier__site_login',
 ];
 
 describe('stopActive', () => {
@@ -140,6 +143,8 @@ describe('rendered settings and committed settings.json', () => {
     const arr = /TOOL_NAMES = \[([\s\S]*?)\]/.exec(li)![1];
     for (const m of arr.matchAll(/'([a-z_]+)'/g)) all.add(`mcp__linkedin__${m[1]}`);
     for (const m of readFileSync(join(ROOT, 'src/mcp/naukri.ts'), 'utf8').matchAll(/'(naukri_[a-z_]+)'/g)) all.add(`mcp__naukri__${m[1]}`);
+    const ap = readFileSync(join(ROOT, 'src/mcp/applier.ts'), 'utf8');
+    for (const m of /TOOL_NAMES = \[([\s\S]*?)\] as const/.exec(ap)![1].matchAll(/'([a-z_]+)'/g)) all.add(`mcp__applier__${m[1]}`);
     for (const t of registered('src/mcp/apply.ts')) all.add(`mcp__apply__${t}`);
     // apply.ts registers greenhouse/lever/workday/ashby through a loop over a literal list
     for (const p of ['greenhouse', 'lever', 'workday', 'ashby']) all.add(`mcp__apply__${p}`);
