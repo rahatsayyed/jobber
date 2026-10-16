@@ -7,6 +7,7 @@ import { ChooseInput, handleChoose } from './choose.js';
 import { UploadInput, handleUpload } from './upload.js';
 import { NextInput, handleNext } from './next.js';
 import { SubmitInput, handleSubmit } from './submit.js';
+import { AutofillInput, ProposeInput, RecipeInput, handleAutofill, handlePropose, handleRecipe } from './autofill.js';
 
 export const APPLIER_TOOL_SCHEMAS = {
   apply_open: OpenInput,
@@ -16,6 +17,9 @@ export const APPLIER_TOOL_SCHEMAS = {
   apply_upload: UploadInput,
   apply_next: NextInput,
   apply_submit: SubmitInput,
+  apply_autofill: AutofillInput,
+  apply_recipe: RecipeInput,
+  apply_propose_recipe: ProposeInput,
 } as const;
 
 /** Registered only when APPLY_SCREENSHOT=true (its pixels are not screened). */
@@ -23,5 +27,6 @@ export const APPLIER_OPTIONAL_TOOL_SCHEMAS = { apply_screenshot: ScreenshotInput
 
 export {
   handleOpen, handleState, handleFill, handleChoose, handleUpload, handleNext, handleSubmit, handleScreenshot, screenshotEnabled,
+  handleAutofill, handleRecipe, handlePropose,
 };
 export { createApplierState, type ApplierDeps, type ApplyResult } from './common.js';

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { LayoutFile, Platform } from './types.js';
-import { ACTION_LABELS, COUNT_KEYS, ID_RE, KINDS, LANDMARKS, MAX_RUN_IDS, RUN_ID_RE } from './vocab.js';
+import { COUNT_KEYS, ID_RE, MAX_RUN_IDS, RUN_ID_RE, actionLabelsFor, kindsFor, landmarksFor } from './vocab.js';
 import { PROJECT_ROOT } from './config.js';
 
 const DEFAULT_MAX_BYTES = 65536;
@@ -23,8 +23,8 @@ const count = z.number().int().min(0).max(1_000_000);
 
 // Closed vocabulary per platform: anything else is rejected, so page text cannot reach the file.
 function buildSchema(platform: Platform) {
-  const landmarks = new Set<string>(LANDMARKS[platform]);
-  const labels = new Set<string>([...Object.values(ACTION_LABELS[platform]), 'action:other']);
+  const landmarks = new Set<string>(landmarksFor(platform));
+  const labels = new Set<string>([...Object.values(actionLabelsFor(platform)), 'action:other']);
   const counts = new Set<string>(COUNT_KEYS);
   const landmark = z.string().regex(ID_RE).refine((s) => landmarks.has(s), 'unknown landmark');
   const label = z.string().regex(ID_RE).refine((s) => labels.has(s), 'unknown action label');
@@ -86,7 +86,7 @@ function has(o: unknown): o is Record<string, unknown> {
 
 // The one validator used by load and save. Fails closed on any unknown kind, landmark, label or count key.
 function validate(raw: unknown, platform: Platform): { ok: true; data: LayoutFile } | { ok: false; why: string } {
-  const kindsAllowed = KINDS[platform] as readonly string[] | undefined;
+  const kindsAllowed = kindsFor(platform) as readonly string[] | undefined;
   if (!kindsAllowed) return { ok: false, why: 'unknown platform' };
   // Own-key prepass: JSON.parse keeps a "__proto__" key as an own property, which record parsing may skip.
   if (has(raw) && has(raw.kinds)) {

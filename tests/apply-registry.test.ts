@@ -12,8 +12,8 @@ describe('classifyApplyUrl', () => {
     expect(c('https://job-boards.greenhouse.io/acme/jobs/1')).toMatchObject({ platform: 'greenhouse', tier: 'fast' });
     expect(c('https://jobs.lever.co/acme/abc')).toMatchObject({ platform: 'lever', tier: 'fast' });
     expect(c('https://jobs.ashbyhq.com/acme/abc')).toMatchObject({ platform: 'ashby', tier: 'fast' });
-    expect(c('https://apply.workable.com/acme/j/1', 'remotive')).toMatchObject({ platform: 'workable', tier: 'agent' });
-    expect(c('https://jobs.smartrecruiters.com/Acme/1', 'remotive')).toMatchObject({ platform: 'smartrecruiters', tier: 'agent' });
+    expect(c('https://apply.workable.com/acme/j/1', 'remotive')).toMatchObject({ platform: 'workable', tier: 'fast' });
+    expect(c('https://jobs.smartrecruiters.com/Acme/1', 'remotive')).toMatchObject({ platform: 'smartrecruiters', tier: 'fast' });
     expect(c('https://acme.wd5.myworkdayjobs.com/ext/job/x', 'adzuna')).toMatchObject({ platform: 'workday', tier: 'agent' });
     expect(c('https://acme.recruitee.com/o/dev', 'adzuna')).toMatchObject({ platform: 'recruitee', tier: 'agent' });
     expect(c('https://acme.jobs.personio.de/job/1', 'adzuna')).toMatchObject({ platform: 'personio', tier: 'agent' });
@@ -67,9 +67,9 @@ describe('classifyApplyUrl', () => {
     }
   });
 
-  it('registry tiers follow the ruling (workable and smartrecruiters are agent until their recipes ship)', () => {
+  it('registry tiers follow the ruling (workable and smartrecruiters are fast now that their recipes ship)', () => {
     const t = Object.fromEntries(ATS_REGISTRY.map((a) => [a.id, a.tier]));
-    expect(t).toMatchObject({ greenhouse: 'fast', lever: 'fast', ashby: 'fast', workable: 'agent', smartrecruiters: 'agent', workday: 'agent', recruitee: 'agent', personio: 'agent' });
+    expect(t).toMatchObject({ greenhouse: 'fast', lever: 'fast', ashby: 'fast', workable: 'fast', smartrecruiters: 'fast', workday: 'agent', recruitee: 'agent', personio: 'agent' });
     expect(ATS_REGISTRY.find((a) => a.id === 'workday')?.accountRequired).toBe(true);
   });
 });

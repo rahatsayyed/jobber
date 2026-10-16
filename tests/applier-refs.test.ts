@@ -7,7 +7,11 @@ import { openDb } from '../src/db.js';
 
 interface Node { type?: string; properties?: Record<string, Node>; items?: Node; anyOf?: Node[]; oneOf?: Node[]; enum?: unknown[]; const?: unknown; pattern?: string; maxLength?: number }
 
-const ALLOWED_PROPS = new Set(['job_id', 'field', 'ref', 'kind', 'key', 'option', 'control']);
+const ALLOWED_PROPS = new Set([
+  'job_id', 'field', 'ref', 'kind', 'key', 'option', 'control',
+  'recipe', 'schema', 'id', 'platform', 'steps', 'confirmation', 'match', 'roles', 'minFields', 'fields', 'role', 'selector', 'type',
+  'required', 'next', 'submit', 'urlPath', 'roles_absent',
+]);
 const BANNED = /^(value|text|answer|content|body|message|password|secret|cover_letter_text|free_text|input|fill|typed)$/i;
 
 function walk(n: Node, name: string, out: Array<{ name: string; node: Node }>): void {
@@ -19,7 +23,7 @@ function walk(n: Node, name: string, out: Array<{ name: string; node: Node }>): 
 
 describe('tool input schemas', () => {
   it('tool schemas contain no free value or text property', () => {
-    expect(Object.keys(APPLIER_TOOL_SCHEMAS).sort()).toEqual(['apply_choose', 'apply_fill', 'apply_next', 'apply_open', 'apply_state', 'apply_submit', 'apply_upload']);
+    expect(Object.keys(APPLIER_TOOL_SCHEMAS).sort()).toEqual(['apply_autofill', 'apply_choose', 'apply_fill', 'apply_next', 'apply_open', 'apply_propose_recipe', 'apply_recipe', 'apply_state', 'apply_submit', 'apply_upload']);
     for (const [tool, schema] of Object.entries(APPLIER_TOOL_SCHEMAS)) {
       const json = z.toJSONSchema(schema) as Node;
       const strings: Array<{ name: string; node: Node }> = [];

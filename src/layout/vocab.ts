@@ -1,18 +1,19 @@
 // Closed vocabulary for layout memory. Anything not listed here can never appear in an
 // observation, so page text cannot leak into the stored layout.
-import type { KindId, LandmarkId, Platform } from './types.js';
+import type { AtsPlatform, BasePlatform, KindId, LandmarkId, Platform } from './types.js';
+import { FIELD_ROLES } from '../webcore/formModel.js';
 
 export const ID_RE = /^[a-z0-9_.:-]{1,48}$/;
 // One definition for run id handling, shared by store, classify and runtime.
 export const RUN_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 export const MAX_RUN_IDS = 5;
 
-export const KINDS: Record<Platform, readonly KindId[]> = {
+export const KINDS: Record<BasePlatform, readonly KindId[]> = {
   linkedin: ['profile', 'search', 'feed', 'messaging', 'invitations', 'jobs', 'login', 'checkpoint', 'other'],
   naukri: ['job', 'search', 'inbox', 'thread', 'login', 'home', 'other'],
 };
 
-export const ACTION_LABELS: Record<Platform, Record<string, string>> = {
+export const ACTION_LABELS: Record<BasePlatform, Record<string, string>> = {
   linkedin: {
     connect: 'action:connect',
     message: 'action:message',
@@ -31,11 +32,11 @@ export const ACTION_LABELS: Record<Platform, Record<string, string>> = {
  */
 export function actionLabelFor(platform: Platform, text: string): string {
   const key = text.replace(/\s+/g, ' ').trim().toLowerCase();
-  const table = ACTION_LABELS[platform];
+  const table = actionLabelsFor(platform);
   return table && Object.hasOwn(table, key) ? table[key] : 'action:other';
 }
 
-export const LANDMARKS: Record<Platform, readonly LandmarkId[]> = {
+export const LANDMARKS: Record<BasePlatform, readonly LandmarkId[]> = {
   linkedin: [
     'profile.name', 'profile.headline', 'profile.degree', 'profile.about', 'profile.bell',
     'profile.pending', 'profile.message_button',
@@ -50,14 +51,14 @@ export const LANDMARKS: Record<Platform, readonly LandmarkId[]> = {
 };
 
 // Count keys that may appear in Observation.counts.
-// The last eight are LinkedIn structure counts (RawSnapshot.structure).
+// 'main'..'form' are LinkedIn structure counts (RawSnapshot.structure); 'fields' and 'required' are ATS form counts.
 export const COUNT_KEYS: readonly string[] = [
   'actions', 'results', 'invitations', 'messages', 'notices', 'buttons', 'options',
-  'main', 'h1', 'h2', 'dialog', 'listitem', 'button', 'link', 'form',
+  'main', 'h1', 'h2', 'dialog', 'listitem', 'button', 'link', 'form', 'fields', 'required',
 ];
 
 // Landmarks whose loss on a known kind means a tool cannot work (drift is critical).
-export const CRITICAL: Record<Platform, Record<KindId, readonly LandmarkId[]>> = {
+export const CRITICAL: Record<BasePlatform, Record<KindId, readonly LandmarkId[]>> = {
   linkedin: {
     profile: ['profile.name'],
     search: ['results.cards'],
@@ -71,7 +72,7 @@ export const CRITICAL: Record<Platform, Record<KindId, readonly LandmarkId[]>> =
 };
 
 // Smallest landmark set a page of that kind is expected to show for layout to count as known.
-export const MIN_SET: Record<Platform, Record<KindId, readonly LandmarkId[]>> = {
+export const MIN_SET: Record<BasePlatform, Record<KindId, readonly LandmarkId[]>> = {
   linkedin: {
     profile: ['profile.name', 'profile.headline'],
     search: ['results.cards'],
@@ -91,3 +92,30 @@ export const TOOL_REQUIRES: Record<string, { kind: KindId; landmarks: readonly L
   linkedin_accept_invite: { kind: 'invitations', landmarks: ['invitations.rows'] },
   naukri_send_message: { kind: 'thread', landmarks: ['chat.input'] },
 };
+
+// ---- ATS form pages (plan 8G-2 task 19) -------------------------------------------------------
+// A browser-applier ATS page is a step of a form. Its layout is a set of role and control ids from the
+// closed lists below: never a label, option, selector or any other page text.
+export const ATS_PLATFORM_RE = /^ats_[a-z0-9]{1,30}$/;
+export const isAtsPlatform = (p: string): p is AtsPlatform => typeof p === 'string' && ATS_PLATFORM_RE.test(p);
+
+export const ATS_KINDS: readonly KindId[] = ['landing', 'listing', 'signin', 'account', 'form', 'review', 'confirmation', 'other'];
+export const ATS_CONTROL_KINDS: readonly string[] = ['next', 'submit', 'back', 'save', 'apply', 'sign_in', 'create_account', 'other'];
+export const ATS_LANDMARKS: readonly LandmarkId[] = [
+  ...FIELD_ROLES.map((r) => `field:${r}`),
+  ...ATS_CONTROL_KINDS.map((k) => `control:${k}`),
+  'notice.present',
+];
+// Kinds that can be learned (a step with a form or controls, however small).
+const ATS_MIN_SET: Record<KindId, readonly LandmarkId[]> = { landing: [], signin: [], account: [], form: [], review: [] };
+
+export const kindsFor = (p: Platform): readonly KindId[] | undefined =>
+  isAtsPlatform(p) ? ATS_KINDS : (KINDS as Record<string, readonly KindId[]>)[p];
+export const landmarksFor = (p: Platform): readonly LandmarkId[] =>
+  isAtsPlatform(p) ? ATS_LANDMARKS : ((LANDMARKS as Record<string, readonly LandmarkId[]>)[p] ?? []);
+export const actionLabelsFor = (p: Platform): Record<string, string> =>
+  isAtsPlatform(p) ? {} : ((ACTION_LABELS as Record<string, Record<string, string>>)[p] ?? {});
+export const criticalFor = (p: Platform, kind: KindId): readonly LandmarkId[] =>
+  isAtsPlatform(p) ? [] : ((CRITICAL as Record<string, Record<KindId, readonly LandmarkId[]>>)[p]?.[kind] ?? []);
+export const minSetFor = (p: Platform, kind: KindId): readonly LandmarkId[] | undefined =>
+  isAtsPlatform(p) ? ATS_MIN_SET[kind] : (MIN_SET as Record<string, Record<KindId, readonly LandmarkId[]>>)[p]?.[kind];

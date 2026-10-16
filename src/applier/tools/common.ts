@@ -7,7 +7,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { WebRuntime } from '../../webcore/runtime.js';
 import type { LiPage } from '../../webcore/launch.js';
-import { type FormField, type FormModel } from '../../webcore/formModel.js';
+import { type FormField, type FormModel, type RawFormSnapshot } from '../../webcore/formModel.js';
+import type { Verdict } from '../../layout/types.js';
+import type { RecipeService } from '../recipes/learn.js';
+import type { AtsLayoutGuard } from '../recipes/layoutGuard.js';
+import { addEscalation } from '../../outreach/service.js';
 import { FIXED_FAIL, HostChanged, haltedWeb, hostOfUrl, noteBlock, readPage } from '../../webcore/login.js';
 import { isDryRun, recordDryRun } from '../../safety/dryRun.js';
 import type { ClassifierPort } from '../../safety/inputGate.js';
@@ -39,6 +43,11 @@ export interface ApplyResult {
   /** missing_required: field ids only. */
   fields?: string[];
   retry_after_sec?: number;
+  /** apply_autofill: field ids the fast path filled, and required ids still open. Ids only, never values. */
+  filled?: string[];
+  unresolved?: string[];
+  /** apply_recipe: a small status record (ids, counts and flags only). */
+  info?: Record<string, string | number | boolean | null>;
 }
 
 export interface OpenJob {
@@ -74,6 +83,10 @@ export interface ApplierDeps {
   escalate?: (kind: string, detail: string) => void;
   /** Recipe confirmation signals for a platform (task 19). */
   recipeSignals?: (platform: string) => ConfirmSignals | null;
+  /** ATS recipes: lookup, autofill counters and confirmed-only learning (task 19). Optional: without it the fast path reports recipe_miss. */
+  recipes?: RecipeService;
+  /** Layout memory for ats_<id> pages (task 19). Observes every page read; enforces drift when LAYOUT_ENFORCE=enforce. */
+  layoutGuard?: AtsLayoutGuard;
   state: ApplierSessionState;
 }
 
@@ -115,7 +128,28 @@ export function blockedResult(deps: ApplierDeps, model: FormModel): ApplyResult 
   return { status: 'blocked', code: model.block ?? 'blocked' };
 }
 
-export interface PageCtx { page: LiPage; job: OpenJob; model: FormModel }
+export interface PageCtx { page: LiPage; job: OpenJob; model: FormModel; raw: RawFormSnapshot; layout: Verdict | null }
+
+/**
+ * Under LAYOUT_ENFORCE=enforce a drifted ATS layout stops the tool before it touches the page. The owner
+ * gets an 'apply' escalation (platform and step kind only). Warn and off modes never refuse.
+ */
+export function layoutDriftRefusal(deps: ApplierDeps, job: OpenJob, model: FormModel, layout: Verdict | null): ApplyResult | null {
+  if (!deps.layoutGuard?.enforce() || !layout || layout.class !== 'drift') return null;
+  try {
+    addEscalation(deps.db, { runId: null, platform: 'apply', reason: 'layout_drift', detail: `platform=${job.platform} kind=${model.stepKind}` }, nowOf(deps));
+  } catch { console.error('[applier] escalation failed'); }
+  deps.escalate?.('layout_drift', `${job.platform} ${model.stepKind}`);
+  return refuse('layout_drift', 'the page layout no longer matches what was learned; continue by hand');
+}
+
+/** Tells the recipe service which field the operator filled (advisory; never throws, never carries a value). */
+export function noteFilled(deps: ApplierDeps, c: Pick<PageCtx, 'job' | 'model' | 'raw'>, f: FormField): void {
+  try {
+    const i = Number(f.id.slice(1)) - 1;
+    deps.recipes?.noteFilled({ platform: c.job.platform, jobId: c.job.jobId, stepKind: c.model.stepKind, field: f, raw: c.raw.fields?.[i] });
+  } catch { console.error('[applier] note failed'); }
+}
 
 /**
  * Runs `fn` on the open page behind the runtime queue: halt, kill switch, an open job, the page still
@@ -132,9 +166,11 @@ export async function inPage(deps: ApplierDeps, fn: (c: PageCtx) => Promise<Appl
       const page = deps.runtime.page();
       if (!page) { deps.state.cur = null; return refuse('no_session', 'the page is closed; call apply_open again'); }
       if (hostOfUrl(page.url()) !== job.host) return refuse('host_changed', 'the page moved to another host; nothing was done');
-      const { model } = await readPage(page);
+      const { raw, model } = await readPage(page);
       if (model.block) return blockedResult(deps, model);
-      return fn({ page, job, model });
+      let layout: Verdict | null = null;
+      try { layout = deps.layoutGuard?.observe(job.platform, model) ?? null; } catch { console.error('[applier] layout observe failed'); }
+      return fn({ page, job, model, raw, layout });
     });
   } catch (e) {
     if (e instanceof HostChanged) return refuse('host_changed', 'the page moved to another host; nothing was typed');

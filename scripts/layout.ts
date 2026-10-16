@@ -17,7 +17,7 @@ import {
   LAYOUT_HALT_PREFIX, layoutFilePath, layoutHaltReason, ownHaltReason, readLayoutFile, renderSummary, summarize,
 } from '../src/layout/summary.js';
 import type { Platform } from '../src/layout/types.js';
-import { KINDS } from '../src/layout/vocab.js';
+import { isAtsPlatform, kindsFor } from '../src/layout/vocab.js';
 import { openDb } from '../src/db.js';
 import { clearHalt } from '../src/outreach/limits.js';
 
@@ -31,7 +31,19 @@ export interface CliDeps {
   fs?: { exists(p: string): boolean; rename(from: string, to: string): void };
 }
 
-const PLATFORMS: readonly Platform[] = ['linkedin', 'naukri'];
+const BASE_PLATFORMS: readonly Platform[] = ['linkedin', 'naukri'];
+
+// The two fixed platforms plus every ats_<id> layout file the browser applier has written.
+function listPlatforms(cfg: LayoutConfig): Platform[] {
+  let names: string[] = [];
+  try { names = fs.readdirSync(cfg.dir); } catch { /* no layout directory yet */ }
+  const ats = names
+    .filter((n) => n.endsWith('.json'))
+    .map((n) => n.slice(0, -'.json'.length))
+    .filter((n): n is Platform => isAtsPlatform(n))
+    .sort();
+  return [...BASE_PLATFORMS, ...ats];
+}
 const USAGE = [
   'usage: npm run layout -- <command>',
   '  status                                  summary for both platforms',
@@ -41,7 +53,7 @@ const USAGE = [
   '  learn <platform>                        learning-run instructions and promotion progress',
 ].join('\n');
 
-const isPlatform = (s: string | undefined): s is Platform => PLATFORMS.includes(s as Platform);
+const isPlatform = (s: string | undefined): s is Platform => BASE_PLATFORMS.includes(s as Platform) || (s !== undefined && isAtsPlatform(s));
 
 async function confirm(d: CliDeps, question: string, yes: boolean): Promise<boolean> {
   if (yes) return true;
@@ -67,7 +79,7 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
   if (cmd === 'status') {
     if (positional.length > 0) { d.err(USAGE); return 2; }
     const db = d.db();
-    for (const p of PLATFORMS) d.out(renderSummary(summarize(p, d.cfg, now, db ?? undefined)));
+    for (const p of listPlatforms(d.cfg)) d.out(renderSummary(summarize(p, d.cfg, now, db ?? undefined)));
     return 0;
   }
 
@@ -105,8 +117,8 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
   }
 
   if (cmd === 'reset') {
-    if (kindArg !== undefined && !(KINDS[platform] as readonly string[]).includes(kindArg)) {
-      d.err(`unknown kind for ${platform}: expected one of ${KINDS[platform].join(' ')}`);
+    if (kindArg !== undefined && !(kindsFor(platform) as readonly string[]).includes(kindArg)) {
+      d.err(`unknown kind for ${platform}: expected one of ${(kindsFor(platform) ?? []).join(' ')}`);
       return 2;
     }
     if (kindIdx >= 0 && kindArg === undefined) { d.err(USAGE); return 2; }
@@ -160,7 +172,7 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
   // Reset the streak of the kind that caused the halt first, so the next dead profile cannot re-halt at once.
   const haltKind = own.slice(LAYOUT_HALT_PREFIX.length);
   let streakNote = '';
-  if ((KINDS[platform] as readonly string[]).includes(haltKind)) {
+  if ((kindsFor(platform) as readonly string[]).includes(haltKind)) {
     try {
       withLayoutLock(file, () => {
         const r = readLayoutFile(platform, d.cfg);

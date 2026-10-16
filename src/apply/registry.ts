@@ -15,13 +15,13 @@ export interface AtsDef {
 }
 
 // Every id here must also be in APPLY_HOST_PLATFORM_IDS (src/webcore/hostCaps.ts); a test asserts it.
-// workable and smartrecruiters are 'agent' until task 19 ships their recipes, which flips them to 'fast'.
+// every platform with a shipped recipe in config/ats-recipes is 'fast' (a test asserts it), the rest are 'agent'.
 export const ATS_REGISTRY: AtsDef[] = [
   { id: 'greenhouse', label: 'Greenhouse', apexes: ['greenhouse.io'], tier: 'fast', accountRequired: false, recipeId: 'greenhouse' },
   { id: 'lever', label: 'Lever', apexes: ['lever.co'], tier: 'fast', accountRequired: false, recipeId: 'lever' },
   { id: 'ashby', label: 'Ashby', apexes: ['ashbyhq.com'], tier: 'fast', accountRequired: false, recipeId: 'ashby' },
-  { id: 'workable', label: 'Workable', apexes: ['workable.com'], tier: 'agent', accountRequired: 'maybe', recipeId: null },
-  { id: 'smartrecruiters', label: 'SmartRecruiters', apexes: ['smartrecruiters.com'], tier: 'agent', accountRequired: 'maybe', recipeId: null },
+  { id: 'workable', label: 'Workable', apexes: ['workable.com'], tier: 'fast', accountRequired: 'maybe', recipeId: 'workable' },
+  { id: 'smartrecruiters', label: 'SmartRecruiters', apexes: ['smartrecruiters.com'], tier: 'fast', accountRequired: 'maybe', recipeId: 'smartrecruiters' },
   { id: 'workday', label: 'Workday', apexes: ['myworkdayjobs.com'], tier: 'agent', accountRequired: true, recipeId: null },
   { id: 'recruitee', label: 'Recruitee', apexes: ['recruitee.com'], tier: 'agent', accountRequired: 'maybe', recipeId: null },
   { id: 'personio', label: 'Personio', apexes: ['personio.de', 'personio.com'], tier: 'agent', accountRequired: 'maybe', recipeId: null },

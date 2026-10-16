@@ -5,7 +5,7 @@ import { fillGuarded } from '../../webcore/login.js';
 import type { AnswerRef } from '../../apply/answers.js';
 import { checkRoleRef, FieldIdSchema, RefSchema } from '../refs.js';
 import {
-  dryRunResult, findField, inPage, refuse, resolveQuestion, type ApplierDeps, type ApplyResult,
+  dryRunResult, findField, inPage, noteFilled, refuse, resolveQuestion, type ApplierDeps, type ApplyResult,
 } from './common.js';
 import { questionText } from './state.js';
 
@@ -14,7 +14,7 @@ export type FillInputT = z.infer<typeof FillInput>;
 
 export async function handleFill(input: FillInputT, deps: ApplierDeps): Promise<ApplyResult> {
   const ref = input.ref as AnswerRef;
-  return inPage(deps, async ({ page, job, model }) => {
+  return inPage(deps, async ({ page, job, model, raw }) => {
     const f = findField(model, input.field);
     if (!f) return refuse('unknown_field', 'no such field on this page');
     if (f.hidden) return refuse('hidden_field', 'the field is not visible');
@@ -46,6 +46,7 @@ export async function handleFill(input: FillInputT, deps: ApplierDeps): Promise<
     const dry = dryRunResult(deps, 'apply_fill', { job_id: job.jobId, field: f.id, role: f.role });
     if (dry) return dry;
     await fillGuarded(page, job.host, f.id, String(value));
+    noteFilled(deps, { job, model, raw }, f);
     return { status: 'ok', code: 'filled' };
   });
 }

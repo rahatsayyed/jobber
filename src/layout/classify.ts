@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto';
 import type { LandmarkId, LayoutFile, KindMemory, Observation, Variant, Verdict } from './types.js';
 import type { LayoutConfig } from './config.js';
-import { CRITICAL, MAX_RUN_IDS, MIN_SET, RUN_ID_RE } from './vocab.js';
+import { MAX_RUN_IDS, RUN_ID_RE, criticalFor, minSetFor } from './vocab.js';
 
 export type { Verdict } from './types.js';
 
@@ -41,7 +41,7 @@ export function classify(file: LayoutFile, obs: Observation, cfg: LayoutConfig):
   if (!b) return { class: 'unknown', score: 0, missing: [], variant: null };
   const have = new Set(obs.landmarks);
   const missing = b.v.landmarks.filter((l) => !have.has(l));
-  const critical = CRITICAL[obs.platform]?.[obs.kind] ?? [];
+  const critical = criticalFor(obs.platform, obs.kind);
   const criticalOk = critical.every((l) => have.has(l));
   const base = { score: b.score, missing, variant: b.v.id };
   if (criticalOk && b.score >= cfg.matchMin) return { class: 'match', ...base };
@@ -88,7 +88,7 @@ type Ev = ApplyResult['events'];
 
 // Accumulate a consistent observation into a learning variant and promote it when it has earned it.
 function learn(km: KindMemory, obs: Observation, now: string, runId: string | null, cfg: LayoutConfig, events: Ev): void {
-  const need = MIN_SET[obs.platform]?.[obs.kind];
+  const need = minSetFor(obs.platform, obs.kind);
   // No MIN_SET entry: nothing guards against a poisoned observation, so the kind is never learned.
   if (!need || !obs.shell) return;
   const have = new Set(obs.landmarks);

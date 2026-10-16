@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "greenhouse",
+  "platform": "greenhouse",
+  "verified": true,
+  "source": "shipped",
+  "note": "derived from the retired src/ats/greenhouse.ts FieldMap",
+  "steps": [
+    {
+      "id": "form",
+      "kind": "form",
+      "match": { "roles": ["name.first", "name.last", "email", "resume"], "minFields": 3 },
+      "fields": [
+        { "role": "name.first", "selector": "#first_name", "type": "text", "required": true },
+        { "role": "name.last", "selector": "#last_name", "type": "text" },
+        { "role": "email", "selector": "#email", "type": "email", "required": true },
+        { "role": "phone", "selector": "#phone", "type": "tel" },
+        { "role": "resume", "selector": "#resume", "type": "file", "required": true },
+        { "role": "cover_letter", "selector": "#cover_letter_text", "type": "textarea" }
+      ],
+      "submit": { "selector": "#submit_app" }
+    }
+  ],
+  "confirmation": { "roles_absent": ["email", "resume"] }
+}

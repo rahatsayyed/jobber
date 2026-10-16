@@ -9,7 +9,7 @@ import { hostAllowed } from '../../webcore/runtime.js';
 import { loadWebConfig } from '../../webcore/config.js';
 import { detectConfirmation } from '../confirm.js';
 import {
-  blockedResult, consumeSubmitCounters, dryRunResult, envOf, inPage, nowOf, preflight, recordApplication, refuse,
+  blockedResult, consumeSubmitCounters, dryRunResult, envOf, inPage, layoutDriftRefusal, nowOf, preflight, recordApplication, refuse,
   type ApplierDeps, type ApplyResult,
 } from './common.js';
 import { screenedState } from './state.js';
@@ -35,10 +35,13 @@ export async function handleSubmit(_input: z.infer<typeof SubmitInput>, deps: Ap
     if (submitMode(env) !== 'submit') {
       return inPage(deps, async ({ model }) => {
         const s = await screenedState(model, 'read', deps);
+        deps.recipes?.noteOutcome({ platform: job.platform, jobId: job.jobId, outcome: 'held' });
         return { status: 'held', code: 'hold_mode', reason: 'APPLY_SUBMIT_MODE is not submit', ...(s.ok ? { state: s.state } : {}) };
       });
     }
-    return inPage(deps, async ({ page, job: j, model }): Promise<ApplyResult> => {
+    return inPage(deps, async ({ page, job: j, model, layout }): Promise<ApplyResult> => {
+      const drift = layoutDriftRefusal(deps, j, model, layout);
+      if (drift) return drift;
       const sc = await screenedState(model, 'send', deps);
       if (!sc.ok) return sc.result;
 
@@ -74,17 +77,21 @@ export async function handleSubmit(_input: z.infer<typeof SubmitInput>, deps: Ap
       } catch {
         console.error('[applier] submit click failed');
         recordApplication(deps.db, j, 'manual_review', 'submit click failed', now);
+        deps.recipes?.noteOutcome({ platform: j.platform, jobId: j.jobId, outcome: 'failed' });
         return { status: 'failed', code: 'error', reason: FIXED_FAIL };
       }
       if (!hostAllowed(page.url(), j.allowedHosts)) {
         recordApplication(deps.db, j, 'manual_review', 'left the application host after submit', now);
+        deps.recipes?.noteOutcome({ platform: j.platform, jobId: j.jobId, outcome: 'unconfirmed' });
         return { status: 'unconfirmed', code: 'left_host', reason: 'the page left the application host; check it by hand' };
       }
-      const c = detectConfirmation(m, after, deps.recipeSignals?.(j.platform) ?? null);
+      const c = detectConfirmation(m, after, deps.recipeSignals?.(j.platform) ?? deps.recipes?.signals(j.platform) ?? null);
       if (c.confirmed) {
         recordApplication(deps.db, j, 'submitted', null, now);
+        deps.recipes?.noteOutcome({ platform: j.platform, jobId: j.jobId, outcome: 'confirmed' });
         return { status: 'submitted', code: 'confirmed', reason: c.layer };
       }
+      deps.recipes?.noteOutcome({ platform: j.platform, jobId: j.jobId, outcome: 'unconfirmed' });
       recordApplication(deps.db, j, 'manual_review', after.model.block ? `blocked after submit: ${after.model.block}` : 'submit not confirmed', now);
       if (after.model.block) return blockedResult(deps, after.model);
       return { status: 'unconfirmed', code: 'no_confirmation', reason: 'no confirmation was seen; check it by hand' };

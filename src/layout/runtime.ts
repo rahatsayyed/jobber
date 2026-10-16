@@ -8,12 +8,13 @@ import type { BlockKind } from '../linkedin/state.js';
 import type { RawSnapshot } from '../linkedin/types.js';
 import type { LayoutConfig } from './config.js';
 import { applyObservation, type ApplyResult } from './classify.js';
-import { observeLinkedin, observeNaukri, type NaukriRawSnapshot } from './fingerprint.js';
+import { observeAts, observeLinkedin, observeNaukri, type NaukriRawSnapshot } from './fingerprint.js';
+import type { FormModel } from '../webcore/formModel.js';
 import { renderLayout } from './render.js';
 import { emptyLayout, loadLayout, saveLayout, withLayoutLock } from './store.js';
 import type { KindId, LandmarkId, LayoutFile, Observation, Platform, Recipe, Verdict } from './types.js';
 import { PROJECT_ROOT } from './config.js';
-import { ACTION_LABELS, ID_RE, RUN_ID_RE, actionLabelFor } from './vocab.js';
+import { ID_RE, RUN_ID_RE, actionLabelFor, actionLabelsFor, isAtsPlatform } from './vocab.js';
 import { haltPlatform, haltReason } from '../outreach/limits.js';
 import { addEscalation } from '../outreach/service.js';
 import { defaultRun } from '../platform/tmux.js';
@@ -26,6 +27,8 @@ export interface LayoutObserver {
   observe(raw: RawSnapshot, block: BlockKind | null): Verdict;      // classify + learn + persist + events
   /** Naukri: the same pipeline from the already parsed snapshot; it never touches the page. */
   observeNaukri(raw: NaukriRawSnapshot, loginRequired: boolean): Verdict;
+  /** Browser-applier ATS pages (platform `ats_<id>`): the same pipeline from a form model; ids only. */
+  observeAts?(model: FormModel): Verdict;
   /** `landmarks` is the observation's own landmark set (what is on the page now). */
   last(): { kind: KindId; verdict: Verdict; landmarks?: LandmarkId[] } | null;
   recordOutcome(label: string, ok: boolean, action?: Recipe['action']): void;  // vocabulary label only
@@ -65,10 +68,11 @@ export function createLayoutObserver(d: {
   db?: BetterSqlite3.Database; path?: string; onEvent?: (e: LayoutEvent) => void;
   /** Notification sink; defaults to the scheduler's .jobber/notify.jsonl notifier (and JOBBER_NOTIFY_CMD). */
   notify?: (n: Notice) => void | Promise<void>;
-}): LayoutObserver {
+}): LayoutObserver & { observeAts(model: FormModel): Verdict } {
   const { platform, cfg } = d;
+  const ats = isAtsPlatform(platform);
   const file = d.path ?? path.join(cfg.dir, `${platform}.json`);
-  const labels = new Set<string>([...Object.values(ACTION_LABELS[platform] ?? {}), 'action:other']);
+  const labels = new Set<string>([...Object.values(actionLabelsFor(platform)), 'action:other']);
   let lastSeen: { kind: KindId; verdict: Verdict; landmarks: LandmarkId[] } | null = null;
 
   let defaultNotifier: ReturnType<typeof fileNotifier> | null = null;
@@ -94,24 +98,27 @@ export function createLayoutObserver(d: {
       if (!db) return;
       if (v.class === 'blocked' || v.class === 'logged_out' || v.class === 'unloaded') return;
       const k = safeId(kind);
+      // ATS pages escalate to the shared 'apply' queue and never halt anything (the apply tools refuse on drift themselves).
+      const escPlatform = ats ? 'apply' : platform;
       const missing = ('missing' in v ? v.missing : []).filter((m) => ID_RE.test(m)).slice(0, 8);
-      const detail = `kind=${k} streak=${Math.max(0, Math.trunc(streak))} missing=${missing.join(',') || 'none'}`;
+      const tag = ats ? ` ats=${platform.slice(4)}` : '';
+      const detail = `kind=${k}${tag} streak=${Math.max(0, Math.trunc(streak))} missing=${missing.join(',') || 'none'}`;
       const now = d.now();
       const run = d.runId ? { runId: d.runId } : {};
       if (event === 'drift_escalate') {
-        addEscalation(db, { runId: d.runId, platform, reason: 'layout_drift', detail }, now);
+        addEscalation(db, { runId: d.runId, platform: escPlatform, reason: 'layout_drift', detail }, now);
         send({ level: 'warn', title: `layout drift on ${platform} (${k})`, ...run });
       } else if (event === 'drift_halt') {
         // drift_halt repeats while the streak stays past the limit: act only on the first one.
-        if (cfg.enforce !== 'enforce') {
+        if (cfg.enforce !== 'enforce' || ats) {
           // Only enforce halts; warn and off halt nothing: record the escalation (once while one is open for
           // this kind) so the owner sees the would-be halt, but never touch halt_flags.
           const open = db.prepare(
             `SELECT 1 FROM escalations WHERE platform = ? AND reason = 'layout_drift_halt'
                AND resolved_at IS NULL AND detail LIKE ? ESCAPE '\\' LIMIT 1`,
-          ).get(platform, `kind=${k.replace(/[\\%_]/g, '\\$&')} %`);
+          ).get(escPlatform, `kind=${k.replace(/[\\%_]/g, '\\$&')}${tag} %`);
           if (open) return;
-          addEscalation(db, { runId: d.runId, platform, reason: 'layout_drift_halt', detail: `${detail} mode=${cfg.enforce}` }, now);
+          addEscalation(db, { runId: d.runId, platform: escPlatform, reason: 'layout_drift_halt', detail: `${detail} mode=${ats ? 'ats' : cfg.enforce}` }, now);
           send({ level: 'warn', title: `layout drift on ${platform} (${k}) would halt (${cfg.enforce} mode, not halted)`, ...run });
           return;
         }
@@ -120,7 +127,7 @@ export function createLayoutObserver(d: {
         addEscalation(db, { runId: d.runId, platform, reason: 'layout_drift_halt', detail }, now);
         send({ level: 'halt', title: `${platform} halted: repeated layout drift (${k})`, ...run });
       } else if (event === 'variant_replaced') {
-        addEscalation(db, { runId: d.runId, platform, reason: 'layout_changed', detail }, now);
+        addEscalation(db, { runId: d.runId, platform: escPlatform, reason: 'layout_changed', detail }, now);
         send({ level: 'info', title: `layout changed on ${platform} (${k})`, ...run });
       }
     } catch (e) { warn('sideEffect', e); }
@@ -209,5 +216,8 @@ export function createLayoutObserver(d: {
     }
   }
 
-  return { observe, observeNaukri: observeNaukriSnapshot, last: () => lastSeen, recordOutcome, render };
+  const observeAtsModel = (model: FormModel): Verdict =>
+    !ats ? UNKNOWN : commit(() => observeAts(model, platform));
+
+  return { observe, observeNaukri: observeNaukriSnapshot, observeAts: observeAtsModel, last: () => lastSeen, recordOutcome, render };
 }

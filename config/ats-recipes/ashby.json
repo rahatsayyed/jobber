@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "id": "ashby",
+  "platform": "ashby",
+  "verified": true,
+  "source": "shipped",
+  "note": "derived from the retired src/ats/ashby.ts FieldMap",
+  "steps": [
+    {
+      "id": "form",
+      "kind": "form",
+      "match": { "roles": ["name.full", "email", "resume"], "minFields": 3 },
+      "fields": [
+        { "role": "name.full", "selector": "input[id^=\"_systemfield_name\"]", "type": "text", "required": true },
+        { "role": "email", "selector": "input[id^=\"_systemfield_email\"]", "type": "email", "required": true },
+        { "role": "phone", "selector": "input[id^=\"_systemfield_phone\"]", "type": "tel" },
+        { "role": "resume", "selector": "input[type=\"file\"]", "type": "file", "required": true },
+        { "role": "cover_letter", "selector": "textarea[name=\"coverLetter\"]", "type": "textarea" }
+      ],
+      "submit": { "selector": "button[type=\"submit\"]" }
+    }
+  ],
+  "confirmation": { "roles_absent": ["email", "resume"] }
+}

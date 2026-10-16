@@ -151,7 +151,7 @@ export function layoutChecks(deps: LayoutCheckDeps = {}): Check[] {
         if (cfg.enforce !== 'warn') return pass(`LAYOUT_ENFORCE=${cfg.enforce}`);
         const unready: string[] = [];
         for (const s of sums) {
-          for (const kindId of Object.keys(CRITICAL[s.platform])) {
+          for (const kindId of Object.keys(CRITICAL[s.platform as 'linkedin' | 'naukri'])) {
             const k = s.kinds.find((x) => x.kind === kindId);
             if (!k || k.state !== 'stable' || k.drift_streak !== 0 || k.drift_total !== 0) unready.push(`${s.platform}/${kindId}`);
           }

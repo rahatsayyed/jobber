@@ -4,13 +4,13 @@ import { z } from 'zod';
 import { hostOfUrl } from '../../webcore/login.js';
 import { FieldIdSchema } from '../refs.js';
 import { DEFAULT_RESUME_ROOT, findPreparedResumePath, validateResumePath } from '../resume.js';
-import { dryRunResult, findField, inPage, refuse, type ApplierDeps, type ApplyResult } from './common.js';
+import { dryRunResult, findField, inPage, noteFilled, refuse, type ApplierDeps, type ApplyResult } from './common.js';
 
 export const UploadInput = z.object({ field: FieldIdSchema }).strict();
 export type UploadInputT = z.infer<typeof UploadInput>;
 
 export async function handleUpload(input: UploadInputT, deps: ApplierDeps): Promise<ApplyResult> {
-  return inPage(deps, async ({ page, job, model }) => {
+  return inPage(deps, async ({ page, job, model, raw }) => {
     const f = findField(model, input.field);
     if (!f) return refuse('unknown_field', 'no such field on this page');
     if (f.hidden) return refuse('hidden_field', 'the field is not visible');
@@ -35,6 +35,7 @@ export async function handleUpload(input: UploadInputT, deps: ApplierDeps): Prom
     } catch {
       return { status: 'failed', code: 'error', reason: 'page interaction failed' };
     }
+    noteFilled(deps, { job, model, raw }, f);
     return { status: 'ok', code: 'uploaded' };
   });
 }

@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "id": "workable",
+  "platform": "workable",
+  "verified": false,
+  "source": "shipped",
+  "note": "INVENTED, live structure unverified; autofill misses safely when the page differs",
+  "steps": [
+    {
+      "id": "form",
+      "kind": "form",
+      "match": { "roles": ["name.first", "name.last", "email", "resume"], "minFields": 3 },
+      "fields": [
+        { "role": "name.first", "selector": "input[name=\"firstname\"]", "type": "text", "required": true },
+        { "role": "name.last", "selector": "input[name=\"lastname\"]", "type": "text", "required": true },
+        { "role": "email", "selector": "input[name=\"email\"]", "type": "email", "required": true },
+        { "role": "phone", "selector": "input[name=\"phone\"]", "type": "tel" },
+        { "role": "resume", "selector": "input[type=\"file\"]", "type": "file", "required": true }
+      ],
+      "submit": { "selector": "button[type=\"submit\"]" }
+    }
+  ],
+  "confirmation": { "roles_absent": ["email", "resume"] }
+}

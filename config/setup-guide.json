@@ -297,6 +297,20 @@
           "entered_in": "owner edits .env"
         },
         {
+          "name": "APPLY_RECIPE_PROMOTE_N",
+          "secret": false,
+          "purpose": "confirmed submitted applications needed before a learned ATS recipe is written (default 3)",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "APPLY_RECIPE_PROMOTE_RUNS",
+          "secret": false,
+          "purpose": "distinct run ids those confirmed applications must span before a learned ATS recipe is written (default 2)",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
           "name": "APPLY_SCREENSHOT",
           "secret": false,
           "purpose": "whether the applier offers a screenshot tool; its pixels are not injection-screened (ships false)",

@@ -3,8 +3,9 @@
 import type { RawSnapshot } from '../linkedin/types.js';
 import type { BlockKind } from '../linkedin/state.js';
 import { classifyUrl } from '../linkedin/urls.js';
-import type { LandmarkId, Observation } from './types.js';
-import { actionLabelFor } from './vocab.js';
+import type { LandmarkId, Observation, Platform } from './types.js';
+import { ATS_CONTROL_KINDS, ATS_KINDS, actionLabelFor, isAtsPlatform } from './vocab.js';
+import type { FormModel } from '../webcore/formModel.js';
 
 // Structural copy of the Naukri RawSnapshot (src/mcp/naukri.ts); importing that module has side effects.
 export interface NaukriRawSnapshot {
@@ -167,6 +168,34 @@ export function observeNaukri(raw: NaukriRawSnapshot, flags: { loginRequired: bo
       notices: bucket(raw.notices.length),
     },
     shell: kind !== 'other' && hasContent && !loginWall && !errorPage && !denied,
+    nonDrift,
+  };
+}
+
+// Browser-applier ATS pages (plan 8G-2 task 19): a form step reduced to field-role ids, control-kind ids
+// and bucketed counts. Labels, options, notices, titles, URLs and selectors never enter the observation.
+export function observeAts(model: FormModel, platform: Platform = 'ats_other'): Observation {
+  const lm = new Set<LandmarkId>();
+  const visible = model.fields.filter((f) => !f.hidden);
+  for (const f of visible) lm.add(`field:${f.role}`);
+  for (const c of model.controls) lm.add(`control:${(ATS_CONTROL_KINDS as readonly string[]).includes(c.kind) ? c.kind : 'other'}`);
+  if (model.notices.length > 0) lm.add('notice.present');
+  const kind = (ATS_KINDS as readonly string[]).includes(model.stepKind) ? model.stepKind : 'other';
+  const empty = visible.length === 0 && model.controls.length === 0;
+  let nonDrift: Observation['nonDrift'] = null;
+  if (model.block) nonDrift = 'blocked';
+  else if (empty) nonDrift = 'unloaded';
+  return {
+    platform: isAtsPlatform(platform) ? platform : 'ats_other',
+    kind,
+    landmarks: finish(lm),
+    counts: {
+      fields: bucket(visible.length),
+      required: bucket(visible.filter((f) => f.required).length),
+      buttons: bucket(model.controls.length),
+      notices: bucket(model.notices.length),
+    },
+    shell: kind !== 'other' && !model.block && !empty,
     nonDrift,
   };
 }
