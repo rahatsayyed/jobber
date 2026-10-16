@@ -14,7 +14,7 @@ import { readControl, statExists, type ControlDeps, type ControlState } from './
 import { countDue } from './due.js';
 import type { LaunchHandle, Launcher } from './launch.js';
 import type { Notice, Notifier } from './notify.js';
-import { loadPlanKnobs, planWake, type WakeDecision } from './plan.js';
+import { loadPlanKnobs, planWake, type DiscoverSearches, type WakeDecision } from './plan.js';
 import { buildWakePrompt } from './prompt.js';
 import { finishRun, getState, markOrphans, setState, startRun, type RunStatus } from './runLog.js';
 
@@ -39,6 +39,8 @@ export interface DriverDeps {
   control?: Pick<ControlDeps, 'exists' | 'read'>;
   pollMs?: number; // default 5000
   session?: string; // tmux session for wake windows, default 'jobber-wake'
+  /** Named LinkedIn discovery searches (config/linkedin-discovery.json); absent plans no discover task. */
+  discoverSearches?: DiscoverSearches;
   heartbeat?: () => void; // called on every poll tick (the daemon lock heartbeat)
   /** Seam for 7D hooks. Called AFTER the run lock is released; errors are swallowed and noticed. */
   afterWake?: (r: WakeResult) => Promise<void>;
@@ -253,6 +255,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
         ceilings: ceilings(d.db, d.cfg, now),
         due: countDue(d.db, now, d.tuning),
         knobs: loadPlanKnobs(d.env),
+        discoverSearches: d.discoverSearches,
       });
     } catch (e) {
       await say(d, { level: 'warn', title: 'scheduler plan failed, not launching', detail: safeMsg(e), runId });

@@ -15,6 +15,10 @@ export interface RawProfile {
   hasMessageButton: boolean;
 }
 export interface RawResult { name: string; headline: string; href: string }
+/** Job search card (jobs search pages only). All fields are untrusted page text. */
+export interface RawJobCard { title: string; company: string; href: string; snippet: string; easyApply: boolean }
+/** Hiring-post card (content search pages only). `text` is the visible post text, untrusted. */
+export interface RawPostCard { text: string; authorName: string; profileHref: string }
 export interface RawInvitation { index: number; name: string; headline: string; href: string }
 export interface RawMessage { from: 'them' | 'me'; text: string }
 
@@ -30,6 +34,8 @@ export interface RawSnapshot {
   dialogText: string | null;          // visible <dialog>/[role=dialog] text
   hasPasswordInput: boolean;
   bodyText: string;                   // visible text of the page, capped at 60000, NEVER surfaced to the model
+  jobCards?: RawJobCard[];            // only on /jobs/search pages (max 50)
+  postCards?: RawPostCard[];          // only on /search/results/content pages (max 50)
   structure?: StructureCounts;        // counts of visible elements (each capped at 999); numbers only, ignored by formatState
 }
 

@@ -13,6 +13,8 @@
     "mcp__linkedin__linkedin_check_connection_status",
     "mcp__linkedin__linkedin_connect_send",
     "mcp__linkedin__linkedin_send_message",
+    "mcp__linkedin__linkedin_search_jobs",
+    "mcp__linkedin__linkedin_search_posts",
     "mcp__db__list_queued_outreach",
     "mcp__db__update_outreach_status"
   ],

@@ -55,3 +55,14 @@ describe('buildWakePrompt', () => {
     expect(p).toContain('must not send');
   });
 });
+
+describe('buildWakePrompt discover task', () => {
+  it('names the searches the operator may run', () => {
+    const p = buildWakePrompt({
+      runId: 'r1', dryRun: false, burst: 2, budget: { maxToolCalls: 10, maxWallSec: 60, maxTokensApprox: 1000 } as any,
+      allowed: ['linkedin'], now: new Date('2026-10-16T10:00:00Z'),
+      tasks: [{ operator: 'linkedin-operator', platform: 'linkedin', tasks: [{ kind: 'discover', quota: 2, searches: { jobs: ['react-india'], posts: ['default'] } }] }],
+    });
+    expect(p).toContain('discover quota 2 (job searches: react-india; post searches: default)');
+  });
+});

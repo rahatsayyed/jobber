@@ -30,7 +30,7 @@
         ]
       },
       {
-        "matcher": "mcp__gmail__send_email|mcp__apply__.*|mcp__linkedin__linkedin_(connect_send|send_message|accept_invite)|mcp__naukri__naukri_(send_message|click|type)|mcp__scout__.*",
+        "matcher": "mcp__gmail__send_email|mcp__apply__.*|mcp__linkedin__linkedin_(connect_send|send_message|accept_invite|search_jobs|search_posts)|mcp__naukri__naukri_(send_message|click|type)|mcp__scout__.*",
         "hooks": [
           {
             "type": "command",

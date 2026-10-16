@@ -5,6 +5,7 @@ import { chromium, type Browser } from 'playwright';
 import type BetterSqlite3 from 'better-sqlite3';
 import { openDb, isSeen, saveJob, type Job } from '../db.js';
 import { dbPath } from '../dbPath.js';
+import { extractLinkedInJobId } from '../linkedin/jobIds.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../..');
@@ -86,10 +87,8 @@ export interface ParseResult {
   skipped: number;
 }
 
-export function extractLinkedInJobId(href: string): string | null {
-  const match = href.match(/\/jobs\/view\/(\d+)/);
-  return match ? match[1] : null;
-}
+// Id derivation now lives in src/linkedin/jobIds.ts (Task 10); this module is deleted in Task 14.
+export { extractLinkedInJobId };
 
 export function parseLinkedInJobCards(rawCards: RawJobCard[]): ParseResult {
   let parsed = 0;

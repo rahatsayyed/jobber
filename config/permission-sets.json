@@ -65,6 +65,8 @@
       "mcp__linkedin__linkedin_send_message",
       "mcp__linkedin__linkedin_check_connection_status",
       "mcp__linkedin__linkedin_find_profiles",
+      "mcp__linkedin__linkedin_search_jobs",
+      "mcp__linkedin__linkedin_search_posts",
       "mcp__naukri__naukri_send_message",
       "mcp__apply__auto",
       "mcp__apply__linkedin",

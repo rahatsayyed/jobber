@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
+import { buildSyntheticPostId, isHiringIntent } from '../linkedin/jobIds.js';
 import { chromium, type Browser } from 'playwright';
 import type BetterSqlite3 from 'better-sqlite3';
 import { openDb, isSeen, saveJob, type Job } from '../db.js';
@@ -25,16 +25,8 @@ export interface RawPostCard {
   authorText: string | null;
 }
 
-export function buildSyntheticPostId(profileUrl: string, text: string): string {
-  const hash = createHash('sha256').update(profileUrl + text.slice(0, 100)).digest('hex').slice(0, 16);
-  return `li-post:${hash}`;
-}
-
-const HIRING_KEYWORDS = /\b(hiring|we're hiring|we are hiring|join our team|open position|looking for)\b/i;
-
-export function isHiringIntent(text: string): boolean {
-  return HIRING_KEYWORDS.test(text);
-}
+// Id derivation and hiring-intent rule now live in src/linkedin/jobIds.ts (Task 10); deleted with this module in Task 14.
+export { buildSyntheticPostId, isHiringIntent };
 
 export function buildLinkedInPostSearchUrl(role: string, geo: string): string {
   const keywords = `(hiring OR "we're hiring" OR "we are hiring" OR "join our team") (${role}) ${geo}`;

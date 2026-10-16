@@ -5,16 +5,25 @@ import type { ControlState, Platform } from './control.js';
 import type { DueCounts } from './due.js';
 
 export type Operator = 'linkedin-operator' | 'naukri-operator';
-export type TaskKind = 'inbox' | 'followups' | 'new_outreach' | 'search';
-export interface OperatorTask { kind: TaskKind; quota: number }
+export type TaskKind = 'inbox' | 'followups' | 'new_outreach' | 'search' | 'discover';
+/** Names of the searches in config/linkedin-discovery.json the discover task may run. */
+export interface DiscoverSearches { jobs: string[]; posts: string[] }
+/** `quota` of a discover task is the number of searches it may run this wake; `searches` names them. */
+export interface OperatorTask { kind: TaskKind; quota: number; searches?: DiscoverSearches }
 export interface Assignment { operator: Operator; platform: Platform; tasks: OperatorTask[] }
 export type SkipReason = 'killed' | 'halted' | 'quiet_hours' | 'ceilings_exhausted' | 'nothing_due';
 export type WakeDecision =
   | { kind: 'skip'; reason: SkipReason; detail?: string }
   | { kind: 'run'; burst: number; tasks: Assignment[] };
-export interface PlanKnobs { inboxEveryMin: number; naukriSearchEveryHours: number }
+export interface PlanKnobs {
+  inboxEveryMin: number;
+  naukriSearchEveryHours: number;
+  /** Hours between LinkedIn discover tasks; absent means the default (a constant, no env key). */
+  linkedinDiscoverEveryHours?: number;
+}
 
 export const INBOX_QUOTA = 5;
+export const LINKEDIN_DISCOVER_EVERY_HOURS = 6;
 
 function posInt(v: string | undefined, fallback: number): number {
   if (v === undefined || v.trim() === '') return fallback;
@@ -37,6 +46,8 @@ export function planWake(i: {
   ceilings: Record<LimitKey, CeilingStatus>;
   due: DueCounts;
   knobs: PlanKnobs;
+  /** Named discovery searches; absent or empty means no discover task is planned. */
+  discoverSearches?: DiscoverSearches;
 }): WakeDecision {
   const { control, ceilings, due, knobs } = i;
   if (control.killed) return { kind: 'skip', reason: 'killed', detail: control.killReason ?? undefined };
@@ -98,6 +109,18 @@ export function planWake(i: {
   const searchDue =
     due.naukriSearchLastHoursAgo === null || due.naukriSearchLastHoursAgo >= knobs.naukriSearchEveryHours;
   if (searchDue && searchPlats.length > 0) byPlatform.naukri.push({ kind: 'search', quota: 1 });
+
+  // Discovery reads and saves jobs, it sends nothing, so it does not spend the burst. It needs the
+  // linkedin_discover ceiling, a named search and a last-run age (undefined: not tracked, never due).
+  const names = i.discoverSearches ?? { jobs: [], posts: [] };
+  const nameCount = names.jobs.length + names.posts.length;
+  const discoverEvery = knobs.linkedinDiscoverEveryHours ?? LINKEDIN_DISCOVER_EVERY_HOURS;
+  const discoverAge = due.linkedinDiscoverLastHoursAgo;
+  const discoverDue = discoverAge === null || (discoverAge !== undefined && discoverAge >= discoverEvery);
+  const discoverRoom = ceilings.linkedin_discover ? ceilings.linkedin_discover.limit - ceilings.linkedin_discover.used : 0;
+  if (allowed.has('linkedin') && discoverDue && nameCount > 0 && ceilings.linkedin_discover?.ok && discoverRoom > 0) {
+    byPlatform.linkedin.push({ kind: 'discover', quota: Math.min(nameCount, discoverRoom), searches: names });
+  }
 
   const tasks: Assignment[] = ORDER.filter((p) => byPlatform[p].length > 0).map((p) => ({
     operator: `${p}-operator` as Operator,

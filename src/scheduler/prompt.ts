@@ -21,7 +21,15 @@ export function buildWakePrompt(i: {
   );
   lines.push(`Allowed platforms: ${i.allowed.join(', ') || 'none'}.`);
   for (const t of i.tasks) {
-    const tasks = t.tasks.map((k) => `${k.kind} quota ${k.quota}`).join(', ');
+    const tasks = t.tasks
+      .map((k) => {
+        const s = k.searches;
+        const names = s && k.kind === 'discover'
+          ? ` (job searches: ${s.jobs.join(', ') || 'none'}; post searches: ${s.posts.join(', ') || 'none'})`
+          : '';
+        return `${k.kind} quota ${k.quota}${names}`;
+      })
+      .join(', ');
     lines.push(`Dispatch operator \`${t.operator}\` for platform ${t.platform} with tasks: ${tasks}.`);
   }
   lines.push(

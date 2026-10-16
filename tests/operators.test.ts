@@ -31,6 +31,7 @@ const OLD_WORKER_TOOLS: Record<string, string[]> = {
 const OLD_UNION = new Set(Object.values(OLD_WORKER_TOOLS).flat());
 const NEW_ALLOWED = new Set([
   'mcp__linkedin__linkedin_layout', 'mcp__naukri__naukri_layout',
+  'mcp__linkedin__linkedin_search_jobs', 'mcp__linkedin__linkedin_search_posts',
   'mcp__outreach__list_due_touches', 'mcp__outreach__next_contacts', 'mcp__outreach__record_inbound',
   'mcp__outreach__escalate', 'mcp__db__list_jobs', 'mcp__db__list_queued_outreach', 'mcp__db__update_outreach_status',
 ]);
@@ -64,7 +65,8 @@ describe('platform operators', () => {
       'mcp__outreach__escalate', 'mcp__linkedin__linkedin_layout', 'mcp__linkedin__linkedin_open',
       'mcp__linkedin__linkedin_state', 'mcp__linkedin__linkedin_scroll', 'mcp__linkedin__linkedin_click',
       'mcp__linkedin__linkedin_check_connection_status', 'mcp__linkedin__linkedin_connect_send',
-      'mcp__linkedin__linkedin_send_message', 'mcp__db__list_queued_outreach', 'mcp__db__update_outreach_status',
+      'mcp__linkedin__linkedin_send_message', 'mcp__linkedin__linkedin_search_jobs',
+      'mcp__linkedin__linkedin_search_posts', 'mcp__db__list_queued_outreach', 'mcp__db__update_outreach_status',
     ]);
   });
   it('naukri-operator has exactly the brief tool list', () => {

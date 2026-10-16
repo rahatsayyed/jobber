@@ -51,12 +51,13 @@ function make(env: NodeJS.ProcessEnv = {}) {
 }
 
 describe('linkedin MCP handlers', () => {
-  it('exposes exactly the 14 tools', () => {
+  it('exposes exactly the 16 tools', () => {
     const { handlers } = make();
     expect(Object.keys(handlers).sort()).toEqual([
       'linkedin_accept_invite', 'linkedin_check_connection_status', 'linkedin_click', 'linkedin_close',
       'linkedin_connect_send', 'linkedin_find_profiles', 'linkedin_layout', 'linkedin_limits', 'linkedin_open',
-      'linkedin_screenshot', 'linkedin_scroll', 'linkedin_send_message', 'linkedin_state', 'linkedin_type',
+      'linkedin_screenshot', 'linkedin_scroll', 'linkedin_search_jobs', 'linkedin_search_posts',
+      'linkedin_send_message', 'linkedin_state', 'linkedin_type',
     ]);
     expect([...TOOL_NAMES].sort()).toEqual(Object.keys(handlers).sort());
   });

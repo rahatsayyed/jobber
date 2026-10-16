@@ -15,6 +15,8 @@ export interface DueCounts {
   newOutreachReadyByPlatform: Record<Platform, number>;
   inboxLastCheckedMinAgo: number | null;
   naukriSearchLastHoursAgo: number | null;
+  /** Hours since the last LinkedIn discovery run (set by the discovery tools); null when never. */
+  linkedinDiscoverLastHoursAgo?: number | null;
 }
 
 // null when the key was never set; 0 (ran just now, so not due) when the stored value is unparseable.
@@ -70,6 +72,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS): D
   const sum = (r: Record<Platform, number>): number => r.linkedin + r.naukri;
   const inbox = agoMs(db, 'inbox_last_checked_at', now);
   const naukri = agoMs(db, 'naukri_search_last_at', now);
+  const discover = agoMs(db, 'linkedin_discover_last_at', now);
   return {
     followupsDue: sum(followupsDueByPlatform),
     newOutreachReady: sum(newByPlatform),
@@ -77,5 +80,6 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS): D
     newOutreachReadyByPlatform: newByPlatform,
     inboxLastCheckedMinAgo: inbox === null ? null : Math.floor(inbox / 60000),
     naukriSearchLastHoursAgo: naukri === null ? null : naukri / 3600000,
+    linkedinDiscoverLastHoursAgo: discover === null ? null : discover / 3600000,
   };
 }

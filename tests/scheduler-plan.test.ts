@@ -312,3 +312,40 @@ describe('countDue', () => {
     expect(c.followupsDue + c.newOutreachReady).toBe(0);
   });
 });
+
+describe('planWake: linkedin discover task', () => {
+  const names = { jobs: ['react-india'], posts: ['default'] };
+  const withDiscover = (keys: LimitKey[] = [], used = 0) => {
+    const c = ceil();
+    for (const k of keys) c[k] = { used: 5, limit: 5, ok: false };
+    c.linkedin_discover = keys.includes('linkedin_discover') ? { used: 12, limit: 12, ok: false } : { used, limit: 12, ok: true };
+    return c;
+  };
+  const discover = (o: Partial<Parameters<typeof planWake>[0]>) => {
+    const { d } = plan({ due: due({ linkedinDiscoverLastHoursAgo: null }), ceilings: withDiscover(), discoverSearches: names, ...o });
+    return d.kind === 'run' ? d.tasks.flatMap((a) => a.tasks.map((t) => ({ ...t, platform: a.platform }))).find((t) => t.kind === 'discover') : undefined;
+  };
+  it('is planned for linkedin when named searches exist and it never ran', () => {
+    expect(discover({})).toMatchObject({ kind: 'discover', platform: 'linkedin', quota: 2, searches: names });
+  });
+  it('quota is capped by what is left of the daily discover ceiling', () => {
+    expect(discover({ ceilings: withDiscover([], 11) })?.quota).toBe(1);
+  });
+  it('waits for the interval, needs names, an open ceiling and an unhalted platform', () => {
+    expect(discover({ due: due({ linkedinDiscoverLastHoursAgo: 2 }) })).toBeUndefined();
+    expect(discover({ due: due({ linkedinDiscoverLastHoursAgo: 7 }) })).toBeDefined();
+    expect(discover({ discoverSearches: { jobs: [], posts: [] } })).toBeUndefined();
+    expect(discover({ discoverSearches: undefined })).toBeUndefined();
+    expect(discover({ ceilings: withDiscover(['linkedin_discover']) })).toBeUndefined();
+    expect(discover({ control: ctl({ allowed: ['naukri'], halted: { linkedin: 'x', naukri: null } }) })).toBeUndefined();
+  });
+  it('an untracked last-run age (field absent) never plans discover', () => {
+    expect(discover({ due: due() })).toBeUndefined();
+  });
+  it('countDue reads the last-run state key written by the discovery tools', () => {
+    const db = openDb(':memory:');
+    expect(countDue(db, NOW, TUNING_DEFAULTS).linkedinDiscoverLastHoursAgo).toBeNull();
+    setState(db, 'linkedin_discover_last_at', new Date(NOW.getTime() - 3 * 3600_000).toISOString(), NOW);
+    expect(countDue(db, NOW, TUNING_DEFAULTS).linkedinDiscoverLastHoursAgo).toBeCloseTo(3);
+  });
+});

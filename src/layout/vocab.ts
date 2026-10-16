@@ -88,6 +88,9 @@ export const TOOL_REQUIRES: Record<string, { kind: KindId; landmarks: readonly L
   linkedin_connect_send: { kind: 'profile', landmarks: ['profile.name', 'action:connect'] },
   linkedin_send_message: { kind: 'profile', landmarks: ['profile.name', 'profile.message_button'] },
   linkedin_find_profiles: { kind: 'search', landmarks: ['results.cards'] },
+  // Discovery pages. `jobs` has no MIN_SET until a supervised learning run, so enforce refuses it as unverified.
+  linkedin_search_jobs: { kind: 'jobs', landmarks: ['results.cards'] },
+  linkedin_search_posts: { kind: 'search', landmarks: ['results.cards'] },
   linkedin_accept_invite: { kind: 'invitations', landmarks: ['invitations.rows'] },
   naukri_send_message: { kind: 'thread', landmarks: ['chat.input'] },
 };

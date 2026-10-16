@@ -101,7 +101,9 @@ describe('linkedin classifier screen', () => {
   });
 
   it('SCREENED_SURFACES: each linkedin_* file calls the screen', () => {
-    const entries = SCREENED_SURFACES.filter((s) => s.id.startsWith('linkedin_') && s.id !== 'linkedin_find_profiles');
+    const entries = SCREENED_SURFACES.filter(
+      (s) => s.id.startsWith('linkedin_') && !['linkedin_find_profiles', 'linkedin_search_jobs', 'linkedin_search_posts'].includes(s.id),
+    );
     expect(entries).toHaveLength(5);
     for (const e of entries) {
       const text = read(e.file);

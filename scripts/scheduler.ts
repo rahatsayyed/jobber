@@ -18,7 +18,8 @@ import { defaultDeps as controlDefaults, readControl } from '../src/scheduler/co
 import { countDue } from '../src/scheduler/due.js';
 import { tmuxLauncher } from '../src/scheduler/launch.js';
 import { fileNotifier } from '../src/scheduler/notify.js';
-import { loadPlanKnobs, planWake } from '../src/scheduler/plan.js';
+import { loadPlanKnobs, planWake, type DiscoverSearches } from '../src/scheduler/plan.js';
+import { loadDiscoveryConfig } from '../src/linkedin/discoveryConfig.js';
 import { getState, listRuns } from '../src/scheduler/runLog.js';
 import { makeAfterWakeHooks } from '../src/scheduler/hooks.js';
 
@@ -64,6 +65,12 @@ function status(env: NodeJS.ProcessEnv): void {
   db.close();
 }
 
+/** Search names only (never definitions) from config/linkedin-discovery.json, for the discover task. */
+function discoverNames(): DiscoverSearches {
+  const c = loadDiscoveryConfig();
+  return { jobs: c.jobs.map((j) => j.name), posts: c.posts.map((p) => p.name) };
+}
+
 function dryRunPlan(env: NodeJS.ProcessEnv): void {
   const db = openReadOnly();
   const now = new Date();
@@ -77,6 +84,7 @@ function dryRunPlan(env: NodeJS.ProcessEnv): void {
     ceilings: ceilings(db, cfg, now),
     due: countDue(db, now, tuning),
     knobs: loadPlanKnobs(env),
+    discoverSearches: discoverNames(),
   });
   console.log(JSON.stringify(decision, null, 2));
   db.close();
@@ -114,6 +122,7 @@ async function main(): Promise<void> {
     notifier,
     newRunId: () => randomBytes(8).toString('hex'),
     session: env.SCHEDULER_TMUX_SESSION || undefined,
+    discoverSearches: discoverNames(),
     afterWake: makeAfterWakeHooks({
       db, env, projectRoot, now, pacing: pacingFromConfig(cfg, tuning), notifier,
     }),
