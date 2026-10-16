@@ -35,6 +35,7 @@ import { readRunLog } from '../dash/runlog.js';
 import { sessionsPanel } from '../dash/sessionsPanel.js';
 import { buildConfigView } from '../dash/configView.js';
 import { loadStatic } from './page.js';
+import { createSettingsRoutes, type SettingsDeps } from './settingsRoutes.js';
 import { applySecurityHeaders, HttpError, json, readJson, securityHeaders, type Ctx } from './router.js';
 
 export interface WebDeps {
@@ -60,6 +61,7 @@ export interface WebDeps {
   env?: NodeJS.ProcessEnv; // for the masked config view, default process.env
   root?: string; // project root for the config view, default cwd
   staticDir?: string; // default: ./static next to this file
+  settings?: SettingsDeps; // dashboard settings editor (plan 8H); routes exist only when set. Never given to chat.
 }
 
 export { STATUS_COMMANDS };
@@ -497,6 +499,12 @@ export function createWebServer(deps: WebDeps): http.Server {
     audit(deps.auth, 'chat_send', { ip: c.ip, textHash: textHash(v.text) }, t);
     json(c.res, 200, { ok: true });
   });
+
+  if (deps.settings) {
+    for (const r of createSettingsRoutes(deps.settings, { auth: deps.auth, now, authMode, reauthMaxAgeSec })) {
+      add(r.method, r.pattern, false, r.fn);
+    }
+  }
 
   add('GET', '/api/runs', false, (c) => json(c.res, 200, readRunLog(deps.data, clampLimit(q(c, 'limit')))));
   add('GET', '/api/config', false, (c) => {

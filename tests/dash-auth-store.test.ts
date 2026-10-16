@@ -36,6 +36,7 @@ describe('authStore additive schema', () => {
     expect((db.prepare('SELECT COUNT(*) AS n FROM sessions').get() as { n: number }).n).toBe(1);
     expect(listAudit(db, 10)).toHaveLength(1);
     expect(() => db.prepare('SELECT * FROM access_token').all()).not.toThrow();
+    expect(() => db.prepare('SELECT * FROM settings_pending').all()).not.toThrow();
   });
 });
 
