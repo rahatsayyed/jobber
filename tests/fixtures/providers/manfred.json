@@ -1,0 +1,22 @@
+[
+  {
+    "id": 42,
+    "slug": "mu-dev",
+    "position": "Senior Frontend",
+    "status": "ACTIVE",
+    "company": {
+      "name": "Mu"
+    },
+    "locations": [],
+    "remotePercentage": 100
+  },
+  {
+    "id": 43,
+    "slug": "nu",
+    "position": "Closed Role",
+    "status": "CLOSED",
+    "company": {
+      "name": "Nu"
+    }
+  }
+]

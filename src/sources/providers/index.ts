@@ -8,6 +8,7 @@ type Loader = () => Promise<{ provider: Provider }>;
 /** Source ids in the order they were imported. A test keeps this list, the loaders, the files and config/platforms.json in step. */
 export const IMPORTED_IDS = [
   '4dayweek', 'arbeitnow', 'jobicy', 'workingnomads', 'themuse', 'landingjobs', 'thehub', 'flowxtra', 'yourator', 'getonbrd',
+  'justjoin', 'manfred', 'cryptocurrencyjobs', 'jobspresso', 'larajobs', 'nodesk', 'pythonorg', 'startup-jobs',
 ] as const;
 
 export const IMPORTED_LOADERS: Record<string, Loader> = {
@@ -21,4 +22,12 @@ export const IMPORTED_LOADERS: Record<string, Loader> = {
   'providers/flowxtra': () => import('./flowxtra.js'),
   'providers/yourator': () => import('./yourator.js'),
   'providers/getonbrd': () => import('./getonbrd.js'),
+  'providers/justjoin': () => import('./justjoin.js'),
+  'providers/manfred': () => import('./manfred.js'),
+  'providers/cryptocurrencyjobs': () => import('./cryptocurrencyjobs.js'),
+  'providers/jobspresso': () => import('./jobspresso.js'),
+  'providers/larajobs': () => import('./larajobs.js'),
+  'providers/nodesk': () => import('./nodesk.js'),
+  'providers/pythonorg': () => import('./pythonorg.js'),
+  'providers/startup-jobs': () => import('./startup-jobs.js'),
 };
