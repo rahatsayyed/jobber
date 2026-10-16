@@ -9,6 +9,7 @@ const ROOT = process.cwd();
 // here on purpose, after deciding why it does not need screenUntrusted.
 const SYNC_ONLY = new Set([
   'src/linkedin/state.ts',
+  'src/webcore/state.ts',
   'src/safety/fieldGate.ts',
   'src/naukri/parse.ts',
   'src/naukri/inbound.ts',
