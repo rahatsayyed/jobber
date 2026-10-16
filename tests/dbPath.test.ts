@@ -25,13 +25,11 @@ describe('dbPath (final review I4)', () => {
   it('importing the db-opening modules does not touch the real data.sqlite', async () => {
     const real = path.join(root, 'data.sqlite');
     const before = stat(real);
-    await import('../src/apply/linkedin.js');
-    await import('../src/apply/external.js');
     expect(stat(real)).toBe(before);
   });
   it('no source module hardcodes the data.sqlite default except dbPath itself', () => {
     const files = ['src/mcp/db.ts', 'src/mcp/gates.ts', 'src/mcp/job-fetch.ts', 'src/mcp/contacts.ts',
-      'src/apply/external.ts', 'src/apply/linkedin.ts', 'src/discover/linkedin-jobs.ts', 'src/discover/linkedin-posts.ts'];
+      'src/discover/linkedin-jobs.ts', 'src/discover/linkedin-posts.ts'];
     for (const f of files) {
       const src = readFileSync(path.join(root, f), 'utf8');
       expect(src, f).not.toMatch(/openDb\('data\.sqlite'\)/);

@@ -15,6 +15,10 @@ const profiles = loadProfiles('config/run-profiles.json', 'config/permission-set
 const wake = profiles.outreach_wake;
 const hunt = profiles.hunt;
 
+// Ruling R4 (8G-2 task 23): sender.md still names the retired apply server until the 8G-1 branch removes the agent (task 14).
+const RETIRED_SERVERS = ['apply'];
+const retired = (t: string): boolean => RETIRED_SERVERS.includes(/^mcp__([a-z0-9-]+)__/.exec(t)?.[1] ?? '');
+
 describe('shipped profiles', () => {
   it('never contain raw_query, wildcards or dangerous built-ins', () => {
     for (const p of Object.values(profiles)) {
@@ -40,6 +44,7 @@ describe('shipped profiles', () => {
       const fm = /^---\n([\s\S]*?)\n---/.exec(readFileSync(`.claude/agents/${f}`, 'utf8'))?.[1] ?? '';
       const tools = (fm.split('\n').find((l) => l.startsWith('tools:')) ?? '').replace('tools:', '').split(',').map((s) => s.trim()).filter(Boolean);
       for (const t of tools) {
+        if (retired(t)) continue;
         if (t.startsWith('mcp__') && !hunt.allow.includes(t)) missing.push(`${f}: ${t}`);
         if (!t.startsWith('mcp__') && !hunt.builtin_tools.includes(t)) missing.push(`${f}: ${t}`);
       }

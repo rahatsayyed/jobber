@@ -2,7 +2,7 @@
 
 Phase 2 uses two separate, never-shared LinkedIn browser sessions:
 
-- **Burner account** — used only by `apply.linkedin` (Easy Apply, `src/apply/linkedin.ts`) and the `discover.linkedin_*` tools. Never used for the `linkedin` MCP.
+- **Burner account** — used only by the applier (LinkedIn Easy Apply, off by default) and the `discover.linkedin_*` tools. Never used for the `linkedin` MCP.
 - **Main account** — used only by the `linkedin` MCP (`linkedin_find_profiles`, connection requests, messages; the `connect` MCP no longer exists). Never used for Easy Apply.
 
 Each MCP server loads its session from a hardcoded path — this is a structural safeguard, not just convention, so the two accounts can't accidentally get cross-wired.

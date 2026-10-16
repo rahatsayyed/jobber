@@ -1,5 +1,5 @@
 // Prepared resume lookup and upload-path validation for the typed apply tools (plan 8G-2 task 18).
-// findPreparedResumePath moved here from src/apply/linkedin.ts (which re-exports it until task 23).
+// findPreparedResumePath moved here from the removed scripted Easy Apply (task 23).
 import type BetterSqlite3 from 'better-sqlite3';
 import { lstatSync, realpathSync } from 'node:fs';
 import path from 'node:path';

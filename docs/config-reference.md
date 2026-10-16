@@ -2,7 +2,7 @@
 
 Audience: owner
 Last verified against: cc51247
-Source files: src/sources/boards/filters.ts, src/targetRegions.ts, src/vetoes.ts, src/replies.ts, src/discover/linkedin-jobs.ts, src/safety/styleGate.ts, src/lib/userData.ts, src/languageGate.ts, src/resumeFacts.ts, src/ats/learned.ts, src/platform/permissions.ts, scripts/permissions.ts, scripts/models.ts, scripts/check-portal.ts, scripts/user-data.ts, .env.example, src/setup/limitsCatalog.ts
+Source files: src/sources/boards/filters.ts, src/targetRegions.ts, src/vetoes.ts, src/replies.ts, src/discover/linkedin-jobs.ts, src/safety/styleGate.ts, src/lib/userData.ts, src/languageGate.ts, src/resumeFacts.ts, src/platform/permissions.ts, scripts/permissions.ts, scripts/models.ts, scripts/check-portal.ts, scripts/user-data.ts, .env.example, src/setup/limitsCatalog.ts
 
 This page lists every file you may edit in `config/` and `user-data/`, what reads it, whether a restart is needed, and how to check an edit. It does not repeat safety rules or caps: those live in `CLAUDE.md` (sections "Safety" and "Outreach safety layers"). All example values below are synthetic.
 
@@ -20,7 +20,7 @@ Restart rule of thumb: an MCP server keeps what it loaded at start. After you ch
 | `user-data/resume.json` | Base resume the agent tailors (the agent never edits it) | resume MCP, matcher | restart after a change (unverified inference: MCP servers keep what they loaded) | none found |
 | `user-data/profile.json` | Roles, locations, salary floors, notice period, work authorization | setup wizard (`profile` step) | per use (unverified inference) | `npm run doctor` check `profile-valid` |
 | `user-data/languages.json` | Languages you speak and whether you confirmed the list | `src/languageGate.ts` | per call | `npm run doctor` check `languages-confirmed` (parse and `confirmed` only) |
-| `user-data/easy-apply-answers.json` | Answers to common screening questions | `src/apply/linkedin.ts` | per apply call, no restart | none found |
+| `user-data/easy-apply-answers.json` | Answers to common screening questions | `src/apply/answers.ts` | per apply call, no restart | none found |
 | `user-data/fact-gate.json` | Facts you confirmed, plus phrases to block or warn on | `src/resumeFacts.ts` (`loadFactGateConfig`) | per render or check call | none found; a bad file blocks with the `unknown key` error |
 
 The `user-data/` files do not exist on a fresh clone. Copy the synthetic templates from `user-data.example/` with:
@@ -138,7 +138,7 @@ Purpose: truthful answers for LinkedIn Easy Apply screening questions. Shape: se
 
 Never invent a value. Rules for filling `custom` are in `CLAUDE.md` "Applying", step 2a.
 
-Known limit (also noted in `CLAUDE.md`, section "Naukri"): the template and the setup `profile` step write `requires_sponsorship` as an object (`india`, `other`), but `src/apply/linkedin.ts` only maps a boolean answer to a Yes/No radio, so an object value fails closed to `needs_answer`. Check the file before any automated apply flow reads it. Do not fix this by hand-editing around it without checking `src/apply/linkedin.ts` first.
+Known limit (also noted in `CLAUDE.md`, section "Naukri"): the template and the setup `profile` step write `requires_sponsorship` as an object (`india`, `other`), but `src/apply/answers.ts` only maps a boolean answer to a Yes/No radio, so an object value fails closed to `needs_answer`. Check the file before any automated apply flow reads it. Do not fix this by hand-editing around it without checking `src/apply/answers.ts` first.
 
 ### user-data/fact-gate.json
 
@@ -187,7 +187,7 @@ That snippet shows two keys of `config/ai-tells.json` only; the real file needs 
 |---|---|---|
 | `config/ccgram.pin.json` `version` | The start script refuses any other ccgram version; ccgram's own upgrade command is never used | the version changes only by editing the pin after review (doctor check `upgrade-policy`); nothing in code writes the file. The one hand edit that is expected is setting `installed` to `true` after installing the pinned version, when doctor check `ccgram-pin-state` warns (see [Prerequisites](prerequisites.md)) |
 | `config/classifier-models.json` pins (`revision`, checksums) | A wrong pin makes the classifier unavailable, and live reads and sends then fail closed | `npm run models -- fetch` then `npm run models -- pin <profile>`; read by `loadRegistry` in `src/safety/classifierRegistry.ts`; check with `npm run doctor` checks `classifier_model` and `classifier_smoke` |
-| the learned ATS platforms file in `config/` (`learned-ats-platforms` with a `.json` extension, set in `src/ats/learned.ts`; not written as a path here because the docs lint rejects a path that does not exist yet) | Written by the system when `apply.auto` learns a field map for an unrecognised ATS; read fresh on every call | `src/ats/learned.ts`. To forget a platform, review the file with git first. May not exist yet |
+| the retired learned ATS platforms file in `config/` (`learned-ats-platforms` with a `.json` extension; not written as a path here because the docs lint rejects a path that does not exist) | No longer written or read (the scripted bootstrap was removed in plan 8G-2 task 23); `scripts/migrate-learned-ats.ts` converts an old copy into applier recipes | `scripts/migrate-learned-ats.ts`. May not exist |
 | `.jobber/layout/` | Layout memory, machine-written, git-ignored | `npm run layout -- reset <platform>` (see `CLAUDE.md` "Layout memory") |
 | `data.sqlite` | The application database | tools only |
 

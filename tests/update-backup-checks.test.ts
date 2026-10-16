@@ -117,7 +117,7 @@ describe('auto-update-state', () => {
 const SETS = JSON.stringify({
   read_only: { allow: ['mcp__db__get_funnel', 'mcp__db__get_job_stats'] },
   outreach_send: { extends: 'read_only', allow: ['mcp__db__enqueue_outreach', 'mcp__db__mark_excluded'] },
-  full: { extends: 'outreach_send', allow: ['mcp__apply__auto'] },
+  full: { extends: 'outreach_send', allow: ['mcp__applier__apply_open'] },
 });
 const setsFile = { [join(ROOT, 'config/permission-sets.json')]: SETS };
 const local = (allow: string[]) => ({ [join(ROOT, '.claude/settings.local.json')]: JSON.stringify({ permissions: { allow } }) });

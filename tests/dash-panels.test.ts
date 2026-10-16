@@ -57,7 +57,7 @@ describe('maskValue', () => {
   it('shows allowlisted values', () => {
     expect(maskValue('MATCH_THRESHOLD', '60')).toEqual({ name: 'MATCH_THRESHOLD', value: '60', masked: false });
     expect(maskValue('MAX_APPLIES_PER_DAY', '5').value).toBe('5');
-    expect(maskValue('EASY_APPLY_HYBRID_FALLBACK', 'true').value).toBe('true');
+    expect(maskValue('NAUKRI_HEADLESS', 'true').value).toBe('true');
   });
   it('shows only set for unknown names', () => {
     expect(maskValue('SOME_UNKNOWN', 'abc')).toEqual({ name: 'SOME_UNKNOWN', value: 'set', masked: false });

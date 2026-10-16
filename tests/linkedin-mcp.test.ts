@@ -154,7 +154,7 @@ describe('registration and source hygiene', () => {
     const cfg = JSON.parse(read('.mcp.json')).mcpServers;
     expect(cfg.linkedin.args).toContain('src/mcp/linkedin.ts');
     expect(Object.keys(cfg).sort()).toEqual([
-      'job-fetch', 'resume', 'contacts', 'db', 'gates', 'gmail', 'apply', 'discover', 'naukri',
+      'job-fetch', 'resume', 'contacts', 'db', 'gates', 'gmail', 'discover', 'naukri',
       'linkedin', 'outreach', 'applier',
     ].sort());
   });

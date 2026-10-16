@@ -27,7 +27,7 @@ const ALLOW_EXACT = new Set([
   'AUTO_UPDATE',
   'NAUKRI_HEADLESS',
 ]);
-const ALLOW_PATTERNS = [/^MAX_/, /_PER_DAY$/, /_PER_WEEK$/, /_HYBRID_FALLBACK$/];
+const ALLOW_PATTERNS = [/^MAX_/, /_PER_DAY$/, /_PER_WEEK$/];
 
 function allowed(name: string): boolean {
   return ALLOW_EXACT.has(name) || ALLOW_PATTERNS.some((r) => r.test(name));

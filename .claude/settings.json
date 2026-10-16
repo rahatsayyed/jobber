@@ -30,7 +30,7 @@
         ]
       },
       {
-        "matcher": "mcp__gmail__send_email|mcp__apply__.*|mcp__applier__(apply_(open|autofill|fill|choose|upload|next|submit|propose_recipe)|site_(login|signup|open_link))|mcp__linkedin__linkedin_(connect_send|send_message|accept_invite)|mcp__naukri__naukri_(send_message|click|type)",
+        "matcher": "mcp__gmail__send_email|mcp__applier__(apply_(open|autofill|fill|choose|upload|next|submit|propose_recipe)|site_(login|signup|open_link))|mcp__linkedin__linkedin_(connect_send|send_message|accept_invite)|mcp__naukri__naukri_(send_message|click|type)",
         "hooks": [
           {
             "type": "command",

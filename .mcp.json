@@ -13,7 +13,6 @@
         "GMAIL_CREDENTIALS_PATH": "secrets/gmail-credentials.json"
       }
     },
-    "apply": { "command": "npx", "args": ["tsx", "src/mcp/apply.ts"] },
     "applier": { "command": "npx", "args": ["tsx", "src/mcp/applier.ts"] },
     "discover": { "command": "npx", "args": ["tsx", "src/mcp/discover.ts"] },
     "naukri": { "command": "npx", "args": ["tsx", "src/mcp/naukri.ts"] },

@@ -30,7 +30,7 @@ describe('getBaseResume', () => {
 });
 
 describe('no source file builds a legacy personal path by hand', () => {
-  const sources = ['src/resume.ts', 'src/apply/linkedin.ts', 'src/resumeFacts.ts', 'src/languageGate.ts'];
+  const sources = ['src/resume.ts', 'src/apply/answers.ts', 'src/resumeFacts.ts', 'src/languageGate.ts'];
   for (const file of sources) {
     it(`${file} uses userDataPath`, () => {
       const text = readFileSync(file, 'utf8');

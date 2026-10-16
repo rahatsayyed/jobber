@@ -84,7 +84,7 @@ function toolsOf(d: Def): string[] {
 describe('registry sanity', () => {
   it('finds known tools', () => {
     for (const t of ['mcp__linkedin__linkedin_send_message', 'mcp__naukri__naukri_send_message', 'mcp__outreach__escalate',
-      'mcp__db__save_followup_draft', 'mcp__apply__auto', 'mcp__gmail__send_email', 'mcp__resume__check_text']) {
+      'mcp__db__save_followup_draft', 'mcp__applier__apply_open', 'mcp__gmail__send_email', 'mcp__resume__check_text']) {
       expect(REAL.has(t), t).toBe(true);
     }
   });
@@ -159,7 +159,7 @@ describe('retired and legacy text is gone', () => {
 });
 
 describe('sending agents state dry run, halted and the kill switch', () => {
-  const isSend = (t: string) => t === 'mcp__gmail__send_email' || /_connect_send$/.test(t) || /_send_message$/.test(t) || t.startsWith('mcp__apply__');
+  const isSend = (t: string) => t === 'mcp__gmail__send_email' || /_connect_send$/.test(t) || /_send_message$/.test(t);
   for (const d of agents) {
     if (!toolsOf(d).some(isSend)) continue;
     it(d.file, () => {
@@ -172,7 +172,7 @@ describe('sending agents state dry run, halted and the kill switch', () => {
 
 describe('untrusted input and screened results', () => {
   const READER_SKILLS = ['match-jobs', 'tailor-resume', 'review-application', 'draft-outreach', 'draft-connect-note', 'draft-linkedin-message', 'manager'];
-  const READER_COMMANDS = ['easy-apply-answer-fallback', 'easy-apply-control-fallback', 'ats-bootstrap-fieldmap', 'setup-resume'];
+  const READER_COMMANDS = ['setup-resume'];
   const readers = defs.filter((d) =>
     (d.kind === 'agent' && d.name !== 'hook-probe') ||
     (d.kind === 'skill' && READER_SKILLS.includes(d.name)) ||

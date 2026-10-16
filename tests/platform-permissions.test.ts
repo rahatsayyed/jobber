@@ -18,12 +18,6 @@ const SEND_TOOLS = [
   'mcp__linkedin__linkedin_connect_send',
   'mcp__linkedin__linkedin_send_message',
   'mcp__gmail__send_email',
-  'mcp__apply__auto',
-  'mcp__apply__linkedin',
-  'mcp__apply__greenhouse',
-  'mcp__apply__lever',
-  'mcp__apply__workday',
-  'mcp__apply__ashby',
   'mcp__naukri__naukri_click',
   'mcp__naukri__naukri_type',
 ];

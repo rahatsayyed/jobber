@@ -172,7 +172,7 @@ Start with `npm run doctor` and `npm run status -- health`, then use the row tha
 | Scheduler run stops early | `src/scheduler/budget.ts` | `src/scheduler/runLog.ts` | [operations.md](operations.md) |
 | Replies not detected | `.claude/agents/reply-watcher.md` | `config/replies.json`, `src/mcp/db.ts` | [operations.md](operations.md) |
 | Follow-up not claimed | `.claude/agents/followup-drafter.md`, `.claude/agents/sender.md` | `src/mcp/db.ts` (`claim_followup_for_send`) | [operations.md](operations.md) |
-| Apply returns manual_review | `src/apply/external.ts` | `src/apply/linkedin.ts`, `src/mcp/applyAutoRouter.ts` | [operations.md](operations.md) |
+| Apply returns manual_review | `src/applier/tools/open.ts` | `src/mcp/applier.ts` | [operations.md](operations.md) |
 | Dashboard login fails | `src/dash/authStore.ts` | `src/web/server.ts`, `npm run dashboard -- status` | [dashboard-login.md](dashboard-login.md) |
 | Setup or bring-up step fails | `npm run doctor` | `src/setup/steps/`, `scripts/stack.ts` | [setup-modes.md](setup-modes.md) |
 | Permissions look wrong | `npm run permissions -- --status` | `config/permission-sets.json` | [operations.md](operations.md) |

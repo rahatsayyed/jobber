@@ -12,8 +12,8 @@ export type JobBucket = 'discovered' | 'matched' | 'applied' | 'pending' | 'fail
 export const JOB_BUCKETS: readonly JobBucket[] = ['discovered', 'matched', 'applied', 'pending', 'failed'];
 
 // Status vocabularies as written by the code (nothing here is invented):
-// applications.status: 'submitted' | 'manual_review' | 'failed' | 'needs_answer'  (src/db.ts:481; written by src/apply/linkedin.ts:258
-//   and src/apply/external.ts:192; 'rate_limited' is returned to the caller but never stored as a row status).
+// applications.status: 'submitted' | 'manual_review' | 'failed' | 'needs_answer'  (src/db.ts:481; written by the applier tools;
+//   'rate_limited' is returned to the caller but never stored as a row status).
 export const APPLICATION_SUBMITTED = 'submitted';
 export const APPLICATION_FAILED = 'failed';
 export const APPLICATION_AWAITING_ACTION = ['manual_review', 'needs_answer'] as const;

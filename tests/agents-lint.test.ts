@@ -51,12 +51,7 @@ function realTools(): Set<string> {
   for (const m of arr.matchAll(/'([a-z_]+)'/g)) all.add(`mcp__linkedin__${m[1]}`);
   for (const t of registered('src/mcp/outreach.ts')) all.add(`mcp__outreach__${t}`);
   for (const t of registered('src/mcp/db.ts')) all.add(`mcp__db__${t}`);
-  for (const f of ['src/mcp/apply.ts', 'src/mcp/contacts.ts']) {
-    const server = f.includes('apply') ? 'apply' : 'contacts';
-    for (const m of readFileSync(f, 'utf8').matchAll(/registerTool\(\s*'([A-Za-z0-9_]+)'/g)) all.add(`mcp__${server}__${m[1]}`);
-  }
-  // apply.ts registers the external platforms through a loop over a literal list
-  for (const p of ['greenhouse', 'lever', 'workday', 'ashby']) all.add(`mcp__apply__${p}`);
+  for (const m of readFileSync('src/mcp/contacts.ts', 'utf8').matchAll(/registerTool\(\s*'([A-Za-z0-9_]+)'/g)) all.add(`mcp__contacts__${m[1]}`);
   // applier.ts registers its tools through a loop over the literal TOOL_NAMES list
   const ap = /TOOL_NAMES = \[([\s\S]*?)\]/.exec(readFileSync('src/mcp/applier.ts', 'utf8'))![1];
   for (const m of ap.matchAll(/'([a-z_]+)'/g)) all.add(`mcp__applier__${m[1]}`);
@@ -67,6 +62,10 @@ function realTools(): Set<string> {
 }
 
 const config: Record<string, string[]> = JSON.parse(readFileSync('config/worker-tools.json', 'utf8'));
+
+// Ruling R4 (8G-2 task 23): sender.md still names the retired apply server until the 8G-1 branch removes the agent (task 14).
+const RETIRED_SERVERS = ['apply'];
+const retired = (t: string): boolean => RETIRED_SERVERS.includes(/^mcp__([a-z0-9-]+)__/.exec(t)?.[1] ?? '');
 
 describe('worker agents', () => {
   const real = realTools();
@@ -185,7 +184,7 @@ describe('contact-finder and sender tools are registered and allowed for the hun
   const real = realTools();
   const hunt = loadProfiles('config/run-profiles.json', 'config/permission-sets.json').hunt;
   for (const name of ['contact-finder', 'sender']) {
-    for (const t of toolsOf(name)) {
+    for (const t of toolsOf(name).filter((x) => !retired(x))) {
       it(`${name}: ${t}`, () => {
         expect(real.has(t), `${t} is not a registered tool`).toBe(true);
         expect(hunt.allow, `${t} not allowed for profile hunt`).toContain(t);

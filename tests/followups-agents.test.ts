@@ -24,6 +24,10 @@ const watcher = agent('reply-watcher');
 const drafter = agent('followup-drafter');
 const followupSection = sender.body.slice(sender.body.indexOf('## Follow-up mode'));
 
+// Ruling R4 (8G-2 task 23): sender.md still names the retired apply server until the 8G-1 branch removes the agent (task 14).
+const RETIRED_SERVERS = ['apply'];
+const retired = (t: string): boolean => RETIRED_SERVERS.includes(/^mcp__([a-z0-9-]+)__/.exec(t)?.[1] ?? '');
+
 describe('follow-up agents: autonomous wiring', () => {
   it('sender follow-up section approves, then claims before sending, with no check_and_increment instruction', () => {
     expect(followupSection).toContain('approve_drafted_followups');
@@ -73,7 +77,7 @@ describe('follow-up agents: autonomous wiring', () => {
     const hunt = loadProfiles('config/run-profiles.json', 'config/permission-sets.json').hunt;
     for (const [name, a] of [['sender', sender], ['reply-watcher', watcher], ['followup-drafter', drafter]] as const) {
       for (const t of a.tools) {
-        if (t === 'Skill') continue;
+        if (t === 'Skill' || retired(t)) continue;
         if (t.startsWith('mcp__db__')) expect(real.has(t), `${name}: ${t} not registered`).toBe(true);
         expect(hunt.allow, `${name}: ${t} not allowed for hunt`).toContain(t);
       }

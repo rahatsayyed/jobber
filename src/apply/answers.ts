@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { userDataPath } from '../lib/userData.js';
 
 // Answer book for the browser apply flow. The matching logic is COPIED from
-// src/apply/linkedin.ts (the old file is deleted in Task 23). Values are only
+// the removed scripted Easy Apply (deleted in Task 23). Values are only
 // ever returned to the calling typed tool; nothing here logs a value.
 
 export type AnswerValue = string | number | boolean;

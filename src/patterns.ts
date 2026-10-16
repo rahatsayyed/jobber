@@ -2,10 +2,11 @@
 // Outcome breakdowns adapted from career-ops-hq/career-ops analyze-patterns.mjs (MIT, (c) 2026 Santiago Fernandez de
 // Valderrama): minimum 5 contacted before any analysis, sufficientSample n >= 8, "avoid" needs 0 positives over >= 2 decided.
 import type BetterSqlite3 from 'better-sqlite3';
-import { detect as greenhouse } from './ats/greenhouse.js';
-import { detect as lever } from './ats/lever.js';
-import { detect as workday } from './ats/workday.js';
-import { detect as ashby } from './ats/ashby.js';
+import { hostMatches } from './lib/hostClass.js';
+
+const ATS_APEXES: Array<[string, string]> = [
+  ['greenhouse', 'greenhouse.io'], ['lever', 'lever.co'], ['workday', 'myworkdayjobs.com'], ['ashby', 'ashbyhq.com'],
+];
 
 export interface Bucket { key: string; n: number; positive: number; negative: number; pending: number; conversion: number | null; decided: number | null; sufficient: boolean; note: string | null }
 type Dim = 'score_band' | 'ats_vendor' | 'remote' | 'seniority' | 'source';
@@ -21,10 +22,7 @@ export function scoreBand(score: number | null): string {
 
 export function atsVendor(applyUrl: string | null): string {
   if (!applyUrl) return 'none';
-  for (const d of [greenhouse, lever, workday, ashby]) {
-    const p = d(applyUrl);
-    if (p) return p;
-  }
+  for (const [id, apex] of ATS_APEXES) if (hostMatches(applyUrl, apex)) return id;
   try {
     const h = new URL(applyUrl).hostname.toLowerCase();
     if (h === 'linkedin.com' || h.endsWith('.linkedin.com')) return 'linkedin';

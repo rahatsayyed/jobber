@@ -7,7 +7,7 @@ import type { RawSets } from '../src/platform/permissions.js';
 const sets: RawSets = {
   read_only: { allow: ['mcp__db__get_funnel'] },
   outreach_send: { extends: 'read_only', allow: ['mcp__gmail__send_email'] },
-  full: { extends: 'outreach_send', allow: ['mcp__apply__auto'] },
+  full: { extends: 'outreach_send', allow: ['mcp__applier__apply_open'] },
 };
 
 const base = resolve(import.meta.dirname, '..', '.superpowers');
@@ -28,7 +28,7 @@ describe('permissions CLI handler', () => {
     const full = runPermissionsCli(['full'], root, sets);
     expect(full.code).toBe(0);
     expect(full.lines.some((l) => l.startsWith('WARN'))).toBe(true);
-    expect(allow()).toEqual(['Bash(ls)', 'mcp__db__get_funnel', 'mcp__gmail__send_email', 'mcp__apply__auto']);
+    expect(allow()).toEqual(['Bash(ls)', 'mcp__db__get_funnel', 'mcp__gmail__send_email', 'mcp__applier__apply_open']);
     const ro = runPermissionsCli(['read_only'], root, sets);
     expect(ro.code).toBe(0);
     expect(ro.lines.some((l) => l.startsWith('WARN'))).toBe(false);

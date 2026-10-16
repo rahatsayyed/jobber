@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { hostMatches, lookAlikeAtsHost } from '../src/lib/hostClass.js';
-import { detect as greenhouse } from '../src/ats/greenhouse.js';
-import { detect as lever } from '../src/ats/lever.js';
-import { detect as workday } from '../src/ats/workday.js';
-import { detect as ashby } from '../src/ats/ashby.js';
 
 describe('hostMatches', () => {
   it.each([
@@ -45,20 +41,4 @@ describe('lookAlikeAtsHost', () => {
     ['https://jobs.newats.example/apply/1', false],
     ['not a url', false],
   ])('%s -> %s', (url, bad) => { expect(lookAlikeAtsHost(url)).toBe(bad); });
-});
-
-describe('ATS detect uses apex matching', () => {
-  it('rejects look-alikes for all four platforms', () => {
-    expect(greenhouse('https://evil-greenhouse.io/acme/jobs/1')).toBeNull();
-    expect(lever('https://lever.co.attacker.org/acme/1')).toBeNull();
-    expect(workday('https://acme.myworkdayjobs.com.phishing.net/job/1')).toBeNull();
-    expect(ashby('https://jobs.ashbyhq.com.evil.io/acme/1')).toBeNull();
-    expect(greenhouse('javascript://boards.greenhouse.io/acme/jobs/1')).toBeNull();
-  });
-  it('still accepts the real hosts', () => {
-    expect(greenhouse('https://boards.greenhouse.io/acme/jobs/1')).toBe('greenhouse');
-    expect(lever('https://jobs.lever.co/acme/1')).toBe('lever');
-    expect(workday('https://acme.wd5.myworkdayjobs.com/en-US/careers/job/1')).toBe('workday');
-    expect(ashby('https://jobs.ashbyhq.com/acme/1')).toBe('ashby');
-  });
 });

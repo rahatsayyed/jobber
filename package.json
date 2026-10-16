@@ -34,7 +34,6 @@
     "mcp:email": "tsx src/mcp/email.ts",
     "mcp:db": "tsx src/mcp/db.ts",
     "mcp:gates": "tsx src/mcp/gates.ts",
-    "mcp:apply": "tsx src/mcp/apply.ts",
     "mcp:applier": "tsx src/mcp/applier.ts",
     "mcp:discover": "tsx src/mcp/discover.ts",
     "mcp:outreach": "tsx src/mcp/outreach.ts",
