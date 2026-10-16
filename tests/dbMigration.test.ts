@@ -54,6 +54,11 @@ describe('openDb migrations (old-shape database)', () => {
       const qCols = cols(db, 'outreach_queue');
       expect(qCols).toContain('resume_json');
       expect(qCols).toContain('connect_company');
+      expect(qCols).toContain('apply_tier');
+      expect(db.prepare('SELECT apply_tier FROM outreach_queue WHERE job_id = ?').get('old-1')).toEqual({ apply_tier: null });
+      saveJob(db, job('old-2'));
+      const nid = enqueueOutreach(db, { job_id: 'old-2', resume_pdf_path: null, email_subject: 's', email_body: 'b', email_to: 'a@b.co', connect_note: null, connect_profile_url: null, connect_category: null, connect_company: null, apply_platform: 'none', apply_url: null });
+      expect(db.prepare('SELECT apply_tier FROM outreach_queue WHERE id = ?').get(nid)).toEqual({ apply_tier: 'never' });
 
       expect(getJob(db, 'old-1')).toMatchObject({ title: 'Old Job', score: 77 });
       expect(db.prepare('SELECT email_subject FROM outreach_queue WHERE job_id = ?').get('old-1')).toEqual({

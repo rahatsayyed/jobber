@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { ATS_REGISTRY } from '../apply/registry.js';
-import { atsCoverageSchema, classifyQueueApply, enqueueOutreach, getCalibrationRows, listJobs, listSentEmails, listQueuedOutreach, listExcludedQueuedOutreach, markExcluded, openDb, recordEmailSent, recordOutcomeChecked, setEmailThread, sweepDeadlines, unexcludeJob, updateOutreachStatus } from '../db.js';
+import { atsCoverageSchema, enqueueOutreachClassified, getCalibrationRows, listJobs, listSentEmails, listQueuedOutreach, listExcludedQueuedOutreach, markExcluded, openDb, recordEmailSent, recordOutcomeChecked, setEmailThread, sweepDeadlines, unexcludeJob, updateOutreachStatus } from '../db.js';
 import { dbPath } from '../dbPath.js';
 import { handleSaveMatchResults, matchResultsInputShape } from '../matchTool.js';
 import { REPLY_WINDOW_DAYS } from '../replies.js';
@@ -198,8 +198,7 @@ server.registerTool(
   },
   async (params) => {
     // The model's apply_platform is ignored unless it is 'none'; code classifies from the job source and apply_url.
-    const cls = classifyQueueApply(db, params.job_id, params.apply_platform, params.apply_url);
-    const id = enqueueOutreach(db, {
+    const id = enqueueOutreachClassified(db, {
       job_id: params.job_id,
       resume_pdf_path: params.resume_pdf_path ?? null,
       email_subject: params.email_subject ?? null,
@@ -209,8 +208,7 @@ server.registerTool(
       connect_profile_url: params.connect_profile_url ?? null,
       connect_category: params.connect_category ?? null,
       connect_company: params.connect_company ?? null,
-      apply_platform: cls.apply_platform,
-      apply_tier: cls.apply_tier,
+      apply_platform: params.apply_platform ?? null,
       apply_url: params.apply_url ?? null,
       resume_json: params.resume_json ?? null,
       ats_coverage: params.ats_coverage ?? null,

@@ -592,6 +592,7 @@ export interface OutreachQueueItem {
   connect_company: string | null;
   connect_status: string | null;
   apply_platform: string | null;
+  apply_tier: string | null;
   apply_url: string | null;
   apply_status: string | null;
   status: string;
@@ -612,6 +613,16 @@ export function classifyQueueApply(
   const source = (db.prepare('SELECT source FROM jobs WHERE id = ?').get(jobId) as { source: string | null } | undefined)?.source ?? null;
   const c = classifyApplyUrl(applyUrl ?? null, source, env);
   return { apply_platform: c.platform, apply_tier: c.tier };
+}
+
+// What the enqueue_outreach MCP tool does: the model's apply_platform is replaced by the code classification.
+export function enqueueOutreachClassified(
+  db: BetterSqlite3.Database,
+  item: Parameters<typeof enqueueOutreach>[1],
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const cls = classifyQueueApply(db, item.job_id, item.apply_platform, item.apply_url, env);
+  return enqueueOutreach(db, { ...item, apply_platform: cls.apply_platform, apply_tier: cls.apply_tier });
 }
 
 export function enqueueOutreach(
@@ -659,7 +670,7 @@ export function enqueueOutreach(
     item.connect_category,
     item.connect_company,
     applyPlatform,
-    applyPlatform === 'none' ? 'never' : (item.apply_tier ?? null),
+    applyPlatform === 'none' ? 'never' : (item.apply_tier ?? 'never'),
     item.apply_url,
     item.resume_json ?? null,
     item.ats_coverage ?? null,
@@ -676,7 +687,7 @@ export function listQueuedOutreach(db: BetterSqlite3.Database): OutreachQueueIte
     // Explicit columns: omit resume_json (several KB per row, no consumer in the sender).
     .prepare(`SELECT id, job_id, resume_pdf_path, email_subject, email_body, email_to, email_status,
       connect_note, connect_profile_url, connect_category, connect_company, connect_status,
-      apply_platform, apply_url, apply_status, status, created_at, updated_at
+      apply_platform, apply_tier, apply_url, apply_status, status, created_at, updated_at
       FROM outreach_queue
       WHERE status = 'queued'
         AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = outreach_queue.job_id AND j.excluded_reason IS NULL)

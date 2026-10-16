@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { openDb, isSeen, saveJob, getJob, saveContact, saveOutreach, enqueueOutreach, classifyQueueApply, listQueuedOutreach, listExcludedQueuedOutreach, updateOutreachStatus, type OutreachQueueItem } from '../src/db.js';
+import { openDb, isSeen, saveJob, getJob, saveContact, saveOutreach, enqueueOutreach, enqueueOutreachClassified, classifyQueueApply, listQueuedOutreach, listExcludedQueuedOutreach, updateOutreachStatus, type OutreachQueueItem } from '../src/db.js';
 import type Database from 'better-sqlite3';
 
 describe('db', () => {
@@ -209,7 +209,7 @@ describe('outreach_queue', () => {
       apply_url: 'https://boards.greenhouse.io/echo/jobs/1', status: 'queued',
     });
     expect(Object.keys(row).sort()).toEqual([
-      'apply_platform', 'apply_status', 'apply_url', 'connect_category', 'connect_company', 'connect_note',
+      'apply_platform', 'apply_status', 'apply_tier', 'apply_url', 'connect_category', 'connect_company', 'connect_note',
       'connect_profile_url', 'connect_status', 'created_at', 'email_body', 'email_status', 'email_subject',
       'email_to', 'id', 'job_id', 'resume_pdf_path', 'status', 'updated_at',
     ]);
@@ -247,6 +247,26 @@ describe('enqueue_outreach apply classification', () => {
     seed(db, 'j3', 'hackernews');
     expect(classifyQueueApply(db, 'j3', 'lever', 'https://jobs.lever.co/a/1', E).apply_platform).toBe('none');
     expect(classifyQueueApply(db, 'missing', 'lever', 'https://jobs.lever.co/a/1', E).apply_platform).toBe('lever');
+  });
+
+  it('the MCP enqueue path (enqueueOutreachClassified) stores code classification, not the model value', () => {
+    const db = openDb(':memory:');
+    seed(db, 'k1', 'remotive');
+    const q = (platform: string | null, url: string | null) => {
+      const id = enqueueOutreachClassified(db, { ...base, job_id: 'k1', apply_platform: platform, apply_url: url }, E);
+      return row(db, id);
+    };
+    expect(q('greenhouse', 'https://jobs.lever.co/acme/1')).toEqual({ apply_platform: 'lever', apply_tier: 'fast' });
+    expect(q('none', 'https://jobs.lever.co/acme/1')).toEqual({ apply_platform: 'none', apply_tier: 'never' });
+    expect(q('workday', 'https://careers.acme.example/1')).toEqual({ apply_platform: 'none', apply_tier: 'never' });
+    expect(q(null, null)).toEqual({ apply_platform: 'none', apply_tier: 'never' });
+  });
+
+  it('a non-none platform enqueued without a tier gets never, not null', () => {
+    const db = openDb(':memory:');
+    seed(db, 'k2', 'remotive');
+    const id = enqueueOutreach(db, { ...base, job_id: 'k2', apply_platform: 'greenhouse', apply_url: 'https://boards.greenhouse.io/a/jobs/1' });
+    expect(row(db, id)).toEqual({ apply_platform: 'greenhouse', apply_tier: 'never' });
   });
 
   it('old rows with apply_platform agent_naukri still load', () => {
