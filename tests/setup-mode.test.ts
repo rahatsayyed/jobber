@@ -1,7 +1,7 @@
 // tests/setup-mode.test.ts
 import { describe, expect, it } from 'vitest';
 import { parseArgs } from '../src/setup/cli.js';
-import { GUIDE_CHECK_IDS, formatStatus, guideReadiness, launchGuide } from '../src/setup/guide.js';
+import { GUIDE_CHECK_IDS, configuredSteps, formatStatus, guideReadiness, launchGuide } from '../src/setup/guide.js';
 import { scriptedIO, type ScriptItem } from '../src/setup/io.js';
 import { resolveMode, startGuideForMode, type ModeDeps } from '../src/setup/mode.js';
 import { emptyState, type SetupMode } from '../src/setup/state.js';
@@ -208,5 +208,42 @@ describe('stored line and status', () => {
     st.steps.resume = { status: 'skipped', at: 't2' };
     const out = formatStatus(['telegram', 'resume'], st);
     expect(out).toBe('mode: agent\ntelegram  skipped (recommended)  t1\nresume  skipped  t2');
+  });
+  it('formatStatus shows configured (not via setup) for an unrecorded or skipped step that is configured, and changes no state', () => {
+    const st = emptyState();
+    st.steps.dashboard = { status: 'skipped', at: 't9' };
+    st.steps.resume = { status: 'done', at: 't2' };
+    const before = JSON.stringify(st);
+    const out = formatStatus(['telegram', 'gmail', 'sessions', 'dashboard', 'resume', 'limits'], st, new Set(['telegram', 'sessions', 'dashboard', 'resume']));
+    expect(out).toBe([
+      'mode: unset',
+      'telegram  configured (not via setup)',
+      'gmail  pending',
+      'sessions  configured (not via setup)',
+      'dashboard  configured (not via setup)',
+      'resume  done  t2',
+      'limits  pending',
+    ].join('\n'));
+    expect(JSON.stringify(st)).toBe(before);
+  });
+  it('configuredSteps: skippable features by the configured rule, other steps when all their checks pass (injected, no network)', () => {
+    const res = (id: string, status: 'pass' | 'warn' | 'fail') => ({ id, title: id, result: { status, detail: id } });
+    const got = configuredSteps({
+      steps: [
+        { id: 'telegram', checkIds: ['telegram-api', 'ccgram-env'] },
+        { id: 'gmail', checkIds: ['gmail-oauth'] },
+        { id: 'apikeys', checkIds: ['api-keys'] },
+        { id: 'sessions', checkIds: ['sessions'] },
+        { id: 'resume', checkIds: ['resume-valid'] },
+        { id: 'classifier', checkIds: ['classifier_model'] },
+        { id: 'dashboard', checkIds: [] },
+        { id: 'final', checkIds: [] },
+      ],
+      results: [res('sessions', 'pass'), res('resume-valid', 'warn'), res('classifier_model', 'pass')],
+      env: { TELEGRAM_BOT_TOKEN: 'x', WEB_AUTH_MODE: 'google_desktop' },
+      fs: { exists: () => false },
+      root: 'r',
+    });
+    expect([...got].sort()).toEqual(['classifier', 'dashboard', 'sessions', 'telegram']);
   });
 });

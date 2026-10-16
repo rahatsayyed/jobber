@@ -18,7 +18,7 @@ before you flip anything live. Nothing on this path flips a dry-run flag for you
 | 1 | Check prerequisites ([prerequisites.md](prerequisites.md)) | see page | 10 to 30 min | owner only (installs may need sudo) | every tool on the page reports a version |
 | 2 | Clone and install dependencies | `npm install` | depends on network | agent can run | command exits 0 |
 | 3 | Install what is missing | `bash scripts/bootstrap.sh` | 10 to 30 min, depends on network | owner only (it asks before installing; sudo is yours) | the printed table has no missing item you need |
-| 4 | Run the wizard, agent or terminal mode ([setup-modes.md](setup-modes.md)) | `npm run setup` | 30 to 90 min | owner only (secrets, logins, consent) | `npm run setup -- --status` shows every step done or skipped |
+| 4 | Run the wizard, agent or terminal mode ([setup-modes.md](setup-modes.md)) | `npm run setup` | 30 to 90 min | owner only (secrets, logins, consent) | `npm run setup -- --status` shows every step done, skipped, configured (not via setup) or pending |
 | 5 | Check health | `npm run doctor` | 1 to 3 min | agent can run | no `fail`; every `warn` is understood |
 | 6 | Create API keys ([api-keys.md](api-keys.md)) | `npm run setup -- --step apikeys` | 15 to 45 min | owner only (key creation) | the `api-keys` doctor check is ok or skipped by choice |
 | 7 | Edit config: portals, target regions, languages ([config-reference.md](config-reference.md)) | edit `config/portals.json`, `config/target-regions.json`, `user-data/languages.json` | 15 to 30 min | owner only (your choices) | `confirmed` is `true` in `user-data/languages.json` once the list is true |

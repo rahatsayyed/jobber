@@ -3,7 +3,7 @@
 // in a second terminal or a detached tmux window; it never receives keys and never reads the wizard.
 import type { CheckOutcome } from '../platform/doctor.js';
 import type { Run } from '../platform/tmux.js';
-import { SKIP_SPECS } from './skips.js';
+import { SKIP_SPECS, type SkipFs } from './skips.js';
 import type { SetupState } from './state.js';
 
 export const GUIDE_PROMPT = 'Use the setup-guide skill. Start by running the doctor.';
@@ -108,12 +108,40 @@ export function runGuideOnly(
   return spawner(GUIDE_LAUNCHER[0], GUIDE_LAUNCHER.slice(1));
 }
 
-/** `--status`: step ids, status and time only; no answers or values. */
-export function formatStatus(stepIds: string[], state: SetupState): string {
+// Steps that are configured although setup never recorded them (done by hand). Pure: doctor outcomes, env
+// and the file probe are injected, so no network is needed here. Same rule as `withSkips`: a skippable
+// feature that is configured counts as configured whatever the state says; any other step counts when
+// every one of its doctor checks passed.
+export function configuredSteps(input: {
+  steps: ReadonlyArray<{ id: string; checkIds: readonly string[] }>;
+  results: ReadonlyArray<CheckOutcome>;
+  env: Record<string, string | undefined>;
+  fs: SkipFs;
+  root: string;
+}): Set<string> {
+  const out = new Set<string>();
+  for (const step of input.steps) {
+    const spec = SKIP_SPECS.find((k) => k.stepId === step.id);
+    if (spec && spec.configured(input.env, input.fs, input.root)) {
+      out.add(step.id);
+      continue;
+    }
+    if (step.checkIds.length === 0) continue;
+    const passed = step.checkIds.every((c) => input.results.find((r) => r.id === c)?.result.status === 'pass');
+    if (passed) out.add(step.id);
+  }
+  return out;
+}
+
+// `--status`: step ids, status and time only; no answers or values. A step that setup never recorded (or
+// that is recorded skipped) but that is configured shows `configured (not via setup)`; the state file is
+// not changed.
+export function formatStatus(stepIds: string[], state: SetupState, configured: ReadonlySet<string> = new Set()): string {
   const recommended = new Set(SKIP_SPECS.filter((k) => k.label === 'RECOMMENDED').map((k) => k.stepId));
   const rows = stepIds.map((id) => {
     const s = state.steps[id];
-    if (!s) return `${id}  pending`;
+    if (!s) return configured.has(id) ? `${id}  configured (not via setup)` : `${id}  pending`;
+    if (s.status === 'skipped' && configured.has(id)) return `${id}  configured (not via setup)`;
     const status = s.status === 'skipped' && recommended.has(id) ? 'skipped (recommended)' : s.status;
     return `${id}  ${status}  ${s.at}`;
   });

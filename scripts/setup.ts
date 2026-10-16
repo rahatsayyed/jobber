@@ -23,7 +23,9 @@ import { redactingIO, ttyIO } from '../src/setup/io.js';
 import { runSetup, type SetupContext, type SetupFs } from '../src/setup/runner.js';
 import { setupGuideChecks } from '../src/platform/checksGuide.js';
 import { runChecks } from '../src/platform/doctor.js';
-import { GUIDE_CHECK_IDS, formatStatus, guideReadiness, runGuideOnly } from '../src/setup/guide.js';
+import { GUIDE_CHECK_IDS, configuredSteps, formatStatus, guideReadiness, runGuideOnly } from '../src/setup/guide.js';
+import { allDoctorChecks } from '../src/platform/checkLists.js';
+import { parseEnv } from '../src/platform/envFile.js';
 import { resolveMode, startGuideForMode } from '../src/setup/mode.js';
 import { loadState, saveState } from '../src/setup/state.js';
 import { ALL_STEPS } from '../src/setup/steps/index.js';
@@ -48,36 +50,8 @@ if (args.list) {
   for (const s of ALL_STEPS) console.log(s.id);
   process.exit(0);
 }
-if (args.status) {
-  const sroot = resolve(import.meta.dirname, '..');
-  const sp = join(userDataDir(process.env, sroot), '.setup-state.json');
-  console.log(
-    formatStatus(
-      ALL_STEPS.map((s) => s.id),
-      loadState(sp, { exists: (p) => existsSync(p), read: (p) => readFileSync(p, 'utf8') }),
-    ),
-  );
-  process.exit(0);
-}
-if (needTty(process.stdin.isTTY, process.stdout.isTTY)) {
-  console.error(NO_TTY_MESSAGE);
-  process.exit(2);
-}
-
 const root = resolve(import.meta.dirname, '..');
 const env = process.env;
-
-if (args.guideOnly) {
-  const c = await runGuideOnly(
-    (cmd, argv) =>
-      new Promise<number>((done) => {
-        const child = spawn(cmd, argv, { cwd: root, env: childEnv(env), stdio: 'inherit' });
-        child.on('error', () => done(127));
-        child.on('close', (code) => done(code ?? 1));
-      }),
-  );
-  process.exit(c);
-}
 
 const fs: SetupFs = {
   ...nodeEnvFs,
@@ -148,6 +122,58 @@ const doctor: DoctorContext = {
   },
   now: () => new Date(),
 };
+
+if (args.status) {
+  // Read-only: the state file is never written. A step that setup never recorded but whose doctor checks
+  // pass (or whose skippable feature is configured) is shown as configured, not pending.
+  const sp = join(userDataDir(env, root), '.setup-state.json');
+  const probe = { exists: (p: string) => existsSync(p), read: (p: string) => readFileSync(p, 'utf8') };
+  const state = loadState(sp, probe);
+  // The classifier smoke loads a 750 MB model: left out of a status read (classifier_model still has to pass).
+  const light = ALL_STEPS.map((s) => ({ id: s.id, checkIds: s.checkIds.filter((c) => c !== 'classifier_smoke') }));
+  const wanted = new Set(light.flatMap((s) => s.checkIds));
+  const all = [...ccgramChecks, ...restrictedChecks(), ...setupChecks, ...allDoctorChecks()];
+  const seen = new Set<string>();
+  const checks = all.filter((c) => wanted.has(c.id) && !seen.has(c.id) && seen.add(c.id));
+  let results: Awaited<ReturnType<typeof runChecks>> = [];
+  try {
+    results = await runChecks(checks, doctor);
+  } catch {
+    results = [];
+  }
+  let fileEnv: Record<string, string> = {};
+  try {
+    const ep = join(root, '.env');
+    if (existsSync(ep)) fileEnv = parseEnv(readFileSync(ep, 'utf8'));
+  } catch {
+    fileEnv = {};
+  }
+  const configured = configuredSteps({
+    steps: light,
+    results,
+    env: { ...fileEnv, ...env },
+    fs: { exists: probe.exists },
+    root,
+  });
+  console.log(formatStatus(ALL_STEPS.map((s) => s.id), state, configured));
+  process.exit(0);
+}
+if (needTty(process.stdin.isTTY, process.stdout.isTTY)) {
+  console.error(NO_TTY_MESSAGE);
+  process.exit(2);
+}
+
+if (args.guideOnly) {
+  const c = await runGuideOnly(
+    (cmd, argv) =>
+      new Promise<number>((done) => {
+        const child = spawn(cmd, argv, { cwd: root, env: childEnv(env), stdio: 'inherit' });
+        child.on('error', () => done(127));
+        child.on('close', (code) => done(code ?? 1));
+      }),
+  );
+  process.exit(c);
+}
 
 const now = (): Date => new Date();
 const dataDir = userDataDir(env, root);
