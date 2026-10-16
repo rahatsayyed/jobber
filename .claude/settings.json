@@ -39,6 +39,17 @@
             "onFailure": "block"
           }
         ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/settings-guard.cjs\"",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
       }
     ]
   }
