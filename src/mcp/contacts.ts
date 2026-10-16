@@ -8,65 +8,15 @@ import { scrapeEmails } from '../lib/scrape.js';
 import { verifyEmail } from '../lib/verify.js';
 import { hunterDomainSearch } from '../lib/hunter.js';
 import { withHnGate } from '../lib/postingDomains.js';
+import { searchWithBudget } from '../search/index.js';
+import { resolveCompanyDomain } from '../search/ladder.js';
 
 const db = openDb(dbPath());
 
-const SOCIAL_HOSTS = [
-  'linkedin.com',
-  'twitter.com',
-  'x.com',
-  'facebook.com',
-  'instagram.com',
-  'github.com',
-  'youtube.com',
-];
-
-function stripWww(host: string): string {
-  return host.replace(/^www\./, '');
-}
-
-async function serperSearch(query: string): Promise<any> {
-  const apiKey = process.env.SERPER_API_KEY;
-  if (!apiKey) return null;
-  try {
-    const res = await fetch('https://google.serper.dev/search', {
-      method: 'POST',
-      headers: {
-        'X-API-KEY': apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ q: query }),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
-async function findDomain(company: string): Promise<string | null> {
-  const results = await serperSearch(`"${company}" official website`);
-  const organic: any[] = results?.organic ?? [];
-  for (const item of organic) {
-    try {
-      const url = new URL(item.link);
-      const host = stripWww(url.hostname.toLowerCase());
-      if (!SOCIAL_HOSTS.some((social) => host === social || host.endsWith(`.${social}`))) {
-        return host;
-      }
-    } catch {
-      // ignore malformed links
-    }
-  }
-  return null;
-}
-
+// Search goes through src/search (cache, then browser dork, then Serper under budget).
 async function searchDomainEmails(domain: string): Promise<string[]> {
-  const results = await serperSearch(`"@${domain}" (careers OR hr OR recruiting OR jobs)`);
-  const organic: any[] = results?.organic ?? [];
-  const text = organic
-    .map((item) => `${item.title ?? ''} ${item.snippet ?? ''} ${item.link ?? ''}`)
-    .join('\n');
+  const out = await searchWithBudget(db, 'domain_emails', { domain });
+  const text = out.results.map((item) => `${item.title} ${item.snippet} ${item.url}`).join('\n');
   return extractEmails(text);
 }
 
@@ -82,7 +32,7 @@ const server = new McpServer({ name: 'contacts', version: '0.1.0' });
 server.registerTool(
   'find_company_emails',
   {
-    description: 'Find and verify company emails via scraping, search, Hunter.io, and pattern generation',
+    description: 'Contact finding: resolve the company domain (param, apply_url, HN posting, budgeted search), then find and verify company emails via scraping, budgeted search (cache, browser, Serper), Hunter.io, and pattern generation',
     inputSchema: {
       company: z.string(),
       domain: z.string().optional(),
@@ -91,7 +41,14 @@ server.registerTool(
     },
   },
   async ({ company, domain, person_name, job_id }) => {
-    const resolvedDomain = domain ?? (await findDomain(company));
+    // source, apply_url and description come from the jobs table, never from the model.
+    const job = job_id === undefined
+      ? undefined
+      : (db.prepare('SELECT source, description, apply_url FROM jobs WHERE id = ?').get(job_id) as
+          | { source: string; description: string | null; apply_url: string | null }
+          | undefined);
+    const ladder = await resolveCompanyDomain(db, { company, explicit: domain, applyUrl: job?.apply_url, job });
+    const resolvedDomain = ladder.domain;
 
     // Without job_id the tool is unchanged (returns the bare array).
     if (job_id === undefined) {
@@ -99,14 +56,10 @@ server.registerTool(
       return { content: [{ type: 'text', text: JSON.stringify(out) }] };
     }
 
-    // source and description come from the jobs table, never from the model.
-    const job = db.prepare('SELECT source, description FROM jobs WHERE id = ?').get(job_id) as
-      | { source: string; description: string | null }
-      | undefined;
     const gated = await withHnGate(job ?? null, resolvedDomain ?? '', async () =>
       resolvedDomain ? gather(company, resolvedDomain, person_name) : [],
     );
-    const result = { contacts: gated.contacts, hn_check: gated.hn_check, domain: resolvedDomain ?? null };
+    const result = { contacts: gated.contacts, hn_check: gated.hn_check, domain: resolvedDomain ?? null, domain_source: ladder.domain_source };
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
 );

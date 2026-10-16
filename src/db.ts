@@ -203,6 +203,20 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    -- Search quota and cache (plan 8G task 3). search_cache also holds dork block cooldown rows (qhash 'cooldown:<provider>').
+    CREATE TABLE IF NOT EXISTS search_usage (
+      day TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, provider)
+    );
+    CREATE TABLE IF NOT EXISTS search_cache (
+      qhash TEXT PRIMARY KEY,
+      provider TEXT,
+      kind TEXT,
+      result TEXT,
+      at TEXT
+    );
   `);
 
   // Migration: older databases created before `method`/`account` existed on

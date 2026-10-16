@@ -82,7 +82,7 @@ export const SKIP_SPECS: readonly SkipSpec[] = [
     title: 'Optional API keys',
     label: 'OPTIONAL',
     lose: [
-      'Adzuna: one job source off. Serper: fewer verified contacts.',
+      'Adzuna: one job source off. Serper and Hunter: contact finding has fewer verified contacts.',
       'Hunter: last-resort email lookup stays off.',
     ],
     checkIds: ['api-keys'],

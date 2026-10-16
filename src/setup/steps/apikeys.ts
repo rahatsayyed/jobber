@@ -1,5 +1,5 @@
 // src/setup/steps/apikeys.ts
-// Step: optional API keys (Adzuna, Serper, Hunter). Each provider is offered separately and can be
+// Step: optional API keys (Adzuna for jobs; Serper and Hunter for contact finding). Each provider is offered separately and can be
 // skipped. Keys come only from askSecret, are checked with one best-effort call through ctx.fetch,
 // and reach .env only through updateEnvText. A URL carrying a key is never logged and a thrown
 // network error is replaced by a fixed message.
@@ -53,7 +53,7 @@ const PROVIDERS: Provider[] = [
     does: 'Google search API used to find company contact pages and emails',
     where: 'serper.dev (free credits on signup; check the site)',
     keys: [{ env: 'SERPER_API_KEY', prompt: 'Serper API key (input is hidden)' }],
-    lose: 'Serper: fewer verified contacts.',
+    lose: 'Serper (contact finding): fewer verified contacts.',
     defaultChoice: 'now',
     request: (v) => ({
       url: 'https://google.serper.dev/search',
@@ -99,7 +99,7 @@ function readEnvText(ctx: SetupContext): string {
 
 export const apikeysStep: SetupStep = {
   id: 'apikeys',
-  title: 'Optional API keys (Adzuna, Serper, Hunter)',
+  title: 'Optional API keys (Adzuna for jobs; Serper and Hunter for contact finding)',
   checkIds: ['api-keys'],
   async run(ctx) {
     const { io } = ctx;

@@ -126,7 +126,7 @@
     },
     {
       "id": "apikeys",
-      "title": "Optional API keys (Adzuna, Serper, Hunter)",
+      "title": "Optional API keys (Adzuna for jobs; Serper and Hunter for contact finding)",
       "owner_command": "npm run setup -- --step apikeys",
       "doctor_checks": [
         "api-keys"
@@ -149,14 +149,14 @@
         {
           "name": "SERPER_API_KEY",
           "secret": true,
-          "purpose": "Serper search key for contact lookup",
+          "purpose": "Serper search key for contact finding",
           "where": "CLAUDE.md, Preferences",
           "entered_in": "owner edits .env"
         },
         {
           "name": "HUNTER_API_KEY",
           "secret": true,
-          "purpose": "Hunter key, last-resort email lookup",
+          "purpose": "Hunter key for contact finding, last-resort email lookup",
           "where": "CLAUDE.md, Preferences",
           "entered_in": "owner edits .env"
         },
@@ -173,13 +173,55 @@
           "purpose": "Hunter credits allowed per month",
           "where": "CLAUDE.md, Preferences",
           "entered_in": "owner edits .env"
+        },
+        {
+          "name": "DORK_ENABLED",
+          "secret": false,
+          "purpose": "whether contact finding may search through the browser first",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "DORK_BLOCK_COOLDOWN_HOURS",
+          "secret": false,
+          "purpose": "hours the browser search stays off after a block",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "SEARCH_CACHE_TTL_DAYS",
+          "secret": false,
+          "purpose": "days a contact-finding search result is reused",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "SERPER_DAILY_BUDGET",
+          "secret": false,
+          "purpose": "Serper searches allowed per day for contact finding",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "SERPER_MONTHLY_BUDGET",
+          "secret": false,
+          "purpose": "Serper searches allowed per month for contact finding",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "DORK_DAILY_BUDGET",
+          "secret": false,
+          "purpose": "browser searches allowed per day for contact finding",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
         }
       ],
-      "explain": "Three optional services: Adzuna (a job source), Serper (contact search) and Hunter (last-resort email lookup, off unless you confirm). Each can be skipped and added later. Keys are typed hidden into the wizard and never shown. Skipping only records the choice.",
+      "explain": "Three optional services: Adzuna (a job source), Serper (contact finding) and Hunter (contact finding, last-resort email lookup, off unless you confirm). Each can be skipped and added later. Keys are typed hidden into the wizard and never shown. Skipping only records the choice.",
       "fixes": {
         "api-keys": "Run the wizard apikeys step to add the keys you want, or leave them unset; this is a warning only."
       },
-      "skip": "Skippable per key (OPTIONAL). Adzuna off: one job source off. Serper off: fewer verified contacts. Hunter off: last-resort email lookup stays off. Doctor shows api-keys as skipped."
+      "skip": "Skippable per key (OPTIONAL). Adzuna off: one job source off. Serper off: fewer verified contacts (contact finding). Hunter off: last-resort email lookup stays off. Doctor shows api-keys as skipped."
     },
     {
       "id": "sessions",

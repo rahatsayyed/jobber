@@ -29,10 +29,12 @@ export const COACH_TEXT: Record<string, string[]> = {
     'Adzuna is a job-search service. Sign up for a free developer account to get an app ID and an app key.',
   ],
   'apikeys.serper': [
-    'Serper lets the contact finder search Google for company contact pages. Each check uses one search credit.',
+    'Serper is used for contact finding: it searches Google for a company site and contact pages.',
+    'It runs only after the cache and the browser search miss. Each check uses one search credit.',
   ],
   'apikeys.hunter': [
-    'Hunter looks up emails as a last resort and spends monthly credits, so it stays off unless you turn it on.',
+    'Hunter is used for contact finding: it looks up emails as a last resort.',
+    'It spends monthly credits, so it stays off unless you turn it on.',
   ],
   'dashboard.token': [
     'The dashboard token is a one-time sign-in link for the status page in your browser.',

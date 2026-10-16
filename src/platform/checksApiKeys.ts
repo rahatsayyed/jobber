@@ -20,7 +20,7 @@ export const apiKeysChecks: Check[] = [
       }
       const env: Record<string, string | undefined> = { ...fileEnv, ...ctx.env };
       const unset = VARS.filter((v) => (env[v] ?? '').trim() === '');
-      if (unset.length === 0) return { status: 'pass', detail: 'Adzuna, Serper and Hunter keys are set' };
+      if (unset.length === 0) return { status: 'pass', detail: 'Adzuna (jobs) and Serper, Hunter (contact finding) keys are set' };
       return { status: 'warn', detail: `not set: ${unset.join(', ')}`, fix: 'npm run setup -- --step apikeys' };
     },
   },
