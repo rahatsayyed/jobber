@@ -14,7 +14,8 @@ import { readControl, statExists, type ControlDeps, type ControlState } from './
 import { countDue } from './due.js';
 import type { LaunchHandle, Launcher } from './launch.js';
 import type { Notice, Notifier } from './notify.js';
-import { loadPlanKnobs, planWake, type DiscoverSearches, type WakeDecision } from './plan.js';
+import { loadPlanKnobs, planWake, stepOrder, type DiscoverSearches, type WakeDecision } from './plan.js';
+import { targetRegionsLine, type CodePassResult } from './pipeline.js';
 import { buildWakePrompt } from './prompt.js';
 import { finishRun, getState, markOrphans, setState, startRun, type RunStatus } from './runLog.js';
 
@@ -41,6 +42,8 @@ export interface DriverDeps {
   session?: string; // tmux session for wake windows, default 'jobber-wake'
   /** Named LinkedIn discovery searches (config/linkedin-discovery.json); absent plans no discover task. */
   discoverSearches?: DiscoverSearches;
+  /** The zero-LLM code pass over the script providers (runCodePass); absent means the stage is planned but not run. Never throws. */
+  codePass?: () => Promise<CodePassResult>;
   heartbeat?: () => void; // called on every poll tick (the daemon lock heartbeat)
   /** Seam for 7D hooks. Called AFTER the run lock is released; errors are swallowed and noticed. */
   afterWake?: (r: WakeResult) => Promise<void>;
@@ -79,6 +82,12 @@ export function childEnv(env: NodeJS.ProcessEnv, dry: boolean): Record<string, s
   }
   out.LINKEDIN_DRY_RUN = dry ? 'true' : 'false';
   return out;
+}
+
+function boundedEnvInt(v: string | undefined, lo: number, hi: number, fallback: number): number {
+  if (v === undefined || v.trim() === '') return fallback;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= lo && n <= hi ? n : fallback;
 }
 
 function backoffMin(env: NodeJS.ProcessEnv): number {
@@ -253,9 +262,10 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       decision = planWake({
         now, rng: d.rng, pacing, control,
         ceilings: ceilings(d.db, d.cfg, now),
-        due: countDue(d.db, now, d.tuning),
+        due: countDue(d.db, now, d.tuning, d.env),
         knobs: loadPlanKnobs(d.env),
         discoverSearches: d.discoverSearches,
+        codePassEnabled: !!d.codePass,
       });
     } catch (e) {
       await say(d, { level: 'warn', title: 'scheduler plan failed, not launching', detail: safeMsg(e), runId });
@@ -276,8 +286,27 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
     });
     started = true;
     tracker = new BudgetTracker(budget, startAt);
+    // Stage 1 runs in code, before the model session: failures are noticed but never stop the wake.
+    let codePass: CodePassResult | null = null;
+    if (decision.stages?.some((s) => s.kind === 'discover_scripts') && d.codePass) {
+      try {
+        codePass = await d.codePass();
+        if (!codePass.ok) await say(d, { level: 'warn', title: 'scheduler code pass failed', detail: codePass.error, runId });
+      } catch (e) {
+        await say(d, { level: 'warn', title: 'scheduler code pass failed', detail: safeMsg(e), runId });
+      }
+    }
+    const order = decision.stages?.length ? stepOrder(decision) : undefined;
     const prompt = buildWakePrompt({
       runId, dryRun: dry, burst: decision.burst, tasks: decision.tasks, budget, allowed: control.allowed, now: startAt,
+      order,
+      pipeline: order ? {
+        matchThreshold: boundedEnvInt(d.env.MATCH_THRESHOLD, 0, 100, 60),
+        sendLimit: boundedEnvInt(d.env.SEND_LIMIT_PER_RUN, 0, 100, 1),
+        targetRegions: targetRegionsLine(d.projectRoot),
+        followupsAutonomous: d.env.FOLLOWUPS_AUTONOMOUS === 'true',
+        codePass,
+      } : undefined,
     });
     launchTried = true;
     handle = await d.launcher.start({

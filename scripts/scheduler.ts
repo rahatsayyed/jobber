@@ -14,6 +14,7 @@ import { loadTuning } from '../src/outreach/tuning.js';
 import { ceilings } from '../src/outreach/limits.js';
 import { pacingFromConfig } from '../src/outreach/pacing.js';
 import { daemonLoop, wakeOnce, type DriverDeps } from '../src/scheduler/driver.js';
+import { runCodePass } from '../src/scheduler/pipeline.js';
 import { defaultDeps as controlDefaults, readControl } from '../src/scheduler/control.js';
 import { countDue } from '../src/scheduler/due.js';
 import { tmuxLauncher } from '../src/scheduler/launch.js';
@@ -86,6 +87,7 @@ function dryRunPlan(env: NodeJS.ProcessEnv): void {
     due: countDue(db, now, tuning),
     knobs: loadPlanKnobs(env),
     discoverSearches: discoverNames(),
+    codePassEnabled: true,
   });
   console.log(JSON.stringify(decision, null, 2));
   db.close();
@@ -124,6 +126,7 @@ async function main(): Promise<void> {
     newRunId: () => randomBytes(8).toString('hex'),
     session: env.SCHEDULER_TMUX_SESSION || undefined,
     discoverSearches: discoverNames(),
+    codePass: () => runCodePass({ db, now }),
     afterWake: makeAfterWakeHooks({
       db, env, projectRoot, now, pacing: pacingFromConfig(cfg, tuning), notifier,
     }),

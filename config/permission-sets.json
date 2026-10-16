@@ -16,6 +16,7 @@
       "mcp__db__list_followup_candidates",
       "mcp__db__list_approved_followups",
       "mcp__job-fetch__board_status",
+      "mcp__job-fetch__source_status",
       "mcp__job-fetch__search_jobs",
       "mcp__resume__get_base_resume",
       "mcp__resume__check_text",

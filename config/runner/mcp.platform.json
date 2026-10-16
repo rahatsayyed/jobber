@@ -1,9 +1,78 @@
 {
   "mcpServers": {
-    "db": { "command": "npx", "args": ["tsx", "src/mcp/db.ts"] },
-    "linkedin": { "command": "npx", "args": ["tsx", "src/mcp/linkedin.ts"] },
-    "scout": { "command": "npx", "args": ["tsx", "src/mcp/scout.ts"] },
-    "naukri": { "command": "npx", "args": ["tsx", "src/mcp/naukri.ts"] },
-    "outreach": { "command": "npx", "args": ["tsx", "src/mcp/outreach.ts"] }
+    "db": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "src/mcp/db.ts"
+      ]
+    },
+    "linkedin": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "src/mcp/linkedin.ts"
+      ]
+    },
+    "scout": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "src/mcp/scout.ts"
+      ]
+    },
+    "naukri": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "src/mcp/naukri.ts"
+      ]
+    },
+    "outreach": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "src/mcp/outreach.ts"
+      ]
+    },
+    "job-fetch": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "src/mcp/job-fetch.ts"
+      ]
+    },
+    "resume": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "src/mcp/resume.ts"
+      ]
+    },
+    "contacts": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "src/mcp/contacts.ts"
+      ]
+    },
+    "gates": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "src/mcp/gates.ts"
+      ]
+    },
+    "gmail": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@gongrzhe/server-gmail-autoauth-mcp"
+      ],
+      "env": {
+        "GMAIL_OAUTH_PATH": "secrets/gcp-oauth.keys.json",
+        "GMAIL_CREDENTIALS_PATH": "secrets/gmail-credentials.json"
+      }
+    }
   }
 }

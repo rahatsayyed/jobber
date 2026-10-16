@@ -123,8 +123,8 @@ describe('worker agents', () => {
       });
     });
   }
-  it('worker-tools.json has exactly the three operators', () => {
-    expect(Object.keys(config).sort()).toEqual([...WORKERS].sort());
+  it('worker-tools.json has the three operators plus mail-operator', () => {
+    expect(Object.keys(config).sort()).toEqual([...WORKERS, 'mail-operator'].sort());
   });
   it('per-operator body contracts', () => {
     const li = frontmatter('linkedin-operator').body;

@@ -15,7 +15,12 @@ value is available.
 
 1. Call `contacts.find_company_emails({company, domain?: <if known>, job_id: <job.id>})`. ALWAYS
    pass `job_id`, and only the id of the job you are currently processing (never another job's id).
-   The result is `{contacts, hn_check, domain}`; use `contacts` as the list. Determine:
+   Never guess a domain: pass `domain` only when the job entry you were given already carries a
+   `domain` from an earlier ladder run; otherwise omit it and the code resolves it (the ladder: the
+   `domain` param, then the company-site `apply_url` host, then the Hacker News posting domain, then
+   a budgeted search). The result is `{contacts, hn_check, domain, domain_source}`; use `contacts`
+   as the list, and return `domain` and `domain_source` in the job's entry so later stages reuse
+   them. If `domain` is null the job has no usable email contact (`notes`: `no_domain`). Determine:
    - If `hn_check` is `unmatched` or `no_domain_in_posting`, or the response has NO `hn_check`
      at all (including a bare array), treat the job as blocked (a Hacker News job whose resolved
      company domain does not match any domain or email in the posting; the company name is
@@ -46,7 +51,15 @@ value is available.
 4. Build `linkedin_profiles` as an array containing an entry for each category that found a
    match: `{profile: <the chosen candidate object, unmodified>, category: "recruiter"|"peer"}`.
    This array has 0, 1, or 2 entries (never more than one per category).
-5. Return `{"job_id": "<job.id>", "contact": {<top verified contact>}|null, "linkedin_profiles": [...], "notes"?: "skipped: hn_domain_unmatched" | "skipped: hn_job_unknown"}`.
+5. Return `{"job_id": "<job.id>", "contact": {<top verified contact>}|null, "linkedin_profiles": [...], "domain"?: "<domain>", "domain_source"?: "<param|apply_url|hn_posting|search>", "notes"?: "<one reason code>"}`.
+
+**Reason codes.** `notes` holds at most one code from this closed list, never free text:
+`skipped: hn_domain_unmatched`, `skipped: hn_job_unknown`, `no_company` (neither `company` nor
+`extracted_company`: no LinkedIn search, email attempted only if a `domain` was given),
+`no_domain` (the ladder found no domain), `no_verified_contact` (a domain but no `verified: true`
+entry), `platform_halted` (the LinkedIn stop rule below fired), `profiles_unscreened` (a result carried
+`injection_suspected`, `classifier_unavailable` or `classifier=unscreened`). The orchestrator
+counts these codes in its report.
 
 **Stop rule:** if `linkedin_find_profiles` returns `status` `halted` or `rate_limited`, or
 `failed` with code `session_locked` or `session_invalid`, stop calling it for the rest of this
