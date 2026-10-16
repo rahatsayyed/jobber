@@ -26,6 +26,7 @@
     "permissions": "tsx scripts/permissions.ts",
     "ccgram-hooks": "tsx scripts/ccgram-hooks.ts",
     "user-data": "tsx scripts/user-data.ts",
+    "site:account": "tsx scripts/site-account.ts",
     "build": "tsc -p .",
     "mcp:job-fetch": "tsx src/mcp/job-fetch.ts",
     "mcp:resume": "tsx src/mcp/resume.ts",

@@ -262,6 +262,41 @@
           "entered_in": "owner edits .env"
         },
         {
+          "name": "APPLY_ALLOW_ACCOUNT_CREATION",
+          "secret": false,
+          "purpose": "whether the applier may create accounts on apply sites (ships false)",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "SCOUT_ALLOW_SIGNUP",
+          "secret": false,
+          "purpose": "whether the scout may create accounts on discovery sites (ships false)",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "SITE_MAIL_VERIFY",
+          "secret": false,
+          "purpose": "how sign-up verification links arrive: owner_assist (default), gmail or off",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "SITE_MAIL_SENDERS",
+          "secret": false,
+          "purpose": "sender addresses whose verification mail may be read in gmail mode (empty by default)",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "APPLY_ACCEPT_LEGAL_REQUIRED",
+          "secret": false,
+          "purpose": "whether a required privacy or terms box may be checked to submit (marketing boxes never are)",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
           "name": "LINKEDIN_ACCEPT_UNKNOWN",
           "secret": false,
           "purpose": "whether invitations from unknown people may be accepted",

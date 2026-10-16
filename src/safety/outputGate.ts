@@ -1,6 +1,8 @@
 // src/safety/outputGate.ts
 // Last gate before text leaves the system. Runs AFTER the style gate and resume.check_text;
 // the caller passes the normalized_text that check_text returned and its verdict.
+import { siteAccountLiterals } from './siteSecrets.js';
+
 export interface OutboundContext {
   recipientKey: string;
   expectedRecipientKey: string;
@@ -12,6 +14,9 @@ export interface OutboundContext {
   secretValues?: string[];
   allowedPhrases?: string[];
   factVerdict: 'pass' | 'warn' | 'block';
+  // Site-account emails are allowlisted only when scope is 'webcore' (plan 8G task 6); ignored elsewhere.
+  scope?: 'webcore';
+  accountEmails?: string[];
 }
 
 export interface OutboundResult {
@@ -128,13 +133,14 @@ export function gateOutbound(text: string, ctx: OutboundContext): OutboundResult
   const urls = URL_RES.flatMap((re) => text.match(re) ?? []);
   if (urls.some((u) => !urlAllowed(u, allowedUrls))) reasons.push('url_not_allowed');
 
-  const allowedEmails = (ctx.allowedEmails ?? []).map((e) => e.toLowerCase());
+  const accountEmails = ctx.scope === 'webcore' ? (ctx.accountEmails ?? []).map((e) => e.toLowerCase()) : [];
+  const allowedEmails = [...(ctx.allowedEmails ?? []).map((e) => e.toLowerCase()), ...accountEmails];
   const emails = text.match(EMAIL_RE) ?? [];
   if (emails.some((e) => !allowedEmails.includes(e.toLowerCase()))) reasons.push('email_not_allowed');
 
   if (PATH_RES.some((re) => re.test(text))) reasons.push('path_in_text');
   if (SECRET_SHAPES.some((re) => re.test(text))) reasons.push('secret_shaped');
-  if ((ctx.secretValues ?? []).some((v) => v.length >= 8 && text.includes(v))) reasons.push('env_secret_value');
+  if ((ctx.secretValues ?? []).some((v) => v.length >= 8 && !accountEmails.includes(v.toLowerCase()) && text.includes(v))) reasons.push('env_secret_value');
 
   if (ctx.rawPageText && copiedFromPage(text, ctx.rawPageText, ctx.allowedPhrases ?? [])) {
     reasons.push('copied_from_page');
@@ -147,5 +153,7 @@ export function secretValuesFromEnv(env: NodeJS.ProcessEnv): string[] {
   for (const [key, value] of Object.entries(env)) {
     if (value && value.length >= 8 && /KEY|SECRET|TOKEN|PASS(WORD)?/i.test(key)) out.push(value);
   }
+  // Site account emails and passwords are literal secrets too (plan 8G task 6).
+  out.push(...siteAccountLiterals(env));
   return out;
 }

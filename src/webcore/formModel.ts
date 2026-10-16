@@ -54,13 +54,16 @@ export const FORM_SNAPSHOT_SCRIPT = `(() => {
     const type = e.tagName === 'SELECT' ? 'select' : e.tagName === 'TEXTAREA' ? 'textarea' : (e.getAttribute('type') || 'text').toLowerCase();
     if (type === 'submit' || type === 'button' || type === 'image' || type === 'reset') continue;
     if (type === 'radio') { const k = e.name || e.id; if (seen.has(k)) continue; seen.add(k); }
+    e.setAttribute('data-jf', String(fields.length));
     const f = { type, name: e.name || '', id: e.id || '', label: labelOf(e), required: e.required || e.getAttribute('aria-required') === 'true', filled: type === 'checkbox' || type === 'radio' ? false : (type === 'file' ? !!(e.files && e.files.length) : !!e.value), hidden: type === 'hidden' || !vis(e), autocomplete: e.getAttribute('autocomplete') || '' };
     if (type === 'checkbox') f.checked = e.checked;
     if (type === 'select') f.options = Array.from(e.options).map((o) => o.textContent.trim()).slice(0, 30);
     if (type === 'radio') { const g = Array.from(document.querySelectorAll('input[type=radio]')).filter((r) => r.name === e.name); f.options = g.map((r) => labelOf(r)).slice(0, 30); f.filled = g.some((r) => r.checked); }
     fields.push(f);
   }
-  const controls = Array.from(document.querySelectorAll('button,input[type=submit],a[href],[role=button]')).filter(vis).map((e) => ({ tag: e.tagName.toLowerCase(), label: (e.textContent || e.value || e.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim().slice(0, 120) })).filter((c) => c.label).slice(0, 60);
+  const cel = Array.from(document.querySelectorAll('button,input[type=submit],a[href],[role=button]')).filter(vis).map((e) => ({ e, tag: e.tagName.toLowerCase(), label: (e.textContent || e.value || e.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim().slice(0, 120) })).filter((c) => c.label).slice(0, 60);
+  cel.forEach((c, i) => c.e.setAttribute('data-jc', String(i)));
+  const controls = cel.map((c) => ({ tag: c.tag, label: c.label }));
   const notices = Array.from(document.querySelectorAll('[role=alert],.error,.errors,[aria-invalid=true]')).filter(vis).map((e) => (e.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 200)).filter(Boolean).slice(0, 10);
   const captchaWidget = !!document.querySelector('.g-recaptcha,.h-captcha,.cf-turnstile,iframe[src*=recaptcha],iframe[src*=hcaptcha],iframe[src*=turnstile]');
   return { url: location.href, title: document.title, text: (document.body ? document.body.innerText : '').slice(0, 20000), fields, controls, notices, captchaWidget };

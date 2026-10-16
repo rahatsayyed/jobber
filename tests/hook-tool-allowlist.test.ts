@@ -214,3 +214,32 @@ describe('CLI', () => {
     expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision).toBe('deny');
   });
 });
+
+describe('gmail sender allowlist rule (plan 8G task 6)', () => {
+  const gp = {
+    allow: ['mcp__gmail__search_emails', 'mcp__gmail__read_email', 'mcp__gmail__send_email', 'mcp__gmail__delete_email'],
+    gmail_sender_allowlist: true,
+  };
+  const env = { SITE_MAIL_SENDERS: 'no-reply@acme.example.test, @jobs.example.test' } as NodeJS.ProcessEnv;
+  const g = (tool_name: string, tool_input: object = {}, e: NodeJS.ProcessEnv = env) =>
+    hook.decide({ tool_name, tool_input }, gp, { root: ROOT, env: e } as never).allow;
+  it('allows a search pinned to an allowlisted sender and reading a message', () => {
+    expect(g('mcp__gmail__search_emails', { query: 'from:no-reply@acme.example.test newer_than:1d' })).toBe(true);
+    expect(g('mcp__gmail__search_emails', { query: 'from:"no-reply@jobs.example.test" verify' })).toBe(true);
+    expect(g('mcp__gmail__read_email', { messageId: 'abc' })).toBe(true);
+  });
+  it('rejects a search without from:, with a foreign sender, an OR group, or an empty allowlist', () => {
+    for (const q of ['verify your account', 'in:inbox', 'from:evil@example.org', 'from:no-reply@acme.example.test OR in:anywhere', '{from:no-reply@acme.example.test in:inbox}', 'from:no-reply@acme.example.test from:x@evil.example.org', '']) {
+      expect(g('mcp__gmail__search_emails', { query: q })).toBe(false);
+    }
+    expect(g('mcp__gmail__search_emails', {})).toBe(false);
+    expect(g('mcp__gmail__search_emails', { query: 'from:no-reply@acme.example.test' }, {} as NodeJS.ProcessEnv)).toBe(false);
+  });
+  it('denies every other gmail tool, even when listed', () => {
+    for (const t of ['mcp__gmail__send_email', 'mcp__gmail__delete_email']) expect(g(t, { to: 'x@example.test' })).toBe(false);
+  });
+  it('profiles without the flag are unchanged', () => {
+    const p = { allow: ['mcp__gmail__search_emails'] };
+    expect(hook.decide({ tool_name: 'mcp__gmail__search_emails', tool_input: { query: 'anything' } }, p, { root: ROOT }).allow).toBe(true);
+  });
+});

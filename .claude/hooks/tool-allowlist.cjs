@@ -135,6 +135,27 @@ function decide(event, profile, opts) {
     }
     if (!allowed.has(name)) return deny('tool not in allowlist');
 
+    // Gmail sender rule (plan 8G task 6): a profile with gmail_sender_allowlist may read verification
+    // mail only through a search whose query is pinned to allowlisted senders (SITE_MAIL_SENDERS).
+    if (name.startsWith('mcp__gmail__') && profile.gmail_sender_allowlist === true) {
+      if (name === 'mcp__gmail__read_email') return { allow: true, reason: '' };
+      if (name !== 'mcp__gmail__search_emails') return deny('gmail tool not allowed for this profile');
+      const env = (opts && opts.env) || process.env;
+      const senders = String(env.SITE_MAIL_SENDERS || '')
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+      const input = event.tool_input && typeof event.tool_input === 'object' ? event.tool_input : {};
+      const q = typeof input.query === 'string' ? input.query : '';
+      if (senders.length === 0 || q === '' || q.length > 500) return deny('gmail search needs an allowlisted from: query');
+      if (/\bOR\b|[{}]|\bAROUND\b|(^|\s)-\s*from:/i.test(q)) return deny('gmail search query shape not allowed');
+      const froms = [...q.matchAll(/(?:^|[\s(])from:\s*"?([^\s")]+)"?/gi)].map((m) => m[1].toLowerCase());
+      if (froms.length === 0) return deny('gmail search needs an allowlisted from: query');
+      const okFrom = (a) => senders.some((s) => (s.startsWith('@') ? a.endsWith(s) : a === s));
+      if (!froms.every(okFrom)) return deny('gmail search from: is not an allowlisted sender');
+      return { allow: true, reason: '' };
+    }
+
     const rule = profile.path_rules && profile.path_rules[name];
     if (rule) {
       const input = event.tool_input && typeof event.tool_input === 'object' ? event.tool_input : {};

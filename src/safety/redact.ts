@@ -1,6 +1,7 @@
 // src/safety/redact.ts
 // Secret redaction shared by the web server and the dashboard text cleaner. Pure, no I/O.
 import { SECRET_SHAPES } from './outputGate.js';
+import { siteAccountLiterals } from './siteSecrets.js';
 
 const REDACTED = '[redacted]';
 // Lines naming a web credential variable (token or secret) are dropped whole.
@@ -30,7 +31,8 @@ export function redactSecrets(text: string, extra: string[] = [], opts: { tokenL
       off += line.length + 1;
     }
   }
-  for (const lit of extra) {
+  // Site account emails and passwords are literal secrets (plan 8G task 6).
+  for (const lit of [...extra, ...siteAccountLiterals()]) {
     if (lit.length < 8) continue;
     for (let i = stripped.indexOf(lit); i >= 0; i = stripped.indexOf(lit, i + lit.length)) add(i, i + lit.length);
   }
