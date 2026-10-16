@@ -1,0 +1,7 @@
+{
+  "name": "Jane Q Fixture",
+  "email": "jane.fixture@example.com",
+  "phone": "+00 1112223333",
+  "location": "Fixture City",
+  "social": { "linkedin": { "url": "https://linkedin.com/in/fixture-person", "label": "linkedin.com/in/fixture-person" } }
+}

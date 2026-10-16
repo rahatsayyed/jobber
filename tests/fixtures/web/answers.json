@@ -1,0 +1,11 @@
+{
+  "years_experience": 5,
+  "authorized_to_work": true,
+  "requires_sponsorship": { "india": false, "other": true },
+  "willing_to_relocate": true,
+  "notice_period_days": 30,
+  "expected_salary": "25 LPA",
+  "phone": "+00 1112223333",
+  "linkedin_profile_url": "https://linkedin.com/in/fixture-person",
+  "custom": { "What is your current CTC?": "18 LPA" }
+}
