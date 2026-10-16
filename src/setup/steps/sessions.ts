@@ -21,14 +21,14 @@ const ACCOUNTS: Account[] = [
     name: 'linkedin_main',
     label: 'LinkedIn main',
     file: 'linkedin-main-state.json',
-    argv: ['tsx', 'scripts/linkedin-login.ts', '--account', 'main'],
+    argv: ['tsx', 'scripts/linkedin-login.ts'],
     who: 'your MAIN LinkedIn account (connection requests and messages)',
   },
   {
     name: 'naukri',
     label: 'Naukri',
     file: 'naukri-state.json',
-    argv: ['tsx', 'scripts/naukri-login.ts', '--account', 'main'],
+    argv: ['tsx', 'scripts/naukri-login.ts'],
     who: 'your Naukri account',
   },
 ];
@@ -50,7 +50,6 @@ export const sessionsStep: SetupStep = {
     const dir = path.join(ctx.root, 'secrets');
     ctx.fs.mkdirp(dir, 0o700);
     io.say('Safety rule: log in the MAIN LinkedIn account and your own Naukri account, in real Chrome.');
-    io.say('The login commands pass --account main, so no environment variable is needed.');
 
     say(ctx, 'sessions.why');
     say(ctx, 'sessions.window');

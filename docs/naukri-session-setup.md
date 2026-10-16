@@ -9,11 +9,10 @@ jobs keep their listing URL as `apply_url` (a harmless, already-supported fallba
 Run from the repo root:
 
 ```bash
-npm run naukri:login -- --account main
+npm run naukri:login
 ```
 
-Without `--account main` the command asks `Log in the MAIN Naukri account? (y/N)` and needs a
-terminal. It never reads an environment variable for this.
+The command takes no flag and asks no question. It prints a short instruction and opens the browser.
 
 1. A real, visible Google Chrome window opens on Naukri's login page. The command uses the same
    Chrome recipe and browser settings as the headless runtime (patchright, installed Chrome,
@@ -29,7 +28,7 @@ terminal. It never reads an environment variable for this.
 ## Re-running later
 
 Naukri sessions expire periodically. When `npm run doctor` (check `sessions`) or the `naukri`
-tools report a missing or expired session, run `npm run naukri:login -- --account main` again.
+tools report a missing or expired session, run `npm run naukri:login` again.
 
 ## Chrome requirement
 

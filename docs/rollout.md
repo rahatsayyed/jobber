@@ -269,8 +269,8 @@ week (estimate, not measured), or a platform shows a restriction notice. Lower t
 
 **Redo on the VPS (nothing carries over by copying state)**
 - `[owner]` Recreate the LinkedIn main session
-  (`npm run linkedin:login -- --account main`) and the Naukri session
-  (`npm run naukri:login -- --account main`).
+  (`npm run linkedin:login`) and the Naukri session
+  (`npm run naukri:login`).
 - `[owner]` Re-run the Naukri headless check from the VPS IP. Akamai may treat a datacenter
   IP harder; the recipe passed from a home IP only. Do not add probe pages.
 - `[owner]` Download, pin and fit the classifier again (models live in `models/`, which is
@@ -297,8 +297,8 @@ Go back to dry before anything live.
 
 1. Set the dry flags on (`SCHEDULER_DRY_RUN`, `LINKEDIN_DRY_RUN`) and run
    `npm run jobber:control -- status`.
-2. `[owner]` Re-save sessions if expired (`npm run linkedin:login -- --account main`,
-   `npm run naukri:login -- --account main`). A dead session shows as `logged_out` in `layout=`.
+2. `[owner]` Re-save sessions if expired (`npm run linkedin:login`,
+   `npm run naukri:login`). A dead session shows as `logged_out` in `layout=`.
 3. `npm run doctor`: classifier pinned and fitted, hooks installed, permission set as you left it.
 4. Update state: `npm run auto-update -- --status`. After an applied update restart Claude
    sessions (MCP servers keep old code).

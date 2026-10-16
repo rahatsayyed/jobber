@@ -136,7 +136,7 @@ for you in any step. Writes to `.env` go through the comment-preserving writer.
 Notes:
 
 - Do not copy limit values from this page. Use `npm run status -- limits` and the catalog file.
-- Sessions follow the account rule in `CLAUDE.md` (main for connects; the login commands take `--account main` or ask y/N). Setup
+- Sessions follow the account rule in `CLAUDE.md` (main for connects; the login commands take no flag, there is only the main account). Setup
   details: [LinkedIn sessions](linkedin-sessions-setup.md) and [Naukri session](naukri-session-setup.md).
 - Bot creation: [Telegram bot setup](telegram-bot-setup.md). Gmail: [Gmail MCP setup](gmail-mcp-setup.md).
   Classifier: [classifier models](classifier-models.md).

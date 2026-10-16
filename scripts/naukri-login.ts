@@ -1,5 +1,5 @@
 // Owner-only: headed real Chrome login for your Naukri account. Not run by tests or the agent.
-//   npm run naukri:login -- --account main     (or answer y at the prompt on a terminal)
+//   npm run naukri:login
 // Uses the same Chrome recipe and context options as the headless runtime so the saved session
 // matches the fingerprint Akamai sees later.
 import { createInterface } from 'node:readline';
@@ -7,11 +7,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS } from '../src/webcore/launch.js';
 import { writeStateAtomic } from '../src/linkedin/session.js';
-import { confirmAccount, type LoginIo } from '../src/platform/loginConfirm.js';
 import type { LiLauncher } from '../src/webcore/launch.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const NAUKRI_STATE_PATH = path.join(ROOT, 'secrets', 'naukri-state.json');
+
+export interface LoginIo {
+  ask(question: string): Promise<string>;
+}
 
 export interface NaukriLoginDeps {
   io?: LoginIo;
@@ -30,7 +33,6 @@ export function hasNaukriAuthCookie(state: unknown): boolean {
 
 function stdinIo(): LoginIo {
   return {
-    isTTY: Boolean(process.stdin.isTTY),
     ask: (q) =>
       new Promise((resolve) => {
         const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -39,13 +41,8 @@ function stdinIo(): LoginIo {
   };
 }
 
-export async function main(argv: string[] = process.argv.slice(2), deps: NaukriLoginDeps = {}): Promise<number> {
+export async function main(deps: NaukriLoginDeps = {}): Promise<number> {
   const io = deps.io ?? stdinIo();
-  const c = await confirmAccount(argv, io, 'main', 'Naukri');
-  if (!c.ok) {
-    console.error(`Refusing: ${c.reason}`);
-    return 2;
-  }
   let browser;
   try {
     browser = await launchRealChrome({ headed: true, launcher: deps.launcher });

@@ -131,8 +131,8 @@ describe('sessionsStep', () => {
     const t = setup([{ confirm: true }, { confirm: true }]);
     expect(await sessionsStep.run(t.ctx)).toBe('done');
     expect(t.spawns.map((s) => [s.cmd, ...s.args])).toEqual([
-      ['npx', 'tsx', 'scripts/linkedin-login.ts', '--account', 'main'],
-      ['npx', 'tsx', 'scripts/naukri-login.ts', '--account', 'main'],
+      ['npx', 'tsx', 'scripts/linkedin-login.ts'],
+      ['npx', 'tsx', 'scripts/naukri-login.ts'],
     ]);
     expect(t.dirs.get('proj/secrets')).toBe(0o700);
     const said = t.sio.transcript.join('\n');
@@ -174,6 +174,6 @@ describe('sessionsStep', () => {
     expect(await sessionsStep.run(t.ctx)).toBe('done');
     expect(t.ctx.state.answers.session_linkedin_main).toBe('skipped');
     expect(t.spawns).toHaveLength(1);
-    expect(t.spawns[0].args).toEqual(['tsx', 'scripts/naukri-login.ts', '--account', 'main']);
+    expect(t.spawns[0].args).toEqual(['tsx', 'scripts/naukri-login.ts']);
   });
 });

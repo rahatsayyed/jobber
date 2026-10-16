@@ -1,11 +1,14 @@
 // Owner-only: headed real Chrome login for the MAIN LinkedIn account. Not run by tests or the agent.
-//   npm run linkedin:login -- --account main     (or answer y at the prompt on a terminal)
+//   npm run linkedin:login
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { launchRealChrome, LINKEDIN_CONTEXT_OPTIONS } from '../src/webcore/launch.js';
 import { DEFAULT_SESSION_PATH, saveStateAtomic } from '../src/linkedin/session.js';
-import { confirmAccount, type LoginIo } from '../src/platform/loginConfirm.js';
 import type { LiLauncher } from '../src/webcore/launch.js';
+
+export interface LoginIo {
+  ask(question: string): Promise<string>;
+}
 
 export interface LoginDeps {
   io?: LoginIo;
@@ -15,7 +18,6 @@ export interface LoginDeps {
 
 function stdinIo(): LoginIo {
   return {
-    isTTY: Boolean(process.stdin.isTTY),
     ask: (q) =>
       new Promise((resolve) => {
         const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -24,13 +26,8 @@ function stdinIo(): LoginIo {
   };
 }
 
-export async function main(argv: string[] = process.argv.slice(2), deps: LoginDeps = {}): Promise<number> {
+export async function main(deps: LoginDeps = {}): Promise<number> {
   const io = deps.io ?? stdinIo();
-  const c = await confirmAccount(argv, io, 'main', 'LinkedIn');
-  if (!c.ok) {
-    console.error(`Refusing: ${c.reason}`);
-    return 2;
-  }
   let browser;
   try {
     browser = await launchRealChrome({ headed: true, launcher: deps.launcher });
