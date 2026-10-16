@@ -2,10 +2,10 @@
 //   npm run linkedin:login -- --account main     (or answer y at the prompt on a terminal)
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { launchRealChrome, LINKEDIN_CONTEXT_OPTIONS } from '../src/linkedin/browser.js';
+import { launchRealChrome, LINKEDIN_CONTEXT_OPTIONS } from '../src/webcore/launch.js';
 import { DEFAULT_SESSION_PATH, saveStateAtomic } from '../src/linkedin/session.js';
 import { confirmAccount, type LoginIo } from '../src/platform/loginConfirm.js';
-import type { LiLauncher } from '../src/linkedin/types.js';
+import type { LiLauncher } from '../src/webcore/launch.js';
 
 export interface LoginDeps {
   io?: LoginIo;

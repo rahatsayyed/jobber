@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, statSync, existsSync } from 'no
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { main, hasNaukriAuthCookie } from '../scripts/naukri-login.js';
-import { HEADLESS_CONTEXT_OPTIONS } from '../src/sources/naukri.js';
+import { HEADLESS_CONTEXT_OPTIONS } from '../src/webcore/launch.js';
 import type { LoginIo } from '../src/platform/loginConfirm.js';
 import type { LiLauncher } from '../src/linkedin/types.js';
 

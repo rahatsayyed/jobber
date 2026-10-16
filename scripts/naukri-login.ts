@@ -5,11 +5,10 @@
 import { createInterface } from 'node:readline';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launchRealChrome } from '../src/linkedin/browser.js';
+import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS } from '../src/webcore/launch.js';
 import { writeStateAtomic } from '../src/linkedin/session.js';
 import { confirmAccount, type LoginIo } from '../src/platform/loginConfirm.js';
-import { HEADLESS_CONTEXT_OPTIONS } from '../src/sources/naukri.js';
-import type { LiLauncher } from '../src/linkedin/types.js';
+import type { LiLauncher } from '../src/webcore/launch.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const NAUKRI_STATE_PATH = path.join(ROOT, 'secrets', 'naukri-state.json');
