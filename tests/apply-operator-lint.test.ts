@@ -84,6 +84,11 @@ describe('apply-operator', () => {
     }
     expect(body).toContain('apply-operator');
   });
+  it('Verification section covers owner_assist default and the gated gmail mode', () => {
+    const v = body.slice(body.search(/^## Verification$/m));
+    for (const w of ['owner_assist', 'email_verification', 'SITE_MAIL_VERIFY=gmail', 'SITE_MAIL_SENDERS', 'site_open_link', 'when the wake profile adds the Gmail read tools','untrusted']) expect(v, w).toContain(w);
+    expect(v).not.toContain('Filled in by plan');
+  });
   it('routes by apply_platform and keeps a Verification placeholder section', () => {
     for (const p of ['linkedin_easy', 'naukri', 'browser', 'naukri_apply']) expect(body, p).toContain(p);
     expect(body).toMatch(/^## Verification$/m);

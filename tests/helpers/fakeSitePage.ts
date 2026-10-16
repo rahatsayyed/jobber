@@ -12,6 +12,8 @@ export interface FakeSiteOpts {
   urlRef?: { value: string };
   /** control label -> next page(s); a list is consumed in order, the last entry repeats */
   transitions?: Record<string, Step[]>;
+  /** goto(url) lands on this fixture when the URL path matches (e.g. a verification link); other URLs reload `start` */
+  gotoMap?: Record<string, string>;
   /** a checkbox whose label matches re-checks itself after any click (hostile page) */
   stickyLabel?: RegExp;
   /** every fill throws an error whose text contains the typed value (leak test) */
@@ -95,7 +97,12 @@ export function createFakeSite(o: FakeSiteOpts): FakeSite {
     return self as LiLocator;
   };
   const page = {
-    async goto() { events.push('goto'); cur = loadFixture(o.start, url); },
+    async goto(u?: string) {
+      events.push('goto');
+      let target = o.start;
+      try { const mapped = o.gotoMap?.[new URL(String(u)).pathname]; if (mapped) target = mapped; } catch { /* keep start */ }
+      cur = loadFixture(target, url);
+    },
     url: () => o.urlRef?.value ?? url,
     title: async () => cur.title,
     async evaluate() { return JSON.parse(JSON.stringify(cur)); },

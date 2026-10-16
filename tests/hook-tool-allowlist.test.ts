@@ -244,6 +244,36 @@ describe('gmail sender allowlist rule (plan 8G task 6)', () => {
   });
 });
 
+describe('gmail tools and the apply-operator (plan 8G-2 task 22)', () => {
+  const gp = {
+    allow: ['mcp__gmail__search_emails', 'mcp__gmail__read_email', 'mcp__gmail__send_email', 'mcp__gmail__delete_email', 'mcp__gmail__modify_email', 'mcp__db__list_queued_outreach'],
+    gmail_sender_allowlist: true,
+  };
+  const env = { SITE_MAIL_SENDERS: 'no-reply@acme.example.test' } as NodeJS.ProcessEnv;
+  const main = (tool_name: string, tool_input: object = {}, e: NodeJS.ProcessEnv = env) =>
+    hook.decide({ tool_name, tool_input }, gp, { root: ROOT, env: e } as never).allow;
+  const operator = (tool_name: string, tool_input: object = {}) =>
+    hook.decide({ tool_name, tool_input, agent_id: 'a1', agent_type: 'apply-operator' }, gp, { root: ROOT, env } as never).allow;
+
+  it('hook rejects an unrestricted gmail search', () => {
+    for (const q of ['in:inbox', 'verify your account', 'label:unread', 'newer_than:1d', 'subject:verify', 'from:someone@else.example.org', 'from:no-reply@acme.example.test OR in:anywhere']) {
+      expect(main('mcp__gmail__search_emails', { query: q }), q).toBe(false);
+    }
+    expect(main('mcp__gmail__search_emails', {})).toBe(false);
+    expect(main('mcp__gmail__search_emails', { query: 'from:no-reply@acme.example.test' }, {} as NodeJS.ProcessEnv)).toBe(false);
+    expect(main('mcp__gmail__search_emails', { query: 'from:no-reply@acme.example.test newer_than:1d' })).toBe(true);
+  });
+  it('hook denies every other gmail tool for operators', () => {
+    for (const t of ['mcp__gmail__send_email', 'mcp__gmail__delete_email', 'mcp__gmail__modify_email', 'mcp__gmail__read_email', 'mcp__gmail__search_emails']) {
+      expect(operator(t, { query: 'from:no-reply@acme.example.test', messageId: 'abc', to: 'x@example.test' }), t).toBe(false);
+    }
+    // the same profile still lets the operator use a tool its own definition lists
+    expect(operator('mcp__db__list_queued_outreach')).toBe(true);
+    // and the other gmail tools are denied for the main session of a sender-pinned profile too
+    for (const t of ['mcp__gmail__send_email', 'mcp__gmail__delete_email', 'mcp__gmail__modify_email']) expect(main(t, { to: 'x@example.test' }), t).toBe(false);
+  });
+});
+
 describe('applier MCP tools in the hunt profile (plan 8G-2 task 20)', () => {
   it('are allowed, and screened tools refuse secret-shaped arguments', async () => {
     const { loadProfiles } = await import('../src/platform/runner.js');
