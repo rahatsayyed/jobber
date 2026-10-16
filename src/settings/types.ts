@@ -56,12 +56,20 @@ export type ChangeOp =
   | { key: string; op: 'clear' }
   | { key: string; op: 'reset' };
 
-// secret: before/after are the words 'set' | 'not set' only
+// secret: before is 'set' | 'not set', after is 'set' | 'replaced' | 'cleared' (words only, never a value)
 export interface FieldDiff {
   key: string;
   before: string;
   after: string;
   secret: boolean;
+}
+
+// What the friction policy needs to know about the caller (the real policy is plan 8H Task 6).
+export interface PolicyCtx {
+  editEnabled: boolean;
+  remoteExposure: boolean;
+  remoteSafetyAllowed: boolean;
+  sessionFresh: boolean;
 }
 
 export interface Friction {

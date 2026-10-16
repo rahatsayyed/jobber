@@ -87,6 +87,8 @@ export interface WriteWithBackupOpts {
   now: () => Date;
   /** Mode of the written file (default 0600). */
   mode?: number;
+  /** Name backups YYYYMMDDTHHMMSSZ-<etag8> (the env store validates ids of that shape); a name collision moves the stamp on by a second. */
+  compactStamp?: boolean;
 }
 
 export interface WriteWithBackupResult {
@@ -97,6 +99,10 @@ export interface WriteWithBackupResult {
 
 function stampOf(now: Date): string {
   return now.toISOString().replace(/[:.]/g, '-');
+}
+
+function compactStampOf(now: Date): string {
+  return now.toISOString().replace(/\.\d{3}Z$/, 'Z').replace(/[-:]/g, '');
 }
 
 export function writeWithBackup(o: WriteWithBackupOpts): WriteWithBackupResult {
@@ -111,12 +117,18 @@ export function writeWithBackup(o: WriteWithBackupOpts): WriteWithBackupResult {
 
   let backupId = '';
   if (current !== null) {
-    const base = `${stampOf(o.now())}-${currentEtag.slice(0, 8)}`;
+    const t0 = o.now();
+    const etag8 = currentEtag.slice(0, 8);
+    const base = `${o.compactStamp ? compactStampOf(t0) : stampOf(t0)}-${etag8}`;
     let name = `${base}${o.backupExt}`;
     try {
       fs.mkdir(o.backupDir, 0o700);
       fs.chmod(o.backupDir, 0o700);
-      for (let n = 1; fs.exists(`${o.backupDir}/${name}`); n++) name = `${base}-${n}${o.backupExt}`;
+      for (let n = 1; fs.exists(`${o.backupDir}/${name}`); n++) {
+        name = o.compactStamp
+          ? `${compactStampOf(new Date(t0.getTime() + n * 1000))}-${etag8}${o.backupExt}`
+          : `${base}-${n}${o.backupExt}`;
+      }
       fs.write(`${o.backupDir}/${name}`, current, 0o600);
       fs.chmod(`${o.backupDir}/${name}`, 0o600);
     } catch {
