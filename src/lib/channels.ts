@@ -44,6 +44,12 @@ export const SOURCE_POLICY: Readonly<Record<string, SourcePolicy>> = {
   smartrecruiters: { apply: 'none' }, workday: { apply: 'none' },
   hackernews: { hn: true, apply: 'none' }, himalayas: { apply: 'none' }, weworkremotely: { apply: 'none' },
   adzuna: { apply: 'url' }, remotive: { apply: 'url' }, remoteok: { apply: 'url' },
+  // Imported feeds (career-ops providers): discover-only, so email and LinkedIn contact are allowed and apply never.
+  '4dayweek': { apply: 'none' }, arbeitnow: { apply: 'none' }, jobicy: { apply: 'none' }, workingnomads: { apply: 'none' },
+  themuse: { apply: 'none' }, landingjobs: { apply: 'none' }, thehub: { apply: 'none' }, flowxtra: { apply: 'none' },
+  yourator: { apply: 'none' }, getonbrd: { apply: 'none' }, justjoin: { apply: 'none' }, manfred: { apply: 'none' },
+  cryptocurrencyjobs: { apply: 'none' }, jobspresso: { apply: 'none' }, larajobs: { apply: 'none' }, nodesk: { apply: 'none' },
+  pythonorg: { apply: 'none' }, 'startup-jobs': { apply: 'none' },
   naukri: { apply: 'url' },
   'linkedin-jobs': { apply: 'url' }, 'linkedin-posts': { apply: 'none' },
 };
