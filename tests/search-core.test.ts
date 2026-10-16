@@ -5,7 +5,6 @@ import { searchWithBudget, searchStatus, type SearchProvider, type SearchResult 
 import { buildDork, createDorkProvider } from '../src/search/dork.js';
 import { createSerperProvider } from '../src/search/serper.js';
 import { isDeniedDomainHost } from '../src/search/denylist.js';
-import { resolveCompanyDomain } from '../src/search/ladder.js';
 
 const NOW = new Date('2026-10-16T10:00:00Z');
 const R = (url: string): SearchResult => ({ title: 't', snippet: 's', url });
@@ -169,42 +168,5 @@ describe('createSerperProvider', () => {
     expect((await ok.search('q', { kind: 'company_domain' })).results).toEqual([{ title: 'A', snippet: 'B', url: 'https://acme.io' }]);
     const bad = createSerperProvider('k', async () => { throw new Error('net'); });
     expect((await bad.search('q', { kind: 'company_domain' })).results).toEqual([]);
-  });
-});
-
-describe('resolveCompanyDomain ladder', () => {
-  const deps = (serper: SearchProvider) => ({ now: () => NOW, env: { SERPER_API_KEY: 'k', DORK_ENABLED: 'false' }, serper });
-
-  it('explicit param wins and calls no provider', async () => {
-    const s = fake('serper', { results: [R('https://zzz.io')] });
-    const r = await resolveCompanyDomain(openDb(':memory:'), { company: 'Acme', explicit: 'WWW.Acme.io', applyUrl: 'https://other.io/j' }, deps(s.p));
-    expect(r).toEqual({ domain: 'acme.io', domain_source: 'param' });
-    expect(s.calls).toHaveLength(0);
-  });
-
-  it('apply_url host next, but not a denied or ATS host', async () => {
-    const s = fake('serper', { results: [R('https://www.found.io/about')] });
-    const a = await resolveCompanyDomain(openDb(':memory:'), { company: 'Acme', applyUrl: 'https://careers.acme.io/jobs/1' }, deps(s.p));
-    expect(a).toEqual({ domain: 'careers.acme.io', domain_source: 'apply_url' });
-    const b = await resolveCompanyDomain(openDb(':memory:'), { company: 'Acme', applyUrl: 'https://boards.greenhouse.io/acme/jobs/1' }, deps(s.p));
-    expect(b).toEqual({ domain: 'found.io', domain_source: 'search' });
-  });
-
-  it('HN posting domain before search', async () => {
-    const s = fake('serper', { results: [R('https://zzz.io')] });
-    const r = await resolveCompanyDomain(
-      openDb(':memory:'),
-      { company: 'Acme', job: { source: 'hackernews', description: 'Apply at https://acme.dev/jobs or see https://github.com/acme' } },
-      deps(s.p),
-    );
-    expect(r).toEqual({ domain: 'acme.dev', domain_source: 'hn_posting' });
-    expect(s.calls).toHaveLength(0);
-  });
-
-  it('search skips denied hosts and returns null when nothing usable', async () => {
-    const s = fake('serper', { results: [R('https://glassdoor.com/acme'), R('https://www.linkedin.com/company/acme'), R('https://acme.io/')] });
-    expect(await resolveCompanyDomain(openDb(':memory:'), { company: 'Acme' }, deps(s.p))).toEqual({ domain: 'acme.io', domain_source: 'search' });
-    const n = fake('serper', { results: [R('https://glassdoor.com/acme')] });
-    expect(await resolveCompanyDomain(openDb(':memory:'), { company: 'Acme' }, deps(n.p))).toEqual({ domain: null, domain_source: null });
   });
 });

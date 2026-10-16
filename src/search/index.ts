@@ -87,10 +87,17 @@ export async function searchWithBudget(db: Db, kind: SearchKind, params: DorkPar
   if (usageToday(db, 'serper', now) >= cfg.serperDaily) return { results: [], provider: 'none', reason: [...reasons, 'serper_daily_budget'].join(',') };
   if (usageMonth(db, 'serper', now) >= cfg.serperMonthly) return { results: [], provider: 'none', reason: [...reasons, 'serper_monthly_budget'].join(',') };
   recordUsage(db, 'serper', now);
-  const out = await serper.search(q, { kind });
-  const results = clean(out.results);
+  let sOut: { results: SearchResult[] } = { results: [] };
+  let serperErr = false;
+  try {
+    sOut = await serper.search(q, { kind });
+  } catch {
+    serperErr = true;
+  }
+  const results = clean(sOut.results);
   if (results.length > 0) cachePut(db, qhash, 'serper', kind, results, now);
-  return { results, provider: 'serper', ...(reasons.length ? { reason: reasons.join(',') } : {}) };
+  const rs = serperErr ? [...reasons, 'serper_error'] : reasons;
+  return { results, provider: 'serper', ...(rs.length ? { reason: rs.join(',') } : {}) };
 }
 
 export interface SearchStatus {

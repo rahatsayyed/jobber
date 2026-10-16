@@ -64,7 +64,8 @@ export function cacheGet(db: Db, qhash: string, ttlDays: number, now: Date): { r
     | { result: string; at: string }
     | undefined;
   if (!r) return null;
-  if (now.getTime() - new Date(r.at).getTime() > ttlDays * 86400_000) return null;
+  const age = now.getTime() - new Date(r.at).getTime();
+  if (!Number.isFinite(age) || age > ttlDays * 86400_000) return null;
   try {
     const parsed = JSON.parse(r.result);
     return Array.isArray(parsed) ? { results: parsed } : null;

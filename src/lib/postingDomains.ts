@@ -58,6 +58,8 @@ const SECOND_LEVEL = new Set([
   'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'co.in', 'org.in', 'net.in', 'com.au', 'net.au', 'org.au',
   'com.sg', 'co.jp', 'com.br', 'co.za', 'com.ae', 'co.nz', 'com.mx', 'com.tr', 'com.sa', 'com.eg',
   'co.il', 'com.cn', 'com.hk', 'com.pk', 'com.my', 'co.id', 'co.kr', 'com.ar', 'com.co',
+  'co.ae', 'net.ae', 'org.ae', 'gov.in', 'ac.in', 'co.ke', 'com.ng', 'com.qa', 'com.kw', 'com.bh', 'com.om',
+  'com.ph', 'com.vn', 'co.th', 'com.pe', 'com.ua', 'co.ug', 'co.tz',
 ]);
 
 function normHost(raw: string): string {

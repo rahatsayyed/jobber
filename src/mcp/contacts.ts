@@ -9,7 +9,7 @@ import { verifyEmail } from '../lib/verify.js';
 import { hunterDomainSearch } from '../lib/hunter.js';
 import { withHnGate } from '../lib/postingDomains.js';
 import { searchWithBudget } from '../search/index.js';
-import { resolveCompanyDomain } from '../search/ladder.js';
+import { resolveDomainForJob } from '../search/ladder.js';
 
 const db = openDb(dbPath());
 
@@ -42,12 +42,7 @@ server.registerTool(
   },
   async ({ company, domain, person_name, job_id }) => {
     // source, apply_url and description come from the jobs table, never from the model.
-    const job = job_id === undefined
-      ? undefined
-      : (db.prepare('SELECT source, description, apply_url FROM jobs WHERE id = ?').get(job_id) as
-          | { source: string; description: string | null; apply_url: string | null }
-          | undefined);
-    const ladder = await resolveCompanyDomain(db, { company, explicit: domain, applyUrl: job?.apply_url, job });
+    const { job, ladder } = await resolveDomainForJob(db, { company, domain, job_id });
     const resolvedDomain = ladder.domain;
 
     // Without job_id the tool is unchanged (returns the bare array).
