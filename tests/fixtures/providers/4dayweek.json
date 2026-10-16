@@ -1,0 +1,31 @@
+{
+  "jobs": [
+    {
+      "title": "React Developer",
+      "slug": "react-developer-acme",
+      "company_name": "Acme Co",
+      "locations": [
+        {
+          "city": "Berlin",
+          "country": "Germany",
+          "work_arrangement": "hybrid"
+        }
+      ],
+      "work_arrangement": "remote",
+      "posted": 1759400000,
+      "is_expired": false
+    },
+    {
+      "title": "Expired Role",
+      "slug": "old-role",
+      "company_name": "Acme Co",
+      "is_expired": true
+    },
+    {
+      "title": "Bad Slug",
+      "slug": "../x",
+      "company_name": "Acme Co"
+    }
+  ],
+  "has_more": false
+}

@@ -102,7 +102,7 @@ for you in any step. Writes to `.env` go through the comment-preserving writer.
 | 3 | `telegram` | Bot token from BotFather, Threaded Mode, chat id, a test message | `.env` (`TELEGRAM_BOT_TOKEN` and the allowed-user key) | creating the bot, pasting the token | yes, id `telegram` |
 | 4 | `gmail` | Google Cloud project, consent screen, OAuth client file, authorisation | Creates the directory of `GMAIL_OAUTH_PATH` (mode 700) and chmods the keys file 600 if present; the auth helper writes the credentials file at `GMAIL_CREDENTIALS_PATH` (chmod 600). It never writes the OAuth keys file: you download it to `GMAIL_OAUTH_PATH` yourself | Downloading the OAuth keys file, OAuth consent in a browser | yes, id `gmail` |
 | 5 | `apikeys` | Adzuna, Serper, Hunter keys, each checked with one best-effort call | `.env` | creating each key | yes, id `apikeys`, per provider |
-| 6 | `sessions` | LinkedIn burner, LinkedIn main and Naukri login sessions | files under `secrets/` | every login (password, 2FA, QR) | per account, can be deferred |
+| 6 | `sessions` | LinkedIn main and Naukri login sessions (real Chrome) | files under `secrets/` | every login (password, 2FA, QR) | per account, can be deferred |
 | 7 | `resume` | Converts your resume file to `user-data/resume.json` | `user-data/resume.json` | supplying your resume | can stop with the step skipped |
 | 8 | `profile` | Job questions and the answers file | `user-data/profile.json`, the Easy Apply answers file | answering about yourself | no |
 | 9 | `limits` | Limits and pacing, from the single catalog `src/setup/limitsCatalog.ts` | `.env` | choosing values | no |
@@ -114,7 +114,7 @@ for you in any step. Writes to `.env` go through the comment-preserving writer.
 Notes:
 
 - Do not copy limit values from this page. Use `npm run status -- limits` and the catalog file.
-- Sessions follow the account rule in `CLAUDE.md` (burner for apply, main for connects). Setup
+- Sessions follow the account rule in `CLAUDE.md` (main for connects; the login commands take `--account main` or ask y/N). Setup
   details: [LinkedIn sessions](linkedin-sessions-setup.md) and [Naukri session](naukri-session-setup.md).
 - Bot creation: [Telegram bot setup](telegram-bot-setup.md). Gmail: [Gmail MCP setup](gmail-mcp-setup.md).
   Classifier: [classifier models](classifier-models.md).

@@ -26,7 +26,7 @@ This page lists every owner doc in `docs/`. Start with the ordered list, then us
 - [Classifier models](classifier-models.md): the prompt-injection classifier and how to fetch, pin and fit a model.
 - [Dashboard exposure](dashboard-exposure.md): how to reach the dashboard from elsewhere and the sign-in modes.
 - [Gmail MCP setup](gmail-mcp-setup.md): Gmail sending and reading runbook.
-- [LinkedIn sessions setup](linkedin-sessions-setup.md): the main and burner LinkedIn sessions.
+- [LinkedIn sessions setup](linkedin-sessions-setup.md): the main LinkedIn session (`npm run linkedin:login`); [Naukri session setup](naukri-session-setup.md) covers `npm run naukri:login`.
 - [Model auth setup](model-auth-setup.md): how Claude Code picks the model and how it is authenticated.
 - [Naukri session setup](naukri-session-setup.md): saving the Naukri login session.
 - [Phase 2 known issues](phase2-known-issues.md): live-test findings recorded during Phase 2.

@@ -1,0 +1,26 @@
+{
+  "jobs": {
+    "docs": [
+      {
+        "id": "abc123",
+        "title": "React Developer",
+        "company": {
+          "name": "Eta ApS"
+        },
+        "location": {
+          "locality": "Copenhagen",
+          "country": "Denmark"
+        },
+        "isRemote": true
+      },
+      {
+        "id": "../bad",
+        "title": "Bad Id",
+        "company": {
+          "name": "B"
+        }
+      }
+    ],
+    "pages": 1
+  }
+}

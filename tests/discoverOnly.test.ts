@@ -3,6 +3,7 @@ import { mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DISCOVER_ONLY_SOURCES, isDiscoverOnlySource } from '../src/lib/discoverOnly.js';
+import { IMPORTED_IDS } from '../src/sources/providers/index.js';
 import { applyExternal } from '../src/apply/external.js';
 import { applyEasyApply } from '../src/apply/linkedin.js';
 import { enqueueOutreach, openDb, saveJob, saveOutreach } from '../src/db.js';
@@ -17,7 +18,10 @@ const job = (id: string, source: string, apply_url: string) =>
 
 describe('isDiscoverOnlySource', () => {
   it('lists exactly the new vendors and aggregators', () => {
-    expect([...DISCOVER_ONLY_SOURCES].sort()).toEqual(['hackernews', 'himalayas', 'personio', 'recruitee', 'smartrecruiters', 'weworkremotely', 'workable', 'workday']);
+    const base = ['hackernews', 'himalayas', 'personio', 'recruitee', 'smartrecruiters', 'weworkremotely', 'workable', 'workday'];
+    // The feeds imported from career-ops (src/sources/providers) are discover-only too.
+    expect([...DISCOVER_ONLY_SOURCES].sort()).toEqual([...base, ...IMPORTED_IDS].sort());
+    for (const s of IMPORTED_IDS) expect(isDiscoverOnlySource(s)).toBe(true);
     for (const s of ['greenhouse', 'lever', 'ashby', 'linkedin', 'adzuna', 'remotive', 'naukri', '', null, undefined]) expect(isDiscoverOnlySource(s)).toBe(false);
     expect(isDiscoverOnlySource('workday')).toBe(true);
     for (const s of ['Workday', ' workday ', 'HACKERNEWS']) expect(isDiscoverOnlySource(s)).toBe(true);
@@ -36,6 +40,8 @@ describe('enqueueOutreach forces apply_platform none for discover-only sources',
     expect(row(enqueueOutreach(db, queueItem('gh:acme:1', 'greenhouse'))).apply_platform).toBe('greenhouse');
     expect(row(enqueueOutreach(db, queueItem('unknown-job', 'lever'))).apply_platform).toBe('lever');
     expect(row(enqueueOutreach(db, queueItem('wd:acme:ext:1', null))).apply_platform).toBe('none');
+    saveJob(db, job('jobicy:abc', 'jobicy', 'https://jobicy.com/jobs/1-x'));
+    expect(row(enqueueOutreach(db, queueItem('jobicy:abc', 'greenhouse')))).toEqual({ apply_platform: 'none', email_to: 'a@b.co' });
   });
 });
 

@@ -111,7 +111,7 @@ describe('terminal-mode coaching text', () => {
   });
 
   it('sessions: only terminal mode prints why, the window text and the lose line on skip', async () => {
-    const script: ScriptItem[] = [{ confirm: false }, { confirm: false }, { confirm: false }];
+    const script: ScriptItem[] = [{ confirm: false }, { confirm: false }];
     const a = mk('agent', script);
     const t = mk('terminal', script);
     expect(await sessionsStep.run(a.ctx)).toBe('done');
@@ -119,7 +119,6 @@ describe('terminal-mode coaching text', () => {
     const want = coachLines([
       'sessions.why',
       'sessions.window',
-      'sessions.lose.linkedin_burner',
       'sessions.lose.linkedin_main',
       'sessions.lose.naukri',
     ]);

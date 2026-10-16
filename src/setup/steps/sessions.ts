@@ -1,6 +1,6 @@
 // src/setup/steps/sessions.ts
-// Step 5: LinkedIn (burner, main) and Naukri browser sessions, captured by the existing
-// scripts in a headed browser. The step never reads a state file: presence comes from
+// Step 5: LinkedIn (main) and Naukri browser sessions, captured by npm run linkedin:login and
+// npm run naukri:login in headed real Chrome. The step never reads a state file: presence comes from
 // fs.exists and validity from the doctor `sessions` check.
 import path from 'node:path';
 import { setupAccountChecks } from '../../platform/checksSetup.js';
@@ -18,24 +18,17 @@ interface Account {
 
 const ACCOUNTS: Account[] = [
   {
-    name: 'linkedin_burner',
-    label: 'LinkedIn burner',
-    file: 'linkedin-burner-state.json',
-    argv: ['tsx', 'scripts/save-linkedin-session.ts', 'burner'],
-    who: 'your BURNER LinkedIn account (used only for Easy Apply)',
-  },
-  {
     name: 'linkedin_main',
     label: 'LinkedIn main',
     file: 'linkedin-main-state.json',
-    argv: ['tsx', 'scripts/save-linkedin-session.ts', 'main'],
-    who: 'your MAIN LinkedIn account (used only for connection requests)',
+    argv: ['tsx', 'scripts/linkedin-login.ts', '--account', 'main'],
+    who: 'your MAIN LinkedIn account (connection requests and messages)',
   },
   {
     name: 'naukri',
     label: 'Naukri',
     file: 'naukri-state.json',
-    argv: ['tsx', 'scripts/save-naukri-session.ts'],
+    argv: ['tsx', 'scripts/naukri-login.ts', '--account', 'main'],
     who: 'your Naukri account',
   },
 ];
@@ -56,8 +49,8 @@ export const sessionsStep: SetupStep = {
     const { io } = ctx;
     const dir = path.join(ctx.root, 'secrets');
     ctx.fs.mkdirp(dir, 0o700);
-    io.say('Safety rule: the BURNER LinkedIn account is for applying, the MAIN account is for');
-    io.say('connection requests. They are never swapped: log in to the right one for each prompt.');
+    io.say('Safety rule: log in the MAIN LinkedIn account and your own Naukri account, in real Chrome.');
+    io.say('The login commands pass --account main, so no environment variable is needed.');
 
     say(ctx, 'sessions.why');
     say(ctx, 'sessions.window');
@@ -76,7 +69,7 @@ export const sessionsStep: SetupStep = {
         say(ctx, `sessions.lose.${a.name}`);
         continue;
       }
-      io.say(`A browser window opens. Log in with ${a.who}, then return here and press Enter.`);
+      io.say(`A Chrome window opens. Log in with ${a.who}, then return here and press Enter.`);
       const code = await ctx.spawnInteractive('npx', a.argv);
       if (ctx.fs.exists(out)) ctx.fs.chmod(out, 0o600);
       if (code !== 0) {

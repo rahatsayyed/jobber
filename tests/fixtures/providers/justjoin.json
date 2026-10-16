@@ -1,0 +1,27 @@
+{
+  "data": [
+    {
+      "slug": "lambda-react-developer-warsaw",
+      "title": "React Developer",
+      "companyName": "Lambda",
+      "workplaceType": "remote",
+      "locations": [
+        {
+          "city": "Warsaw"
+        }
+      ],
+      "city": "Warsaw",
+      "publishedAt": "2025-10-02T07:00:00Z"
+    },
+    {
+      "slug": "bad slug",
+      "title": "Bad Slug",
+      "companyName": "B"
+    }
+  ],
+  "meta": {
+    "next": {
+      "cursor": null
+    }
+  }
+}

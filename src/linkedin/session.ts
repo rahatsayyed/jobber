@@ -138,6 +138,11 @@ export function acquireLock(
 
 export function saveStateAtomic(p: string, state: unknown): void {
   if (!hasLiAt(state)) throw new Error('refusing to save a session with no li_at cookie');
+  writeStateAtomic(p, state);
+}
+
+// Atomic 0600 write with no cookie check (callers do their own, e.g. the Naukri login).
+export function writeStateAtomic(p: string, state: unknown): void {
   mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
   const tmp = `${p}.tmp-${process.pid}`;
   try { unlinkSync(tmp); } catch { /* none */ }

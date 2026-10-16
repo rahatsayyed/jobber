@@ -127,25 +127,24 @@ describe('gmailStep', () => {
 });
 
 describe('sessionsStep', () => {
-  it('captures all three accounts with exact argv, chmods 600, restates the safety rule', async () => {
-    const t = setup([{ confirm: true }, { confirm: true }, { confirm: true }]);
+  it('captures both accounts with exact argv, chmods 600, restates the safety rule', async () => {
+    const t = setup([{ confirm: true }, { confirm: true }]);
     expect(await sessionsStep.run(t.ctx)).toBe('done');
     expect(t.spawns.map((s) => [s.cmd, ...s.args])).toEqual([
-      ['npx', 'tsx', 'scripts/save-linkedin-session.ts', 'burner'],
-      ['npx', 'tsx', 'scripts/save-linkedin-session.ts', 'main'],
-      ['npx', 'tsx', 'scripts/save-naukri-session.ts'],
+      ['npx', 'tsx', 'scripts/linkedin-login.ts', '--account', 'main'],
+      ['npx', 'tsx', 'scripts/naukri-login.ts', '--account', 'main'],
     ]);
     expect(t.dirs.get('proj/secrets')).toBe(0o700);
     const said = t.sio.transcript.join('\n');
-    expect(said).toMatch(/BURNER.*applying/);
-    expect(said).toMatch(/MAIN.*connection requests/);
-    expect(said).toContain('never swapped');
+    expect(said).toMatch(/MAIN LinkedIn/);
+    expect(said).toContain('real Chrome');
+    expect(said).not.toMatch(/BURNER/);
     expect(t.reads.some((p) => SECRET_RE.test(p))).toBe(false);
     t.sio.assertDone();
   });
 
   it('chmods 600 an output file the script created', async () => {
-    const t = setup([{ confirm: false }, { confirm: false }, { confirm: true }]);
+    const t = setup([{ confirm: false }, { confirm: true }]);
     t.ctx.spawnInteractive = async (cmd, args) => {
       t.spawns.push({ cmd, args });
       t.store.set('proj/secrets/naukri-state.json', NAUKRI_STATE);
@@ -158,28 +157,23 @@ describe('sessionsStep', () => {
   it('skips a present valid session without capturing and records declines', async () => {
     const t = setup(
       [
-        { confirm: false }, // burner already captured: redo? no
-        { confirm: false }, // main: capture? no -> skipped
+        { confirm: false }, // main already captured: redo? no
         { confirm: false }, // naukri: capture? no -> skipped
       ],
-      { 'proj/secrets/linkedin-burner-state.json': GOOD_STATE },
+      { 'proj/secrets/linkedin-main-state.json': GOOD_STATE },
     );
     expect(await sessionsStep.run(t.ctx)).toBe('done');
     expect(t.spawns).toEqual([]);
-    expect(t.ctx.state.answers).toEqual({
-      session_linkedin_main: 'skipped',
-      session_naukri: 'skipped',
-    });
+    expect(t.ctx.state.answers).toEqual({ session_naukri: 'skipped' });
     expect(t.reads.some((p) => SECRET_RE.test(p))).toBe(false);
     t.sio.assertDone();
   });
 
   it('declining one account still returns done and captures the rest', async () => {
-    const t = setup([{ confirm: false }, { confirm: false }, { confirm: true }]);
+    const t = setup([{ confirm: false }, { confirm: true }]);
     expect(await sessionsStep.run(t.ctx)).toBe('done');
-    expect(t.ctx.state.answers.session_linkedin_burner).toBe('skipped');
     expect(t.ctx.state.answers.session_linkedin_main).toBe('skipped');
     expect(t.spawns).toHaveLength(1);
-    expect(t.spawns[0].args).toEqual(['tsx', 'scripts/save-naukri-session.ts']);
+    expect(t.spawns[0].args).toEqual(['tsx', 'scripts/naukri-login.ts', '--account', 'main']);
   });
 });

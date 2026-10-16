@@ -1,0 +1,22 @@
+{
+  "data": {
+    "data": [
+      {
+        "title": "Full Stack Developer",
+        "urlJobApplay": "https://careers.flowxtra.com/job/123",
+        "name_company": "Theta",
+        "city_company": "Dubai",
+        "state_company": "",
+        "country_company": "UAE",
+        "workplace": "Remote",
+        "date_share": "2025-10-02T08:00:00Z"
+      },
+      {
+        "title": "Off Host",
+        "urlJobApplay": "https://evil.example.com/j",
+        "name_company": "E"
+      }
+    ],
+    "next_page_url": null
+  }
+}

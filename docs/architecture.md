@@ -160,10 +160,10 @@ Start with `npm run doctor` and `npm run status -- health`, then use the row tha
 | Resume or email blocked by fact gate | `src/resumeFacts.ts` | `user-data.example/` shapes, `src/mcp/resume.ts` | [config-reference.md](config-reference.md) |
 | Style gate rejects outreach text | `src/safety/styleGate.ts` | `config/ai-tells.json` | [config-reference.md](config-reference.md) |
 | LinkedIn action refused | `src/mcp/linkedin.ts` | `src/linkedin/verify.ts`, `npm run status -- working` | [operations.md](operations.md) |
-| LinkedIn session locked or expired | `src/platform/lock.ts` | `scripts/save-linkedin-session.ts` | [linkedin-sessions-setup.md](linkedin-sessions-setup.md) |
+| LinkedIn session locked or expired | `src/platform/lock.ts` | `scripts/linkedin-login.ts` (`npm run linkedin:login`) | [linkedin-sessions-setup.md](linkedin-sessions-setup.md) |
 | LinkedIn checkpoint or CAPTCHA halt | `npm run status -- working` | `scripts/linkedin-clear-halt.ts` (owner only) | [operations.md](operations.md) |
 | Layout drift halt | `npm run layout -- status` | `src/layout/store.ts`, `src/layout/classify.ts` | [layout-memory.md](layout-memory.md) |
-| Naukri blocked or empty | `src/sources/naukri.ts` | `src/mcp/naukri.ts`, `scripts/save-naukri-session.ts` | [naukri-session-setup.md](naukri-session-setup.md) |
+| Naukri blocked or empty | `src/sources/naukri.ts` | `src/mcp/naukri.ts`, `scripts/naukri-login.ts` (`npm run naukri:login`) | [naukri-session-setup.md](naukri-session-setup.md) |
 | Classifier blocked a read or send | `src/safety/screen.ts` | `config/classifier-models.json`, `npm run models -- list` | [classifier-models.md](classifier-models.md) |
 | Tool denied by hook | `.claude/hooks/tool-allowlist.cjs` | `config/run-profiles.json`, `config/worker-tools.json` | [operations.md](operations.md) |
 | Path denied outside project | `.claude/hooks/block-outside-project.cjs` | `.claude/settings.json` | [operations.md](operations.md) |
