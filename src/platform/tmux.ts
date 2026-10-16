@@ -4,8 +4,8 @@ import { execFile } from 'node:child_process';
 export type Run = (
   cmd: string,
   args: string[],
-  opts?: { cwd?: string; input?: string; env?: Record<string, string> },
-) => Promise<{ stdout: string; code: number }>;
+  opts?: { cwd?: string; input?: string; env?: Record<string, string>; timeoutMs?: number },
+) => Promise<{ stdout: string; code: number; stderr?: string }>;
 
 export const defaultRun: Run = (cmd, args, opts) =>
   new Promise((resolve) => {
@@ -15,11 +15,11 @@ export const defaultRun: Run = (cmd, args, opts) =>
       {
         cwd: opts?.cwd,
         env: opts?.env ? { ...process.env, ...opts.env } : undefined,
-        timeout: 10_000,
-        maxBuffer: 1_000_000,
+        timeout: opts?.timeoutMs ?? 10_000,
+        maxBuffer: opts?.timeoutMs ? 10_000_000 : 1_000_000,
       },
-      (err, stdout) => {
-        resolve({ stdout: String(stdout ?? ''), code: err ? 1 : 0 });
+      (err, stdout, stderr) => {
+        resolve({ stdout: String(stdout ?? ''), code: err ? 1 : 0, stderr: String(stderr ?? '') });
       },
     );
     if (opts?.input !== undefined) {
