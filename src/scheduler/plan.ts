@@ -40,7 +40,7 @@ export const LINKEDIN_DISCOVER_EVERY_HOURS = 6;
 /** Hours between code passes over the script providers (a constant, no env key). */
 export const SCRIPT_DISCOVER_EVERY_HOURS = 6;
 /** Most unscored jobs one wake's pipeline stage takes (a constant, no env key); the rest wait for the next wake. */
-export const PIPELINE_MAX_JOBS_PER_WAKE = 25;
+export const PIPELINE_MAX_JOBS_PER_WAKE = 10; // two matcher batches of 5; larger batches exceed one tool result (22KB passed, 54KB did not)
 /** Most source_tasks one source-operator task may work per wake. */
 export const SOURCE_TASK_QUOTA = 10;
 

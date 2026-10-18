@@ -250,13 +250,13 @@ describe('list_unscored_jobs', () => {
     expect((db.prepare("SELECT length(description) AS n FROM jobs WHERE id = 'big'").get() as { n: number }).n).toBe(30000);
     expect(JSON.stringify(listUnscoredJobs(db, { limit: 25 })).length).toBeLessThan(25 * (UNSCORED_DESCRIPTION_CHARS + 1500));
   });
-  it('a full wake batch of 25 oversized postings serializes under 60000 characters', () => {
+  it('a full wake batch of oversized postings serializes under 30000 characters (one tool result: 22KB passed, 54KB did not)', () => {
     const db = openDb(':memory:');
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < PIPELINE_MAX_JOBS_PER_WAKE; i++) {
       add(db, `j${i}`);
       db.prepare('UPDATE jobs SET description = ? WHERE id = ?').run('y'.repeat(50000), `j${i}`);
     }
-    expect(JSON.stringify(listUnscoredJobs(db, { limit: 25 })).length).toBeLessThan(60000);
+    expect(JSON.stringify(listUnscoredJobs(db, { limit: PIPELINE_MAX_JOBS_PER_WAKE })).length).toBeLessThan(30000);
   });
   it('apply_class is deterministic from channelsFor', () => {
     const db = openDb(':memory:');
@@ -270,11 +270,11 @@ describe('list_unscored_jobs', () => {
   it('the pipeline quota is capped per wake', () => {
     const d = run(plan({ due: due({ unmatchedJobs: 400, inboxLastCheckedMinAgo: 1 }) }));
     expect(d.stages?.find((s) => s.kind === 'pipeline')?.quota).toBe(PIPELINE_MAX_JOBS_PER_WAKE);
-    expect(PIPELINE_MAX_JOBS_PER_WAKE).toBe(25);
+    expect(PIPELINE_MAX_JOBS_PER_WAKE).toBe(10);
   });
   it('P1 names the tool, the cap and apply_class; the direct-call list names every tool used', () => {
     const t = pipelineLines({ matchThreshold: 60, sendLimit: 1, targetRegions: 'T', followupsAutonomous: false }).join('\n');
-    expect(t).toContain('`db.list_unscored_jobs({limit: 25})`');
+    expect(t).toContain(`\`db.list_unscored_jobs({limit: ${PIPELINE_MAX_JOBS_PER_WAKE}})\``);
     expect(t).toContain('apply_class');
     for (const c of ['db.sweep_deadlines', 'db.list_unscored_jobs', 'db.save_match_result', 'gates.apply_vetoes', 'db.mark_excluded', 'job-fetch.source_status', 'job-fetch.board_status']) {
       expect(t.split('\n')[0]).toContain(`\`${c}\``);
