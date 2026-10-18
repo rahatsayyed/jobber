@@ -82,6 +82,33 @@ describe('settings frontend lint', () => {
     expect(t).toContain('aria-live');
   });
 
+  it('files editor and backups views: two-piece API use, accessible status, wired into the shell', () => {
+    for (const f of ['settings-files.js', 'settings-backups.js']) {
+      expect(settingsFiles).toContain(f);
+      const t = read('views', f);
+      expect(t).toContain('SETTINGS_API');
+      expect(t.includes('/api/' + 'settings'), f).toBe(false);
+      expect(t).toContain("role: 'status'");
+      expect(t).toContain('aria-live');
+      expect(/\.(href|src)\s*=/.test(t), f).toBe(false);
+    }
+    const files = read('views', 'settings-files.js');
+    expect(files).toContain('Form');
+    expect(files).toContain('Raw JSON');
+    expect(read('views', 'settings-diff.js')).toContain('The file changed on disk since you opened this page.');
+    expect(files).toMatch(/\.spellcheck = false/);
+    const settings = read('views', 'settings.js');
+    expect(settings).toContain('renderFiles');
+    expect(settings).toContain('renderBackups');
+    const backups = read('views', 'settings-backups.js');
+    expect(backups).toContain('Compare with current');
+    expect(backups).toContain('Restore');
+    expect(backups).toContain('/rollback/preview');
+    expect(backups).toContain('/rollback/apply');
+    expect(backups).toContain('frictionControls');
+    expect(read('views', 'settings-diff.js')).toContain('Type ${fr.phrase} to confirm');
+  });
+
   it('css gives the banner distinct border styles and 44px targets', () => {
     const c = read('style.css');
     expect(c).toContain('#banner');

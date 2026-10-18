@@ -116,4 +116,28 @@ header { top: var(--banner-h, 0px); }
 .diff-row { display: grid; gap: 2px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; overflow-wrap: anywhere; }
 .env-bar { position: sticky; bottom: 0; z-index: 1; display: flex; gap: 12px; align-items: center; justify-content: space-between;
   padding: 8px 0; background: var(--bg); border-top: 1px solid var(--line); }
-.env-status:focus, .env-review h3:focus { outline: 3px solid var(--accent); outline-offset: 2px; }
+/* Settings: files editor and backups. Changes are marked with words and a symbol, never colour alone. */
+.files-ul { padding-left: 0; list-style: none; display: grid; gap: 8px; }
+.file-row { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--card); overflow-wrap: anywhere; }
+.file-row button, .file-head button, .rows-editor button, .backups-list button { min-height: 44px; margin: 4px 4px 0 0; }
+.file-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.file-field { border-top: 1px solid var(--line); padding: 8px 0; }
+.file-field input[type="text"], .file-field input[type="number"], .file-field select, .rows-editor select, #backups-target, #file-phrase, #rollback-phrase {
+  min-height: 44px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); max-width: 100%; }
+.file-field input[type="text"], .file-field input[type="number"] { width: 100%; }
+.file-field input[type="checkbox"], .rows-editor input[type="checkbox"] { width: 24px; height: 24px; vertical-align: middle; }
+.row-item { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin: 8px 0; }
+.row-fields { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 240px; min-width: 0; }
+.row-fields .cell { flex: 1 1 140px; min-width: 0; display: grid; gap: 2px; }
+.cell-label { font-size: 0.8rem; }
+#file-raw { width: 100%; min-height: 50vh; font-family: ui-monospace, Menlo, monospace; font-size: 0.9rem; padding: 8px 12px;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); white-space: pre; overflow: auto; }
+.parse-status:empty { display: none; }
+.file-diff { gap: 2px; }
+.diff-line { display: flex; gap: 8px; font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; overflow-wrap: anywhere; padding: 2px 6px; border-radius: 4px; }
+.diff-line .ln { min-width: 3ch; color: var(--muted); text-align: right; }
+.diff-add { border-left: 4px solid var(--accent); }
+.diff-del { border-left: 4px double var(--bad); text-decoration: line-through; }
+.diff-fmt { opacity: 0.75; }
+.diff-gap { padding: 2px 6px; }
+.env-status:focus, .env-review h3:focus, .env-review h4:focus { outline: 3px solid var(--accent); outline-offset: 2px; }

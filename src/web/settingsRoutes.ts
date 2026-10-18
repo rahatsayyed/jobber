@@ -411,7 +411,10 @@ export function createSettingsRoutes(deps: SettingsDeps, env: SettingsRouteEnv):
 
       const out = p.commit(); // (10)
       p.afterApply?.();
-      if (p.restart.length > 0) deps.pendingRestart?.mark(p.restart);
+      if (p.restart.length > 0) {
+        // the change is already written and backed up: a tracking failure must not turn it into an error reply
+        try { deps.pendingRestart?.mark(p.restart); } catch { /* the banner just misses this entry */ }
+      }
       auditRow(p.kind, c, p.note, planHash); // (11)
       reply(c, 200, { ok: true, backupId: out.backupId, newEtag: out.newEtag, restart: p.restart, pendingRestart: deps.pendingRestart ? deps.pendingRestart.list() : [] });
     } catch (e) {

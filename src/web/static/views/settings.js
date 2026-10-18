@@ -1,10 +1,12 @@
 // src/web/static/views/settings.js
 // Settings shell: tabs Environment, Files, Backups and the read-only notice when editing is off. Reads the settings
 // meta; creates no write controls while editEnabled is not true. The Environment tab is settings-env.js; Files and
-// Backups are placeholders filled by a later task.
+// Backups are settings-files.js and settings-backups.js.
 import { getSettingsMeta } from '../api.js';
 import { button, clear, el, notice } from '../dom.js';
+import { renderBackups } from './settings-backups.js';
 import { renderEnv } from './settings-env.js';
+import { renderFiles } from './settings-files.js';
 
 export const READ_ONLY_TEXT = 'Read only. To enable editing set WEB_SETTINGS_EDIT=true in .env and restart the dashboard.';
 export const TABS = [['environment', 'Environment'], ['files', 'Files'], ['backups', 'Backups']];
@@ -43,7 +45,16 @@ export async function render({ root, onCleanup: addCleanup }) {
       renderEnv({ host, meta, onCleanup: (f) => tabCleanups.push(f), gotoBackups: () => show('backups') });
       return;
     }
-    panel.append(el('p', { class: 'muted' }, `${entry[1]} settings load here.`));
+    if (entry[0] === 'files' || (entry[0] === 'backups' && editable)) {
+      const host = el('div');
+      panel.append(host);
+      const args = { host, meta, onCleanup: (f) => tabCleanups.push(f), gotoBackups: () => show('backups') };
+      (entry[0] === 'files' ? renderFiles(args) : renderBackups(args)).catch(() => {
+        clear(host).append(notice('Could not load this tab. Try again.', 'error'));
+      });
+      return;
+    }
+    panel.append(el('p', { class: 'muted' }, 'Backups can be restored only while editing is on.'));
   }
   root.append(tabs, panel);
   show(TABS[0][0]);
