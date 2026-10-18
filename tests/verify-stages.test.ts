@@ -1,5 +1,5 @@
 // tests/verify-stages.test.ts
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -75,11 +75,12 @@ describe('doctor and classifier-smoke', () => {
 });
 
 describe('launcher', () => {
-  it('runs hunt, outreach_wake and setup_guide --interactive --print-args', async () => {
+  it('runs outreach_wake and setup_guide --interactive --print-args, only for profiles that exist', async () => {
     const seen: string[][] = [];
     const r = await S.launcher.run(mk({ run: async (_c, a) => { seen.push(a); return { stdout: 'claude --safe', code: 0 }; } }));
     expect(r.status).toBe('pass');
-    expect(seen.some((a) => a.includes('hunt') && a.includes('--print-args'))).toBe(true);
+    const profiles = Object.keys((JSON.parse(readFileSync('config/run-profiles.json', 'utf8')) as { profiles: Record<string, unknown> }).profiles);
+    for (const a of seen) expect(profiles).toContain(a[2]);
     expect(seen.some((a) => a.includes('outreach_wake') && a.includes('--print-args'))).toBe(true);
     expect(seen.some((a) => a.includes('setup_guide') && a.includes('--interactive') && a.includes('--print-args'))).toBe(true);
   });

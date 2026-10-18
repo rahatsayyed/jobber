@@ -85,7 +85,6 @@ const launcher: Stage = {
   id: 'launcher', title: 'restricted launcher argv', skippable: false,
   async run(ctx) {
     const cases: Array<{ profile: string; extra: string[] }> = [
-      { profile: 'hunt', extra: [] },
       { profile: 'outreach_wake', extra: [] },
       { profile: 'setup_guide', extra: ['--interactive'] },
     ];
@@ -95,7 +94,7 @@ const launcher: Stage = {
       const m = BAD_ARGV.exec(r.stdout);
       if (m) return fail(`${c.profile}: argv contains "${m[0]}"`, `launcher ${c.profile} printed a forbidden flag`);
     }
-    return pass('hunt, outreach_wake and setup_guide print safe argv');
+    return pass('outreach_wake and setup_guide print safe argv');
   },
 };
 
