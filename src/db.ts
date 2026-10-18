@@ -850,7 +850,7 @@ export const MATCH_FAIL_LIMIT = 2;
  * 25 of those exceed the size limit of one tool result and the wake could then score a single job. The stored text is not cut,
  * and the veto gates read it from the db.
  */
-export const UNSCORED_DESCRIPTION_CHARS = 2500;
+export const UNSCORED_DESCRIPTION_CHARS = 1500;
 
 export interface UnscoredJob extends Job {
   /** `apply_capable`, or the closed reason code from channelsFor (`discover_only_source`, `apply_tier:<tier>`, `held_review`). */

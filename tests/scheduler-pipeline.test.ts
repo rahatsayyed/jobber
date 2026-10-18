@@ -250,6 +250,14 @@ describe('list_unscored_jobs', () => {
     expect((db.prepare("SELECT length(description) AS n FROM jobs WHERE id = 'big'").get() as { n: number }).n).toBe(30000);
     expect(JSON.stringify(listUnscoredJobs(db, { limit: 25 })).length).toBeLessThan(25 * (UNSCORED_DESCRIPTION_CHARS + 1500));
   });
+  it('a full wake batch of 25 oversized postings serializes under 60000 characters', () => {
+    const db = openDb(':memory:');
+    for (let i = 0; i < 25; i++) {
+      add(db, `j${i}`);
+      db.prepare('UPDATE jobs SET description = ? WHERE id = ?').run('y'.repeat(50000), `j${i}`);
+    }
+    expect(JSON.stringify(listUnscoredJobs(db, { limit: 25 })).length).toBeLessThan(60000);
+  });
   it('apply_class is deterministic from channelsFor', () => {
     const db = openDb(':memory:');
     add(db, 'gh');
