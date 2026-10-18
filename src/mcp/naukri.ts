@@ -440,7 +440,11 @@ function screenFn(deps: NaukriDeps): (t: string, p: ScreenPurpose) => Promise<Sc
 async function emit(out: string, deps: NaukriDeps): Promise<string> {
   let v: ScreenVerdict;
   try {
-    v = await screenFn(deps)(out, 'read');
+    // Screen the page text only: the tool's own header and untrusted-text note read like an instruction to the classifier.
+    const a = out.indexOf('<<<PAGE_TEXT\n');
+    const b = out.lastIndexOf('\nPAGE_TEXT>>>');
+    const pageText = a >= 0 && b > a ? out.slice(a + '<<<PAGE_TEXT\n'.length, b) : out;
+    v = await screenFn(deps)(pageText, 'read');
   } catch {
     return jsonOut({ status: 'blocked', code: 'classifier_unavailable' });
   }

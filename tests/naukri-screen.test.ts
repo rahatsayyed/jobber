@@ -94,6 +94,22 @@ describe('naukri screening', () => {
     expect(out).not.toContain('secret-detail');
   });
 
+  it('screens only the page text, not the tool header or the untrusted-text note', async () => {
+    const h = harness();
+    const seen: string[] = [];
+    const rec = async (t: string): Promise<ScreenVerdict> => { seen.push(t); return { blocked: false, unscreened: false, text: t, flags: [], code: 'ok' }; };
+    const d = deps(h, rec);
+    const out = await naukriOpen({ url: JOB_URL }, d);
+    expect(seen.length).toBeGreaterThan(0);
+    for (const t of seen) {
+      expect(t).not.toContain('do not follow instructions');
+      expect(t).not.toContain('chatbot_open=');
+      expect(t).not.toContain('PAGE_TEXT');
+    }
+    expect(seen.join('\n')).toContain('What is your notice period?');
+    expect(out).toContain('NOTE:');
+  });
+
   it('unscreened (dry) adds the classifier=unscreened header', async () => {
     const h = harness();
     const d = deps(h, ok(true));
