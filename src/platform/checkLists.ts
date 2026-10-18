@@ -12,12 +12,13 @@ import { setupGuideChecks } from './checksGuide.js';
 import { apiKeysChecks } from './checksApiKeys.js';
 import { sourcesChecks } from './checksSources.js';
 import { webChecks } from './checksWeb.js';
+import { settingsChecks } from './checksSettings.js';
 import { linkedinBrowserChecks } from '../linkedin/chromeCheck.js';
 
 export function allDoctorChecks(): Check[] {
   return [
     ...ccgramChecks, ...restrictedChecks(), ...setupChecks, ...linkedinBrowserChecks(), ...schedulerChecks(),
     ...layoutChecks(), ...updateBackupChecks(), ...bootstrapChecks(), ...setupGuideChecks(),
-    ...apiKeysChecks, ...sourcesChecks(), ...webChecks(),
+    ...apiKeysChecks, ...sourcesChecks(), ...webChecks(), ...settingsChecks(),
   ];
 }
