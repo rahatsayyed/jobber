@@ -138,6 +138,16 @@ describe('SNAPSHOT_SRC leak paths (fake computed style)', () => {
     expect(liveBodyText({ clip: 'rect(1px, 1px, 1px, 1px)' }, 'wrapleak2', r, true)).not.toContain('wrapleak2');
     expect(liveBodyText({}, 'wrapok', r, true)).toContain('wrapok');
   });
+  it('keeps children of a display:contents wrapper (zero box, no own rendering) visible', () => {
+    const zero = { width: 0, height: 0, right: 0, bottom: 0 };
+    expect(liveBodyText({ display: 'contents' }, 'contentsok', zero, true)).toContain('contentsok');
+  });
+  it('still hides children of a display:contents wrapper that is clipped, transparent or aria-hidden-style hidden', () => {
+    const zero = { width: 0, height: 0, right: 0, bottom: 0 };
+    expect(liveBodyText({ display: 'contents', clipPath: 'inset(50%)' }, 'contentsleak', zero, true)).not.toContain('contentsleak');
+    expect(liveBodyText({ display: 'contents', opacity: '0' }, 'contentsleak2', zero, true)).not.toContain('contentsleak2');
+    expect(liveBodyText({ display: 'contents', visibility: 'hidden' }, 'contentsleak3', zero, true)).not.toContain('contentsleak3');
+  });
   it('hides text-indent of -200px or more negative', () => {
     expect(liveBodyText({ textIndent: '-200px' }, 'indleak')).not.toContain('indleak');
     expect(liveBodyText({ textIndent: '-10px' }, 'indok')).toContain('indok');

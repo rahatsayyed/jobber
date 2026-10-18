@@ -81,13 +81,17 @@ export const SNAPSHOT_SRC = String.raw`(function () {
       if (cp.indexOf('inset(100%') === 0) return true;
       var clp = String(cs.clip || 'auto').trim().toLowerCase();
       if (clp !== 'auto') return true;
-      var r = e.getBoundingClientRect();
-      if (!r) return true;
-      if (tag !== 'HTML' && tag !== 'BODY' && (r.width <= 0 || r.height <= 0)) return true;
-      var ovs = String(cs.overflow || '') + ' ' + String(cs.overflowX || '') + ' ' + String(cs.overflowY || '');
-      if ((ovs.indexOf('hidden') >= 0 || ovs.indexOf('clip') >= 0) && (r.width <= 2 || r.height <= 2)) return true;
-      var sx = window.scrollX || 0, sy = window.scrollY || 0;
-      if (r.right + sx < -200 || r.bottom + sy < -200) return true;
+      // display:contents has no box (0x0 rect) and no overflow clipping of its own: its children are boxed
+      // and checked on their own. Every other check above and below still applies to it.
+      if (cs.display !== 'contents') {
+        var r = e.getBoundingClientRect();
+        if (!r) return true;
+        if (tag !== 'HTML' && tag !== 'BODY' && (r.width <= 0 || r.height <= 0)) return true;
+        var ovs = String(cs.overflow || '') + ' ' + String(cs.overflowX || '') + ' ' + String(cs.overflowY || '');
+        if ((ovs.indexOf('hidden') >= 0 || ovs.indexOf('clip') >= 0) && (r.width <= 2 || r.height <= 2)) return true;
+        var sx = window.scrollX || 0, sy = window.scrollY || 0;
+        if (r.right + sx < -200 || r.bottom + sy < -200) return true;
+      }
       if (own) {
         var bg = resolveBg(e);
         if (!bg) return true;
