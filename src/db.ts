@@ -845,10 +845,19 @@ export function saveMatchResultsChecked(
 /** Rejected match saves after which a job is no longer offered to the wake pipeline. */
 export const MATCH_FAIL_LIMIT = 2;
 
+/**
+ * Longest description `listUnscoredJobs` hands to the wake session. An aggregator posting can run to 50000 characters of HTML;
+ * 25 of those exceed the size limit of one tool result and the wake could then score a single job. The stored text is not cut,
+ * and the veto gates read it from the db.
+ */
+export const UNSCORED_DESCRIPTION_CHARS = 2500;
+
 export interface UnscoredJob extends Job {
   /** `apply_capable`, or the closed reason code from channelsFor (`discover_only_source`, `apply_tier:<tier>`, `held_review`). */
   apply_class: string;
   channels: ChannelVerdict[];
+  /** Set only when `description` was cut to UNSCORED_DESCRIPTION_CHARS. */
+  description_truncated?: true;
 }
 
 /**
@@ -870,7 +879,13 @@ export function listUnscoredJobs(db: BetterSqlite3.Database, opts: { limit?: num
     };
     const channels = channelsFor(job);
     const apply = channels.find((c) => c.channel === 'apply');
-    return { ...job, apply_class: apply?.eligible ? 'apply_capable' : (apply?.reason ?? 'apply_tier:none'), channels };
+    const cut = job.description.length > UNSCORED_DESCRIPTION_CHARS;
+    return {
+      ...job,
+      ...(cut ? { description: job.description.slice(0, UNSCORED_DESCRIPTION_CHARS), description_truncated: true as const } : {}),
+      apply_class: apply?.eligible ? 'apply_capable' : (apply?.reason ?? 'apply_tier:none'),
+      channels,
+    };
   });
 }
 

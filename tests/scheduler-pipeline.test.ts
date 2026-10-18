@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, listUnscoredJobs, saveMatchResultsChecked, MATCH_FAIL_LIMIT, type Job } from '../src/db.js';
+import { openDb, listUnscoredJobs, saveMatchResultsChecked, MATCH_FAIL_LIMIT, UNSCORED_DESCRIPTION_CHARS, type Job } from '../src/db.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
 import type { PacingConfig } from '../src/outreach/pacing.js';
@@ -235,6 +235,20 @@ describe('list_unscored_jobs', () => {
     add(db, 'a');
     saveMatchResultsChecked(db, [{ job_id: 'a', error: 'overflow' } as never]);
     expect(listUnscoredJobs(db)).toHaveLength(1);
+  });
+  it('caps the description handed to the wake so 25 jobs fit one tool result, and leaves the stored text alone', () => {
+    const db = openDb(':memory:');
+    add(db, 'big');
+    add(db, 'small');
+    db.prepare("UPDATE jobs SET description = ? WHERE id = 'big'").run('x'.repeat(30000));
+    db.prepare("UPDATE jobs SET description = ? WHERE id = 'small'").run('short body');
+    const rows = Object.fromEntries(listUnscoredJobs(db).map((r) => [r.id, r]));
+    expect(rows.big.description.length).toBeLessThanOrEqual(UNSCORED_DESCRIPTION_CHARS);
+    expect(rows.big.description_truncated).toBe(true);
+    expect(rows.small.description).toBe('short body');
+    expect(rows.small.description_truncated).toBeUndefined();
+    expect((db.prepare("SELECT length(description) AS n FROM jobs WHERE id = 'big'").get() as { n: number }).n).toBe(30000);
+    expect(JSON.stringify(listUnscoredJobs(db, { limit: 25 })).length).toBeLessThan(25 * (UNSCORED_DESCRIPTION_CHARS + 1500));
   });
   it('apply_class is deterministic from channelsFor', () => {
     const db = openDb(':memory:');
