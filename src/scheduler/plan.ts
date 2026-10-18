@@ -17,7 +17,7 @@ export type TaskKind =
 export type StageOperator = 'code' | 'source-operator' | 'pipeline' | 'mail-operator' | 'apply-operator';
 export interface Stage { operator: StageOperator; kind: TaskKind; quota: number }
 /** One step of the wake, in execution order (see `stepOrder`). */
-export interface Step { operator: Operator | StageOperator; kind: TaskKind; quota: number; platform?: Platform }
+export interface Step { operator: Operator | StageOperator; kind: TaskKind; quota: number; platform?: Platform; searches?: DiscoverSearches }
 /** Names of the searches the discover tasks may run: LinkedIn from config/linkedin-discovery.json, Naukri (`naukri`) from config/naukri-discovery.json. */
 export interface DiscoverSearches { jobs: string[]; posts: string[]; naukri?: string[] }
 /** `quota` of a LinkedIn discover task is the number of searches it may run this wake; of a Naukri one, the job pages it may open for descriptions. `searches` names them. */
@@ -198,7 +198,7 @@ export function stepOrder(d: Extract<WakeDecision, { kind: 'run' }>): Step[] {
   };
   stage('discover_scripts');
   stage('discover_agent');
-  for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'discover') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });
+  for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'discover') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota, searches: t.searches });
   stage('pipeline');
   stage('mail');
   for (const a of d.tasks) for (const t of a.tasks) if (t.kind !== 'discover') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });

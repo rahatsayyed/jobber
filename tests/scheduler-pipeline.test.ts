@@ -187,6 +187,15 @@ describe('prompt', () => {
     expect(p).toContain('SEND_LIMIT_PER_RUN=1');
     expect(p).toContain('pre-send reply check completed with no errors');
   });
+  it('names the discover searches in the ordered wake prompt', () => {
+    const d = run(plan({ due: due({ linkedinDiscoverLastHoursAgo: null, naukriSearchLastHoursAgo: null }) }));
+    const p = buildWakePrompt({
+      runId: 'r1', dryRun: true, burst: d.burst, tasks: d.tasks, budget: { maxToolCalls: 60, maxWallSec: 900, maxTokensApprox: 150000 },
+      allowed: ['linkedin', 'naukri'], now: NOW, order: stepOrder(d), pipeline: pipe,
+    });
+    expect(p).toContain('job searches: react; post searches: none');
+    expect(p).toContain('searches: react-india; quota is the job pages you may open for descriptions');
+  });
   it('the pipeline keeps the veto-gate stop rule and the threshold', () => {
     const t = pipelineLines(pipe).join('\n');
     expect(t).toContain('at least 60');

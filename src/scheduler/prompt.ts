@@ -1,8 +1,16 @@
 // src/scheduler/prompt.ts
 import type { Budget } from './budget.js';
 import type { Platform } from './control.js';
-import type { Assignment, Step } from './plan.js';
+import type { Assignment, DiscoverSearches, Step } from './plan.js';
 import { pipelineLines, type PipelinePromptInput } from './pipeline.js';
+
+/** The named searches of a discover task; the operator runs only these, so a missing list would leave it with nothing to do. */
+function searchNames(platform: Platform | undefined, kind: string, s: DiscoverSearches | undefined): string {
+  if (!s || kind !== 'discover') return '';
+  return platform === 'naukri'
+    ? ` (searches: ${s.jobs.join(', ') || 'none'}; quota is the job pages you may open for descriptions)`
+    : ` (job searches: ${s.jobs.join(', ') || 'none'}; post searches: ${s.posts.join(', ') || 'none'})`;
+}
 
 function orderLines(order: Step[], pipeline?: PipelinePromptInput): string[] {
   const L: string[] = ['Wake order (execute the steps in exactly this order, one Agent call per operator step; never reorder or skip ahead):'];
@@ -13,7 +21,7 @@ function orderLines(order: Step[], pipeline?: PipelinePromptInput): string[] {
     else if (s.operator === 'pipeline') L.push(`${at} Pipeline stage (${s.quota} unscored jobs waiting): see the pipeline instructions below.`);
     else if (s.operator === 'mail-operator') L.push(`${at} Dispatch \`mail-operator\` with task mail quota ${s.quota} (queued emails and email follow-ups).`);
     else if (s.operator === 'apply-operator') L.push(`${at} Dispatch \`apply-operator\` with task apply quota ${s.quota}.`);
-    else L.push(`${at} Dispatch \`${s.operator}\` for platform ${s.platform} with task: ${s.kind} quota ${s.quota}.`);
+    else L.push(`${at} Dispatch \`${s.operator}\` for platform ${s.platform} with task: ${s.kind} quota ${s.quota}${searchNames(s.platform, s.kind, s.searches)}.`);
   });
   if (order.some((s) => s.operator === 'pipeline' || s.operator === 'mail-operator') && pipeline) L.push(...pipelineLines(pipeline));
   return L;
