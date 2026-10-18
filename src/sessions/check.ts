@@ -25,12 +25,24 @@ export interface CheckDeps {
   halted?: () => string | null;
   settleMs?: number;
   maxAgeDays?: number;
+  /** Kill switch file; its existence stops the check before anything is opened. */
+  stopFile?: string;
 }
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const NAUKRI_SESSION_PATH = path.join(ROOT, 'secrets', 'naukri-state.json');
 export const LINKEDIN_FEED_URL = 'https://www.linkedin.com/feed/';
 export const NAUKRI_HOME_URL = 'https://www.naukri.com/mnjuser/homepage';
+
+/** True when the URL is https on exactly this host and its path starts with the prefix. */
+function onPage(url: string, host: string, prefix: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && u.hostname === host && u.pathname.startsWith(prefix);
+  } catch {
+    return false;
+  }
+}
 
 const ok = (): CheckOutcome => ({ ok: true, line: 'OK session valid' });
 const fail = (reason: string): CheckOutcome => ({ ok: false, line: `FAIL ${reason}` });
@@ -79,7 +91,10 @@ async function launch(launcher: LiLauncher | undefined): Promise<LiBrowser | nul
   try { return await launchRealChrome({ launcher }); } catch { return null; }
 }
 
+const killed = (deps: CheckDeps): boolean => existsSync(deps.stopFile ?? path.join(ROOT, '.jobber', 'STOP'));
+
 export async function checkLinkedinSession(deps: CheckDeps = {}): Promise<CheckOutcome> {
+  if (killed(deps)) return fail('killed');
   const sessionPath = deps.sessionPath ?? DEFAULT_SESSION_PATH;
   const chk = checkSessionFile(sessionPath, { now: (deps.now ?? (() => new Date()))(), maxAgeDays: deps.maxAgeDays });
   if (!chk.ok) return fail(linkedinFileReason(chk.reason));
@@ -99,9 +114,7 @@ export async function checkLinkedinSession(deps: CheckDeps = {}): Promise<CheckO
     if (block === 'checkpoint') return fail('checkpoint');
     if (block === 'restriction') return fail('blocked');
     if (block === 'session_expired') return fail('logged_out');
-    let pathname = '';
-    try { pathname = new URL(snap.url).pathname; } catch { /* leave empty */ }
-    return pathname.startsWith('/feed') ? ok() : fail('unexpected_page');
+    return onPage(snap.url, 'www.linkedin.com', '/feed') ? ok() : fail('unexpected_page');
   } catch {
     return fail('page_load_failed');
   } finally {
@@ -119,6 +132,7 @@ const NAUKRI_PROBE = String.raw`(function () {
 interface NaukriProbe { url: string; title: string; hasPassword: boolean; head: string }
 
 export async function checkNaukriSession(deps: CheckDeps = {}): Promise<CheckOutcome> {
+  if (killed(deps)) return fail('killed');
   const sessionPath = deps.sessionPath ?? NAUKRI_SESSION_PATH;
   const problem = naukriFileProblem(sessionPath, (deps.now ?? (() => new Date()))(), deps.maxAgeDays ?? 45);
   if (problem) return fail(problem);
@@ -134,8 +148,8 @@ export async function checkNaukriSession(deps: CheckDeps = {}): Promise<CheckOut
     const text = `${p.title}\n${p.head}`;
     if (/access denied/i.test(text)) return fail('blocked');
     if (/captcha|verify (that )?you('| a)re (a )?human/i.test(text)) return fail('captcha');
-    if (p.url.includes('/nlogin') || p.hasPassword) return fail('logged_out');
-    return p.url.includes('/mnjuser/') ? ok() : fail('unexpected_page');
+    if (p.url.includes('/nlogin') || p.hasPassword || /login[\s\S]{0,40}register/i.test(p.head)) return fail('logged_out');
+    return onPage(p.url, 'www.naukri.com', '/mnjuser/') ? ok() : fail('unexpected_page');
   } catch {
     return fail('page_load_failed');
   } finally {

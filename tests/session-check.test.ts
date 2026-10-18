@@ -193,6 +193,33 @@ describe('naukri session check', () => {
   });
 });
 
+describe('hardening', () => {
+  it('Naukri: /mnjuser/ on a look-alike host or with a login query is not OK', async () => {
+    const d = tmp();
+    const base = { sessionPath: sessionFile(d, 's.json', 'nauk_at') };
+    const other = fake({ url: 'https://evil.example/mnjuser/homepage', evalResult: nk({ url: 'https://evil.example/mnjuser/homepage' }) });
+    expect((await checkNaukriSession({ ...base, launcher: other.launcher })).line).toBe('FAIL unexpected_page');
+    const reg = fake({ url: 'x', evalResult: nk({ head: 'Login Register to continue' }) });
+    expect((await checkNaukriSession({ ...base, launcher: reg.launcher })).line).toBe('FAIL logged_out');
+  });
+  it('LinkedIn: /feed on another host is not OK', async () => {
+    const d = tmp();
+    const f = fake({ url: 'x', evalResult: snap({ url: 'https://evil.example/feed/' }) });
+    const r = await checkLinkedinSession({ sessionPath: sessionFile(d, 's.json', 'li_at'), lockPath: path.join(d, 'l.lock'), launcher: f.launcher });
+    expect(r.line).toBe('FAIL unexpected_page');
+  });
+  it('FAIL killed when the STOP file exists, without launching', async () => {
+    const d = tmp();
+    const stop = path.join(d, 'STOP');
+    writeFileSync(stop, 'x');
+    const f = fake({ url: 'x', evalResult: snap({}) });
+    const li = await checkLinkedinSession({ sessionPath: sessionFile(d, 's.json', 'li_at'), lockPath: path.join(d, 'l.lock'), launcher: f.launcher, stopFile: stop });
+    const nk2 = await checkNaukriSession({ sessionPath: sessionFile(d, 'n.json', 'nauk_at'), launcher: f.launcher, stopFile: stop });
+    expect([li.line, nk2.line]).toEqual(['FAIL killed', 'FAIL killed']);
+    expect(f.seen.gotos).toEqual([]);
+  });
+});
+
 describe('wiring', () => {
   it('package.json has linkedin:check and naukri:check', () => {
     const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as { scripts: Record<string, string> };
