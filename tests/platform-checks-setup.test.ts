@@ -513,7 +513,7 @@ describe('sessions', () => {
 describe('placeholders', () => {
   const want: Record<string, string> = {
     'mcp-connect': 'skipped: needs a live launch, run the owner checklist in plan 7B',
-    'sessions-live': 'skipped: headless login check is owner-run (plan 7B owner checklist)',
+    'sessions-live': 'skipped: headless login check is owner-run: npm run linkedin:check and npm run naukri:check',
     'dashboard-login': 'judged by the doctor per auth mode (plan 8C)',
     'backup-configured': 'skipped until installed (plan 7D)',
     'auto-update': 'skipped until installed (plan 7D)',

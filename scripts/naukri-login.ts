@@ -65,6 +65,7 @@ export async function main(deps: NaukriLoginDeps = {}): Promise<number> {
     }
     writeStateAtomic(deps.outPath ?? NAUKRI_STATE_PATH, state);
     console.log(`Saved session (${Array.isArray(state.cookies) ? state.cookies.length : 0} cookies)`);
+    console.log('Verify it with: npm run naukri:check');
     return 0;
   } catch (e) {
     console.error(`Login failed: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);

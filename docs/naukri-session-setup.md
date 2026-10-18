@@ -30,6 +30,18 @@ The command takes no flag and asks no question. It prints a short instruction an
 Naukri sessions expire periodically. When `npm run doctor` (check `sessions`) or the `naukri`
 tools report a missing or expired session, run `npm run naukri:login` again.
 
+## Checking the saved session
+
+```bash
+npm run naukri:check
+```
+
+Read-only: it opens the saved session headless, loads the Naukri home page and prints one line,
+`OK session valid` (exit 0) or `FAIL <reason>` (exit 1). Reasons: `session_missing`, `session_stale`,
+`session_invalid`, `halted`, `chrome_unavailable`, `logged_out`, `blocked`, `captcha`,
+`unexpected_page`, `page_load_failed`. It clicks and sends nothing and does not re-save the session.
+Run it after `npm run naukri:login`.
+
 ## Chrome requirement
 
 Naukri sits behind Akamai Bot Manager, which blocks headless Chromium and stock Playwright. Every

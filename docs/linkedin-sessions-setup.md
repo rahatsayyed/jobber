@@ -36,6 +36,19 @@ LinkedIn sessions expire periodically. If the `linkedin` MCP fails with a login 
 or `npm run doctor` (check `sessions`) says the session is missing or expired, run
 `npm run linkedin:login` again.
 
+## Checking the saved session
+
+```bash
+npm run linkedin:check
+```
+
+Read-only: it opens the saved session headless, loads your feed and prints one line, `OK session
+valid` (exit 0) or `FAIL <reason>` (exit 1). Reasons: `session_missing`, `session_stale`,
+`session_invalid`, `halted`, `session_locked` (another LinkedIn session is open), `chrome_unavailable`,
+`logged_out`, `checkpoint`, `captcha`, `blocked`, `unexpected_page`, `page_load_failed`. It clicks
+and sends nothing, writes no halt and does not re-save the session. Run it after
+`npm run linkedin:login`.
+
 ## Before live LinkedIn reads or sends
 
 The `linkedin` MCP is dry-run by default (`LINKEDIN_DRY_RUN=true`) and, when live, refuses every read and send until the prompt-injection classifier is downloaded, pinned and fitted and `CLASSIFIER_MODEL` is set (see [classifier models](classifier-models.md)). `npm run doctor` shows the `classifier_wired` check.

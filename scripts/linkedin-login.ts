@@ -46,6 +46,7 @@ export async function main(deps: LoginDeps = {}): Promise<number> {
     const state = (await context.storageState()) as { cookies?: unknown[] };
     saveStateAtomic(deps.outPath ?? DEFAULT_SESSION_PATH, state);
     console.log(`Saved session (${Array.isArray(state.cookies) ? state.cookies.length : 0} cookies)`);
+    console.log('Verify it with: npm run linkedin:check');
     return 0;
   } catch (e) {
     console.error(`Login failed: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);

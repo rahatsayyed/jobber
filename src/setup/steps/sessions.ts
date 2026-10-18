@@ -14,6 +14,7 @@ interface Account {
   file: string;
   argv: string[];
   who: string;
+  check: string; // read-only command that confirms the saved session still works
 }
 
 const ACCOUNTS: Account[] = [
@@ -23,6 +24,7 @@ const ACCOUNTS: Account[] = [
     file: 'linkedin-main-state.json',
     argv: ['tsx', 'scripts/linkedin-login.ts'],
     who: 'your MAIN LinkedIn account (connection requests and messages)',
+    check: 'npm run linkedin:check',
   },
   {
     name: 'naukri',
@@ -30,6 +32,7 @@ const ACCOUNTS: Account[] = [
     file: 'naukri-state.json',
     argv: ['tsx', 'scripts/naukri-login.ts'],
     who: 'your Naukri account',
+    check: 'npm run naukri:check',
   },
 ];
 
@@ -76,6 +79,7 @@ export const sessionsStep: SetupStep = {
         continue;
       }
       delete ctx.state.answers[answerKey];
+      io.say(`${a.label}: saved. Verify it with ${a.check}`);
     }
     return 'done';
   },
