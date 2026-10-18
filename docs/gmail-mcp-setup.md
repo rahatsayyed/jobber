@@ -147,7 +147,7 @@ expect a scope that covers both, and read the consent screen carefully when it a
 
 ## Tools it exposes
 
-Jobber's agents use `send_email` (sender stage), and `search_emails` and `read_email`
+Jobber's agents use `send_email` (`mail-operator`), and `search_emails` and `read_email`
 (`reply-watcher`). The package exposes more tools (drafts, labels, modify, delete, batch variants);
 the full list is defined upstream, check upstream. Which of them a session may call is limited by the
 permission set, not by this file.

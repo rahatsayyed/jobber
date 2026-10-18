@@ -15,6 +15,8 @@ const OWNER_DOCS: string[] = [
   'docs/rollout.md',
   'docs/scheduler-install.md',
   'docs/config-reference.md',
+  'docs/sources-and-platforms.md',
+  'docs/apply.md',
   'docs/architecture.md',
   'docs/layout-memory.md',
   'docs/dashboard-login.md',

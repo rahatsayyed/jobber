@@ -1,8 +1,8 @@
 # Owner docs index
 
 Audience: owner
-Last verified against: 384fcd7
-Source files: docs/, README.md, CLAUDE.md, tests/docs-owner.test.ts
+Last verified against: 37942b4
+Source files: docs/, README.md, CLAUDE.md, tests/docs-owner.test.ts, docs/sources-and-platforms.md, docs/apply.md
 
 This page lists every owner doc in `docs/`. Start with the ordered list, then use the topic list as a reference.
 
@@ -13,12 +13,14 @@ This page lists every owner doc in `docs/`. Start with the ordered list, then us
 3. [Setup modes](setup-modes.md): bootstrap, setup (agent or terminal), dry-run, start and stop (`npm start`, `npm stop`).
 4. [API keys](api-keys.md): which keys and credentials exist and where each goes.
 5. [Config reference](config-reference.md): what lives in `config/`, `user-data/` and the env catalog.
-6. [Rollout](rollout.md): the five phases from dry run to autonomous.
-7. [Operations](operations.md): stop, halts, dry run, status, logs and the failure table.
-8. [Scheduler install](scheduler-install.md): launchd and systemd units for the scheduler.
-9. [Layout memory](layout-memory.md): how page layouts are remembered and what drift does.
-10. [Dashboard login](dashboard-login.md): the login options for the dashboard.
-11. [Architecture](architecture.md): how the pieces fit together.
+6. [Sources and platforms](sources-and-platforms.md): the source registry, the source table, generated providers and imported feeds.
+7. [Browser apply](apply.md): how applying works, its caps, accounts, escalations and the live checks.
+8. [Rollout](rollout.md): the five phases from dry run to autonomous.
+9. [Operations](operations.md): stop, halts, dry run, status, logs and the failure table.
+10. [Scheduler install](scheduler-install.md): launchd and systemd units for the scheduler.
+11. [Layout memory](layout-memory.md): how page layouts are remembered and what drift does.
+12. [Dashboard login](dashboard-login.md): the login options for the dashboard.
+13. [Architecture](architecture.md): how the pieces fit together.
 
 ## Topic docs
 

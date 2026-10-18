@@ -1,8 +1,8 @@
 # Rollout: five phases from dry run to autonomous
 
 Audience: owner
-Last verified against: cc51247
-Source files: CLAUDE.md, src/safety/dryRun.ts, src/stack/mode.ts, src/verify/cli.ts, scripts/dry-run.ts, scripts/stack.ts, scripts/jobber-control.ts, scripts/status.ts, scripts/layout.ts, scripts/linkedin-seed-person.ts, scripts/scheduler.ts, .env.example, docs/superpowers/plans/2026-10-14-6d-scheduler-agents-naukri.md, docs/superpowers/plans/2026-10-15-8a-wiring-and-legacy-removal.md, docs/backup-and-restore.md
+Last verified against: 37942b4
+Source files: CLAUDE.md, src/safety/dryRun.ts, src/stack/mode.ts, src/verify/cli.ts, scripts/dry-run.ts, scripts/stack.ts, scripts/jobber-control.ts, scripts/status.ts, scripts/layout.ts, scripts/linkedin-seed-person.ts, scripts/scheduler.ts, .env.example, docs/superpowers/plans/2026-10-14-6d-scheduler-agents-naukri.md, docs/superpowers/plans/2026-10-15-8a-wiring-and-legacy-removal.md, docs/backup-and-restore.md, src/webcore/hostCaps.ts, src/sources/runner.ts
 
 Each phase is gated on the one before. Do not skip ahead. Steps marked `[owner]` can only
 be done by you (a login, a key, a flag flip). No agent flips a dry-run flag, clears a halt or
@@ -50,8 +50,9 @@ npm run jobber:control -- resume
 Expected: stop writes the STOP file and halts `all`, `linkedin` and `naukri`; status shows
 it; resume removes the STOP file and clears only halts that carry the stop prefix.
 `[owner]` Hook propagation of the kill switch into subagents in real `claude` is unverified:
-test it once per `CLAUDE.md` and the 8A owner checklist (start a hunt in the `hunt` window,
-stop, ask it to send, expect a "kill switch" denial; `./run-hunt.sh` must exit 4).
+test it once per `CLAUDE.md` and the 8A owner checklist (start a session, stop, ask it to send,
+expect a "kill switch" denial; with STOP set `./run-hunt.sh` must report a skipped wake with
+reason `killed`, and the launcher itself exits 4).
 
 ## Phase 1: Mac, dry run
 
@@ -110,7 +111,7 @@ Real sessions for reads; sends stay dry.
 - `[owner]` Claude Code and the ccgram windows fully restarted after any code change.
 
 **Flags (names only)**
-- Dry flags stay on: `SCHEDULER_DRY_RUN`, `LINKEDIN_DRY_RUN`.
+- Dry flags stay on: `SCHEDULER_DRY_RUN`, `LINKEDIN_DRY_RUN`, `WEB_DRY_RUN`, `APPLY_DRY_RUN`, `SCOUT_DRY_RUN`.
 - NAUKRI_HEADLESS per `CLAUDE.md` Naukri section (the headless recipe passed from a home IP
   only).
 - `LAYOUT_ENFORCE` still `warn`.
@@ -126,8 +127,8 @@ npm run layout -- status
 Expected: doctor has no `fail`, `working` shows queue, halts and funnel, `layout` shows what
 each platform has observed so far.
 
-Try one supervised canary read-only pass: a supervised `/runhunt` in the `hunt` window with
-`LINKEDIN_DRY_RUN` on, then read the first resumes, emails and ATS coverage lines yourself.
+Try one supervised canary read-only pass: a supervised forced wake (`./run-hunt.sh`, the
+`/runhunt` shim) with `LINKEDIN_DRY_RUN` on, then read the first resumes, emails and ATS coverage lines yourself.
 The review step (`review-application` to `resume.apply_review_edits`) has never run end to end
 with a real model: `unverified`.
 
@@ -141,7 +142,7 @@ with a real model: `unverified`.
 - You read at least one tailored resume and one drafted email and accepted them.
 
 **Stop and go back to Phase 1 if** a halt appears, the classifier errors, or a read returns
-`session_locked` repeatedly (a hunt and a wake collided; see `CLAUDE.md` Safety rule 6).
+`session_locked` repeatedly (two processes collided; see `CLAUDE.md` Safety rule 6).
 
 ## Between phases 2 and 3: layout supervised learning run
 
@@ -174,6 +175,33 @@ holds only vocabulary ids (no page text). Expect to tune the minimum-set and cri
 **On a `layout_drift:*` halt:** look at the page in a headed session, `npm run layout --
 reset <platform> --kind <id>` if the layout really changed, `npm run layout -- clear-halt
 <platform>`, then relearn. Only you clear it.
+
+## Between phases 2 and 3: sources, discover tasks and browser apply
+
+`[owner]` Everything below is `unverified` against real sites: it is covered by unit tests with
+fakes only. Keep every apply and web flag dry until the step that says otherwise.
+
+1. Sources: run a wake with the dry flags on, then `npm run status -- sources`. Enable an imported
+   feed only after you read the site's terms of use and robots.txt, one at a time
+   ([sources-and-platforms.md](sources-and-platforms.md)). Force one failure (unset
+   `ADZUNA_APP_KEY` on a copy of `.env`) and confirm the table shows an error row.
+2. LinkedIn discover: with the classifier fitted, one supervised wake with `LINKEDIN_DRY_RUN` set to
+   exactly `false`; confirm new jobs from the `linkedin-jobs` and `linkedin-posts` sources, no
+   checkpoint halt, and `layout=` verdicts learned (the layout learning run above covers the new page
+   kinds).
+3. Fallback and providers: break one board slug on a copy of `config/portals.json`; confirm a queued
+   source task, the `source-operator` fallback in the next wake, and (if it authors one) a generated
+   provider that reaches `validated`. Review it with `npm run providers -- show <id>` before any
+   `approve`.
+4. Browser apply: follow the owner live checks in [apply.md](apply.md) in order (hold mode on
+   Greenhouse, Lever and Ashby, then one submit, then account walls and blocks). Flip `WEB_DRY_RUN`,
+   `APPLY_DRY_RUN` and `SCOUT_DRY_RUN` to exactly `false` one at a time, and `APPLY_SUBMIT_MODE` to
+   `submit` last.
+5. Search: confirm browser dork results for five companies; force a block and confirm the fall back to
+   Serper under its budget; `npm run doctor` shows usage.
+
+**Exit criteria:** each step above matched what you saw on the real site, nothing was sent or
+submitted that you did not choose, and `npm run dry-run:report` lists only expected action kinds.
 
 ## Phase 3: Mac, canary sends
 
@@ -295,7 +323,7 @@ The 3 month threshold is an estimate, not measured; use your judgement.
 
 Go back to dry before anything live.
 
-1. Set the dry flags on (`SCHEDULER_DRY_RUN`, `LINKEDIN_DRY_RUN`) and run
+1. Set the dry flags on (`SCHEDULER_DRY_RUN`, `LINKEDIN_DRY_RUN`, `WEB_DRY_RUN`, `APPLY_DRY_RUN`, `SCOUT_DRY_RUN`) and run
    `npm run jobber:control -- status`.
 2. `[owner]` Re-save sessions if expired (`npm run linkedin:login`,
    `npm run naukri:login`). A dead session shows as `logged_out` in `layout=`.

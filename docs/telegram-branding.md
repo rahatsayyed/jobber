@@ -24,10 +24,10 @@ Jobber finds roles, tailors resumes and handles outreach within strict limits. B
 ## /setcommands
 
 ```setcommands
-runhunt - Discover jobs, match, find contacts, send cold emails
+runhunt - Run one wake now: discover, match, contacts, send, apply
 status - Funnel, rates and benchmarks
 followups - Draft follow-ups for approval, resolve stale
-apply - Apply to a job (Easy Apply or external ATS)
+apply - Status of a job in the browser-apply queue
 connect - Draft + send a LinkedIn connect request
 include - Un-exclude a vetoed job (manual override)
 outcome - Record a job outcome (replied/interview/offer/rejected...)

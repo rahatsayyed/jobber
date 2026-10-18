@@ -28,7 +28,7 @@ Runs the full health check; each failing item prints a `fix:` line.
 | git | yes | clone, auto-update |
 | C build tools | yes | native module build (`better-sqlite3`) |
 | npm dependencies, renderer dependencies | yes | all servers, PDF rendering |
-| Claude Code CLI (`claude`), logged in | yes | the hunt, scheduler wakes, setup guide |
+| Claude Code CLI (`claude`), logged in | yes | scheduler wakes (and `./run-hunt.sh`), setup guide |
 | tmux | yes | ccgram bridge, named windows, scheduler runs |
 | uv | yes | installing ccgram |
 | ccgram (pinned) | yes | Telegram bridge |

@@ -1,8 +1,8 @@
 # Config reference
 
 Audience: owner
-Last verified against: cc51247
-Source files: src/sources/boards/filters.ts, src/targetRegions.ts, src/vetoes.ts, src/replies.ts, src/linkedin/discoveryConfig.ts, src/safety/styleGate.ts, src/lib/userData.ts, src/languageGate.ts, src/resumeFacts.ts, src/platform/permissions.ts, scripts/permissions.ts, scripts/models.ts, scripts/check-portal.ts, scripts/user-data.ts, .env.example, src/setup/limitsCatalog.ts
+Last verified against: 37942b4
+Source files: src/sources/boards/filters.ts, src/targetRegions.ts, src/vetoes.ts, src/replies.ts, src/linkedin/discoveryConfig.ts, src/safety/styleGate.ts, src/lib/userData.ts, src/languageGate.ts, src/resumeFacts.ts, src/platform/permissions.ts, scripts/permissions.ts, scripts/models.ts, scripts/check-portal.ts, scripts/user-data.ts, .env.example, src/setup/limitsCatalog.ts, src/sources/registry.ts, src/sources/runner.ts
 
 This page lists every file you may edit in `config/` and `user-data/`, what reads it, whether a restart is needed, and how to check an edit. It does not repeat safety rules or caps: those live in `CLAUDE.md` (sections "Safety" and "Outreach safety layers"). All example values below are synthetic.
 
@@ -12,7 +12,8 @@ Restart rule of thumb: an MCP server keeps what it loaded at start. After you ch
 
 | File | Purpose | Read by | Reload | Validate |
 |---|---|---|---|---|
-| `config/portals.json` | Which company boards and aggregator feeds to fetch, plus the title and location filters | `src/sources/boards/filters.ts` (`loadPortals`), used by `job-fetch.list_new_jobs` | per fetch; a restart is needed only if the server was started before the file existed (unverified) | `npm run doctor` check `config-files` (parses and needs a `tracked_companies` array); slugs: `npx tsx scripts/check-portal.ts` |
+| `config/platforms.json` | The platform registry: every job source, whether it is on, how far it was verified, attribution for imported feeds | `src/sources/registry.ts` (`loadRegistry`), used by the code pass and `source_status` | per code pass | `npm run doctor` check `source_status`; see [sources-and-platforms.md](sources-and-platforms.md) |
+| `config/portals.json` | Which company boards and aggregator feeds to fetch, plus the title and location filters | `src/sources/boards/filters.ts` (`loadPortals`), used by the code pass and `job-fetch.list_new_jobs` | per fetch; a restart is needed only if the server was started before the file existed (unverified) | `npm run doctor` check `config-files` (parses and needs a `tracked_companies` array); slugs: `npx tsx scripts/check-portal.ts` |
 | `config/target-regions.json` | Home region, target regions (Gulf), remote and `remote_anywhere` switches for the location gate | `src/targetRegions.ts`, called by `gates.apply_vetoes` | per call | `npm run doctor` check `config-files` (needs `home` and `targets` arrays) |
 | `config/linkedin-discovery.json` | Named LinkedIn job searches and hiring-post searches | `src/linkedin/discoveryConfig.ts` | read with each search call (unverified for posts) | `npm run doctor` check `config-files` (parses, must be a JSON object only) |
 | `config/deal-breakers.json` | Keywords that exclude a job | `src/vetoes.ts` (`loadDealBreakers`) | per call | `npm run doctor` check `config-files` (parses, must be a JSON object; it does not check `keywords`) |
@@ -152,7 +153,7 @@ Add an allow entry only for a fact you confirmed, and add that fact to `user-dat
 |---|---|---|---|---|
 | `config/ai-tells.json` | Style gate for outbound LinkedIn and Naukri text: banned phrases, dash bans, markdown ban, word limits per kind | `src/safety/styleGate.ts` (`loadStyleConfigSafe`), cached by `src/mcp/linkedin.ts` and `src/mcp/naukri.ts` | restart | a bad value falls back to the built-in default and a note is logged; Naukri sends refuse with `style_config_unavailable` when a note exists |
 | `config/permission-sets.json` | The three permission sets `read_only`, `outreach_send`, `full` | `scripts/permissions.ts`, launchers | read when the command or launcher starts | `npm run permissions -- --status` |
-| `config/run-profiles.json` | Restricted-run profiles: `outreach_wake`, `hunt`, `setup_guide` (tools, env, turn limits) | `scripts/run-claude.ts`, `src/platform/checks.ts` | read at each launch | `npm run doctor` |
+| `config/run-profiles.json` | Restricted-run profiles: `outreach_wake`, `setup_guide` (tools, env, turn limits) | `scripts/run-claude.ts`, `src/platform/checks.ts` | read at each launch | `npm run doctor` |
 | `config/worker-tools.json` | Exact tool list per operator agent (`linkedin-operator`, `naukri-operator`) | `src/platform/checksScheduler.ts` (doctor check `agents-worker-tools`) | read at launch and by doctor | `npm run doctor` |
 | `config/manager-windows.json` | Named tmux windows the manager can start (`hunt`, `followups`) and the protected ones | `scripts/manager.ts`, `src/stack/up.ts`, `src/stack/down.ts` | read when the command runs | `npm run doctor` |
 | `config/setup-guide.json` | Step text for the guided setup session | the `setup-guide` skill (`.claude/skills/setup-guide/SKILL.md`); shape checked by `tests/setup-guide.test.ts` | read by the guide session when it starts (from the skill text) | `npm run doctor` check `setup_guide_ready` covers the profile and skill, not this file |
@@ -192,8 +193,9 @@ This prints today's limits and usage. To walk the limits interactively use `npm 
 
 Groups in `.env.example` (one line each):
 
-- Job sources: Adzuna and Serper keys. See [api-keys](api-keys.md) and `.env.example`.
-- Contact finder: Hunter key, enable switch and monthly cap.
+- Job sources: the Adzuna key. See [api-keys](api-keys.md) and `.env.example`.
+- Contact finding: Serper and Hunter keys, the dork and search budgets, the Hunter enable switch and monthly cap.
+- Browser apply and web: `WEB_DRY_RUN`, `APPLY_DRY_RUN`, `SCOUT_DRY_RUN`, `APPLY_SUBMIT_MODE`, the per-host caps and the account flags; see [apply.md](apply.md).
 - Email: Gmail OAuth paths and the legacy SMTP fallback.
 - Telegram: bot token and allowed user ids for the ccgram bridge.
 - Agent tuning: `MATCH_THRESHOLD`, `SEND_LIMIT_PER_RUN`, `MAX_APPLIES_PER_DAY`, `MAX_LINKEDIN_SEARCHES_PER_DAY`, and the follow-up switches (`FOLLOWUPS_AUTONOMOUS`, `EMAIL_FOLLOWUP_GAPS_DAYS`).
