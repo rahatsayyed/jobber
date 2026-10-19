@@ -218,9 +218,10 @@ export const SNAPSHOT_SRC = String.raw`(function () {
         if (hrefv.indexOf('/in/') >= 0) { link = links[li2]; break; }
       }
       if (!link) continue;
-      var nm = lines(link)[0] || '';
+      var nmRaw = lines(link)[0] || '';
+      var nm = String(nmRaw).replace(/\s*[•·]\s*(?:1st|2nd|3rd\+?)\s*$/, '');
       var rl = lines(cards[ci]), hd = '';
-      for (var r2 = 0; r2 < rl.length; r2++) if (rl[r2] !== nm) { hd = rl[r2]; break; }
+      for (var r2 = 0; r2 < rl.length; r2++) if (rl[r2] !== nmRaw) { hd = rl[r2]; break; }
       results.push({ name: cap(nm, 200), headline: cap(hd, 300), href: cap(link.getAttribute('href') || '', 500) });
     }
 
@@ -325,6 +326,8 @@ const tagIn = (...t: string[]) => (n: HtmlNode) => t.includes(n.tag);
 const linesOf = (n: HtmlNode) => (n.hidden ? [] : visibleText(n).split('\n').filter(Boolean));
 const flat = (n: HtmlNode) => linesOf(n).join(' ').replace(/\s+/g, ' ').trim();
 const DEGREE = /^(?:·\s*)?(1st|2nd|3rd)$/;
+/** Trailing connection-degree badge LinkedIn renders inside a search card's name link ("Jane Doe • 3rd+"); keep in step with the in-page script. */
+const DEGREE_BADGE = /\s*[•·]\s*(?:1st|2nd|3rd\+?)\s*$/;
 
 function hideClosedDialogs(n: HtmlNode, parentHidden = false): void {
   const closed = n.tag === 'dialog' && !('open' in n.attrs);
@@ -386,8 +389,9 @@ export function buildSnapshotFromHtml(html: string, url: string): RawSnapshot {
       if (results.length >= 12) break;
       const link = vq(card, (n) => n.tag === 'a' && (n.attrs['href'] ?? '').includes('/in/'))[0];
       if (!link) continue;
-      const nm = linesOf(link)[0] ?? '';
-      const hd = linesOf(card).find((l) => l !== nm) ?? '';
+      const nmRaw = linesOf(link)[0] ?? '';
+      const nm = nmRaw.replace(DEGREE_BADGE, '');
+      const hd = linesOf(card).find((l) => l !== nmRaw) ?? '';
       results.push({ name: cap(nm, 200), headline: cap(hd, 300), href: cap(link.attrs['href'] ?? '', 500) });
     }
     out.results = results;

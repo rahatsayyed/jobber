@@ -25,6 +25,13 @@ describe('buildSnapshotFromHtml', () => {
     expect(s.profile?.about).toContain('Visible sentence that must survive');
     expect(s.bodyText).toContain('Visible sentence that must survive');
   });
+  it('drops the connection-degree badge from a search card name', () => {
+    const html = '<main><div role="list"><div role="listitem"><a href="/in/jane-doe"><p><span>Jane Doe</span><span> • 3rd+</span></p><p>Recruiter at Acme</p></a></div>'
+      + '<div role="listitem"><a href="/in/sam-roe"><p><span>Sam Roe</span> <span>· 2nd</span></p><p>Engineer</p></a></div></div></main>';
+    const s = buildSnapshotFromHtml(html, 'https://www.linkedin.com/search/results/people/');
+    expect(s.results.map((r) => r.name)).toEqual(['Jane Doe', 'Sam Roe']);
+    expect(s.results.map((r) => r.headline)).toEqual(['Recruiter at Acme', 'Engineer']);
+  });
   it('lists only visible search cards and caps them', () => {
     const s = buildSnapshotFromHtml(fx('search-results.html'), 'https://www.linkedin.com/search/results/people/');
     // fixture has 3 visible cards and 1 display:none card (the plan text said 2; the fixture is authoritative)
