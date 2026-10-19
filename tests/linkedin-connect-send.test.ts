@@ -53,7 +53,7 @@ function setup(o: Opts = {}) {
   const log: string[] = [];
   const db = openDb(':memory:');
   if (o.seed !== false) {
-    upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(URL_), name: 'Jane Example', company: 'Acme', category: 'recruiter' });
+    upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(URL_), name: 'Jane Example', headline: 'Technical Recruiter at Acme', company: 'Acme', category: 'recruiter' });
   }
   const els: Els = {
     [SELECTORS.nameHeadings]: [{ text: 'Jane Example', box: { x: 100, y: 100, height: 30 } }],

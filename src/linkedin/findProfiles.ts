@@ -6,11 +6,18 @@ import { upsertPerson } from '../outreach/people.js';
 import { gateField, MAX_FIELD_CHARS } from './state.js';
 import { classifyUrl, isBlockedPath, isLinkedInUrl, isProfileUrl, profileKeyOf } from './urls.js';
 import { layoutClassOf } from './layoutGuard.js';
+import { classifyCategory, headlineMatchesCompany } from './employer.js';
 import type { ToolDeps } from './toolDeps.js';
 
 export type FindProfilesCategory = 'recruiter' | 'hiring_manager' | 'peer';
 export interface FindProfilesArgs { company: string; role_hint?: string; category: FindProfilesCategory }
-export interface ProfileCandidateOut { profile_url: string; name: string; headline: string }
+export interface ProfileCandidateOut {
+  profile_url: string; name: string; headline: string;
+  /** Set by code from the headline (never the model's request alone). */
+  category?: FindProfilesCategory | 'connection';
+  /** true: headline names the company; false: it names another employer; null: no headline. */
+  employer_match?: boolean | null;
+}
 export interface FindProfilesResult {
   status: 'ok' | 'rate_limited' | 'halted' | 'failed';
   code: string;
@@ -70,7 +77,10 @@ export async function findProfiles(a: FindProfilesArgs, deps: ToolDeps): Promise
     const key = profileKeyOf(profile_url);
     if (seen.has(key)) continue;
     seen.add(key);
-    cands.push({ profile_url, name: name.text, headline: head.blocked ? '' : head.text });
+    // Snapshot text can run the name straight into the headline ("Priya DemoTalent Partner ..."):
+    // drop the leading name so word-based matching on the headline works.
+    const headText = head.blocked ? '' : head.text.startsWith(name.text) ? head.text.slice(name.text.length).trim() : head.text;
+    cands.push({ profile_url, name: name.text, headline: headText });
   }
 
   if (cands.length === 0) {
@@ -80,13 +90,19 @@ export async function findProfiles(a: FindProfilesArgs, deps: ToolDeps): Promise
   if (verdict.blocked) return { status: 'failed', code: verdict.code, candidates: [], injection_suspected: true };
 
   for (const c of cands) {
+    // Finding 20: the category comes from the headline in code, and the headline-versus-company
+    // match is stored, so a send can later be refused for the wrong employer.
+    const m = headlineMatchesCompany(c.headline, company);
+    c.category = classifyCategory(c.headline, a.category);
+    c.employer_match = m === null ? null : m;
     upsertPerson(deps.db, {
       platform: 'linkedin',
       profileKey: profileKeyOf(c.profile_url),
       name: c.name,
       headline: c.headline,
       company,
-      category: a.category,
+      category: c.category,
+      employerMatch: m === null ? null : m ? 1 : 0,
     });
   }
   return { status: 'ok', code: cands.length ? 'found' : 'no_candidates', candidates: cands, ...(injection ? { injection_suspected: true } : {}), ...layout };

@@ -60,4 +60,7 @@ export function migrateOutreachTables(db: Db): void {
       cleared_at TEXT
     );
   `);
+  // Finding 20: whether the headline named the searched company at registration (1 yes, 0 no, NULL unknown).
+  const peopleCols = new Set((db.prepare('PRAGMA table_info(people)').all() as { name: string }[]).map((c) => c.name));
+  if (!peopleCols.has('employer_match')) db.exec('ALTER TABLE people ADD COLUMN employer_match INTEGER');
 }

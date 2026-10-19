@@ -1,6 +1,7 @@
 // src/outreach/people.ts
 import type BetterSqlite3 from 'better-sqlite3';
 import type { Category } from './cadence.js';
+import { headlineMatchesCompany } from '../linkedin/employer.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -43,18 +44,25 @@ export interface PersonInput {
   headline?: string;
   company: string;
   category: Category;
+  /** 1 headline names the company, 0 it names another, null or undefined unknown (finding 20). */
+  employerMatch?: number | null;
 }
 
 export function upsertPerson(db: Db, p: PersonInput): number {
+  // Unless the caller states it, derive the match from the headline (null when nothing to compare).
+  const derived = headlineMatchesCompany(p.headline ?? '', p.company);
+  const employerMatch = p.employerMatch !== undefined ? p.employerMatch : derived === null ? null : derived ? 1 : 0;
   db.prepare(
-    `INSERT INTO people (platform, profile_key, name, headline, company, company_key, category)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO people (platform, profile_key, name, headline, company, company_key, category, employer_match)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(platform, profile_key) DO UPDATE SET
        name = COALESCE(excluded.name, name), headline = COALESCE(excluded.headline, headline),
        company = excluded.company, company_key = excluded.company_key,
+       employer_match = CASE WHEN excluded.employer_match IS NOT NULL THEN excluded.employer_match
+                             WHEN excluded.company_key = people.company_key THEN people.employer_match ELSE NULL END,
        category = CASE WHEN COALESCE((SELECT stage FROM contact_state WHERE person_id = people.id), 'new') = 'new'
                        THEN excluded.category ELSE people.category END`,
-  ).run(p.platform, p.profileKey, p.name ?? null, p.headline ?? null, p.company, normalizeCompany(p.company), p.category);
+  ).run(p.platform, p.profileKey, p.name ?? null, p.headline ?? null, p.company, normalizeCompany(p.company), p.category, employerMatch);
   const row = db
     .prepare('SELECT id FROM people WHERE platform = ? AND profile_key = ?')
     .get(p.platform, p.profileKey) as { id: number };

@@ -107,7 +107,7 @@ describe('connectSend with a layout precondition', () => {
   function setup(verdict: Verdict, enforce: string, personName = 'Jane Example', injection = false) {
     const log: string[] = [];
     const db = openDb(':memory:');
-    upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(URL_), name: personName, company: 'Acme', category: 'recruiter' });
+    upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(URL_), name: personName, headline: 'Technical Recruiter at Acme', company: 'Acme', category: 'recruiter' });
     const dlg: Record<string, FakeElement[]> = {};
     const els: Record<string, FakeElement[]> = {
       [SELECTORS.nameHeadings]: [{ text: 'Jane Example', box: { x: 100, y: 100, height: 30 } }],

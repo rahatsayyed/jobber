@@ -33,7 +33,7 @@ afterEach(async () => {
 
 function make(env: NodeJS.ProcessEnv = {}) {
   const db = openDb(':memory:');
-  upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(PROFILE), name: 'Jane Example', company: 'Acme', category: 'recruiter' });
+  upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(PROFILE), name: 'Jane Example', headline: 'Technical Recruiter at Acme', company: 'Acme', category: 'recruiter' });
   const snap = buildSnapshotFromHtml(read('tests/fixtures/linkedin/profile-not-connected.html'), PROFILE);
   const els = { [SELECTORS.nameHeadings]: [{ text: 'Jane Example', box: { x: 100, y: 100, height: 30 } }] };
   const log: string[] = [];

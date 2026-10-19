@@ -96,7 +96,7 @@ class ScriptedLauncher implements Launcher {
   // The REAL typed LinkedIn send (sendMessage) against a fake page, under the run's flags.
   private async linkedinSend(env: NodeJS.ProcessEnv, now: Date): Promise<void> {
     const fx = (n: string) => readFileSync(new URL(`./fixtures/linkedin/${n}`, import.meta.url), 'utf8');
-    upsertPerson(this.db, { platform: 'linkedin', profileKey: profileKeyOf(LI_URL), name: 'Jane Example', company: 'Acme', category: 'recruiter' });
+    upsertPerson(this.db, { platform: 'linkedin', profileKey: profileKeyOf(LI_URL), name: 'Jane Example', headline: 'Technical Recruiter at Acme', company: 'Acme', category: 'recruiter' });
     const statePath = join(this.dir, 'li-state.json');
     writeFileSync(
       statePath,

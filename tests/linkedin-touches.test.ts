@@ -17,7 +17,7 @@ const args = (text: string, over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   db = openDb(':memory:');
-  pid = upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(URL1), name: 'Jane Doe', company: 'Acme', category: 'recruiter' });
+  pid = upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(URL1), name: 'Jane Doe', headline: 'Technical Recruiter at Acme', company: 'Acme', category: 'recruiter' });
 });
 
 describe('touch ledger', () => {

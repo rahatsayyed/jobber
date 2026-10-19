@@ -65,7 +65,13 @@ describe('findProfiles', () => {
     expect(r.candidates[0].headline).toContain('Engineering Manager at Acme Robotics');
     const rows = people(db);
     expect(rows).toHaveLength(3);
-    expect(rows.every((p) => p.category === 'recruiter' && p.company === 'Acme')).toBe(true);
+    // Finding 20: the category comes from the headline in code, whatever the caller asked for.
+    expect(rows.map((p) => p.category)).toEqual(['hiring_manager', 'recruiter', 'peer']);
+    expect(rows.every((p) => p.company === 'Acme')).toBe(true);
+    expect(r.candidates.map((c) => c.employer_match)).toEqual([true, false, false]);
+    expect(
+      (db.prepare('SELECT employer_match AS m FROM people ORDER BY id').all() as Array<{ m: number }>).map((x) => x.m),
+    ).toEqual([1, 0, 0]);
     expect((db.prepare('SELECT COUNT(*) c FROM contact_state').get() as { c: number }).c).toBe(3);
     noActions(log);
   });

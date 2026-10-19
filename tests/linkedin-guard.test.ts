@@ -30,7 +30,7 @@ function input(over: Partial<GuardInput> = {}): GuardInput {
 
 beforeEach(() => {
   db = openDb(':memory:');
-  pid = upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(URL1), name: 'Jane Doe', company: 'Acme', category: 'recruiter' });
+  pid = upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(URL1), name: 'Jane Doe', headline: 'Technical Recruiter at Acme', company: 'Acme', category: 'recruiter' });
 });
 
 describe('preSendGuard', () => {

@@ -60,7 +60,7 @@ interface Opts {
 function setup(o: Opts = {}) {
   const log: string[] = [];
   const db = openDb(':memory:');
-  upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(URL_), name: 'Jane Example', company: 'Acme', category: 'recruiter' });
+  upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(URL_), name: 'Jane Example', headline: 'Technical Recruiter at Acme', company: 'Acme', category: 'recruiter' });
   const base = buildSnapshotFromHtml(fx(o.notConnected ? 'profile-not-connected.html' : 'profile-connected.html'), URL_);
   const els: Record<string, FakeElement[]> = {};
   if (!o.noNamePoint) els[SELECTORS.nameHeadings] = [{ text: 'Jane Example', box: { x: 100, y: 100, height: 30 } }];

@@ -7,12 +7,13 @@ type Db = BetterSqlite3.Database;
 export interface PersonRow {
   id: number; profile_key: string; name: string | null; company: string;
   company_key: string; category: string; stage: string; paused_reason: string | null;
+  headline: string | null; employer_match: number | null;
 }
 
 export function personByProfileKey(db: Db, profileKey: string): PersonRow | null {
   const row = db
     .prepare(
-      `SELECT p.id, p.profile_key, p.name, p.company, p.company_key, p.category,
+      `SELECT p.id, p.profile_key, p.name, p.company, p.company_key, p.category, p.headline, p.employer_match,
               COALESCE(c.stage, 'new') AS stage, c.paused_reason AS paused_reason
        FROM people p LEFT JOIN contact_state c ON c.person_id = p.id
        WHERE p.platform = 'linkedin' AND p.profile_key = ?`,

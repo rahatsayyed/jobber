@@ -11,6 +11,7 @@ import { gateOutbound, secretValuesFromEnv, type OutboundContext } from '../safe
 import { checkTextWithNormalized } from '../resumeFacts.js';
 import { getBaseResume } from '../resume.js';
 import { isLinkedInUrl, isProfileUrl, isBlockedPath, profileKeyOf } from './urls.js';
+import { employerGate } from './employer.js';
 import { validateNoteLength } from './verify.js';
 import { personByProfileKey, reserveTouch, idempotencyKey, type PersonRow } from './touches.js';
 import { effectiveDryRun, type LinkedinConfig } from './config.js';
@@ -79,6 +80,11 @@ export function preSendGuard(i: GuardInput): GuardResult {
   ) {
     return refuse('contact_paused', 'contact or company is paused');
   }
+
+  // People quality (finding 20): the person must show as working at the company. Runs in dry runs
+  // too, and before any touch is reserved or ceiling consumed.
+  const employer = employerGate(person);
+  if (!employer.ok) return refuse(employer.code, employer.reason);
 
   const text = i.text ?? '';
   if (text.trim().length === 0) return refuse('empty_text', 'text is empty');

@@ -15,6 +15,10 @@ export interface SeedArgs {
   name: string;
   company: string;
   category: string;
+  /** Optional profile headline; a headline naming the company is what lets the send gate pass. */
+  headline?: string;
+  /** Owner vouches that the person works at the company (stores employer_match = 1). */
+  employerVerified?: boolean;
 }
 
 export type SeedResult = { ok: true; person_id: number } | { ok: false; error: string };
@@ -36,7 +40,10 @@ export function seedPerson(db: BetterSqlite3.Database, args: SeedArgs): SeedResu
     profileKey: profileKeyOf(url),
     name,
     company,
+    headline: args.headline?.trim() || undefined,
     category: category as Category,
+    // The owner vouches for the employer when seeding by hand (finding 20).
+    employerMatch: args.employerVerified ? 1 : undefined,
   });
   return { ok: true, person_id };
 }
@@ -46,7 +53,10 @@ function parseArgv(argv: string[]): SeedArgs {
     const i = argv.indexOf(flag);
     return i >= 0 && i + 1 < argv.length ? argv[i + 1] : '';
   };
-  return { url: get('--url'), name: get('--name'), company: get('--company'), category: get('--category') };
+  return {
+    url: get('--url'), name: get('--name'), company: get('--company'), category: get('--category'),
+    headline: get('--headline'), employerVerified: argv.includes('--employer-verified'),
+  };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
