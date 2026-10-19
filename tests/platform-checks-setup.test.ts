@@ -365,12 +365,10 @@ describe('chrome and browser-binaries', () => {
     expect(r.status).toBe('fail');
     expect(r.fix).toContain('npm ci');
   });
-  it('browser-binaries warns when chromium binary missing', async () => {
-    const r = await one('browser-binaries', makeCtx({
-      files: { [`${R}/node_modules/patchright`]: {}, [`${R}/node_modules/playwright`]: {} },
-    }));
-    expect(r.status).toBe('warn');
-    expect(r.fix).toContain('npx playwright install chromium');
+  it('browser-binaries passes with patchright installed and asks for no browser download', async () => {
+    const r = await one('browser-binaries', makeCtx({ files: { [`${R}/node_modules/patchright`]: {} } }));
+    expect(r.status).toBe('pass');
+    expect(`${r.detail} ${r.fix ?? ''}`).not.toMatch(/playwright|install chromium/i);
   });
 });
 

@@ -263,9 +263,9 @@ describe('shared launcher (O-browser)', () => {
 
   it('neither Naukri module imports a browser library or launches directly', () => {
     for (const f of ['src/sources/naukri.ts', 'src/mcp/naukri.ts', 'src/naukri/discover.ts']) {
-      const src = readFileSync(f, 'utf8');
-      expect(src, f).not.toMatch(/from\s+['"]patchright['"]/);
-      expect(src, f).not.toMatch(/import\s+\{[^}]*\bchromium\b[^}]*\}\s+from\s+['"]playwright/);
+      // `import type` lines are erased at compile time (patchright's types only); everything else must not import a browser library.
+      const src = readFileSync(f, 'utf8').replace(/^import type [^\n]*\n/gm, '');
+      expect(src, f).not.toMatch(/from\s+['"](patchright|playwright|playwright-core)['"]/);
       expect(src, f).not.toMatch(/\.launch\(/);
       expect(src, f).not.toMatch(/launchPersistentContext/);
     }

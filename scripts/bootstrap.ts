@@ -18,7 +18,7 @@ import { defaultRun } from '../src/platform/tmux.js';
 import { defaultFetchDeps } from '../src/safety/modelFetch.js';
 import type { CliDeps } from './models.js';
 
-const IDS: ItemId[] = ['git', 'build-tools', 'node', 'npm-deps', 'renderer-deps', 'playwright-chromium', 'chrome', 'tmux', 'uv', 'ccgram', 'claude-cli', 'age', 'rclone', 'classifier-model'];
+const IDS: ItemId[] = ['git', 'build-tools', 'node', 'npm-deps', 'renderer-deps', 'chrome', 'tmux', 'uv', 'ccgram', 'claude-cli', 'age', 'rclone', 'classifier-model'];
 
 export const USAGE = [
   'usage: npm run bootstrap -- [options]',

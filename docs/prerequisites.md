@@ -32,8 +32,7 @@ Runs the full health check; each failing item prints a `fix:` line.
 | tmux | yes | ccgram bridge, named windows, scheduler runs |
 | uv | yes | installing ccgram |
 | ccgram (pinned) | yes | Telegram bridge |
-| Playwright Chromium | optional | no longer needed for PDF rendering or the tests (the renderer uses installed Google Chrome) |
-| Google Chrome | optional | Naukri headless search and session capture |
+| Google Chrome | yes (warning if missing) | every browser tool (LinkedIn, Naukri, scout, applier) and the resume PDF render |
 | patchright browser | per package install | LinkedIn and apply sessions |
 | age, rclone | optional | backups only |
 | launchctl or systemctl | optional | scheduler unit install only |
@@ -52,9 +51,8 @@ Runs the full health check; each failing item prints a `fix:` line.
 | tmux | holds ccgram, windows and scheduler runs | none checked | `tmux -V` | macOS `brew install tmux`; Ubuntu `apt-get install -y tmux` |
 | uv | installs the pinned ccgram | none checked | `uv --version` | macOS `brew install uv`. Ubuntu: official installer (check upstream: https://astral.sh/uv/install.sh); bootstrap can download it, show url, size and sha256, then ask again. |
 | ccgram | Telegram bridge | exactly the version in `config/ccgram.pin.json` | `ccgram --version` | see "ccgram" below |
-| Playwright Chromium | PDF render path and some tests | `playwright` dependency in `package.json` | `npx playwright --version`; doctor `browser-binaries` warns when the binary is missing | `npx playwright install chromium` (the repo's baseline note uses `npx playwright install --with-deps chromium`). On Linux, bootstrap also runs `npx playwright install-deps chromium`, which needs sudo (`--allow-sudo`). |
-| Google Chrome | Naukri headless uses `channel: 'chrome'` | none checked | macOS: `/Applications/Google Chrome.app` exists; else `google-chrome --version` | macOS: bootstrap runs `brew install --cask google-chrome`. Linux: download page (check upstream: https://www.google.com/chrome/). |
-| patchright browser | LinkedIn and apply sessions | `patchright` dependency in `package.json` | `npx patchright --version` (unverified: the install and browser-path behaviour is not read from this repo; check upstream: patchright) | `npm ci` installs the package; its browser download is not installed by bootstrap (CLAUDE.md, "Known limits", U13). |
+| Google Chrome | every browser (LinkedIn, Naukri, scout, applier) and the resume PDF render use `channel: 'chrome'` | none checked | macOS: `/Applications/Google Chrome.app` exists; else `google-chrome --version` | macOS: bootstrap runs `brew install --cask google-chrome`. Linux: download page (check upstream: https://www.google.com/chrome/). |
+| patchright | launches the installed Chrome for every browser tool | `patchright` dependency in `package.json`; doctor `browser-binaries` | `npx patchright --version` | `npm ci` installs the package. No browser download is needed: browsers run on the installed Google Chrome. |
 | age | encrypts backups | none checked | `age --version` | `brew install age` (Ubuntu `apt install age`) |
 | rclone | optional cloud mirror of backups | none checked | `rclone version` | `brew install rclone` (Ubuntu `apt install rclone`); see `docs/backup-and-restore.md` |
 | launchctl / systemctl | scheduler units | none checked | macOS `launchctl help`; Linux `systemctl --user status` | built into the OS; see the scheduler unit docs. `npm run scheduler:units` only writes files and prints install commands. |
@@ -75,13 +73,11 @@ uv tool install --python <python version in the doctor hint> "ccgram==<version i
 
 Take the version from `config/ccgram.pin.json` and the exact command (including the Python version it passes to `uv`) from the doctor `ccgram-version` hint (`ccgramInstallHint` in `src/platform/checks.ts`). `scripts/ccgram/start.sh` runs `scripts/ccgram/check-version.sh` first, which exits non-zero if ccgram is missing or its `--version` output does not equal the pin, so the bridge refuses to start on a mismatch. Never run ccgram's own upgrade command (owner decision 2026-10-14, see CLAUDE.md "Platform and sessions"). After installing, set `installed` to `true` in the pin file when doctor's `ccgram-pin-state` warns.
 
-### Playwright Chromium and the baseline failures
+### Google Chrome (the only browser)
 
-PDF rendering (`renderer/index.js`) launches the installed Google Chrome (`channel: 'chrome'`), so no Playwright browser download is needed. The repo baseline is 0 failing tests (`config/update-known-failures.json` is `{}`; it is used by the auto-update test gate). Without Chrome installed, `tests/renderChecked.test.ts` and `tests/resume.test.ts` fail.
+Every browser use goes through patchright and the installed Google Chrome (`channel: 'chrome'`), launched by the one shared launcher `launchRealChrome` (`src/linkedin/browser.ts`): LinkedIn, Naukri, scout, applier and the resume PDF render (`src/pdfRender.ts`, headless Chrome printing `renderer/` HTML to an A4 PDF). Playwright's own browser downloads and its headless shell are not used and not installed, and the repo has no `playwright` dependency. Patchright's bundled Chromium and stock headless were blocked in the 2026-10-13 Naukri measurement (see CLAUDE.md "Naukri"). Doctor `chrome` is a warning, not a failure, when Chrome is missing, but then every browser tool and the PDF render fail. Headless Naukri from a VPS or datacenter IP is untested.
 
-### Google Chrome
-
-Only Naukri needs it: the headless recipe uses installed Chrome (`channel: 'chrome'`), because patchright's bundled Chromium and stock headless were blocked in the 2026-10-13 measurement (see CLAUDE.md "Naukri"). Doctor `chrome` is a warning, not a failure, when it is missing. Headless Naukri from a VPS or datacenter IP is untested.
+The test baseline has no known failures any more: `tests/renderChecked.test.ts` and `tests/resume.test.ts` render real PDFs through the installed Chrome, so they need Chrome on the machine running the tests (`config/update-known-failures.json` is `{}`; it is used by the auto-update test gate).
 
 ### age and rclone (backups only)
 
@@ -95,13 +91,12 @@ Backups are one age-encrypted archive; creating a backup probes `age --version` 
 
 | Missing | Effect |
 |---|---|
-| Google Chrome | PDF render fails; render tests fail |
-| Google Chrome | Naukri headless search and session capture unavailable |
+| Google Chrome | every browser tool unavailable, the resume PDF render fails (so no outreach rows can be prepared) and the render tests fail |
 | age | no backups |
 | rclone | no cloud mirror; local backups still work |
 | launchctl / systemctl | no unattended scheduler; run it in the foreground |
 
 ## Unverified
 
-- Install commands and package names for Ubuntu (Homebrew and apt names, Playwright system packages) are listed in CLAUDE.md as unverified (U5, U6). check upstream.
+- Install commands and package names for Ubuntu (Homebrew and apt names) are listed in CLAUDE.md as unverified (U5, U6). check upstream.
 - Exact minimum versions of tmux, git, uv, age and rclone are not enforced by code.

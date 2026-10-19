@@ -34,13 +34,14 @@ function walk(dir: string, out: string[]): void {
     if (name === 'node_modules' || name.startsWith('.')) continue;
     const p = join(dir, name);
     if (statSync(p).isDirectory()) walk(p, out);
-    else if (name.endsWith('.ts')) out.push(p);
+    else if (name.endsWith('.ts') || name.endsWith('.js') || name.endsWith('.mjs')) out.push(p);
   }
 }
 
 function scan(): Record<string, string[]> {
   const files: string[] = [];
-  for (const d of ['src', 'scripts']) walk(join(ROOT, d), files);
+  // renderer/ is plain JS (it prepares the resume HTML); it must not launch or import a browser either.
+  for (const d of ['src', 'scripts', 'renderer']) walk(join(ROOT, d), files);
   const hits: Record<string, string[]> = {};
   for (const f of files) {
     const v = launchViolations(readFileSync(f, 'utf8'));
@@ -70,6 +71,17 @@ describe('browser launch lint', () => {
     const allowed = new Set([HOME, ...LEGACY_LAUNCH_ALLOWLIST, ...Object.keys(PERMANENT_EXCEPTIONS)]);
     const bad = Object.entries(scan()).filter(([f]) => !allowed.has(f));
     expect(bad, `launch through src/webcore/launch.ts: ${JSON.stringify(bad)}`).toEqual([]);
+  });
+
+  it('no renderer script imports a browser library, and the stock playwright package is not a dependency', () => {
+    const files: string[] = [];
+    walk(join(ROOT, 'renderer'), files);
+    expect(files.length).toBeGreaterThan(0);
+    for (const f of files) expect(readFileSync(f, 'utf8'), f).not.toMatch(/from\s*['"](playwright|patchright|playwright-core)['"]/);
+    for (const pkg of ['package.json', 'renderer/package.json']) {
+      const deps = JSON.parse(readFileSync(join(ROOT, pkg), 'utf8')).dependencies ?? {};
+      expect(Object.keys(deps), pkg).not.toContain('playwright');
+    }
   });
 
   it('the legacy launch allowlist is empty (task 23)', () => {

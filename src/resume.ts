@@ -12,6 +12,7 @@ import { classifyKeywords, coveragePct, type KeywordResult, type KeywordSpec } f
 import { pickBulletToCut, removeBullet } from './trimResume.js';
 import { normalizeForAts } from './atsText.js';
 import { missingUserDataMessage, userDataPath } from './lib/userData.js';
+import { htmlToPdf } from './pdfRender.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -43,8 +44,10 @@ async function renderOnce(resumeJson: any): Promise<string> {
   const outputDir = path.join(rendererDir, 'automation', id);
   mkdirSync(outputDir, { recursive: true });
   writeFileSync(path.join(outputDir, 'resume.json'), JSON.stringify(resumeJson));
+  // renderer/index.js writes resume.html; the PDF is printed by headless installed Chrome (src/pdfRender.ts).
   await execFileAsync('node', ['index.js', id], { cwd: rendererDir });
   const pdfPath = path.join(outputDir, 'resume.pdf');
+  await htmlToPdf(path.join(outputDir, 'resume.html'), pdfPath);
   if (!existsSync(pdfPath)) throw new Error(`Expected PDF not found at ${pdfPath}`);
   return pdfPath;
 }
