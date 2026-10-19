@@ -44,16 +44,6 @@ async function probe(d: BootstrapDeps, cmd: string, args: string[], label: strin
   return { present: true, version: line, detail: line || `${label} found` };
 }
 
-function chromiumPresent(d: BootstrapDeps): boolean {
-  const home = d.env.HOME ?? '';
-  const dirs = [
-    d.env.PLAYWRIGHT_BROWSERS_PATH,
-    home && join(home, 'Library', 'Caches', 'ms-playwright'),
-    home && join(home, '.cache', 'ms-playwright'),
-  ].filter((p): p is string => Boolean(p));
-  return dirs.some((p) => d.fs.exists(p) && d.fs.list(p).some((n) => n.startsWith('chromium')));
-}
-
 const unsupported = (what: string): Plan => ({
   kind: 'owner',
   message: `unsupported platform: install ${what} yourself, then re-run the bootstrap`,
@@ -193,7 +183,7 @@ export function buildCatalog(input: {
     required: true,
     async detect(d) {
       const nm = join(d.root, 'node_modules');
-      const need = ['.package-lock.json', 'tsx', 'better-sqlite3', 'patchright', 'playwright'];
+      const need = ['.package-lock.json', 'tsx', 'better-sqlite3', 'patchright'];
       const missing = need.filter((n) => !d.fs.exists(join(nm, n)));
       return missing.length
         ? { present: false, detail: `missing in node_modules: ${missing.join(', ')}` }
@@ -219,29 +209,6 @@ export function buildCatalog(input: {
       if (det.present) return done(det);
       if (d.platform === 'unsupported') return unsupported('renderer dependencies');
       return act({ id: 'renderer-deps:ci', summary: 'npm ci --prefix renderer', argv: ['npm', 'ci', '--prefix', 'renderer'], cwd: d.root, needsSudo: false, network: true });
-    },
-  };
-
-  const chromium: Item = {
-    id: 'playwright-chromium',
-    title: 'Playwright Chromium',
-    required: false,
-    optionalKind: 'consent',
-    async detect(d) {
-      return chromiumPresent(d)
-        ? { present: true, detail: 'Chromium binary found' }
-        : { present: false, detail: 'Playwright Chromium binary not found' };
-    },
-    plan(d, det) {
-      if (det.present) return done(det);
-      if (d.platform === 'unsupported') return unsupported('Playwright Chromium');
-      const actions: Action[] = [
-        { id: 'chromium:install', summary: 'npx playwright install chromium', argv: ['npx', 'playwright', 'install', 'chromium'], cwd: d.root, needsSudo: false, network: true },
-      ];
-      if (d.platform === 'linux') {
-        actions.push({ id: 'chromium:deps', summary: 'npx playwright install-deps chromium (system packages, sudo)', argv: ['npx', 'playwright', 'install-deps', 'chromium'], cwd: d.root, needsSudo: true, network: true });
-      }
-      return { kind: 'actions', actions };
     },
   };
 
@@ -367,7 +334,6 @@ export function buildCatalog(input: {
   const items: Item[] = [git, buildTools, node, npmDeps];
   if (input.hasRenderer) items.push(rendererDeps);
   items.push(
-    chromium,
     chrome,
     tmux,
     uv,

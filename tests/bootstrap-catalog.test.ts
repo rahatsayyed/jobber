@@ -73,10 +73,10 @@ describe('detect', () => {
     expect((await item('node').detect(deps())).present).toBe(false);
   });
 
-  it('npm-deps needs the lock marker and four packages', async () => {
+  it('npm-deps needs the lock marker and three packages', async () => {
     const nm = `${ROOT}/node_modules`;
     const all: Record<string, true> = {};
-    for (const n of ['.package-lock.json', 'tsx', 'better-sqlite3', 'patchright', 'playwright']) all[`${nm}/${n}`] = true;
+    for (const n of ['.package-lock.json', 'tsx', 'better-sqlite3', 'patchright']) all[`${nm}/${n}`] = true;
     expect((await item('npm-deps').detect(deps({ files: all }))).present).toBe(true);
     const partial = { ...all };
     delete partial[`${nm}/tsx`];
@@ -90,11 +90,8 @@ describe('detect', () => {
     expect((await item('renderer-deps').detect(deps())).present).toBe(false);
   });
 
-  it('playwright-chromium looks for chromium* in the cache dirs', async () => {
-    const dir = '/home/u/Library/Caches/ms-playwright';
-    expect((await item('playwright-chromium').detect(deps({ files: { [dir]: ['chromium-1100'] } }))).present).toBe(true);
-    expect((await item('playwright-chromium').detect(deps({ files: { [dir]: ['firefox-1'] } }))).present).toBe(false);
-    expect((await item('playwright-chromium').detect(deps())).present).toBe(false);
+  it('there is no Playwright browser item: every browser runs on the installed Chrome', () => {
+    expect(catalog().has('playwright-chromium' as ItemId)).toBe(false);
   });
 
   it('chrome: app bundle or google-chrome', async () => {
@@ -135,10 +132,6 @@ describe('plan, macOS', () => {
   it('npm-deps and renderer-deps', async () => {
     expect(actions(await planFor('npm-deps', deps()))[0]).toMatchObject({ argv: ['npm', 'ci'], network: true, needsSudo: false });
     expect(actions(await planFor('renderer-deps', deps()))[0].argv).toEqual(['npm', 'ci', '--prefix', 'renderer']);
-  });
-  it('playwright-chromium: one action, no sudo', async () => {
-    const a = actions(await planFor('playwright-chromium', deps()));
-    expect(a.map((x) => x.argv.join(' '))).toEqual(['npx playwright install chromium']);
   });
   it('chrome: brew cask', async () => {
     expect(actions(await planFor('chrome', deps()))[0].argv).toEqual(['brew', 'install', '--cask', 'google-chrome']);
@@ -193,12 +186,6 @@ describe('plan, Linux', () => {
   });
   it('node: owner when apt-cache is unavailable', async () => {
     expect((await planFor('node', L())).kind).toBe('owner');
-  });
-  it('playwright-chromium adds a separate sudo install-deps action', async () => {
-    const a = actions(await planFor('playwright-chromium', L()));
-    expect(a).toHaveLength(2);
-    expect(a[0].needsSudo).toBe(false);
-    expect(a[1]).toMatchObject({ argv: ['npx', 'playwright', 'install-deps', 'chromium'], needsSudo: true });
   });
   it('chrome: owner message only', async () => {
     const p = await planFor('chrome', L());
@@ -255,7 +242,7 @@ describe('invariants', () => {
     for (const id of ['git', 'build-tools', 'node', 'npm-deps', 'renderer-deps', 'tmux', 'uv', 'ccgram', 'claude-cli'] as ItemId[]) {
       expect(c.get(id)!.required, id).toBe(true);
     }
-    expect(c.get('playwright-chromium')!.optionalKind).toBe('consent');
+    expect(c.get('chrome')!.optionalKind).toBe('consent');
     expect(c.get('age')!.optionalKind).toBe('report_only');
     expect(c.get('rclone')!.optionalKind).toBe('report_only');
   });

@@ -1,7 +1,6 @@
 import fs from "fs";
 import path from "path";
 import Handlebars from "handlebars";
-import { chromium } from "playwright";
 import { resolveResumePath, missingResumeMessage } from "./userData.js";
 
 const inputDir = path.resolve(process.cwd(), "input");
@@ -40,18 +39,4 @@ const html = template(resume);
 fs.writeFileSync(htmlPath, html);
 console.log("✅ resume.html generated");
 
-const browser = await chromium.launch({ channel: "chrome" });
-const page = await browser.newPage();
-
-await page.goto(`file://${htmlPath}`, {
-  waitUntil: "load",
-});
-
-await page.pdf({
-  path: pdfPath,
-  format: "A4",
-  printBackground: true,
-});
-
-await browser.close();
-console.log("✅ resume.pdf generated");
+// HTML only: the PDF is printed by src/pdfRender.ts (headless installed Chrome); see `npm run render`.

@@ -29,7 +29,7 @@
         "node-version": "Install a newer Node.js, then run the bootstrap script again.",
         "tmux": "Install tmux (the bootstrap script offers this), then run the doctor again.",
         "chrome": "Install Google Chrome. It is needed for the LinkedIn and Naukri browser sessions.",
-        "browser-binaries": "Install the Playwright Chromium build with the bootstrap script, or accept that browser features stay off.",
+        "browser-binaries": "Run npm ci to install the patchright package. Browsers run on the installed Google Chrome, so no browser download is needed.",
         "ccgram-version": "Install the exact ccgram version pinned in config/ccgram.pin.json using the bootstrap script."
       }
     },

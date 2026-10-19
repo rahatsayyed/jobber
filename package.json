@@ -46,6 +46,7 @@
     "eval:metrics": "tsx scripts/eval/metrics.ts",
     "eval:judge": "tsx scripts/eval/judge.ts",
     "report": "tsx scripts/funnel-report.ts",
+    "render": "tsx scripts/render-resume.ts",
     "jobber:control": "tsx scripts/jobber-control.ts",
     "scheduler": "tsx scripts/scheduler.ts",
     "scheduler:units": "tsx scripts/scheduler-units.ts",
@@ -66,8 +67,7 @@
     "nodemailer": "^6.10.0",
     "onnxruntime-node": "1.30.0",
     "patchright": "^1.63.0",
-    "pdf-parse": "1.1.1",
-    "playwright": "^1.58.0"
+    "pdf-parse": "1.1.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",

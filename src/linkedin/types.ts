@@ -68,6 +68,8 @@ export interface LiPage {
   goBack(opts?: { timeout?: number; waitUntil?: string }): Promise<unknown>;
   keyboard: { press(key: string): Promise<void> };
   screenshot(opts?: { type?: 'png'; fullPage?: boolean }): Promise<Buffer>;
+  /** Print to PDF (headless Chrome only); used by the resume renderer, not by any site session. */
+  pdf?(opts: { path: string; format: string; printBackground: boolean }): Promise<unknown>;
 }
 export interface LiContext {
   newPage(): Promise<LiPage>;

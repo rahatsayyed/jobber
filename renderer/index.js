@@ -2,7 +2,6 @@ import fs from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
 import Handlebars from "handlebars";
-import { chromium } from "playwright";
 import { resolveResumePath, missingResumeMessage } from "./userData.js";
 
 const projectRoot = import.meta.dirname;
@@ -53,18 +52,5 @@ const html = template(resume).replaceAll('url("./fonts/', `url("${fontUrl}/`);
 fs.writeFileSync(htmlPath, html);
 console.log(`✅ ${htmlPath} generated`);
 
-const browser = await chromium.launch({ channel: "chrome" });
-const page = await browser.newPage();
-
-await page.goto(`file://${htmlPath}`, {
-  waitUntil: "load",
-});
-
-await page.pdf({
-  path: pdfPath,
-  format: "A4",
-  printBackground: true,
-});
-
-await browser.close();
-console.log(`✅ ${pdfPath} generated`);
+// The PDF is printed by src/pdfRender.ts (headless installed Chrome through the shared launcher);
+// run `npm run render` from the project root to produce both files.

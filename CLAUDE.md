@@ -51,10 +51,11 @@ Operators (one Agent call each, exact tool lists in `config/worker-tools.json`):
   `apply_state`, `apply_autofill`, `apply_fill`, `apply_choose`, `apply_upload`, `apply_next`,
   `apply_submit`, `apply_escalate`, `apply_recipe`, `apply_propose_recipe`, `apply_limits`,
   `apply_close`, `site_login`, `site_signup`, `site_open_link`). See "Applying".
-- Every browser (LinkedIn, Naukri, scout, applier) is patchright plus the installed Google Chrome
-  (`channel: 'chrome'`), launched through the one shared launcher (`launchRealChrome` in
-  `src/linkedin/browser.ts`, re-exported for the web code by `src/webcore/launch.ts`); the lint test
-  `tests/browser-launch-lint.test.ts` keeps other code from importing a browser library.
+- Every browser (LinkedIn, Naukri, scout, applier and the resume PDF render in `src/pdfRender.ts`) is
+  patchright plus the installed Google Chrome (`channel: 'chrome'`), launched through the one shared
+  launcher (`launchRealChrome` in `src/linkedin/browser.ts`, re-exported for the web code by
+  `src/webcore/launch.ts`); the lint test `tests/browser-launch-lint.test.ts` keeps other code, the
+  `renderer/` scripts included, from importing a browser library. There is no `playwright` dependency.
 
 The old batch-hunt pieces are gone (the `discoverer` and `sender` agents, the `discover` MCP, the
 scripted per-platform apply tools and their router, the headless-CLI ATS bootstrap and hybrid
@@ -657,7 +658,7 @@ section is the reference for what exists.
   `scheduler:units`, `jobber:control -- stop|resume|status`, `dry-run:report`, `auto-update`
   (`--tick|--now|--dry-run|--status`), `backup` (`--tick|--now|--plan|--status`), `restore`,
   `user-data -- init|migrate`, `linkedin:login`, `naukri:login`, `linkedin:clear-halt`, `linkedin:seed`,
-  `classifier:fit`, `classifier:bench`, `report`, `build`, `test`, `eval:gen|metrics|judge`,
+  `classifier:fit`, `classifier:bench`, `report`, `render` (resume HTML and PDF by hand), `build`, `test`, `eval:gen|metrics|judge`,
   `permissions`, `ccgram-hooks`, `site:account -- add|list|remove|status` (owner-managed site credentials), `providers -- list|show|validate|approve|reject` (generated job-source providers), `settings -- list|get KEY|check|backups|diff ID` (read-only), `layout`, and `mcp:<name>` (job-fetch, resume, contacts, email, db, gates,
   applier, outreach) to start one stdio server by hand (there are no scripts for the linkedin, naukri and scout servers: `.mcp.json` starts them). `linkedin:login` and `naukri:login` take no flag. The dashboard (`scripts/web.ts` serving `src/web/server.ts`, sign-in in
   `src/dash/oidc.ts`) listens on loopback by default (`WEB_BIND`, `WEB_ALLOW_REMOTE_BIND`) and
@@ -1171,11 +1172,11 @@ and the Indian and Gulf job boards.
   until L3); whether a blocked `UserPromptSubmit` prompt also leaves the model context and
   transcript (U4, until L3); tmux window environment inheritance (U7, until L9 and L8);
   single-instance scheduler and SIGINT behaviour (U9, until L8). Check upstream, no live check:
-  the Claude Code CLI install method and flags (U1), Homebrew and apt package names and
-  Playwright system dependencies (U5), Linux Node, uv and Chrome installer URLs (U6); L1 and L2
+  the Claude Code CLI install method and flags (U1), Homebrew and apt package names (U5),
+  Linux Node, uv and Chrome installer URLs (U6); L1 and L2
   exercise the install paths only loosely. How ccgram binds the `manager` window (U8) is owner
   decision O5 in plan 8E. The `better-sqlite3` native build toolchain (U12) is surfaced by the
-  `build-tools` item and `npm ci` output. The dry-run dashboard stage runs the token login for real (plan 8C merged; it skips only on a 404 auth mode route). The patchright browser download is not installed by bootstrap (U13).
+  `build-tools` item and `npm ci` output. The dry-run dashboard stage runs the token login for real (plan 8C merged; it skips only on a 404 auth mode route). No browser download is needed (U13 is closed): every browser runs on the installed Google Chrome.
 - Plan 8F setup text is unverified until the owner live checks: BotFather's Threaded Mode / Topics
   label and path, Mini App versus `/mybots` (unverified until owner live check L1); whether `getMe`
   returns the topics field the step reads (`has_topics_enabled`, one constant in
@@ -1187,11 +1188,14 @@ and the Indian and Gulf job boards.
   (`src/platform/notify.ts`, `run.sh`, `claude-session.sh`, `start.sh`; traced by reading,
   unverified until L2); Hunter's account-endpoint credit use (unverified until L7).
 
-Test baseline: `npx tsc -p . --noEmit` is clean and `npx vitest run` has 0 known failures. Resume
-rendering (`renderer/index.js`, `renderer/html.js`) launches the installed Google Chrome
-(`channel: 'chrome'`), so the render tests need Chrome but no Playwright browser download. The
-list of known failures, mirrored in `config/update-known-failures.json` (now `{}`), is used by the
-auto-update test gate; update both together if one ever appears.
+Test baseline: `npx tsc -p . --noEmit` is clean and `npx vitest run` has 0 known failures. The
+resume PDF tests (`tests/renderChecked.test.ts`, `tests/resume.test.ts`) render real PDFs through
+headless installed Google Chrome (`src/pdfRender.ts`, the shared launcher; `renderer/index.js`
+only writes the HTML), so they need Chrome on the machine; there is no Playwright download. The
+render tests use a full-page synthetic fixture (`tests/fixtures/render/`) because the shipped example
+resume is far shorter than a page. The list of known failures, mirrored in
+`config/update-known-failures.json` (`{}`), is used by the auto-update test gate; update both
+together if one ever appears.
 
 ## Safety
 

@@ -8,7 +8,6 @@ export type ItemId =
   | 'node'
   | 'npm-deps'
   | 'renderer-deps'
-  | 'playwright-chromium'
   | 'chrome'
   | 'tmux'
   | 'uv'

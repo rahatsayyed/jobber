@@ -190,8 +190,7 @@ wizard text as a best guess until you have checked it yourself.
 - Hidden secret input in a real terminal: unverified.
 - That a skipped Telegram is safe for every consumer of `TELEGRAM_BOT_TOKEN`: traced by reading
   only.
-- Install commands and package names used by `bootstrap` for Homebrew, apt, Playwright system
-  dependencies, uv, Chrome and the Claude CLI: check upstream.
+- Install commands and package names used by `bootstrap` for Homebrew, apt, uv, Chrome and the Claude CLI: check upstream.
 
 ## bootstrap
 
@@ -219,7 +218,7 @@ npm` (Debian-like, only when apt offers a new enough Node) or `npm ci`. It then 
 | `--help` | Print usage. |
 
 Items (ids from `src/bootstrap/catalog.ts`): `git`, `build-tools`, `node`, `npm-deps`,
-`renderer-deps`, `playwright-chromium`, `chrome`, `tmux`, `uv`, `ccgram`, `claude-cli`,
+`renderer-deps`, `chrome`, `tmux`, `uv`, `ccgram`, `claude-cli`,
 `classifier-model`, plus the optional `age` and `rclone`. The classifier model profile is read
 from `config/classifier-models.json` (`BOOTSTRAP_MODEL_PROFILE` in `.env` can override; process
 env wins).

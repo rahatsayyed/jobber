@@ -9,7 +9,7 @@ import { defaultFetchDeps } from '../safety/modelFetch.js';
 import type { Check, CheckResult, DoctorContext } from './doctor.js';
 
 const REQUIRED: ItemId[] = ['node', 'npm-deps', 'renderer-deps', 'tmux', 'uv', 'ccgram', 'claude-cli'];
-const OPTIONAL: ItemId[] = ['chrome', 'playwright-chromium', 'classifier-model'];
+const OPTIONAL: ItemId[] = ['chrome', 'classifier-model'];
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 function hostPlatform(): Platform {

@@ -14,7 +14,6 @@
   "description": "",
   "dependencies": {
     "handlebars": "^4.7.8",
-    "pizzip": "^3.2.0",
-    "playwright": "^1.58.0"
+    "pizzip": "^3.2.0"
   }
 }

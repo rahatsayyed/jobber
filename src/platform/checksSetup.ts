@@ -78,18 +78,6 @@ export function looseDbFiles(ctx: DoctorContext): string[] {
 
 const SERVED = ['user-data', 'docs', 'renderer', 'reports', 'public'];
 
-function chromiumPresent(ctx: DoctorContext): boolean {
-  const list = ctx.fs.list;
-  if (!list) return false;
-  const home = ctx.env.HOME ?? '';
-  const dirs = [
-    ctx.env.PLAYWRIGHT_BROWSERS_PATH,
-    home && join(home, 'Library', 'Caches', 'ms-playwright'),
-    home && join(home, '.cache', 'ms-playwright'),
-  ].filter((d): d is string => Boolean(d));
-  return dirs.some((d) => ctx.fs.exists(d) && list(d).some((n) => n.startsWith('chromium')));
-}
-
 export const setupToolingChecks: Check[] = [
   {
     id: 'node-version',
@@ -132,19 +120,17 @@ export const setupToolingChecks: Check[] = [
       if (ctx.fs.exists('/Applications/Google Chrome.app')) return pass('Google Chrome found');
       const r = await ctx.run('google-chrome', ['--version']);
       if (r.code === 0) return pass('Google Chrome found');
-      return warn('Google Chrome not found; Naukri headless search and session capture need it', 'install Google Chrome');
+      return warn('Google Chrome not found; every browser tool and the resume PDF render need it', 'install Google Chrome');
     },
   },
   {
     id: 'browser-binaries',
-    title: 'browser automation packages and Chromium',
+    title: 'browser automation package (patchright)',
     async run(ctx) {
-      const missing = ['patchright', 'playwright'].filter((p) => !ctx.fs.exists(join(ctx.root, 'node_modules', p)));
+      // Every browser runs on the installed Google Chrome (the `chrome` check above); no browser download is needed.
+      const missing = ['patchright'].filter((p) => !ctx.fs.exists(join(ctx.root, 'node_modules', p)));
       if (missing.length) return fail(`missing packages: ${missing.join(', ')}`, 'npm ci');
-      if (!chromiumPresent(ctx)) {
-        return warn('Playwright Chromium binary not found', 'run npx playwright install chromium');
-      }
-      return pass('packages and Chromium present');
+      return pass('patchright installed; browsers run on the installed Google Chrome');
     },
   },
   {

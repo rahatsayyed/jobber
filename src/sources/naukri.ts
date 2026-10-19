@@ -4,7 +4,7 @@ import type { Provider } from './provider.js';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Browser, BrowserContext, Page } from 'playwright';
+import type { Browser, BrowserContext, Page } from 'patchright';
 import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS, type LiLauncher } from '../webcore/launch.js';
 
 // Browser launching goes through the shared launcher (patchright + installed Google Chrome, never bundled
