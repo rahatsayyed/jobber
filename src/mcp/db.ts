@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { ATS_REGISTRY } from '../apply/registry.js';
-import { atsCoverageSchema, enqueueOutreachClassified, getCalibrationRows, listJobs, listUnscoredJobs, listSentEmails, listQueuedOutreach, listExcludedQueuedOutreach, markExcluded, openDb, recordEmailSent, recordOutcomeChecked, setEmailThread, sweepDeadlines, unexcludeJob, updateOutreachStatus } from '../db.js';
+import { atsCoverageSchema, enqueueOutreachClassifiedResult,getCalibrationRows, listJobs, listUnscoredJobs, listSentEmails, listQueuedOutreach, listExcludedQueuedOutreach, markExcluded, openDb, recordEmailSent, recordOutcomeChecked, setEmailThread, sweepDeadlines, unexcludeJob, updateOutreachStatus } from '../db.js';
 import { dbPath } from '../dbPath.js';
 import { handleSaveMatchResults, matchResultsInputShape } from '../matchTool.js';
 import { REPLY_WINDOW_DAYS } from '../replies.js';
@@ -210,7 +210,7 @@ server.registerTool(
   },
   async (params) => {
     // The model's apply_platform is ignored unless it is 'none'; code classifies from the job source and apply_url.
-    const id = enqueueOutreachClassified(db, {
+    const { id, duplicate } = enqueueOutreachClassifiedResult(db, {
       job_id: params.job_id,
       resume_pdf_path: params.resume_pdf_path ?? null,
       email_subject: params.email_subject ?? null,
@@ -229,7 +229,8 @@ server.registerTool(
       review_applied: params.review_applied ?? null,
       review_rejected: params.review_rejected ?? null,
     });
-    return { content: [{ type: 'text', text: JSON.stringify({ id }) }] };
+    // A duplicate (same job and connect profile already queued) changes nothing and returns the existing id.
+    return { content: [{ type: 'text', text: JSON.stringify(duplicate ? { id, duplicate: true, note: 'already queued for this job and profile; nothing changed' } : { id }) }] };
   }
 );
 

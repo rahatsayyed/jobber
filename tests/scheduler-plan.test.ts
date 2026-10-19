@@ -251,7 +251,9 @@ describe('apply task (8G-2 task 21)', () => {
     db.prepare("INSERT INTO jobs (id, source, title, company, url) VALUES ('j1','t','T','C','u')").run();
     db.prepare("INSERT INTO jobs (id, source, title, company, url, excluded_reason) VALUES ('j2','t','T','C','u','x')").run();
     db.prepare("INSERT INTO jobs (id, source, title, company, url) VALUES ('j3','t','T','C','u')").run();
-    const ins = db.prepare('INSERT INTO outreach_queue (job_id, apply_platform, apply_status, status) VALUES (?, ?, ?, ?)');
+    const stmt = db.prepare('INSERT INTO outreach_queue (job_id, apply_platform, apply_status, status, connect_profile_url) VALUES (?, ?, ?, ?, ?)');
+    let n = 0; // one queue row per job and connect profile, so each row gets its own profile
+    const ins = { run: (...a: unknown[]) => stmt.run(...a, `https://linkedin.com/in/p${n++}`) };
     ins.run('j1', 'greenhouse', null, 'queued'); // counted
     ins.run('j3', 'browser', 'queued', 'queued'); // counted (one per job)
     ins.run('j1', 'none', null, 'queued'); // not an apply row

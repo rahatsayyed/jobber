@@ -252,8 +252,9 @@ describe('enqueue_outreach apply classification', () => {
   it('the MCP enqueue path (enqueueOutreachClassified) stores code classification, not the model value', () => {
     const db = openDb(':memory:');
     seed(db, 'k1', 'remotive');
+    let n = 0; // one queue row per job and connect profile, so each call uses its own profile
     const q = (platform: string | null, url: string | null) => {
-      const id = enqueueOutreachClassified(db, { ...base, job_id: 'k1', apply_platform: platform, apply_url: url }, E);
+      const id = enqueueOutreachClassified(db, { ...base, connect_profile_url: `https://linkedin.com/in/p${n++}`, job_id: 'k1', apply_platform: platform, apply_url: url }, E);
       return row(db, id);
     };
     expect(q('greenhouse', 'https://jobs.lever.co/acme/1')).toEqual({ apply_platform: 'lever', apply_tier: 'fast' });

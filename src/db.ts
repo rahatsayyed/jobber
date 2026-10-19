@@ -294,6 +294,7 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
     db.exec("UPDATE outreach_queue SET email_sent_at = updated_at WHERE email_status = 'sent' AND email_sent_at IS NULL AND updated_at IS NOT NULL");
   }
 
+  dedupeOutreachQueue(db);
   backfillJobKeys(db);
   migrateOutreachTables(db);
   migrateSchedulerTables(db);
@@ -301,6 +302,32 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
 }
 
 /** Mark a queued email sent (and its duplicate rows for the same job+recipient, which share one email). */
+/**
+ * One outreach_queue row per job and connect profile (a null profile is the job's email/apply row). Older databases hold
+ * duplicate pairs, so dedupe first, then create the unique index. Survivor: the most advanced row (anything sent, claimed or
+ * submitted beats queued), then the earliest sent, then the lowest id; a sent row is never deleted in favour of a queued one.
+ * Nothing references outreach_queue ids, so deleting the losers is safe. Idempotent; a legacy table without the columns is left alone.
+ */
+function dedupeOutreachQueue(db: BetterSqlite3.Database): void {
+  const cols = new Set((db.prepare('PRAGMA table_info(outreach_queue)').all() as { name: string }[]).map((c) => c.name));
+  for (const c of ['job_id', 'connect_profile_url', 'email_status', 'email_sent_at', 'connect_status', 'apply_status', 'status']) if (!cols.has(c)) return;
+  const adv = (col: string) => `(${col} IS NOT NULL AND ${col} NOT IN ('queued', 'pending', 'skipped', 'held_review'))`;
+  const advanced = `(email_sent_at IS NOT NULL OR ${adv('email_status')} OR ${adv('connect_status')} OR ${adv('apply_status')} OR ${adv('status')})`;
+  db.transaction(() => {
+    db.exec(`
+      DELETE FROM outreach_queue WHERE id IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY job_id, COALESCE(connect_profile_url, '')
+            ORDER BY CASE WHEN ${advanced} THEN 0 ELSE 1 END, CASE WHEN email_sent_at IS NULL THEN 1 ELSE 0 END, email_sent_at, id
+          ) AS rn FROM outreach_queue
+        ) WHERE rn > 1
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_outreach_queue_job_profile ON outreach_queue (job_id, COALESCE(connect_profile_url, ''));
+    `);
+  })();
+}
+
 export function recordEmailSent(db: BetterSqlite3.Database, queueId: number, messageId: string | null): number {
   const r = db.prepare('SELECT job_id, email_to FROM outreach_queue WHERE id = ?').get(queueId) as { job_id: string; email_to: string | null } | undefined;
   if (!r) return 0;
@@ -644,8 +671,17 @@ export function enqueueOutreachClassified(
   item: Parameters<typeof enqueueOutreach>[1],
   env: NodeJS.ProcessEnv = process.env,
 ): number {
+  return enqueueOutreachClassifiedResult(db, item, env).id;
+}
+
+// Same as enqueueOutreachClassified, but says whether the row already existed (uniqueness per job and connect profile).
+export function enqueueOutreachClassifiedResult(
+  db: BetterSqlite3.Database,
+  item: Parameters<typeof enqueueOutreach>[1],
+  env: NodeJS.ProcessEnv = process.env,
+): { id: number; duplicate: boolean } {
   const cls = classifyQueueApply(db, item.job_id, item.apply_platform, item.apply_url, env);
-  return enqueueOutreach(db, { ...item, apply_platform: cls.apply_platform, apply_tier: cls.apply_tier });
+  return enqueueOutreachResult(db, { ...item, apply_platform: cls.apply_platform, apply_tier: cls.apply_tier });
 }
 
 export function enqueueOutreach(
@@ -671,6 +707,14 @@ export function enqueueOutreach(
     review_rejected?: number | null;
   }
 ): number {
+  return enqueueOutreachResult(db, item).id;
+}
+
+// Inserts the row unless one exists for the same job and connect profile (unique index); a duplicate returns the existing id and changes nothing.
+export function enqueueOutreachResult(
+  db: BetterSqlite3.Database,
+  item: Parameters<typeof enqueueOutreach>[1],
+): { id: number; duplicate: boolean } {
   // Discover-only sources (see src/lib/discoverOnly.ts) never get an apply attempt, whatever the preparer asked for: 'none' keeps
   // the sender away from the shared daily apply counter while email and connect outreach on the same row still run.
   const source = (db.prepare('SELECT source FROM jobs WHERE id = ?').get(item.job_id) as { source: string | null } | undefined)?.source;
@@ -679,7 +723,7 @@ export function enqueueOutreach(
   // until `npm run providers -- approve <id>` releases them. list_queued_outreach returns only status 'queued', so a held row is never sent.
   const held = isHeldSource(source) && !(db.prepare('SELECT approved FROM generated_providers WHERE id = ?').get(String(source).slice(4)) as { approved: number } | undefined)?.approved;
   const result = db.prepare(`
-    INSERT INTO outreach_queue (
+    INSERT OR IGNORE INTO outreach_queue (
       job_id, resume_pdf_path, email_subject, email_body, email_to,
       connect_note, connect_profile_url, connect_category, connect_company,
       apply_platform, apply_tier, apply_url, resume_json,
@@ -706,7 +750,12 @@ export function enqueueOutreach(
     item.review_rejected ?? null,
     held ? 'held_review' : 'queued'
   );
-  return Number(result.lastInsertRowid);
+  if (result.changes === 0) {
+    const existing = db.prepare("SELECT id FROM outreach_queue WHERE job_id = ? AND COALESCE(connect_profile_url, '') = COALESCE(?, '') ORDER BY id LIMIT 1")
+      .get(item.job_id, item.connect_profile_url) as { id: number };
+    return { id: existing.id, duplicate: true };
+  }
+  return { id: Number(result.lastInsertRowid), duplicate: false };
 }
 
 export function listQueuedOutreach(db: BetterSqlite3.Database): OutreachQueueItem[] {
