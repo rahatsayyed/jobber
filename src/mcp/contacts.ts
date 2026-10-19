@@ -8,8 +8,13 @@ import { scrapeEmails } from '../lib/scrape.js';
 import { verifyEmail } from '../lib/verify.js';
 import { hunterDomainSearch } from '../lib/hunter.js';
 import { withHnGate } from '../lib/postingDomains.js';
+import { loadContactsEnv } from '../lib/contactsEnv.js';
 import { searchWithBudget } from '../search/index.js';
 import { resolveDomainForJob } from '../search/ladder.js';
+
+// Serper and Hunter keys are not in the wake env (outreach_wake env_keys stay narrow): this server reads
+// only its own allowlisted names from the project .env, process env wins (finding 17). Live-unverified in a wake.
+loadContactsEnv();
 
 const db = openDb(dbPath());
 
