@@ -11,6 +11,7 @@ import { withHnGate } from '../lib/postingDomains.js';
 import { loadContactsEnv } from '../lib/contactsEnv.js';
 import { searchWithBudget } from '../search/index.js';
 import { resolveDomainForJob } from '../search/ladder.js';
+import { createContactsDork } from '../search/contactsDork.js';
 
 // Serper and Hunter keys are not in the wake env (outreach_wake env_keys stay narrow): this server reads
 // only its own allowlisted names from the project .env, process env wins (finding 17). Live-unverified in a wake.
@@ -18,9 +19,13 @@ loadContactsEnv();
 
 const db = openDb(dbPath());
 
-// Search goes through src/search (cache, then browser dork, then Serper under budget).
+// Search goes through src/search (cache, then browser dork, then Serper under budget). The dork provider
+// builds its browser lazily and the engine closes it after each query (finding 7, live-unverified).
+const dork = createContactsDork({ db });
+const searchDeps = { dork };
+
 async function searchDomainEmails(domain: string): Promise<string[]> {
-  const out = await searchWithBudget(db, 'domain_emails', { domain });
+  const out = await searchWithBudget(db, 'domain_emails', { domain }, searchDeps);
   const text = out.results.map((item) => `${item.title} ${item.snippet} ${item.url}`).join('\n');
   return extractEmails(text);
 }
@@ -47,7 +52,7 @@ server.registerTool(
   },
   async ({ company, domain, person_name, job_id }) => {
     // source, apply_url and description come from the jobs table, never from the model.
-    const { job, ladder } = await resolveDomainForJob(db, { company, domain, job_id });
+    const { job, ladder } = await resolveDomainForJob(db, { company, domain, job_id }, searchDeps);
     const resolvedDomain = ladder.domain;
 
     // Without job_id the tool is unchanged (returns the bare array).
