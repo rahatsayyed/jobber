@@ -145,6 +145,15 @@ describe('dashboard skip', () => {
     t.sio.assertDone();
   });
 
+  it('an already configured dashboard is done without a skip offer (clears a stale skip)', async () => {
+    const env = 'DASHBOARD_ALLOWED_EMAIL=me@example.com\n';
+    const t = mk({ script: [], files: { ...WITH, 'proj/.env': env } });
+    t.ctx.state.steps.dashboard = { status: 'skipped', at: '2026-10-14T00:00:00Z' };
+    expect(await dashboardStep.run(t.ctx)).toBe('done');
+    expect(t.spawns).toEqual([]);
+    t.sio.assertDone();
+  });
+
   it('existing OIDC owner is not offered a skip', async () => {
     const env = 'WEB_OIDC_CLIENT_ID=cid\nWEB_OIDC_CLIENT_SECRET=sec\n';
     const t = mk({ script: [], files: { ...WITH, 'proj/.env': env } });

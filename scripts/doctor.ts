@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { allDoctorChecks } from '../src/platform/checkLists.js';
 import { exitCode, formatJson, formatReport, runChecks, type DoctorContext } from '../src/platform/doctor.js';
 import { skipSummary, skippedFromContext, withSkips } from '../src/setup/skips.js';
+import { readAuthAccount, readAuthToken } from '../src/dash/authRead.js';
 import { defaultRun } from '../src/platform/tmux.js';
 import { initTerm } from '../src/ui/term.js';
 
@@ -45,36 +46,8 @@ const ctx: DoctorContext = {
       return null;
     }
   },
-  authAccount: (p) => {
-    try {
-      const Database = createRequire(import.meta.url)('better-sqlite3') as SqliteCtor;
-      const db = new Database(p, { readonly: true, fileMustExist: true });
-      try {
-        const r = db.prepare('SELECT email, sub FROM allowed_account WHERE id = 1').get() as
-          | { email: string; sub: string | null }
-          | undefined;
-        return r ? { email: r.email, pinned: r.sub !== null } : null;
-      } finally {
-        db.close();
-      }
-    } catch {
-      return null;
-    }
-  },
-  authToken: (p) => {
-    try {
-      const Database = createRequire(import.meta.url)('better-sqlite3') as SqliteCtor;
-      const db = new Database(p, { readonly: true, fileMustExist: true });
-      try {
-        const r = db.prepare('SELECT created_at FROM access_token WHERE id = 1').get() as { created_at: string } | undefined;
-        return r ? { set: true, createdAt: r.created_at } : { set: false, createdAt: null };
-      } finally {
-        db.close();
-      }
-    } catch {
-      return null;
-    }
-  },
+  authAccount: (p) => readAuthAccount(p),
+  authToken: (p) => readAuthToken(p),
   now: () => new Date(),
 };
 

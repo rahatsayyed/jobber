@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { allDoctorChecks } from '../src/platform/checkLists.js';
 import { runChecks, type CheckOutcome, type DoctorContext } from '../src/platform/doctor.js';
+import { readAuthAccount, readAuthToken } from '../src/dash/authRead.js';
 import { defaultRun } from '../src/platform/tmux.js';
 import { runDown, type DownOpts } from '../src/stack/down.js';
 import { runUp } from '../src/stack/up.js';
@@ -63,17 +64,7 @@ async function main(): Promise<number> {
     say: (l: string) => console.log(term.paint(l)),
     sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
     probe: loopbackProbe,
-    authTokenSet: (p: string): boolean | null => {
-      try {
-        const Database = createRequire(import.meta.url)('better-sqlite3') as new (f: string, o: object) => {
-          prepare(q: string): { get(): unknown }; close(): void;
-        };
-        const db = new Database(p, { readonly: true, fileMustExist: true });
-        try { return db.prepare('SELECT 1 AS x FROM access_token WHERE id = 1').get() !== undefined; } finally { db.close(); }
-      } catch {
-        return null;
-      }
-    },
+    authTokenSet: (p: string): boolean | null => readAuthToken(p)?.set ?? null,
     doctor: async (): Promise<CheckOutcome[]> => {
       const ctx: DoctorContext = {
         root,
@@ -86,6 +77,8 @@ async function main(): Promise<number> {
           mode: (x) => (existsSync(x) ? statSync(x).mode & 0o777 : null),
         },
         now: () => new Date(),
+        authToken: (p) => readAuthToken(p),
+        authAccount: (p) => readAuthAccount(p),
       };
       return runChecks(allDoctorChecks(), ctx);
     },

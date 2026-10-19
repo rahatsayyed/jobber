@@ -8,6 +8,8 @@ import type { Check, CheckResult, DoctorContext } from '../platform/doctor.js';
 import { skip } from '../platform/doctor.js';
 import { parseEnv } from '../platform/envFile.js';
 import { userDataDir } from '../lib/userData.js';
+import { readAuthToken } from '../dash/authRead.js';
+import { authDbPathFromEnv } from '../web/env.js';
 
 export type SkippableId = 'telegram' | 'dashboard' | 'gmail' | 'apikeys';
 
@@ -53,12 +55,17 @@ export const SKIP_SPECS: readonly SkipSpec[] = [
     checkIds: ['web', 'dashboard-login'],
     // WEB_AUTH_MODE=token is the shipped .env.example default, so it is not a deliberate choice;
     // only oidc or google_desktop (or a client id or allowed email) counts as configured.
-    configured: (env) => {
+    // A stored access token in the auth store also counts (finding 11): it is the same state
+    // `npm run dashboard -- status` reports, read by the one shared helper.
+    configured: (env, fs, root) => {
       const mode = (env.WEB_AUTH_MODE ?? '').trim().toLowerCase();
-      return (
+      if (
         mode === 'oidc' || mode === 'google_desktop' ||
         set(env, 'WEB_OIDC_CLIENT_ID') || set(env, 'DASHBOARD_ALLOWED_EMAIL')
-      );
+      ) return true;
+      const rel = authDbPathFromEnv(env);
+      const p = isAbsolute(rel) ? rel : join(root, rel);
+      return fs.exists(p) && readAuthToken(p)?.set === true;
     },
   },
   {

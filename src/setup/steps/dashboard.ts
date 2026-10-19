@@ -7,6 +7,7 @@ import { envFileValue, updateEnvText, writeEnvFile } from '../envWriter.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 import { offerSkip, say } from '../coach.js';
 import { SKIP_SPECS } from '../skips.js';
+import { parseEnv } from '../../platform/envFile.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const CALLBACK_PATH = '/auth/callback';
@@ -100,8 +101,17 @@ export const dashboardStep: SetupStep = {
       return 'done';
     }
 
-    // A skip leaves .env untouched: the local settings are written only after this offer.
+    // Configured wins (finding 11): an already configured dashboard (sign-in settings in .env, or an
+    // access token in the auth store) is done. The runner then records it done, which replaces a
+    // stale "skipped" record, so `up` and the doctor stop treating the dashboard as skipped.
     const spec = SKIP_SPECS.find((x) => x.id === 'dashboard');
+    if (spec && spec.configured(parseEnv(envText), ctx.fs, root)) {
+      localSettings(ctx);
+      io.say('The dashboard is already configured; any earlier skip is cleared.');
+      return 'done';
+    }
+
+    // A skip leaves .env untouched: the local settings are written only after this offer.
     if (spec && (await offerSkip(ctx, spec)) === 'later') return 'skipped';
 
     localSettings(ctx);
