@@ -204,7 +204,7 @@ Capture the LinkedIn and Naukri sessions on a machine with a display, or run the
 - **Anything looks wrong:** `npm run doctor` names the failing check and the fix.
 - **Gmail not authorized:** rerun `npm run setup -- --step gmail` (see [Gmail setup](docs/gmail-mcp-setup.md)).
 - **LinkedIn or Naukri session expired:** rerun `npm run setup -- --step sessions` (see [LinkedIn sessions](docs/linkedin-sessions-setup.md) and [Naukri session](docs/naukri-session-setup.md)).
-- **Playwright PDF rendering fails:** `npx playwright install --with-deps chromium`.
+- **PDF rendering fails:** the renderer launches the installed Google Chrome (`channel: 'chrome'`); install Chrome.
 - **A source returns nothing or errors:** `npm run status -- sources` shows the per-source table; see [docs/sources-and-platforms.md](docs/sources-and-platforms.md).
 - **Jobs found but no matches:** lower `MATCH_THRESHOLD` temporarily or add missing skills to `user-data/resume.json`.
 

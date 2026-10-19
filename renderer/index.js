@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { pathToFileURL } from "url";
 import Handlebars from "handlebars";
 import { chromium } from "playwright";
 import { resolveResumePath, missingResumeMessage } from "./userData.js";
@@ -44,13 +45,15 @@ const templateHtml = fs.readFileSync(templatePath, "utf8");
 const template = Handlebars.compile(templateHtml);
 
 // Render
-const html = template(resume);
+// The template points at ./fonts/, which does not exist next to the per-job output; the files live in renderer/font.
+const fontUrl = pathToFileURL(path.join(projectRoot, "font")).href;
+const html = template(resume).replaceAll('url("./fonts/', `url("${fontUrl}/`);
 
 // Save
 fs.writeFileSync(htmlPath, html);
 console.log(`✅ ${htmlPath} generated`);
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ channel: "chrome" });
 const page = await browser.newPage();
 
 await page.goto(`file://${htmlPath}`, {

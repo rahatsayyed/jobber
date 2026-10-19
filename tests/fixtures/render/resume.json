@@ -1,0 +1,72 @@
+{
+  "name": "Jane Doe",
+  "jobTitle": "Full Stack Developer",
+  "email": "jane@example.com",
+  "phone": "+00 0000000000",
+  "website": { "url": "https://example.com/example", "label": "example.com" },
+  "social": {
+    "linkedin": { "url": "https://linkedin.com/in/example-person", "label": "linkedin.com/in/example-person" },
+    "github": { "url": "https://example.com/github", "label": "example.com/github" },
+    "flowcv": { "url": "https://example.com/flowcv", "label": "example.com/flowcv" }
+  },
+  "summary": "Full stack developer who builds and maintains web applications with React and TypeScript, works closely with designers and backend engineers, and cares about readable code, reliable releases and steady performance work.",
+  "experience": [
+    {
+      "title": "Senior Software Engineer",
+      "company": "Example Corp",
+      "companyUrl": "https://example.com/example",
+      "location": null,
+      "start": "2021-01",
+      "end": "2024-06",
+      "description": [
+        "Coordinated cross-functional delivery of a customer dashboard with design, product and backend teammates, keeping releases on a steady weekly cadence.",
+        "Built reusable React components in TypeScript for forms, tables and charts, which shortened the time to assemble new screens across several products.",
+        "Improved the load time of the main dashboard by splitting bundles, caching API responses and removing unused dependencies from the build.",
+        "Wrote integration tests around the checkout flow and fixed several long-standing defects found along the way.",
+        "Reviewed pull requests from teammates and mentored two junior developers on component design and testing habits.",
+        "Maintained REST endpoints in Node.js and PostgreSQL queries behind the dashboard, adding indexes where slow queries showed up in monitoring.",
+        "Documented deployment steps and on-call notes so that releases no longer depended on one person.",
+        "Introduced a shared design token set for colors and spacing so that new screens looked consistent without manual tweaking.",
+        "Helped plan quarterly work with the product manager by breaking large requests into small slices that could ship independently."
+      ]
+    },
+    {
+      "title": "Software Engineer",
+      "company": "Sample Systems",
+      "companyUrl": "https://example.com/sample",
+      "location": null,
+      "start": "2018-07",
+      "end": "2020-12",
+      "description": [
+        "Developed internal tools in React for support and operations teams, replacing several spreadsheets with searchable web pages.",
+        "Added background jobs and email notifications to an existing Node.js service, with retries and clear error messages for operators.",
+        "Migrated a legacy jQuery admin screen to React in small steps without interrupting daily use.",
+        "Paired with QA engineers to turn manual regression checks into automated browser tests.",
+        "Supported teammates during releases by watching logs, rolling back quickly when needed and writing short follow-up notes."
+      ]
+    },
+    {
+      "title": "Junior Developer",
+      "company": "Demo Labs",
+      "companyUrl": "https://example.com/demo",
+      "location": null,
+      "start": "2016-06",
+      "end": "2018-06",
+      "description": [
+        "Implemented small features and bug fixes in a PHP and JavaScript web application under the guidance of senior developers.",
+        "Wrote SQL reports for the finance team and tidied the scripts that produced them each month.",
+        "Learned the release process and helped keep the staging environment in step with production."
+      ]
+    }
+  ],
+  "projects": [],
+  "education": [
+    { "degree": "Bachelor of Science", "school": "Example University", "location": "Example City", "year": "2016-05" }
+  ],
+  "skills": [
+    { "category": "Frontend", "items": ["React", "TypeScript", "JavaScript", "HTML", "CSS"] },
+    { "category": "Backend", "items": ["Node.js", "PostgreSQL", "REST APIs"] },
+    { "category": "Practices", "items": ["Code review", "Automated testing", "Continuous delivery"] }
+  ],
+  "certificates": []
+}

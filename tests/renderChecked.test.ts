@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { join } from 'node:path';
 import { getBaseResume, renderResumeChecked } from '../src/resume.js';
+
+// These tests need a base resume that fills about one page (the shipped example is far shorter), so they use a
+// synthetic full-page fixture instead of user-data.example.
+const FIXTURE_DIR = join(import.meta.dirname, 'fixtures', 'render');
+let savedUserData: string | undefined;
+beforeAll(() => { savedUserData = process.env.JOBAPPLIER_USER_DATA; process.env.JOBAPPLIER_USER_DATA = FIXTURE_DIR; });
+afterAll(() => { if (savedUserData === undefined) delete process.env.JOBAPPLIER_USER_DATA; else process.env.JOBAPPLIER_USER_DATA = savedUserData; });
 
 const W = ['amber', 'birch', 'cedar', 'dune', 'ember', 'fjord', 'glade', 'harbor', 'iris', 'juniper', 'kelp', 'lotus', 'maple'];
 const fold =(s: string) => s.split(/\s+/).join(' ').trim();

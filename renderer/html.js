@@ -40,7 +40,7 @@ const html = template(resume);
 fs.writeFileSync(htmlPath, html);
 console.log("✅ resume.html generated");
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ channel: "chrome" });
 const page = await browser.newPage();
 
 await page.goto(`file://${htmlPath}`, {

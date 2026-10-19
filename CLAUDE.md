@@ -1187,10 +1187,11 @@ and the Indian and Gulf job boards.
   (`src/platform/notify.ts`, `run.sh`, `claude-session.sh`, `start.sh`; traced by reading,
   unverified until L2); Hunter's account-endpoint credit use (unverified until L7).
 
-Test baseline: `npx tsc -p . --noEmit` is clean; `npx vitest run` has exactly 5 known failures
-(4 in `tests/renderChecked.test.ts`, 1 in `tests/resume.test.ts`) because a Playwright browser is
-not installed (`npx playwright install --with-deps chromium` fixes them). The list is mirrored in
-`config/update-known-failures.json`, which the auto-update test gate uses; update both together.
+Test baseline: `npx tsc -p . --noEmit` is clean and `npx vitest run` has 0 known failures. Resume
+rendering (`renderer/index.js`, `renderer/html.js`) launches the installed Google Chrome
+(`channel: 'chrome'`), so the render tests need Chrome but no Playwright browser download. The
+list of known failures, mirrored in `config/update-known-failures.json` (now `{}`), is used by the
+auto-update test gate; update both together if one ever appears.
 
 ## Safety
 

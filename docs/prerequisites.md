@@ -32,7 +32,7 @@ Runs the full health check; each failing item prints a `fix:` line.
 | tmux | yes | ccgram bridge, named windows, scheduler runs |
 | uv | yes | installing ccgram |
 | ccgram (pinned) | yes | Telegram bridge |
-| Playwright Chromium | optional, recommended | PDF resume rendering; fixes the 5 baseline test failures |
+| Playwright Chromium | optional | no longer needed for PDF rendering or the tests (the renderer uses installed Google Chrome) |
 | Google Chrome | optional | Naukri headless search and session capture |
 | patchright browser | per package install | LinkedIn and apply sessions |
 | age, rclone | optional | backups only |
@@ -77,13 +77,7 @@ Take the version from `config/ccgram.pin.json` and the exact command (including 
 
 ### Playwright Chromium and the baseline failures
 
-Without the Chromium binary, PDF rendering tests fail. The repo baseline expects exactly 5 failing tests: 4 in `tests/renderChecked.test.ts` and 1 in `tests/resume.test.ts` (mirrored in `config/update-known-failures.json`, which the auto-update test gate uses). Installing Chromium removes them:
-
-```bash
-npx playwright install --with-deps chromium
-```
-
-Downloads the browser; afterwards `npx vitest run` should show no failures from those two files. If you do that, update the baseline note and `config/update-known-failures.json` together.
+PDF rendering (`renderer/index.js`) launches the installed Google Chrome (`channel: 'chrome'`), so no Playwright browser download is needed. The repo baseline is 0 failing tests (`config/update-known-failures.json` is `{}`; it is used by the auto-update test gate). Without Chrome installed, `tests/renderChecked.test.ts` and `tests/resume.test.ts` fail.
 
 ### Google Chrome
 
@@ -101,7 +95,7 @@ Backups are one age-encrypted archive; creating a backup probes `age --version` 
 
 | Missing | Effect |
 |---|---|
-| Playwright Chromium | PDF render fails; 5 baseline test failures |
+| Google Chrome | PDF render fails; render tests fail |
 | Google Chrome | Naukri headless search and session capture unavailable |
 | age | no backups |
 | rclone | no cloud mirror; local backups still work |
