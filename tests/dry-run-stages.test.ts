@@ -60,20 +60,17 @@ describe('scout-dork stage', () => {
     expect(r.status).toBe('skip');
     expect(r.detail).toMatch(/src\/scout is not installed/);
   });
-  it('skips (never fails) when the engine exists but exports no parseSerp', async () => {
+  it('skips (never fails) when serp.ts exists but the anchor-page fixtures are not installed', async () => {
     const root = emptyRoot();
-    fs.write(join(root, 'src/scout/engine.ts'), 'export const x = 1;\n');
+    fs.write(join(root, 'src/scout/serp.ts'), 'export {};\n');
     const r = await scoutDork.run(mk(root));
     expect(r.status).toBe('skip');
-    expect(r.detail).toMatch(/parseSerp/);
+    expect(r.detail).toMatch(/anchor-page fixtures/);
   });
-  it('passes over the serp fixtures when the engine exports parseSerp', async () => {
-    const root = emptyRoot();
-    fs.write(join(root, 'src/scout/engine.ts'),
-      'export function parseSerp(html: string) { return html.includes("blocked") ? { blocked: true, results: [] } : { blocked: false, results: [{ url: "https://x.example" }] }; }\n');
-    for (const n of ['serp-ok.html', 'serp-blocked.html']) fs.write(join(root, 'tests/fixtures/web', n), readFileSync(join(ROOT, 'tests/fixtures/web', n), 'utf8'));
-    const r = await scoutDork.run(mk(root));
+  it('really runs: parseSerp (serp.ts) over anchor pages built from the serp fixtures, not a skip', async () => {
+    const r = await scoutDork.run(mk());
     expect(r.status, r.detail).toBe('pass');
+    expect(r.detail).toMatch(/serp-ok parsed 3 results; serp-blocked recognised \(bot_wall\)/);
   });
 });
 

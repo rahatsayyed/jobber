@@ -64,21 +64,24 @@ export const providerShapeBreak: Stage = {
 // ---- (b) scout dork engine over serp-ok / serp-blocked --------------------------------------------------------
 
 export const scoutDork: Stage = {
-  id: 'scout-dork', title: 'scout dork engine over the SERP fixtures', skippable: true,
+  id: 'scout-dork', title: 'scout dork SERP parsing over the SERP fixtures', skippable: true,
   async run(ctx: VerifyCtx) {
-    const engine = join(ctx.root, 'src', 'scout', 'engine.ts');
-    if (!ctx.fs.exists(engine)) return skip('src/scout is not installed');
+    const serp = join(ctx.root, 'src', 'scout', 'serp.ts');
+    const helper = join(ctx.root, 'tests', 'helpers', 'fakeScoutBrowser.ts');
+    const fixtures = ['serp-ok.html', 'serp-blocked.html'].map((n) => join(ctx.root, 'tests', 'fixtures', 'web', n));
+    if (!ctx.fs.exists(serp)) return skip('src/scout is not installed');
+    if (!ctx.fs.exists(helper) || !fixtures.every((f) => ctx.fs.exists(f))) return skip('anchor-page fixtures (tests/helpers/fakeScoutBrowser.ts, tests/fixtures/web/serp-*.html) are not installed');
     try {
-      const mod = (await import(pathToFileURL(engine).href)) as Record<string, unknown>;
-      const parse = mod.parseSerp;
-      if (typeof parse !== 'function') return skip('scout engine has no parseSerp export on this branch');
-      const read = ctx.fs.read;
-      if (!read) return skip('no fixture reader in this context');
-      const ok = (parse as (html: string) => { results?: unknown[]; blocked?: boolean })(read(join(ctx.root, 'tests', 'fixtures', 'web', 'serp-ok.html')));
-      const blocked = (parse as (html: string) => { results?: unknown[]; blocked?: boolean })(read(join(ctx.root, 'tests', 'fixtures', 'web', 'serp-blocked.html')));
-      if (!ok.results?.length || ok.blocked) return fail('serp-ok fixture did not parse into results', 'src/scout/engine.ts');
-      if (!blocked.blocked) return fail('serp-blocked fixture was not recognised as a block', 'src/scout/engine.ts');
-      return pass(`serp-ok parsed ${ok.results.length} results; serp-blocked recognised`);
+      // parseSerp lives in serp.ts and takes the anchor page the in-page script returns (RawAnchorPage), not HTML.
+      const [{ parseSerp }, { anchorSnapshotFromHtml }] = await Promise.all([
+        import('../scout/serp.js'),
+        import(pathToFileURL(helper).href) as Promise<typeof import('../../tests/helpers/fakeScoutBrowser.js')>,
+      ]);
+      const ok = parseSerp(anchorSnapshotFromHtml('serp-ok.html', 'https://www.bing.com/search?q=x'));
+      const blocked = parseSerp(anchorSnapshotFromHtml('serp-blocked.html', 'https://www.google.com/search?q=x'));
+      if (ok.blocked || !ok.results.length) return fail('serp-ok fixture did not parse into results', 'src/scout/serp.ts');
+      if (!blocked.blocked) return fail('serp-blocked fixture was not recognised as a block', 'src/scout/serp.ts');
+      return pass(`serp-ok parsed ${ok.results.length} results; serp-blocked recognised (${blocked.block})`);
     } catch (e) {
       return fail(`scout stage crashed: ${firstLine(e)}`);
     }
