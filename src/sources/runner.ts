@@ -239,10 +239,20 @@ export async function runScriptSources(db: Db | null, opts: RunOptions): Promise
   }
 
   // 3. Queue the agent fallback (one row per platform/company per day) and mark platforms that keep failing.
-  if (db) {
-    for (const f of failures) {
-      try { queueTask(db, f, now); } catch (e) { console.error('[sources] could not queue a source task:', redactError(e)); }
+  // An API or Naukri source has no board or target URL, so a source task for it could only fail every wake
+  // (scout resolveTaskTarget returns null): it gets a note in source_status and no task.
+  const noTarget = new Set(apiDefs.map((d) => d.id));
+  for (const f of failures) {
+    if (f.company === null && noTarget.has(f.platform)) {
+      const o = outcomes.find((x) => x.id === f.platform);
+      if (o) {
+        o.fallback_used = false;
+        o.note = o.note ? `${o.note}; no board url: agent fallback not queued` : 'no board url: agent fallback not queued';
+      }
+      continue;
     }
+    if (!db) continue;
+    try { queueTask(db, f, now); } catch (e) { console.error('[sources] could not queue a source task:', redactError(e)); }
   }
   for (const o of outcomes) {
     if (o.error && (prevOf(o.id)?.streak_fail ?? 0) + 1 >= FLAKY_STREAK) {

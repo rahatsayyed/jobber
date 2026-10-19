@@ -93,7 +93,8 @@ describe('drift detection', () => {
     expect(same.rows.find((x) => x.source === 'adzuna')!.fallback_used).toBe(false);
     const drift = await runScriptSources(db, o(mk([{ id: 'two', title: 't' }], [])));
     expect(drift.rows.find((x) => x.source === 'adzuna')!.error).toMatch(/drift/);
-    expect(tasks(db).filter((t) => t.platform === 'adzuna')).toEqual([{ platform: 'adzuna', company: null, reason: 'drift', state: 'queued' }]);
+    // an API source has no target URL: note instead of a source task (finding 8)
+    expect(tasks(db).filter((t) => t.platform === 'adzuna')).toEqual([]);
   });
 
   it('recordRun keeps the stored shape_hash when a failed run passes none', () => {

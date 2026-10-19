@@ -73,8 +73,10 @@ describe('runScriptSources', () => {
     const p = fakeProvider('adzuna', async () => ({ jobs: [job('adzuna:1', 'adzuna')], sample: [{ id: 'x', nope: 1 }] }));
     const r = await runScriptSources(db, { role: 'r', portalsPath: portals(), registryPath: registry([apiRow('adzuna')]), providers: { adzuna: p }, now: () => NOW });
     expect(r.jobs.map((j) => j.id)).toContain('adzuna:1');
-    expect(r.rows.find((x) => x.source === 'adzuna')).toMatchObject({ fallback_used: true });
-    expect(tasks(db)).toEqual([{ platform: 'adzuna', company: null, reason: 'shape', state: 'queued' }]);
+    expect(r.rows.find((x) => x.source === 'adzuna')).toMatchObject({ fallback_used: false, note: expect.stringMatching(/no board url/) });
+    expect(r.rows.find((x) => x.source === 'adzuna')!.error).toMatch(/shape/);
+    // an API source has no target URL: a note, not a source task (finding 8)
+    expect(tasks(db)).toEqual([]);
   });
 
   it('hash change with zero kept after kept>0 is drift', async () => {
@@ -116,9 +118,10 @@ describe('runScriptSources', () => {
     const rem = r.rows.find((x) => x.source === 'remotive')!;
     expect(rem.error).toContain('remotive down');
     expect(rem.error).not.toContain('SECRET');
-    expect(rem.fallback_used).toBe(true);
+    expect(rem.fallback_used).toBe(false);
+    expect(rem.note).toMatch(/no board url/);
     expect(r.rows.find((x) => x.source === 'remoteok')!.error).toMatch(/timeout/);
-    expect(tasks(db).map((t) => `${t.platform}:${t.reason}`).sort()).toEqual(['remoteok:error', 'remotive:error']);
+    expect(tasks(db)).toEqual([]);
   });
 
   it('a board that errors queues an error task for that company', async () => {

@@ -15,7 +15,7 @@ const firstLine = (e: unknown): string => (e instanceof Error ? e.message : Stri
 // ---- (a) provider fixtures with one forced shape break --------------------------------------------------------
 
 export const providerShapeBreak: Stage = {
-  id: 'provider-shape', title: 'source runner: forced shape break queues one source_tasks row', skippable: true,
+  id: 'provider-shape', title: 'source runner: forced shape break on an API source is noted, no source_tasks row', skippable: true,
   async run(ctx: VerifyCtx) {
     if (!ctx.fs.exists(join(ctx.root, 'src', 'sources', 'runner.ts'))) return skip('src/sources/runner is not installed');
     let db: BetterSqlite3.Database | null = null;
@@ -47,12 +47,14 @@ export const providerShapeBreak: Stage = {
         });
       } finally { console.error = quiet; }
       const rows = db.prepare('SELECT platform, reason, state FROM source_tasks').all() as Array<{ platform: string; reason: string; state: string }>;
-      if (rows.length !== 1 || rows[0]!.platform !== 'remotive' || rows[0]!.reason !== 'shape' || rows[0]!.state !== 'queued') {
-        return fail(`expected exactly one queued shape task for the broken provider, got ${JSON.stringify(rows)}`, 'src/sources/runner.ts');
+      // An API source has no board or target URL: its shape break is an error plus a note, never a source task.
+      const bad = r.rows.find((x) => x.source === 'remotive');
+      if (rows.length !== 0 || !bad || !(bad.error ?? '').includes('shape') || !(bad.note ?? '').includes('no board url')) {
+        return fail(`expected a shape error with a no-board-url note and no source task for the broken API provider, got tasks ${JSON.stringify(rows)}`, 'src/sources/runner.ts');
       }
       const ok = r.rows.find((x) => x.source === 'adzuna');
       if (!ok || ok.error || ok.fallback_used) return fail('the healthy provider was affected by the broken one', 'src/sources/runner.ts');
-      return pass('healthy provider clean; broken provider queued one source_tasks row (shape)');
+      return pass('healthy provider clean; broken API provider recorded a shape error with a note and queued no source_tasks row');
     } catch (e) {
       return fail(`source runner stage crashed: ${firstLine(e)}`);
     } finally {
