@@ -45,7 +45,7 @@ describe('follow-up candidates', () => {
     expect(listFollowupCandidates(db, now)).toEqual([]);
     expect(() => save(db)).toThrow(/not a follow-up candidate/);
     expect(setFollowupApproval(db, [id1], true)).toBe(1);
-    expect(listApprovedFollowups(db)).toEqual([{ id: id1, job_id: 'j1', n: 1, subject: 'Re: Frontend role', body: BODY, email_to: 'hr@acme.dev', thread_id: null }]);
+    expect(listApprovedFollowups(db)).toEqual([{ id: id1, job_id: 'j1', n: 1, subject: 'Re: Frontend role', body: BODY, body_html: expect.stringContaining('<p'), email_to: 'hr@acme.dev', thread_id: null }]);
     expect(markFollowupSent(db, id1, 'fm1')).toEqual({ ok: true, late_block: false });
     expect(markFollowupSent(db, id1, 'fm1')).toEqual({ ok: false, late_block: false });
     db.prepare("UPDATE followups SET sent_at = '2026-10-01 09:00:00' WHERE id = ?").run(id1);
@@ -139,6 +139,20 @@ describe('who must never get a follow-up', () => {
     expect(db2.prepare('SELECT status FROM followups WHERE id = ?').get(b)).toEqual({ status: 'cancelled' });
     expect(listApprovedFollowups(db2)).toEqual([]);
     expect(markFollowupSent(db2, b, 'm')).toEqual({ ok: false, late_block: false });
+  });
+});
+
+describe('follow-up emphasis markers', () => {
+  it('stores the plain body (markers stripped, word count on plain text), builds the html in code, and never leaks a marker into the subject', () => {
+    const db = setup('2026-09-01 09:00:00');
+    const marked = BODY.replace('Frontend Developer role', '**Frontend Developer role**');
+    expect(marked).not.toBe(BODY);
+    const r = save(db, { body: marked, subject: 'Re: **Frontend** role' });
+    expect(r.body).toBe(BODY);
+    const row = db.prepare('SELECT subject, body, body_html FROM followups WHERE id = ?').get(r.id) as { subject: string; body: string; body_html: string };
+    expect(row.body).toBe(BODY);
+    expect(row.body_html).toContain('<strong>Frontend Developer role</strong>');
+    expect(row.subject).toBe('Re: Frontend role');
   });
 });
 

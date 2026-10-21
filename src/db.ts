@@ -10,6 +10,7 @@ import { classifyApplyUrl } from './apply/registry.js';
 import { channelsFor, type ChannelVerdict } from './lib/channels.js';
 import { migrateOutreachTables } from './outreach/schema.js';
 import { migrateSchedulerTables } from './scheduler/runLog.js';
+import { buildEmailParts, loadEmailLinks, stripMarkers, type EmailLink } from './emailHtml.js';
 
 /** enqueue_outreach.ats_coverage: an integer percentage, or null when the final render had no keywords (tailor contract). */
 export const atsCoverageSchema = z.number().int().min(0).max(100).nullable().optional();
@@ -277,13 +278,15 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   }
   // Count of match-save rejections per job: after MATCH_FAIL_LIMIT the wake pipeline stops re-offering it (plan 8G task 13).
   if (!jobCols.has('match_fails')) db.exec('ALTER TABLE jobs ADD COLUMN match_fails INTEGER NOT NULL DEFAULT 0');
+  const followupCols = new Set((db.prepare('PRAGMA table_info(followups)').all() as { name: string }[]).map(c => c.name));
+  if (!followupCols.has('body_html')) db.exec('ALTER TABLE followups ADD COLUMN body_html TEXT');
   // Hand-backs of a matched job without an outreach row to the wake pipeline (PREP_OFFER_LIMIT).
   if (!jobCols.has('prep_offers')) db.exec('ALTER TABLE jobs ADD COLUMN prep_offers INTEGER NOT NULL DEFAULT 0');
   if (!outreachQueueColumnNames.has('resume_json')) db.exec('ALTER TABLE outreach_queue ADD COLUMN resume_json TEXT');
   for (const [col, type] of [['ats_coverage', 'INTEGER'], ['ats_gaps', 'TEXT'], ['fact_warnings', 'TEXT'], ['review_applied', 'INTEGER'], ['review_rejected', 'INTEGER']] as const) {
     if (!outreachQueueColumnNames.has(col)) db.exec(`ALTER TABLE outreach_queue ADD COLUMN ${col} ${type}`);
   }
-  for (const col of ['email_sent_at', 'email_message_id', 'email_thread_id', 'apply_tier']) {
+  for (const col of ['email_sent_at', 'email_message_id', 'email_thread_id', 'apply_tier', 'email_html']) {
     if (!outreachQueueColumnNames.has(col)) db.exec(`ALTER TABLE outreach_queue ADD COLUMN ${col} TEXT`);
   }
   // Migration: processed_messages.candidates (JSON array of job ids) for an ambiguous reply/bounce, so follow-ups are blocked for every candidate.
@@ -631,6 +634,8 @@ export function saveConnection(db: BetterSqlite3.Database, connection: Connectio
 }
 
 export interface OutreachQueueItem {
+  /** HTML part of the email, built in code from email_body (null when there is no email). */
+  email_html?: string | null;
   id: number;
   job_id: string;
   resume_pdf_path: string | null;
@@ -716,7 +721,11 @@ export function enqueueOutreach(
 export function enqueueOutreachResult(
   db: BetterSqlite3.Database,
   item: Parameters<typeof enqueueOutreach>[1],
+  links: EmailLink[] = loadEmailLinks(),
 ): { id: number; duplicate: boolean } {
+  // The model may mark up to three phrases with **...**: store the plain text (what was gated) and build the HTML part in code.
+  const parts = item.email_body ? buildEmailParts(item.email_body, links) : null;
+  item = { ...item, email_body: parts ? parts.plain : item.email_body, email_subject: item.email_subject ? stripMarkers(item.email_subject) : item.email_subject };
   // Discover-only sources (see src/lib/discoverOnly.ts) never get an apply attempt, whatever the preparer asked for: 'none' keeps
   // the sender away from the shared daily apply counter while email and connect outreach on the same row still run.
   const source = (db.prepare('SELECT source FROM jobs WHERE id = ?').get(item.job_id) as { source: string | null } | undefined)?.source;
@@ -729,8 +738,8 @@ export function enqueueOutreachResult(
       job_id, resume_pdf_path, email_subject, email_body, email_to,
       connect_note, connect_profile_url, connect_category, connect_company,
       apply_platform, apply_tier, apply_url, resume_json,
-      ats_coverage, ats_gaps, fact_warnings, review_applied, review_rejected, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ats_coverage, ats_gaps, fact_warnings, review_applied, review_rejected, status, email_html
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     item.job_id,
     item.resume_pdf_path,
@@ -750,7 +759,8 @@ export function enqueueOutreachResult(
     item.fact_warnings ? JSON.stringify(item.fact_warnings) : null,
     item.review_applied ?? null,
     item.review_rejected ?? null,
-    held ? 'held_review' : 'queued'
+    held ? 'held_review' : 'queued',
+    parts ? parts.html : null
   );
   if (result.changes === 0) {
     const existing = db.prepare("SELECT id FROM outreach_queue WHERE job_id = ? AND COALESCE(connect_profile_url, '') = COALESCE(?, '') ORDER BY id LIMIT 1")
@@ -763,14 +773,19 @@ export function enqueueOutreachResult(
 export function listQueuedOutreach(db: BetterSqlite3.Database): OutreachQueueItem[] {
   return db
     // Explicit columns: omit resume_json (several KB per row, no consumer in the sender).
-    .prepare(`SELECT id, job_id, resume_pdf_path, email_subject, email_body, email_to, email_status,
+    .prepare(`SELECT id, job_id, resume_pdf_path, email_subject, email_body, email_html, email_to, email_status,
       connect_note, connect_profile_url, connect_category, connect_company, connect_status,
       apply_platform, apply_tier, apply_url, apply_status, status, created_at, updated_at
       FROM outreach_queue
       WHERE status = 'queued'
         AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = outreach_queue.job_id AND j.excluded_reason IS NULL)
       ORDER BY created_at ASC`)
-    .all() as OutreachQueueItem[];
+    .all()
+    // A draft queued before the HTML part existed gets it built now from its stored text (links, no emphasis).
+    .map((r) => {
+      const row = r as OutreachQueueItem;
+      return row.email_body && !row.email_html ? { ...row, email_html: buildEmailParts(row.email_body, loadEmailLinks()).html } : row;
+    });
 }
 
 // Queued rows that listQueuedOutreach skips because their job was excluded after the row was queued

@@ -210,7 +210,7 @@ describe('outreach_queue', () => {
     });
     expect(Object.keys(row).sort()).toEqual([
       'apply_platform', 'apply_status', 'apply_tier', 'apply_url', 'connect_category', 'connect_company', 'connect_note',
-      'connect_profile_url', 'connect_status', 'created_at', 'email_body', 'email_status', 'email_subject',
+      'connect_profile_url', 'connect_status', 'created_at', 'email_body', 'email_html', 'email_status', 'email_subject',
       'email_to', 'id', 'job_id', 'resume_pdf_path', 'status', 'updated_at',
     ]);
   });

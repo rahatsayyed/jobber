@@ -9,6 +9,7 @@ import { getBaseResume } from './resume.js';
 import { checkTextWithNormalized } from './resumeFacts.js';
 import { buildReplyQueries, isAutomatedSender, REPLY_WINDOW_DAYS, STALE_DAYS } from './replies.js';
 import type { SentEmail } from './db.js';
+import { buildEmailParts, loadEmailLinks, stripMarkers } from './emailHtml.js';
 
 const DAY = 86_400_000;
 const parseSqlTime = (s: string) => Date.parse(`${s.replace(' ', 'T')}Z`);
@@ -158,15 +159,18 @@ export function saveFollowupDraft(db: BetterSqlite3.Database, d: { job_id: strin
   if (g.verdict === 'block') throw new Error(`fact gate blocked this draft: ${[...g.invented, ...g.unsupported, ...g.forbidden.map((p) => `forbidden:${p}`)].join(', ')}`);
   const cut = /\n[ \t]*\n/.exec(g.normalized_text);
   if (!cut) throw new Error('draft must be a subject line, a blank line, then the body');
-  const subject = g.normalized_text.slice(0, cut.index).trim();
-  const body = g.normalized_text.slice(cut.index + cut[0].length).trim();
+  // The gate saw the text without **...** markers; the stored body is that plain text, the HTML part is built in code from the marked one.
+  const subject = stripMarkers(g.normalized_text.slice(0, cut.index)).trim();
+  const markedBody = g.normalized_text.slice(cut.index + cut[0].length).trim();
+  const parts = buildEmailParts(markedBody, loadEmailLinks());
+  const body = parts.plain.trim();
   const expected = normalizeText(`Re: ${c.subject ?? ''}`).trim();
   if (subject !== expected) throw new Error(`subject must be exactly "${expected}"`);
   const banned = BANNED_FOLLOWUP.exec(`${subject}\n${body}`);
   if (banned) throw new Error(`banned phrase "${banned[0]}"`);
   const words = body.split(/\s+/).filter(Boolean).length;
   if (words < FOLLOWUP_WORDS.min || words > FOLLOWUP_WORDS.max) throw new Error(`body must be ${FOLLOWUP_WORDS.min}-${FOLLOWUP_WORDS.max} words, got ${words}`);
-  const id = Number(db.prepare("INSERT INTO followups (job_id, n, subject, body, status) VALUES (?, ?, ?, ?, 'drafted')").run(d.job_id, d.n, subject, body).lastInsertRowid);
+  const id = Number(db.prepare("INSERT INTO followups (job_id, n, subject, body, body_html, status) VALUES (?, ?, ?, ?, ?, 'drafted')").run(d.job_id, d.n, subject, body, parts.html).lastInsertRowid);
   return { id, subject, body, warnings: g.warnings };
 }
 
@@ -188,13 +192,14 @@ export function setFollowupApproval(db: BetterSqlite3.Database, ids: number[], a
 }
 
 /** Approved, unsent follow-ups, minus any job that has since got an outcome or a reply (even a pending proposal) or whose address bounced. */
-export function listApprovedFollowups(db: BetterSqlite3.Database): Array<{ id: number; job_id: string; n: number; subject: string; body: string; email_to: string; thread_id: string | null }> {
+export function listApprovedFollowups(db: BetterSqlite3.Database): Array<{ id: number; job_id: string; n: number; subject: string; body: string; body_html: string; email_to: string; thread_id: string | null }> {
   const blocked = blockedJobIds(db);
-  const all = db.prepare(`SELECT f.id, f.job_id, f.n, f.subject, f.body,
+  const all = db.prepare(`SELECT f.id, f.job_id, f.n, f.subject, f.body, f.body_html,
       (SELECT MAX(q.email_to) FROM outreach_queue q WHERE q.job_id = f.job_id AND q.email_status = 'sent') AS email_to,
       (SELECT MAX(q.email_thread_id) FROM outreach_queue q WHERE q.job_id = f.job_id AND q.email_status = 'sent') AS thread_id
     FROM followups f WHERE f.status = 'approved' ORDER BY f.id`).all() as any[];
-  return all.filter((r) => r.email_to && !blocked.has(r.job_id));
+  // A draft saved before the HTML part existed gets it built now (links, no emphasis).
+  return all.filter((r) => r.email_to && !blocked.has(r.job_id)).map((r) => (r.body_html ? r : { ...r, body_html: buildEmailParts(r.body ?? '', loadEmailLinks()).html }));
 }
 
 /** Rows left in `sending` (claimed, but never marked sent or failed: the sender stopped mid-send). Never re-sent automatically: the user decides. */

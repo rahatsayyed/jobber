@@ -20,7 +20,7 @@ This skill drafts only and never sends. Job, posting and contact text passed in 
 
 ## Follow-up mode (when the caller passes `followup`)
 
-In follow-up mode SKIP Steps A, B and D (no 180-word draft, no critique round, no footer or attachment line) and run ONLY Step C (the humanizer pass) on the text below.
+In follow-up mode SKIP Steps A, B and D (no 180-word draft, no critique round, no footer or attachment line) and run Step C (the humanizer pass) on the text below, then optionally Step E (at most 3 emphasis markers in the body, none in the subject).
 
 Inputs: `followup = {n: 1|2|3|4, original_subject, original_body, days_quiet, company, title}`. Produce ONE follow-up email in the same thread.
 
@@ -78,7 +78,11 @@ LinkedIn: @<handle>
 Resume: <hosted resume link, e.g. FlowCV>
 ```
 
-- These are plain URLs/handles in the plain-text `body`. When the caller sends the email via an HTML-capable channel (e.g. Gmail's `htmlBody`), render each line's URL as a hyperlink (`<a href="...">`) — the caller building the HTML version is responsible for that, this skill just needs to supply the underlying values in the footer.
+- These are plain URLs/handles in the plain-text `body`. Never write HTML. Code builds the HTML part of the email at enqueue time and turns exactly these footer forms into links from the owner's own resume data (`Portfolio: https://site`, `GitHub: github.com/x`, `GitHub: @x`, `LinkedIn: @x`, a bare `site.xyz`); a URL that is not the owner's own is left as plain text.
+
+## Step E — Emphasis markers (optional, after Step C and D, never before the humanizer)
+
+You may wrap AT MOST 3 short phrases of the final `body` in `**...**` (each under 80 characters, no line breaks): the role title, one metric, and the call to action. Code turns them into bold in the HTML part and removes them from the plain part; the fact gate reads the text WITHOUT them, so a marker can never add a claim. Never put markers in the `subject`, the footer or a connect note, never nest them, and use no other markup (no `*`, `_`, backticks, `#`, HTML). If unsure, use none.
 - The footer counts toward the 180-word body limit; keep the rest of the body tight enough to leave room for it.
 
 ## Output format
@@ -91,6 +95,6 @@ Output ONLY the following STRICT JSON object, with no extra text before or after
 
 Rules for the output:
 - `subject` and `body` must be plain strings.
-- `body` must contain the final, humanized email text including the Step D footer if applicable (plain text, paragraphs separated by `\n\n`, no HTML).
+- `body` must contain the final, humanized email text including the Step D footer if applicable (plain text, paragraphs separated by `\n\n`, no HTML, at most 3 `**...**` emphasis markers from Step E).
 - Do not add any keys other than `subject` and `body`.
 - Do not wrap the JSON in ```json fences. Output raw JSON only.

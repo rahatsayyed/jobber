@@ -236,6 +236,10 @@ Weekly:
 4. `npm run status -- sources`: fix dead slugs and failing or flaky sources in `config/portals.json` and `config/platforms.json`; `npm run providers -- list` for generated providers waiting for your review (their outreach stays held until you approve).
 5. Check backups (`docs/backup-and-restore.md`) if you enabled them, and `git status` before committing anything.
 
+## Email format
+
+Every cold email and email follow-up is sent as multipart/alternative. The plain part is the stored, gated text. The HTML part is built in code from that text, never by the model: paragraphs, "- " lines as a list, and links only for your own sites (the `website` and `social` URLs in `user-data/resume.json`; forms like `GitHub: @handle`, `Portfolio: https://site` and a bare `site.xyz` become full links, any other URL stays plain text). The draft may wrap at most three short phrases in `**...**`; they become bold in the HTML and are removed from the plain part, and the fact gate reads the text without them. HTML from the model is escaped; there are no images, tracking or remote styles. The HTML is stored in `outreach_queue.email_html` and `followups.body_html` (older drafts get it built when listed). Preview a queued draft without sending: build it from the stored row (see `.jobber/test/email-preview-*.html` for the last ones).
+
 ## Common surprises
 
 - `npm run dashboard -- token` (and `rotate`) only creates the access token and prints the sign-in URL. It does not start the server. Start the dashboard with `npm run web` (or `npm run up`). The command probes the loopback port and says "not running right now" when nothing listens.

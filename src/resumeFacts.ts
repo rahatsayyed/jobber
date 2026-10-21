@@ -3,6 +3,7 @@ import { userDataPath } from './lib/userData.js';
 import { delegatedAuthorshipClaims, diagnoseCoverage, exceedsScanCap, factClaims, joinStatements, MAX_SCAN_CHARS, metricClaims, normalizeClaim, normalizeFact, sourceContainsFact } from './factClaims.js';
 import { proseFindings, resumeStatements } from './proseClaims.js';
 import { mixedScriptWords, normalizeForAts, normalizeText } from './atsText.js';
+import { stripMarkers } from './emailHtml.js';
 
 /** `mixed-script:<word>: reason` findings for words that mix Latin with another script (homoglyph bypass). */
 const mixedScriptFindings = (text: string): string[] =>
@@ -273,6 +274,8 @@ export function checkOutreachText(text: string, base: Record<string, any>, opts:
 
 /** The check_text MCP result: the gate report plus `normalized_text`, the exact text that was gated (enqueue/send THIS, never the pre-gate text). */
 export function checkTextWithNormalized(text: string, base: Record<string, any>, opts: CheckOptions & { extraSource?: string } = {}): FactReport & { normalized_text: string } {
+  // normalized_text may carry up to three **...** emphasis markers (src/emailHtml.ts); the gate always sees the text WITHOUT them,
+  // so a marker can never carry a claim the gate did not read.
   const normalized_text = normalizeText(String(text ?? ''));
-  return { ...checkOutreachText(normalized_text, base, opts), normalized_text };
+  return { ...checkOutreachText(stripMarkers(normalized_text), base, opts), normalized_text };
 }
