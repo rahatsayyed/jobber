@@ -17,8 +17,7 @@ export function connectionState(p: ConnectionSignals): { state: ConnectionState;
   // A visible Connect button means there is no connection, whatever else the page shows.
   if (hasConnectButton(p.actions)) return { state: 'not_connected', code: 'connect_available' };
   if (p.degree === '1st') return { state: 'connected', code: p.hasBell ? 'bell_present' : 'first_degree' };
-  // Degree not readable: the bell is the only remaining signal (no Connect button was seen above).
-  if (p.degree === null && p.hasBell) return { state: 'connected', code: 'bell_present' };
+  // Degree not readable: not connected (fail closed). The bell is not enough, a followed 3rd+ profile has it too.
   if (p.pending) return { state: 'pending', code: 'pending_control' };
   return { state: 'not_connected', code: p.hasBell ? 'not_first_degree' : 'no_bell' };
 }

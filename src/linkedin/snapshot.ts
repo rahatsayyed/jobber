@@ -173,7 +173,7 @@ export const SNAPSHOT_SRC = String.raw`(function () {
       if (name && header) {
         var hl = lines(header), degree = null, i2;
         for (i2 = 0; i2 < hl.length; i2++) {
-          var dm = /^(?:·\s*)?(1st|2nd|3rd)$/.exec(hl[i2]);
+          var dm = /^(?:·\s*)?(1st|2nd|3rd)\+?$/.exec(hl[i2]);
           if (dm) { degree = dm[1]; break; }
         }
         var actions = [], acts = qs(header, 'a,button');
@@ -184,7 +184,7 @@ export const SNAPSHOT_SRC = String.raw`(function () {
         var rest = [];
         for (i2 = 0; i2 < hl.length; i2++) {
           var t = hl[i2];
-          if (t === name || t === headline || t === location_ || /^(?:·\s*)?(1st|2nd|3rd)$/.test(t)) continue;
+          if (t === name || t === headline || t === location_ || /^(?:·\s*)?(1st|2nd|3rd)\+?$/.test(t)) continue;
           if (actions.indexOf(t) >= 0 || t.length > 200) continue;
           rest.push(t);
         }
@@ -325,7 +325,7 @@ const vq = (root: HtmlNode, pred: (n: HtmlNode) => boolean) => findAll(root, (n)
 const tagIn = (...t: string[]) => (n: HtmlNode) => t.includes(n.tag);
 const linesOf = (n: HtmlNode) => (n.hidden ? [] : visibleText(n).split('\n').filter(Boolean));
 const flat = (n: HtmlNode) => linesOf(n).join(' ').replace(/\s+/g, ' ').trim();
-const DEGREE = /^(?:·\s*)?(1st|2nd|3rd)$/;
+const DEGREE = /^(?:·\s*)?(1st|2nd|3rd)\+?$/;
 /** Trailing connection-degree badge LinkedIn renders inside a search card's name link ("Jane Doe • 3rd+"); keep in step with the in-page script. */
 const DEGREE_BADGE = /\s*[•·]\s*(?:1st|2nd|3rd\+?)\s*$/;
 

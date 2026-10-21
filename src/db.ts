@@ -286,7 +286,7 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   for (const [col, type] of [['ats_coverage', 'INTEGER'], ['ats_gaps', 'TEXT'], ['fact_warnings', 'TEXT'], ['review_applied', 'INTEGER'], ['review_rejected', 'INTEGER']] as const) {
     if (!outreachQueueColumnNames.has(col)) db.exec(`ALTER TABLE outreach_queue ADD COLUMN ${col} ${type}`);
   }
-  for (const col of ['email_sent_at', 'email_message_id', 'email_thread_id', 'apply_tier', 'email_html']) {
+  for (const col of ['email_sent_at', 'email_message_id', 'email_thread_id', 'apply_tier', 'email_html', 'email_released_day']) {
     if (!outreachQueueColumnNames.has(col)) db.exec(`ALTER TABLE outreach_queue ADD COLUMN ${col} TEXT`);
   }
   // Migration: processed_messages.candidates (JSON array of job ids) for an ambiguous reply/bounce, so follow-ups are blocked for every candidate.
@@ -342,19 +342,33 @@ export function recordEmailSent(db: BetterSqlite3.Database, queueId: number, mes
 
 /**
  * Undo a send that never left the machine (the tool call was denied before sending, for example by the PreToolUse hook):
- * every `failed` row of the job that has no sent time and no message id becomes sendable again (email_status NULL), and ONE
- * `send_email` slot of today is given back (never below zero). A sent row, a dry_run row and other jobs are never touched.
+ * every `failed` row of the job that has no sent time and no message id, and was marked failed TODAY, becomes sendable again
+ * (email_status NULL), and ONE `send_email` slot of today is given back (never below zero). Bounded so the model cannot use it
+ * to get around SEND_LIMIT_PER_RUN: a failure from an earlier day never consumed today's slot, and a job is released at most
+ * once per day (`email_released_day`). A sent row, a dry_run row and other jobs are never touched.
  */
 export function releaseEmailSend(db: BetterSqlite3.Database, jobId: string): { rows: number; slot_released: boolean } {
   return db.transaction(() => {
+    const already = db.prepare("SELECT 1 FROM outreach_queue WHERE job_id = ? AND email_released_day = date('now') LIMIT 1").get(jobId);
+    if (already) return { rows: 0, slot_released: false };
     const rows = db.prepare(
-      `UPDATE outreach_queue SET email_status = NULL, updated_at = datetime('now')
-        WHERE job_id = ? AND email_status = 'failed' AND email_sent_at IS NULL AND email_message_id IS NULL`,
+      `UPDATE outreach_queue SET email_status = NULL, email_released_day = date('now'), updated_at = datetime('now')
+        WHERE job_id = ? AND email_status = 'failed' AND email_sent_at IS NULL AND email_message_id IS NULL
+          AND date(updated_at) = date('now')`,
     ).run(jobId).changes;
     if (rows === 0) return { rows: 0, slot_released: false };
     const slot = db.prepare("UPDATE daily_counters SET count = count - 1 WHERE day = date('now') AND key = 'send_email' AND count > 0").run().changes > 0;
     return { rows, slot_released: slot };
   })();
+}
+
+/** Owner repair only (npm run mail:release -- <job_id> --reset; not an MCP tool): failed rows of any age with no sent time and no message id become sendable again. The counter is not touched. */
+export function resetFailedEmail(db: BetterSqlite3.Database, jobId: string): { rows: number } {
+  const rows = db.prepare(
+    `UPDATE outreach_queue SET email_status = NULL, updated_at = datetime('now')
+      WHERE job_id = ? AND email_status = 'failed' AND email_sent_at IS NULL AND email_message_id IS NULL`,
+  ).run(jobId).changes;
+  return { rows };
 }
 
 export function setEmailThread(db: BetterSqlite3.Database, messageId: string, threadId: string): number {

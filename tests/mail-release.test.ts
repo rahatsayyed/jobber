@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enqueueOutreach, openDb, recordEmailSent, releaseEmailSend } from '../src/db.js';
+import { enqueueOutreach, openDb, recordEmailSent, releaseEmailSend, resetFailedEmail } from '../src/db.js';
 import { checkAndIncrement } from '../src/lib/rateLimit.js';
 
 function setup() {
@@ -38,6 +38,35 @@ describe('releaseEmailSend (a send the hook denied never left the machine)', () 
     expect(status(db).filter((r) => r.email_status === 'sent')).toHaveLength(2);
     expect(used(db)).toBe(1);
     expect(status(db).find((r) => r.id === 3)?.email_status).toBe('failed');
+  });
+  it('only releases a failure from TODAY (an old failure never consumed today\'s slot)', () => {
+    const { db } = setup();
+    checkAndIncrement(db, 'send_email', 5);
+    db.prepare("UPDATE outreach_queue SET email_status = 'failed', updated_at = '2020-01-01 00:00:00' WHERE job_id = 'j'").run();
+    expect(releaseEmailSend(db, 'j')).toEqual({ rows: 0, slot_released: false });
+    expect(used(db)).toBe(1);
+    expect(status(db).map((r) => r.email_status)).toEqual(['failed', 'failed']);
+  });
+  it('releases a job at most once per day, so fail-then-release cannot be used to bypass the cap', () => {
+    const { db } = setup();
+    checkAndIncrement(db, 'send_email', 5);
+    db.prepare("UPDATE outreach_queue SET email_status = 'failed' WHERE job_id = 'j'").run();
+    expect(releaseEmailSend(db, 'j').slot_released).toBe(true);
+    checkAndIncrement(db, 'send_email', 5);
+    db.prepare("UPDATE outreach_queue SET email_status = 'failed' WHERE job_id = 'j'").run();
+    expect(releaseEmailSend(db, 'j')).toEqual({ rows: 0, slot_released: false });
+    expect(used(db)).toBe(1);
+  });
+  it('owner reset: makes failed rows of any age sendable again, never touches sent rows or the counter', () => {
+    const { db, a } = setup();
+    checkAndIncrement(db, 'send_email', 5);
+    db.prepare("UPDATE outreach_queue SET email_status = 'failed', updated_at = '2020-01-01 00:00:00' WHERE job_id = 'j'").run();
+    expect(resetFailedEmail(db, 'j')).toEqual({ rows: 2 });
+    expect(status(db).map((r) => r.email_status)).toEqual([null, null]);
+    expect(used(db)).toBe(1);
+    recordEmailSent(db, a, 'm-9');
+    db.prepare("UPDATE outreach_queue SET email_status = 'failed' WHERE id = 2 AND email_status != 'sent'").run();
+    expect(resetFailedEmail(db, 'j')).toEqual({ rows: 0 });
   });
   it('does not touch a dry_run or queued row', () => {
     const { db } = setup();

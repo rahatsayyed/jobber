@@ -21,8 +21,8 @@ describe('connectionState: the bell alone never means connected', () => {
     expect(connectionState(p({ hasBell: true, degree: '1st', actions: ['Message', 'More'] }))).toEqual({ state: 'connected', code: 'bell_present' });
     expect(connectionState(p({ hasBell: false, degree: '1st', actions: ['Message'] }))).toEqual({ state: 'connected', code: 'first_degree' });
   });
-  it('degree unknown: connected only with the bell and no Connect button', () => {
-    expect(connectionState(p({ hasBell: true, degree: null, actions: ['Message'] })).state).toBe('connected');
+  it('degree unreadable: never connected (fail closed), bell or not, because a followed 3rd+ profile also has the bell', () => {
+    expect(connectionState(p({ hasBell: true, degree: null, actions: ['Message'] })).state).toBe('not_connected');
     expect(connectionState(p({ hasBell: false, degree: null, actions: ['Message'] })).state).toBe('not_connected');
   });
   it('pending is reported when there is no Connect button and no 1st degree', () => {

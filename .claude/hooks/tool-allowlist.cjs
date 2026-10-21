@@ -109,10 +109,11 @@ function isRenderedResumePdf(p, root) {
     const m = new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/renderer/automation/([A-Za-z0-9-]{1,64})/resume\\.pdf$').exec(p);
     if (!m) continue;
     try {
-      if (fs.existsSync(p)) {
-        const real = fs.realpathSync(p);
-        if (!real.startsWith(realRoot + path.sep)) return false;
-      }
+      // Must exist as a regular file (no symlink, no dangling link) whose real path is exactly the expected one,
+      // so a link at resume.pdf or at the id directory can never point the attachment at a secret.
+      const st = fs.lstatSync(p);
+      if (!st.isFile() || st.isSymbolicLink()) return false;
+      if (fs.realpathSync(p) !== path.join(realRoot, 'renderer', 'automation', m[1], 'resume.pdf')) return false;
     } catch { return false; }
     return true;
   }

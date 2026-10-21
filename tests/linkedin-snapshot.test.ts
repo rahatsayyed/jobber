@@ -15,6 +15,11 @@ describe('buildSnapshotFromHtml', () => {
     expect(s.profile?.location).toBe('Pune, Maharashtra, India');
     expect(s.profile?.about).toContain('robotics software teams');
   });
+  it('reads a "3rd+" profile header badge as degree 3rd (it was null before, which hid non-connections)', () => {
+    const html = fx('profile-not-connected.html').replace(/>\s*2nd\s*</, '>· 3rd+<');
+    expect(html).toContain('3rd+');
+    expect(buildSnapshotFromHtml(html, U).profile?.degree).toBe('3rd');
+  });
   it('reads a connected profile via the notifications bell', () => {
     expect(buildSnapshotFromHtml(fx('profile-connected.html'), U).profile?.hasBell).toBe(true);
   });
