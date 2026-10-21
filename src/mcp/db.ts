@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { ATS_REGISTRY } from '../apply/registry.js';
-import { atsCoverageSchema, enqueueOutreachClassifiedResult,getCalibrationRows, listJobs, listUnscoredJobs, listSentEmails, listQueuedOutreach, listExcludedQueuedOutreach, markExcluded, openDb, recordEmailSent, recordOutcomeChecked, setEmailThread, sweepDeadlines, unexcludeJob, updateOutreachStatus } from '../db.js';
+import { atsCoverageSchema, enqueueOutreachClassifiedResult,getCalibrationRows, listJobs, listUnscoredJobs, listSentEmails, listQueuedOutreach, listExcludedQueuedOutreach, markExcluded, openDb, recordEmailSent, recordOutcomeChecked, releaseEmailSend, setEmailThread, sweepDeadlines, unexcludeJob, updateOutreachStatus } from '../db.js';
 import { dbPath } from '../dbPath.js';
 import { handleSaveMatchResults, matchResultsInputShape } from '../matchTool.js';
 import { REPLY_WINDOW_DAYS } from '../replies.js';
@@ -386,6 +386,15 @@ server.registerTool(
     inputSchema: { id: z.number(), message_id: z.string().max(500).optional() },
   },
   async ({ id, message_id }) => ({ content: [{ type: 'text', text: JSON.stringify({ updated: recordEmailSent(db, id, message_id ?? null) }) }] })
+);
+
+server.registerTool(
+  'release_email_send',
+  {
+    description: 'ONLY when gmail.send_email was DENIED before anything was sent (the hook or run policy blocked the call; no "Email sent successfully" text): gives today\'s send_email slot back and makes the job\'s failed email rows sendable again. Never call it after a send that may have gone out. Returns {rows, slot_released}.',
+    inputSchema: { job_id: z.string().max(200) },
+  },
+  async ({ job_id }) => ({ content: [{ type: 'text', text: JSON.stringify(releaseEmailSend(db, job_id)) }] })
 );
 
 server.registerTool(

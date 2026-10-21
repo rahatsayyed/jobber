@@ -60,6 +60,7 @@
     "mcp__db__list_skipped_outreach",
     "mcp__db__update_outreach_status",
     "mcp__db__record_email_sent",
+    "mcp__db__release_email_send",
     "mcp__db__check_and_increment",
     "mcp__gmail__send_email",
     "mcp__db__approve_drafted_followups",

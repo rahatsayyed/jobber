@@ -57,6 +57,50 @@ describe('argument screening', () => {
   });
 });
 
+describe('send_email attachments (rendered resume PDF only)', () => {
+  const p2 = { allow: ['mcp__gmail__send_email'], builtin_tools: [], screen_args: ['mcp__gmail__send_email'] };
+  const send = (attachments: unknown, extra: object = {}) =>
+    hook.decide({ tool_name: 'mcp__gmail__send_email', tool_input: { to: ['a@acme.com'], subject: 'S', body: 'B', htmlBody: '<p>B</p>', mimeType: 'multipart/alternative', attachments, ...extra } }, p2, { root: ROOT });
+  const pdf = `${ROOT}/renderer/automation/9ca10512-1472-4ca4-820e-e01656ac73b0/resume.pdf`;
+  it('allows the absolute path of a rendered resume PDF in attachments', () => {
+    expect(send([pdf]).allow).toBe(true);
+  });
+  it('still screens every other argument, so a secret path in the body is denied', () => {
+    expect(send([pdf], { body: 'see secrets/gmail-credentials.json' }).allow).toBe(false);
+    expect(send([pdf], { subject: 'x /Users/someone/.env' }).allow).toBe(false);
+  });
+  it('denies secret paths, traversal, look-alike directories, other files and other places in attachments', () => {
+    for (const bad of [
+      `${ROOT}/secrets/gmail-credentials.json`,
+      `${ROOT}/user-data/resume.json`,
+      `${ROOT}/.env`,
+      `${ROOT}/.ccgram/state.json`,
+      `${ROOT}/secrets/linkedin-main-state.json`,
+      `${ROOT}/renderer/automation/../../secrets/x.pdf`,
+      `${ROOT}/renderer/automation/abc/../../../secrets/resume.pdf`,
+      `${ROOT}/renderer/automation-evil/abc/resume.pdf`,
+      `${ROOT}/renderer/automation/abc/def/resume.pdf`,
+      `${ROOT}/renderer/automation/abc/resume.html`,
+      `${ROOT}/renderer/automation/abc/state.json`,
+      `${ROOT}/renderer/automation/.env/resume.pdf`,
+      `${ROOT}/renderer/automation/abc/resume.pdf.sqlite`,
+      '/etc/passwd',
+      '/Users/someone/Documents/resume.pdf',
+      'renderer/automation/abc/resume.pdf',
+      `${ROOT}/xrenderer/automation/abc/resume.pdf`,
+    ]) expect(send([bad]).allow, bad).toBe(false);
+  });
+  it('denies a non-array or non-string attachments value and one bad entry among good ones', () => {
+    expect(send(pdf).allow).toBe(false);
+    expect(send([pdf, 5]).allow).toBe(false);
+    expect(send([pdf, `${ROOT}/secrets/x.pdf`]).allow).toBe(false);
+  });
+  it('does not widen other tools: an absolute path under /Users is still denied elsewhere', () => {
+    const p3 = { allow: ['mcp__naukri__naukri_type'], builtin_tools: [], screen_args: ['mcp__naukri__naukri_type'] };
+    expect(hook.decide({ tool_name: 'mcp__naukri__naukri_type', tool_input: { attachments: [pdf] } }, p3, { root: ROOT }).allow).toBe(false);
+  });
+});
+
 describe('subagents', () => {
   it('uses the agent frontmatter tools, intersected with the profile', () => {
     // matcher.md: tools: Skill, mcp__resume__get_base_resume, mcp__gates__check_liveness

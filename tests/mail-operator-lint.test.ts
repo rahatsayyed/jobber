@@ -10,7 +10,7 @@ function def(name: string): { fm: string; body: string; tools: string[] } {
 }
 
 const MAIL_TOOLS = [
-  'mcp__db__list_queued_outreach', 'mcp__db__list_skipped_outreach', 'mcp__db__update_outreach_status', 'mcp__db__record_email_sent',
+  'mcp__db__list_queued_outreach', 'mcp__db__list_skipped_outreach', 'mcp__db__update_outreach_status', 'mcp__db__record_email_sent', 'mcp__db__release_email_send',
   'mcp__db__check_and_increment', 'mcp__gmail__send_email', 'mcp__db__approve_drafted_followups', 'mcp__db__list_followup_candidates',
   'mcp__db__list_approved_followups', 'mcp__db__claim_followup_for_send', 'mcp__db__mark_followup_sent', 'mcp__db__mark_followup_failed',
 ];
@@ -38,7 +38,7 @@ const WAKE_ALLOW = [
   'mcp__resume__get_base_resume', 'mcp__resume__render_resume', 'mcp__resume__check_text', 'mcp__resume__apply_review_edits',
   'mcp__db__list_sent_emails', 'mcp__db__set_email_thread', 'mcp__db__triage_replies', 'mcp__db__record_reply_check',
   'mcp__gmail__search_emails', 'mcp__gmail__read_email', 'mcp__gmail__send_email',
-  'mcp__db__list_skipped_outreach', 'mcp__db__record_email_sent', 'mcp__db__check_and_increment',
+  'mcp__db__list_skipped_outreach', 'mcp__db__record_email_sent', 'mcp__db__release_email_send', 'mcp__db__check_and_increment',
   'mcp__db__approve_drafted_followups', 'mcp__db__list_followup_candidates', 'mcp__db__list_approved_followups',
   'mcp__db__claim_followup_for_send', 'mcp__db__mark_followup_sent', 'mcp__db__mark_followup_failed', 'mcp__db__save_followup_draft',
   // apply-operator (8G-2 task 21): the applier tools, and Naukri click/type for naukri rows

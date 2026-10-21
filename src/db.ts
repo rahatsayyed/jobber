@@ -340,6 +340,23 @@ export function recordEmailSent(db: BetterSqlite3.Database, queueId: number, mes
     WHERE id = ? OR (job_id = ? AND email_to IS ? AND coalesce(email_status, '') != 'sent')`).run(messageId, queueId, r.job_id, r.email_to).changes;
 }
 
+/**
+ * Undo a send that never left the machine (the tool call was denied before sending, for example by the PreToolUse hook):
+ * every `failed` row of the job that has no sent time and no message id becomes sendable again (email_status NULL), and ONE
+ * `send_email` slot of today is given back (never below zero). A sent row, a dry_run row and other jobs are never touched.
+ */
+export function releaseEmailSend(db: BetterSqlite3.Database, jobId: string): { rows: number; slot_released: boolean } {
+  return db.transaction(() => {
+    const rows = db.prepare(
+      `UPDATE outreach_queue SET email_status = NULL, updated_at = datetime('now')
+        WHERE job_id = ? AND email_status = 'failed' AND email_sent_at IS NULL AND email_message_id IS NULL`,
+    ).run(jobId).changes;
+    if (rows === 0) return { rows: 0, slot_released: false };
+    const slot = db.prepare("UPDATE daily_counters SET count = count - 1 WHERE day = date('now') AND key = 'send_email' AND count > 0").run().changes > 0;
+    return { rows, slot_released: slot };
+  })();
+}
+
 export function setEmailThread(db: BetterSqlite3.Database, messageId: string, threadId: string): number {
   return db.prepare('UPDATE outreach_queue SET email_thread_id = ? WHERE email_message_id = ?').run(threadId, messageId).changes;
 }

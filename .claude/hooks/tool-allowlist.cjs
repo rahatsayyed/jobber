@@ -96,6 +96,29 @@ function validBashExact(list) {
 
 const nonEmptyString =(v) => typeof v === 'string' && v !== '';
 
+/**
+ * True only for an absolute, normalized path <project>/renderer/automation/<id>/resume.pdf where <id> is one safe path segment
+ * (letters, digits, hyphen). No traversal, no other file name, no other directory, no symlink out of the project.
+ */
+function isRenderedResumePdf(p, root) {
+  if (typeof p !== 'string' || !path.isAbsolute(p) || p.includes('\0')) return false;
+  if (path.resolve(p) !== p) return false;
+  let realRoot = root;
+  try { realRoot = fs.realpathSync(root); } catch { /* fall back to the given root */ }
+  for (const base of new Set([root, realRoot])) {
+    const m = new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/renderer/automation/([A-Za-z0-9-]{1,64})/resume\\.pdf$').exec(p);
+    if (!m) continue;
+    try {
+      if (fs.existsSync(p)) {
+        const real = fs.realpathSync(p);
+        if (!real.startsWith(realRoot + path.sep)) return false;
+      }
+    } catch { return false; }
+    return true;
+  }
+  return false;
+}
+
 function decide(event, profile, opts) {
   const root = (opts && opts.root) || DEFAULT_ROOT;
   const deny = (reason) => ({ allow: false, reason });
@@ -194,7 +217,17 @@ function decide(event, profile, opts) {
       } catch {
         return deny('tool_input too deeply nested or too large to screen');
       }
+      // gmail send_email may attach ONLY a rendered resume PDF (<project>/renderer/automation/<id>/resume.pdf). Its absolute path
+      // contains /Users/, which the generic screen below rejects, so the attachments are checked here by an exact rule and then
+      // left out of the generic screen; every other argument is still screened.
+      let skip = null;
+      if (name === 'mcp__gmail__send_email' && event.tool_input && event.tool_input.attachments !== undefined) {
+        const att = event.tool_input.attachments;
+        if (!Array.isArray(att) || !att.every((a) => isRenderedResumePdf(a, root))) return deny('attachment path not allowed');
+        skip = new Set(att);
+      }
       for (const s of strs) {
+        if (skip && skip.has(s)) continue;
         if (SECRET_ARG_RES.some((re) => re.test(s))) return deny('secret-shaped path in tool arguments');
       }
     }

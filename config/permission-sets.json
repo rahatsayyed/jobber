@@ -52,6 +52,7 @@
       "mcp__db__mark_followup_failed",
       "mcp__db__mark_followup_sent",
       "mcp__db__record_email_sent",
+      "mcp__db__release_email_send",
       "mcp__db__record_outcome",
       "mcp__db__record_reply_check",
       "mcp__db__resolve_reply_proposals",

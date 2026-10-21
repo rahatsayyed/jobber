@@ -47,6 +47,7 @@
     "eval:judge": "tsx scripts/eval/judge.ts",
     "report": "tsx scripts/funnel-report.ts",
     "render": "tsx scripts/render-resume.ts",
+    "mail:release": "tsx scripts/release-email.ts",
     "jobber:control": "tsx scripts/jobber-control.ts",
     "scheduler": "tsx scripts/scheduler.ts",
     "scheduler:units": "tsx scripts/scheduler-units.ts",
