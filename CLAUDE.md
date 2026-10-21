@@ -268,9 +268,12 @@ never skipped.
 - **P0b Check replies**: dispatch `reply-watcher` (`dry_run: false`) first (replies change who gets
   follow-ups); include its counts and any bounced addresses in the report. If it fails, report
   `reply check failed: <error>` and continue.
-- **P1 Take work**: `db.list_unscored_jobs({limit: 25})` (`PIPELINE_MAX_JOBS_PER_WAKE`, a constant):
-  at most 25 jobs per wake, oldest first, as full Job rows plus `apply_class` and `channels`; the rest
-  wait for the next wake, and a job whose match save is rejected twice is no longer offered.
+- **P1 Take work**: `db.list_unscored_jobs({limit, match_threshold})` (`PIPELINE_MAX_JOBS_PER_WAKE`, a constant, 10):
+  full Job rows plus `apply_class` and `channels`. Jobs scored at or above the threshold that never got an
+  outreach row come first, marked `already_matched` with their stored score (at most half the batch, at most
+  twice each, counted in `jobs.prep_offers`); they skip the matcher but still pass `gates.apply_vetoes`, then go
+  to P3. Unscored jobs follow, round-robin by source and oldest first within a source; the rest wait for the
+  next wake, and a job whose match save is rejected twice is no longer offered.
 - **P2 Match**: put one line `Target regions: home=<home>; targets=<targets>; remote OK=<remote>;
   remote anywhere=<remote_anywhere>` (built by `targetRegionsLine` from `config/target-regions.json`;
   a missing or invalid file gives a line that says so) into every matcher prompt. Split the jobs into
