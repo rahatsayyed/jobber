@@ -83,6 +83,9 @@ export function pickCandidate(cands: Candidate[], query: string): Pick {
 }
 
 const DEFAULT_IDLE_MS = 10 * 60 * 1000;
+/** `open` reads again (after another settle) while the page text is shorter than this, at most this many times. */
+const OPEN_CONTENT_MIN_CHARS = 100;
+const OPEN_CONTENT_RETRIES = 3;
 
 interface Session { browser: LiBrowser; context: LiContext; page: LiPage; lock: LockHandle; idle: ReturnType<typeof setTimeout> | null }
 
@@ -190,7 +193,12 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
       touch();
       await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' });
       await settle(page);
-      const snap = await rawSnapshot();
+      let snap = await rawSnapshot();
+      // A single page app (the messaging page) can still be empty after the first settle and then redirect and render: read again a few times.
+      for (let i = 0; i < OPEN_CONTENT_RETRIES && snap && snap.bodyText.length < OPEN_CONTENT_MIN_CHARS && !snap.hasPasswordInput; i++) {
+        await settle(page);
+        snap = await rawSnapshot();
+      }
       if (!snap) { await closeSession(); return { ok: false, code: 'failed', reason: 'no snapshot' }; }
       const blk = afterNavigation(snap);
       observeLayout(snap, blk);

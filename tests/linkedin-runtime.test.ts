@@ -54,6 +54,23 @@ const profileSite = (): FakeSite => ({
 });
 
 describe('open', () => {
+  it('waits for a slow single page app to render before reading the first snapshot', async () => {
+    let reads = 0;
+    const page: Record<string, unknown> = { title: 'Messaging | LinkedIn' };
+    Object.defineProperty(page, 'bodyText', { enumerable: true, get: () => (++reads <= 2 ? '' : 'x'.repeat(400)) });
+    const { rt } = setup({ state: STATE, pages: { '/messaging/': page as never } });
+    const r = await rt.open('https://www.linkedin.com/messaging/');
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.snapshot.bodyText.length).toBe(400);
+  });
+
+  it('gives up waiting for content after a few reads and returns the thin page', async () => {
+    const { rt, log } = setup({ state: STATE, pages: { '/messaging/': { title: 'Messaging | LinkedIn', bodyText: '' } } });
+    const r = await rt.open('https://www.linkedin.com/messaging/');
+    expect(r.ok).toBe(true);
+    expect(log.filter((l) => l === 'snapshot').length).toBeLessThanOrEqual(5);
+  });
+
   it('refuses non-LinkedIn and blocked paths without launching', async () => {
     const { rt, launcher } = setup(profileSite());
     const a = await rt.open('https://example.com/in/x/');
