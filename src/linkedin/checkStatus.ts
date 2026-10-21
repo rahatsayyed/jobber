@@ -5,6 +5,7 @@ import { gateField, MAX_FIELD_CHARS } from './state.js';
 import { isProfileUrl } from './urls.js';
 import { verifyProfileUrl } from './verify.js';
 import type { ToolDeps } from './toolDeps.js';
+import { connectionState } from './connectionState.js';
 
 export interface StatusResult {
   status: 'connected' | 'not_connected' | 'pending' | 'failed' | 'halted';
@@ -26,10 +27,12 @@ export async function checkConnectionStatus(a: { profile_url: string }, deps: To
   if (!verifyProfileUrl(a.profile_url, snap.url).ok) return { status: 'failed', code: 'profile_url_mismatch' };
   const p = snap.profile;
   if (!p) return { status: 'failed', code: 'no_profile' };
-  // The bell is the only 1st-degree signal: a Message button alone is Premium/InMail (2026-08-28).
+  // 1st degree and no Connect button decide it (connectionState): the bell also shows for a profile that is only followed,
+  // and a Message button alone is Premium or InMail.
+  const cs = connectionState(p);
   const out: StatusResult = {
-    status: p.hasBell ? 'connected' : p.pending ? 'pending' : 'not_connected',
-    code: p.hasBell ? 'bell_present' : p.pending ? 'pending_control' : 'no_bell',
+    status: cs.state,
+    code: cs.code,
     degree: p.degree,
     // Read-only: reports the layout verdict class, never refuses on it.
     ...layoutClassOf(deps.rt, 'check_connection_status'),

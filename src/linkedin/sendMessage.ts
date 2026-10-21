@@ -15,6 +15,7 @@ import { refusal, type ToolDeps, type TypedResult } from './toolDeps.js';
 import { SNAPSHOT_SRC } from './snapshot.js';
 import type { LiLocator, RawSnapshot } from './types.js';
 import { extractExpectedNameFromTitle, namesPlausiblyMatch, verifyProfileUrl } from './verify.js';
+import { connectionState } from './connectionState.js';
 
 export interface SendMessageOptions {
   composeClearTimeoutMs?: number;
@@ -127,7 +128,7 @@ export async function sendMessage(
       const p = snap.profile;
       if (!p) return fail('no_profile', 'profile header not found');
       // 1st-degree requirement: LinkedIn shows Message to some non-connections.
-      if (!p.hasBell) return refuse('not_connected', 'recipient is not a 1st-degree connection');
+      if (connectionState(p).state !== 'connected') return refuse('not_connected', 'recipient is not a 1st-degree connection');
       const fields: Array<[string, number]> = [
         [snap.title, MAX_FIELD_CHARS.headline], [p.name, MAX_FIELD_CHARS.name],
         [p.headline, MAX_FIELD_CHARS.headline], [p.location, MAX_FIELD_CHARS.location],

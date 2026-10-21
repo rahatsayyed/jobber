@@ -167,6 +167,15 @@ describe('sendMessage', () => {
     expect(events(t.db)).toBe(0);
   });
 
+  it('a followed 3rd-degree profile (bell present, Connect shown) is still not connected: refused, no click', async () => {
+    const t = setup({ notConnected: true });
+    t.def.profile = { ...t.def.profile, hasBell: true, degree: '3rd', actions: ['Message', 'Connect', 'More', 'Follow'] };
+    const r = await send(t.deps);
+    expect(r).toMatchObject({ status: 'refused', code: 'not_connected' });
+    expect(t.log.filter((l) => l.startsWith('click:'))).toEqual([]);
+    expect(events(t.db)).toBe(0);
+  });
+
   it('overlay header names someone else -> refused, Escape, no Send click', async () => {
     const t = setup({ header: 'Other Person' });
     const r = await send(t.deps);

@@ -311,7 +311,7 @@ describe('connectSend', () => {
     delete def.profile;
     Object.defineProperty(def, 'profile', {
       enumerable: true,
-      get: () => (++reads >= 2 ? { ...profile, pending: true } : profile),
+      get: () => (++reads >= 2 ? { ...profile, pending: true, actions: ['Pending', 'Message', 'More'] } : profile),
     });
     t.site.pages[P] = def;
     const r = await send(t.deps);

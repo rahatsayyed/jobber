@@ -7,6 +7,7 @@ import { gateOutbound } from '../safety/outputGate.js';
 import { outputGateContext, preSendGuard } from './guard.js';
 import { getProfileNamePoint, pickNearestLocator } from './proximity.js';
 import { layoutGate } from './layoutGuard.js';
+import { connectionState } from './connectionState.js';
 import { SELECTORS } from './selectors.js';
 import { gateField, MAX_FIELD_CHARS } from './state.js';
 import { finishTouch, pauseContact, type TouchStatus } from './touches.js';
@@ -89,8 +90,9 @@ export async function connectSend(
       // Step 4: status re-check on the same page.
       const p = snap.profile;
       if (!p) return fail('no_profile', 'profile header not found');
-      if (p.hasBell) return refuse('already_connected', 'recipient is already a connection');
-      if (p.pending) return refuse('already_pending', 'an invitation is already pending');
+      const cs = connectionState(p);
+      if (cs.state === 'connected') return refuse('already_connected', 'recipient is already a connection');
+      if (cs.state === 'pending') return refuse('already_pending', 'an invitation is already pending');
       // Step 5: injection gate over visible profile fields, then the page-dependent output gate.
       const fields: Array<[string, number]> = [
         [snap.title, MAX_FIELD_CHARS.headline], [p.name, MAX_FIELD_CHARS.name],

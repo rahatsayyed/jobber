@@ -72,8 +72,19 @@ describe('checkConnectionStatus', () => {
   it('Pending control -> pending', async () => {
     const snap = fromFixture('profile-not-connected.html');
     snap.profile!.pending = true;
+    snap.profile!.actions = ['Pending', 'Message', 'More']; // a pending profile shows Pending instead of Connect
     const { deps, log } = setup({ pages: { [P]: snap } });
     expect((await checkConnectionStatus({ profile_url: URL_ }, deps)).status).toBe('pending');
+    noClicks(log);
+  });
+
+  it('live regression: a followed 3rd-degree profile with Connect and Follow and a bell is NOT connected', async () => {
+    const snap = fromFixture('profile-not-connected.html');
+    snap.profile!.hasBell = true;
+    snap.profile!.degree = '3rd';
+    snap.profile!.actions = ['Contact info', 'Message', 'Connect', 'More', 'Follow'];
+    const { deps, log } = setup({ pages: { [P]: snap } });
+    expect(await checkConnectionStatus({ profile_url: URL_ }, deps)).toMatchObject({ status: 'not_connected', code: 'connect_available', degree: '3rd' });
     noClicks(log);
   });
 

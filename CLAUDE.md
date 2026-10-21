@@ -608,9 +608,12 @@ fallback for its selector misses; a miss returns a refusal or `failed`.
 ### Connection-status check (decided BEFORE drafting, not discovered mid-send)
 
 `linkedin_check_connection_status({profile_url})` is read-only (never clicks or sends anything)
-and returns `status: "connected" | "not_connected" | "failed"`. It checks the profile header for
-the "Manage notifications about `<Name>`" bell — LinkedIn shows this only for an existing
-1st-degree connection. This replaced an earlier design (embedding an already-connected check
+and returns `status: "connected" | "pending" | "not_connected" | "failed"`. The rule is one shared function
+(`src/linkedin/connectionState.ts`, also used by `linkedin_connect_send` and `linkedin_send_message`):
+a visible Connect button always means not connected; a 1st-degree reading without Connect means
+connected; only when the degree cannot be read does the "Manage notifications about `<Name>`" bell
+count. The bell alone is NOT proof: live check 2026-10-21 showed it on a followed 3rd-degree profile
+with Connect and Follow buttons. This replaced an earlier design (embedding an already-connected check
 directly inside the send call, keyed off Message-button presence) after a live false positive on
 a legacy tool: a 2nd-degree (not connected) profile can show BOTH "Connect" and "Message" (a
 Premium/InMail feature that opens messaging to non-connections) — Message presence alone does
