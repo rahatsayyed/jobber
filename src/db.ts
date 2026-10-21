@@ -920,7 +920,7 @@ export const PREP_OFFER_LIMIT = 2;
 
 /**
  * The wake pipeline's input. First the jobs scored at or above `matchThreshold`, not excluded, with no outreach row yet (at most
- * PREP_OFFER_LIMIT hand-backs each, counted in `prep_offers`), marked `already_matched` with the stored score; then the jobs saved but
+ * PREP_OFFER_LIMIT hand-backs each, counted in `prep_offers`, and at most half of `limit` per call so new jobs still get matched), marked `already_matched` with the stored score; then the jobs saved but
  * not scored, not excluded and not given up on, taken round-robin by source (oldest first within a source) so one source's backlog
  * cannot starve the others. Full Job rows plus the channelsFor result (computed without a Hacker News domain check, so an HN job shows
  * hn_gate_pending until the contact stage). Without `matchThreshold` no matched job is returned.
@@ -935,7 +935,7 @@ export function listUnscoredJobs(db: BetterSqlite3.Database, opts: { limit?: num
         WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ?
           AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id)
         ORDER BY score DESC, created_at ASC, rowid ASC LIMIT ?`,
-    ).all(opts.matchThreshold, PREP_OFFER_LIMIT, limit) as Row[]
+    ).all(opts.matchThreshold, PREP_OFFER_LIMIT, Math.max(1, Math.floor(limit / 2))) as Row[]
     : [];
   if (pending.length) {
     const bump = db.prepare('UPDATE jobs SET prep_offers = prep_offers + 1 WHERE id = ?');

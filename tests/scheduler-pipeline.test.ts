@@ -246,6 +246,14 @@ describe('list_unscored_jobs', () => {
     expect(listUnscoredJobs(db, { limit: 10, matchThreshold: 60 }).map((r) => r.id)).toEqual(['fresh']);
     expect(listUnscoredJobs(db, { limit: 10 }).map((r) => r.id)).toEqual(['fresh']);
   });
+  it('hands back at most half the batch as already matched so new jobs are still matched', () => {
+    const db = openDb(':memory:');
+    for (let i = 0; i < 6; i++) { add(db, `m${i}`); db.prepare('UPDATE jobs SET score = 70 WHERE id = ?').run(`m${i}`); }
+    add(db, 'fresh');
+    const rows = listUnscoredJobs(db, { limit: 4, matchThreshold: 60 });
+    expect(rows.filter((r) => r.already_matched)).toHaveLength(2);
+    expect(rows.map((r) => r.id)).toContain('fresh');
+  });
   it('does not let one source starve the others: unscored jobs are taken round-robin by source, oldest first within a source', () => {
     const db = openDb(':memory:');
     add(db, 'g1', { at: '2026-10-01 10:00:00' });

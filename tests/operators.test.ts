@@ -123,6 +123,13 @@ describe('platform operators', () => {
         for (const w of ['halted', 'rate_limited', 'killed']) expect(body).toContain(w);
         expect(body).not.toMatch(/mcp__connect/);
       });
+      it('treats layout=unknown as not learned yet (reported, never a layout_drift escalation)', () => {
+        const rule = body.split('\n').find((l) => l.startsWith('2. Every `' + platform + '_state`')) ?? '';
+        expect(rule).toContain('not_learned');
+        const driftPart = rule.slice(rule.indexOf('On `drift`'), rule.indexOf('On `unknown`') > 0 ? rule.indexOf('On `unknown`') : undefined);
+        expect(driftPart).not.toContain('`unknown`');
+        expect(rule.slice(rule.indexOf('On `unknown`'))).not.toMatch(/escalate` with reason `layout_drift`[^.]*unknown/);
+      });
       it('every operator tool is in the wake profile allow list', () => {
         for (const t of tools) {
           if (t === 'Skill') expect(wake.builtin_tools).toContain('Skill');
