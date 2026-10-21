@@ -277,6 +277,8 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   }
   // Count of match-save rejections per job: after MATCH_FAIL_LIMIT the wake pipeline stops re-offering it (plan 8G task 13).
   if (!jobCols.has('match_fails')) db.exec('ALTER TABLE jobs ADD COLUMN match_fails INTEGER NOT NULL DEFAULT 0');
+  // Hand-backs of a matched job without an outreach row to the wake pipeline (PREP_OFFER_LIMIT).
+  if (!jobCols.has('prep_offers')) db.exec('ALTER TABLE jobs ADD COLUMN prep_offers INTEGER NOT NULL DEFAULT 0');
   if (!outreachQueueColumnNames.has('resume_json')) db.exec('ALTER TABLE outreach_queue ADD COLUMN resume_json TEXT');
   for (const [col, type] of [['ats_coverage', 'INTEGER'], ['ats_gaps', 'TEXT'], ['fact_warnings', 'TEXT'], ['review_applied', 'INTEGER'], ['review_rejected', 'INTEGER']] as const) {
     if (!outreachQueueColumnNames.has(col)) db.exec(`ALTER TABLE outreach_queue ADD COLUMN ${col} ${type}`);
@@ -907,24 +909,49 @@ export interface UnscoredJob extends Job {
   channels: ChannelVerdict[];
   /** Set only when `description` was cut to UNSCORED_DESCRIPTION_CHARS. */
   description_truncated?: true;
+  /** Set on a job already scored at or above the threshold and vetoed clean that never got an outreach row: skip matching, go to contacts. */
+  already_matched?: true;
+  /** The stored score, only on an already_matched job. */
+  score?: number;
 }
 
+/** Times a matched job without an outreach row is handed back before it is dropped (a job with no contact and no profile never gets a row). */
+export const PREP_OFFER_LIMIT = 2;
+
 /**
- * Jobs saved but not scored, not excluded and not given up on, oldest first, as full Job rows plus the channelsFor result
- * (computed without a Hacker News domain check, so an HN job shows hn_gate_pending until the contact stage). Read-only.
+ * The wake pipeline's input. First the jobs scored at or above `matchThreshold`, not excluded, with no outreach row yet (at most
+ * PREP_OFFER_LIMIT hand-backs each, counted in `prep_offers`), marked `already_matched` with the stored score; then the jobs saved but
+ * not scored, not excluded and not given up on, taken round-robin by source (oldest first within a source) so one source's backlog
+ * cannot starve the others. Full Job rows plus the channelsFor result (computed without a Hacker News domain check, so an HN job shows
+ * hn_gate_pending until the contact stage). Without `matchThreshold` no matched job is returned.
  */
-export function listUnscoredJobs(db: BetterSqlite3.Database, opts: { limit?: number } = {}): UnscoredJob[] {
+export function listUnscoredJobs(db: BetterSqlite3.Database, opts: { limit?: number; matchThreshold?: number } = {}): UnscoredJob[] {
   const limit = Math.max(1, Math.min(100, Math.floor(opts.limit ?? 25)));
-  const rows = db.prepare(
-    `SELECT id, source, title, company, url, apply_url, description, posted_at FROM jobs
-      WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ?
-      ORDER BY created_at ASC, rowid ASC LIMIT ?`,
-  ).all(MATCH_FAIL_LIMIT, limit) as Array<Record<string, string | null>>;
-  return rows.map((r) => {
+  type Row = Record<string, string | number | null>;
+  const cols = 'id, source, title, company, url, apply_url, description, posted_at, score';
+  const pending: Row[] = typeof opts.matchThreshold === 'number'
+    ? db.prepare(
+      `SELECT ${cols} FROM jobs
+        WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ?
+          AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id)
+        ORDER BY score DESC, created_at ASC, rowid ASC LIMIT ?`,
+    ).all(opts.matchThreshold, PREP_OFFER_LIMIT, limit) as Row[]
+    : [];
+  if (pending.length) {
+    const bump = db.prepare('UPDATE jobs SET prep_offers = prep_offers + 1 WHERE id = ?');
+    db.transaction(() => { for (const r of pending) bump.run(r.id as string); })();
+  }
+  const fresh = db.prepare(
+    `SELECT ${cols} FROM (
+       SELECT *, rowid AS rid, ROW_NUMBER() OVER (PARTITION BY source ORDER BY created_at ASC, rowid ASC) AS rn FROM jobs
+        WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ?)
+      ORDER BY rn ASC, created_at ASC, rid ASC LIMIT ?`,
+  ).all(MATCH_FAIL_LIMIT, Math.max(0, limit - pending.length)) as Row[];
+  const toJob = (r: Row, matched: boolean): UnscoredJob => {
     const job: Job = {
       id: r.id as string, source: (r.source ?? '') as string, title: (r.title ?? '') as string, company: (r.company ?? '') as string,
       url: (r.url ?? '') as string, apply_url: (r.apply_url ?? '') as string, description: (r.description ?? '') as string,
-      ...(r.posted_at ? { posted_at: r.posted_at } : {}),
+      ...(r.posted_at ? { posted_at: r.posted_at as string } : {}),
     };
     const channels = channelsFor(job);
     const apply = channels.find((c) => c.channel === 'apply');
@@ -934,8 +961,10 @@ export function listUnscoredJobs(db: BetterSqlite3.Database, opts: { limit?: num
       ...(cut ? { description: job.description.slice(0, UNSCORED_DESCRIPTION_CHARS), description_truncated: true as const } : {}),
       apply_class: apply?.eligible ? 'apply_capable' : (apply?.reason ?? 'apply_tier:none'),
       channels,
+      ...(matched ? { already_matched: true as const, score: r.score as number } : {}),
     };
-  });
+  };
+  return [...pending.map((r) => toJob(r, true)), ...fresh.map((r) => toJob(r, false))];
 }
 
 export function markExcluded(

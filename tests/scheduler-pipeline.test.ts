@@ -230,6 +230,31 @@ describe('list_unscored_jobs', () => {
     expect(countDue(db, NOW, loadTuning({}), {}).unmatchedJobs).toBe(2);
     expect(listUnscoredJobs(db, { limit: 1 })).toHaveLength(1);
   });
+  it('offers matched jobs without an outreach row first, marked already_matched, at most twice', () => {
+    const db = openDb(':memory:');
+    add(db, 'fresh', { at: '2026-10-01 10:00:00' });
+    add(db, 'pending', { at: '2026-10-02 10:00:00' }); db.prepare("UPDATE jobs SET score = 74 WHERE id = 'pending'").run();
+    add(db, 'low'); db.prepare("UPDATE jobs SET score = 59 WHERE id = 'low'").run();
+    add(db, 'queued'); db.prepare("UPDATE jobs SET score = 80 WHERE id = 'queued'").run();
+    db.prepare("INSERT INTO outreach_queue (job_id, status) VALUES ('queued', 'queued')").run();
+    add(db, 'vetoed'); db.prepare("UPDATE jobs SET score = 80, excluded_reason = 'x' WHERE id = 'vetoed'").run();
+    const first = listUnscoredJobs(db, { limit: 10, matchThreshold: 60 });
+    expect(first.map((r) => r.id)).toEqual(['pending', 'fresh']);
+    expect(first[0]).toMatchObject({ already_matched: true, score: 74 });
+    expect(first[1].already_matched).toBeUndefined();
+    expect(listUnscoredJobs(db, { limit: 10, matchThreshold: 60 }).map((r) => r.id)).toEqual(['pending', 'fresh']);
+    expect(listUnscoredJobs(db, { limit: 10, matchThreshold: 60 }).map((r) => r.id)).toEqual(['fresh']);
+    expect(listUnscoredJobs(db, { limit: 10 }).map((r) => r.id)).toEqual(['fresh']);
+  });
+  it('does not let one source starve the others: unscored jobs are taken round-robin by source, oldest first within a source', () => {
+    const db = openDb(':memory:');
+    add(db, 'g1', { at: '2026-10-01 10:00:00' });
+    add(db, 'g2', { at: '2026-10-01 11:00:00' });
+    add(db, 'g3', { at: '2026-10-01 12:00:00' });
+    add(db, 'n1', { source: 'naukri', apply_url: 'https://www.naukri.com/job-listings-x', at: '2026-10-05 10:00:00' });
+    expect(listUnscoredJobs(db, { limit: 2 }).map((r) => r.id)).toEqual(['g1', 'n1']);
+    expect(listUnscoredJobs(db, { limit: 4 }).map((r) => r.id)).toEqual(['g1', 'n1', 'g2', 'g3']);
+  });
   it('one rejection is not enough to give up', () => {
     const db = openDb(':memory:');
     add(db, 'a');
@@ -274,7 +299,8 @@ describe('list_unscored_jobs', () => {
   });
   it('P1 names the tool, the cap and apply_class; the direct-call list names every tool used', () => {
     const t = pipelineLines({ matchThreshold: 60, sendLimit: 1, targetRegions: 'T', followupsAutonomous: false }).join('\n');
-    expect(t).toContain(`\`db.list_unscored_jobs({limit: ${PIPELINE_MAX_JOBS_PER_WAKE}})\``);
+    expect(t).toContain(`\`db.list_unscored_jobs({limit: ${PIPELINE_MAX_JOBS_PER_WAKE}, match_threshold: 60})\``);
+    expect(t).toContain('already_matched');
     expect(t).toContain('apply_class');
     for (const c of ['db.sweep_deadlines', 'db.list_unscored_jobs', 'db.save_match_result', 'gates.apply_vetoes', 'db.mark_excluded', 'job-fetch.source_status', 'job-fetch.board_status']) {
       expect(t.split('\n')[0]).toContain(`\`${c}\``);
