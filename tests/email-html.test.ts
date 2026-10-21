@@ -24,6 +24,14 @@ describe('buildEmailParts', () => {
     const t = 'Hi,\n\nAbout the **Sr React role**.\n\nRahat';
     expect(buildEmailParts(t, links).plain).toBe(stripMarkers(t));
   });
+  it('control characters in the input cannot fake extra bold or leak into either part', () => {
+    const t = 'A\u0001x\u0002 B\u0001y\u0002 C\u0001z\u0002 D\u0001w\u0002 \u0002stray **real**';
+    const { html, plain } = buildEmailParts(t, links);
+    expect((html.match(/<strong>/g) ?? []).length).toBeLessThanOrEqual(MAX_MARKERS);
+    expect(html).not.toMatch(/[\u0001\u0002]/);
+    expect(plain).not.toMatch(/[\u0001\u0002]/);
+    expect(stripMarkers(t)).not.toMatch(/[\u0001\u0002]/);
+  });
   it('turns markers into <strong>, at most 3', () => {
     const { html } = buildEmailParts('**a** **b** **c** **d**', links);
     expect((html.match(/<strong>/g) ?? []).length).toBe(MAX_MARKERS);

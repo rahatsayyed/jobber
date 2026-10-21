@@ -13,7 +13,7 @@ export interface EmailLink { url: string; key: string; label: string; host: stri
 export interface EmailParts { plain: string; html: string }
 
 export function stripMarkers(text: string): string {
-  return String(text ?? '').replace(MARK, '$1').replace(/\*\*/g, '');
+  return String(text ?? '').replace(/[\u0001\u0002]/g, '').replace(MARK, '$1').replace(/\*\*/g, '');
 }
 
 /** Lowercase, no scheme, no leading @ or www., no trailing slash or sentence punctuation. */
@@ -94,7 +94,7 @@ function renderLine(line: string, links: EmailLink[]): string {
 export function buildEmailParts(text: string, links: EmailLink[]): EmailParts {
   const plain = stripMarkers(text);
   let n = 0;
-  const marked = String(text ?? '').replace(MARK, (_m, c: string) => (++n <= MAX_MARKERS ? `${OPEN}${c}${CLOSE}` : c)).replace(/\*\*/g, '');
+  const marked = String(text ?? '').replace(/[\u0001\u0002]/g, '').replace(MARK, (_m, c: string) => (++n <= MAX_MARKERS ? `${OPEN}${c}${CLOSE}` : c)).replace(/\*\*/g, '');
   const blocks = marked.replace(/\r\n/g, '\n').trim().split(/\n[ \t]*\n/).filter((b) => b.trim());
   const html = blocks.map((b) => {
     const lines = b.split('\n').map((l) => l.replace(/\s+$/, ''));
