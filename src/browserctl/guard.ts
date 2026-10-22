@@ -58,7 +58,7 @@ export function dialogKindOf(dialogName: string | null | undefined): DialogKind 
   const n = normName(dialogName);
   if (!n) return null;
   if (/invit|connect|add a note|personali[sz]e|how do you know/.test(n)) return 'invite';
-  if (/message|compose|conversation|inmail|chat/.test(n)) return 'message';
+  if (/messag|compose|conversation|inmail|chat/.test(n)) return 'message';
   return 'other';
 }
 

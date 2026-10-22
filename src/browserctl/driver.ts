@@ -11,6 +11,8 @@ export const BC_KEYS: readonly BcKey[] = ['Enter', 'Escape', 'Tab', 'ArrowDown',
 export interface BcPage {
   url(): string;
   title(): Promise<string>;
+  /** Navigate. Used by open() only, after the platform URL allowlist. */
+  goto(url: string): Promise<void>;
   /** Stamp ordinals and read the visible tree. */
   snapshot(): Promise<RawTree>;
   /** Re-read one stamped element live; null when it is gone or hidden. */
@@ -55,6 +57,7 @@ export function realBcPage(page: RealPage): BcPage {
   return {
     url: () => page.url(),
     title: () => page.title(),
+    async goto(url) { await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' }); },
     async snapshot() {
       const t = await run<RawTree>('snapshot');
       if (!t || !Array.isArray(t.nodes)) return { url: page.url(), title: '', nodes: [] };

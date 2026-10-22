@@ -20,6 +20,9 @@ export interface ArmedIntent {
   text: string | null;
   personId?: number;
   touchId?: number;
+  company?: string;
+  /** Armed in a dry run: the commit path records instead of clicking. */
+  dry?: boolean;
   expiresAt: number;
 }
 export type IntentInput = Omit<ArmedIntent, 'id' | 'expiresAt'>;
