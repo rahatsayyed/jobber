@@ -240,8 +240,7 @@ yourself on a second account. `up -- --status` must read `MODE: LIVE`.
 
 Send one canary email and one canary connect, then check Gmail, LinkedIn and the DB (the
 dashboard or `npm run status -- working`). The browserctl snapshot walker and semantic guard are `unverified`
-against live pages: with the screenshot flags off, read the page yourself the first time (or set
-`LINKEDIN_SCREENSHOT=true` for the supervised session only).
+against live pages: the screenshot flags are on by default (set `LINKEDIN_SCREENSHOT=false` to disable them), but read the page yourself the first time, since the pixels are unscreened.
 
 **Time box:** 3 to 5 days (estimate, not measured) of supervised canaries; you watch each send.
 

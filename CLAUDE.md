@@ -33,7 +33,7 @@ Operators (one Agent call each, exact tool lists in `config/worker-tools.json`):
   `src/browserctl` engine. Generic page tools act by ref only: `linkedin_open`, `linkedin_snapshot`
   (refs `s<epoch>.<n>`, a new epoch per snapshot, a stale ref is refused), `linkedin_click`,
   `linkedin_type`, `linkedin_press_key`, `linkedin_scroll`, `linkedin_wait_for`, plus
-  `linkedin_screenshot` and `linkedin_click_at` (both off unless `LINKEDIN_SCREENSHOT=true`). The one
+  `linkedin_screenshot` and `linkedin_click_at` (both on by default, off only when the owner sets `LINKEDIN_SCREENSHOT=false`). The one
   send tool is `linkedin_arm_send` (kinds `connect_note`, `role_ask`, `rapport`, `referral_ask`,
   `followup`, `feedback`, `accept`): it runs the code gates and arms one intent, and the following
   type and click calls commit it (see "Connecting"). Data tools: `linkedin_find_profiles` (people
@@ -47,7 +47,7 @@ Operators (one Agent call each, exact tool lists in `config/worker-tools.json`):
   gone.
 - `naukri` MCP: the same engine. Generic ref tools `naukri_open`, `naukri_snapshot`, `naukri_click`,
   `naukri_type`, `naukri_press_key`, `naukri_scroll`, `naukri_wait_for`, `naukri_screenshot` and
-  `naukri_click_at` (both off unless `NAUKRI_SCREENSHOT=true`), the two arm tools `naukri_arm_send`
+  `naukri_click_at` (both on by default, off only when the owner sets `NAUKRI_SCREENSHOT=false`), the two arm tools `naukri_arm_send`
   (thread messages, verified threads only; `naukri-operator`) and `naukri_arm_apply` (the native
   Apply, `apply-operator` only), and the data tools `naukri_search`, `naukri_discover`,
   `naukri_inbox`, `naukri_read_thread`, `naukri_layout` and `naukri_close`.
@@ -57,7 +57,7 @@ Operators (one Agent call each, exact tool lists in `config/worker-tools.json`):
   `scout_open`, `scout_state`, `scout_scroll`, `scout_click`, `scout_extract_jobs`,
   `scout_save_jobs`, `scout_capture_fixture`, `scout_propose_provider`, `scout_tasks`,
   `scout_task_update`, `scout_layout`, `scout_close`, `site_login`, `site_signup`), plus
-  `scout_screenshot` and `scout_click_at` (both off unless `SCOUT_SCREENSHOT=true`; the click refuses
+  `scout_screenshot` and `scout_click_at` (both on by default, off only when the owner sets `SCOUT_SCREENSHOT=false`; the click refuses
   every commit, submit, apply, sign-in and sign-up control).
 - `applier` MCP: the typed browser-apply tools for the `apply-operator` (`apply_open`,
   `apply_state`, `apply_autofill`, `apply_fill`, `apply_choose`, `apply_upload`, `apply_next`,
@@ -880,9 +880,8 @@ gates and that the engine re-verifies against the live page. Layers, outermost f
    process (`linkedin`, `naukri`, `outreach`) loads its own copy of the model on first use (about
    750 MB of weights each; `outreach` only on `escalate`). The three screenshot tools (`linkedin_screenshot`,
    `naukri_screenshot`, `scout_screenshot`) return raw pixels that are NOT screened, and their
-   `*_click_at` pointer tools act on coordinates; both ship off behind `LINKEDIN_SCREENSHOT`,
-   `NAUKRI_SCREENSHOT` and `SCOUT_SCREENSHOT` (all `false`, the owner flips them, same idea as
-   `APPLY_SCREENSHOT`). `click_at` needs its flag, a snapshot and a screenshot at the current epoch, and is
+   `*_click_at` pointer tools act on coordinates; both are ON by default behind `LINKEDIN_SCREENSHOT`,
+   `NAUKRI_SCREENSHOT` and `SCOUT_SCREENSHOT` (owner decision: off only when the value is exactly `false`; unset or any other value is on; `APPLY_SCREENSHOT` is different and still ships off). `click_at` needs its flag not `false`, a snapshot and a screenshot at the current epoch, and is
    classified by the same semantic guard as a ref click (an element under the point that is a commit
    or irreversible class needs an armed intent; scout refuses all of them). The arm tools, the guard
    and the armed-intent store are described under "Connecting".
@@ -984,8 +983,8 @@ home IP; Akamai may treat a datacenter/VPS IP harder, so re-run the check from t
   shared daily cap) and then clicks the native Apply control by ref from the latest
   `naukri_snapshot`. The recruiter chatbot is answered through `naukri_click` and `naukri_type` under
   that armed intent only, each typed answer through the output gate and a length cap, and only with
-  answers from the answer book. `naukri_screenshot` and `naukri_click_at` exist only with
-  `NAUKRI_SCREENSHOT=true` (unscreened pixels, see "Outreach safety layers"). A confirmed apply is
+  answers from the answer book. `naukri_screenshot` and `naukri_click_at` exist unless the owner sets
+  `NAUKRI_SCREENSHOT=false` (unscreened pixels, see "Outreach safety layers"). A confirmed apply is
   recorded once per job; most Naukri jobs say "Apply on company site" and are not applied through
   this tool (recorded as `manual_review`). The `naukri-operator` has click and type but no
   `naukri_arm_apply`, is forbidden to touch any Apply control, and sends only through
@@ -1135,9 +1134,9 @@ is not measured by it.
 13. Browserctl rebuild (LinkedIn, Naukri, scout; all live-unverified): (a) fully quit and restart every
     Claude window (new MCP tool names, rewritten operator agents); (b) re-apply the permission set
     (`npm run permissions -- outreach_send`, or the set you currently use) and check
-    `npm run permissions -- --status`; (c) leave `LINKEDIN_SCREENSHOT`, `NAUKRI_SCREENSHOT` and
-    `SCOUT_SCREENSHOT` at `false` unless you want screenshots and the pointer fallback (the pixels are
-    unscreened); (d) supervised live structure checks in dry run: `linkedin_open` and
+    `npm run permissions -- --status`; (c) `LINKEDIN_SCREENSHOT`, `NAUKRI_SCREENSHOT` and
+    `SCOUT_SCREENSHOT` are on by default (screenshots and the pointer fallback; the pixels are
+    unscreened): set one to `false` in `.env` to disable it; (d) supervised live structure checks in dry run: `linkedin_open` and
     `linkedin_snapshot` on a profile, a search page and the messaging page, the same for Naukri (a job
     page and a thread), and a scout read of one custom site, confirming the snapshot shows the
     Connect, Message, Send and Apply controls with sensible names; (e) the first supervised canary

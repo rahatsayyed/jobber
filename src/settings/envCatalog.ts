@@ -272,12 +272,12 @@ const hand: EnvSpec[] = [
     restartEvidence: 'src/linkedin/config.ts',
   }),
   e('LINKEDIN_SCREENSHOT', 'linkedin', 'LinkedIn', 'bool', {
-    default: 'false',
+    default: 'true',
     exampleActive: true,
-    about: 'Turn on linkedin_screenshot and linkedin_click_at (a pointer click needs a snapshot and a screenshot at the current epoch). Screenshot pixels are NOT checked by the injection classifier, so leave it off unless the page tree is not enough.',
+    about: 'On by default: linkedin_screenshot and linkedin_click_at (a pointer click needs a snapshot and a screenshot at the current epoch). Set false to disable. Screenshot pixels are NOT checked by the injection classifier.',
     restart: 'mcp',
     restartEvidence: 'src/mcp/linkedin.ts',
-    ...tier('guarded', 'Feeds unscreened page pixels to the model and allows pointer clicks.', 'true'),
+    ...tier('guarded', 'Feeds unscreened page pixels to the model and allows pointer clicks.'),
   }),
   e('LINKEDIN_SESSION_MAX_AGE_DAYS', 'linkedin', 'LinkedIn', 'int', {
     default: '45',
@@ -419,20 +419,20 @@ const hand: EnvSpec[] = [
     restartEvidence: 'src/sources/naukri.ts',
   }),
   e('NAUKRI_SCREENSHOT', 'naukri', 'Naukri', 'bool', {
-    default: 'false',
+    default: 'true',
     exampleActive: true,
-    about: 'Turn on naukri_screenshot and naukri_click_at (a pointer click needs a snapshot and a screenshot at the current epoch). Screenshot pixels are NOT checked by the injection classifier, so leave it off unless the page tree is not enough.',
+    about: 'On by default: naukri_screenshot and naukri_click_at (a pointer click needs a snapshot and a screenshot at the current epoch). Set false to disable. Screenshot pixels are NOT checked by the injection classifier.',
     restart: 'mcp',
     restartEvidence: 'src/mcp/naukri.ts',
-    ...tier('guarded', 'Feeds unscreened page pixels to the model and allows pointer clicks.', 'true'),
+    ...tier('guarded', 'Feeds unscreened page pixels to the model and allows pointer clicks.'),
   }),
   e('SCOUT_SCREENSHOT', 'apply', 'source scout', 'bool', {
-    default: 'false',
+    default: 'true',
     exampleActive: true,
-    about: 'Turn on scout_screenshot and scout_click_at (a pointer click needs a scout_state and a screenshot since the last navigation or scroll). Screenshot pixels are NOT checked by the injection classifier, so leave it off unless the page tree is not enough.',
+    about: 'On by default: scout_screenshot and scout_click_at (a pointer click needs a scout_state and a screenshot since the last navigation or scroll). Set false to disable. Screenshot pixels are NOT checked by the injection classifier.',
     restart: 'mcp',
     restartEvidence: 'src/mcp/scout.ts',
-    ...tier('guarded', 'Feeds unscreened page pixels to the model and allows pointer clicks.', 'true'),
+    ...tier('guarded', 'Feeds unscreened page pixels to the model and allows pointer clicks.'),
   }),
 
   // ---- Scheduler

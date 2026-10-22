@@ -118,14 +118,19 @@ describe('scout_screenshot and scout_click_at', () => {
     return s;
   };
 
-  it('is registered and refused while SCOUT_SCREENSHOT is not true', async () => {
+  it('is registered and refused only while SCOUT_SCREENSHOT is exactly false', async () => {
     expect(TOOL_NAMES).toContain('scout_screenshot');
     expect(TOOL_NAMES).toContain('scout_click_at');
-    const s = await opened({ ...LIVE });
+    const s = await opened({ ...LIVE, SCOUT_SCREENSHOT: 'false' });
     expect(JSON.parse(((await s.h.scout_screenshot({})) as { text: string }).text)).toMatchObject({ ok: false, reason: 'screenshot_off' });
     expect(body(await s.call('scout_click_at', { x: 5, y: 5 }))).toMatchObject({ ok: false, reason: 'screenshot_off' });
     expect(s.browser.screenshots).toBe(0);
     expect(s.browser.mouseClicks).toEqual([]);
+  });
+
+  it.each([['unset', {}], ['true', ON]])('SCOUT_SCREENSHOT %s enables the screenshot', async (_n, extra) => {
+    const s = await opened({ ...LIVE, ...extra });
+    expect(await s.h.scout_screenshot({})).toMatchObject({ ok: true, base64: expect.any(String) });
   });
 
   it('click_at needs a state and a screenshot since the last navigation or scroll', async () => {

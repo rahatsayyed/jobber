@@ -200,7 +200,7 @@ Groups in `.env.example` (one line each):
 - Telegram: bot token and allowed user ids for the ccgram bridge.
 - Agent tuning: `MATCH_THRESHOLD`, `SEND_LIMIT_PER_RUN`, `MAX_APPLIES_PER_DAY`, `MAX_LINKEDIN_SEARCHES_PER_DAY`, and the follow-up switches (`FOLLOWUPS_AUTONOMOUS`, `EMAIL_FOLLOWUP_GAPS_DAYS`).
 - Dashboard: `WEB_PORT`, `WEB_AUTH_MODE` and the other `WEB_*` keys; see `docs/dashboard-exposure.md`.
-- LinkedIn tools: dry-run flag, accept limits, allow-lists for URLs and emails, idle time, and the off-by-default `LINKEDIN_SCREENSHOT`, `NAUKRI_SCREENSHOT` and `SCOUT_SCREENSHOT` flags (screenshot and pointer-click tools; the pixels are not screened by the classifier).
+- LinkedIn tools: dry-run flag, accept limits, allow-lists for URLs and emails, idle time, and the on-by-default (set `false` to disable) `LINKEDIN_SCREENSHOT`, `NAUKRI_SCREENSHOT` and `SCOUT_SCREENSHOT` flags (screenshot and pointer-click tools; the pixels are not screened by the classifier).
 - Scheduler: enable and dry-run flags, run budgets (`RUN_MAX_*`), inbox and Naukri search cadence, `USAGE_LIMIT_BACKOFF_MIN`, kill switch `JOBBER_KILL`.
 - Auto-update and backup: `AUTO_UPDATE*` and `BACKUP_*`; see `docs/backup-and-restore.md`.
 - Layout memory: `LAYOUT_ENFORCE` and the other `LAYOUT_*` keys, all optional and commented.

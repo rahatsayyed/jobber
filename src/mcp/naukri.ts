@@ -353,7 +353,7 @@ function getEngine(deps: NaukriDeps): Engine {
     },
     intents: deps.intents ?? processIntents,
     screen: (t, p) => screenFn(latestDeps)(t, p),
-    screenshotEnabled: env.NAUKRI_SCREENSHOT === 'true',
+    screenshotEnabled: env.NAUKRI_SCREENSHOT !== 'false',
     layoutFeed: (tree) => {
       const o = session?.layout;
       if (!o) return;
@@ -468,7 +468,7 @@ export function naukriClickAt({ x, y }: { x: number; y: number }, deps: NaukriDe
 
 export type ScreenshotResult = { ok: true; base64: string; note: string } | { ok: false; text: string };
 
-/** Off unless NAUKRI_SCREENSHOT=true. The pixels are NOT checked by the injection classifier. */
+/** On unless NAUKRI_SCREENSHOT=false. The pixels are NOT checked by the injection classifier. */
 export function naukriScreenshot(deps: NaukriDeps = {}): Promise<ScreenshotResult> {
   return serial(async () => {
     try {
@@ -1028,7 +1028,7 @@ server.registerTool(
   'naukri_screenshot',
   {
     description:
-      'EMERGENCY fallback, off unless NAUKRI_SCREENSHOT=true: PNG of the viewport at most 900px wide, after a snapshot. The pixels are NOT checked by the injection classifier. ' + UNTRUSTED,
+      'EMERGENCY fallback, on unless NAUKRI_SCREENSHOT=false: PNG of the viewport at most 900px wide, after a snapshot. The pixels are NOT checked by the injection classifier. ' + UNTRUSTED,
     inputSchema: {},
   },
   async () => {
@@ -1042,7 +1042,7 @@ server.registerTool(
   'naukri_click_at',
   {
     description:
-      'Clicks a viewport point (needs NAUKRI_SCREENSHOT=true, a snapshot and a screenshot at the current epoch). The element under the point is classified exactly like naukri_click. ' + UNTRUSTED,
+      'Clicks a viewport point (needs NAUKRI_SCREENSHOT not false, a snapshot and a screenshot at the current epoch). The element under the point is classified exactly like naukri_click. ' + UNTRUSTED,
     inputSchema: { x: z.number().int().min(0).max(5000), y: z.number().int().min(0).max(5000) },
   },
   async ({ x, y }) => text(await naukriClickAt({ x, y }))

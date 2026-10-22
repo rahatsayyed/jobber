@@ -106,11 +106,11 @@ export async function scoutClick(a: { control: string }, deps: ScoutCtx): Promis
   return stateResult(deps, { ok: true, code: 'clicked' });
 }
 
-export const scoutScreenshotEnabled = (env: NodeJS.ProcessEnv): boolean => env.SCOUT_SCREENSHOT === 'true';
+export const scoutScreenshotEnabled = (env: NodeJS.ProcessEnv): boolean => env.SCOUT_SCREENSHOT !== 'false';
 
 export type ScoutScreenshot = { ok: true; base64: string; note: string } | { ok: false; text: string };
 
-/** Off unless SCOUT_SCREENSHOT=true. The pixels are NOT checked by the injection classifier. */
+/** On unless SCOUT_SCREENSHOT=false. The pixels are NOT checked by the injection classifier. */
 export async function scoutScreenshot(_a: unknown, deps: ScoutCtx): Promise<ScoutScreenshot> {
   if (!scoutScreenshotEnabled(deps.env)) return { ok: false, text: json({ ok: false, code: 'refused', reason: 'screenshot_off' }) };
   const h = haltedWeb(deps.db);
@@ -126,7 +126,7 @@ export async function scoutScreenshot(_a: unknown, deps: ScoutCtx): Promise<Scou
   }
 }
 
-/** Pointer click: off unless SCOUT_SCREENSHOT=true; needs a state and a screenshot since the last navigation or scroll. */
+/** Pointer click: on unless SCOUT_SCREENSHOT=false; needs a state and a screenshot since the last navigation or scroll. */
 export async function scoutClickAt(a: { x: number; y: number }, deps: ScoutCtx): Promise<string> {
   if (!scoutScreenshotEnabled(deps.env)) return json({ ok: false, code: 'refused', reason: 'screenshot_off' });
   const h = haltedWeb(deps.db);

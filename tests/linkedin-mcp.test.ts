@@ -153,14 +153,23 @@ describe('linkedin MCP on the engine', () => {
     expect(page.log.filter((l) => l.startsWith('click'))).toHaveLength(1);
   });
 
-  it('arm_send in a dry wake arms a dry intent and clicks nothing; click_at and screenshot are off by default', async () => {
+  it('arm_send in a dry wake arms a dry intent and clicks nothing', async () => {
     const { handlers, page, intents } = makeEngine({});
     const r = JSON.parse(await call(handlers.linkedin_arm_send, { kind: 'connect_note', profile_url: URL_, text: NOTE }));
     expect(r).toMatchObject({ status: 'armed', dry_run: true, class: 'commit_connect_send' });
     expect(intents.peek('linkedin')).not.toBeNull();
     expect(page.log.filter((l) => l.startsWith('click') || l.startsWith('fill') || l.startsWith('press'))).toEqual([]);
-    expect(head(await call(handlers.linkedin_click_at, { x: 10, y: 10 })).code).toBe('click_at_disabled');
-    expect(head(await call(handlers.linkedin_screenshot)).code).toBe('screenshot_disabled');
+  });
+
+  it('LINKEDIN_SCREENSHOT: unset or true is on, only exactly false is off; click_at still needs snapshot and screenshot', async () => {
+    for (const env of [{}, { LINKEDIN_SCREENSHOT: 'true' }, { LINKEDIN_SCREENSHOT: 'FALSE' }, { LINKEDIN_SCREENSHOT: '0' }]) {
+      const { handlers } = makeEngine(env);
+      expect(head(await call(handlers.linkedin_screenshot)).code).toBe('snapshot_required');
+      expect(head(await call(handlers.linkedin_click_at, { x: 10, y: 10 })).code).not.toBe('click_at_disabled');
+    }
+    const off = makeEngine({ LINKEDIN_SCREENSHOT: 'false' });
+    expect(head(await call(off.handlers.linkedin_screenshot)).code).toBe('screenshot_disabled');
+    expect(head(await call(off.handlers.linkedin_click_at, { x: 10, y: 10 })).code).toBe('click_at_disabled');
   });
 
   it('arm_send refuses an unknown recipient and a bad kind', async () => {

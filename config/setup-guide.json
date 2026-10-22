@@ -320,7 +320,7 @@
         {
           "name": "APPLY_SCREENSHOT",
           "secret": false,
-          "purpose": "whether the applier offers a screenshot tool; its pixels are not injection-screened (ships false)",
+          "purpose": "whether the applier offers a screenshot tool; its pixels are not injection-screened (on by default, set false to disable)",
           "where": ".env.example",
           "entered_in": "owner edits .env"
         },
@@ -390,21 +390,21 @@
         {
           "name": "LINKEDIN_SCREENSHOT",
           "secret": false,
-          "purpose": "whether linkedin_screenshot and linkedin_click_at exist; screenshot pixels are not injection-screened (ships false)",
+          "purpose": "whether linkedin_screenshot and linkedin_click_at exist; screenshot pixels are not injection-screened (on by default, set false to disable)",
           "where": ".env.example",
           "entered_in": "owner edits .env"
         },
         {
           "name": "NAUKRI_SCREENSHOT",
           "secret": false,
-          "purpose": "whether naukri_screenshot and naukri_click_at exist; screenshot pixels are not injection-screened (ships false)",
+          "purpose": "whether naukri_screenshot and naukri_click_at exist; screenshot pixels are not injection-screened (on by default, set false to disable)",
           "where": ".env.example",
           "entered_in": "owner edits .env"
         },
         {
           "name": "SCOUT_SCREENSHOT",
           "secret": false,
-          "purpose": "whether scout_screenshot and scout_click_at exist; screenshot pixels are not injection-screened (ships false)",
+          "purpose": "whether scout_screenshot and scout_click_at exist; screenshot pixels are not injection-screened (on by default, set false to disable)",
           "where": ".env.example",
           "entered_in": "owner edits .env"
         }

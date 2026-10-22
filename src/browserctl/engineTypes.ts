@@ -29,7 +29,7 @@ export interface EngineDeps {
   screen: (text: string, purpose: ScreenPurpose) => Promise<ScreenVerdict>;
   /** `.jobber/STOP` path (default: the project's). */
   stopFile?: string;
-  /** LINKEDIN_SCREENSHOT or NAUKRI_SCREENSHOT flag (ships off). */
+  /** LINKEDIN_SCREENSHOT or NAUKRI_SCREENSHOT flag (on unless the owner sets it to false). */
   screenshotEnabled?: boolean;
   /** Advisory layout telemetry: sees every tree the engine reads; never fails an action. */
   layoutFeed?: (tree: RawTree) => void;

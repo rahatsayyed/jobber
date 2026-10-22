@@ -227,9 +227,9 @@ describe('engine tools through the MCP handlers', () => {
     expect(s).toContain('searchbox');
   });
 
-  it('screenshot and click_at are off by default; the flag turns them on with an unscreened note', async () => {
+  it('screenshot and click_at are on unless NAUKRI_SCREENSHOT is exactly false; unset and true both give an unscreened note', async () => {
     const h = makeNkLauncher({ html: () => jobHtml() });
-    const d = deps(h);
+    const d = deps(h, { env: { ...LIVE, NAUKRI_SCREENSHOT: 'false' } });
     await naukriOpen({ url: JOB_URL }, d);
     const off = await naukriScreenshot(d);
     expect(off.ok).toBe(false);
@@ -237,13 +237,16 @@ describe('engine tools through the MCP handlers', () => {
     expect(head(await naukriClickAt({ x: 5, y: 5 }, d)).code).toBe('click_at_disabled');
     await shutdownNaukri();
 
-    const h2 = makeNkLauncher({ html: () => jobHtml() });
-    const d2 = deps(h2, { env: { ...LIVE, NAUKRI_SCREENSHOT: 'true' } });
-    await naukriOpen({ url: JOB_URL }, d2);
-    const on = await naukriScreenshot(d2);
-    expect(on).toMatchObject({ ok: true, base64: Buffer.from('smallpng').toString('base64') });
-    expect((on as { note: string }).note).toMatch(/unscreened pixels/);
-    expect(h2.helper.close).toHaveBeenCalled();
+    for (const env of [{ ...LIVE }, { ...LIVE, NAUKRI_SCREENSHOT: 'true' }]) {
+      const h2 = makeNkLauncher({ html: () => jobHtml() });
+      const d2 = deps(h2, { env });
+      await naukriOpen({ url: JOB_URL }, d2);
+      const on = await naukriScreenshot(d2);
+      expect(on).toMatchObject({ ok: true, base64: Buffer.from('smallpng').toString('base64') });
+      expect((on as { note: string }).note).toMatch(/unscreened pixels/);
+      expect(h2.helper.close).toHaveBeenCalled();
+      await shutdownNaukri();
+    }
   });
 
   it('a handler error becomes a fixed failed result with no exception text', async () => {

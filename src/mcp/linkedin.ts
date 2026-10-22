@@ -208,7 +208,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
     if (engine) return engine;
     engine = createEngine({
       db: getDb(), now, env, cfg, getPage, intents, screen,
-      screenshotEnabled: env.LINKEDIN_SCREENSHOT === 'true',
+      screenshotEnabled: env.LINKEDIN_SCREENSHOT !== 'false',
       layoutFeed: (tree) => { getRt().layout?.observe(treeToRawSnapshot(tree), null); },
       afterBlock: async () => { await getRt().discard(); },
       ...(deps.paceMs ? { paceMs: deps.paceMs } : {}),
@@ -326,8 +326,8 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   linkedin_press_key: 'Presses one allowed key (Enter, Escape, Tab, arrows, PageUp/Down, Backspace, Space). Enter in a message composer counts as its Send click and needs an armed intent. ' + UNTRUSTED,
   linkedin_scroll: 'Scrolls the page and returns a fresh tree. ' + UNTRUSTED,
   linkedin_wait_for: 'Waits up to 10 s (ms) or until some text appears, then returns a fresh tree. ' + UNTRUSTED,
-  linkedin_screenshot: 'EMERGENCY fallback, off unless LINKEDIN_SCREENSHOT=true: PNG of the viewport at most 900px wide, after a snapshot. The pixels are NOT checked by the injection classifier. ' + UNTRUSTED,
-  linkedin_click_at: 'Clicks a viewport point (needs LINKEDIN_SCREENSHOT=true, a snapshot and a screenshot at the current epoch). The element under the point is classified exactly like linkedin_click. ' + UNTRUSTED,
+  linkedin_screenshot: 'EMERGENCY fallback, on unless LINKEDIN_SCREENSHOT=false: PNG of the viewport at most 900px wide, after a snapshot. The pixels are NOT checked by the injection classifier. ' + UNTRUSTED,
+  linkedin_click_at: 'Clicks a viewport point (needs LINKEDIN_SCREENSHOT not false, a snapshot and a screenshot at the current epoch). The element under the point is classified exactly like linkedin_click. ' + UNTRUSTED,
   linkedin_arm_send: 'Arms ONE send intent after every code gate passed (known recipient, employer, style, fact and output gates, ceiling, page and name verification). kind is connect_note, role_ask, rapport, referral_ask, followup, feedback or accept. The send itself is then a linkedin_click (or Enter) on the matching control within 120 s. Dry run unless LINKEDIN_DRY_RUN=false. ' + UNTRUSTED,
   linkedin_close: 'Closes the LinkedIn session, saves session state and releases the lock.',
   linkedin_limits: 'Read-only: halt reason, weekly invite and message ceilings, daily accept counter, dry_run flag and session validity (booleans and reasons only).',

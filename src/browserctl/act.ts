@@ -241,7 +241,7 @@ export function createEngine(deps: EngineDeps): Engine {
   }
 
   async function doClickAt(x: number, y: number): Promise<EngineResult> {
-    if (!deps.screenshotEnabled) return refused('click_at_disabled', `click_at needs ${P.screenshotFlag}=true`);
+    if (!deps.screenshotEnabled) return refused('click_at_disabled', `click_at is off (${P.screenshotFlag}=false)`);
     const g = await gate();
     if (!g.ok) return g.res;
     if (!(seenEpoch === refs.epoch && refs.hasSnapshot)) return refused('snapshot_required', 'take a snapshot at the current epoch first');
@@ -296,7 +296,7 @@ export function createEngine(deps: EngineDeps): Engine {
       return r.ok ? { ...r, code: found ? 'ready' : 'timeout' } : r;
     }),
     screenshot: () => serial(async () => {
-      if (!deps.screenshotEnabled) return refused('screenshot_disabled', `screenshots are off (${P.screenshotFlag})`);
+      if (!deps.screenshotEnabled) return refused('screenshot_disabled', `screenshots are off (${P.screenshotFlag}=false)`);
       const g = await gate();
       if (!g.ok) return g.res;
       if (seenEpoch !== refs.epoch || !refs.hasSnapshot) return refused('snapshot_required', 'take a snapshot first');
