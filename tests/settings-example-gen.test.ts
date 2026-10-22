@@ -56,12 +56,7 @@ describe('the committed .env.example', () => {
   });
 
   it('ships the safe values', () => {
-    expect(val('JOBBER_DRY_RUN')).toBe('1');
-    expect(val('SCHEDULER_DRY_RUN')).toBe('true');
-    expect(val('LINKEDIN_DRY_RUN')).toBe('true');
-    for (const s of ENV_CATALOG.filter((x) => /_DRY_RUN$/.test(x.key) && x.key !== 'JOBBER_DRY_RUN')) {
-      expect(val(s.key), s.key).toBe('true');
-    }
+    expect(val('JOBBER_DRY_RUN')).toBe('true');
     expect(val('WEB_SETTINGS_EDIT')).toBe('false');
     expect(val('WEB_SETTINGS_REMOTE_SAFETY')).toBe('false');
     expect(val('WEB_AUTH_MODE')).toBe('token');
@@ -80,7 +75,7 @@ describe('npm run env:example -- --check', () => {
       const copy = join(dir, 'example');
       copyFileSync(join(repoRoot, '.env.example'), copy);
       expect(run(['--check', '--file', copy]).status).toBe(0);
-      writeFileSync(copy, committed.replace('JOBBER_DRY_RUN=1', 'JOBBER_DRY_RUN=0'));
+      writeFileSync(copy, committed.replace('JOBBER_DRY_RUN=true', 'JOBBER_DRY_RUN=false'));
       const r = run(['--check', '--file', copy]);
       expect(r.status).toBe(1);
       expect(r.stderr).toContain('differs from the catalog');

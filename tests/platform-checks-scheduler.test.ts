@@ -39,9 +39,9 @@ const goodAgents = (): Files => {
 };
 
 describe('scheduler doctor checks', () => {
-  it('has the six kebab-case ids', () => {
+  it('has the seven kebab-case ids', () => {
     expect(schedulerChecks().map((c) => c.id)).toEqual([
-      'scheduler-tmux', 'scheduler-lock-dir', 'scheduler-stop-file', 'scheduler-dry-run', 'scheduler-units', 'agents-worker-tools',
+      'scheduler-tmux', 'scheduler-lock-dir', 'scheduler-stop-file', 'scheduler-dry-run', 'dry-run-legacy-keys', 'scheduler-units', 'agents-worker-tools',
     ]);
   });
 
@@ -66,16 +66,36 @@ describe('scheduler doctor checks', () => {
     expect((await run(ctxWith({ '/p/.jobber/STOP': { text: 'x' } })))['scheduler-stop-file'].status).toBe('warn');
   });
 
-  it('dry run state reports dry or LIVE and never the env values', async () => {
-    const dry = (await run(ctxWith({})))['scheduler-dry-run'];
-    expect(dry).toMatchObject({ status: 'pass', detail: 'dry' });
-    const live = (await run(ctxWith({}, { env: { SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false' } })))['scheduler-dry-run'];
+  it('dry run mode prints MODE: DRY RUN or MODE: LIVE, never env values; unset runs LIVE', async () => {
+    const dry = (await run(ctxWith({}, { env: { JOBBER_DRY_RUN: 'true' } })))['scheduler-dry-run'];
+    expect(dry).toMatchObject({ status: 'pass', detail: 'MODE: DRY RUN' });
+    const unset = (await run(ctxWith({})))['scheduler-dry-run'];
+    expect(unset.status).toBe('warn');
+    expect(unset.detail).toMatch(/^MODE: LIVE/);
+    expect(unset.detail).toMatch(/not set/);
+    const live = (await run(ctxWith({}, { env: { JOBBER_DRY_RUN: 'false' } })))['scheduler-dry-run'];
     expect(live.status).toBe('warn');
-    expect(live.detail).toMatch(/^LIVE/);
-    const fromFile = await run(ctxWith({ '/p/.env': { text: 'SCHEDULER_DRY_RUN=false\nLINKEDIN_DRY_RUN=false\n' } }));
-    expect(fromFile['scheduler-dry-run'].detail).toMatch(/^LIVE/);
-    const both = await run(ctxWith({}, { env: { SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false', JOBBER_DRY_RUN: '1' } }));
-    expect(both['scheduler-dry-run'].detail).toBe('dry');
+    expect(live.detail).toMatch(/^MODE: LIVE/);
+    const fromFile = await run(ctxWith({ '/p/.env': { text: 'JOBBER_DRY_RUN=false\n' } }));
+    expect(fromFile['scheduler-dry-run'].detail).toMatch(/^MODE: LIVE/);
+    const fileDry = await run(ctxWith({ '/p/.env': { text: 'JOBBER_DRY_RUN=TRUE\n' } }));
+    expect(fileDry['scheduler-dry-run'].detail).toBe('MODE: DRY RUN');
+    const legacyOnly = await run(ctxWith({}, { env: { SCHEDULER_DRY_RUN: 'true', LINKEDIN_DRY_RUN: 'true' } }));
+    expect(legacyOnly['scheduler-dry-run'].detail).toMatch(/^MODE: LIVE/);
+  });
+
+  it('warns once, by name only, about leftover legacy *_DRY_RUN keys and ignores them', async () => {
+    const clean = (await run(ctxWith({ '/p/.env': { text: 'JOBBER_DRY_RUN=true\n' } })))['dry-run-legacy-keys'];
+    expect(clean.status).toBe('pass');
+    const text = 'JOBBER_DRY_RUN=true\nSCHEDULER_DRY_RUN=SECRETISH-1\nLINKEDIN_DRY_RUN=false\nWEB_DRY_RUN=true\nAPPLY_DRY_RUN=true\nSCOUT_DRY_RUN=true\n';
+    const r = await run(ctxWith({ '/p/.env': { text } }));
+    const w = r['dry-run-legacy-keys'];
+    expect(w.status).toBe('warn');
+    for (const k of ['SCHEDULER_DRY_RUN', 'LINKEDIN_DRY_RUN', 'WEB_DRY_RUN', 'APPLY_DRY_RUN', 'SCOUT_DRY_RUN']) expect(w.detail).toContain(k);
+    expect(w.detail).toMatch(/ignored/);
+    expect(w.fix).toMatch(/remove/);
+    expect(JSON.stringify(r)).not.toContain('SECRETISH-1');
+    expect(r['scheduler-dry-run'].detail).toBe('MODE: DRY RUN');
   });
 
   it('units generated', async () => {

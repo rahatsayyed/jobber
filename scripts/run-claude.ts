@@ -116,8 +116,8 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  if (flags.has('--no-classifier') && process.env.JOBBER_DRY_RUN !== '1') {
-    die(2, '--no-classifier is only allowed with JOBBER_DRY_RUN=1');
+  if (flags.has('--no-classifier') && !isDryRun(process.env)) {
+    die(2, '--no-classifier is only allowed with JOBBER_DRY_RUN=true');
   }
 
   let prompt = '';
@@ -133,7 +133,7 @@ async function main(): Promise<void> {
   } else if (!flags.has('--no-classifier')) {
     let check;
     try {
-      check = await checkClassifierForLaunch(env, root, isDryRun(env, { linkedin: true }));
+      check = await checkClassifierForLaunch(env, root, isDryRun(env));
     } catch (e) {
       die(3, `classifier not ready: ${(e as Error).message}`);
     }

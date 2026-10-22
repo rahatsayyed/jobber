@@ -238,17 +238,17 @@ describe('classifier_wired check', () => {
     expect(missing.status).toBe('fail');
     expect(missing.detail).toContain('outreach_escalate');
   });
-  it('unset or unfitted model: warn in dry, fail when SCHEDULER_DRY_RUN=false, with the fix', async () => {
-    const unset = await wired(mk({ screenSmoke: good() }), {});
+  it('unset or unfitted model: warn in dry (JOBBER_DRY_RUN=true), fail when live, with the fix', async () => {
+    const unset = await wired(mk({ screenSmoke: good() }), {}, { JOBBER_DRY_RUN: 'true' });
     expect(unset.status).toBe('warn');
-    expect((await wired(mk({ screenSmoke: good() }), {}, { SCHEDULER_DRY_RUN: 'false' })).status).toBe('fail');
+    expect((await wired(mk({ screenSmoke: good() }), {}, { JOBBER_DRY_RUN: 'false' })).status).toBe('fail');
     const unfitted = mk({ profile: profile({ fit: { threshold: null } }), screenSmoke: good() });
-    const w = await wired(unfitted, withModel());
+    const w = await wired(unfitted, withModel(), { JOBBER_DRY_RUN: 'true' });
     expect(w.status).toBe('warn');
     expect(w.fix).toBe('npm run classifier:fit -- --profile pg2 --write');
-    expect((await wired(unfitted, withModel(), { SCHEDULER_DRY_RUN: 'false' })).status).toBe('fail');
+    expect((await wired(unfitted, withModel(), { JOBBER_DRY_RUN: 'false' })).status).toBe('fail');
     const gone = mk({ verifyProfile: async () => okReport({ ok: false, problems: ['x'], observed_sha256: {} }), screenSmoke: good() });
-    const nd = await wired(gone, withModel());
+    const nd = await wired(gone, withModel(), { JOBBER_DRY_RUN: 'true' });
     expect(nd.status).toBe('warn');
     expect(nd.fix).toBe('npm run models -- fetch pg2');
   });

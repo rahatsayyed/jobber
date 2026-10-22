@@ -15,7 +15,7 @@ export async function scoutCaptureFixture(a: { task_id: number }, deps: ScoutCtx
   if (!t.ok) return t.out;
   const platform = t.target.platform.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 40) || 'unknown';
   const host = hostOfUrl(t.url);
-  if (isDryRun(deps.env, { web: true })) {
+  if (isDryRun(deps.env)) {
     recordDryRun(deps.db, { runId: null, action: 'scout_capture_fixture', platform: 'web', payload: { task_id: t.row.id, platform, host } }, deps.now(), deps.env);
     return json({ ok: true, status: 'dry_run' });
   }

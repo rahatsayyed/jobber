@@ -195,13 +195,14 @@ Groups in `.env.example` (one line each):
 
 - Job sources: the Adzuna key. See [api-keys](api-keys.md) and `.env.example`.
 - Contact finding: Serper and Hunter keys, the dork and search budgets, the Hunter enable switch and monthly cap.
-- Browser apply and web: `WEB_DRY_RUN`, `APPLY_DRY_RUN`, `SCOUT_DRY_RUN`, `APPLY_SUBMIT_MODE`, the per-host caps and the account flags; see [apply.md](apply.md).
+- Browser apply and web: `APPLY_SUBMIT_MODE`, the per-host caps and the account flags; see [apply.md](apply.md).
 - Email: Gmail OAuth paths and the legacy SMTP fallback.
 - Telegram: bot token and allowed user ids for the ccgram bridge.
 - Agent tuning: `MATCH_THRESHOLD`, `SEND_LIMIT_PER_RUN`, `MAX_APPLIES_PER_DAY`, `MAX_LINKEDIN_SEARCHES_PER_DAY`, and the follow-up switches (`FOLLOWUPS_AUTONOMOUS`, `EMAIL_FOLLOWUP_GAPS_DAYS`).
 - Dashboard: `WEB_PORT`, `WEB_AUTH_MODE` and the other `WEB_*` keys; see `docs/dashboard-exposure.md`.
-- LinkedIn tools: dry-run flag, accept limits, allow-lists for URLs and emails, idle time, and the on-by-default (set `false` to disable) `LINKEDIN_SCREENSHOT`, `NAUKRI_SCREENSHOT` and `SCOUT_SCREENSHOT` flags (screenshot and pointer-click tools; the pixels are not screened by the classifier).
-- Scheduler: enable and dry-run flags, run budgets (`RUN_MAX_*`), inbox and Naukri search cadence, `USAGE_LIMIT_BACKOFF_MIN`, kill switch `JOBBER_KILL`.
+- LinkedIn tools: accept limits, allow-lists for URLs and emails, idle time, and the on-by-default (set `false` to disable) `LINKEDIN_SCREENSHOT`, `NAUKRI_SCREENSHOT` and `SCOUT_SCREENSHOT` flags (screenshot and pointer-click tools; the pixels are not screened by the classifier).
+- Dry run: the single flag `JOBBER_DRY_RUN` (`true` or `1` = dry; unset, `false` or anything else = LIVE). The old per-area dry-run keys (one each for the scheduler, LinkedIn, web, apply and scout) are ignored.
+- Scheduler: enable flag, run budgets (`RUN_MAX_*`), inbox and Naukri search cadence, `USAGE_LIMIT_BACKOFF_MIN`, kill switch `JOBBER_KILL`.
 - Auto-update and backup: `AUTO_UPDATE*` and `BACKUP_*`; see `docs/backup-and-restore.md`.
 - Layout memory: `LAYOUT_ENFORCE` and the other `LAYOUT_*` keys, all optional and commented.
 - Stack and bootstrap: `STACK_TMUX_SESSION`, `STACK_DOWN_WAIT_SEC`, `BOOTSTRAP_MODEL_PROFILE`.

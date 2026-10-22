@@ -24,7 +24,7 @@ function input(over: Partial<GuardInput> = {}): GuardInput {
     db, now: OK_TIME, env: {}, action: 'invite', kind: 'connect', profileUrl: URL1,
     text: 'Hi Jane, I saw the platform team is hiring and would like to connect.',
     factCheck: (t) => ({ verdict: 'pass' as const, normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
-    cfg: loadLinkedinConfig({ LINKEDIN_DRY_RUN: 'false', SCHEDULER_DRY_RUN: 'false' }), ...over,
+    cfg: loadLinkedinConfig({ JOBBER_DRY_RUN: 'false' }), ...over,
   };
 }
 const touches = () => (db.prepare('SELECT COUNT(*) AS n FROM touches').get() as { n: number }).n;

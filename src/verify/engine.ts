@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type BetterSqlite3 from 'better-sqlite3';
 import type { Run } from '../platform/tmux.js';
 import type { CheckOutcome } from '../platform/doctor.js';
+import { LEGACY_DRY_RUN_KEYS } from '../safety/dryRun.js';
 
 export type StageStatus = 'pass' | 'fail' | 'skip';
 export interface StageResult { id: string; title: string; status: StageStatus; detail: string; fix?: string; ms: number }
@@ -68,9 +69,8 @@ export interface VerifyCtx {
 export function forceDryEnv(env: NodeJS.ProcessEnv, dbPath: string): NodeJS.ProcessEnv {
   if (!dbPath) throw new Error('forceDryEnv: dbPath is required');
   const out: NodeJS.ProcessEnv = { ...env };
-  out.JOBBER_DRY_RUN = '1';
-  out.SCHEDULER_DRY_RUN = 'true';
-  out.LINKEDIN_DRY_RUN = 'true';
+  out.JOBBER_DRY_RUN = 'true';
+  for (const k of LEGACY_DRY_RUN_KEYS) delete out[k];
   out.JOBAPPLIER_DB = dbPath;
   delete out.JOBBER_KILL;
   return out;

@@ -47,7 +47,7 @@ function setup(envExtra: Record<string, string> = {}, h = harness()) {
   const statePath = path.join(dir, 'state.json');
   writeFileSync(statePath, '{"cookies":[],"origins":[]}');
   const env = {
-    SCHEDULER_DRY_RUN: 'false', JOBBER_DRY_RUN: '0', LAYOUT_DIR: 'layout', LAYOUT_PROMOTE_N: '1', LAYOUT_PROMOTE_RUNS: '1',
+    JOBBER_DRY_RUN: 'false', LAYOUT_DIR: 'layout', LAYOUT_PROMOTE_N: '1', LAYOUT_PROMOTE_RUNS: '1',
     JOBBER_RUN_ID: 'run1', ...envExtra,
   } as NodeJS.ProcessEnv;
   const layoutCfg = loadLayoutConfig(env, dir);

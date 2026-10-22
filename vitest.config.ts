@@ -7,6 +7,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     exclude: ['**/node_modules/**', '**/dist/**', '.superpowers/**', 'renderer/automation/**'],
-    env: { JOBAPPLIER_DB: ':memory:', JOBAPPLIER_USER_DATA: 'user-data.example' },
+    // JOBBER_DRY_RUN=true is the safety net for any test that reads process.env by default: nothing can send for real.
+    env: { JOBAPPLIER_DB: ':memory:', JOBAPPLIER_USER_DATA: 'user-data.example', JOBBER_DRY_RUN: 'true' },
   },
 });

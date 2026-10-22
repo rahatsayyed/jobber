@@ -2,7 +2,7 @@
 // The single catalog of every owner-settable environment key (plan 8H, Task 2). Numeric limits are COMPOSED from
 // LIMITS (src/setup/limitsCatalog.ts, which keeps its own drift test); everything else is authored here.
 // .env.example is GENERATED from this list (npm run env:example, src/settings/exampleGen.ts); edit here, not there.
-// Rules a test enforces over the whole list (D22): *_DRY_RUN is `safety` with a direction and a non-null default,
+// Rules a test enforces over the whole list (D22): JOBBER_DRY_RUN is the only *_DRY_RUN, `safety` with a direction and a non-null default,
 // type `path` and *_CMD/*_PATH/*_REMOTE/*_DIR are `never`, a LIMITS key with a raiseNote is `guarded` or stricter,
 // secret === (type === 'secret'), a restart scope other than `stack` names an existing reader file.
 import { APPLY_HOST_PLATFORM_IDS, hostCapKey, TOP_LEVEL_KEY } from '../webcore/hostCaps.js';
@@ -81,14 +81,6 @@ const R_UPDATE = 'Where code comes from, how it is verified or where backups go:
 const R_DRY = 'Decides whether real emails, messages, applications or account creations happen. Leaving dry run needs a fresh sign-in and a typed phrase.';
 const R_SEND = 'Turns on a path that sends, applies or creates accounts for real, or widens an output allow-list. Enabling needs a fresh sign-in and a typed phrase.';
 const R_VENDOR = 'Replacing a key for a fixed vendor host cannot redirect anything. The value is write-only.';
-
-const dryRun = (key: string, about: string): EnvSpec =>
-  e(key, 'safety', 'safety', 'bool', {
-    default: 'true',
-    exampleActive: true,
-    ...tier('safety', R_DRY, 'false'),
-    about,
-  });
 
 const hand: EnvSpec[] = [
   // ---- Credentials: job sources
@@ -180,23 +172,13 @@ const hand: EnvSpec[] = [
 
   // ---- Safety and dry-run flags
   e('JOBBER_DRY_RUN', 'safety', 'safety', 'bool', {
-    default: '1',
-    allowed: ['1', '0'],
+    default: 'false',
+    exampleValue: 'true',
+    allowed: ['true', 'false', '1', '0'],
     exampleActive: true,
-    about: 'Hunt-side dry run. 1 means dry (and the Gmail send hook denies gmail.send_email); anything else, such as 0, means this flag no longer forces dry. Live also needs SCHEDULER_DRY_RUN=false and, for LinkedIn paths, LINKEDIN_DRY_RUN=false.',
+    about: 'The ONE dry-run flag for the whole system (scheduler, LinkedIn, Naukri, scout, applier, web actions and the Gmail send hook). Copying this file to .env gives true = DRY RUN: nothing is sent, connected or applied. Remove the line or set false = LIVE (an unset flag also runs LIVE). Only 1 or true (any case) mean dry; anything else is live. Default when unset: false (LIVE). Allowed: true, false, 1, 0. The old SCHEDULER_DRY_RUN, LINKEDIN_DRY_RUN, WEB_DRY_RUN, APPLY_DRY_RUN and SCOUT_DRY_RUN keys are ignored: delete them.',
     ...tier('safety', R_DRY, 'false'),
   }),
-  dryRun(
-    'SCHEDULER_DRY_RUN',
-    'Scheduler dry run. Dry unless the value is exactly false. Live also needs LINKEDIN_DRY_RUN=false for LinkedIn paths.',
-  ),
-  dryRun('LINKEDIN_DRY_RUN', 'LinkedIn typed tools dry run. Dry unless the value is exactly false.'),
-  dryRun(
-    'WEB_DRY_RUN',
-    'Web dry run for company sites and ATS pages (login, sign-up, upload, typing, next and submit). Dry unless the value is exactly false. Live needs WEB_DRY_RUN, APPLY_DRY_RUN and SCOUT_DRY_RUN all false, plus SCHEDULER_DRY_RUN=false.',
-  ),
-  dryRun('APPLY_DRY_RUN', 'Browser applier dry run. Dry unless the value is exactly false.'),
-  dryRun('SCOUT_DRY_RUN', 'Source scout dry run. Dry unless the value is exactly false.'),
   e('JOBBER_KILL', 'safety', 'safety', 'bool', {
     default: '0',
     allowed: ['1', '0'],

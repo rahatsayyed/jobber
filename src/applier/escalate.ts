@@ -91,7 +91,7 @@ async function escalate(input: EscalateInputT, deps: ApplierDeps, x: EscalateExt
     } catch { /* the header alone is enough */ }
   }
   const composed = lines.join('\n');
-  const v = await screenUntrusted(composed, 'escalate', { env, dryRun: isDryRun(env, { web: true }), classifier: deps.classifier, maxChars: 12000 });
+  const v = await screenUntrusted(composed, 'escalate', { env, dryRun: isDryRun(env), classifier: deps.classifier, maxChars: 12000 });
   const detail = v.blocked
     ? `${lines[0]}\n[page text withheld: ${v.code}]`
     : v.text.slice(0, DETAIL_CAP) + (v.unscreened ? '\nclassifier=unscreened' : '');

@@ -89,12 +89,13 @@ function setup(opts: { start?: Date; env?: NodeJS.ProcessEnv; launcher?: Launche
 }
 
 describe('wakeIsDry', () => {
-  it('is dry unless every flag says live', () => {
-    expect(wakeIsDry({})).toBe(true);
-    expect(wakeIsDry({ SCHEDULER_DRY_RUN: 'false' })).toBe(true);
-    expect(wakeIsDry({ SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false' })).toBe(false);
-    expect(wakeIsDry({ SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false', JOBBER_DRY_RUN: '1' })).toBe(true);
-    expect(wakeIsDry({ SCHEDULER_DRY_RUN: 'FALSE', LINKEDIN_DRY_RUN: 'false' })).toBe(true);
+  it('is dry only when JOBBER_DRY_RUN is 1 or true; unset is live', () => {
+    expect(wakeIsDry({})).toBe(false);
+    expect(wakeIsDry({ JOBBER_DRY_RUN: 'false' })).toBe(false);
+    expect(wakeIsDry({ JOBBER_DRY_RUN: '1' })).toBe(true);
+    expect(wakeIsDry({ JOBBER_DRY_RUN: 'true' })).toBe(true);
+    expect(wakeIsDry({ JOBBER_DRY_RUN: ' TRUE ' })).toBe(true);
+    expect(wakeIsDry({ SCHEDULER_DRY_RUN: 'true', LINKEDIN_DRY_RUN: 'true' })).toBe(false);
   });
 });
 
@@ -153,23 +154,27 @@ describe('wakeOnce sources notice', () => {
 });
 
 describe('wakeOnce', () => {
-  it('runs a dry wake by default and logs ok', async () => {
-    const s = setup();
+  it('runs a dry wake when JOBBER_DRY_RUN=true and logs ok', async () => {
+    const s = setup({ env: { JOBBER_DRY_RUN: 'true' } });
     const r = await wakeOnce(s.d);
     expect(r.status).toBe('ok');
     expect(s.launcher.starts).toHaveLength(1);
     expect(s.launcher.starts[0].dryRun).toBe(true);
-    expect(s.launcher.starts[0].env?.LINKEDIN_DRY_RUN).toBe('true');
+    expect(s.launcher.starts[0].env?.JOBBER_DRY_RUN).toBeUndefined();
     expect(getState(s.db, 'next_wake_at')).toBe(r.nextWakeAt);
     expect(getState(s.db, 'inbox_last_checked_at')).not.toBeNull();
     expect(peekLock(s.d.lockRoot, 'run')).toBeNull();
   });
 
-  it('passes live only for the exact flags', async () => {
-    const s = setup({ env: { SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false' } });
+  it('an unset flag launches a live wake; false is live too', async () => {
+    for (const env of [{}, { JOBBER_DRY_RUN: 'false' }]) {
+      const s = setup({ env });
+      await wakeOnce(s.d);
+      expect(s.launcher.starts[0].dryRun).toBe(false);
+    }
+    const s = setup({ env: { JOBBER_DRY_RUN: 'false' } });
     await wakeOnce(s.d);
     expect(s.launcher.starts[0].dryRun).toBe(false);
-    expect(s.launcher.starts[0].env?.LINKEDIN_DRY_RUN).toBe('false');
     expect(s.launcher.starts[0].noClassifier).toBe(false);
   });
 
@@ -184,7 +189,7 @@ describe('wakeOnce', () => {
     });
     await wakeOnce(s.d);
     const env = s.launcher.starts[0].env ?? {};
-    const ok = /^(TZ|QUIET_HOURS_START|QUIET_HOURS_END|COMPANY_CONTACT_LIMIT|SPECULATIVE_COMPANY_LIMIT|LINKEDIN_DRY_RUN|(PACING_|COOLDOWN_|CADENCE_|LINKEDIN_MAX_|NAUKRI_MAX_|CLASSIFIER_).*)$/;
+    const ok = /^(TZ|QUIET_HOURS_START|QUIET_HOURS_END|COMPANY_CONTACT_LIMIT|SPECULATIVE_COMPANY_LIMIT|(PACING_|COOLDOWN_|CADENCE_|LINKEDIN_MAX_|NAUKRI_MAX_|CLASSIFIER_).*)$/;
     for (const k of Object.keys(env)) expect(k).toMatch(ok);
     expect(env.OPENAI_API_KEY).toBeUndefined();
     expect(env.PACING_FOO).toBe('1');
@@ -192,11 +197,11 @@ describe('wakeOnce', () => {
   });
 
   it('SCHEDULER_NO_CLASSIFIER only applies when dry', async () => {
-    const dry = setup({ env: { SCHEDULER_NO_CLASSIFIER: 'true' } });
+    const dry = setup({ env: { SCHEDULER_NO_CLASSIFIER: 'true', JOBBER_DRY_RUN: 'true' } });
     await wakeOnce(dry.d);
     expect(dry.launcher.starts[0].noClassifier).toBe(true);
     const live = setup({
-      env: { SCHEDULER_NO_CLASSIFIER: 'true', SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false' },
+      env: { SCHEDULER_NO_CLASSIFIER: 'true', JOBBER_DRY_RUN: 'false' },
     });
     await wakeOnce(live.d);
     expect(live.launcher.starts[0].noClassifier).toBe(false);

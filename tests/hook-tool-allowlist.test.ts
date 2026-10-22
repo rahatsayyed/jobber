@@ -9,7 +9,7 @@ import { resolve } from 'node:path';
 
 const require = createRequire(import.meta.url);
 const hook = require('../.claude/hooks/tool-allowlist.cjs') as {
-  decide: (e: any, p: any, o?: { root?: string }) => { allow: boolean; reason: string };
+  decide: (e: any, p: any, o?: { root?: string; env?: NodeJS.ProcessEnv }) => { allow: boolean; reason: string };
   agentTools: (t: string, root: string) => string[] | null;
 };
 const ROOT = resolve(__dirname, '..');
@@ -63,7 +63,7 @@ describe('argument screening', () => {
 describe('send_email attachments (rendered resume PDF only)', () => {
   const p2 = { allow: ['mcp__gmail__send_email'], builtin_tools: [], screen_args: ['mcp__gmail__send_email'] };
   const send = (attachments: unknown, extra: object = {}) =>
-    hook.decide({ tool_name: 'mcp__gmail__send_email', tool_input: { to: ['a@acme.com'], subject: 'S', body: 'B', htmlBody: '<p>B</p>', mimeType: 'multipart/alternative', attachments, ...extra } }, p2, { root: R });
+    hook.decide({ tool_name: 'mcp__gmail__send_email', tool_input: { to: ['a@acme.com'], subject: 'S', body: 'B', htmlBody: '<p>B</p>', mimeType: 'multipart/alternative', attachments, ...extra } }, p2, { root: R, env: { ...process.env, JOBBER_DRY_RUN: 'false' } });
   // A real project-shaped root in a temp dir: the rule needs the file to exist as a regular file.
   const R = realpathSync(mkdtempSync(join(tmpdir(), 'att-root-')));
   mkdirSync(join(R, 'renderer', 'automation', '9ca10512-1472'), { recursive: true });

@@ -124,7 +124,7 @@ export async function siteLogin(_input: { host?: string }, deps: SiteDeps): Prom
     if (!hit) return { status: 'needs_owner', code: 'no_account', reason: `no stored account for ${host}` };
     if (!hostMatchesAccount(host, hit.key)) return { status: 'refused', code: 'host_mismatch', reason: 'page host does not match the stored account' };
     if (hostCoolingDown(host)) return { status: 'refused', code: 'host_cooldown', reason: 'host blocked twice this run' };
-    if (isDryRun(env, { web: true })) {
+    if (isDryRun(env)) {
       recordDryRun(deps.db, { runId: null, action: 'site_login', platform: 'web', payload: { host } }, now(), env);
       return { status: 'dry_run', code: 'dry_run' };
     }

@@ -13,7 +13,7 @@ const hunt = loadProfiles('tests/fixtures/runner-send-profile.json', 'config/per
 function childEnv(dryRun: boolean, extra: Record<string, string>): Record<string, string> {
   const argv = buildRunnerArgv({
     runId: 'abcd1234', dryRun, promptPath: '/r/p', logPath: '/r/l', exitPath: '/r/e',
-    env: { LINKEDIN_DRY_RUN: dryRun ? 'true' : 'false', ...extra },
+    env: { ...extra },
   });
   const start = argv.indexOf('env') + 1;
   const end = argv.indexOf('npx');
@@ -31,9 +31,8 @@ describe('wake env survives the runner allowlist', () => {
       const base = childEnv(dry, { SOME_API_KEY: 'secret', LINKEDIN_MAX_INVITES_PER_WEEK: '5' });
       const out = buildEnv(profiles.outreach_wake, base, {});
       expect(out.JOBBER_RUN_ID).toBe('abcd1234');
-      expect(out.JOBBER_DRY_RUN).toBe(dry ? '1' : '0');
-      expect(out.SCHEDULER_DRY_RUN).toBe(dry ? 'true' : 'false');
-      expect(out.LINKEDIN_DRY_RUN).toBe(dry ? 'true' : 'false');
+      expect(out.JOBBER_DRY_RUN).toBe(dry ? 'true' : 'false');
+      expect(Object.keys(out).filter((k) => /^(SCHEDULER|LINKEDIN|WEB|APPLY|SCOUT)_DRY_RUN$/.test(k))).toEqual([]);
       expect(out.SOME_API_KEY).toBeUndefined();
       expect(out.LINKEDIN_MAX_INVITES_PER_WEEK).toBe('5');
     });

@@ -45,7 +45,7 @@ const envGuard: Stage = {
   async run(ctx) {
     const bad = 'internal: dry env not applied';
     const e = ctx.env;
-    if (!isDryRun(e, { linkedin: true }) || e.JOBBER_DRY_RUN !== '1' || e.SCHEDULER_DRY_RUN !== 'true' || e.LINKEDIN_DRY_RUN !== 'true') {
+    if (!isDryRun(e)) {
       return fail('dry flags are not all on', bad);
     }
     if (ctx.env.JOBBER_KILL !== undefined) return fail('JOBBER_KILL is set', bad);
@@ -279,10 +279,10 @@ const llmHunt: Stage = {
         return fail(`--llm refused: cannot read ${name}`, 'fix the file, then rerun');
       }
     }
-    if (!isDryRun(merged as NodeJS.ProcessEnv, { linkedin: true })) {
+    if (!isDryRun(merged as NodeJS.ProcessEnv)) {
       return fail(
-        '--llm refused: .env is not dry; set JOBBER_DRY_RUN=1, SCHEDULER_DRY_RUN=true and LINKEDIN_DRY_RUN=true in .env first',
-        'set JOBBER_DRY_RUN=1, SCHEDULER_DRY_RUN=true and LINKEDIN_DRY_RUN=true in .env first',
+        '--llm refused: .env is not dry; set JOBBER_DRY_RUN=true in .env first',
+        'set JOBBER_DRY_RUN=true in .env first',
       );
     }
     // PATH and HOME are passed explicitly (the launcher and claude need them), like the other stages' runEnv.

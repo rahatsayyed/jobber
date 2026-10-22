@@ -131,7 +131,7 @@ describe('apply_fill', () => {
     haltPlatform(x.db, 'apply', 'owner', new Date());
     expect(await fill(x, 'f1', P('name.first'))).toMatchObject({ status: 'refused', code: 'halted' });
     await x.close(); h = null;
-    x = await opened({ env: { APPLY_DRY_RUN: 'true' } });
+    x = await opened({ env: { JOBBER_DRY_RUN: 'true' } });
     expect(await fill(x, 'f1', P('name.first'))).toMatchObject({ status: 'dry_run' });
     expect(x.site.fills).toEqual([]);
     const rows = x.db.prepare('SELECT payload FROM dry_run_actions').all() as Array<{ payload: string }>;

@@ -17,7 +17,7 @@ const OPEN_STATES = ['queued', 'running'];
 /** Queued source_tasks rows (plus one row per enabled `custom` site, created once while none is open). */
 export async function scoutTasks(_a: unknown, deps: ScoutCtx): Promise<string> {
   const at = deps.now().toISOString();
-  const dry = isDryRun(deps.env, { web: true });
+  const dry = isDryRun(deps.env);
   for (const s of customSites(deps.portalsPath)) {
     if (dry) continue; // a dry run creates no rows (it lists them below without an id)
     const open =deps.db.prepare("SELECT 1 FROM source_tasks WHERE platform = 'custom' AND company = ? AND state IN ('queued','running')").get(s.name);
@@ -47,7 +47,7 @@ export async function scoutTaskUpdate(a: { task_id: number; state: 'done' | 'fai
   if (!row) return json({ ok: false, code: 'refused', reason: 'unknown_task' });
   if (a.state !== 'done' && a.state !== 'failed') return json({ ok: false, code: 'refused', reason: 'invalid_state' });
   if (!OPEN_STATES.includes(row.state)) return json({ ok: false, code: 'refused', reason: 'task_not_open' });
-  if (isDryRun(deps.env, { web: true })) {
+  if (isDryRun(deps.env)) {
     recordDryRun(deps.db, { runId: null, action: 'scout_task_update', platform: 'web', payload: { task_id: row.id, state: a.state } }, deps.now(), deps.env);
     return json({ ok: true, status: 'dry_run', task_id: row.id });
   }
@@ -107,7 +107,7 @@ export async function scoutSaveJobs(a: { task_id: number; source: string }, deps
   if (!okSource) return json({ ok: false, code: 'refused', reason: 'invalid_source' });
   const jobs = deps.pending.get(row.id);
   if (!jobs || jobs.length === 0) return json({ ok: false, code: 'refused', reason: 'nothing_extracted' });
-  if (isDryRun(deps.env, { web: true })) {
+  if (isDryRun(deps.env)) {
     recordDryRun(deps.db, { runId: null, action: 'scout_save_jobs', platform: 'web', payload: { task_id: row.id, source, count: jobs.length, host: target?.hosts[0] ?? '' } }, deps.now(), deps.env);
     return json({ ok: true, status: 'dry_run', would_save: jobs.length });
   }

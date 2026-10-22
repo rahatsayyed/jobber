@@ -56,6 +56,8 @@ if (process.argv.includes('--json')) {
   console.log(formatJson(results));
 } else {
   const summary = skipSummary(skippedFromContext(ctx));
-  console.log(term.paint(formatReport(results) + (summary ? `\n${summary}` : '')));
+  const modeDetail = results.find((r) => r.id === 'scheduler-dry-run')?.result.detail ?? '';
+  const modeLine = modeDetail.startsWith('MODE:') ? `\n${modeDetail}` : '';
+  console.log(term.paint(formatReport(results) + modeLine + (summary ? `\n${summary}` : '')));
 }
 process.exit(exitCode(results));

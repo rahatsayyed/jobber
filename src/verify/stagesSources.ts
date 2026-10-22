@@ -141,8 +141,7 @@ export const applierFixture: Stage = {
           .run('fx-apply', join(resumeDir, 'resume.pdf'), 'greenhouse', 'fast', applyUrl, 'queued');
         // Flags are explicit on this in-process env object only; the fake launcher cannot reach a real site.
         const env: NodeJS.ProcessEnv = {
-          SCHEDULER_DRY_RUN: 'false', WEB_DRY_RUN: 'false', SCOUT_DRY_RUN: 'false', WEB_MIN_GAP_SEC: '0',
-          APPLY_DRY_RUN: mode === 'dry' ? 'true' : 'false', APPLY_SUBMIT_MODE: 'hold',
+          JOBBER_DRY_RUN: mode === 'dry' ? 'true' : 'false', WEB_MIN_GAP_SEC: '0', APPLY_SUBMIT_MODE: 'hold',
         };
         const site = createFakeSite({ start: 'ats-b-form.html', url: applyUrl, transitions: { 'Submit application': [{ fixture: 'ats-b-confirmation.html' }] } });
         const rt = createWebRuntime({ db, launcher: site.launcher, lockPath: join(dir, 'l.lock'), sessionDir: join(dir, 's'), config: { minGapSec: 0, settleMs: 0 }, env });

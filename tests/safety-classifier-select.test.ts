@@ -32,10 +32,14 @@ function mk(opts: { fail?: boolean; unfitted?: boolean } = {}) {
 beforeEach(() => _resetActiveClassifierForTests());
 
 describe('currentUse', () => {
-  it('only the exact string 1 is a dry run', () => {
+  it('dry only for 1 or true (any case); unset and everything else is send', () => {
     expect(currentUse({})).toBe('send');
     expect(currentUse({ JOBBER_DRY_RUN: '1' })).toBe('dry_run');
-    expect(currentUse({ JOBBER_DRY_RUN: 'true' })).toBe('send');
+    expect(currentUse({ JOBBER_DRY_RUN: 'true' })).toBe('dry_run');
+    expect(currentUse({ JOBBER_DRY_RUN: ' TRUE ' })).toBe('dry_run');
+    expect(currentUse({ JOBBER_DRY_RUN: 'false' })).toBe('send');
+    expect(currentUse({ JOBBER_DRY_RUN: '0' })).toBe('send');
+    expect(currentUse({ SCHEDULER_DRY_RUN: 'true' })).toBe('send');
   });
 });
 

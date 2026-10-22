@@ -87,7 +87,7 @@ export async function siteSignup(input: { host?: string; purpose: SignupPurpose 
     if (!host) return { status: 'refused', code: 'no_session', reason: 'open a page first' };
     const h = haltedWeb(deps.db);
     if (h) return { status: 'refused', code: 'halted', reason: h };
-    if (isDryRun(env, { web: true })) {
+    if (isDryRun(env)) {
       recordDryRun(deps.db, { runId: null, action: 'site_signup', platform: 'web', payload: { host, purpose: input.purpose } }, now(), env);
       return { status: 'dry_run', code: 'dry_run' };
     }

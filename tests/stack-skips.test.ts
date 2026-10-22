@@ -71,7 +71,7 @@ function deps(f: Fake, probes: string[] = []): StackDeps & { out: string[] } {
   const out: string[] = [];
   return {
     root,
-    env: { HOME: '/home/x', PATH: '/usr/bin', SCHEDULER_DRY_RUN: 'true' },
+    env: { HOME: '/home/x', PATH: '/usr/bin', JOBBER_DRY_RUN: 'true' },
     run: f.run,
     fs: { exists: (p) => existsSync(p), read: (p) => readFileSync(p, 'utf8') },
     now: () => new Date('2026-10-15T00:00:00Z'),

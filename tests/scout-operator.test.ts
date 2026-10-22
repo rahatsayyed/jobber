@@ -31,7 +31,8 @@ describe('source-operator definition', () => {
   it('the wake profile passes the scout flags and search budgets through, but no Serper key or credentials', () => {
     const p = JSON.parse(readFileSync('config/run-profiles.json', 'utf8')).profiles.outreach_wake as { env_keys: string[]; env_prefixes: string[] };
     for (const k of ['WEB_', 'SCOUT_', 'DORK_', 'SEARCH_']) expect(p.env_prefixes).toContain(k);
-    expect(p.env_keys).toContain('APPLY_DRY_RUN');
+    expect(p.env_keys).toContain('JOBBER_DRY_RUN');
+    expect(p.env_keys).not.toContain('APPLY_DRY_RUN');
     expect(p.env_keys.concat(p.env_prefixes).some((k) => /SERPER|PASSWORD|TOKEN|SECRET/.test(k))).toBe(false);
   });
 });

@@ -6,7 +6,7 @@ import { isDryRun } from '../src/safety/dryRun.js';
 const fakeFs = { mkdtemp: (p: string) => `/virt/${p}x`, mkdir: () => {}, write: () => {}, exists: () => false, rm: () => {} };
 function ctx(): VerifyCtx {
   return buildCtx({
-    root: '/r', env: { JOBBER_KILL: '1', JOBBER_DRY_RUN: '0', SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false', KEEP: 'a' },
+    root: '/r', env: { JOBBER_KILL: '1', JOBBER_DRY_RUN: 'false', SCHEDULER_DRY_RUN: 'false', KEEP: 'a' },
     run: async () => ({ stdout: '', code: 0 }), fs: fakeFs, now: () => new Date(0),
     doctor: async () => [], openDb: () => { throw new Error('no'); },
     startWeb: async () => { throw new Error('no'); }, fixtures: () => { throw new Error('no'); },
@@ -16,9 +16,12 @@ const st = (id: string, run: Stage['run'], skippable = true): Stage => ({ id, ti
 
 describe('forceDryEnv', () => {
   it('forces dry for every input combination and drops JOBBER_KILL', () => {
-    for (const j of [undefined, '0', '1']) for (const s of [undefined, 'false', 'true']) for (const l of [undefined, 'false', 'true']) {
-      const out = forceDryEnv({ JOBBER_DRY_RUN: j, SCHEDULER_DRY_RUN: s, LINKEDIN_DRY_RUN: l, JOBBER_KILL: '1' }, '/t/db');
-      expect(isDryRun(out, { linkedin: true })).toBe(true);
+    for (const j of [undefined, '', '0', 'false', '1', 'true']) {
+      const out = forceDryEnv({ JOBBER_DRY_RUN: j, SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false', JOBBER_KILL: '1' }, '/t/db');
+      expect(isDryRun(out)).toBe(true);
+      expect(out.JOBBER_DRY_RUN).toBe('true');
+      expect(out.SCHEDULER_DRY_RUN).toBeUndefined();
+      expect(out.LINKEDIN_DRY_RUN).toBeUndefined();
       expect(out.JOBBER_KILL).toBeUndefined();
       expect(out.JOBAPPLIER_DB).toBe('/t/db');
     }
@@ -28,7 +31,7 @@ describe('forceDryEnv', () => {
   });
   it('copies nothing beyond the input', () => {
     const out = forceDryEnv({ A: '1' }, 'x');
-    expect(Object.keys(out).sort()).toEqual(['A', 'JOBAPPLIER_DB', 'JOBBER_DRY_RUN', 'LINKEDIN_DRY_RUN', 'SCHEDULER_DRY_RUN']);
+    expect(Object.keys(out).sort()).toEqual(['A', 'JOBAPPLIER_DB', 'JOBBER_DRY_RUN']);
   });
 });
 
@@ -37,7 +40,7 @@ describe('buildCtx', () => {
     const c = ctx();
     expect(c.tempDbPath.startsWith(c.tmp)).toBe(true);
     expect(c.tempStopFile).toBe(`${c.tmp}/.jobber/STOP`);
-    expect(isDryRun(c.env, { linkedin: true })).toBe(true);
+    expect(isDryRun(c.env)).toBe(true);
     expect(c.env.JOBAPPLIER_DB).toBe(c.tempDbPath);
   });
 });

@@ -20,7 +20,7 @@ export const HOST = 'boards.greenhouse.io';
 export const WHY = 'Because the product is interesting and the team ships.';
 
 export const LIVE: NodeJS.ProcessEnv = {
-  SCHEDULER_DRY_RUN: 'false', WEB_DRY_RUN: 'false', APPLY_DRY_RUN: 'false', SCOUT_DRY_RUN: 'false',
+  JOBBER_DRY_RUN: 'false',
   APPLY_SUBMIT_MODE: 'submit', WEB_MIN_GAP_SEC: '0',
 };
 

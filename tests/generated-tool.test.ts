@@ -8,7 +8,7 @@ import type { ScoutCtx } from '../src/scout/tools/common.js';
 import { getProvider } from '../src/sources/generated/store.js';
 import { baseSpec } from './helpers/genSpec.js';
 
-const LIVE = { SCHEDULER_DRY_RUN: 'false', WEB_DRY_RUN: 'false', APPLY_DRY_RUN: 'false', SCOUT_DRY_RUN: 'false' } as NodeJS.ProcessEnv;
+const LIVE = { JOBBER_DRY_RUN: 'false' } as NodeJS.ProcessEnv;
 let root: string;
 beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), 'jobber-gen-tool-')); });
 afterEach(() => { rmSync(root, { recursive: true, force: true }); });
@@ -54,7 +54,7 @@ describe('scout_propose_provider', () => {
   });
 
   it('dry run writes nothing and records the action', async () => {
-    const { db, c, task } = ctx({});
+    const { db, c, task } = ctx({ JOBBER_DRY_RUN: 'true' });
     fixture();
     expect(body(await scoutProposeProvider({ task_id: task('acme'), spec: baseSpec() }, c))).toEqual({ ok: true, status: 'dry_run' });
     expect(existsSync(path.join(root, 'providers'))).toBe(false);

@@ -16,12 +16,13 @@ import { buildSyntheticPostId } from '../src/linkedin/jobIds.js';
 import type { LayoutObserver } from '../src/layout/runtime.js';
 import type { ToolDeps, Screen } from '../src/linkedin/toolDeps.js';
 import { makeFakeLauncher, type FakeSite } from './helpers/fakeLinkedin.js';
+const DRY_ENV: Record<string, string> = { JOBBER_DRY_RUN: 'true' };
 
 const STATE = { cookies: [{ name: 'li_at', value: 'SENTINEL-NOT-REAL', domain: '.linkedin.com', path: '/' }], origins: [] };
 const fx = (n: string) => readFileSync(new URL(`./fixtures/linkedin/${n}`, import.meta.url), 'utf8');
 const POSTS_URL = 'https://www.linkedin.com/search/results/content/?keywords=hiring';
 const PP = '/search/results/content/';
-const LIVE = { LINKEDIN_DRY_RUN: 'false', SCHEDULER_DRY_RUN: 'false' };
+const LIVE = { JOBBER_DRY_RUN: 'false' };
 const CONFIG: DiscoveryConfig = {
   jobs: [],
   posts: [{ name: 'default', role: 'react developer', geo: 'in', limit: 25 }],
@@ -40,12 +41,12 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function setup(site: FakeSite, env: NodeJS.ProcessEnv = {}, over: Partial<ToolDeps> = {}) {
+function setup(site: FakeSite, env: NodeJS.ProcessEnv = DRY_ENV, over: Partial<ToolDeps> = {}) {
   const log: string[] = [];
   const db = openDb(':memory:');
   const rt = createRuntime({
     db, launcher: makeFakeLauncher(site, log), sessionPath: path.join(dir, 'state.json'),
-    lockPath: path.join(dir, 'l.lock'), settleMs: 0, env: {},
+    lockPath: path.join(dir, 'l.lock'), settleMs: 0, env: DRY_ENV,
   });
   runtimes.push(rt);
   const deps: ToolDeps = {
@@ -137,7 +138,7 @@ describe('searchPosts', () => {
   });
 
   it('dry run saves no job and registers no author, and records the action', async () => {
-    const { deps, db } = setup(page(), {});
+    const { deps, db } = setup(page(), DRY_ENV);
     const r = await searchPosts({ search: 'default' }, deps, { config: CONFIG });
     expect(r).toMatchObject({ status: 'dry_run', new: 0 });
     expect(jobs(db)).toEqual([]);

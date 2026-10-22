@@ -5,6 +5,7 @@ import { listDryRun } from '../src/safety/dryRun.js';
 import {
   LIVE_ENV, MSG, NOTE, NOW, URL_, inviteDialog, messageOverlay, profileHtml, refOf, world, type World,
 } from './helpers/bcWorld.js';
+const DRY_ENV: Record<string, string> = { JOBBER_DRY_RUN: 'true' };
 
 const worlds: World[] = [];
 const mk = (o: Parameters<typeof world>[0]) => { const w = world(o); worlds.push(w); return w; };
@@ -275,7 +276,7 @@ describe('commit: connect send', () => {
   });
 
   it('dry run: arm records, commit does not click, closes the dialog and disarms', async () => {
-    const w = mk({ html: profileHtml({ dialog: inviteDialog() }), env: {} });
+    const w = mk({ html: profileHtml({ dialog: inviteDialog() }), env: DRY_ENV });
     const a = await w.arm({ kind: 'connect_note', profile_url: URL_, text: NOTE });
     expect(a).toMatchObject({ status: 'armed', dry_run: true });
     const r = await w.engine.click(refOf(await w.snap(), 'button', 'Send'));
@@ -359,7 +360,7 @@ describe('commit: connect send', () => {
 
 describe('commit: connect open step (profile Connect button)', () => {
   it('dry run does not click; live clicks once, keeps the intent for the dialog, no ceiling yet', async () => {
-    const dry = mk({ html: profileHtml(), env: {} });
+    const dry = mk({ html: profileHtml(), env: DRY_ENV });
     expect((await dry.arm({ kind: 'connect_note', profile_url: URL_, text: NOTE })).status).toBe('armed');
     const r0 = await dry.engine.click(refOf(await dry.snap(), 'button', 'Connect'));
     expect(r0.status).toBe('dry_run');

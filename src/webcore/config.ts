@@ -1,8 +1,7 @@
 import { isDryRun } from '../safety/dryRun.js';
 
 // Shared web runtime config. Never throws; invalid values fall back, out-of-range values clamp.
-// Dry run is ON unless WEB_DRY_RUN, APPLY_DRY_RUN, SCOUT_DRY_RUN and SCHEDULER_DRY_RUN are exactly
-// 'false' and JOBBER_DRY_RUN is not '1' (see isDryRun).
+// Dry run follows the single master flag JOBBER_DRY_RUN (see isDryRun).
 export interface WebConfig {
   dryRun: boolean;
   minGapSec: number;
@@ -21,7 +20,7 @@ function int(raw: string | undefined, def: number, min: number, max: number): nu
 
 export function loadWebConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
   return {
-    dryRun: isDryRun(env, { web: true }),
+    dryRun: isDryRun(env),
     minGapSec: int(env.WEB_MIN_GAP_SEC, 20, 0, 3600),
     maxCallsPerJob: int(env.WEB_MAX_CALLS_PER_JOB, 80, 1, 1000),
     maxJobMin: int(env.WEB_MAX_JOB_MIN, 15, 1, 240),

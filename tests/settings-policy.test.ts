@@ -163,21 +163,24 @@ describe('phraseMatches', () => {
 
 describe('default wiring in planEnvChange', () => {
   const dry = (key: string): EnvSpec => ({ ...spec('FX_DRY_RUN'), key, allowed: ['0', '1', 'true', 'false'] });
-  const catalog = [...FIXTURE_CATALOG, dry('JOBBER_DRY_RUN'), dry('SCHEDULER_DRY_RUN'), dry('LINKEDIN_DRY_RUN')];
-  const text = 'JOBBER_DRY_RUN=1\nSCHEDULER_DRY_RUN=true\nLINKEDIN_DRY_RUN=true\n';
+  const catalog = [...FIXTURE_CATALOG, dry('JOBBER_DRY_RUN')];
+  const text = 'JOBBER_DRY_RUN=true\n';
   const st: EnvState = { text, etag: etagOf(text), exists: true };
   const set = (key: string, value: string): ChangeOp => ({ key, op: 'set', value });
-  it('a three-flag flip needs GO LIVE', () => {
-    const p = planEnvChange(st, [set('JOBBER_DRY_RUN', '0'), set('SCHEDULER_DRY_RUN', 'false'), set('LINKEDIN_DRY_RUN', 'false')], catalog, CTX);
-    expect(p.friction).toEqual({ reauth: true, phrase: 'GO LIVE' });
+  it('flipping the one master flag to false needs GO LIVE', () => {
+    for (const v of ['false', '0']) {
+      const p = planEnvChange(st, [set('JOBBER_DRY_RUN', v)], catalog, CTX);
+      expect(p.modeAfter).toBe('LIVE');
+      expect(p.friction).toEqual({ reauth: true, phrase: 'GO LIVE' });
+    }
   });
-  it('flipping only JOBBER_DRY_RUN keeps the file mode dry and asks for CHANGE JOBBER_DRY_RUN', () => {
-    const p = planEnvChange(st, [set('JOBBER_DRY_RUN', '0')], catalog, CTX);
+  it('legacy flags in the file do not change the mode', () => {
+    const t = 'JOBBER_DRY_RUN=true\nSCHEDULER_DRY_RUN=false\nLINKEDIN_DRY_RUN=false\n';
+    const p = planEnvChange({ text: t, etag: etagOf(t), exists: true }, [], catalog, CTX);
     expect(p.modeAfter).toBe('DRY RUN');
-    expect(p.friction).toEqual({ reauth: true, phrase: 'CHANGE JOBBER_DRY_RUN' });
   });
   it('edit disabled refuses through the plan', () => {
-    const p = planEnvChange(st, [set('JOBBER_DRY_RUN', '0')], catalog, { ...CTX, editEnabled: false });
+    const p = planEnvChange(st, [set('JOBBER_DRY_RUN', 'false')], catalog, { ...CTX, editEnabled: false });
     expect(p.friction.refuse).toBe('settings_disabled');
   });
 });
@@ -210,10 +213,10 @@ describe('preflight', () => {
 });
 
 describe('computed DRY RUN to LIVE flip is guarded whatever the key tiers', () => {
-  const FLAGS = ['JOBBER_DRY_RUN', 'SCHEDULER_DRY_RUN', 'LINKEDIN_DRY_RUN'];
+  const FLAGS = ['JOBBER_DRY_RUN'];
   const flagSpec = (key: string, over: Partial<EnvSpec>): EnvSpec => ({ ...spec('FX_DRY_RUN'), key, allowed: ['0', '1', 'true', 'false'], ...over });
-  // dry = JOBBER_DRY_RUN=1 or any other flag not exactly "false"; live = JOBBER_DRY_RUN=0, others "false"
-  const val = (k: string, live: boolean): string => (k === 'JOBBER_DRY_RUN' ? (live ? '0' : '1') : live ? 'false' : 'true');
+  // dry = JOBBER_DRY_RUN=true; live = JOBBER_DRY_RUN=false
+  const val = (_k: string, live: boolean): string => (live ? 'false' : 'true');
   const flagText = (live: boolean) => FLAGS.map((k) => `${k}=${val(k, live)}\n`).join('');
   const state = (text: string): EnvState => ({ text, etag: etagOf(text), exists: true });
   const setAll = (): ChangeOp[] => FLAGS.map((k) => ({ key: k, op: 'set', value: val(k, true) }));
@@ -225,11 +228,11 @@ describe('computed DRY RUN to LIVE flip is guarded whatever the key tiers', () =
     expect(p.modeAfter).toBe('LIVE');
     expect(p.friction).toEqual({ reauth: true, phrase: 'GO LIVE' });
   });
-  it('unset -> 0 with a null default still counts (unset reads as dry)', () => {
+  it('an unset flag already reads as live, so setting it false is not a flip', () => {
     const catalog = FLAGS.map((k) => flagSpec(k, { default: null }));
     const p = planEnvChange(state(''), setAll(), catalog, CTX);
     expect(p.modeAfter).toBe('LIVE');
-    expect(p.friction).toEqual({ reauth: true, phrase: 'GO LIVE' });
+    expect(p.friction.phrase).not.toBe('GO LIVE');
   });
   it('an empty change list with a mode flip is guarded', () => {
     expect(rawFriction([], CTX, flip)).toEqual({ reauth: true, phrase: 'GO LIVE' });

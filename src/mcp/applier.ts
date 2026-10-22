@@ -162,7 +162,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
   /** site_*: the compact state a webcore result carries is page text, so it is classifier-screened here. */
   const screenSite = async (r: SiteResult): Promise<SiteResult> => {
     if (!r.state) return r;
-    const v = await screenUntrusted(r.state, 'read', { env, dryRun: isDryRun(env, { web: true }), classifier: deps.classifier, maxChars: 12000 });
+    const v = await screenUntrusted(r.state, 'read', { env, dryRun: isDryRun(env), classifier: deps.classifier, maxChars: 12000 });
     if (v.blocked) { const { state: _s, ...rest } = r; return { ...rest, reason: `page text withheld: ${v.code}` }; }
     return v.unscreened ? { ...r, state: `${v.text}\nclassifier=unscreened` } : { ...r, state: v.text };
   };
@@ -199,7 +199,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
       const used = d.prepare("SELECT count FROM daily_counters WHERE day = date('now') AND key = 'easy_apply'").get() as { count: number } | undefined;
       const raw = env.MAX_APPLIES_PER_DAY;
       return json({
-        halt: haltedWeb(d), dry_run: isDryRun(env, { web: true }), submit_mode: env.APPLY_SUBMIT_MODE === 'submit' ? 'submit' : 'hold',
+        halt: haltedWeb(d), dry_run: isDryRun(env), submit_mode: env.APPLY_SUBMIT_MODE === 'submit' ? 'submit' : 'hold',
         apply_attempt: c.apply_attempt, applies_today: { used: used?.count ?? 0, limit: raw !== undefined && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : 5 },
         host_cap_default: resolveHostCap('browser', env).cap, host_today: hosts, cooling_hosts: cooledHosts(d, env, at),
         open_job: a.state.cur ? { platform: a.state.cur.platform, host: a.state.cur.host } : null,

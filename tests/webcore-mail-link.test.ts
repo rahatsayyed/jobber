@@ -58,7 +58,7 @@ describe('siteOpenLink', () => {
   let dir: string;
   beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jobber-ml-')); });
   afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
-  const LIVE = { SCHEDULER_DRY_RUN: 'false', WEB_DRY_RUN: 'false', APPLY_DRY_RUN: 'false', SCOUT_DRY_RUN: 'false' } as NodeJS.ProcessEnv;
+  const LIVE = { JOBBER_DRY_RUN: 'false' } as NodeJS.ProcessEnv;
   async function setup(env: NodeJS.ProcessEnv) {
     const db = openDb(':memory:');
     const site = createFakeSite({ start: 'wd-verify-email.html', url: 'https://acme.example.test/' });
@@ -84,7 +84,7 @@ describe('siteOpenLink', () => {
     expect(await siteOpenLink({ url_or_message_text: mail(SENDERS[0], 'https://acme.example.test/verify') }, g.deps)).toMatchObject({ status: 'opened' });
     const off = await setup({ ...LIVE, SITE_MAIL_VERIFY: 'off' });
     expect(await siteOpenLink({ url_or_message_text: 'https://acme.example.test/verify' }, off.deps)).toMatchObject({ code: 'mode_off' });
-    const dry = await setup({} as NodeJS.ProcessEnv);
+    const dry = await setup({ JOBBER_DRY_RUN: 'true' } as NodeJS.ProcessEnv);
     const before = dry.site.events.length;
     expect(await siteOpenLink({ url_or_message_text: 'https://acme.example.test/verify' }, dry.deps)).toEqual({ status: 'dry_run' });
     expect(dry.site.events.length).toBe(before);

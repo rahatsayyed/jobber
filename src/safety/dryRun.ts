@@ -1,17 +1,27 @@
-// Dry-run guard. Any dry flag wins; unset means dry; live needs every relevant flag explicitly live.
+// Dry-run guard. ONE master flag, JOBBER_DRY_RUN: dry iff its trimmed, lowercased value is `1` or `true`.
+// Unset, empty, `false`, `0` or anything else is LIVE (the default). Legacy *_DRY_RUN keys are ignored.
+// .claude/hooks/kill-switch.cjs carries a copy of the parse; tests/dryrun-parity.test.ts keeps them equal.
 import type BetterSqlite3 from 'better-sqlite3';
 import { redactSecrets } from './redact.js';
 import { secretValuesFromEnv } from './outputGate.js';
 
 type Db = BetterSqlite3.Database;
 
-export function isDryRun(env: NodeJS.ProcessEnv = process.env, opts: { linkedin?: boolean; web?: boolean } = {}): boolean {
-  if (env.JOBBER_DRY_RUN === '1') return true;
-  if (env.SCHEDULER_DRY_RUN !== 'false') return true;
-  if (opts.linkedin && env.LINKEDIN_DRY_RUN !== 'false') return true;
-  // Web actions (login, sign-up, upload, typing, next/submit) need every web flag explicitly live.
-  if (opts.web && (env.WEB_DRY_RUN !== 'false' || env.APPLY_DRY_RUN !== 'false' || env.SCOUT_DRY_RUN !== 'false')) return true;
-  return false;
+export const DRY_RUN_KEY = 'JOBBER_DRY_RUN';
+/** Keys of the retired per-area flags. They are never read; the doctor warns when .env still has one. */
+export const LEGACY_DRY_RUN_KEYS = [
+  'SCHEDULER_DRY_RUN', 'LINKEDIN_DRY_RUN', 'WEB_DRY_RUN', 'APPLY_DRY_RUN', 'SCOUT_DRY_RUN',
+] as const;
+
+/** Parse the master flag value. Only `1` and `true` (any case, surrounding space ignored) mean dry. */
+export function parseDryFlag(value: string | undefined | null): boolean {
+  if (typeof value !== 'string') return false;
+  const v = value.trim().toLowerCase();
+  return v === '1' || v === 'true';
+}
+
+export function isDryRun(env: NodeJS.ProcessEnv = process.env): boolean {
+  return parseDryFlag(env[DRY_RUN_KEY]);
 }
 
 export interface DryRunRecord {

@@ -5,12 +5,12 @@ import { loadOutreachConfig } from '../src/outreach/config.js';
 import { LIMITS, specFor } from '../src/setup/limitsCatalog.js';
 
 const env = (o: Record<string, string>) => o as NodeJS.ProcessEnv;
-const LIVE = { SCHEDULER_DRY_RUN: 'false', WEB_DRY_RUN: 'false', APPLY_DRY_RUN: 'false', SCOUT_DRY_RUN: 'false' };
+const LIVE = { JOBBER_DRY_RUN: 'false' };
 
 describe('loadWebConfig', () => {
-  it('defaults', () => {
+  it('defaults (unset flag means live)', () => {
     expect(loadWebConfig(env({}))).toEqual({
-      dryRun: true, minGapSec: 20, maxCallsPerJob: 80, maxJobMin: 15, idleMs: 600000, settleMs: 1500,
+      dryRun: false, minGapSec: 20, maxCallsPerJob: 80, maxJobMin: 15, idleMs: 600000, settleMs: 1500,
     });
   });
   it('invalid and out-of-range values fall back or clamp and never throw', () => {
@@ -26,22 +26,18 @@ describe('loadWebConfig', () => {
 });
 
 describe('isDryRun web flags', () => {
-  it('web live needs all three flags exactly false', () => {
-    expect(isDryRun(env(LIVE), { web: true })).toBe(false);
-    for (const k of ['WEB_DRY_RUN', 'APPLY_DRY_RUN', 'SCOUT_DRY_RUN']) {
-      expect(isDryRun(env({ ...LIVE, [k]: 'true' }), { web: true }), k).toBe(true);
-      const { [k]: _omit, ...rest } = LIVE as Record<string, string>;
-      expect(isDryRun(env(rest), { web: true }), `${k} unset`).toBe(true);
+  it('web paths follow only the master flag', () => {
+    expect(isDryRun(env(LIVE))).toBe(false);
+    expect(isDryRun(env({}))).toBe(false);
+    expect(isDryRun(env({ JOBBER_DRY_RUN: 'true' }))).toBe(true);
+    expect(loadWebConfig(env({ JOBBER_DRY_RUN: 'true' })).dryRun).toBe(true);
+    expect(loadWebConfig(env(LIVE)).dryRun).toBe(false);
+  });
+  it('the retired WEB, APPLY, SCOUT and SCHEDULER flags have no effect', () => {
+    for (const k of ['WEB_DRY_RUN', 'APPLY_DRY_RUN', 'SCOUT_DRY_RUN', 'SCHEDULER_DRY_RUN']) {
+      expect(isDryRun(env({ ...LIVE, [k]: 'true' })), k).toBe(false);
+      expect(isDryRun(env({ JOBBER_DRY_RUN: 'true', [k]: 'false' })), k).toBe(true);
     }
-  });
-  it('JOBBER_DRY_RUN=1 and unset SCHEDULER_DRY_RUN still win', () => {
-    expect(isDryRun(env({ ...LIVE, JOBBER_DRY_RUN: '1' }), { web: true })).toBe(true);
-    const { SCHEDULER_DRY_RUN: _s, ...rest } = LIVE;
-    expect(isDryRun(env(rest), { web: true })).toBe(true);
-  });
-  it('web flags do not affect calls without the web option', () => {
-    expect(isDryRun(env({ SCHEDULER_DRY_RUN: 'false' }))).toBe(false);
-    expect(isDryRun(env({ SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false' }), { linkedin: true })).toBe(false);
   });
 });
 

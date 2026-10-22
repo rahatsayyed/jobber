@@ -38,28 +38,27 @@ describe('buildRunnerArgv', () => {
   const head = ['/bin/sh', '-c', 'p=$1; l=$2; e=$3; shift 3; "$@" <"$p" >>"$l" 2>&1; echo $? >"$e"', 'sh', '/r/p', '/r/l', '/r/e', 'env'];
   it('golden without dry run', () => {
     expect(buildRunnerArgv({ ...base, dryRun: false })).toEqual([
-      ...head, 'JOBBER_RUN_ID=abcd1234', 'JOBBER_DRY_RUN=0', 'SCHEDULER_DRY_RUN=false', 'npx', 'tsx', 'scripts/run-claude.ts', 'outreach_wake',
+      ...head, 'JOBBER_RUN_ID=abcd1234', 'JOBBER_DRY_RUN=false', 'npx', 'tsx', 'scripts/run-claude.ts', 'outreach_wake',
     ]);
   });
   it('golden with dry run, env and no-classifier', () => {
     expect(buildRunnerArgv({ ...base, dryRun: true, env: { FOO_BAR: 'x y' }, noClassifier: true })).toEqual([
-      ...head, 'FOO_BAR=x y', 'JOBBER_RUN_ID=abcd1234', 'JOBBER_DRY_RUN=1', 'SCHEDULER_DRY_RUN=true', 'npx', 'tsx', 'scripts/run-claude.ts', 'outreach_wake', '--no-classifier',
+      ...head, 'FOO_BAR=x y', 'JOBBER_RUN_ID=abcd1234', 'JOBBER_DRY_RUN=true', 'npx', 'tsx', 'scripts/run-claude.ts', 'outreach_wake', '--no-classifier',
     ]);
   });
   it('rejects reserved env keys and always emits the dry-run flag last', () => {
     expect(() => buildRunnerArgv({ ...base, dryRun: true, env: { JOBBER_DRY_RUN: '0' } })).toThrow();
     expect(() => buildRunnerArgv({ ...base, dryRun: true, env: { SCHEDULER_X: '1' } })).toThrow();
+    expect(() => buildRunnerArgv({ ...base, dryRun: false, env: { JOBBER_DRY_RUN: 'true' } })).toThrow();
     for (const k of ['PATH', 'NODE_OPTIONS', 'LD_PRELOAD', 'LD_LIBRARY_PATH', 'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH', 'HOME']) {
       expect(() => buildRunnerArgv({ ...base, dryRun: false, env: { [k]: 'x' } })).toThrow();
     }
     const a = buildRunnerArgv({ ...base, dryRun: true, env: { OK_KEY: '1' } });
-    expect(a.filter((x) => x.startsWith('JOBBER_DRY_RUN='))).toEqual(['JOBBER_DRY_RUN=1']);
-    expect(a).toContain('SCHEDULER_DRY_RUN=true');
-    expect(a).not.toContain('SCHEDULER_DRY_RUN=false');
-    const live = buildRunnerArgv({ ...base, dryRun: false, env: { LINKEDIN_DRY_RUN: 'false' } });
-    expect(live).toContain('SCHEDULER_DRY_RUN=false');
-    expect(live).toContain('LINKEDIN_DRY_RUN=false');
-    expect(a.indexOf('JOBBER_DRY_RUN=1')).toBeGreaterThan(a.indexOf('OK_KEY=1'));
+    expect(a.filter((x) => x.startsWith('JOBBER_DRY_RUN='))).toEqual(['JOBBER_DRY_RUN=true']);
+    expect(a.some((x) => /^(SCHEDULER|LINKEDIN|WEB|APPLY|SCOUT)_DRY_RUN=/.test(x))).toBe(false);
+    const live = buildRunnerArgv({ ...base, dryRun: false, env: { OK_KEY: '1' } });
+    expect(live.filter((x) => x.startsWith('JOBBER_DRY_RUN='))).toEqual(['JOBBER_DRY_RUN=false']);
+    expect(a.indexOf('JOBBER_DRY_RUN=true')).toBeGreaterThan(a.indexOf('OK_KEY=1'));
   });
   it('rejects bad env keys, values and run ids', () => {
     expect(() => buildRunnerArgv({ ...base, dryRun: false, env: { 'bad key': 'x' } })).toThrow();

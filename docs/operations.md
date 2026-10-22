@@ -36,7 +36,6 @@ What does not stop (restated from `CLAUDE.md`, "Outreach safety layers" layer 6,
 - Interactive sessions started outside this project directory.
 - Sends done through Bash.
 - `halt_flags` rows are not read by the hook (the typed tools read them).
-- The Gmail dry run covers only JOBBER_DRY_RUN set to 1.
 
 If the model is mid-run and you need it gone now, also stop the tmux windows: `npm run down` (see "Bring the stack up and down" below).
 
@@ -75,15 +74,13 @@ Only the owner clears halts. Do not flip a dry-run flag or clear a halt from ins
 
 ## Dry run
 
-Three flags decide whether an action is performed or only recorded. Any one of them wins (rule in `src/safety/dryRun.ts`, `isDryRun`; `CLAUDE.md` Safety rule 15):
+One flag decides whether an action is performed or only recorded (rule in `src/safety/dryRun.ts`, `isDryRun`; `CLAUDE.md` Safety rule 15):
 
 | Flag | Dry when |
 |---|---|
-| JOBBER_DRY_RUN | exactly `1` |
-| `SCHEDULER_DRY_RUN` | anything except exactly `false` (unset is dry) |
-| `LINKEDIN_DRY_RUN` | anything except exactly `false`, checked for LinkedIn paths only |
+| `JOBBER_DRY_RUN` | the trimmed, lowercased value is `1` or `true` |
 
-Live needs JOBBER_DRY_RUN not `1`, `SCHEDULER_DRY_RUN=false`, and for LinkedIn `LINKEDIN_DRY_RUN=false`. Only the Gmail send hook looks at JOBBER_DRY_RUN set to 1; see "What does not stop" above.
+Unset, empty, `false`, `0` or anything else is LIVE. `.env.example` ships `JOBBER_DRY_RUN=true`. The old per-area dry-run keys (one each for the scheduler, LinkedIn, web, apply and scout) are ignored; `npm run doctor` warns when `.env` still has one and prints `MODE: DRY RUN` or `MODE: LIVE`. The Gmail send hook uses the same parse.
 
 To tell whether the stack is dry:
 
@@ -244,7 +241,7 @@ Every cold email and email follow-up is sent as multipart/alternative. The plain
 
 - `npm run dashboard -- token` (and `rotate`) only creates the access token and prints the sign-in URL. It does not start the server. Start the dashboard with `npm run web` (or `npm run up`). The command probes the loopback port and says "not running right now" when nothing listens.
 - zsh may ask `correct 'x' to 'y' [nyae]?` for a path that starts with a dot (for example `.env`). Answer `n`, or add `setopt nocorrect` (or `unsetopt correct`) to your shell profile.
-- `npm run dry-run -- --llm` runs the `llm-hunt` stage (an LLM run in dry mode) and needs a dry `.env`: `JOBBER_DRY_RUN=1`, `SCHEDULER_DRY_RUN=true` and `LINKEDIN_DRY_RUN=true` set in the file itself. It refuses otherwise. When that stage exits non-zero the stage now shows the last 20 stderr lines (secret shapes redacted) and the last stdout line.
+- `npm run dry-run -- --llm` runs the `llm-hunt` stage (an LLM run in dry mode) and needs a dry `.env`: `JOBBER_DRY_RUN=true` set in the file itself. It refuses otherwise. When that stage exits non-zero the stage now shows the last 20 stderr lines (secret shapes redacted) and the last stdout line.
 
 ## Common failures
 

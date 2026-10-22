@@ -234,34 +234,6 @@
       ],
       "keys": [
         {
-          "name": "LINKEDIN_DRY_RUN",
-          "secret": false,
-          "purpose": "LinkedIn actions are only recorded unless exactly false",
-          "where": "docs/linkedin-sessions-setup.md",
-          "entered_in": "owner edits .env"
-        },
-        {
-          "name": "WEB_DRY_RUN",
-          "secret": false,
-          "purpose": "company-site and ATS browser actions are only recorded unless exactly false",
-          "where": ".env.example",
-          "entered_in": "owner edits .env"
-        },
-        {
-          "name": "APPLY_DRY_RUN",
-          "secret": false,
-          "purpose": "browser applications are only recorded unless exactly false",
-          "where": ".env.example",
-          "entered_in": "owner edits .env"
-        },
-        {
-          "name": "SCOUT_DRY_RUN",
-          "secret": false,
-          "purpose": "source scouting actions are only recorded unless exactly false",
-          "where": ".env.example",
-          "entered_in": "owner edits .env"
-        },
-        {
           "name": "APPLY_ALLOW_ACCOUNT_CREATION",
           "secret": false,
           "purpose": "whether the applier may create accounts on apply sites (ships false)",
@@ -452,6 +424,7 @@
         "env-limits",
         "env-inline-comments",
         "scheduler-dry-run",
+        "dry-run-legacy-keys",
         "scheduler-stop-file",
         "auto-update-config",
         "backup-config"
@@ -514,13 +487,6 @@
           "entered_in": "owner edits .env"
         },
         {
-          "name": "SCHEDULER_DRY_RUN",
-          "secret": false,
-          "purpose": "scheduler actions are only recorded unless exactly false",
-          "where": "src/setup/limitsCatalog.ts",
-          "entered_in": "owner edits .env"
-        },
-        {
           "name": "SCHEDULER_TMUX_SESSION",
           "secret": false,
           "purpose": "tmux session of the wake windows",
@@ -572,7 +538,7 @@
         {
           "name": "JOBBER_DRY_RUN",
           "secret": false,
-          "purpose": "1 keeps the hunt in dry run and denies Gmail send",
+          "purpose": "the one dry-run flag: true keeps everything in dry run (and denies Gmail send), false or removed means LIVE",
           "where": "CLAUDE.md, Outreach safety layers",
           "entered_in": "owner edits .env"
         },
@@ -696,11 +662,12 @@
           "entered_in": "owner edits .env"
         }
       ],
-      "explain": "Limits keep sending slow and safe. Dry run is on by default and stays on until you turn it off yourself. Show today's numbers with npm run status -- limits; the catalog in src/setup/limitsCatalog.ts is the source, so no numbers are invented here.",
+      "explain": "Limits keep sending slow and safe. The shipped .env.example has JOBBER_DRY_RUN=true (dry run); you turn it off yourself by setting false or removing the line (an unset flag runs LIVE). Show today's numbers with npm run status -- limits; the catalog in src/setup/limitsCatalog.ts is the source, so no numbers are invented here.",
       "fixes": {
         "env-limits": "Open .env in your own editor and correct the limit named in the doctor line.",
         "env-inline-comments": "Remove the trailing comment from the .env line named in the doctor output.",
-        "scheduler-dry-run": "Dry run on is the safe state; only you decide when to turn it off.",
+        "scheduler-dry-run": "JOBBER_DRY_RUN=true in .env is the dry state; only you decide when to turn it off (false or removed means LIVE).",
+        "dry-run-legacy-keys": "Open .env in your own editor and delete the retired SCHEDULER, LINKEDIN, WEB, APPLY and SCOUT dry-run lines named in the doctor output: they are ignored, JOBBER_DRY_RUN is the only dry-run flag.",
         "scheduler-stop-file": "The stop file is the kill switch; only you remove it, with npm run jobber:control -- resume.",
         "auto-update-config": "Updates ship off; leave them off unless you have read docs/backup-and-restore.md.",
         "backup-config": "Backups ship off; follow docs/backup-and-restore.md if you want them."

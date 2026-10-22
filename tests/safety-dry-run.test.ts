@@ -1,38 +1,43 @@
 import { describe, it, expect } from 'vitest';
 import { openDb } from '../src/db.js';
-import { isDryRun, recordDryRun, listDryRun } from '../src/safety/dryRun.js';
+import { isDryRun, recordDryRun, listDryRun, LEGACY_DRY_RUN_KEYS } from '../src/safety/dryRun.js';
 import { loadLinkedinConfig } from '../src/linkedin/config.js';
 
 const T = new Date('2026-10-15T10:00:00.000Z');
 
-describe('isDryRun truth table', () => {
+describe('isDryRun: the single master flag JOBBER_DRY_RUN', () => {
   it.each([
-    [{}, true],
-    [{ JOBBER_DRY_RUN: '0' }, true],
-    [{ JOBBER_DRY_RUN: '0', SCHEDULER_DRY_RUN: 'true' }, true],
-    [{ SCHEDULER_DRY_RUN: 'false' }, false],
-    [{ SCHEDULER_DRY_RUN: 'false', JOBBER_DRY_RUN: '0' }, false],
-    [{ SCHEDULER_DRY_RUN: 'false', JOBBER_DRY_RUN: '1' }, true],
-    [{ SCHEDULER_DRY_RUN: 'False' }, true],
-    [{ SCHEDULER_DRY_RUN: '' }, true],
-  ])('%j -> %s', (env, want) => {
+    [{}, false],
+    [{ JOBBER_DRY_RUN: undefined }, false],
+    [{ JOBBER_DRY_RUN: '' }, false],
+    [{ JOBBER_DRY_RUN: '   ' }, false],
+    [{ JOBBER_DRY_RUN: 'false' }, false],
+    [{ JOBBER_DRY_RUN: 'FALSE' }, false],
+    [{ JOBBER_DRY_RUN: '0' }, false],
+    [{ JOBBER_DRY_RUN: 'yes' }, false],
+    [{ JOBBER_DRY_RUN: 'on' }, false],
+    [{ JOBBER_DRY_RUN: '1' }, true],
+    [{ JOBBER_DRY_RUN: 'true' }, true],
+    [{ JOBBER_DRY_RUN: ' TRUE ' }, true],
+    [{ JOBBER_DRY_RUN: 'True' }, true],
+  ])('%j -> dry %s (unset means LIVE)', (env, want) => {
     expect(isDryRun(env as NodeJS.ProcessEnv)).toBe(want);
   });
 
-  it('linkedin flag matrix', () => {
-    const o = { linkedin: true };
-    expect(isDryRun({ SCHEDULER_DRY_RUN: 'false' }, o)).toBe(true);
-    expect(isDryRun({ SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false' }, o)).toBe(false);
-    expect(isDryRun({ LINKEDIN_DRY_RUN: 'false' }, o)).toBe(true);
-    expect(isDryRun({ SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false', JOBBER_DRY_RUN: '1' }, o)).toBe(true);
-    // non-linkedin callers ignore the linkedin flag
-    expect(isDryRun({ SCHEDULER_DRY_RUN: 'false' })).toBe(false);
+  it('legacy per-area flags are ignored in both directions', () => {
+    for (const k of LEGACY_DRY_RUN_KEYS) {
+      expect(isDryRun({ [k]: 'true' })).toBe(false);
+      expect(isDryRun({ [k]: 'false', JOBBER_DRY_RUN: 'true' })).toBe(true);
+      expect(isDryRun({ [k]: 'true', JOBBER_DRY_RUN: 'false' })).toBe(false);
+    }
   });
 
-  it('loadLinkedinConfig honours the global flags', () => {
-    expect(loadLinkedinConfig({ LINKEDIN_DRY_RUN: 'false' }).dryRun).toBe(true);
-    expect(loadLinkedinConfig({ LINKEDIN_DRY_RUN: 'false', SCHEDULER_DRY_RUN: 'false' }).dryRun).toBe(false);
-    expect(loadLinkedinConfig({ LINKEDIN_DRY_RUN: 'false', SCHEDULER_DRY_RUN: 'false', JOBBER_DRY_RUN: '1' }).dryRun).toBe(true);
+  it('loadLinkedinConfig follows only the master flag', () => {
+    expect(loadLinkedinConfig({}).dryRun).toBe(false);
+    expect(loadLinkedinConfig({ JOBBER_DRY_RUN: 'true' }).dryRun).toBe(true);
+    expect(loadLinkedinConfig({ JOBBER_DRY_RUN: 'false' }).dryRun).toBe(false);
+    expect(loadLinkedinConfig({ LINKEDIN_DRY_RUN: 'true', SCHEDULER_DRY_RUN: 'true' }).dryRun).toBe(false);
+    expect(loadLinkedinConfig({ LINKEDIN_DRY_RUN: 'false', JOBBER_DRY_RUN: '1' }).dryRun).toBe(true);
   });
 });
 

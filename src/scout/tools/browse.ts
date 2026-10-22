@@ -32,7 +32,7 @@ export async function stateResult(deps: ScoutCtx, head: Record<string, unknown> 
   const { model } = await deps.runtime.serial(() => readPage(page));
   deps.last = { stepKind: model.stepKind, block: model.block, fields: model.fields.length, controls: model.controls.length };
   if (model.block) noteBlock(model.host);
-  const state = formatState(model, [`dry_run=${isDryRun(deps.env, { web: true })}`]);
+  const state = formatState(model, [`dry_run=${isDryRun(deps.env)}`]);
   const v = await deps.screen(state, 'read');
   if (v.blocked) return blockedJson(v);
   deps.pixels = { state: true, shot: false };
@@ -86,7 +86,7 @@ export async function scoutClick(a: { control: string }, deps: ScoutCtx): Promis
     const c = model.controls.find((x) => x.id === id);
     if (!c) return { code: 'no_such_control' as const };
     if (isSubmitLike(c.label) || BLOCKED_KINDS.has(c.kind)) return { code: 'submit_like' as const };
-    if (isDryRun(deps.env, { web: true })) return { code: 'dry_run' as const, label: c.label };
+    if (isDryRun(deps.env)) return { code: 'dry_run' as const, label: c.label };
     try { await clickControl(page, id); } catch { return { code: 'failed' as const }; }
     await page.waitForTimeout(loadWebConfig(deps.env).settleMs).catch(() => undefined);
     return { code: 'clicked' as const };
@@ -140,7 +140,7 @@ export async function scoutClickAt(a: { x: number; y: number }, deps: ScoutCtx):
     const p = await classifyPoint(bc, 'scout', null, x, y).catch(() => ({ ok: false as const, code: 'unresolvable_point' as const }));
     if (!p.ok) return { code: 'unresolvable_point' as const };
     if (p.cls !== 'free' || p.node.submit || isSubmitLike(p.node.name) || BLOCKED_KINDS.has(p.node.role)) return { code: 'submit_like' as const };
-    if (isDryRun(deps.env, { web: true })) return { code: 'dry_run' as const };
+    if (isDryRun(deps.env)) return { code: 'dry_run' as const };
     try { await bc.clickPoint(x, y); } catch { return { code: 'failed' as const }; }
     await page.waitForTimeout(loadWebConfig(deps.env).settleMs).catch(() => undefined);
     return { code: 'clicked' as const };

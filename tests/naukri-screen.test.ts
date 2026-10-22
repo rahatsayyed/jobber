@@ -61,7 +61,7 @@ function deps(h: ReturnType<typeof harness>, screen: any, extra: Record<string, 
   writeFileSync(p, '{"cookies":[],"origins":[]}');
   return {
     db: openDb(':memory:'), chromium: h.launcher, sessionStatePath: p, settleMs: 0,
-    env: { SCHEDULER_DRY_RUN: 'false' } as NodeJS.ProcessEnv, now: () => new Date('2026-10-14T10:00:00Z'),
+    env: { JOBBER_DRY_RUN: 'false' } as NodeJS.ProcessEnv, now: () => new Date('2026-10-14T10:00:00Z'),
     screen, layoutCfg: loadLayoutConfig({ LAYOUT_DIR: 'layout' } as NodeJS.ProcessEnv, dir), ...extra,
   } as any;
 }

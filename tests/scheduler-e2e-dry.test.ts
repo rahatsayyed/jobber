@@ -54,8 +54,8 @@ const PLAIN = 'Hi, we have an opening for a React role. Are you interested?';
 const LI_URL = 'https://www.linkedin.com/in/jane-example/';
 const LI_MSG = 'Hi Jane, thanks for connecting. Curious how the platform team is shaping its roadmap this quarter.';
 
-const DRY_ENV: NodeJS.ProcessEnv = {};
-const LIVE_ENV: NodeJS.ProcessEnv = { SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false' };
+const DRY_ENV: NodeJS.ProcessEnv = { JOBBER_DRY_RUN: 'true' };
+const LIVE_ENV: NodeJS.ProcessEnv = { JOBBER_DRY_RUN: 'false' };
 
 interface World {
   pidDue: number;
@@ -154,8 +154,8 @@ class ScriptedLauncher implements Launcher {
     // plan.dryRun is the DRIVER's decision, derived from DriverDeps.env (wakeIsDry); the env below
     // just carries the matching flags to the workers the way the runner would.
     const env: NodeJS.ProcessEnv = plan.dryRun
-      ? { JOBBER_DRY_RUN: '1', LINKEDIN_DRY_RUN: 'true' }
-      : { SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false' };
+      ? { JOBBER_DRY_RUN: 'true' }
+      : { JOBBER_DRY_RUN: 'false' };
     const nkEnv: NodeJS.ProcessEnv = { ...env, JOBBER_RUN_ID: plan.runId };
     const nameOf = (id: number): string => (this.db.prepare('SELECT name FROM people WHERE id = ?').get(id) as { name: string }).name;
     // due-followups
@@ -256,7 +256,7 @@ describe('scheduler end-to-end dry run', () => {
     expect(r.status).toBe('ok');
     expect(h.launcher.starts).toHaveLength(1);
     expect(h.launcher.starts[0].dryRun).toBe(true);
-    expect(h.launcher.starts[0].dryRun).toBe(isDryRun(DRY_ENV, { linkedin: true }));
+    expect(h.launcher.starts[0].dryRun).toBe(isDryRun(DRY_ENV));
 
     const run = listRuns(h.db, 5)[0];
     expect(run).toMatchObject({ id: r.runId, status: 'ok', dry_run: 1 });
@@ -349,7 +349,7 @@ describe('scheduler end-to-end dry run', () => {
     const r = await wakeOnce(h.d);
     expect(r.status).toBe('ok');
     expect(h.launcher.starts[0].dryRun).toBe(false);
-    expect(h.launcher.starts[0].dryRun).toBe(isDryRun(LIVE_ENV, { linkedin: true }));
+    expect(h.launcher.starts[0].dryRun).toBe(isDryRun(LIVE_ENV));
 
     // Naukri: the due follow-up went out through the page driver exactly once
     expect(h.launcher.pageSends).toHaveLength(1);

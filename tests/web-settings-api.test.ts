@@ -128,7 +128,7 @@ describe('reads', () => {
     expect('value' in key.state).toBe(false);
     expect(items.find((i: any) => i.key === 'FX_MAX_PER_DAY').state).toMatchObject({ set: true, value: '5', shellOverride: true });
     expect(items.find((i: any) => i.key === 'FX_PORT').state).toMatchObject({ set: false, source: 'default' });
-    expect(j.unknownKeys).toEqual(['ANOTHER_UNKNOWN', 'UNKNOWN_FIXTURE_KEY']);
+    expect(j.unknownKeys).toEqual(['ANOTHER_UNKNOWN', 'JOBBER_DRY_RUN', 'UNKNOWN_FIXTURE_KEY']);
     const q = J(await s.get('/api/settings/env?q=weekly'));
     expect(q.sections.flatMap((x: any) => x.items).map((i: any) => i.key)).toEqual(['FX_LINKEDIN_WEEKLY']);
     const sec = J(await s.get('/api/settings/env?section=telegram'));

@@ -288,8 +288,8 @@ MODE: DRY RUN (nothing is sent)
 MODE: LIVE (real email, LinkedIn and Naukri actions, within caps)
 ```
 
-followed by the values of the three dry-run flags (the jobber, scheduler and LinkedIn ones, named in
-`src/stack/mode.ts`) and the kill variable. The banner reads the flags as the children will see them (the parsed `.env`), and
+followed by the value of the one dry-run flag `JOBBER_DRY_RUN` (named in
+`src/stack/mode.ts`; an unset flag is shown as live) and the kill variable. The banner reads the flags as the children will see them (the parsed `.env`), and
 warns when your shell exports a different value. `up` never changes a flag.
 
 Exit codes for `up`: 0 ok (also for `--status`), 1 doctor failures (nothing started) or a start

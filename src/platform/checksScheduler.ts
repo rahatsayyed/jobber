@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { Check, CheckResult, DoctorContext } from './doctor.js';
 import { skip } from './doctor.js';
 import { parseEnv } from './envFile.js';
-import { isDryRun } from '../safety/dryRun.js';
+import { isDryRun, LEGACY_DRY_RUN_KEYS } from '../safety/dryRun.js';
 import { DEFAULT_LABEL, SERVICE_NAME } from '../scheduler/units.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -82,11 +82,31 @@ export function schedulerChecks(): Check[] {
     },
     {
       id: 'scheduler-dry-run',
-      title: 'scheduler: dry run state',
+      title: 'dry run mode (JOBBER_DRY_RUN, the only dry-run flag)',
       async run(ctx) {
-        return isDryRun(mergedEnv(ctx), { linkedin: true })
-          ? pass('dry')
-          : warn('LIVE: real sends are enabled', 'set SCHEDULER_DRY_RUN=true to go back to dry');
+        const env = mergedEnv(ctx);
+        if (isDryRun(env)) return pass('MODE: DRY RUN');
+        const unset = typeof env.JOBBER_DRY_RUN !== 'string' || env.JOBBER_DRY_RUN.trim() === '';
+        return warn(
+          unset
+            ? 'MODE: LIVE (JOBBER_DRY_RUN is not set, so it runs LIVE: real sends are enabled)'
+            : 'MODE: LIVE (real sends are enabled)',
+          'set JOBBER_DRY_RUN=true in .env to go back to dry',
+        );
+      },
+    },
+    {
+      id: 'dry-run-legacy-keys',
+      title: 'no retired *_DRY_RUN keys in the environment',
+      async run(ctx) {
+        const env = mergedEnv(ctx);
+        const left = LEGACY_DRY_RUN_KEYS.filter((k) => env[k] !== undefined);
+        return left.length === 0
+          ? pass('no legacy dry-run keys')
+          : warn(
+            `ignored legacy keys: ${left.join(', ')} (JOBBER_DRY_RUN is the only dry-run flag)`,
+            'remove them from .env: they are ignored',
+          );
       },
     },
     {

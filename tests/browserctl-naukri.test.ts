@@ -13,6 +13,7 @@ import { upsertPerson } from '../src/outreach/people.js';
 import { bumpFailures, failKey, FAILURE_LIMIT, threadStateKey } from '../src/naukri/sendState.js';
 import { armNaukriApply, armNaukriMessage } from '../src/browserctl/arm/naukri.js';
 import { JOB_ID, JOB_URL, LIVE_ENV, MSG, NOW, THREAD, THREAD_URL, jobHtml, nkWorld, refOf, threadHtml, type NkWorld } from './helpers/nkWorld.js';
+const DRY_ENV: Record<string, string> = { JOBBER_DRY_RUN: 'true' };
 
 const worlds: NkWorld[] = [];
 const mk = (o: Parameters<typeof nkWorld>[0]) => { const w = nkWorld(o); worlds.push(w); return w; };
@@ -132,7 +133,7 @@ describe('naukri engine: type guard (the old naukri_type was ungated)', () => {
     const box = refOf(await w.snap(), 'searchbox', 'Search jobs');
     haltPlatform(w.db, 'naukri', 'test halt', NOW);
     expect((await w.engine.type(box, 'react')).code).toBe('halted');
-    const d = mk({ html: threadHtml({ extra: search }), env: {} });
+    const d = mk({ html: threadHtml({ extra: search }), env: DRY_ENV });
     const dbox = refOf(await d.snap(), 'searchbox', 'Search jobs');
     expect((await d.engine.type(dbox, 'react')).ok).toBe(true);
     expect(listDryRun(d.db).map((x) => x.action)).toContain('naukri_type');
@@ -273,7 +274,7 @@ describe('armNaukriMessage: gates 1 to 10 of the old send', () => {
   });
 
   it('dry run arms a dry intent, records, reserves no touch', async () => {
-    const w = mk({ html: threadHtml(), env: {} });
+    const w = mk({ html: threadHtml(), env: DRY_ENV });
     const a = await w.armSend();
     expect(a).toMatchObject({ status: 'armed', dry_run: true });
     expect(touches(w)).toEqual([]);
@@ -415,7 +416,7 @@ describe('naukri_send commit path', () => {
   });
 
   it('dry run records and does not click, consumes nothing, leaves no touch', async () => {
-    const w = mk({ html: threadHtml({ text: '' }), env: {} });
+    const w = mk({ html: threadHtml({ text: '' }), env: DRY_ENV });
     react(w);
     const send = await armAndType(w);
     const r = await w.engine.click(send);
@@ -512,7 +513,7 @@ describe('armNaukriApply', () => {
   });
 
   it('dry run arms a dry intent and records', async () => {
-    const w = mk({ html: jobHtml(), url: JOB_URL, env: {} });
+    const w = mk({ html: jobHtml(), url: JOB_URL, env: DRY_ENV });
     expect(await w.armApply()).toMatchObject({ status: 'armed', dry_run: true });
     expect(listDryRun(w.db).map((x) => x.action)).toContain('naukri_arm_apply');
   });
@@ -600,7 +601,7 @@ describe('naukri_apply commit path and the chatbot', () => {
   });
 
   it('dry run records, does not click, consumes nothing', async () => {
-    const w = mk({ html: jobHtml(), url: JOB_URL, env: {} });
+    const w = mk({ html: jobHtml(), url: JOB_URL, env: DRY_ENV });
     expect((await w.armApply()).dry_run).toBe(true);
     const r = await w.engine.click(refOf(await w.snap(), 'button', 'Apply'));
     expect(r).toMatchObject({ ok: true, status: 'dry_run' });

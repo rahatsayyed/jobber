@@ -19,7 +19,7 @@ const STATE = { cookies: [{ name: 'li_at', value: 'SENTINEL-NOT-REAL', domain: '
 const fx = (n: string) => readFileSync(new URL(`./fixtures/linkedin/${n}`, import.meta.url), 'utf8');
 const SEARCH = 'https://www.linkedin.com/search/results/people/?keywords=Acme';
 const SP = '/search/results/people/';
-const LIVE = { LINKEDIN_DRY_RUN: 'false', SCHEDULER_DRY_RUN: 'false' };
+const LIVE = { JOBBER_DRY_RUN: 'false' };
 let dir: string;
 const runtimes: Runtime[] = [];
 
@@ -164,7 +164,7 @@ describe('findProfiles', () => {
     runtimes.push(rt);
     const classifier: ClassifierPort = { classify: vi.fn(async () => ({ malicious: false, score: 0, truncated: false })) };
     const handlers = buildHandlers({
-      db, rt, env: { LINKEDIN_DRY_RUN: 'true' }, now: () => new Date('2026-10-14T10:00:00Z'),
+      db, rt, env: { JOBBER_DRY_RUN: 'true' }, now: () => new Date('2026-10-14T10:00:00Z'),
       factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
       sessionPath: path.join(dir, 'state.json'), classifier,
     });

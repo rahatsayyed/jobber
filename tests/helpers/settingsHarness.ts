@@ -33,7 +33,7 @@ export interface SettingsSetup {
 
 export async function setupSettings(over: Partial<SettingsDeps> = {}): Promise<SettingsSetup> {
   const fs = memFs({
-    [ENV_PATH]: fixtureText('env.fixture'),
+    [ENV_PATH]: fixtureText('env.fixture') + 'JOBBER_DRY_RUN=true\n',
     [`${ROOT}/config/portals.json`]: fixtureText('portals.json'),
     [`${ROOT}/config/target-regions.json`]: fixtureText('target-regions.json'),
     [`${ROOT}/config/deal-breakers.json`]: fixtureText('deal-breakers.json'),

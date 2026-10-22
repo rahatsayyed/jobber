@@ -65,15 +65,15 @@ const PASS_KEYS = new Set([
 const PASS_PREFIXES = ['PACING_', 'COOLDOWN_', 'CADENCE_', 'LINKEDIN_MAX_', 'NAUKRI_MAX_', 'CLASSIFIER_'];
 
 /**
- * A wake is dry unless every flag explicitly says live; any dry flag wins and unset means dry.
+ * A wake is dry only when JOBBER_DRY_RUN is `1` or `true`; unset or anything else is live.
  */
 export function wakeIsDry(env: NodeJS.ProcessEnv): boolean {
-  return isDryRun(env, { linkedin: true });
+  return isDryRun(env);
 }
 
 /**
  * The explicit child env. JOBBER_* and SCHEDULER_* are reserved by the launcher (buildRunnerArgv
- * emits JOBBER_DRY_RUN and SCHEDULER_DRY_RUN from dryRun); LINKEDIN_DRY_RUN is passed here.
+ * emits JOBBER_DRY_RUN from dryRun), so nothing dry-run related is put in this env.
  */
 export function childEnv(env: NodeJS.ProcessEnv, dry: boolean): Record<string, string> {
   const out: Record<string, string> = {};
@@ -81,7 +81,7 @@ export function childEnv(env: NodeJS.ProcessEnv, dry: boolean): Record<string, s
     if (typeof v !== 'string' || /[\r\n\0]/.test(v)) continue;
     if (PASS_KEYS.has(k) || PASS_PREFIXES.some((p) => k.startsWith(p))) out[k] = v;
   }
-  out.LINKEDIN_DRY_RUN = dry ? 'true' : 'false';
+  void dry; // the master flag is emitted last by buildRunnerArgv from the plan's dryRun; it is a reserved key here
   return out;
 }
 

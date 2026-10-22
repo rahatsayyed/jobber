@@ -13,7 +13,7 @@ const STATE_MAX_CHARS = 12000;
 
 export async function screenText(raw: string, purpose: 'read' | 'send', deps: ApplierDeps, maxChars = STATE_MAX_CHARS): Promise<ScreenVerdict> {
   const env = envOf(deps);
-  return screenUntrusted(raw, purpose, { env, dryRun: isDryRun(env, { web: true }), classifier: deps.classifier, maxChars });
+  return screenUntrusted(raw, purpose, { env, dryRun: isDryRun(env), classifier: deps.classifier, maxChars });
 }
 
 /** The model's compact state, or the screen verdict that withheld it. */

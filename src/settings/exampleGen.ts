@@ -16,7 +16,7 @@ export const SECTION_BANNERS: Record<SectionId, SectionBanner> = {
   'credentials-sources': { title: 'Credentials: job sources' },
   'contact-finding': { title: 'Credentials: contact finding (company domain and email lookup)' },
   'credentials-gmail': { title: 'Credentials: Gmail (cold email send and reply reading)' },
-  safety: { title: 'Safety and dry-run flags', lines: ['Any dry flag wins, and an unset flag counts as dry. Only the owner flips these.'] },
+  safety: { title: 'Safety and dry-run flags', lines: ['JOBBER_DRY_RUN is the only dry-run flag. true = dry run, false or removed = LIVE. Only the owner flips it.'] },
   classifier: { title: 'Classifier (prompt-injection screen for LinkedIn and Naukri text)' },
   limits: {
     title: 'Limits (daily, weekly, per company, pacing, cooldowns)',

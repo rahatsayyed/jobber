@@ -33,7 +33,7 @@ async function ready(o: HarnessOpts = {}): Promise<ApplierHarness> {
 
 describe('apply_submit', () => {
   it('dry', async () => {
-    const x = await ready({ env: { APPLY_DRY_RUN: 'true' } });
+    const x = await ready({ env: { JOBBER_DRY_RUN: 'true' } });
     // dry run: fills above were dry too, so the form is still empty; dry wins before any check
     expect(await handleSubmit({}, x.deps)).toMatchObject({ status: 'dry_run' });
     expect(clicks(x)).toBe(0);

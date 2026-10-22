@@ -15,10 +15,9 @@ live-verified" in `CLAUDE.md`.
 
 ## How to read the mode
 
-Dry run wins. Any dry flag on, or a flag unset, means actions are recorded in
-`dry_run_actions` and not performed (`src/safety/dryRun.ts`). Live needs
-`SCHEDULER_DRY_RUN=false`, and for LinkedIn paths also `LINKEDIN_DRY_RUN=false`. The
-email path also honours the Gmail dry flag, JOBBER_DRY_RUN (see `CLAUDE.md` Safety rule 15; it is not listed in `.env.example`).
+Dry run wins. `JOBBER_DRY_RUN=true` (or `1`) means actions are recorded in
+`dry_run_actions` and not performed (`src/safety/dryRun.ts`). Live means the flag is `false` or
+removed: an unset flag runs LIVE. One flag covers every platform and the Gmail hook (see `CLAUDE.md` Safety rule 15).
 
 ```bash
 npm run up -- --status
@@ -62,7 +61,7 @@ reason `killed`, and the launcher itself exits 4).
 - `data.sqlite` backed up outside the repo.
 
 **Flags (names only)**
-- `SCHEDULER_DRY_RUN` set to anything other than `false`, `LINKEDIN_DRY_RUN` the same.
+- `JOBBER_DRY_RUN=true`.
 - `LAYOUT_ENFORCE` left at `warn`.
 - Keep the permission set at `read_only` (`npm run permissions -- --status`).
 
@@ -111,7 +110,7 @@ Real sessions for reads; sends stay dry.
 - `[owner]` Claude Code and the ccgram windows fully restarted after any code change.
 
 **Flags (names only)**
-- Dry flags stay on: `SCHEDULER_DRY_RUN`, `LINKEDIN_DRY_RUN`, `WEB_DRY_RUN`, `APPLY_DRY_RUN`, `SCOUT_DRY_RUN`.
+- The dry flag stays on: `JOBBER_DRY_RUN=true`.
 - NAUKRI_HEADLESS per `CLAUDE.md` Naukri section (the headless recipe passed from a home IP
   only).
 - `LAYOUT_ENFORCE` still `warn`.
@@ -128,7 +127,7 @@ Expected: doctor has no `fail`, `working` shows queue, halts and funnel, `layout
 each platform has observed so far.
 
 Try one supervised canary read-only pass: a supervised forced wake (`./run-hunt.sh`, the
-`/runhunt` shim) with `LINKEDIN_DRY_RUN` on, then read the first resumes, emails and ATS coverage lines yourself.
+`/runhunt` shim) with `JOBBER_DRY_RUN=true`, then read the first resumes, emails and ATS coverage lines yourself.
 The review step (`review-application` to `resume.apply_review_edits`) has never run end to end
 with a real model: `unverified`.
 
@@ -150,7 +149,7 @@ with a real model: `unverified`.
 `CLAUDE.md` "Layout memory and platform operators" (the 8B build did not perform it).
 
 1. Fully restart Claude Code. Check the store is ignored: `git check-ignore .jobber/layout/linkedin.json`.
-2. Keep `LINKEDIN_DRY_RUN`, `SCHEDULER_DRY_RUN` on and `LAYOUT_ENFORCE=warn`.
+2. Keep `JOBBER_DRY_RUN=true` and `LAYOUT_ENFORCE=warn`.
 3. Trigger two scheduler wakes (two distinct run ids) while logged in, covering a LinkedIn
    profile and search page and, for Naukri, a search page and a chatbot or thread page.
 4. Check progress.
@@ -185,8 +184,8 @@ fakes only. Keep every apply and web flag dry until the step that says otherwise
    feed only after you read the site's terms of use and robots.txt, one at a time
    ([sources-and-platforms.md](sources-and-platforms.md)). Force one failure (unset
    `ADZUNA_APP_KEY` on a copy of `.env`) and confirm the table shows an error row.
-2. LinkedIn discover: with the classifier fitted, one supervised wake with `LINKEDIN_DRY_RUN` set to
-   exactly `false`; confirm new jobs from the `linkedin-jobs` and `linkedin-posts` sources, no
+2. LinkedIn discover: with the classifier fitted, one supervised wake with `JOBBER_DRY_RUN` set to
+   `false`; confirm new jobs from the `linkedin-jobs` and `linkedin-posts` sources, no
    checkpoint halt, and `layout=` verdicts learned (the layout learning run above covers the new page
    kinds).
 3. Fallback and providers: break one board slug on a copy of `config/portals.json`; confirm a queued
@@ -194,9 +193,8 @@ fakes only. Keep every apply and web flag dry until the step that says otherwise
    provider that reaches `validated`. Review it with `npm run providers -- show <id>` before any
    `approve`.
 4. Browser apply: follow the owner live checks in [apply.md](apply.md) in order (hold mode on
-   Greenhouse, Lever and Ashby, then one submit, then account walls and blocks). Flip `WEB_DRY_RUN`,
-   `APPLY_DRY_RUN` and `SCOUT_DRY_RUN` to exactly `false` one at a time, and `APPLY_SUBMIT_MODE` to
-   `submit` last.
+   Greenhouse, Lever and Ashby, then one submit, then account walls and blocks). Flip `JOBBER_DRY_RUN` to `false` only for
+   the supervised check, and `APPLY_SUBMIT_MODE` to `submit` last.
 5. Search: confirm browser dork results for five companies; force a block and confirm the fall back to
    Serper under its budget; `npm run doctor` shows usage.
 
@@ -218,11 +216,9 @@ Real sends under temporary low ceilings, supervised.
 - Gmail OAuth done (`docs/gmail-mcp-setup.md`). Sending rules: see `CLAUDE.md` "Safety".
 
 **Flags (names only)**
-- `[owner]` `SCHEDULER_DRY_RUN` set to exactly `false`. Set `LINKEDIN_DRY_RUN` to exactly
-  `false` only when you are ready for a LinkedIn canary. One flag at a time.
-- [owner] JOBBER_DRY_RUN (the Gmail dry flag): while it is `1`, Gmail send stays blocked (`src/safety/dryRun.ts`
-  and the kill-switch hook under `.claude/hooks`). Clear it yourself for a real email. It is
-  absent from `.env.example`, so add it deliberately.
+- `[owner]` `JOBBER_DRY_RUN` set to `false` (or the line removed). It is the only dry flag: while it is
+  `true` or `1`, nothing is sent and Gmail send stays blocked (`src/safety/dryRun.ts` and the
+  kill-switch hook under `.claude/hooks`). Keep the ceilings low for the canary.
 - `FOLLOWUPS_AUTONOMOUS` stays `false`.
 
 **Commands**
@@ -253,7 +249,7 @@ against live pages: the screenshot flags are on by default (set `LINKEDIN_SCREEN
 
 **Stop and go back to Phase 2 if** any send went to the wrong person, any text broke a gate
 you expected to catch it, or a checkpoint or CAPTCHA appeared. Run
-`npm run jobber:control -- stop <reason>` first, then flip the dry flags back.
+`npm run jobber:control -- stop <reason>` first, then set `JOBBER_DRY_RUN=true` again.
 
 ## Phase 4: Mac, autonomous
 
@@ -323,7 +319,7 @@ The 3 month threshold is an estimate, not measured; use your judgement.
 
 Go back to dry before anything live.
 
-1. Set the dry flags on (`SCHEDULER_DRY_RUN`, `LINKEDIN_DRY_RUN`, `WEB_DRY_RUN`, `APPLY_DRY_RUN`, `SCOUT_DRY_RUN`) and run
+1. Set the dry flag on (`JOBBER_DRY_RUN=true`) and run
    `npm run jobber:control -- status`.
 2. `[owner]` Re-save sessions if expired (`npm run linkedin:login`,
    `npm run naukri:login`). A dead session shows as `logged_out` in `layout=`.

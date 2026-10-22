@@ -167,8 +167,8 @@ npm run doctor
 
 Expected: the scheduler checks are `scheduler: tmux >= 3.2`, `lock dir writable`,
 `STOP file absent or reported`, `dry run state`, `units generated` and `agents: worker tool lint
-ok`. `units generated` shows skip until `npm run scheduler:units` has run. `dry run state` is a
-warning when the scheduler is live; that is information, not a fault.
+ok`. `units generated` shows skip until `npm run scheduler:units` has run. `dry run mode` prints `MODE: DRY RUN` or `MODE: LIVE` and is a
+warning when it is live (or `JOBBER_DRY_RUN` is unset, which runs live); that is information, not a fault.
 
 To run exactly one wake by hand (it forces a wake even before the planned time):
 
@@ -181,9 +181,9 @@ sent. Only run it when you mean it and the dry flags are what you want.
 
 ## Start in dry mode first
 
-The scheduler is dry unless every flag says otherwise. `.env.example` ships
-`SCHEDULER_DRY_RUN=true`. A LinkedIn path also needs `LINKEDIN_DRY_RUN=false` to go live, and
-the Gmail dry flag (see the dry run rules in `CLAUDE.md`, "Outreach safety layers") must not be on. Leave all of them dry when you first install the unit, watch
+The scheduler is dry only while `JOBBER_DRY_RUN` is `true` or `1`; an unset flag runs LIVE.
+`.env.example` ships `JOBBER_DRY_RUN=true`, and that one flag covers every platform and the Gmail
+hook (see the dry run rules in `CLAUDE.md`, "Outreach safety layers"). Leave it dry when you first install the unit, watch
 `npm run scheduler -- --status` and `npm run dry-run:report`, and only then follow the phases in
 [rollout.md](./rollout.md).
 Dry flags are changed by the owner only, see `CLAUDE.md` "Safety" rule 15. `npm run up -- --status`

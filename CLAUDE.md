@@ -455,8 +455,8 @@ stage that sends email; cold emails then follow-ups under the shared daily `send
 Applying is browser apply through the `applier` MCP, driven by the `apply-operator` in the `apply`
 stage of a wake (the last step of "Running a wake"). The scripted per-platform apply tools, the router
 and their hybrid Claude fallbacks and ATS bootstrap are gone. Everything about it ships OFF or
-dry (see "Dry run" in "Outreach safety layers"): a real submit needs `WEB_DRY_RUN`, `APPLY_DRY_RUN`
-and `SCOUT_DRY_RUN` all `false` plus `SCHEDULER_DRY_RUN=false`, and `APPLY_SUBMIT_MODE=submit`.
+dry (see "Dry run" in "Outreach safety layers"): a real submit needs `JOBBER_DRY_RUN` not
+`1` or `true` (the one master dry-run flag; unset is live), and `APPLY_SUBMIT_MODE=submit`.
 Owner guide: `docs/apply.md`.
 
 **What can be applied to.** The apply platform of a queue row is decided in code, never by the model:
@@ -497,7 +497,7 @@ application. Page loads are paced by `WEB_MIN_GAP_SEC`, `WEB_MAX_CALLS_PER_JOB`,
 
 **Accounts.** The operator never creates an account on its own: `site_signup` works only when
 `APPLY_ALLOW_ACCOUNT_CREATION=true` (ships `false`, normally refuses with `signup_disabled` and the job
-is escalated as `account_needed`), every web dry-run flag is `false` and `SITE_MAX_ACCOUNTS_PER_DAY`
+is escalated as `account_needed`), `JOBBER_DRY_RUN` is not on and `SITE_MAX_ACCOUNTS_PER_DAY`
 has room. Credentials live in `secrets/site-accounts.json` (mode 600 in a mode 700 directory, one
 unique code-generated password per host, read only inside the MCP process and never returned by a
 tool); the owner manages them with `npm run site:account` (`add`, `list`, `remove`, `status`; the agent
@@ -814,7 +814,7 @@ prints the summary. `npm run doctor` checks `layout_store`, `layout_age`, `layou
 **Supervised learning run (owner-only; NOT performed in this build; now only informs telemetry).**
 1. Fully restart Claude Code (new agents, new MCP tool names, removed workers); check
    `git check-ignore .jobber/layout/linkedin.json`.
-2. Dry-run flags (`LINKEDIN_DRY_RUN=true`, `SCHEDULER_DRY_RUN=true`) and `LAYOUT_ENFORCE=warn`.
+2. Dry-run flag (`JOBBER_DRY_RUN=true`) and `LAYOUT_ENFORCE=warn`.
    Trigger two scheduler wakes (two run ids) while logged in, covering a profile, a search page,
    and for Naukri a search and a chatbot or thread page.
 3. `npm run layout -- status`: each visited kind should be `stable`; `learn <platform>` shows
@@ -907,22 +907,25 @@ gates and that the engine re-verifies against the live page. Layers, outermost f
    `apply_choose`, `apply_upload`, `apply_next`, `apply_submit`, `apply_propose_recipe`, `site_login`,
    `site_signup`, `site_open_link`), `linkedin_(click|type|press_key|click_at|arm_send)`, `linkedin_search_jobs`, `linkedin_search_posts`,
    `naukri_(click|type|press_key|click_at|arm_send|arm_apply)`, `naukri_discover` and every `scout` tool); the same hook
-   denies `gmail.send_email` when `JOBBER_DRY_RUN=1`; the launcher (`scripts/run-claude.ts`) exits 4 when STOP or `JOBBER_KILL` is set, and a wake (also a
+   denies `gmail.send_email` when `JOBBER_DRY_RUN` is dry (`1` or `true`, same parse as `isDryRun`); the launcher (`scripts/run-claude.ts`) exits 4 when STOP or `JOBBER_KILL` is set, and a wake (also a
    forced one from `./run-hunt.sh`) is skipped with reason `killed`. Not covered: `halt_flags` rows are not
    read by the hook (the typed tools read them); a tool call already executing when STOP is
    written completes; hook propagation into subagents is unverified in real `claude`;
    interactive sessions outside this project directory; sends done through Bash; the Gmail dry
-   run covers only `JOBBER_DRY_RUN=1` (not `SCHEDULER_DRY_RUN` or `LINKEDIN_DRY_RUN`);
+   run is the same single `JOBBER_DRY_RUN` flag;
    `JOBBER_KILL` is not in the `outreach_wake` profile's `env_keys`, so inside restricted runs
    the hook's `JOBBER_KILL` path is inert (the STOP file and the launcher cover it).
-7. **Dry run**: `src/safety/dryRun.ts` `isDryRun`: ANY dry flag wins and unset means dry. Live
-   needs `JOBBER_DRY_RUN` not `1`, `SCHEDULER_DRY_RUN=false`, for LinkedIn paths also
-   `LINKEDIN_DRY_RUN=false`, and for web actions (company sites and ATS pages: scout, applier, login,
-   sign-up, upload, typing, submit) also `WEB_DRY_RUN`, `APPLY_DRY_RUN` and `SCOUT_DRY_RUN` all `false`. Dry actions are recorded in `dry_run_actions`
+7. **Dry run**: ONE master flag, `JOBBER_DRY_RUN` (`src/safety/dryRun.ts` `isDryRun`, copied into the
+   hook `.claude/hooks/kill-switch.cjs`, parity test `tests/dryrun-parity.test.ts`). Dry iff the trimmed,
+   lowercased value is `1` or `true`; unset, empty, `false`, `0` or anything else is LIVE (the default).
+   It covers the scheduler, LinkedIn, Naukri, scout, applier, web actions (login, sign-up, upload, typing,
+   submit) and the Gmail send hook. `.env.example` ships `JOBBER_DRY_RUN=true`. The old
+   `SCHEDULER_DRY_RUN`, `LINKEDIN_DRY_RUN`, `WEB_DRY_RUN`, `APPLY_DRY_RUN` and `SCOUT_DRY_RUN` keys are
+   ignored (the doctor warns when `.env` still has one). Dry actions are recorded in `dry_run_actions`
    (`npm run dry-run:report`), redacted and clamped.
 
-Not covered by code: `gmail.send_email` has the kill-switch and `JOBBER_DRY_RUN=1` hook only (no
-`halt_flags` read; the `mail-operator` "dry run" rule for other dry flags is prompt-only). The
+Not covered by code: `gmail.send_email` has the kill-switch and `JOBBER_DRY_RUN` hook only (no
+`halt_flags` read). The
 browserctl actions do check halts and the kill switch themselves, but the semantic guard is a word
 list over accessible names (English plus a short extension list), so a control it mis-reads is a
 residual risk; it fails closed for unknown dialog-footer and submit buttons. See layer 6 for the full
@@ -954,9 +957,9 @@ ranges, explanations; a test fails on drift), shown by the setup `limits` step. 
 values into docs.
 
 Rollout (each phase gated on the previous; the owner runs these): Phase 1 "Mac, dry run" (48
-hours, covering at least one night, `SCHEDULER_DRY_RUN=true`, review `dry-run:report`, test the
+hours, covering at least one night, `JOBBER_DRY_RUN=true`, review `dry-run:report`, test the
 kill switch first); Phase 2 "Mac, read-only live" (still dry flags, real sessions for reads);
-Phase 3 "Mac, canary sends" (`SCHEDULER_DRY_RUN=false`, temporary low ceilings, supervision);
+Phase 3 "Mac, canary sends" (`JOBBER_DRY_RUN=false`, temporary low ceilings, supervision);
 Phase 4 "Mac, autonomous" (ceilings raised one at a time, 5+ days unattended); Phase 5 "VPS
 cutover" (re-check Naukri headless from that IP, recreate sessions, repeat phases 1 and 2
 briefly: 24 hours dry, a day read-only). Plan:
@@ -1125,8 +1128,8 @@ is not measured by it.
     career-ops feed only after you reviewed its terms of use and robots.txt: set `enabled: true` on its
     row in `config/platforms.json`, one at a time. Review generated providers with
     `npm run providers -- list` and `show <id>` before any `approve <id>`.
-11. Browser apply (plan 8G): follow the owner live checks in `docs/apply.md`. Keep `WEB_DRY_RUN`,
-    `APPLY_DRY_RUN` and `SCOUT_DRY_RUN` true and `APPLY_SUBMIT_MODE=hold` until a supervised check, and
+11. Browser apply (plan 8G): follow the owner live checks in `docs/apply.md`. Keep `JOBBER_DRY_RUN`
+    `true` and `APPLY_SUBMIT_MODE=hold` until a supervised check, and
     keep `APPLY_ALLOW_ACCOUNT_CREATION`, `SCOUT_ALLOW_SIGNUP`, `APPLY_ALLOW_UNKNOWN_HOSTS` and
     `APPLY_LINKEDIN_EASY` off until you decide otherwise.
 12. Sessions: run `npm run linkedin:login` and `npm run naukri:login` (neither takes a flag), then
@@ -1140,7 +1143,7 @@ is not measured by it.
     `linkedin_snapshot` on a profile, a search page and the messaging page, the same for Naukri (a job
     page and a thread), and a scout read of one custom site, confirming the snapshot shows the
     Connect, Message, Send and Apply controls with sensible names; (e) the first supervised canary
-    (one hand-picked profile, low ceilings, `LINKEDIN_DRY_RUN=false` only for that session) before any
+    (one hand-picked profile, low ceilings, `JOBBER_DRY_RUN=false` only for that session) before any
     unattended wake, reading the `dry_run_actions` report first.
 
 Board discovery known limits: the Greenhouse/Lever/Ashby response shapes are not live-verified
@@ -1168,7 +1171,7 @@ and the Indian and Gulf job boards.
   unmeasured (`npm run classifier:bench`), and the default profile is English-only. Until the owner
   has fetched, pinned and fitted a model and set `CLASSIFIER_MODEL`, live reads and sends are
   refused by design; `npm run doctor` check `classifier_wired` verifies that every surface calls
-  the screen and that the profile is pinned and fitted (a warn while `SCHEDULER_DRY_RUN` is not
+  the screen and that the profile is pinned and fitted (a warn while `JOBBER_DRY_RUN` is dry, i.e. not
   `false`, a fail when it is) and runs a smoke screen.
 - The browserctl engine (`src/browserctl`: snapshot walker, semantic guard, arm and commit path, the
   screenshot and click_at tools) is covered by hermetic tests with fake pages only; no live LinkedIn,
@@ -1315,10 +1318,9 @@ together if one ever appears.
     "Outreach safety layers" layer 6 for what is not covered. Never clear a halt, delete STOP or
     flip a dry-run flag on your own; only the owner does (`jobber:control resume`,
     `linkedin:clear-halt`).
-15. Dry run takes precedence: if ANY dry flag is on (`JOBBER_DRY_RUN=1`, `SCHEDULER_DRY_RUN` not
-    exactly `false`, for LinkedIn `LINKEDIN_DRY_RUN` not exactly `false`, or for web actions any of
-    `WEB_DRY_RUN`, `APPLY_DRY_RUN`, `SCOUT_DRY_RUN` not exactly `false`) or a flag is unset,
-    the action is recorded in `dry_run_actions`, not performed. Never reason around it.
+15. Dry run takes precedence: if `JOBBER_DRY_RUN` is `1` or `true` (any case, trimmed; the one
+    master flag, unset means LIVE), the action is recorded in `dry_run_actions`, not performed. The
+    retired per-area `*_DRY_RUN` keys are ignored. Never reason around it.
 16. AUTO_UPDATE and backup never widen access: an update never changes permission sets or the
     `.claude/settings.local.json` allow list, applies only signed fast-forward commits (unless
     the owner set `AUTO_UPDATE_REQUIRE_SIGNED=false`) and rolls back on any failed step; backups

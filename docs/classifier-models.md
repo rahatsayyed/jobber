@@ -18,7 +18,7 @@ Rules that matter in practice:
 - **Exactly one classifier per process.** `CLASSIFIER_MODEL` picks the profile and it loads once. There is no fallback chain. Changing profile needs a restart of every MCP server and session that loaded the old one.
 - **`CLASSIFIER_MODEL` unset fails closed.** There is no implicit default; `resolveProfile` and the selector refuse with a message listing the known profile ids.
 - **The shipped default is already pinned and fitted.** The registry carries sha256 digests for every file and a fitted threshold for `protectai-deberta-v3-base-v2`, so for it only fetch, verify and setting `CLASSIFIER_MODEL` remain. Any other or custom profile starts unpinned (some files carry only a sha1 or no hash) until the owner runs `npm run models -- pin <id>`, and the loader refuses until it is pinned. `models pin` is idempotent: when every digest is present and matches it writes nothing and says "already pinned"; when it must write, it changes only the missing values and keeps the file's formatting.
-- **An unfitted profile is refused in send paths.** It only runs, at a placeholder threshold of 0.5, in dry runs (`JOBBER_DRY_RUN=1`). Fit it with `npm run classifier:fit` first.
+- **An unfitted profile is refused in send paths.** It only runs, at a placeholder threshold of 0.5, in dry runs (`JOBBER_DRY_RUN=true`). Fit it with `npm run classifier:fit` first.
 - **A gated profile is never fetched** by this project.
 - **Downloads** come only from `huggingface.co` / `hf.co` hosts (including subdomains), over https, at the pinned revision, with no token.
 
@@ -84,4 +84,4 @@ Reading sizes and hashes: open `https://huggingface.co/api/models/<repo>?blobs=t
 - Tokenizer loading and the ONNX input names (`input_ids`, `attention_mask`) are unverified until the first real model load.
 - Non-LFS files are sha1-pinned only until `models pin` runs.
 - A fit is bound only to the model file's sha256, not to the other scoring-relevant profile fields (max_tokens, stride, max_chunks, special_tokens, labels, inputs/output, tokenizer and config digests). After changing any of them the owner must refit; the loader does not detect it.
-- Dry run is the env var `JOBBER_DRY_RUN=1` alone, and nothing in `src` makes such a process non-sending. Never set `JOBBER_DRY_RUN=1` in a process that can send; the unfitted-at-0.5 path is only as safe as that.
+- Dry run is the env var `JOBBER_DRY_RUN` (`1` or `true`) alone, and nothing in `src` makes such a process non-sending. Never set `JOBBER_DRY_RUN=true` in a process that can send; the unfitted-at-0.5 path is only as safe as that.

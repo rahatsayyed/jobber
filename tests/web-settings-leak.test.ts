@@ -117,7 +117,7 @@ describe('settings API leak scan', () => {
     }
     expect(env.body).toContain('UNKNOWN_FIXTURE_KEY');
     expect(env.body).not.toContain('keep-me-as-is');
-    expect(J(env).unknownKeys).toEqual(['ANOTHER_UNKNOWN', 'UNKNOWN_FIXTURE_KEY']);
+    expect(J(env).unknownKeys).toEqual(['ANOTHER_UNKNOWN', 'JOBBER_DRY_RUN', 'UNKNOWN_FIXTURE_KEY']);
   });
 
   it('a registered secret is masked even if it shows up in a file response', async () => {

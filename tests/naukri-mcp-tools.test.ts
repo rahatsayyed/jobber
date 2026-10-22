@@ -27,7 +27,7 @@ import { loadLayoutConfig } from '../src/layout/config.js';
 
 const fx = (n: string) => JSON.parse(readFileSync(path.join(__dirname, 'fixtures', 'naukri', n), 'utf8'));
 const JOB_URL = 'https://www.naukri.com/job-listings-software-engineer-netapp-bengaluru-5-to-8-years-081026050522';
-const LIVE = { SCHEDULER_DRY_RUN: 'false' } as NodeJS.ProcessEnv;
+const LIVE = { JOBBER_DRY_RUN: 'false' } as NodeJS.ProcessEnv;
 
 function snap(over: Partial<RawSnapshot> = {}): RawSnapshot {
   return {

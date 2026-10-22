@@ -32,7 +32,7 @@ import { JOB_ID, JOB_URL, MSG, THREAD, THREAD_URL, jobHtml, refOf, threadHtml } 
 import { makeNkLauncher } from './helpers/nkLauncher.js';
 
 const NOW = () => new Date('2026-10-14T10:00:00Z');
-const LIVE = { SCHEDULER_DRY_RUN: 'false', JOBBER_DRY_RUN: '0' } as NodeJS.ProcessEnv;
+const LIVE = { JOBBER_DRY_RUN: 'false' } as NodeJS.ProcessEnv;
 const benignScreen = async (t: string) => ({ blocked: false, unscreened: false, text: t, flags: [], code: 'ok' as const });
 
 function snap(over: Partial<RawSnapshot> = {}): RawSnapshot {
@@ -288,14 +288,14 @@ describe('arm tools through the MCP handlers', () => {
   });
 
   it('arm_send refuses a cold thread, in dry runs too, before any send', async () => {
-    const { h, d, pid } = sendWorld({} as NodeJS.ProcessEnv);
+    const { h, d, pid } = sendWorld({ JOBBER_DRY_RUN: 'true' } as NodeJS.ProcessEnv);
     const r = head(await naukriArmSend({ person_id: pid, thread_ref: 'cold-thread', text: MSG, kind: 'role_ask' }, d));
     expect(r).toMatchObject({ status: 'refused', code: 'unverified_thread' });
     expect(h.clicks).toEqual([]);
   });
 
   it('dry run: arm, type and click record and send nothing', async () => {
-    const { h, d, pid } = sendWorld({} as NodeJS.ProcessEnv);
+    const { h, d, pid } = sendWorld({ JOBBER_DRY_RUN: 'true' } as NodeJS.ProcessEnv);
     expect(head(await naukriArmSend({ person_id: pid, thread_ref: THREAD, text: MSG, kind: 'role_ask' }, d))).toMatchObject({ status: 'armed', dry_run: true });
     const snap1 = await naukriSnapshot(d);
     await naukriType({ ref: refOf(state(snap1), 'textbox', 'Type a message'), text: MSG }, d);

@@ -9,6 +9,7 @@ import { loadClassifier } from '../safety/classifierModel.js';
 import { loadRegistry, resolveProfile, type ClassifierProfile, type ClassifierRegistry } from '../safety/classifierRegistry.js';
 import { verifyProfile, type VerifyReport } from '../safety/modelFetch.js';
 import { SMOKE_BENIGN, SMOKE_INJECTION } from '../safety/smoke.js';
+import { isDryRun } from '../safety/dryRun.js';
 import { screenUntrusted, SCREENED_SURFACES, callsScreen, type ScreenVerdict } from '../safety/screen.js';
 import { loadProfiles } from './runner.js';
 import { authDbPathFromEnv, DEFAULT_GOOGLE_KEYS_PATH, isLoopbackBind, resolveAuthMode, validateRunnerConfig } from '../web/env.js';
@@ -231,7 +232,7 @@ export function restrictedChecks(deps: Partial<RestrictedDeps> = {}): Check[] {
       title: 'classifier wired into every untrusted-text surface',
       async run(ctx) {
         const env = mergedEnv(ctx);
-        const live = env.SCHEDULER_DRY_RUN === 'false';
+        const live = !isDryRun(env);
         // 2. every surface file must call the screen
         const bad: string[] = [];
         for (const s of SCREENED_SURFACES) {

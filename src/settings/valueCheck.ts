@@ -98,7 +98,7 @@ export function validateCross(values: Record<string, string>, catalog: readonly 
   return validatePairs(scoped);
 }
 
-const isLive = (v: string | undefined): boolean => v === 'true' || v === '1';
+const isLive = (v: string | undefined): boolean => v !== undefined && ['true', '1'].includes(v.trim().toLowerCase());
 
 // True when the change from `before` to `after` loosens a safety control, per spec.weakens.
 // A missing/blank value counts as the spec default.

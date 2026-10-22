@@ -14,6 +14,7 @@ import { fakeBcPage } from './helpers/fakeBc.js';
 import { IntentStore } from '../src/browserctl/intent.js';
 import { profileHtml, URL_ } from './helpers/bcWorld.js';
 import { DEFAULT_STYLE_CONFIG } from '../src/safety/styleGate.js';
+const DRY_ENV: Record<string, string> = { JOBBER_DRY_RUN: 'true' };
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(path.join(tmpdir(), 'layout-rt-')); });
@@ -198,7 +199,7 @@ describe('observer wiring in the MCP (engine telemetry)', () => {
     const page = fakeBcPage(profileHtml({ extra: `<p>${'Experience and projects. '.repeat(12)}</p>` }), URL_);
     const rt = { page: () => ({}), touch: () => undefined, discard: async () => true, close: async () => true, layout } as unknown as Runtime;
     const handlers = buildHandlers({
-      db, rt, env: {}, now: () => NOW, layoutCfg: cfg(), intents: new IntentStore(),
+      db, rt, env: DRY_ENV, now: () => NOW, layoutCfg: cfg(), intents: new IntentStore(),
       factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
       bcPage: () => page, paceMs: () => 0, settleMs: 0,
     });

@@ -90,7 +90,7 @@ describe('contacts browser dork', () => {
   });
 
   it('dry run: a search is a read, so the dork still runs (same as scout_search)', async () => {
-    const s = setup('serp-ok.html', { SCHEDULER_DRY_RUN: 'true', WEB_DRY_RUN: 'true', SCOUT_DRY_RUN: 'true' });
+    const s = setup('serp-ok.html', { JOBBER_DRY_RUN: 'true' });
     const out = await searchWithBudget(s.db, 'careers_page', P, s.deps);
     expect(out.provider).toBe('browser-dork');
     expect(s.closes()).toBe(1);

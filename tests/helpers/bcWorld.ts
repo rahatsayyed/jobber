@@ -17,7 +17,7 @@ export const URL_ = 'https://www.linkedin.com/in/jane-example/';
 export const NOW = new Date('2026-10-14T10:00:00Z'); // 15:30 IST
 export const NOTE = 'Hi Jane, I saw the platform team is hiring and would like to connect.';
 export const MSG = 'Hi Jane, I saw the platform team is hiring. Would you be open to a short chat about the role?';
-export const LIVE_ENV: Record<string, string> = { SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false', JOBBER_DRY_RUN: '0' };
+export const LIVE_ENV: Record<string, string> = { JOBBER_DRY_RUN: 'false' };
 
 export interface World {
   db: ReturnType<typeof openDb>;

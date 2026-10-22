@@ -14,8 +14,8 @@ import { fakeBcPage } from './helpers/fakeBc.js';
 import { NOTE, profileHtml, URL_ } from './helpers/bcWorld.js';
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
-const LIVE = { LINKEDIN_DRY_RUN: 'false', SCHEDULER_DRY_RUN: 'false', JOBBER_DRY_RUN: '0' };
-const DRY = { LINKEDIN_DRY_RUN: 'true' };
+const LIVE = { JOBBER_DRY_RUN: 'false' };
+const DRY = { JOBBER_DRY_RUN: 'true' };
 
 const fake = (malicious: boolean): ClassifierPort => ({
   classify: vi.fn(async () => ({ malicious, score: 0.5, truncated: false })),

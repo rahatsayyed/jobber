@@ -2,12 +2,13 @@
 // One active classifier per process, chosen by CLASSIFIER_MODEL. No fallback chain.
 import type { ClassifierPort } from './inputGate.js';
 import { loadClassifier, type LoadedClassifier, type LoadOptions } from './classifierModel.js';
+import { isDryRun } from './dryRun.js';
 import { loadRegistry, resolveProfile, type ClassifierRegistry } from './classifierRegistry.js';
 
 export type ClassifierUse = 'send' | 'dry_run';
 
 export function currentUse(env: NodeJS.ProcessEnv = process.env): ClassifierUse {
-  return env.JOBBER_DRY_RUN === '1' ? 'dry_run' : 'send';
+  return isDryRun(env) ? 'dry_run' : 'send';
 }
 
 export interface SelectDeps {

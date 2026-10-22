@@ -95,7 +95,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
   let runtime = deps.runtime;
   const getDb = () => (db ??= openDb(dbPath()));
   const getRuntime = () => (runtime ??= createWebRuntime({ db: getDb(), env }));
-  const screen: Screen = (t, p) => screenUntrusted(t, p, { env, dryRun: isDryRun(env, { web: true }), classifier: deps.classifier });
+  const screen: Screen = (t, p) => screenUntrusted(t, p, { env, dryRun: isDryRun(env), classifier: deps.classifier });
   let ctx: ScoutCtx | null = null;
   const getCtx = (): ScoutCtx => (ctx ??= {
     db: getDb(), runtime: getRuntime(), env, now, screen,

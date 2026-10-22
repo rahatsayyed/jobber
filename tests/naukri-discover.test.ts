@@ -14,7 +14,7 @@ import {
 import { searchNaukri } from '../src/sources/naukri.js';
 import { naukriOpen, naukriDiscover, shutdownNaukri, naukriServer, SEARCH_SRC, DETAIL_SRC } from '../src/mcp/naukri.js';
 
-const LIVE = { SCHEDULER_DRY_RUN: 'false' } as NodeJS.ProcessEnv;
+const LIVE = { JOBBER_DRY_RUN: 'false' } as NodeJS.ProcessEnv;
 const NOW = new Date('2026-10-16T10:00:00Z');
 const CONFIG: NaukriDiscoveryConfig = { searches: [{ name: 'react-india', query: 'react developer', location: 'india', limit: 20 }] };
 const PASS = async (t: string): Promise<ScreenVerdict> => ({ blocked: false, unscreened: false, text: t, flags: [], code: 'ok' });
@@ -133,7 +133,7 @@ describe('runNaukriDiscover', () => {
   });
 
   it('dry run records the action, saves nothing, reads no detail pages and stamps the last run', async () => {
-    const d = deps({ env: { SCHEDULER_DRY_RUN: 'true' } });
+    const d = deps({ env: { JOBBER_DRY_RUN: 'true' } });
     const f = fakeIo([card(1)]);
     const r = await run(f.io, d);
     expect(r).toMatchObject({ status: 'dry_run', code: 'dry_run', new: 0, fetched: 1 });

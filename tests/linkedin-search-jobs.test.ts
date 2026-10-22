@@ -17,12 +17,13 @@ import { SCREENED_SURFACES, callsScreen } from '../src/safety/screen.js';
 import type { LayoutObserver } from '../src/layout/runtime.js';
 import type { ToolDeps, Screen } from '../src/linkedin/toolDeps.js';
 import { makeFakeLauncher, type FakeSite } from './helpers/fakeLinkedin.js';
+const DRY_ENV: Record<string, string> = { JOBBER_DRY_RUN: 'true' };
 
 const STATE = { cookies: [{ name: 'li_at', value: 'SENTINEL-NOT-REAL', domain: '.linkedin.com', path: '/' }], origins: [] };
 const fx = (n: string) => readFileSync(new URL(`./fixtures/linkedin/${n}`, import.meta.url), 'utf8');
 const JOBS_URL = 'https://www.linkedin.com/jobs/search/?keywords=react';
 const JP = '/jobs/search/';
-const LIVE = { LINKEDIN_DRY_RUN: 'false', SCHEDULER_DRY_RUN: 'false' };
+const LIVE = { JOBBER_DRY_RUN: 'false' };
 const CONFIG: DiscoveryConfig = {
   jobs: [{ name: 'react-india', keyword: 'react developer', location: 'India', remote_only: true, limit: 25 }],
   posts: [{ name: 'default', role: 'react developer', geo: 'in', limit: 25 }],
@@ -41,12 +42,12 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function setup(site: FakeSite, env: NodeJS.ProcessEnv = {}, over: Partial<ToolDeps> = {}) {
+function setup(site: FakeSite, env: NodeJS.ProcessEnv = DRY_ENV, over: Partial<ToolDeps> = {}) {
   const log: string[] = [];
   const db = openDb(':memory:');
   const launcher = makeFakeLauncher(site, log);
   const rt = createRuntime({
-    db, launcher, sessionPath: path.join(dir, 'state.json'), lockPath: path.join(dir, 'l.lock'), settleMs: 0, env: {},
+    db, launcher, sessionPath: path.join(dir, 'state.json'), lockPath: path.join(dir, 'l.lock'), settleMs: 0, env: DRY_ENV,
   });
   runtimes.push(rt);
   const deps: ToolDeps = {
@@ -165,7 +166,7 @@ describe('searchJobs', () => {
   });
 
   it('dry run saves nothing, records the action and consumes no ceiling', async () => {
-    const { deps, db } = setup(page('jobs-search.html'), {});
+    const { deps, db } = setup(page('jobs-search.html'), DRY_ENV);
     expect(deps.cfg.dryRun).toBe(true);
     const r = await searchJobs({ search: 'react-india' }, deps, { config: CONFIG });
     expect(r).toMatchObject({ status: 'dry_run', code: 'dry_run', fetched: 5, new: 0 });
@@ -255,7 +256,7 @@ describe('MCP wiring', () => {
     const db = openDb(':memory:');
     const rt = createRuntime({
       db, launcher: makeFakeLauncher(page('jobs-search.html'), log), sessionPath: path.join(dir, 'state.json'),
-      lockPath: path.join(dir, 'l.lock'), settleMs: 0, env: {},
+      lockPath: path.join(dir, 'l.lock'), settleMs: 0, env: DRY_ENV,
     });
     runtimes.push(rt);
     const handlers = buildHandlers({

@@ -19,7 +19,7 @@ import { enforceCheckboxGate, resetSiteBlocks, siteSignup } from '../src/webcore
 import { readPage } from '../src/webcore/login.js';
 import { createFakeSite, type FakeSite, type FakeSiteOpts } from './helpers/fakeSitePage.js';
 
-const LIVE = { SCHEDULER_DRY_RUN: 'false', WEB_DRY_RUN: 'false', APPLY_DRY_RUN: 'false', SCOUT_DRY_RUN: 'false', APPLY_ALLOW_ACCOUNT_CREATION: 'true', SCOUT_ALLOW_SIGNUP: 'true' } as NodeJS.ProcessEnv;
+const LIVE = { JOBBER_DRY_RUN: 'false', APPLY_ALLOW_ACCOUNT_CREATION: 'true', SCOUT_ALLOW_SIGNUP: 'true' } as NodeJS.ProcessEnv;
 const HOST = 'wd.example.test';
 const CREATE = 'Create Account';
 
@@ -56,7 +56,7 @@ describe('site_signup refusals', () => {
     expect(await run(s, 'scout')).toMatchObject({ code: 'signup_disabled' });
     expect(s.site.events.filter((e) => e.startsWith('click'))).toEqual([]);
 
-    s = await setup({}, { APPLY_DRY_RUN: 'true' });
+    s = await setup({}, { JOBBER_DRY_RUN: 'true' });
     expect(await run(s)).toMatchObject({ status: 'dry_run' });
     expect((s.db.prepare('SELECT payload FROM dry_run_actions').all() as Array<{ payload: string }>).map((r) => r.payload).join()).not.toContain(CANARY);
     expect(s.site.events.filter((e) => e.startsWith('click') || e.startsWith('fill'))).toEqual([]);
@@ -340,7 +340,7 @@ describe('credential leak tests (wd-landing -> wd-account -> verify stop)', () =
     const deps = { runtime, db, env: { ...LIVE, SITE_ACCOUNTS_FILE: accountsPath }, accountsPath, profileEmail: 'me@example.test', escalate: (k: string, d: string) => { escalations.push(`${k} ${d}`); } };
     const results = [await siteSignup({ host: HOST, purpose: 'apply' }, deps)];
     // dry-run variant and a failing-fill variant in the same run
-    results.push(await siteSignup({ host: 'dry.example.test', purpose: 'apply' }, { ...deps, env: { ...deps.env, WEB_DRY_RUN: 'true' } }));
+    results.push(await siteSignup({ host: 'dry.example.test', purpose: 'apply' }, { ...deps, env: { ...deps.env, JOBBER_DRY_RUN: 'true' } }));
     const dry = db.prepare('SELECT action, payload FROM dry_run_actions').all();
     const thrown = createFakeSite({ start: 'wd-account.html', failFill: true });
     const rt2 = createWebRuntime({ db, launcher: thrown.launcher, lockPath: path.join(dir, 'l2.lock'), sessionDir: path.join(dir, 's'), config: { minGapSec: 0, settleMs: 0 } });
@@ -377,7 +377,7 @@ describe('site_login', () => {
     stored();
     s = await setup({ start: 'captcha-wall.html' });
     expect(await siteLogin({ host: HOST }, s.deps)).toMatchObject({ status: 'blocked' });
-    s = await setup({ start: 'wd-signin.html' }, { WEB_DRY_RUN: 'true' });
+    s = await setup({ start: 'wd-signin.html' }, { JOBBER_DRY_RUN: 'true' });
     expect(await siteLogin({ host: HOST }, s.deps)).toMatchObject({ status: 'dry_run' });
     expect(s.site.fills).toEqual([]);
   });

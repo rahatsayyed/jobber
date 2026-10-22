@@ -8,8 +8,9 @@ import { buildHandlers, buildServer, TOOL_NAMES, schemas } from '../src/mcp/scou
 import { isSubmitLike } from '../src/scout/tools/browse.js';
 import type { SearchProvider } from '../src/search/index.js';
 import { createScoutBrowser, type FakeScoutBrowser } from './helpers/fakeScoutBrowser.js';
+const DRY_ENV: Record<string, string> = { JOBBER_DRY_RUN: 'true' };
 
-const LIVE = { SCHEDULER_DRY_RUN: 'false', WEB_DRY_RUN: 'false', APPLY_DRY_RUN: 'false', SCOUT_DRY_RUN: 'false' } as NodeJS.ProcessEnv;
+const LIVE = { JOBBER_DRY_RUN: 'false' } as NodeJS.ProcessEnv;
 const LEVER = 'https://jobs.lever.co/acme';
 const classifier = { classify: async (t: string) => ({ malicious: /ignore all previous instructions/i.test(t), score: 1, truncated: false }) };
 
@@ -18,7 +19,7 @@ let rt: WebRuntime | null = null;
 beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jobber-scout-')); });
 afterEach(async () => { await rt?.close(); rt = null; fs.rmSync(dir, { recursive: true, force: true }); });
 
-function setup(pages: Record<string, string>, env: NodeJS.ProcessEnv = {}, opts: { dork?: SearchProvider } = {}) {
+function setup(pages: Record<string, string>, env: NodeJS.ProcessEnv = DRY_ENV, opts: { dork?: SearchProvider } = {}) {
   const db = openDb(':memory:');
   const browser: FakeScoutBrowser = createScoutBrowser(pages);
   rt = createWebRuntime({ db, launcher: browser.launcher, lockPath: path.join(dir, 'l.lock'), sessionDir: path.join(dir, 's'), config: { minGapSec: 0, settleMs: 0 } });
@@ -49,7 +50,7 @@ describe('tool surface', () => {
   it('TOOL_NAMES, handlers, schemas and the registered server agree', () => {
     const s = setup({});
     void s;
-    const h = buildHandlers({ db: openDb(':memory:'), runtime: rt!, env: {}, classifier });
+    const h = buildHandlers({ db: openDb(':memory:'), runtime: rt!, env: DRY_ENV, classifier });
     expect([...TOOL_NAMES].sort()).toEqual(Object.keys(h).sort());
     expect([...TOOL_NAMES].sort()).toEqual(Object.keys(schemas).sort());
     expect(() => buildServer(h)).not.toThrow();
@@ -99,7 +100,7 @@ describe('scout_click', () => {
     expect(s.browser.clicks).toEqual(['[data-jc="1"]']);
     await rt!.close();
 
-    s = setup({ [url]: PAGE }, {});
+    s = setup({ [url]: PAGE }, DRY_ENV);
     await s.call('scout_open', { url, task_id: s.task('lever', 'Acme') });
     expect(body(await s.call('scout_click', { control: 'c2' }))).toMatchObject({ ok: true, code: 'dry_run' });
     expect(s.browser.clicks).toEqual([]);
@@ -171,7 +172,7 @@ describe('scout_screenshot and scout_click_at', () => {
     expect(s.browser.mouseClicks).toEqual([[10, 20]]);
     await rt!.close();
 
-    s = await opened({ ...ON });
+    s = await opened({ ...DRY_ENV, ...ON });
     await s.h.scout_screenshot({});
     s.browser.atNode = node('Load more');
     expect(body(await s.call('scout_click_at', { x: 10, y: 20 }))).toMatchObject({ ok: true, code: 'dry_run' });
@@ -190,7 +191,7 @@ describe('scout_screenshot and scout_click_at', () => {
 
 describe('extract and save', () => {
   it('extracts three jobs, dry run saves nothing, live saves and dedupes', async () => {
-    let s = setup({ [LEVER]: 'listing-a.html' }, {});
+    let s = setup({ [LEVER]: 'listing-a.html' }, DRY_ENV);
     let t = s.task('lever', 'Acme');
     await s.call('scout_open', { url: LEVER, task_id: t });
     const ex = await s.call('scout_extract_jobs', { task_id: t });
@@ -244,7 +245,7 @@ describe('extract and save', () => {
   });
 
   it('extraction is refused off the task host and for unknown tasks', async () => {
-    const s = setup({ [LEVER]: 'listing-a.html', 'https://jobs.ashbyhq.com/x': 'listing-a.html' }, {});
+    const s = setup({ [LEVER]: 'listing-a.html', 'https://jobs.ashbyhq.com/x': 'listing-a.html' }, DRY_ENV);
     const t = s.task('lever', 'Acme');
     await s.call('scout_open', { url: 'https://jobs.ashbyhq.com/x' });
     expect(body(await s.call('scout_extract_jobs', { task_id: t }))).toMatchObject({ reason: 'page_not_task_host' });
@@ -253,7 +254,7 @@ describe('extract and save', () => {
   });
 
   it('injected job text is blocked by the screen and nothing is kept', async () => {
-    const s = setup({ [LEVER]: 'job-injection.html' }, {});
+    const s = setup({ [LEVER]: 'job-injection.html' }, DRY_ENV);
     const t = s.task('lever', 'Acme');
     await s.call('scout_open', { url: LEVER, task_id: t });
     expect(body(await s.call('scout_extract_jobs', { task_id: t }))).toMatchObject({ ok: false, code: 'injection_suspected' });
@@ -270,7 +271,7 @@ describe('extract and save', () => {
 
 describe('scout_capture_fixture', () => {
   it('dry run writes nothing; live writes the sanitized page under generated/fixtures/<platform>/', async () => {
-    let s = setup({ [LEVER]: 'listing-a.html' }, {});
+    let s = setup({ [LEVER]: 'listing-a.html' }, DRY_ENV);
     let t = s.task('lever', 'Acme');
     await s.call('scout_open', { url: LEVER, task_id: t });
     expect(body(await s.call('scout_capture_fixture', { task_id: t }))).toMatchObject({ status: 'dry_run' });
@@ -291,7 +292,7 @@ describe('scout_capture_fixture', () => {
 
 describe('dry run does not consume tasks', () => {
   it('scout_tasks creates no custom row and scout_task_update changes nothing in a dry run', async () => {
-    const s = setup({}, {});
+    const s = setup({}, DRY_ENV);
     const t = s.task('lever', 'Acme');
     const r = body(await s.call('scout_tasks'));
     expect(r.dry_run).toBe(true);
@@ -324,7 +325,7 @@ describe('tasks and site tools', () => {
     expect(body(await s.call('site_signup'))).toMatchObject({ status: 'refused', code: 'signup_disabled' });
   });
   it('scout_layout returns vocabulary and counts only; scout_close closes', async () => {
-    const s = setup({ [LEVER]: 'listing-a.html' }, {});
+    const s = setup({ [LEVER]: 'listing-a.html' }, DRY_ENV);
     await s.call('scout_open', { url: LEVER });
     const l = body(await s.call('scout_layout'));
     expect(l).toMatchObject({ ok: true, enforce: 'off' });

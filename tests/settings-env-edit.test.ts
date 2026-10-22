@@ -190,21 +190,20 @@ describe('cross-key validation', () => {
 });
 
 describe('modeAfter', () => {
-  // isDryRun: JOBBER_DRY_RUN=1 is dry; SCHEDULER_DRY_RUN and LINKEDIN_DRY_RUN are dry unless exactly "false".
+  // isDryRun: only JOBBER_DRY_RUN counts; dry iff its trimmed, lowercased value is 1 or true.
   const flag = (key: string, allowed: string[]): EnvSpec => ({ ...specOf('FX_FLAG'), key, allowed, tier: 'safety', weakens: 'false' });
-  const cat = [flag('JOBBER_DRY_RUN', ['0', '1']), flag('SCHEDULER_DRY_RUN', ['true', 'false']), flag('LINKEDIN_DRY_RUN', ['true', 'false'])];
-  const ALL = 'JOBBER_DRY_RUN=0\nSCHEDULER_DRY_RUN=false\nLINKEDIN_DRY_RUN=false\n';
-  it('is DRY RUN while any flag is unset or on, LIVE only when all three are off', () => {
-    expect(plan([], '', cat).modeAfter).toBe('DRY RUN');
-    expect(plan([set('JOBBER_DRY_RUN', '0'), set('SCHEDULER_DRY_RUN', 'false')], '', cat).modeAfter).toBe('DRY RUN');
-    expect(plan([set('JOBBER_DRY_RUN', '0'), set('SCHEDULER_DRY_RUN', 'false'), set('LINKEDIN_DRY_RUN', 'false')], '', cat).modeAfter).toBe('LIVE');
+  const cat = [flag('JOBBER_DRY_RUN', ['true', 'false', '0', '1']), flag('SCHEDULER_DRY_RUN', ['true', 'false'])];
+  it('is LIVE when the flag is unset or false, DRY RUN when true or 1', () => {
+    expect(plan([], '', cat).modeAfter).toBe('LIVE');
+    expect(plan([set('JOBBER_DRY_RUN', 'false')], '', cat).modeAfter).toBe('LIVE');
+    expect(plan([set('JOBBER_DRY_RUN', 'true')], '', cat).modeAfter).toBe('DRY RUN');
+    expect(plan([set('JOBBER_DRY_RUN', '1')], '', cat).modeAfter).toBe('DRY RUN');
   });
-  it('flips back with each of the three flags', () => {
-    expect(plan([], ALL, cat).modeAfter).toBe('LIVE');
-    expect(plan([set('JOBBER_DRY_RUN', '1')], ALL, cat).modeAfter).toBe('DRY RUN');
-    expect(plan([set('SCHEDULER_DRY_RUN', 'true')], ALL, cat).modeAfter).toBe('DRY RUN');
-    expect(plan([set('LINKEDIN_DRY_RUN', 'true')], ALL, cat).modeAfter).toBe('DRY RUN');
-    expect(plan([{ key: 'LINKEDIN_DRY_RUN', op: 'reset' }], ALL, cat).modeAfter).toBe('DRY RUN');
+  it('flips with the one flag and ignores the retired ones', () => {
+    expect(plan([], 'JOBBER_DRY_RUN=false\n', cat).modeAfter).toBe('LIVE');
+    expect(plan([set('JOBBER_DRY_RUN', 'true')], 'JOBBER_DRY_RUN=false\n', cat).modeAfter).toBe('DRY RUN');
+    expect(plan([{ key: 'JOBBER_DRY_RUN', op: 'clear' }], 'JOBBER_DRY_RUN=true\n', cat).modeAfter).toBe('LIVE');
+    expect(plan([set('SCHEDULER_DRY_RUN', 'true')], 'JOBBER_DRY_RUN=false\n', cat).modeAfter).toBe('LIVE');
   });
 });
 
@@ -221,7 +220,7 @@ describe('friction seam and newText', () => {
       seenCtx = ctx;
       return { reauth: true, phrase: 'CHANGE FX_MAX_PER_DAY' };
     };
-    const p = planEnvChange(stateOf(FIXTURE), [set('FX_MAX_PER_DAY', '6')], FIXTURE_CATALOG, CTX, { frictionFn });
+    const p = planEnvChange(stateOf(FIXTURE + 'JOBBER_DRY_RUN=true\n'), [set('FX_MAX_PER_DAY', '6')], FIXTURE_CATALOG, CTX, { frictionFn });
     expect(p.friction).toEqual({ reauth: true, phrase: 'CHANGE FX_MAX_PER_DAY' });
     expect(seenCtx).toBe(CTX);
     expect(seen!.modeBefore).toBe('DRY RUN');

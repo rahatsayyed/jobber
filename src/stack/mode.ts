@@ -9,7 +9,7 @@ export interface ModeView {
   lines: string[];
 }
 
-const FLAG_NAMES = ['JOBBER_DRY_RUN', 'SCHEDULER_DRY_RUN', 'LINKEDIN_DRY_RUN'] as const;
+const FLAG_NAMES = ['JOBBER_DRY_RUN'] as const;
 
 // The flags the children see: only the parsed .env file (they run under `env -i`).
 export function fileFlags(fileEnv: Record<string, string>): NodeJS.ProcessEnv {
@@ -32,11 +32,9 @@ export function shellDivergence(fileEnv: Record<string, string>, procEnv: NodeJS
 }
 
 export function currentMode(env: NodeJS.ProcessEnv): ModeView {
-  const dry = isDryRun(env, { linkedin: true });
+  const dry = isDryRun(env);
   const flags: Record<string, string> = {
-    JOBBER_DRY_RUN: env.JOBBER_DRY_RUN ?? '(unset)',
-    SCHEDULER_DRY_RUN: env.SCHEDULER_DRY_RUN ?? '(unset)',
-    LINKEDIN_DRY_RUN: env.LINKEDIN_DRY_RUN ?? '(unset)',
+    JOBBER_DRY_RUN: env.JOBBER_DRY_RUN ?? '(unset, runs LIVE)',
   };
   const head = dry
     ? 'MODE: DRY RUN (nothing is sent)'

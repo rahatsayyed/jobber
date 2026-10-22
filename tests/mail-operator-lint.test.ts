@@ -120,7 +120,8 @@ describe('wake profile', () => {
   });
   it('passes the web, scout, site, dork and search prefixes (task 7) and no secret', () => {
     for (const p of ['WEB_', 'SCOUT_', 'SITE_', 'DORK_', 'SEARCH_']) expect(wake.env_prefixes).toContain(p);
-    expect(wake.env_keys).toContain('APPLY_DRY_RUN');
+    expect(wake.env_keys).toContain('JOBBER_DRY_RUN');
+    expect(wake.env_keys).not.toContain('APPLY_DRY_RUN');
     expect([...(wake.env_keys ?? []), ...(wake.env_prefixes ?? [])].some((k) => /SERPER|PASSWORD|TOKEN|SECRET|API_KEY/.test(k))).toBe(false);
   });
   it('serves every wake tool from a configured server', () => {

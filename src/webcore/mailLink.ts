@@ -92,7 +92,7 @@ export async function siteOpenLink(input: { url_or_message_text: string }, deps:
   if (links.length === 0) return { status: 'refused', code: 'no_link', reason: 'no acceptable verification link' };
   const link = links[0];
   const now = (deps.now ?? (() => new Date()))();
-  if (isDryRun(env, { web: true })) {
+  if (isDryRun(env)) {
     recordDryRun(deps.db, { runId: null, action: 'site_open_link', platform: 'web', payload: { host: new URL(link).hostname } }, now, env);
     return { status: 'dry_run' };
   }

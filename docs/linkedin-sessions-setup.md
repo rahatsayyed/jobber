@@ -51,4 +51,4 @@ and sends nothing, writes no halt and does not re-save the session. Run it after
 
 ## Before live LinkedIn reads or sends
 
-The `linkedin` MCP is dry-run by default (`LINKEDIN_DRY_RUN=true`) and, when live, refuses every read and send until the prompt-injection classifier is downloaded, pinned and fitted and `CLASSIFIER_MODEL` is set (see [classifier models](classifier-models.md)). `npm run doctor` shows the `classifier_wired` check.
+The `linkedin` MCP is dry-run while `JOBBER_DRY_RUN=true` (the one master flag, shipped in `.env.example`) and, when live, refuses every read and send until the prompt-injection classifier is downloaded, pinned and fitted and `CLASSIFIER_MODEL` is set (see [classifier models](classifier-models.md)). `npm run doctor` shows the `classifier_wired` check.

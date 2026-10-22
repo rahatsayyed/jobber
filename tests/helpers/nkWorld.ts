@@ -23,7 +23,7 @@ export const JOB_URL = 'https://www.naukri.com/job-listings-software-engineer-ac
 export const JOB_ID = 'naukri:081026050522';
 export const NOW = new Date('2026-10-14T10:00:00Z'); // 15:30 IST
 export const MSG = 'Hi Pat, happy to share more about my React work.';
-export const LIVE_ENV: Record<string, string> = { SCHEDULER_DRY_RUN: 'false', JOBBER_DRY_RUN: '0' };
+export const LIVE_ENV: Record<string, string> = { JOBBER_DRY_RUN: 'false' };
 
 export interface NkWorld {
   db: ReturnType<typeof openDb>;

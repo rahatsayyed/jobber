@@ -111,7 +111,7 @@ describe('coverage', () => {
   });
   it('lists the 8G, 8E, 8F and webcore keys', () => {
     for (const k of [
-      'WEB_DRY_RUN', 'APPLY_DRY_RUN', 'SCOUT_DRY_RUN', 'APPLY_ALLOW_ACCOUNT_CREATION', 'SCOUT_ALLOW_SIGNUP',
+      'JOBBER_DRY_RUN', 'APPLY_ALLOW_ACCOUNT_CREATION', 'SCOUT_ALLOW_SIGNUP',
       'APPLY_ALLOW_UNKNOWN_HOSTS', 'APPLY_LINKEDIN_EASY', 'APPLY_SUBMIT_MODE', 'APPLY_ACCEPT_LEGAL_REQUIRED',
       'APPLY_SCREENSHOT', 'APPLY_RECIPE_PROMOTE_N', 'APPLY_RECIPE_PROMOTE_RUNS', 'SITE_MAIL_VERIFY', 'SITE_MAIL_SENDERS',
       'SITE_ACCOUNTS_FILE', 'WEB_MIN_GAP_SEC', 'WEB_MAX_CALLS_PER_JOB', 'WEB_MAX_JOB_MIN', 'WEB_IDLE_MS', 'WEB_SETTLE_MS',
@@ -144,17 +144,20 @@ describe('fromLimit', () => {
 });
 
 describe('rules (D22) over the whole catalog', () => {
-  it('every *_DRY_RUN key is safety, in the safety section, with a direction and a non-null default', () => {
+  it('JOBBER_DRY_RUN is the ONLY *_DRY_RUN key: safety, in the safety section, with a direction and a non-null default', () => {
     const dry = ENV_CATALOG.filter((s) => s.key.endsWith('_DRY_RUN'));
-    expect(dry.map((s) => s.key).sort()).toEqual(['APPLY_DRY_RUN', 'JOBBER_DRY_RUN', 'LINKEDIN_DRY_RUN', 'SCHEDULER_DRY_RUN', 'SCOUT_DRY_RUN', 'WEB_DRY_RUN']);
+    expect(dry.map((s) => s.key)).toEqual(['JOBBER_DRY_RUN']);
     for (const s of dry) {
       expect(s.tier, s.key).toBe('safety');
       expect(s.section, s.key).toBe('safety');
       expect(s.weakens, s.key).not.toBeNull();
       expect(s.default, s.key).not.toBeNull();
-      // unset -> the flag turned off is seen as a weakening change
-      expect(weakens(s, undefined, s.key === 'JOBBER_DRY_RUN' ? '0' : 'false'), s.key).toBe(true);
-      expect(weakens(s, undefined, s.default), s.key).toBe(false);
+      // dry (true, 1, any case) turned off is a weakening change; unset already means live, so it is not one
+      for (const off of ['false', '0', '', 'no']) expect(weakens(s, 'true', off), off).toBe(true);
+      expect(weakens(s, ' TRUE ', 'false')).toBe(true);
+      expect(weakens(s, undefined, 'false')).toBe(false);
+      expect(weakens(s, 'false', 'true')).toBe(false);
+      expect(s.default).toBe('false');
     }
   });
   it('every path key and every *_CMD, *_PATH, *_REMOTE, *_DIR key is never', () => {
@@ -193,7 +196,7 @@ describe('rules (D22) over the whole catalog', () => {
   });
   it('the safety tier holds every key the plan lists as safety', () => {
     for (const k of [
-      'JOBBER_DRY_RUN', 'SCHEDULER_DRY_RUN', 'LINKEDIN_DRY_RUN', 'FOLLOWUPS_AUTONOMOUS', 'SCHEDULER_ENABLED', 'AUTO_UPDATE',
+      'JOBBER_DRY_RUN', 'FOLLOWUPS_AUTONOMOUS', 'SCHEDULER_ENABLED', 'AUTO_UPDATE',
       'BACKUP_ENABLED', 'HUNTER_ENABLED', 'LINKEDIN_ACCEPT_UNKNOWN', 'LINKEDIN_ALLOWED_URLS', 'LINKEDIN_ALLOWED_EMAILS',
       'CLASSIFIER_MODEL', 'LAYOUT_ENFORCE', 'APPLY_ALLOW_ACCOUNT_CREATION', 'SCOUT_ALLOW_SIGNUP', 'APPLY_ALLOW_UNKNOWN_HOSTS',
       'APPLY_LINKEDIN_EASY', 'APPLY_SUBMIT_MODE', 'APPLY_ACCEPT_LEGAL_REQUIRED', 'SITE_MAIL_VERIFY', 'SITE_MAIL_SENDERS',

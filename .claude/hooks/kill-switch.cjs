@@ -6,6 +6,15 @@
 const fs = require('fs');
 const path = require('path');
 
+// parseDryFlag(value): the master dry-run flag. Dry iff the trimmed, lowercased value is "1" or "true";
+// anything else (unset, empty, "false", "0", "yes") is LIVE. This must stay identical to parseDryFlag in
+// src/safety/dryRun.ts; tests/dryrun-parity.test.ts runs both over the same inputs.
+function parseDryFlag(value) {
+  if (typeof value !== 'string') return false;
+  const v = value.trim().toLowerCase();
+  return v === '1' || v === 'true';
+}
+
 // stopActive(root, env): stopped when <root>/.jobber/STOP exists, JOBBER_KILL=1,
 // or the stat errors for any reason but ENOENT.
 function stopActive(root, env) {
@@ -26,8 +35,8 @@ function decide(event, opts) {
     const env = (opts && opts.env) || process.env;
     const s = stopActive(root, env);
     if (s.stopped) return { allow: false, reason: s.reason };
-    if (event && event.tool_name === 'mcp__gmail__send_email' && env.JOBBER_DRY_RUN === '1') {
-      return { allow: false, reason: 'dry run: gmail send blocked (JOBBER_DRY_RUN=1)' };
+    if (event && event.tool_name === 'mcp__gmail__send_email' && parseDryFlag(env.JOBBER_DRY_RUN)) {
+      return { allow: false, reason: 'dry run: gmail send blocked (JOBBER_DRY_RUN is on)' };
     }
     return { allow: true, reason: '' };
   } catch {
@@ -49,7 +58,7 @@ function emitDenyAndExit(reason) {
   }
 }
 
-module.exports = { stopActive, decide };
+module.exports = { stopActive, decide, parseDryFlag };
 
 if (require.main === module) {
   process.on('uncaughtException', () => emitDenyAndExit('hook crashed (fail closed)'));

@@ -7,7 +7,7 @@ import { cleanupRoots, copyFromRepo, ctxFor, REPO, realFs, tempRoot } from './he
 
 afterEach(cleanupRoots);
 
-const LIVE = { SCHEDULER_DRY_RUN: 'false', WEB_DRY_RUN: 'false', APPLY_DRY_RUN: 'false', SCOUT_DRY_RUN: 'false' };
+const LIVE = { JOBBER_DRY_RUN: 'false' };
 
 async function run(id: string, ctx: DoctorContext, classifierReady = async () => true) {
   const check = webChecks({ classifierReady }).find((c) => c.id === id)!;

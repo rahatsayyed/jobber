@@ -1,7 +1,6 @@
 import { isDryRun } from '../safety/dryRun.js';
 
-// LinkedIn typed-tool config. Dry run is ON unless LINKEDIN_DRY_RUN and SCHEDULER_DRY_RUN are
-// exactly 'false' and JOBBER_DRY_RUN is not '1' (see isDryRun).
+// LinkedIn typed-tool config. Dry run follows the single master flag JOBBER_DRY_RUN (see isDryRun).
 export interface LinkedinConfig {
   dryRun: boolean;
   acceptUnknown: boolean;
@@ -24,7 +23,7 @@ export function loadLinkedinConfig(env: NodeJS.ProcessEnv = process.env): Linked
   const idleRaw = env.LINKEDIN_IDLE_MS;
   const idleN = idleRaw !== undefined && /^\d+$/.test(idleRaw.trim()) ? Number(idleRaw.trim()) : 600000;
   return {
-    dryRun: isDryRun(env, { linkedin: true }),
+    dryRun: isDryRun(env),
     maxSearchesPerDay: Number.isInteger(srN) && srN >= 0 && srN <= 100000 ? srN : 20,
     acceptUnknown: env.LINKEDIN_ACCEPT_UNKNOWN === 'true',
     maxAcceptsPerDay: Number.isInteger(accN) && accN >= 0 && accN <= 1000 ? accN : 30,

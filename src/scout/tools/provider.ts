@@ -16,7 +16,7 @@ export async function scoutProposeProvider(a: { task_id: number; spec: unknown }
   const specId = a.spec && typeof a.spec === 'object' ? (a.spec as { id?: unknown }).id : undefined;
   // The spec must be for this task's platform: fixtures were captured under generated/fixtures/<platform>/.
   if (specId !== want) return json({ ok: false, code: 'refused', reason: 'spec_id_mismatch' });
-  if (isDryRun(deps.env, { web: true })) {
+  if (isDryRun(deps.env)) {
     recordDryRun(deps.db, { runId: null, action: 'scout_propose_provider', platform: 'web', payload: { task_id: row.id, id: want } }, deps.now(), deps.env);
     return json({ ok: true, status: 'dry_run' });
   }

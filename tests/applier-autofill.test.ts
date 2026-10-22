@@ -104,7 +104,7 @@ describe('apply_autofill', () => {
   });
 
   it('dry run fills nothing', async () => {
-    const x = await opened({ env: { APPLY_DRY_RUN: 'true' } });
+    const x = await opened({ env: { JOBBER_DRY_RUN: 'true' } });
     const r = await handleAutofill({}, x.deps);
     expect(r.status).toBe('dry_run');
     expect(x.site.fills).toEqual([]);

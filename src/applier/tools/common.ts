@@ -119,7 +119,7 @@ export function preflight(deps: ApplierDeps): ApplyResult | null {
 
 export function dryRunResult(deps: ApplierDeps, action: string, payload: Record<string, unknown>): ApplyResult | null {
   const env = envOf(deps);
-  if (!isDryRun(env, { web: true })) return null;
+  if (!isDryRun(env)) return null;
   recordDryRun(deps.db, { runId: null, action, platform: 'web', payload }, nowOf(deps), env);
   return { status: 'dry_run', code: 'dry_run' };
 }

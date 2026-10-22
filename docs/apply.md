@@ -66,15 +66,15 @@ A `rate_limited` result is reported and not retried. `npm run status -- limits` 
 
 ## Dry run, hold and submit
 
-Everything ships dry. A real browser action needs `SCHEDULER_DRY_RUN=false` and `WEB_DRY_RUN`,
-`APPLY_DRY_RUN` and `SCOUT_DRY_RUN` all `false`. Even then `APPLY_SUBMIT_MODE` ships `hold`: the
+Everything ships dry (`JOBBER_DRY_RUN=true` in `.env.example`). A real browser action needs
+`JOBBER_DRY_RUN` set to `false` or removed (unset is live). Even then `APPLY_SUBMIT_MODE` ships `hold`: the
 operator fills the form, uploads the PDF and stops at the review step, reporting `held`. Only exactly
 `submit` clicks submit. You flip these flags; the agent never does.
 
 ## Accounts and credentials
 
 - The operator never creates an account on its own. `site_signup` works only when
-  `APPLY_ALLOW_ACCOUNT_CREATION` is `true` (ships `false`), every web dry-run flag is `false` and
+  `APPLY_ALLOW_ACCOUNT_CREATION` is `true` (ships `false`), `JOBBER_DRY_RUN` is not on and
   `SITE_MAX_ACCOUNTS_PER_DAY` has room. Otherwise the job is escalated as `account_needed`.
 - Credentials are stored in `secrets/site-accounts.json` (mode 600 in a mode 700 directory), one
   entry per host, with a unique code-generated password for accounts the agent creates. A password is
@@ -136,7 +136,7 @@ Nothing in browser apply has run against a real ATS posting: it is covered by un
 and invented fixture pages, and the shipped recipes were written from fixtures (`unverified`). Do
 these yourself, in order, after backing up `data.sqlite` and fully restarting Claude Code:
 
-1. Hold mode: one Greenhouse job with `APPLY_DRY_RUN` `false` and `APPLY_SUBMIT_MODE` `hold`. Check it
+1. Hold mode: one Greenhouse job with `JOBBER_DRY_RUN` `false` and `APPLY_SUBMIT_MODE` `hold`. Check it
    fills by reference, uploads the PDF and stops at review (`held`); compare with the posting in your
    own browser and check every marketing box is unchecked. Repeat for Lever and Ashby.
 2. First submit: `APPLY_SUBMIT_MODE` `submit` for one job; confirm `submitted` and the vendor's
