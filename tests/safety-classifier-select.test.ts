@@ -93,3 +93,37 @@ describe('getActiveClassifier', () => {
     expect(r2.blocked).toBe(false);
   });
 });
+
+describe('CLASSIFIER_MODEL .env fallback and failure reason', () => {
+  it('falls back to only the CLASSIFIER_MODEL key from root/.env when process env lacks it; process env wins', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = mkdtempSync(join(tmpdir(), 'clsenv-'));
+    writeFileSync(join(root, '.env'), 'CLASSIFIER_MODEL=p2\nJOBBER_DRY_RUN=true\nOTHER=x\n');
+    const m = mk();
+    await getActiveClassifier('send', { ...m.deps(undefined), root });
+    expect(m.load.mock.calls[0][0].profile.id).toBe('p2');
+    _resetActiveClassifierForTests();
+    await getActiveClassifier('send', { ...m.deps('p1'), root });
+    expect(m.load.mock.calls[1][0].profile.id).toBe('p1');
+    // only the CLASSIFIER_MODEL key is read: the dry-run flag in .env is not applied
+    expect(m.load.mock.calls[0][0].allowUnfitted).toBe(false);
+  });
+
+  it('writes a one-line error message (no page text) to stderr when the classifier fails, still fail-closed', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const m = mk({ fail: true });
+    const r = await gateInputAsync('SECRET PAGE TEXT', {
+      classifier: () => getActiveClassifier('send', m.deps('p1')),
+      requireClassifier: true,
+    });
+    const out = spy.mock.calls.map((c) => c.join(' ')).join('\n');
+    spy.mockRestore();
+    expect(r.blocked).toBe(true);
+    expect(r.flags).toContain('classifier_unavailable');
+    expect(out).toMatch(/boom/);
+    expect(out).not.toMatch(/SECRET PAGE TEXT/);
+    expect(out.trim().split('\n')).toHaveLength(1);
+  });
+});

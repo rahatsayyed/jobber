@@ -145,7 +145,10 @@ export async function gateInputAsync(raw: string, opts: InputGateAsyncOptions = 
       result.flags.push('classifier_injection');
       result.blocked = true;
     }
-  } catch {
+  } catch (e) {
+    // Reason only (error message, one line, capped); never the text under classification.
+    const msg = (e instanceof Error ? e.message : String(e)).split('\n')[0].slice(0, 200);
+    console.error(`classifier unavailable: ${msg}`);
     result.flags.push('classifier_unavailable');
     if (opts.requireClassifier) result.blocked = true;
   }

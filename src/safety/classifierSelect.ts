@@ -1,5 +1,8 @@
 // src/safety/classifierSelect.ts
 // One active classifier per process, chosen by CLASSIFIER_MODEL. No fallback chain.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { parseEnv } from '../platform/envFile.js';
 import type { ClassifierPort } from './inputGate.js';
 import { loadClassifier, type LoadedClassifier, type LoadOptions } from './classifierModel.js';
 import { isDryRun } from './dryRun.js';
@@ -26,14 +29,27 @@ interface Cached {
 }
 let cached: Cached | null = null;
 
+/** Process env wins; when it has no CLASSIFIER_MODEL, take just that key from <root>/.env. Never throws. */
+function withEnvFileModel(env: NodeJS.ProcessEnv, root: string | undefined): NodeJS.ProcessEnv {
+  if (!root || (env.CLASSIFIER_MODEL ?? '').trim()) return env;
+  try {
+    const v = parseEnv(readFileSync(join(root, '.env'), 'utf8')).CLASSIFIER_MODEL;
+    return v && v.trim() ? { ...env, CLASSIFIER_MODEL: v.trim() } : env;
+  } catch {
+    return env;
+  }
+}
+
 export function _resetActiveClassifierForTests(): void {
   cached = null;
 }
 
 /** Resolve CLASSIFIER_MODEL, load exactly that profile once, return it as a gate port. Rejects (and does not cache) on any failure. */
 export async function getActiveClassifier(use?: ClassifierUse, deps: SelectDeps = {}): Promise<ClassifierPort> {
-  const env = deps.env ?? process.env;
-  const u = use ?? currentUse(env);
+  const baseEnv = deps.env ?? process.env;
+  const u = use ?? currentUse(baseEnv);
+  // Stdio MCP servers inherit the launching claude's env, which may lack .env keys: read ONLY CLASSIFIER_MODEL from .env.
+  const env = withEnvFileModel(baseEnv, deps.root ?? (deps.env ? undefined : process.cwd()));
   const reg = (deps.loadRegistry ?? (() => loadRegistry()))();
   const profile = resolveProfile(reg, env);
   const digest = profile.files.find((f) => f.role === 'model')?.sha256 ?? 'none';
