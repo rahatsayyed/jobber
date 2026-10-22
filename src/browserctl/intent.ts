@@ -2,7 +2,9 @@
 // memory, one per platform, 120 s expiry, single use. The arm tools (task 3) create it after the code
 // gates have passed; the commit path checks it right before the click.
 import { randomUUID } from 'node:crypto';
+import type BetterSqlite3 from 'better-sqlite3';
 import { textMatches, type CommitClass } from './guard.js';
+import { finishTouch } from '../linkedin/touches.js';
 
 export const INTENT_TTL_MS = 120_000;
 export type IntentPlatform = 'linkedin' | 'naukri';
@@ -36,11 +38,34 @@ export type IntentCheck =
 export class IntentStore {
   private armed = new Map<IntentPlatform, ArmedIntent>();
   private used = new Set<string>();
+  private releaser: ((touchId: number, at: Date) => void) | null = null;
 
   constructor(private now: () => number = () => Date.now(), private ttlMs: number = INTENT_TTL_MS) {}
 
+  /**
+   * Bind the callback that moves a reserved touch row out of 'sending' (to 'failed') when its intent
+   * expires, is replaced or is disarmed WITHOUT a commit, so a retry can reserve again. The arm and
+   * commit entry points bind it (the db is at hand there). A consumed intent is never released here.
+   */
+  bindReleaser(fn: (touchId: number, at: Date) => void): void { this.releaser = fn; }
+
+  private release(it: ArmedIntent): void {
+    if (it.touchId === undefined || it.dry || !this.releaser) return;
+    try { this.releaser(it.touchId, new Date(this.now())); } catch { /* never block the caller */ }
+  }
+
+  /** Drop expired intents and release their touches (lazy: runs on arm, peek, check and consume). */
+  sweep(): void {
+    for (const [pl, it] of [...this.armed]) {
+      if (this.now() >= it.expiresAt) { this.armed.delete(pl); this.release(it); }
+    }
+  }
+
   /** Arm an intent; it replaces any earlier one for the platform (one at a time). */
   arm(input: IntentInput): ArmedIntent {
+    this.sweep();
+    const prev = this.armed.get(input.platform);
+    if (prev && prev.touchId !== input.touchId) this.release(prev);
     const intent: ArmedIntent = { ...input, id: randomUUID(), expiresAt: this.now() + this.ttlMs };
     this.armed.set(input.platform, intent);
     return intent;
@@ -48,10 +73,8 @@ export class IntentStore {
 
   /** The armed intent, or null (an expired one is dropped). */
   peek(platform: IntentPlatform): ArmedIntent | null {
-    const it = this.armed.get(platform);
-    if (!it) return null;
-    if (this.now() >= it.expiresAt) { this.armed.delete(platform); return null; }
-    return it;
+    this.sweep();
+    return this.armed.get(platform) ?? null;
   }
 
   /**
@@ -61,7 +84,7 @@ export class IntentStore {
   check(platform: IntentPlatform, cls: CommitClass, liveText?: string | null): IntentCheck {
     const it = this.armed.get(platform);
     if (!it) return { ok: false, code: 'no_armed_intent' };
-    if (this.now() >= it.expiresAt) { this.armed.delete(platform); return { ok: false, code: 'intent_expired' }; }
+    if (this.now() >= it.expiresAt) { this.armed.delete(platform); this.release(it); return { ok: false, code: 'intent_expired' }; }
     if (this.used.has(it.id)) return { ok: false, code: 'intent_used' };
     if (it.class !== cls) return { ok: false, code: 'intent_class_mismatch' };
     if (it.text !== null && (liveText === undefined || liveText === null || !textMatches(it.text, liveText))) {
@@ -75,12 +98,21 @@ export class IntentStore {
     if (this.used.has(id)) return { ok: false, code: 'intent_used' };
     const it = this.armed.get(platform);
     if (!it || it.id !== id) return { ok: false, code: 'no_armed_intent' };
-    if (this.now() >= it.expiresAt) { this.armed.delete(platform); return { ok: false, code: 'intent_expired' }; }
+    if (this.now() >= it.expiresAt) { this.armed.delete(platform); this.release(it); return { ok: false, code: 'intent_expired' }; }
     this.used.add(id);
     this.armed.delete(platform);
     return { ok: true, intent: it };
   }
 
   /** Drop the armed intent without using it (dry run, dialog closed, refusal). */
-  disarm(platform: IntentPlatform): void { this.armed.delete(platform); }
+  disarm(platform: IntentPlatform): void {
+    const it = this.armed.get(platform);
+    this.armed.delete(platform);
+    if (it) this.release(it);
+  }
+}
+
+// Bind the release of a never-committed intent to the db: its reserved touch row goes sending -> failed.
+export function bindTouchRelease(intents: IntentStore, db: BetterSqlite3.Database): void {
+  intents.bindReleaser((touchId, at) => finishTouch(db, touchId, 'failed', at));
 }

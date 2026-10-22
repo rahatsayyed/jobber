@@ -30,6 +30,7 @@ import type { Engine } from '../act.js';
 import { DEFAULT_MAX_APPLIES_PER_DAY, threadHeaderName } from '../commitNaukri.js';
 import { killReason, type EngineDeps } from '../engineTypes.js';
 import type { IntentStore } from '../intent.js';
+import { bindTouchRelease } from '../intent.js';
 import { NAUKRI_POLICY } from '../policy.js';
 import { renderTree, type RawTree } from '../snapshot.js';
 
@@ -76,6 +77,8 @@ function pageTextOf(tree: RawTree, epoch: number): string {
 
 export async function armNaukriMessage(d: NaukriArmDeps, a: NaukriSendArgs): Promise<NaukriArmResult> {
   const { db } = d;
+  bindTouchRelease(d.intents, db);
+  d.intents.sweep();
   const now = d.now();
   let touchId: number | undefined;
   let liveTouch = false;
@@ -239,6 +242,8 @@ function easyApplyRoom(db: BetterSqlite3.Database, env: NodeJS.ProcessEnv): { us
 
 export async function armNaukriApply(d: Omit<NaukriArmDeps, 'checkText' | 'style'>, a: NaukriApplyArgs): Promise<NaukriArmResult> {
   const { db } = d;
+  bindTouchRelease(d.intents, db);
+  d.intents.sweep();
   const now = d.now();
   const fail = (status: NaukriArmResult['status'], code: string, reason?: string): NaukriArmResult =>
     ({ status, code, ...(reason ? { reason } : {}) });

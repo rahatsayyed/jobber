@@ -426,6 +426,14 @@ const hand: EnvSpec[] = [
     restartEvidence: 'src/mcp/naukri.ts',
     ...tier('guarded', 'Feeds unscreened page pixels to the model and allows pointer clicks.', 'true'),
   }),
+  e('SCOUT_SCREENSHOT', 'apply', 'source scout', 'bool', {
+    default: 'false',
+    exampleActive: true,
+    about: 'Turn on scout_screenshot and scout_click_at (a pointer click needs a scout_state and a screenshot since the last navigation or scroll). Screenshot pixels are NOT checked by the injection classifier, so leave it off unless the page tree is not enough.',
+    restart: 'mcp',
+    restartEvidence: 'src/mcp/scout.ts',
+    ...tier('guarded', 'Feeds unscreened page pixels to the model and allows pointer clicks.', 'true'),
+  }),
 
   // ---- Scheduler
   e('SCHEDULER_ENABLED', 'scheduler', 'scheduler', 'bool', {

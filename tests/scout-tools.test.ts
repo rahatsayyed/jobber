@@ -41,7 +41,7 @@ function setup(pages: Record<string, string>, env: NodeJS.ProcessEnv = {}, opts:
   const task = (platform: string, company: string | null) => Number(
     db.prepare("INSERT INTO source_tasks (platform, company, reason, state, created_at, updated_at) VALUES (?, ?, 'error', 'queued', 'now', 'now')").run(platform, company).lastInsertRowid,
   );
-  return { db, browser, call, task, generatedRoot };
+  return { db, browser, call, task, generatedRoot, h };
 }
 const body = (s: string) => JSON.parse(s.split('\n')[0]!);
 
@@ -104,6 +104,82 @@ describe('scout_click', () => {
     expect(body(await s.call('scout_click', { control: 'c2' }))).toMatchObject({ ok: true, code: 'dry_run' });
     expect(s.browser.clicks).toEqual([]);
     expect((s.db.prepare("SELECT action FROM dry_run_actions").all() as Array<{ action: string }>).map((r) => r.action)).toEqual(['scout_click']);
+  });
+});
+
+describe('scout_screenshot and scout_click_at', () => {
+  const URL_ = 'https://jobs.lever.co/acme/list';
+  const PAGE = '<html><body><button>Load more</button></body></html>';
+  const ON = { SCOUT_SCREENSHOT: 'true' } as NodeJS.ProcessEnv;
+  const node = (name: string, extra: Record<string, unknown> = {}) => ({ n: 1, role: 'button', name, ...extra });
+  const opened = async (env: NodeJS.ProcessEnv) => {
+    const s = setup({ [URL_]: PAGE }, env);
+    await s.call('scout_open', { url: URL_, task_id: s.task('lever', 'Acme') });
+    return s;
+  };
+
+  it('is registered and refused while SCOUT_SCREENSHOT is not true', async () => {
+    expect(TOOL_NAMES).toContain('scout_screenshot');
+    expect(TOOL_NAMES).toContain('scout_click_at');
+    const s = await opened({ ...LIVE });
+    expect(JSON.parse(((await s.h.scout_screenshot({})) as { text: string }).text)).toMatchObject({ ok: false, reason: 'screenshot_off' });
+    expect(body(await s.call('scout_click_at', { x: 5, y: 5 }))).toMatchObject({ ok: false, reason: 'screenshot_off' });
+    expect(s.browser.screenshots).toBe(0);
+    expect(s.browser.mouseClicks).toEqual([]);
+  });
+
+  it('click_at needs a state and a screenshot since the last navigation or scroll', async () => {
+    const s = await opened({ ...LIVE, ...ON });
+    s.browser.atNode = node('Load more');
+    expect(body(await s.call('scout_click_at', { x: 5, y: 5 }))).toMatchObject({ ok: false, reason: 'needs_state_and_screenshot' });
+    const r = await s.h.scout_screenshot({});
+    expect(r).toMatchObject({ ok: true, base64: expect.any(String) });
+    expect(s.browser.screenshots).toBe(1);
+    expect(body(await s.call('scout_click_at', { x: 5, y: 5 }))).toMatchObject({ ok: true, code: 'clicked' });
+    expect(s.browser.mouseClicks).toEqual([[5, 5]]);
+    // the click navigated or changed the page: a new state is shown, the old screenshot no longer counts
+    expect(body(await s.call('scout_click_at', { x: 6, y: 6 }))).toMatchObject({ reason: 'needs_state_and_screenshot' });
+    await s.h.scout_screenshot({});
+    await s.call('scout_scroll', { direction: 'down' });
+    expect(body(await s.call('scout_click_at', { x: 6, y: 6 }))).toMatchObject({ reason: 'needs_state_and_screenshot' });
+    expect(s.browser.mouseClicks).toHaveLength(1);
+  });
+
+  it('refuses submit-like, apply, sign-in, commit-class and unresolvable points', async () => {
+    const s = await opened({ ...LIVE, ...ON });
+    await s.h.scout_screenshot({});
+    for (const n of [node('Apply now'), node('Sign in'), node('Sign up'), node('Submit application'), node('Send'), node('Connect'),
+      node('Accept', { submit: true }), node('Continue', { submit: true }), node('Whatever', { submit: true, inFooter: true, dialogName: 'Invite' })]) {
+      s.browser.atNode = n;
+      expect(body(await s.call('scout_click_at', { x: 5, y: 5 })), JSON.stringify(n)).toMatchObject({ ok: false, reason: 'submit_like_control' });
+    }
+    s.browser.atNode = null;
+    expect(body(await s.call('scout_click_at', { x: 5, y: 5 }))).toMatchObject({ ok: false, reason: 'unresolvable_point' });
+    expect(s.browser.mouseClicks).toEqual([]);
+  });
+
+  it('clicks a free point live, records a dry run, and closes the session on an off-host result', async () => {
+    let s = await opened({ ...LIVE, ...ON });
+    await s.h.scout_screenshot({});
+    s.browser.atNode = node('Load more');
+    expect(body(await s.call('scout_click_at', { x: 10, y: 20 }))).toMatchObject({ ok: true, code: 'clicked' });
+    expect(s.browser.mouseClicks).toEqual([[10, 20]]);
+    await rt!.close();
+
+    s = await opened({ ...ON });
+    await s.h.scout_screenshot({});
+    s.browser.atNode = node('Load more');
+    expect(body(await s.call('scout_click_at', { x: 10, y: 20 }))).toMatchObject({ ok: true, code: 'dry_run' });
+    expect(s.browser.mouseClicks).toEqual([]);
+    expect((s.db.prepare("SELECT action FROM dry_run_actions").all() as Array<{ action: string }>).map((r) => r.action)).toEqual(['scout_click_at']);
+    await rt!.close();
+
+    s = await opened({ ...LIVE, ...ON });
+    await s.h.scout_screenshot({});
+    s.browser.atNode = node('Load more');
+    s.browser.urlAfterMouse = 'https://evil.example.test/x';
+    expect(body(await s.call('scout_click_at', { x: 10, y: 20 }))).toMatchObject({ ok: false, reason: 'host_change' });
+    expect(rt!.page()).toBeNull();
   });
 });
 

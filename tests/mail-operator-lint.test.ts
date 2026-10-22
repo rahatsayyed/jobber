@@ -29,6 +29,7 @@ const WAKE_ALLOW = [
   'mcp__naukri__naukri_arm_send', 'mcp__naukri__naukri_arm_apply', 'mcp__db__list_jobs', 'mcp__db__update_outreach_status',
   'mcp__linkedin__linkedin_layout', 'mcp__naukri__naukri_layout', 'mcp__linkedin__linkedin_search_jobs', 'mcp__linkedin__linkedin_search_posts',
   'mcp__scout__scout_search', 'mcp__scout__scout_open', 'mcp__scout__scout_state', 'mcp__scout__scout_scroll', 'mcp__scout__scout_click',
+  'mcp__scout__scout_screenshot', 'mcp__scout__scout_click_at',
   'mcp__scout__scout_extract_jobs', 'mcp__scout__scout_save_jobs', 'mcp__scout__scout_capture_fixture', 'mcp__scout__scout_propose_provider',
   'mcp__scout__scout_tasks', 'mcp__scout__scout_task_update', 'mcp__scout__site_login', 'mcp__scout__site_signup',
   'mcp__scout__scout_layout', 'mcp__scout__scout_close',

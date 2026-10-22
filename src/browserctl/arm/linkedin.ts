@@ -20,6 +20,7 @@ import { profileHeadingName } from '../commit.js';
 import { killReason, type EngineDeps } from '../engineTypes.js';
 import { normName, type CommitClass } from '../guard.js';
 import type { IntentStore } from '../intent.js';
+import { bindTouchRelease } from '../intent.js';
 import { renderTree, type RawTree } from '../snapshot.js';
 
 export type ArmKind = 'connect_note' | 'role_ask' | 'rapport' | 'referral_ask' | 'followup' | 'feedback' | 'accept';
@@ -82,6 +83,8 @@ const KIND_TO_GUARD: Record<ArmKind, Kind | null> = {
 
 export async function armLinkedinSend(deps: ArmDeps, a: ArmArgs): Promise<ArmResult> {
   const { db } = deps;
+  bindTouchRelease(deps.intents, db);
+  deps.intents.sweep();
   const now = () => deps.now();
   let touchId: number | undefined;
   let liveTouch = false;

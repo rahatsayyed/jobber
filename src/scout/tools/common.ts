@@ -27,6 +27,8 @@ export interface ScoutCtx {
   pending: Map<number, Job[]>;
   /** Vocabulary-only summary of the last page read (scout_layout). */
   last: { stepKind: string; block: string | null; fields: number; controls: number } | null;
+  /** click_at preconditions since the last navigation or scroll: a state was shown, a screenshot was taken. */
+  pixels?: { state: boolean; shot: boolean };
 }
 
 export const json = (v: unknown): string => JSON.stringify(v);

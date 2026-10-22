@@ -28,6 +28,7 @@ import type { BcPage } from './driver.js';
 import { killReason, type EngineDeps, type EngineResult } from './engineTypes.js';
 import { isNaukriApplyName, normName } from './guard.js';
 import type { ArmedIntent, IntentStore } from './intent.js';
+import { bindTouchRelease } from './intent.js';
 import type { LiveNode, RawTree } from './snapshot.js';
 
 export interface NaukriCommitInput {
@@ -140,6 +141,8 @@ const echoCount = (tree: RawTree, want: string): number =>
 async function commitSend(i: NaukriCommitInput): Promise<EngineResult> {
   const { deps, page, live } = i;
   const { db } = deps;
+  bindTouchRelease(deps.intents, db);
+  deps.intents.sweep();
   const now = () => deps.now();
   const platform = 'naukri' as const;
   const runId = deps.env.JOBBER_RUN_ID ?? null;

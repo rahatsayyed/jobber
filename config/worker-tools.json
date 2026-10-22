@@ -52,6 +52,8 @@
     "mcp__scout__scout_state",
     "mcp__scout__scout_scroll",
     "mcp__scout__scout_click",
+    "mcp__scout__scout_screenshot",
+    "mcp__scout__scout_click_at",
     "mcp__scout__scout_extract_jobs",
     "mcp__scout__scout_save_jobs",
     "mcp__scout__scout_capture_fixture",

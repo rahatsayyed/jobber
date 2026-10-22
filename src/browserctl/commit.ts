@@ -18,6 +18,7 @@ import type { BcPage } from './driver.js';
 import { killReason, type EngineDeps, type EngineResult } from './engineTypes.js';
 import { dialogKindOf, normName, type CommitClass } from './guard.js';
 import type { ArmedIntent } from './intent.js';
+import { bindTouchRelease } from './intent.js';
 import type { LiveNode, RawTree } from './snapshot.js';
 
 export interface CommitInput {
@@ -83,6 +84,8 @@ const acceptCount = (tree: RawTree): number =>
 export async function commitAction(i: CommitInput): Promise<EngineResult> {
   const { deps, page, cls, live } = i;
   const { db } = deps;
+  bindTouchRelease(deps.intents, db);
+  deps.intents.sweep();
   const now = () => deps.now();
   const platform = 'linkedin' as const;
   let intent: ArmedIntent | null = deps.intents.peek(platform);

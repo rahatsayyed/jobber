@@ -50,11 +50,18 @@ export interface FakeScoutBrowser {
   gotos: string[];
   clicks: string[];
   launches: number;
+  /** Viewport points clicked with the mouse. */
+  mouseClicks: Array<[number, number]>;
+  /** What the in-page "at" script (describeAt) returns for any point; null means nothing usable. */
+  atNode: Record<string, unknown> | null;
+  screenshots: number;
+  /** When set, a mouse click navigates the page to this URL. */
+  urlAfterMouse: string | null;
 }
 
 /** pages: URL -> fixture name or inline HTML. A URL missing from the map loads an empty page. */
 export function createScoutBrowser(pages: Record<string, string>, redirects: Record<string, string> = {}): FakeScoutBrowser {
-  const f: FakeScoutBrowser = { gotos: [], clicks: [], launches: 0, launcher: null as unknown as LiLauncher };
+  const f: FakeScoutBrowser = { gotos: [], clicks: [], launches: 0, mouseClicks: [], atNode: null, screenshots: 0, urlAfterMouse: null, launcher: null as unknown as LiLauncher };
   f.launcher = {
     async launch(): Promise<LiBrowser> {
       f.launches++;
@@ -78,10 +85,13 @@ export function createScoutBrowser(pages: Record<string, string>, redirects: Rec
               if (src === ANCHORS_SCRIPT) return JSON.parse(JSON.stringify(anchorSnapshotFromHtml(html, cur)));
               if (src === FORM_SNAPSHOT_SCRIPT) return JSON.parse(JSON.stringify(snapshotFromHtml(html, cur)));
               if (src === FIXTURE_HTML_SCRIPT) return html;
+              if (src.startsWith('(function (MODE, A)') && src.includes('})("at",')) return f.atNode;
               return null;
             },
             locator: (s: string) => loc(s),
             waitForTimeout: async () => undefined,
+            mouse: { async click(x: number, y: number) { f.mouseClicks.push([x, y]); if (f.urlAfterMouse) cur = f.urlAfterMouse; } },
+            async screenshot() { f.screenshots++; return Buffer.from('png'); },
           } as unknown as LiPage;
           return { newPage: async () => page, storageState: async () => ({ cookies: [] }), waitForEvent: async () => page } as unknown as LiContext;
         },
