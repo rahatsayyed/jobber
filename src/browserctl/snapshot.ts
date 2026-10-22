@@ -36,7 +36,9 @@ export interface RawTree { url: string; title: string; nodes: RawNode[]; truncat
 /** A node re-read live at the moment of an action (same shape as a snapshot node). */
 export type LiveNode = RawNode;
 
-export const MAX_NODES = 400;
+// Pages with a big filter sidebar (Naukri search) put hundreds of text nodes before the result cards, so the
+// collection cap is generous; the render budget drops low-value text lines first, never controls.
+export const MAX_NODES = 1500;
 export const MAX_NAME = 200;
 export const MAX_TEXT = 300;
 export const MAX_VALUE = 5000;
@@ -210,7 +212,7 @@ const BODY_SRC = String.raw`
         if (!/\S/.test(ownText(e)) || underAction(e)) continue;
         role = 'text';
       } else if (role === 'text') { continue; }
-      if (nodes.length >= 400) { truncated = true; break; }
+      if (nodes.length >= MAXN) { truncated = true; break; }
       e.setAttribute('data-bc', String(n));
       nodes.push(info(e, role, false));
       n++;
@@ -252,7 +254,7 @@ export function bcScript(mode: 'snapshot' | 'describe' | 'at' | 'focused', args:
       safe[k] = v;
     }
   }
-  return `(function (MODE, A) { try { ${VIS_SRC}\n${BODY_SRC}\n } catch (err) { return null; } })(${JSON.stringify(mode)}, ${JSON.stringify(safe)})`;
+  return `(function (MODE, A) { try { var MAXN = ${MAX_NODES};\n${VIS_SRC}\n${BODY_SRC}\n } catch (err) { return null; } })(${JSON.stringify(mode)}, ${JSON.stringify(safe)})`;
 }
 
 // ---- fixture side ----
@@ -410,8 +412,9 @@ function clean(s: string): string {
  * Password-like fields show `secret` and never a value. Text past maxChars is cut with a marker.
  */
 export function renderTree(tree: RawTree, epoch: number, maxChars = MAX_RENDER_CHARS): string {
-  const lines: string[] = [`url: ${clean(tree.url.split(/[?#]/)[0]).slice(0, 110)}`];
-  if (tree.title) lines.push(`title: ${clean(tree.title).slice(0, 120)}`);
+  const head: string[] = [`url: ${clean(tree.url.split(/[?#]/)[0]).slice(0, 110)}`];
+  if (tree.title) head.push(`title: ${clean(tree.title).slice(0, 120)}`);
+  const lines: string[] = [];
   for (const nd of tree.nodes) {
     const ref = `[s${epoch}.${nd.n}]`;
     const ind = nd.dialog !== undefined ? '  ' : '';
@@ -427,9 +430,30 @@ export function renderTree(tree: RawTree, epoch: number, maxChars = MAX_RENDER_C
     }
     lines.push(l);
   }
-  if (tree.truncated) lines.push('(page truncated)');
-  let text = lines.join('\n');
-  if (text.length > maxChars) text = text.slice(0, maxChars) + '\n(truncated)';
+  const total = (ls: string[]) => head.join('\n').length + ls.reduce((a, l) => a + l.length + 1, 0);
+  const keep = lines.map(() => true);
+  if (total(lines) > maxChars) {
+    // Over budget: controls and dialog content rank first. Plain text next to a control (a card's company,
+    // location) ranks second, other text last. Drop the lowest rank from the end of the page backwards until it fits.
+    const nodes = tree.nodes;
+    const rank = nodes.map((nd, i) => {
+      if (nd.role !== 'text' || nd.dialog !== undefined) return 0;
+      const near = [i - 2, i - 1, i + 1, i + 2].some((j) => nodes[j] !== undefined && nodes[j]!.role !== 'text');
+      return near ? 1 : 2;
+    });
+    let size = total(lines);
+    for (const r of [2, 1]) {
+      for (let i = lines.length - 1; i >= 0 && size > maxChars; i--) {
+        if (rank[i] === r && keep[i]) { keep[i] = false; size -= lines[i]!.length + 1; }
+      }
+    }
+  }
+  const dropped = keep.filter((k) => !k).length;
+  const out = [...head, ...lines.filter((_, i) => keep[i])];
+  if (dropped) out.push(`(${dropped} text lines omitted)`);
+  if (tree.truncated) out.push('(page truncated)');
+  let text = out.join('\n');
+  if (text.length > maxChars + 60) text = text.slice(0, maxChars) + '\n(truncated)';
   return text;
 }
 
