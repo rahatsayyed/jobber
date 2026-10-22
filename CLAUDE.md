@@ -29,24 +29,36 @@ Operators (one Agent call each, exact tool lists in `config/worker-tools.json`):
 `linkedin-operator`, `naukri-operator`, `source-operator`, `mail-operator`, `apply-operator`.
 `hook-probe` is a throwaway probe and is never used in a pipeline.
 
-- `linkedin` MCP: a locked headless Patchright session on the main account, free-form
-  `open/state/click/type/scroll/screenshot` for reading, plus typed tools:
-  `linkedin_find_profiles` (people search for a company and role hint, used by `contact-finder`;
-  it registers every returned profile in the `people` table, also in dry runs, so the typed send
-  tools accept them as known recipients), `linkedin_check_connection_status`,
-  `linkedin_connect_send`, `linkedin_send_message` (required `kind`: role_ask, rapport,
-  referral_ask, followup, feedback), `linkedin_accept_invite`, `linkedin_limits`,
-  `linkedin_layout` (read-only layout memory), `linkedin_search_jobs` and `linkedin_search_posts`
-  (named searches from `config/linkedin-discovery.json`, main account); 16 tools in all, see
-  `TOOL_NAMES` in `src/mcp/linkedin.ts`.
-- `naukri` MCP: `naukri_search`, `naukri_discover`, `naukri_inbox`, `naukri_read_thread`,
-  `naukri_send_message`, `naukri_layout` and the older open/state/click/type/screenshot/close.
+- `linkedin` MCP: a locked headless Patchright session on the main account, built on the shared
+  `src/browserctl` engine. Generic page tools act by ref only: `linkedin_open`, `linkedin_snapshot`
+  (refs `s<epoch>.<n>`, a new epoch per snapshot, a stale ref is refused), `linkedin_click`,
+  `linkedin_type`, `linkedin_press_key`, `linkedin_scroll`, `linkedin_wait_for`, plus
+  `linkedin_screenshot` and `linkedin_click_at` (both off unless `LINKEDIN_SCREENSHOT=true`). The one
+  send tool is `linkedin_arm_send` (kinds `connect_note`, `role_ask`, `rapport`, `referral_ask`,
+  `followup`, `feedback`, `accept`): it runs the code gates and arms one intent, and the following
+  type and click calls commit it (see "Connecting"). Data tools: `linkedin_find_profiles` (people
+  search for a company and role hint, used by `contact-finder`; it registers every returned profile in
+  the `people` table, also in dry runs, so the arm tool accepts them as known recipients),
+  `linkedin_search_jobs` and `linkedin_search_posts` (named searches from
+  `config/linkedin-discovery.json`), `linkedin_limits`, `linkedin_layout` (read-only layout
+  telemetry) and `linkedin_close`; 16 tools in all, see `TOOL_NAMES` in `src/mcp/linkedin.ts`. The
+  old `linkedin_connect_send`, `linkedin_send_message`, `linkedin_accept_invite`,
+  `linkedin_check_connection_status`, text-based click and type and the selector code behind them are
+  gone.
+- `naukri` MCP: the same engine. Generic ref tools `naukri_open`, `naukri_snapshot`, `naukri_click`,
+  `naukri_type`, `naukri_press_key`, `naukri_scroll`, `naukri_wait_for`, `naukri_screenshot` and
+  `naukri_click_at` (both off unless `NAUKRI_SCREENSHOT=true`), the two arm tools `naukri_arm_send`
+  (thread messages, verified threads only; `naukri-operator`) and `naukri_arm_apply` (the native
+  Apply, `apply-operator` only), and the data tools `naukri_search`, `naukri_discover`,
+  `naukri_inbox`, `naukri_read_thread`, `naukri_layout` and `naukri_close`.
 - `outreach` MCP: `list_due_touches`, `next_contacts`, `record_inbound`, `escalate`,
   `list_open_escalations`.
 - `scout` MCP: page tools for the `source-operator` that read and extract only (`scout_search`,
   `scout_open`, `scout_state`, `scout_scroll`, `scout_click`, `scout_extract_jobs`,
   `scout_save_jobs`, `scout_capture_fixture`, `scout_propose_provider`, `scout_tasks`,
-  `scout_task_update`, `scout_layout`, `scout_close`, `site_login`, `site_signup`).
+  `scout_task_update`, `scout_layout`, `scout_close`, `site_login`, `site_signup`), plus
+  `scout_screenshot` and `scout_click_at` (both off unless `SCOUT_SCREENSHOT=true`; the click refuses
+  every commit, submit, apply, sign-in and sign-up control).
 - `applier` MCP: the typed browser-apply tools for the `apply-operator` (`apply_open`,
   `apply_state`, `apply_autofill`, `apply_fill`, `apply_choose`, `apply_upload`, `apply_next`,
   `apply_submit`, `apply_escalate`, `apply_recipe`, `apply_propose_recipe`, `apply_limits`,
@@ -515,7 +527,8 @@ platform that already has a recipe. Drift: every ATS page read is observed by la
 per `ats_<id>`, see "Layout memory and platform operators"); under `LAYOUT_ENFORCE=enforce` a drifted
 verdict makes `apply_autofill` and `apply_submit` refuse, otherwise it is only recorded.
 `APPLY_SCREENSHOT` (ships `false`) would offer a screenshot tool; screenshot pixels are NOT checked by
-the injection classifier.
+the injection classifier. The Naukri leg of apply (`naukri_arm_apply` and the ref tools) is described
+under "Naukri".
 
 **Answering rules (unchanged).** Never invent a plausible-sounding number or fact. On `needs_owner` the
 operator reports `{job_id, reason, question}` with the exact question text and calls `apply_escalate`; it
@@ -541,16 +554,15 @@ written from fixtures. Owner live checks are in `docs/apply.md`.
 
 LinkedIn connection requests and messages are sent automatically by the `linkedin-operator` (tasks
 `new_outreach` and `followups`, see "Layout memory and platform operators") as part of scheduled wakes,
-through the typed tools of the `linkedin` MCP (main account, one locked headless session). There is no
+through the `linkedin` MCP (main account, one locked headless session; arm tool plus ref actions). There is no
 per-note Telegram approval gate. This was an explicit, informed decision (not an oversight): the
 wrong-recipient incident that originally motivated the approval gate was root-caused and fixed at the
-automated-verification level rather than relying on a human catching it after the fact. The typed
-tools fail closed on every call regardless of who triggered it: the recipient must be a known row in
+automated-verification level rather than relying on a human catching it after the fact. The
+arm and commit steps fail closed on every call regardless of who triggered it: the recipient must be a known row in
 `people` (a refused `unknown_recipient` means the contact was never registered: `contact-finder`
 registers people through `linkedin_find_profiles`, so rerun the pipeline for that job), the profile
 URL and the recipient name shown in the dialog are verified against the expected person
-(`src/linkedin/verify.ts`: `verifyProfileUrl`, `verifyRecipientName`, plus 2D-proximity candidate
-matching), outbound text passes the style and output gates and the classifier screen (see "Outreach
+(`src/linkedin/verify.ts`: `verifyProfileUrl`, `verifyRecipientName`, `namesPlausiblyMatch`), outbound text passes the style and output gates and the classifier screen (see "Outreach
 safety layers"), and the ceiling is consumed right before the Send click.
 
 The only connect caps are the weekly rolling ceilings in `src/outreach/limits.ts`: `linkedin_invite`
@@ -563,73 +575,61 @@ its hybrid Claude fallback are gone; the browser applier's own LinkedIn Easy App
 under "Applying".
 
 The `linkedin-operator` flow for a new contact (`new_outreach`): `outreach.next_contacts` returns the
-only people it may contact (it enforces the per-company limit), `linkedin_open` plus `linkedin_state`
-confirm the page shows the expected person, then `linkedin_check_connection_status` runs BEFORE
-anything is drafted. `not_connected`: the `draft-connect-note` skill drafts a note (at most 300
-characters) and `linkedin_connect_send` sends it. `connected`: the `draft-linkedin-message` skill drafts
-a DM and `linkedin_send_message` sends it with `kind` `role_ask` or `rapport`. `failed`: skip it.
+only people it may contact (it enforces the per-company limit), `linkedin_open` plus `linkedin_snapshot`
+confirm the page shows the expected person, and the connection state is read from that snapshot BEFORE
+anything is drafted (a Connect control means not connected, a 1st degree mark without Connect means
+connected, Pending or unclear means skip). Not connected: the `draft-connect-note` skill drafts a note
+(at most 300 characters), the operator calls `linkedin_arm_send({kind: "connect_note", ...})` with the
+exact text, then clicks Connect by ref, types the exact note and clicks Send. Connected: the
+`draft-linkedin-message` skill drafts a DM, `linkedin_arm_send` with `kind` `role_ask` or `rapport`,
+then open the message dialog, type the exact armed text and click Send.
+
+**Arm, then commit** (`src/browserctl`; unit-tested with fakes, NOT live-verified). Every browser
+action goes through one engine: it refuses a ref from an old snapshot epoch, re-reads the element, its
+role, accessible name and enclosing dialog live at the moment of the action, and classifies it with a
+pure semantic guard (`src/browserctl/guard.ts`: `free`, `commit_connect_send`, `commit_message_send`,
+`commit_accept_invite`, `naukri_send`, `naukri_apply`, `irreversible_other`; a dialog-footer or submit
+button whose name is not on the known-safe list is `irreversible_other`; an unresolvable `click_at`
+point is refused). A commit-class click, an Enter in a composer, or typing into a composer needs an
+ARMED INTENT: the arm tool (`linkedin_arm_send`, `naukri_arm_send`, `naukri_arm_apply`) runs the
+existing code gates first (recipient must be a known `people` row, employer, style, fact and output
+gates, `reserveTouch` idempotency, quiet hours, halts, dry run, a spent weekly ceiling refuses at
+arm) and holds one in-memory intent per platform for 120 seconds, single use. At commit time the
+engine re-verifies on the live page (profile key equals the armed key, the dialog recipient name
+plausibly matches, the composer text read from the live field equals the armed text exactly), then
+consumes the ceiling right before the click, watches the platform POST and confirms by response plus
+dialog state. Statuses: `sent`, `dry_run`, `unconfirmed` (clicked but not confirmed: never retried,
+the owner checks it), `refused`, `rate_limited`, `halted`; `no_armed_intent` refuses an unarmed
+commit. An armed intent that expires or is disarmed without a commit releases its reserved touch.
+Typing text other than the armed text into a composer is refused; search and other fields are capped
+and output-gated; password and hidden field values never appear in a snapshot.
+
+**Failure ladder** (written into the operator prompts): snapshot, act by ref; if a ref is missing or
+the page is odd, scroll and re-snapshot once; then screenshot (only with the flag on); then
+`*_click_at` (only after a snapshot and a screenshot at the current epoch, never for a commit class
+without an arm); then escalate with a one-line reason through `outreach.escalate` rather than looping.
+A drifted layout is no longer a stop reason, but a block, CAPTCHA, checkpoint or login wall still
+halts and escalates.
 
 The manual on-demand `/connect` command (one hand-picked job and profile, outside a wake) uses the same
-typed tools and also sends immediately, without a separate approval step. "Manual" means "you trigger
-it for one job/profile," not "requires a review step." Steps:
+tools and also sends without a separate approval step. "Manual" means "you trigger it for one
+job/profile," not "requires a review step." Steps:
 
-1. Call `linkedin_find_profiles({company, role_hint})` -> candidate profiles (registered in
-   `people` as a side effect, which the send tools require).
-2. For the chosen candidate, call `linkedin_check_connection_status({profile_url})` FIRST —
-   read-only, before drafting anything. This decides which skill and which send tool to use
-   below; never draft or send without checking status first. It also returns
-   `profileContext.about` (scraped from the same page load, see "Connection-status check"
-   below) — pass this through to whichever drafting skill runs next.
-3. If `status: "connected"`:
-   - Invoke the `draft-linkedin-message` skill with the job, the candidate profile, and
-     `profileContext` from step 2 -> a message (no character cap, phrased as a DM to an
-     existing contact, not a connection ask).
-   - Call `linkedin_send_message({profile_url, text, kind, job_id, company})` immediately, with
-     a required `kind` (`role_ask`, `rapport`, `referral_ask`, `followup` or `feedback`) —
-     no separate approval step, per above.
-   - Report the result (`sent`/`rate_limited`/`failed`/`dry_run`) to Telegram.
-4. If `status: "not_connected"`:
-   - Invoke the `draft-connect-note` skill with the job, the candidate profile, and
-     `profileContext` from step 2 -> a note (<=300 chars, references the job/role by name).
-   - Call `linkedin_connect_send({profile_url, note, job_id, company})` immediately — no
-     approval wait, per above; its fail-closed recipient-name/URL verification still runs.
-   - Report the result (`sent`/`rate_limited`/`failed`/`dry_run`) to Telegram.
-5. If `status: "failed"`: report the failure to Telegram — do not guess which path to take.
+1. Call `linkedin_find_profiles({company, role_hint, category})` -> candidate profiles (registered in
+   `people` as a side effect, which the arm tool requires).
+2. `linkedin_open` the chosen profile and `linkedin_snapshot`; read the connection state from the
+   snapshot before drafting anything (see above) and pass any visible About text to the drafting skill.
+3. Connected: invoke `draft-linkedin-message`, then `linkedin_arm_send({kind, profile_url, text,
+   job_id, company})` (kind `role_ask`, `rapport`, `referral_ask`, `followup` or `feedback`), open the
+   message dialog, type the exact text, click Send.
+4. Not connected: invoke `draft-connect-note` (<=300 chars, references the role by name),
+   `linkedin_arm_send({kind: "connect_note", ...})`, click Connect, type the exact note, click Send.
+5. Report the status (`sent`, `dry_run`, `unconfirmed`, `refused`, `rate_limited`) to Telegram. An
+   unclear page: report it, do not guess which path to take.
 
-### `linkedin_connect_send` reliability
-
-`linkedin_connect_send` verifies its final Send click actually went through (confirmation poll
-on the invite dialog and the network response) before reporting `sent`; any exit after the click
-without confirmation is `unconfirmed`, never a guessed success. It has no knowledge of connection
-status at all — callers must call `linkedin_check_connection_status` first (see above) and only
-invoke `linkedin_connect_send` for a profile already confirmed `not_connected`. There is no Claude
-fallback for its selector misses; a miss returns a refusal or `failed`.
-
-### Connection-status check (decided BEFORE drafting, not discovered mid-send)
-
-`linkedin_check_connection_status({profile_url})` is read-only (never clicks or sends anything)
-and returns `status: "connected" | "pending" | "not_connected" | "failed"`. The rule is one shared function
-(`src/linkedin/connectionState.ts`, also used by `linkedin_connect_send` and `linkedin_send_message`):
-a visible Connect button always means not connected; a 1st-degree reading without Connect means
-connected; only when the degree cannot be read does the "Manage notifications about `<Name>`" bell
-count. The bell alone is NOT proof: live check 2026-10-21 showed it on a followed 3rd-degree profile
-with Connect and Follow buttons. This replaced an earlier design (embedding an already-connected check
-directly inside the send call, keyed off Message-button presence) after a live false positive on
-a legacy tool: a 2nd-degree (not connected) profile can show BOTH "Connect" and "Message" (a
-Premium/InMail feature that opens messaging to non-connections) — Message presence alone does
-not imply already-connected, but the bell reliably did (observed with that legacy tool; the typed
-tool's selectors have not been checked against live LinkedIn, see "Known limits").
-Checking status up front — before drafting — also avoids drafting the wrong kind of content
-(a connection-request note when a DM was needed, or vice versa) and re-drafting after the fact.
-`linkedin_send_message` is gated by its own weekly rolling `linkedin_message` ceiling, separate
-from the invite ceiling, and records the sent message in the `connections` table with
-`status: "messaged"`.
-
-`linkedin_check_connection_status` also scrapes the profile's "About" section text from the same
-page load (no extra navigation) and returns it as `profileContext: {about}` when present. This
-feeds `draft-connect-note`/`draft-linkedin-message` a real, verifiable detail about the person so
-the note/message isn't generic — both skills are instructed to reference one concrete detail from
-`about` when present, and to never invent one when it's absent.
+`linkedin_arm_send` is gated by the weekly rolling `linkedin_invite` ceiling for connects and the
+separate `linkedin_message` ceiling for messages (limit values live in the catalog, not here), and a
+confirmed send is recorded in `connections` (`status: "messaged"` for a DM).
 
 ## Owner docs
 
@@ -650,7 +650,7 @@ section is the reference for what exists.
   refuses any other version. Its own upgrade command is never to be used (owner decision,
   2026-10-14). The bridge gets only `TELEGRAM_BOT_TOKEN` and `ALLOWED_USERS` from `.env`.
 - **Permission sets** (`config/permission-sets.json`): `read_only` (default, no sends),
-  `outreach_send` (read_only plus fetch, queue, send email, LinkedIn connect and message, Naukri message, apply; still under the caps) and
+  `outreach_send` (read_only plus fetch, queue, send email, LinkedIn arm and action tools, Naukri arm and action tools, apply; still under the caps; re-apply the set after the browserctl rebuild because the tool names changed) and
   `full` (adds whole MCP servers). `npm run permissions -- read_only|outreach_send|full|--status`
   applies one to the git-ignored `.claude/settings.local.json` (a sibling
   `settings.local.managed.json` records what was written). `npm run ccgram-hooks --
@@ -732,57 +732,52 @@ mode: it prints `MODE: DRY RUN` or `MODE: LIVE` from `.env`, and the owner alone
 
 ## Layout memory and platform operators
 
-Plan 8B. Code, not the model, remembers what the LinkedIn and Naukri pages looked like, so the
-scheduled operators can skip exploratory reads when a page matches and stop when a page drifted.
+Plan 8B. Code, not the model, remembers what the LinkedIn and Naukri pages looked like, as
+**telemetry**: the operators can see what the pages looked like, but since the browserctl rebuild a
+drifted layout never stops anything (see "Drift handling").
 
 **Layout memory** (`src/layout/*`). One JSON file per platform at `.jobber/layout/<platform>.json`
 (git-ignored; `LAYOUT_DIR` must resolve inside the project, else the default is used; a file
 over `LAYOUT_MAX_BYTES` is not grown). It holds only ids from the closed vocabulary in
 `src/layout/vocab.ts` (page kinds, landmark ids, count keys, action labels): page text can never
-reach it, and nothing in it is model-written. The observer is advisory: it records what the
-extractors parsed from a state read and never blocks a read. Variants are promoted after
+reach it, and nothing in it is model-written. The observer is advisory: the browserctl engine feeds it every snapshot (and the data tools feed it
+their parsed reads); it records and never blocks a read or an action. Variants are promoted after
 `LAYOUT_PROMOTE_N` observations over `LAYOUT_PROMOTE_RUNS` distinct run ids. A run id is the
 process or run id (`JOBBER_RUN_ID`, else `SCHEDULER_RUN_ID`, else per process). Promoted variants
 are never auto-evicted: a third distinct layout needs `npm run layout -- reset`
 (`variant_replaced` is effectively dormant).
 
-**Reading `layout=`**: `linkedin_state`/`linkedin_open` and the Naukri state header carry
-`layout=<match|partial|drift|unknown|blocked|logged_out|unloaded>`. `match`: known layout, use
-typed tools directly. `partial`: some landmarks missing, re-read before relying on them. `drift`:
-a learned landmark is gone. `unknown`: kind or variant not learned yet. `blocked`, `logged_out`:
+**Reading `layout=`**: `linkedin_open`/`linkedin_snapshot` and the Naukri snapshot header carry
+`layout=<match|partial|drift|unknown|blocked|logged_out|unloaded>`. `match`: known layout. `partial`: some landmarks missing, re-snapshot before relying on a ref. `drift`:
+a learned landmark is gone (adapt, do not stop). `unknown`: kind or variant not learned yet. `blocked`, `logged_out`:
 not layout problems (halt and login rules win). `unloaded`: page not fully loaded, retry.
 Read-only tools `linkedin_layout` and `naukri_layout` return the enforce mode, the last verdict
 and the compact memory.
 
-**Warn then enforce.** `LAYOUT_ENFORCE=warn` (default): typed tools add a `layout=` note and
-proceed. `enforce`: the irreversible LinkedIn tools (`linkedin_connect_send`,
-`linkedin_send_message`, `linkedin_accept_invite`) refuse with `layout_drift` or
-`layout_unverified` before any ceiling is consumed; `unknown` kinds refuse until learned;
-`partial` passes only if every landmark the tool needs is present. Naukri has the precondition
-only on `naukri_send_message` for the `thread` kind. `off` disables it. Enforce only after the
-supervised learning run below.
+**No enforcement on sends.** The LinkedIn and Naukri action tools no longer have a landmark
+precondition: the old `layout_drift` and `layout_unverified` refusals of `linkedin_connect_send`,
+`linkedin_send_message`, `linkedin_accept_invite` and `naukri_send_message` are gone with those tools,
+and the send safety now comes from the arm tool, the semantic guard and the live re-verification (see
+"Connecting"). `TOOL_REQUIRES` (`src/layout/vocab.ts`) now scopes only the data tools
+(`linkedin_find_profiles`, `linkedin_search_jobs`, `linkedin_search_posts`), where `LAYOUT_ENFORCE=enforce`
+can still refuse an unverified read page. `LAYOUT_ENFORCE=warn` (default) only adds a `layout=` note;
+`off` disables it. The ATS applier's own enforce behaviour is described under "Applying".
 
-**Drift handling.** `LAYOUT_DRIFT_ESCALATE_N` drift observations within
-`LAYOUT_DRIFT_WINDOW_HOURS` write an owner info escalation; a platform halt (`layout_drift:*` in
-`halt_flags`) needs a streak of at least `LAYOUT_DRIFT_HALT_N` AND at least 2 distinct run ids.
-Only the owner clears it. The halt itself is applied only when `LAYOUT_ENFORCE=enforce`: in
-`warn` and `off` mode the same event records the `layout_drift_halt` escalation (detail ends
-`mode=warn` or `mode=off`) and a notification, but halts nothing. `npm run layout -- clear-halt <platform>` also resets the
-drift streak, window and run ids of the kind named in the `layout_drift:<kind>` reason (totals are
-kept), so the next dead page cannot re-halt at once, and it refuses when only the global `all`
-halt carries the reason. A LinkedIn `profile` URL whose snapshot has no extracted profile name
-("profile unavailable", `/in/x/recent-activity`) is `unloaded`, never drift and never learned.
-Naukri: `shell` and `unloaded` come from snapshot content (an empty snapshot at a known URL is
-`unloaded`, an Access Denied title or notice is `blocked`, a login wall or error page is not a
-shell); the `job` kind has no critical landmarks and stays `unknown`, only `thread` is learned
-(requires `chat.input`). `LAYOUT_*` is in the `outreach_wake` env allowlist (`env_prefixes` in
-`config/run-profiles.json`), so the MCP servers of a wake see it; `npm run status -- layout`, the
-layout CLI and the doctor read `LAYOUT_*` from `.env` through one helper
-(`src/layout/config.ts` `loadLayoutEnv`, nothing else is read).
+**Drift handling.** Drift is telemetry only for LinkedIn and Naukri. `LAYOUT_DRIFT_ESCALATE_N` drift
+observations within `LAYOUT_DRIFT_WINDOW_HOURS` still write an owner info escalation, but there is no
+`layout_drift` halt for these platforms any more: operators adapt (snapshot, scroll, screenshot,
+pointer, escalate, see "Connecting"). The halts that remain are the real ones: a block page, CAPTCHA,
+checkpoint or restriction page halts the platform, consecutive Naukri send failures halt Naukri, and
+`.jobber/STOP` and `halt_flags` still win. `npm run layout -- clear-halt <platform>` remains for any
+old `layout_drift:*` row and for the ATS `ats_<id>` files. A LinkedIn `profile` URL whose snapshot has
+no extracted profile name ("profile unavailable") is `unloaded`, never drift and never learned.
+`LAYOUT_*` is in the `outreach_wake` env allowlist (`env_prefixes` in `config/run-profiles.json`), so
+the MCP servers of a wake see it; `npm run status -- layout`, the layout CLI and the doctor read
+`LAYOUT_*` from `.env` through one helper (`src/layout/config.ts` `loadLayoutEnv`, nothing else is read).
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `LAYOUT_ENFORCE` | `warn` | `off`, `warn` or `enforce` |
+| `LAYOUT_ENFORCE` | `warn` | `off`, `warn` or `enforce` (data tools and ATS pages only) |
 | `LAYOUT_PROMOTE_N` | `3` | observations before a variant is promoted |
 | `LAYOUT_PROMOTE_RUNS` | `2` | distinct run ids needed for promotion |
 | `LAYOUT_MATCH_MIN` | `0.9` | landmark score for `match` |
@@ -806,8 +801,8 @@ order of the wake prompt (see "Running a wake"). A platform operator gets a list
 `kind` and `quota`: `inbox`, `followups`, `new_outreach`, `discover` (named LinkedIn job and post
 searches, or the Naukri searches; the quota is the number of searches or, for Naukri, the job pages it
 may open for descriptions) and `search` (Naukri only; it returns counts only). Every platform operator
-starts with its layout tool and follows the `layout=` protocol; a typed-tool refusal is final for that
-item. The browser applier also observes ATS pages under per-platform `ats_<id>` layout files (see
+starts with its layout tool (telemetry) and then follows snapshot-first, arm-then-commit and the
+failure ladder; a refusal from an arm or commit step is final for that item. The browser applier also observes ATS pages under per-platform `ats_<id>` layout files (see
 "Applying"). Tool lists: `config/worker-tools.json`.
 
 **Owner CLI.** `npm run layout -- status|show <platform>|reset <platform> [--kind <id>]|clear-halt
@@ -816,7 +811,7 @@ item. The browser applier also observes ATS pages under per-platform `ats_<id>` 
 prints the summary. `npm run doctor` checks `layout_store`, `layout_age`, `layout_drift` and
 `layout_enforce`. The dashboard chat box still accepts only `limits`, `working` and `health`.
 
-**Supervised learning run (owner-only; NOT performed in this build).**
+**Supervised learning run (owner-only; NOT performed in this build; now only informs telemetry).**
 1. Fully restart Claude Code (new agents, new MCP tool names, removed workers); check
    `git check-ignore .jobber/layout/linkedin.json`.
 2. Dry-run flags (`LINKEDIN_DRY_RUN=true`, `SCHEDULER_DRY_RUN=true`) and `LAYOUT_ENFORCE=warn`.
@@ -826,14 +821,14 @@ prints the summary. `npm run doctor` checks `layout_store`, `layout_age`, `layou
    missing observations or runs.
 4. `npm run layout -- show linkedin` and check only vocabulary ids appear; expect to tune
    `MIN_SET` and `CRITICAL` in `src/layout/vocab.ts` (a code change).
-5. Set `LAYOUT_ENFORCE=enforce` only after a clean week of `warn` with no drift on critical kinds
-   and doctor `layout_enforce` ready. A new page kind a typed tool starts using needs a new
-   supervised learn step.
-6. On a `layout_drift:*` halt: look at the page in a headed session, `reset <platform> --kind <id>`
+5. `LAYOUT_ENFORCE=enforce` now only affects the data tools and ATS pages; set it only after a clean
+   week of `warn` with no drift on critical kinds and doctor `layout_enforce` ready.
+6. On an old `layout_drift:*` halt: look at the page in a headed session, `reset <platform> --kind <id>`
    if the layout really changed, `clear-halt <platform>`, then relearn.
 
 **Known limits.** Real pages are unverified: landmark rules come from the parsed snapshot shape,
-so `MIN_SET`/`CRITICAL` need tuning after the first live observation. `chat.input` rests on the
+so `MIN_SET`/`CRITICAL` need tuning after the first live observation, and the browserctl snapshot
+walker (generic, role and name based) has not been run against real LinkedIn or Naukri. `chat.input` rests on the
 unverified Naukri `chatbot_Drawer` selector. The memory detects the code's view of the page, not
 the DOM: a change the extractors parse identically is invisible. LinkedIn structure counts are a
 coarse extra signal, and `shell` is a proxy. Naukri's Akamai blocks are sensitive: observation adds
@@ -842,9 +837,10 @@ check. Auto-promotion can learn a bad steady state (use `reset`). Halts need the
 
 ## Outreach safety layers
 
-LinkedIn and Naukri outreach is agent-driven (ADR `docs/superpowers/specs/2026-10-13-adr-agent-driven-browser-runtime.md`):
-reading is free-form, anything irreversible goes through a typed tool that enforces the rules
-in code. Layers, outermost first:
+LinkedIn and Naukri outreach is agent-driven (ADR `docs/superpowers/specs/2026-10-13-adr-agent-driven-browser-runtime.md`,
+revised by the browserctl design `.superpowers/sdd/linkedin-arch-design.md`): the model reads and acts by
+snapshot ref, and anything irreversible needs an armed intent that the arm tool created after the code
+gates and that the engine re-verifies against the live page. Layers, outermost first:
 
 1. **Restricted runner**: `scripts/run-claude.sh|ts <profile>` builds the `claude` argv from
    `config/run-profiles.json`: exact allowlisted tool names (wildcards rejected), allowlisted
@@ -867,10 +863,9 @@ in code. Layers, outermost first:
    the owner (`npm run models -- fetch|pin`, then `classifier:fit`); see
    `docs/classifier-models.md`. The default profile is English-only. It is wired through one
    function, `screenUntrusted` (`src/safety/screen.ts`: code gate, then classifier), called on
-   every surface in `SCREENED_SURFACES`: `linkedin_state` (also covers open, scroll, click and type
-   output), `linkedin_check_connection_status`, `linkedin_connect_send`, `linkedin_send_message`,
-   `linkedin_accept_invite`, `linkedin_find_profiles`, `linkedin_search_jobs`, `linkedin_search_posts`, the `naukri` reads (`naukri_state`,
-   `naukri_search`, `naukri_discover`, `naukri_inbox`, `naukri_read_thread`) and the Naukri send path, the Naukri
+   every surface in `SCREENED_SURFACES`: `linkedin_snapshot` (also covers open, scroll, click, type and press_key
+   output), `linkedin_arm_send`, `linkedin_find_profiles`, `linkedin_search_jobs`, `linkedin_search_posts`, the `naukri` reads (`naukri_snapshot`,
+   `naukri_arm_send`, `naukri_arm_apply`, `naukri_search`, `naukri_discover`, `naukri_inbox`, `naukri_read_thread`) and the Naukri send path, the Naukri
    inbound classifier (`src/naukri/inbound.ts`) `outreach.escalate`, and the applier and scout page reads (`apply_state`, `apply_escalate`, `scout_search`, `scout_state`, `scout_extract_jobs`, site state; the full list is `SCREENED_SURFACES` in `src/safety/screen.ts`); a lint test and the
    `classifier_wired` doctor check fail when one of them stops calling it. Fail-closed policy:
    a live (non-dry-run) read or send is BLOCKED when the classifier is unset, unpinned, unfitted,
@@ -883,8 +878,14 @@ in code. Layers, outermost first:
    launcher refuses to start any profile whose classifier is not ready (`src/platform/launchCheck.ts`,
    exit 3 `classifier not ready`); the legacy `config/classifier.pin.json` is removed. Each MCP
    process (`linkedin`, `naukri`, `outreach`) loads its own copy of the model on first use (about
-   750 MB of weights each; `outreach` only on `escalate`). `linkedin_screenshot` returns raw
-   pixels that are NOT screened.
+   750 MB of weights each; `outreach` only on `escalate`). The three screenshot tools (`linkedin_screenshot`,
+   `naukri_screenshot`, `scout_screenshot`) return raw pixels that are NOT screened, and their
+   `*_click_at` pointer tools act on coordinates; both ship off behind `LINKEDIN_SCREENSHOT`,
+   `NAUKRI_SCREENSHOT` and `SCOUT_SCREENSHOT` (all `false`, the owner flips them, same idea as
+   `APPLY_SCREENSHOT`). `click_at` needs its flag, a snapshot and a screenshot at the current epoch, and is
+   classified by the same semantic guard as a ref click (an element under the point that is a commit
+   or irreversible class needs an armed intent; scout refuses all of them). The arm tools, the guard
+   and the armed-intent store are described under "Connecting".
 5. **Output gate** (`src/safety/outputGate.ts`) after the AI-tells style gate
    (`src/safety/styleGate.ts`, `config/ai-tells.json`: banned phrases, no em or en dashes, no
    markdown, per-kind word limits) and `resume.check_text` (fact gate): recipient and thread must
@@ -905,9 +906,8 @@ in code. Layers, outermost first:
    `.claude/settings.json` as a `onFailure: block` matcher hook for the irreversible tools only
    (`gmail.send_email`, the applier's acting tools (`apply_open`, `apply_autofill`, `apply_fill`,
    `apply_choose`, `apply_upload`, `apply_next`, `apply_submit`, `apply_propose_recipe`, `site_login`,
-   `site_signup`, `site_open_link`), `linkedin_connect_send`, `linkedin_send_message`,
-   `linkedin_accept_invite`, `linkedin_search_jobs`, `linkedin_search_posts`, `naukri_send_message`,
-   `naukri_discover`, `naukri_click`, `naukri_type` and every `scout` tool); the same hook
+   `site_signup`, `site_open_link`), `linkedin_(click|type|press_key|click_at|arm_send)`, `linkedin_search_jobs`, `linkedin_search_posts`,
+   `naukri_(click|type|press_key|click_at|arm_send|arm_apply)`, `naukri_discover` and every `scout` tool); the same hook
    denies `gmail.send_email` when `JOBBER_DRY_RUN=1`; the launcher (`scripts/run-claude.ts`) exits 4 when STOP or `JOBBER_KILL` is set, and a wake (also a
    forced one from `./run-hunt.sh`) is skipped with reason `killed`. Not covered: `halt_flags` rows are not
    read by the hook (the typed tools read them); a tool call already executing when STOP is
@@ -923,8 +923,10 @@ in code. Layers, outermost first:
    (`npm run dry-run:report`), redacted and clamped.
 
 Not covered by code: `gmail.send_email` has the kill-switch and `JOBBER_DRY_RUN=1` hook only (no
-`halt_flags` read; the `mail-operator` "dry run" rule for other dry flags is prompt-only), and free-form
-`linkedin_open/click/scroll` have no halt check beyond the typed tools'. See layer 6 for the full
+`halt_flags` read; the `mail-operator` "dry run" rule for other dry flags is prompt-only). The
+browserctl actions do check halts and the kill switch themselves, but the semantic guard is a word
+list over accessible names (English plus a short extension list), so a control it mis-reads is a
+residual risk; it fails closed for unknown dialog-footer and submit buttons. See layer 6 for the full
 kill-switch scope.
 
 ## Scheduler
@@ -975,18 +977,19 @@ home IP; Akamai may treat a datacenter/VPS IP harder, so re-run the check from t
   to the headless recipe above; unset means the old headed Playwright. The apply-URL resolution
   phase (`resolveApplyUrl`) resolved 0 of 10 jobs both headed and headless (not diagnosed, so
   `apply_url` falls back to the Naukri listing URL).
-- **Apply** (`naukri` MCP, `src/mcp/naukri.ts`, tools `naukri_open`, `naukri_state`,
-  `naukri_click`, `naukri_type`, `naukri_screenshot`, `naukri_close`): ONE persistent headless
-  session (saved login in `secrets/naukri-state.json`, refresh with `npm run naukri:login`,
-  which opens headed real Chrome for a manual login), closed after ~10 min idle. It is hands and
-  eyes only: you read `naukri_state` (a compact text state, about 100-200 tokens: buttons, the
-  recruiter chatbot's last messages, input, options, `applied_confirmation_seen`) and decide every
-  answer yourself; `naukri_screenshot` (900px PNG, far more tokens) is the emergency fallback only
-  when the text state is empty or confusing. Typed answers: `naukri_type` with `submit: true`.
-  Option questions: `naukri_click` the option, then `naukri_click` "Save" (the panel's Save). The
-  native Apply click spends one of the shared daily `MAX_APPLIES_PER_DAY`, and a confirmed apply is
-  recorded once per job. Only the native Apply button is clickable by default; most Naukri jobs
-  say "Apply on company site" and are not applied through this tool.
+- **Apply** (`naukri` MCP, `src/mcp/naukri.ts`, built on `src/browserctl`): ONE persistent headless
+  session (saved login in `secrets/naukri-state.json`, refresh with `npm run naukri:login`, which
+  opens headed real Chrome for a manual login), closed after ~10 min idle. Only the `apply-operator`
+  applies: it calls `naukri_arm_apply({job_id})` (code gates: veto, caps, `naukri_apply` beside the
+  shared daily cap) and then clicks the native Apply control by ref from the latest
+  `naukri_snapshot`. The recruiter chatbot is answered through `naukri_click` and `naukri_type` under
+  that armed intent only, each typed answer through the output gate and a length cap, and only with
+  answers from the answer book. `naukri_screenshot` and `naukri_click_at` exist only with
+  `NAUKRI_SCREENSHOT=true` (unscreened pixels, see "Outreach safety layers"). A confirmed apply is
+  recorded once per job; most Naukri jobs say "Apply on company site" and are not applied through
+  this tool (recorded as `manual_review`). The `naukri-operator` has click and type but no
+  `naukri_arm_apply`, is forbidden to touch any Apply control, and sends only through
+  `naukri_arm_send` on a verified thread.
 - **Answering rules** are the same as the answering rules in "Applying": answer only from the resume or
   `user-data/easy-apply-answers.json`, never invent a number or fact, and ask the user (Telegram if
   active) for anything else, including self-identification questions (military spouse, covenants,
@@ -999,18 +1002,19 @@ home IP; Akamai may treat a datacenter/VPS IP harder, so re-run the check from t
   answer book type (`src/apply/answers.ts`) allows an object form (`{india, other}`) for it. Check the
   file before any automated flow reads it.
 - **Wired in by plan 6D** (replaces the old "not wired" note): the `naukri` MCP also has
-  `naukri_search` (headless search), `naukri_inbox`, `naukri_read_thread` and `naukri_send_message`
-  (typed, gated: recruiter or reply threads only, `NAUKRI_MAX_MESSAGES_PER_DAY`, input and output
-  gates, dry run and halt aware). a naukri.com `apply_url` is class `naukri`
-  (`classifyApplyUrl`) and is applied to only by the `apply-operator` (`naukri_open`, `naukri_state`,
-  `naukri_click`, `naukri_type`); the scheduled `naukri-operator` runs the `discover` and `search`
+  `naukri_search` (headless search), `naukri_inbox`, `naukri_read_thread` and `naukri_arm_send`
+  (arm then type then click Send: recruiter or reply threads only, `NAUKRI_MAX_MESSAGES_PER_DAY`,
+  input and output gates, dry run and halt aware). a naukri.com `apply_url` is class `naukri`
+  (`classifyApplyUrl`) and is applied to only by the `apply-operator` (`naukri_arm_apply` plus the
+  generic ref tools); the scheduled `naukri-operator` runs the `discover` and `search`
   tasks (named searches, finds jobs, returns counts only) and the `inbox` task (reads and answers or
   escalates recruiter messages), and never applies. The manual
   Apply click honours dry run and halts and also consumes `naukri_apply`
   (`NAUKRI_MAX_APPLIES_PER_DAY`) beside the shared `MAX_APPLIES_PER_DAY`.
 - **Cold Naukri outreach is not possible by design**: a message goes out only on a thread already
   verified server-side (a recruiter inquiry or reply inbound, or a prior confirmed send).
-- **Still live-unverified**: the search, inbox and thread selectors and thread URL shape were
+- **Still live-unverified**: the snapshot walker and the semantic guard have not seen a live Naukri
+  page; the search, inbox and thread extraction selectors and thread URL shape were
   written from fixtures, not live pages; Naukri's real message limits are unmeasured; the
   compose-box locator and thread_ref charset are guesses. Phase 2 of the rollout (see
   "Scheduler") is where they get checked. A full Claude Code restart loads server changes.
@@ -1128,6 +1132,17 @@ is not measured by it.
     `APPLY_LINKEDIN_EASY` off until you decide otherwise.
 12. Sessions: run `npm run linkedin:login` and `npm run naukri:login` (neither takes a flag), then
     `npm run doctor`.
+13. Browserctl rebuild (LinkedIn, Naukri, scout; all live-unverified): (a) fully quit and restart every
+    Claude window (new MCP tool names, rewritten operator agents); (b) re-apply the permission set
+    (`npm run permissions -- outreach_send`, or the set you currently use) and check
+    `npm run permissions -- --status`; (c) leave `LINKEDIN_SCREENSHOT`, `NAUKRI_SCREENSHOT` and
+    `SCOUT_SCREENSHOT` at `false` unless you want screenshots and the pointer fallback (the pixels are
+    unscreened); (d) supervised live structure checks in dry run: `linkedin_open` and
+    `linkedin_snapshot` on a profile, a search page and the messaging page, the same for Naukri (a job
+    page and a thread), and a scout read of one custom site, confirming the snapshot shows the
+    Connect, Message, Send and Apply controls with sensible names; (e) the first supervised canary
+    (one hand-picked profile, low ceilings, `LINKEDIN_DRY_RUN=false` only for that session) before any
+    unattended wake, reading the `dry_run_actions` report first.
 
 Board discovery known limits: the Greenhouse/Lever/Ashby response shapes are not live-verified
 inside a wake yet (only the seeded slugs were checked while writing). The Workable, Recruitee,
@@ -1143,11 +1158,11 @@ and the Indian and Gulf job boards.
   against a real ATS, job site, search engine, Serper or mail verification; it is covered by unit tests
   with fakes and invented fixture pages. The terms of use of the search engine the browser dork uses
   are unreviewed.
-- Nothing in the platform and outreach work (plans 6A to 7D) has run against real LinkedIn,
+- Nothing in the platform and outreach work (plans 6A to 7D and the browserctl rebuild) has run against real LinkedIn,
   Naukri, Google OIDC sign-in, a downloaded classifier model, real tmux/ccgram wiring, a real
-  backup (`age`, `rclone`) or a real update; it is covered by unit tests with fakes. The typed
+  backup (`age`, `rclone`) or a real update; it is covered by unit tests with fakes. The
   `linkedin` tools have a canary seed script (`npm run linkedin:seed`) for the first supervised
-  send, not unattended mileage.
+  send; check that it still matches the arm-then-commit flow before using it. No unattended mileage.
 - The classifier is wired through `screenUntrusted` on every surface in `SCREENED_SURFACES` and
   fails closed in live mode (see "Outreach safety layers", layer 4), but no downloaded model has
   run against real LinkedIn or Naukri text, its first-call latency inside a tool timeout is
@@ -1156,7 +1171,10 @@ and the Indian and Gulf job boards.
   refused by design; `npm run doctor` check `classifier_wired` verifies that every surface calls
   the screen and that the profile is pinned and fitted (a warn while `SCHEDULER_DRY_RUN` is not
   `false`, a fail when it is) and runs a smoke screen.
-- `linkedin_*` and `naukri_*` selectors, Naukri limits and the scheduler's real-claude behaviour
+- The browserctl engine (`src/browserctl`: snapshot walker, semantic guard, arm and commit path, the
+  screenshot and click_at tools) is covered by hermetic tests with fake pages only; no live LinkedIn,
+  Naukri or scout page has been snapshotted, no live commit has ever run, and the screenshot flags
+  are off by default. The data tools' extraction selectors, Naukri limits and the scheduler's real-claude behaviour
   (hook propagation into subagents, `--setting-sources project`, `--permission-prompts`,
   hook `onFailure: block`) are unverified until rollout phase 2 and the plan 6B owner checks.
 - Autonomous email follow-ups (rule 10 in "Safety") are built behind `FOLLOWUPS_AUTONOMOUS`,
@@ -1169,7 +1187,7 @@ and the Indian and Gulf job boards.
 - Model-bound third-party text that is NOT classifier-screened: board, Hacker News and other
   script-provider job text, Gmail reply bodies read by `reply-watcher`, the text of a verification mail
   passed to `site_open_link` (it is not in `SCREENED_SURFACES`; host and path rules in code apply),
-  and `linkedin_screenshot` pixels (applier screenshots too when `APPLY_SCREENSHOT` is on). The launcher and doctor classifier
+  and the `linkedin_screenshot`, `naukri_screenshot` and `scout_screenshot` pixels (applier screenshots too when `APPLY_SCREENSHOT` is on; all off by default). The launcher and doctor classifier
   readiness cover only the screened surfaces in `SCREENED_SURFACES`.
 - Bring-up (plan 8E) is covered by hermetic tests with fakes only. The live checks L1 to L9 are
   defined in `docs/superpowers/plans/2026-10-15-8e-bootstrap-guided-setup-run-all.md` ("Owner-only
@@ -1217,20 +1235,20 @@ together if one ever appears.
 3. A scheduled wake sends cold email (`mail-operator`) and LinkedIn connection requests
    (`linkedin-operator`) automatically, per the "Connecting" section: an explicit, informed design
    decision, not an oversight. Since the agent-driven runtime (ADR 2026-10-13) LinkedIn and Naukri
-   messages are also allowed, but only through the typed, gated tools (`linkedin_connect_send`,
-   `linkedin_send_message` with a required `kind`, `naukri_send_message`) from the scheduled
-   operators, never by clicking Send through the free-form tools and never on a channel without a typed
-   tool. The pipeline stage does not draft direct messages; the `linkedin-operator` drafts a DM for an
+   messages are also allowed, but only through the arm tools (`linkedin_arm_send` with a required `kind`,
+   `naukri_arm_send`) followed by typing the armed text and clicking Send by ref, from the scheduled
+   operators; the engine refuses any commit click or composer text that was not armed, and there is no
+   channel without an arm tool. The pipeline stage does not draft direct messages; the `linkedin-operator` drafts a DM for an
    already-connected profile through the `draft-linkedin-message` skill.
 4. If any tool call fails or returns an error, do not retry silently more than once; log the
    failure and continue with the next job rather than aborting the whole run. Exception: if
    `db.save_match_result` or `gates.apply_vetoes` (pipeline stage P2) fails after one retry, stop the run
    instead, since a veto gate that cannot run must not be skipped.
-5. `linkedin_connect_send` is called automatically by the `linkedin-operator` as part of scheduled
+5. `linkedin_arm_send` and the following commit are used automatically by the `linkedin-operator` as part of scheduled
    wakes — no per-note human approval is required (see "Connecting"). The automated
-   recipient-verification safety net inside the typed tool (`src/linkedin/verify.ts`:
-   `verifyRecipientName`, `verifyProfileUrl`, fail-closed, and a recipient that must already be
-   in `people`) still runs on every call regardless of who/what triggered it.
+   recipient-verification safety net (`src/linkedin/verify.ts`:
+   `verifyRecipientName`, `verifyProfileUrl`, `namesPlausiblyMatch`, fail-closed, and a recipient that must already be
+   in `people`) runs at arm time and again on the live page at commit time, whoever triggered it.
 6. Never use the burner account's session for the `linkedin` MCP or its typed tools, and never use
    the main account's session for the browser applier's LinkedIn Easy Apply. The `linkedin` MCP uses
    the main account only (`secrets/linkedin-main-state.json`), in ONE locked headless browser session
@@ -1291,7 +1309,7 @@ together if one ever appears.
     automatic reply; escalations are stored with a `[blocked: <code>]` or `[unscreened]` prefix,
     never dropped. There is one active classifier and no fallback chain.
 14. The kill switch always wins: `.jobber/STOP`, `JOBBER_KILL=1` or a `halt_flags` row for `all`,
-    `linkedin` or `naukri` stops the typed LinkedIn and Naukri tools and the scheduler for that
+    `linkedin` or `naukri` stops the LinkedIn and Naukri tools and the scheduler for that
     scope; `.jobber/STOP` and `JOBBER_KILL=1` are additionally enforced by the PreToolUse hook
     on every tool in restricted runs and on the irreversible tools (Gmail send, the applier's acting tools, the scout tools, typed
     LinkedIn and Naukri sends and discovery) everywhere in this project, and by the launcher (exit 4); see

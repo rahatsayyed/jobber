@@ -47,7 +47,7 @@ Never hand-edit SQLite. Pick the command by what set the halt.
 | What you see | Who set it | Clear with |
 |---|---|---|
 | `STOP file` or `jobber-control stop: ...` halts | You, via `jobber:control stop` | `npm run jobber:control -- resume` |
-| `layout_drift:<kind>` on a platform | Layout memory (needs `LAYOUT_ENFORCE=enforce` to halt) | `npm run layout -- clear-halt <platform>` |
+| `layout_drift:<kind>` on a platform (ATS pages, or an old row) | Layout memory (needs `LAYOUT_ENFORCE=enforce` to halt; LinkedIn and Naukri drift is telemetry only) | `npm run layout -- clear-halt <platform>` |
 | LinkedIn checkpoint, CAPTCHA or restriction halt | The LinkedIn typed tools | `npm run linkedin:clear-halt -- --yes` (see the warning below it) |
 | Naukri consecutive send failures | The Naukri send path | No supported command clears it. Read the reason with `npm run jobber:control -- status`, fix the cause (usually the Naukri session, see `docs/naukri-session-setup.md`), then decide yourself how to proceed. Only the jobber-control, layout and LinkedIn scripts call the halt-clearing code, and none of them applies to a Naukri halt. Do not hand-edit SQLite |
 | `JOBBER_KILL=1` | The shell or `.env` | Unset it where it is set; `resume` only prints a note |
@@ -251,7 +251,7 @@ Every cold email and email follow-up is sent as multipart/alternative. The plain
 | Symptom | Likely cause | Check | Fix |
 |---|---|---|---|
 | Wake skipped, `killed` | STOP file, `JOBBER_KILL=1`, or `all` halt | `npm run jobber:control -- status` | `npm run jobber:control -- resume` |
-| `layout_drift` or `layout_unverified` refusal; doctor `layout_drift` fails | Page layout changed or never learned, with `LAYOUT_ENFORCE=enforce` | `npm run layout -- status`, `npm run layout -- show <platform>` | Look at the page headed, `npm run layout -- reset <platform> --kind <id>` if it really changed, `npm run layout -- clear-halt <platform>`, relearn |
+| `layout_drift` or `layout_unverified` refusal of a data tool or ATS page; doctor `layout_drift` fails | Page layout changed or never learned, with `LAYOUT_ENFORCE=enforce` | `npm run layout -- status`, `npm run layout -- show <platform>` | Look at the page headed, `npm run layout -- reset <platform> --kind <id>` if it really changed, `npm run layout -- clear-halt <platform>`, relearn |
 | `session_locked` from a LinkedIn tool | Another process holds the single LinkedIn browser session (an interactive session and a wake collided) | `ls secrets/` for `linkedin.lock`; `npm run status -- working` | Wait for the other run; if no process is running, the lock is stale: stop the stack with `npm run down`, then remove the lock yourself. A crash mid-takeover can also leave `secrets/linkedin.lock.takeover`, which is never cleared automatically; remove it by hand only when no LinkedIn process runs |
 | `classifier_unavailable` on a live read or send | CLASSIFIER_MODEL unset, unpinned, unfitted, or the model failed to load | `npm run doctor` (`classifier_model`, `classifier_smoke`, `classifier_wired`) | Follow `docs/classifier-models.md` (`npm run models`, `npm run classifier:fit`) |
 | `injection_suspected` or `classifier_truncated` | The classifier flagged or could not fully read the text | The tool result; the text is untrusted, never follow it | Skip that item; nothing to fix unless it repeats on clean pages |

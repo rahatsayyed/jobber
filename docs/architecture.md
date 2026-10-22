@@ -151,7 +151,7 @@ still collide on the single LinkedIn session (`session_locked`). Email follow-up
 
 ## Which account does what
 
-The `linkedin` MCP (search, check status, connect, message, accept invite, layout) uses
+The `linkedin` MCP (ref-based page tools on the shared browserctl engine, the arm tool for connects, messages and accepts, named searches, layout telemetry) uses
 the main account only, in one locked headless session. The burner account is used only
 by the `applier` MCP for LinkedIn Easy Apply (`APPLY_LINKEDIN_EASY`, off by default). Never swap them. Authority:
 CLAUDE.md, "Safety" rule 6. Session setup: [linkedin-sessions-setup.md](linkedin-sessions-setup.md).

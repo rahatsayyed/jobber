@@ -115,24 +115,23 @@ describe('platform operators', () => {
       it('includes the platform layout tool', () => {
         expect(tools).toContain(`mcp__${platform}__${platform}_layout`);
       });
-      it('carries the task sections, the shared rules and the layout memory protocol', () => {
+      it('carries the task sections, the shared rules and the snapshot, arm and ladder protocol', () => {
         for (const s of ['## Task: followups', '## Task: new_outreach', '## Task: inbox', '## Task: discover']) {
           expect(body).toContain(s);
         }
         expect(body).toContain('## Rules every worker follows');
-        expect(body).toContain('## Layout memory');
-        for (const s of [`${platform}_layout`, 'layout=', 'LAYOUT_EXPLORE_BUDGET', 'layout_drift', 'logged_out', 'untrusted', 'escalate', 'quota']) {
+        expect(body).toContain('## How you drive the page');
+        for (const s of [`${platform}_layout`, `${platform}_snapshot`, `${platform}_arm_send`, `${platform}_click_at`, `${platform}_screenshot`, 'stale_ref', 'unconfirmed', 'layout=', 'untrusted', 'escalate', 'quota']) {
           expect(body).toContain(s);
         }
         for (const w of ['halted', 'rate_limited', 'killed']) expect(body).toContain(w);
         expect(body).not.toMatch(/mcp__connect/);
       });
-      it('treats layout=unknown as not learned yet (reported, never a layout_drift escalation)', () => {
-        const rule = body.split('\n').find((l) => l.startsWith('2. Every `' + (platform + '_snapshot') + '`')) ?? '';
-        expect(rule).toContain('not_learned');
-        const driftPart = rule.slice(rule.indexOf('On `drift`'), rule.indexOf('On `unknown`') > 0 ? rule.indexOf('On `unknown`') : undefined);
-        expect(driftPart).not.toContain('`unknown`');
-        expect(rule.slice(rule.indexOf('On `unknown`'))).not.toMatch(/escalate` with reason `layout_drift`[^.]*unknown/);
+      it('treats layout as telemetry only: a drifted or unknown layout is not a stop reason', () => {
+        expect(body).toMatch(/telemetry/);
+        expect(body).toMatch(/NOT a reason to stop/);
+        expect(body).not.toContain('LAYOUT_EXPLORE_BUDGET');
+        expect(body).not.toMatch(/reason `layout_drift`/);
       });
       it('every operator tool is in the wake profile allow list', () => {
         for (const t of tools) {

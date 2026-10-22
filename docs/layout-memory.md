@@ -10,7 +10,7 @@ The commands below are offline: they start no browser and make no network call. 
 
 ## What the verdicts mean
 
-The `layout=` token on `linkedin_state`, `linkedin_open` and the Naukri state header carries one of these. Operators follow the same table.
+The `layout=` token on `linkedin_open`, `linkedin_snapshot` and the Naukri snapshot header carries one of these. It is telemetry: since the browserctl rebuild (live-unverified) no verdict stops an operator, which adapts by snapshot, scroll, screenshot, pointer and escalation instead.
 
 | Verdict | Meaning | What you do |
 |---|---|---|
@@ -40,7 +40,7 @@ naukri: enforce=warn
   no layout memory yet
 ```
 
-`HALTED(layout_drift)` after the enforce value means the platform is halted for layout drift. `INVALID` means the file failed validation; the runtime quarantines it on its next load.
+`HALTED(layout_drift)` after the enforce value means an old `layout_drift:*` halt row is still present (the LinkedIn and Naukri tools no longer write new ones). `INVALID` means the file failed validation; the runtime quarantines it on its next load.
 
 ## Show what the operator sees
 
@@ -91,10 +91,10 @@ Set `LAYOUT_ENFORCE` in `.env` (default and range in `.env.example`).
 | Mode | Behaviour |
 |---|---|
 | `off` | Layout gate disabled. |
-| `warn` | Typed tools add a `layout=` note and proceed. Drift is recorded and escalated, no halt. |
-| `enforce` | `linkedin_connect_send`, `linkedin_send_message` and `linkedin_accept_invite` refuse with `layout_drift` or `layout_unverified` before any ceiling is consumed; unknown kinds refuse until learned; `partial` passes only if every landmark the tool needs is present. Naukri has the precondition only on `naukri_send_message` for the `thread` kind. A platform halt for layout drift is applied only in this mode. |
+| `warn` | Tools add a `layout=` note and proceed. Drift is recorded and escalated, no halt. |
+| `enforce` | Affects only the LinkedIn data tools (`linkedin_find_profiles`, `linkedin_search_jobs`, `linkedin_search_posts`, scoped by the tool-requirements table in `src/layout/vocab.ts`) and the ATS applier pages: an unverified or drifted page refuses the read. It no longer gates any send, connect, accept or apply: those tools are gone, and their safety is the arm tool, the semantic guard and the live re-verification (see CLAUDE.md, "Connecting"). |
 
-Recommended path: stay on `warn` until the supervised learning run below is clean, then switch to `enforce`. To roll back, set `LAYOUT_ENFORCE=warn` (or `off`) and restart sessions; then run `npm run layout -- clear-halt <platform>` if a layout halt is still active.
+Recommended path: stay on `warn`; `enforce` now matters only for the data tools and ATS pages. To roll back, set `LAYOUT_ENFORCE=warn` (or `off`) and restart sessions; then run `npm run layout -- clear-halt <platform>` if an old layout halt is still active.
 
 ## Supervised learning run
 
@@ -111,7 +111,7 @@ Steps marked `[owner]` need you watching a real session.
 
 ## Drift escalation and halt
 
-`LAYOUT_DRIFT_ESCALATE_N` drift observations within `LAYOUT_DRIFT_WINDOW_HOURS` write an owner info escalation and a notification. A platform halt (`layout_drift:<kind>`) needs a streak of at least `LAYOUT_DRIFT_HALT_N` AND at least two distinct run ids, and is applied only under `enforce`. In `warn` and `off` the same event records a `layout_drift_halt` escalation (detail ends `mode=warn` or `mode=off`) and halts nothing.
+`LAYOUT_DRIFT_ESCALATE_N` drift observations within `LAYOUT_DRIFT_WINDOW_HOURS` write an owner info escalation and a notification. For LinkedIn and Naukri drift is telemetry only and writes no halt. A `layout_drift:<kind>` halt (streak of `LAYOUT_DRIFT_HALT_N` and two run ids, under `enforce`) can still come from an ATS `ats_<id>` file; in `warn` and `off` the same event records a `layout_drift_halt` escalation (detail ends `mode=warn` or `mode=off`) and halts nothing. Block pages, CAPTCHAs and checkpoints still halt a platform, independently of layout.
 
 When halted:
 

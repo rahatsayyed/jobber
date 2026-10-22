@@ -75,7 +75,7 @@ Schema pointer: `loadTargetRegionsStatus` in `src/targetRegions.ts`. Missing fil
 
 ### config/linkedin-discovery.json
 
-Purpose: named LinkedIn job searches (`jobs[]`) and hiring-post searches (`posts[]`) for the typed `linkedin_search_jobs` and `linkedin_search_posts` tools (main account, selectors live-unverified). It replaced the old discover config file (plan 8G Task 14); the typed tools take only a search name and the URL is built in code.
+Purpose: named LinkedIn job searches (`jobs[]`) and hiring-post searches (`posts[]`) for the `linkedin_search_jobs` and `linkedin_search_posts` tools (main account, extraction selectors live-unverified). It replaced the old discover config file (plan 8G Task 14); the typed tools take only a search name and the URL is built in code.
 
 Schema pointer: `src/linkedin/discoveryConfig.ts`. A job entry is `name`, `keyword`, plus optional `location`, `posted_within_seconds`, `remote_only`, `easy_apply_only`, `experience_level` and `limit`; a post entry is `name`, `role`, `geo` and `limit`.
 
@@ -200,7 +200,7 @@ Groups in `.env.example` (one line each):
 - Telegram: bot token and allowed user ids for the ccgram bridge.
 - Agent tuning: `MATCH_THRESHOLD`, `SEND_LIMIT_PER_RUN`, `MAX_APPLIES_PER_DAY`, `MAX_LINKEDIN_SEARCHES_PER_DAY`, and the follow-up switches (`FOLLOWUPS_AUTONOMOUS`, `EMAIL_FOLLOWUP_GAPS_DAYS`).
 - Dashboard: `WEB_PORT`, `WEB_AUTH_MODE` and the other `WEB_*` keys; see `docs/dashboard-exposure.md`.
-- LinkedIn typed tools: dry-run flag, accept limits, allow-lists for URLs and emails, idle time.
+- LinkedIn tools: dry-run flag, accept limits, allow-lists for URLs and emails, idle time, and the off-by-default `LINKEDIN_SCREENSHOT`, `NAUKRI_SCREENSHOT` and `SCOUT_SCREENSHOT` flags (screenshot and pointer-click tools; the pixels are not screened by the classifier).
 - Scheduler: enable and dry-run flags, run budgets (`RUN_MAX_*`), inbox and Naukri search cadence, `USAGE_LIMIT_BACKOFF_MIN`, kill switch `JOBBER_KILL`.
 - Auto-update and backup: `AUTO_UPDATE*` and `BACKUP_*`; see `docs/backup-and-restore.md`.
 - Layout memory: `LAYOUT_ENFORCE` and the other `LAYOUT_*` keys, all optional and commented.
