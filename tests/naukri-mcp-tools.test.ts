@@ -4,11 +4,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   naukriOpen,
-  naukriClick,
   naukriSearch,
   naukriInbox,
   naukriReadThread,
-  naukriSendMessageTool,
   shutdownNaukri,
   naukriServer,
   buildSearchUrl,
@@ -132,14 +130,15 @@ describe('tool surface', () => {
   it('registers the typed tools and the read-only naukri_layout', () => {
     const tools = Object.keys((naukriServer as unknown as { _registeredTools: Record<string, unknown> })._registeredTools).sort();
     expect(tools).toEqual([
-      'naukri_click', 'naukri_close', 'naukri_discover', 'naukri_inbox', 'naukri_layout', 'naukri_open', 'naukri_read_thread',
-      'naukri_screenshot', 'naukri_search', 'naukri_send_message', 'naukri_state', 'naukri_type',
+      'naukri_arm_apply', 'naukri_arm_send', 'naukri_click', 'naukri_click_at', 'naukri_close', 'naukri_discover',
+      'naukri_inbox', 'naukri_layout', 'naukri_open', 'naukri_press_key', 'naukri_read_thread', 'naukri_screenshot',
+      'naukri_scroll', 'naukri_search', 'naukri_snapshot', 'naukri_type', 'naukri_wait_for',
     ]);
   });
 });
 
 describe('halts', () => {
-  it('all four tools return halted for a naukri or an all halt', async () => {
+  it('the data tools return halted for a naukri or an all halt', async () => {
     for (const platform of ['naukri', 'all']) {
       const h = harness();
       const d = await opened(h);
@@ -148,7 +147,6 @@ describe('halts', () => {
         await naukriSearch({ query: 'react' }, d),
         await naukriInbox({}, d),
         await naukriReadThread({ thread_ref: 'abc123' }, d),
-        await naukriSendMessageTool({ person_id: 1, thread_ref: 'abc123', text: 'hi', kind: 'role_ask' }, d),
       ];
       for (const o of outs) expect(JSON.parse(o)).toMatchObject({ status: 'halted', reason: 'test halt' });
       expect(h.gotos).toEqual([]);
@@ -251,90 +249,5 @@ describe('read_thread', () => {
     setState(d.db, `naukri_thread_${pid}`, 'abc123', new Date());
     const out = await naukriReadThread({ thread_ref: 'abc123' }, d);
     expect(out).toContain(`person_id=${pid}`);
-  });
-});
-
-describe('send_message', () => {
-  it('dry run returns dry_run and types nothing', async () => {
-    const h = harness();
-    const d = await opened(h, { env: {} as NodeJS.ProcessEnv, cfg: { ...loadOutreachConfig({}), quietStartHour: 0, quietEndHour: 0 } });
-    const pid = upsertPerson(d.db, { platform: 'naukri', profileKey: 'naukri:pat-recruiter', name: 'Pat Recruiter', company: 'Acme Labs', category: 'recruiter' });
-    setState(d.db, `naukri_thread_${pid}`, 'abc123', new Date());
-    const out = JSON.parse(
-      await naukriSendMessageTool(
-        { person_id: pid, thread_ref: 'abc123', text: 'Hi Pat, happy to share more about my React work.', kind: 'role_ask' },
-        {
-          ...d,
-          checkText: async (t: string) => ({ ok: true, normalized: t, verdict: 'pass' as const }),
-          style: () => ({ ok: true, hits: [] }),
-        }
-      )
-    );
-    expect(out.status).toBe('dry_run');
-    expect(h.typed).toEqual([]);
-    expect(h.clicks).toEqual([]);
-    expect(h.gotos).toEqual([]);
-  });
-
-  it('rejects a bad thread_ref and an unknown kind before anything else', async () => {
-    const h = harness();
-    const d = await opened(h);
-    expect(JSON.parse(await naukriSendMessageTool({ person_id: 1, thread_ref: 'a b', text: 'x', kind: 'role_ask' }, d)).status).toBe('refused');
-    expect(JSON.parse(await naukriSendMessageTool({ person_id: 1, thread_ref: 'ab', text: 'x', kind: 'connect' as any }, d)).status).toBe('refused');
-  });
-});
-
-describe('apply click gating', () => {
-  const counters = (d: any) => ({
-    legacy: d.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply'").get(),
-    events: d.db.prepare("SELECT COUNT(*) AS n FROM rate_events WHERE key = 'naukri_apply'").get().n,
-  });
-
-  it('is refused in dry run without consuming a counter', async () => {
-    const h = harness();
-    const d = await opened(h, { env: {} as NodeJS.ProcessEnv });
-    const out = await naukriClick({ text: 'Apply' }, d);
-    expect(out).toContain('dry_run');
-    expect(h.clicks).toEqual([]);
-    expect(counters(d)).toEqual({ legacy: undefined, events: 0 });
-  });
-
-  it('is refused under a halt without consuming a counter', async () => {
-    const h = harness();
-    const d = await opened(h);
-    haltPlatform(d.db, 'naukri', 'stop', new Date());
-    const out = await naukriClick({ text: 'Apply' }, d);
-    expect(out).toContain('halted');
-    expect(h.clicks).toEqual([]);
-    expect(counters(d)).toEqual({ legacy: undefined, events: 0 });
-  });
-
-  it('legacy counter exhausted: naukri_apply event is not left behind', async () => {
-    const h = harness();
-    const d = await opened(h, { maxAppliesPerDay: 0 });
-    const out = await naukriClick({ text: 'Apply' }, d);
-    expect(out).toContain('rate_limited');
-    expect(h.clicks).toEqual([]);
-    expect(counters(d).events).toBe(0);
-  });
-
-  it('naukri_apply ceiling exhausted: legacy counter is not spent', async () => {
-    const h = harness();
-    const d = await opened(h, { cfg: { ...loadOutreachConfig({}), naukriMaxAppliesPerDay: 0 } });
-    const out = await naukriClick({ text: 'Apply' }, d);
-    expect(out).toContain('rate_limited');
-    expect(h.clicks).toEqual([]);
-    const row = d.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply'").get();
-    expect(row === undefined || row.count === 0).toBe(true);
-    expect(counters(d).events).toBe(0);
-  });
-
-  it('consumes both counters on a live apply', async () => {
-    const h = harness();
-    const d = await opened(h);
-    await naukriClick({ text: 'Apply' }, d);
-    expect(h.clicks.length).toBe(1);
-    expect(counters(d).legacy).toMatchObject({ count: 1 });
-    expect(counters(d).events).toBe(1);
   });
 });

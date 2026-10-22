@@ -2,6 +2,7 @@
 // already understands, so layout memory keeps learning from linkedin_snapshot. Advisory telemetry
 // only: it carries no page text beyond what the observer's own fingerprinting reads (counts and
 // landmark ids come out of it), and a wrong guess here never blocks or refuses anything.
+import type { NaukriRawSnapshot } from '../layout/fingerprint.js';
 import { classifyUrl } from '../linkedin/urls.js';
 import type { RawSnapshot } from '../linkedin/types.js';
 import { normName } from './guard.js';
@@ -77,5 +78,42 @@ export function treeToRawSnapshot(tree: RawTree): RawSnapshot {
     hasPasswordInput: tree.nodes.some((x) => x.secret === true),
     bodyText,
     ...(jobCards ? { jobCards } : {}),
+  };
+}
+
+// ---- Naukri ----
+const NAUKRI_BUTTON_RE = /^(apply|applied|save|saved|login|register|apply on company site)\b/i;
+
+/**
+ * Engine tree to the Naukri snapshot shape the layout observer already understands (telemetry only; a
+ * wrong guess never blocks anything). Bot and user chat messages cannot be told apart in a tree, so the
+ * message list stays empty and only the landmarks that exist in the tree are reported.
+ */
+export function treeToNaukriSnapshot(tree: RawTree): NaukriRawSnapshot {
+  const buttons: string[] = [];
+  for (const x of tree.nodes) {
+    if (x.composer || (x.role !== 'button' && x.role !== 'link')) continue;
+    const nm = x.name.replace(/\s+/g, ' ').trim();
+    if (nm && nm.length <= 40 && NAUKRI_BUTTON_RE.test(nm) && !buttons.includes(nm)) buttons.push(nm);
+  }
+  const box = tree.nodes.find((x) => x.role === 'textbox' && x.composer && !x.secret);
+  const send = tree.nodes.find((x) => x.role === 'button' && x.composer && /^send\b/i.test(x.name));
+  const options = tree.nodes
+    .filter((x) => (x.role === 'radio' || x.role === 'option' || x.role === 'checkbox') && x.name && x.name.length <= 80)
+    .map((x) => x.name)
+    .slice(0, 10);
+  return {
+    title: tree.title,
+    url: tree.url,
+    buttons,
+    chatbot: {
+      open: !!box || !!send,
+      messages: [],
+      placeholder: box ? box.name : null,
+      sendLabel: send ? send.name : null,
+      options,
+    },
+    notices: [],
+    hasPasswordInput: tree.nodes.some((x) => x.secret === true),
   };
 }

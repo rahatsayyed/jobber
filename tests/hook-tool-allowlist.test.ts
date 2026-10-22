@@ -267,12 +267,12 @@ describe('CLI', () => {
     }
   });
   it('denies when the policy file is missing', () => {
-    const r = run(['outreach_wake', 'config/does-not-exist.json'], { tool_name: 'mcp__naukri__naukri_state' });
+    const r = run(['outreach_wake', 'config/does-not-exist.json'], { tool_name: 'mcp__naukri__naukri_snapshot' });
     expect(r.status).toBe(0);
     expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision).toBe('deny');
   });
   it('prints nothing for an allowed call under the shipped outreach_wake profile', () => {
-    const r = run(['outreach_wake'], { tool_name: 'mcp__naukri__naukri_state', tool_input: {} });
+    const r = run(['outreach_wake'], { tool_name: 'mcp__naukri__naukri_snapshot', tool_input: {} });
     expect(r.status).toBe(0);
     expect(r.stdout.trim()).toBe('');
   });

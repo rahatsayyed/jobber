@@ -4,12 +4,15 @@
 // classification, dry-run recording, pacing, then execute. Free actions go through; commit classes go to
 // commit.ts; irreversible_other is always refused.
 import { haltPlatform } from '../outreach/limits.js';
-import { isBlockedPath, isLinkedInUrl, classifyUrl, profileKeyOf } from '../linkedin/urls.js';
+import { profileKeyOf } from '../linkedin/urls.js';
+import { naukriJobIdOfUrl, threadRefOfUrl } from '../naukri/page.js';
 import { recordDryRun } from '../safety/dryRun.js';
 import { commitAction } from './commit.js';
+import { applyCounted, commitNaukri, observeApplyConfirmation } from './commitNaukri.js';
 import { BC_KEYS, type BcKey, type BcPage } from './driver.js';
-import { detectTreeBlock, killReason, refused, type EngineDeps, type EngineResult } from './engineTypes.js';
+import { killReason, refused, type EngineDeps, type EngineResult } from './engineTypes.js';
 import { checkType, classify, classifyKey, classifyPoint, guardInputOf, type ActionClass, type CommitClass } from './guard.js';
+import { LINKEDIN_POLICY } from './policy.js';
 import { RefStore } from './refs.js';
 import { renderTree, type LiveNode, type RawTree } from './snapshot.js';
 
@@ -36,6 +39,7 @@ const MAX_WAIT_MS = 10_000;
 const FREE_KEYS = new Set<string>(['Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Backspace']);
 
 export function createEngine(deps: EngineDeps): Engine {
+  const P = deps.policy ?? LINKEDIN_POLICY;
   const refs = new RefStore();
   let tree: RawTree | null = null;
   let seenEpoch = -1;
@@ -59,13 +63,14 @@ export function createEngine(deps: EngineDeps): Engine {
   async function read(page: BcPage): Promise<EngineResult> {
     let t: RawTree;
     try { t = await page.snapshot(); } catch { return refused('no_snapshot', 'could not read the page'); }
-    const block = detectTreeBlock(t);
+    const block = P.detectBlock(t);
     if (block) {
-      haltPlatform(deps.db, 'linkedin', `${block}: ${pathOnly(t.url)}`, now());
       refs.invalidate();
       tree = null;
+      if (!block.halt) return { ok: false, code: block.kind, reason: `page needs attention: ${block.kind}` };
+      haltPlatform(deps.db, P.platform, `${block.kind}: ${pathOnly(t.url)}`, now());
       await deps.afterBlock?.().catch(() => undefined);
-      return { ok: false, code: 'halted', reason: `block page: ${block}` };
+      return { ok: false, code: 'halted', reason: `block page: ${block.kind}` };
     }
     const epoch = refs.begin(t);
     tree = t;
@@ -73,20 +78,25 @@ export function createEngine(deps: EngineDeps): Engine {
     const v = await deps.screen(renderTree(t, epoch), 'read');
     if (v.blocked) { seenEpoch = -1; return { ok: false, code: v.code, reason: 'page text blocked by the input screen', epoch }; }
     seenEpoch = epoch;
-    if (isLinkedInUrl(t.url) && !isBlockedPath(t.url).blocked) lastGoodUrl = t.url;
+    if (P.platform === 'naukri') {
+      // A confirmation that shows up after a chatbot answer (no commit-class click) is still recorded once.
+      try { observeApplyConfirmation(deps, t); } catch { /* bookkeeping only */ }
+    }
+    if (P.checkUrl(t.url).ok) lastGoodUrl = t.url;
     const state = `epoch: ${epoch}\n${v.unscreened ? 'screen: unscreened\n' : ''}<<<PAGE_TEXT\n${v.text}\nPAGE_TEXT>>>`;
     return { ok: true, code: 'ok', state, epoch };
   }
 
-  /** After an action: stay on LinkedIn, then re-read. */
+  /** After an action: stay on the platform, then re-read. */
   async function finish(page: BcPage, code: string): Promise<EngineResult> {
     await page.waitMs(deps.settleMs ?? 800).catch(() => undefined);
     const url = page.url();
-    if (!isLinkedInUrl(url) || isBlockedPath(url).blocked) {
-      const left = isLinkedInUrl(url) ? 'left_blocked_path' : 'left_linkedin_host';
+    const where = P.checkUrl(url);
+    if (!where.ok) {
+      const left = where.code === 'blocked_path' ? 'left_blocked_path' : `left_${P.tool}_host`;
       refs.invalidate();
       if (lastGoodUrl) await page.goto(lastGoodUrl).catch(() => undefined);
-      return refused(left, 'navigated off LinkedIn or to a blocked path, went back');
+      return refused(left, `navigated off ${P.tool} or to a blocked path, went back`);
     }
     const r = await read(page);
     return r.ok ? { ...r, code } : r;
@@ -96,7 +106,7 @@ export function createEngine(deps: EngineDeps): Engine {
     const k = killReason(deps);
     if (k) return { ok: false, res: { ok: false, code: k.startsWith('kill switch') ? 'killed' : 'halted', reason: k } };
     const page = await deps.getPage();
-    if (!page) return { ok: false, res: refused('no_session', 'call linkedin_open first') };
+    if (!page) return { ok: false, res: refused('no_session', `call ${P.tool}_open first`) };
     return { ok: true, page };
   };
 
@@ -117,12 +127,12 @@ export function createEngine(deps: EngineDeps): Engine {
     return { ok: true, page: g.page, n: r.n, live };
   }
 
-  const pageKind = (page: BcPage): string => classifyUrl(page.url());
+  const pageKind = (page: BcPage): string => P.pageKind(page.url());
 
   function recordFree(op: string, cls: ActionClass, live: LiveNode): void {
     if (!deps.cfg.dryRun) return;
     try {
-      recordDryRun(deps.db, { runId: null, action: `linkedin_${op}`, platform: 'linkedin', payload: { class: cls, role: live.role, name: live.name.slice(0, 80) } }, now(), deps.env);
+      recordDryRun(deps.db, { runId: null, action: `${P.platform}_${op}`, platform: P.platform, payload: { class: cls, role: live.role, name: live.name.slice(0, 80) } }, now(), deps.env);
     } catch { /* recording is best effort for free actions */ }
   }
 
@@ -131,9 +141,12 @@ export function createEngine(deps: EngineDeps): Engine {
     op: string, page: BcPage, cls: ActionClass, live: LiveNode, act: () => Promise<void>, redescribe: () => Promise<LiveNode | null>,
   ): Promise<EngineResult> {
     if (cls === 'irreversible_other') return refused('irreversible_refused', 'this control is never clicked through the engine');
-    if (cls === 'naukri_send' || cls === 'naukri_apply') return refused('wrong_platform', 'not a LinkedIn control');
+    const naukriClass = cls === 'naukri_send' || cls === 'naukri_apply';
+    if (naukriClass !== (P.platform === 'naukri') && cls !== 'free') return refused('wrong_platform', `not a ${P.tool} control`);
     if (cls !== 'free') {
-      const res = await commitAction({ deps, page, cls: cls as CommitClass, live, act, redescribe });
+      const res = P.platform === 'naukri'
+        ? await commitNaukri({ deps, page, cls: cls as 'naukri_send' | 'naukri_apply', live, act, redescribe })
+        : await commitAction({ deps, page, cls: cls as CommitClass, live, act, redescribe });
       refs.invalidate();
       return res;
     }
@@ -147,9 +160,8 @@ export function createEngine(deps: EngineDeps): Engine {
   }
 
   async function doOpen(url: string): Promise<EngineResult> {
-    if (!isLinkedInUrl(url)) return refused('not_linkedin', 'only https linkedin.com URLs may be opened');
-    const b = isBlockedPath(url);
-    if (b.blocked) return refused('blocked_path', b.why ?? 'path is blocked');
+    const allowed = P.checkUrl(url);
+    if (!allowed.ok) return refused(allowed.code, allowed.why);
     const g = await gate();
     if (!g.ok) return g.res;
     await pace(g.page);
@@ -157,7 +169,7 @@ export function createEngine(deps: EngineDeps): Engine {
     try { await g.page.goto(url); } catch { return refused('failed', 'open failed'); }
     refs.invalidate();
     const final = g.page.url();
-    if (!isLinkedInUrl(final) || isBlockedPath(final).blocked) {
+    if (!P.checkUrl(final).ok) {
       if (lastGoodUrl) await g.page.goto(lastGoodUrl).catch(() => undefined);
       return refused('blocked_path', 'page redirected to a blocked or off-site URL');
     }
@@ -165,20 +177,20 @@ export function createEngine(deps: EngineDeps): Engine {
   }
   function recordNav(url: string): void {
     if (!deps.cfg.dryRun) return;
-    try { recordDryRun(deps.db, { runId: null, action: 'linkedin_open', platform: 'linkedin', payload: { path: pathOnly(url) } }, now(), deps.env); } catch { /* best effort */ }
+    try { recordDryRun(deps.db, { runId: null, action: `${P.platform}_open`, platform: P.platform, payload: { path: pathOnly(url) } }, now(), deps.env); } catch { /* best effort */ }
   }
 
   async function doClick(ref: string): Promise<EngineResult> {
     const t = await target(ref);
     if (!t.ok) return t.res;
-    const cls = classify(guardInputOf(t.live, 'linkedin', pageKind(t.page)));
+    const cls = classify(guardInputOf(t.live, P.platform, pageKind(t.page)));
     return dispatch('click', t.page, cls, t.live, () => t.page.clickNode(t.n), () => t.page.describe(t.n));
   }
 
   async function doPress(page: BcPage, key: BcKey, node: LiveNode | null, redescribe: () => Promise<LiveNode | null>): Promise<EngineResult> {
     if (!FREE_KEYS.has(key)) {
       if (!node) return refused('focus_unknown', 'cannot tell which element has focus; nothing pressed');
-      const cls = classifyKey({ ...guardInputOf(node, 'linkedin', pageKind(page)), key });
+      const cls = classifyKey({ ...guardInputOf(node, P.platform, pageKind(page)), key });
       return dispatch('press_key', page, cls, node, () => page.press(key), redescribe);
     }
     await pace(page);
@@ -191,11 +203,30 @@ export function createEngine(deps: EngineDeps): Engine {
     const t = await target(ref);
     if (!t.ok) return t.res;
     if (typeof text !== 'string') return refused('bad_text', 'text must be a string');
-    const armed = deps.intents.peek('linkedin');
+    const armed = deps.intents.peek(P.platform);
     const chk = checkType(t.live, text, armed ? { class: armed.class, text: armed.text } : null);
     if (!chk.ok) return refused(chk.code, chk.reason);
-    if (chk.mode === 'composer' && armed && armed.class !== 'commit_accept_invite') {
-      if (!armed.profileKey || profileKeyOf(t.page.url()) !== armed.profileKey) return refused('profile_url_mismatch', 'browser is not on the armed profile');
+    if (P.platform === 'linkedin') {
+      if (chk.mode === 'composer' && armed && armed.class !== 'commit_accept_invite') {
+        if (!armed.profileKey || profileKeyOf(t.page.url()) !== armed.profileKey) return refused('profile_url_mismatch', 'browser is not on the armed profile');
+      }
+    } else {
+      // Naukri: the thread composer only on the armed thread; the apply chatbot only on the armed job's
+      // page, after its Apply click was counted; plain fields and chatbot answers go through the text gate.
+      if (chk.mode === 'composer') {
+        if (!armed || armed.class !== 'naukri_send' || !armed.threadRef || threadRefOfUrl(t.page.url()) !== armed.threadRef) {
+          return refused('thread_mismatch', 'browser is not on the armed thread');
+        }
+      } else if (chk.mode === 'chatbot') {
+        if (!armed || armed.class !== 'naukri_apply' || !armed.pageKey || naukriJobIdOfUrl(t.page.url()) !== armed.pageKey) {
+          return refused('job_mismatch', 'browser is not on the armed job page');
+        }
+        if (!applyCounted(deps.intents).has(armed.pageKey)) return refused('apply_not_started', 'click Apply under the armed intent before answering the chatbot');
+      }
+      if (chk.mode !== 'composer') {
+        const why = deps.textGate?.(text, chk.mode);
+        if (why) return refused('output_gate', `text refused: ${why}`);
+      }
     }
     recordFree('type', 'free', t.live);
     await pace(t.page);
@@ -210,12 +241,12 @@ export function createEngine(deps: EngineDeps): Engine {
   }
 
   async function doClickAt(x: number, y: number): Promise<EngineResult> {
-    if (!deps.screenshotEnabled) return refused('click_at_disabled', 'click_at needs LINKEDIN_SCREENSHOT=true');
+    if (!deps.screenshotEnabled) return refused('click_at_disabled', `click_at needs ${P.screenshotFlag}=true`);
     const g = await gate();
     if (!g.ok) return g.res;
     if (!(seenEpoch === refs.epoch && refs.hasSnapshot)) return refused('snapshot_required', 'take a snapshot at the current epoch first');
     if (shotEpoch !== refs.epoch) return refused('screenshot_required', 'take a screenshot at the current epoch first');
-    const p = await classifyPoint(g.page, 'linkedin', pageKind(g.page), x, y);
+    const p = await classifyPoint(g.page, P.platform, pageKind(g.page), x, y);
     if (!p.ok) return refused(p.code, 'nothing usable at that point');
     return dispatch('click_at', g.page, p.cls, p.node, () => g.page.clickPoint(x, y), () => g.page.describeAt(x, y));
   }
@@ -265,7 +296,7 @@ export function createEngine(deps: EngineDeps): Engine {
       return r.ok ? { ...r, code: found ? 'ready' : 'timeout' } : r;
     }),
     screenshot: () => serial(async () => {
-      if (!deps.screenshotEnabled) return refused('screenshot_disabled', 'screenshots are off (LINKEDIN_SCREENSHOT)');
+      if (!deps.screenshotEnabled) return refused('screenshot_disabled', `screenshots are off (${P.screenshotFlag})`);
       const g = await gate();
       if (!g.ok) return g.res;
       if (seenEpoch !== refs.epoch || !refs.hasSnapshot) return refused('snapshot_required', 'take a snapshot first');

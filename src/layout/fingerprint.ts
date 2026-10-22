@@ -102,7 +102,7 @@ export function observeLinkedin(
 const ACCESS_DENIED_RE = /access denied|403 forbidden|request blocked|unusual traffic/i;
 const ERROR_PAGE_RE = /\b(404|page not found|not found|500|internal server error|something went wrong|service unavailable)\b/i;
 
-function naukriKind(url: string): string {
+export function naukriKind(url: string): string {
   let host = '';
   let path = '';
   let threaded = false;

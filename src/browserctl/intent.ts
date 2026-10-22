@@ -16,6 +16,8 @@ export interface ArmedIntent {
   profileKey?: string;
   threadRef?: string;
   jobId?: number | string;
+  /** Naukri apply: the job key (`naukri:<n>`) the live page URL must carry. */
+  pageKey?: string;
   /** Exact outbound text (null for accept and apply). */
   text: string | null;
   personId?: number;

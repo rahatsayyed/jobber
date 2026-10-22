@@ -1,5 +1,5 @@
-// End-to-end dry-run harness: the real driver, plan, due-work, service layer, Naukri send path and
-// the REAL LinkedIn arm tool plus browserctl commit path (against a fake page), with a scripted fake
+// End-to-end dry-run harness: the real driver, plan, due-work, service layer and the REAL arm tools plus
+// browserctl commit paths for Naukri and LinkedIn (against fake pages), with a scripted fake
 // Launcher standing in for the model run (no tmux, no claude, no real browser).
 import { describe, it, expect, afterEach } from 'vitest';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -21,7 +21,9 @@ import { upsertPerson } from '../src/outreach/people.js';
 import { countSince } from '../src/outreach/limits.js';
 import { addEscalation, hashInboundText, listDueTouches, recordInbound } from '../src/outreach/service.js';
 import { classifyInbound } from '../src/naukri/inbound.js';
-import { naukriSendMessage, type PageDriver } from '../src/naukri/actions.js';
+import { armNaukriMessage } from '../src/browserctl/arm/naukri.js';
+import { NAUKRI_POLICY } from '../src/browserctl/policy.js';
+import { threadHtml, refOf as nkRefOf } from './helpers/nkWorld.js';
 import { daemonLoop, wakeOnce, type DriverDeps } from '../src/scheduler/driver.js';
 import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
 import type { Notice } from '../src/scheduler/notify.js';
@@ -84,12 +86,39 @@ class ScriptedLauncher implements Launcher {
   attempts: Array<{ who: string; status: string; reasons: string[] }> = [];
   linkedin: { status: string; sendClicks: number } | null = null;
   constructor(private db: Db, private d: () => DriverDeps, private world: World, private dir: string) {}
-  private page: PageDriver = {
-    sendInThread: async (thread, text) => {
-      this.pageSends.push({ thread, text });
-      return { confirmed: true, observedRecipient: 'Pat Recruiter' };
-    },
-  };
+  // The REAL Naukri arm tool and engine commit path against a fake thread page, under the run's flags.
+  private async naukriSend(
+    env: NodeJS.ProcessEnv, now: Date, d: DriverDeps, p: { id: number; name: string }, thread: string, text: string, kind: string,
+  ): Promise<{ status: string; reasons: string[] }> {
+    const name = p.name;
+    const page = fakeBcPage(threadHtml({ name, text: '' }), `https://www.naukri.com/mnjuser/inbox?threadId=${thread}`);
+    const intents = new IntentStore(() => now.getTime());
+    const screen = async (t: string) => ({ blocked: false as const, unscreened: false, text: t, flags: [] as string[], code: 'ok' as const });
+    const stopFile = join(this.dir, 'STOP');
+    const engine = createEngine({
+      db: this.db, now: () => now, env, cfg: { dryRun: isDryRun(env), maxAcceptsPerDay: 0 }, policy: NAUKRI_POLICY,
+      getPage: async () => page, intents, screen: screen as never, stopFile, paceMs: () => 0, settleMs: 0, confirmTimeoutMs: 50,
+    });
+    const armed = await armNaukriMessage({
+      engine, intents, db: this.db, now: () => now, env, cfg: d.cfg, screen: screen as never, stopFile, tuning: d.tuning,
+      checkText: async (x) => ({ ok: true, normalized: x.trim(), verdict: 'pass' }),
+      style: () => ({ ok: true, hits: [] }),
+    }, { person_id: p.id, thread_ref: thread, text, kind: kind as never });
+    if (armed.status !== 'armed') return { status: armed.status === 'refused' ? 'blocked' : armed.status, reasons: [armed.code] };
+    page.onAct = (what) => {
+      const f = /^fill \d+ ([\s\S]*)$/.exec(what);
+      if (f) page.setHtml(threadHtml({ name, text: f[1] }));
+      else if (what.startsWith('click')) {
+        this.pageSends.push({ thread, text });
+        page.setHtml(threadHtml({ name, text: '', sent: text }));
+      }
+    };
+    const box = nkRefOf((await engine.snapshot()).state ?? '', 'textbox', 'Type a message');
+    await engine.type(box, text);
+    const send = nkRefOf((await engine.snapshot()).state ?? '', 'button', 'Send');
+    const r = await engine.click(send);
+    return { status: r.status ?? r.code, reasons: r.status === 'sent' || r.status === 'dry_run' ? [] : [r.code] };
+  }
 
   // The REAL LinkedIn arm tool and engine commit path against a fake page, under the run's flags.
   private async linkedinSend(env: NodeJS.ProcessEnv, now: Date): Promise<void> {
@@ -127,17 +156,13 @@ class ScriptedLauncher implements Launcher {
     const env: NodeJS.ProcessEnv = plan.dryRun
       ? { JOBBER_DRY_RUN: '1', LINKEDIN_DRY_RUN: 'true' }
       : { SCHEDULER_DRY_RUN: 'false', LINKEDIN_DRY_RUN: 'false' };
-    const sendDeps = (): Parameters<typeof naukriSendMessage>[0] => ({
-      db: this.db, cfg: d.cfg, now, env, runId: plan.runId, driver: this.page, tuning: d.tuning,
-      checkText: async (x) => ({ ok: true, normalized: x.trim(), verdict: 'pass' }),
-      style: () => ({ ok: true, hits: [] }),
-    });
+    const nkEnv: NodeJS.ProcessEnv = { ...env, JOBBER_RUN_ID: plan.runId };
+    const nameOf = (id: number): string => (this.db.prepare('SELECT name FROM people WHERE id = ?').get(id) as { name: string }).name;
     // due-followups
     for (const t of listDueTouches(this.db, now, d.tuning, { limit: 5 })) {
       if (t.platform !== 'naukri') continue;
-      const r = await naukriSendMessage(sendDeps(), {
-        personId: t.person_id, threadRef: 'thread-pat', text: 'Hi Pat, wanted to share my React work for the role.', kind: t.kind,
-      });
+      const r = await this.naukriSend(nkEnv, now, d, { id: t.person_id, name: nameOf(t.person_id) }, 'thread-pat',
+        'Hi Pat, wanted to share my React work for the role.', t.kind);
       this.attempts.push({ who: 'due', status: r.status, reasons: r.reasons });
     }
     await this.linkedinSend(env, now);
@@ -160,9 +185,8 @@ class ScriptedLauncher implements Launcher {
       // A model worker might still try to answer: attempt it for every inbound and let the guard decide.
       // (The plain inquiry is attempted only in dry mode; live, it would be a legitimate second send.)
       if (who !== 'plain' || plan.dryRun) {
-        const r = await naukriSendMessage(sendDeps(), {
-          personId: pid, threadRef: ref, text: 'Thanks for reaching out, happy to talk about the role.', kind: 'followup',
-        });
+        const r = await this.naukriSend(nkEnv, now, d, { id: pid, name: nameOf(pid) }, ref,
+          'Thanks for reaching out, happy to talk about the role.', 'followup');
         this.attempts.push({ who, status: r.status, reasons: r.reasons });
       }
     }
@@ -242,7 +266,7 @@ describe('scheduler end-to-end dry run', () => {
     expect(sentNonConnect(h.db, 'naukri')).toBe(0);
     expect(sentNonConnect(h.db, 'linkedin')).toBe(0);
     expect(count(h.db, 'SELECT COUNT(*) AS n FROM rate_events')).toBe(eventsBefore);
-    expect(h.launcher.pageSends).toHaveLength(0); // Naukri driver never called
+    expect(h.launcher.pageSends).toHaveLength(0); // no Naukri Send click
 
     // real typed LinkedIn path in dry mode: dry_run status, a dry_run touch, no Send click, no event
     expect(h.launcher.linkedin).toEqual({ status: 'dry_run', sendClicks: 0 });
@@ -254,9 +278,13 @@ describe('scheduler end-to-end dry run', () => {
 
     // the would-be follow-up and the plain-inquiry reply are recorded; escalated inbounds are not
     const all = h.db.prepare('SELECT * FROM dry_run_actions').all() as Array<{ run_id: string | null; platform: string; person_id: number; action: string }>;
-    const dry = all.filter((x) => x.platform === 'naukri');
-    expect(dry.map((x) => x.person_id).sort()).toEqual([h.world.pidDue, h.world.pidPlain].sort());
-    expect(dry.every((x) => x.run_id === r.runId && x.action === 'message')).toBe(true);
+    // typing in a dry run is recorded too (no person); the arm and send records carry the person
+    const dry = all.filter((x) => x.platform === 'naukri' && x.person_id !== null);
+    expect([...new Set(dry.map((x) => x.person_id))].sort()).toEqual([h.world.pidDue, h.world.pidPlain].sort());
+    expect(dry.every((x) => x.run_id === r.runId && ['naukri_arm_send', 'naukri_send'].includes(x.action))).toBe(true);
+    for (const pid of [h.world.pidDue, h.world.pidPlain]) {
+      expect(dry.filter((x) => x.person_id === pid).map((x) => x.action).sort()).toEqual(['naukri_arm_send', 'naukri_send']);
+    }
     // the LinkedIn engine records its dry arm and the would-be send (never a click)
     expect(all.filter((x) => x.platform === 'linkedin').map((x) => x.action)).toEqual(
       expect.arrayContaining(['linkedin_arm_send', 'linkedin_commit_message_send']),

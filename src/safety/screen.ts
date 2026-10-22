@@ -71,7 +71,10 @@ export const SCREENED_SURFACES: ReadonlyArray<{ id: string; file: string }> = [
   { id: 'linkedin_find_profiles', file: 'src/linkedin/findProfiles.ts' },
   { id: 'linkedin_search_jobs', file: 'src/linkedin/discoverCommon.ts' },
   { id: 'linkedin_search_posts', file: 'src/linkedin/discoverCommon.ts' },
-  { id: 'naukri_state', file: 'src/mcp/naukri.ts' },
+  // The browserctl engine screens every page tree it returns (open, snapshot and each action's re-read).
+  { id: 'naukri_snapshot', file: 'src/browserctl/act.ts' },
+  { id: 'naukri_arm_send', file: 'src/browserctl/arm/naukri.ts' },
+  { id: 'naukri_arm_apply', file: 'src/browserctl/arm/naukri.ts' },
   { id: 'naukri_search', file: 'src/mcp/naukri.ts' },
   { id: 'naukri_discover', file: 'src/naukri/discover.ts' },
   { id: 'naukri_inbox', file: 'src/mcp/naukri.ts' },

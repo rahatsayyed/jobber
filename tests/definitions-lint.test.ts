@@ -85,7 +85,7 @@ function toolsOf(d: Def): string[] {
 
 describe('registry sanity', () => {
   it('finds known tools', () => {
-    for (const t of ['mcp__linkedin__linkedin_arm_send', 'mcp__naukri__naukri_send_message', 'mcp__outreach__escalate',
+    for (const t of ['mcp__linkedin__linkedin_arm_send', 'mcp__naukri__naukri_arm_send', 'mcp__outreach__escalate',
       'mcp__db__save_followup_draft', 'mcp__applier__apply_open', 'mcp__gmail__send_email', 'mcp__resume__check_text']) {
       expect(REAL.has(t), t).toBe(true);
     }

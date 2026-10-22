@@ -36,10 +36,13 @@ const NEW_ALLOWED = new Set([
   'mcp__linkedin__linkedin_snapshot', 'mcp__linkedin__linkedin_type', 'mcp__linkedin__linkedin_press_key',
   'mcp__linkedin__linkedin_wait_for', 'mcp__linkedin__linkedin_screenshot', 'mcp__linkedin__linkedin_click_at',
   'mcp__linkedin__linkedin_arm_send',
+  // the same for Naukri (naukri_arm_send arms a thread send; the apply operator holds naukri_arm_apply)
+  ...['snapshot', 'click', 'type', 'press_key', 'scroll', 'wait_for', 'screenshot', 'click_at', 'arm_send', 'arm_apply'].map((n) => `mcp__naukri__naukri_${n}`),
   'mcp__outreach__list_due_touches', 'mcp__outreach__next_contacts', 'mcp__outreach__record_inbound',
   'mcp__outreach__escalate', 'mcp__db__list_jobs', 'mcp__db__list_queued_outreach', 'mcp__db__update_outreach_status',
 ]);
 const FORBIDDEN = ['Agent', 'Task', 'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch'];
+const NKOP = ['layout', 'open', 'snapshot', 'click', 'type', 'press_key', 'scroll', 'wait_for', 'screenshot', 'click_at', 'arm_send', 'search', 'discover', 'inbox', 'read_thread'];
 const OTHER: Record<string, string> = { linkedin: 'mcp__naukri__', naukri: 'mcp__linkedin__' };
 
 function parse(name: string): { fm: string; body: string; tools: string[] } {
@@ -77,9 +80,7 @@ describe('platform operators', () => {
   it('naukri-operator has exactly the brief tool list', () => {
     expect(cfg['naukri-operator']).toEqual([
       'Skill', 'mcp__outreach__list_due_touches', 'mcp__outreach__next_contacts', 'mcp__outreach__record_inbound',
-      'mcp__outreach__escalate', 'mcp__naukri__naukri_layout', 'mcp__naukri__naukri_open',
-      'mcp__naukri__naukri_state', 'mcp__naukri__naukri_search', 'mcp__naukri__naukri_discover',
-      'mcp__naukri__naukri_inbox', 'mcp__naukri__naukri_read_thread', 'mcp__naukri__naukri_send_message', 'mcp__db__list_jobs',
+      'mcp__outreach__escalate', ...NKOP.map((n) => `mcp__naukri__naukri_${n}`), 'mcp__db__list_jobs',
       'mcp__db__list_queued_outreach', 'mcp__db__update_outreach_status',
     ]);
   });
@@ -105,14 +106,10 @@ describe('platform operators', () => {
           expect(t).not.toContain('*');
         }
       });
-      it('has no accept tool (linkedin may hold the engine type, screenshot and click_at tools; naukri none), and no naukri click', () => {
+      it('has no accept tool and, for Naukri, no apply arm tool (the apply stage owns it)', () => {
         for (const t of tools) {
-          if (platform === 'naukri') {
-            expect(t.endsWith('_type')).toBe(false);
-            expect(t.endsWith('_screenshot')).toBe(false);
-          }
           expect(t.endsWith('_accept_invite')).toBe(false);
-          if (platform === 'naukri') expect(t.endsWith('_click')).toBe(false);
+          if (platform === 'naukri') expect(t.endsWith('_arm_apply')).toBe(false);
         }
       });
       it('includes the platform layout tool', () => {
@@ -131,7 +128,7 @@ describe('platform operators', () => {
         expect(body).not.toMatch(/mcp__connect/);
       });
       it('treats layout=unknown as not learned yet (reported, never a layout_drift escalation)', () => {
-        const rule = body.split('\n').find((l) => l.startsWith('2. Every `' + (platform === 'linkedin' ? 'linkedin_snapshot' : platform + '_state') + '`')) ?? '';
+        const rule = body.split('\n').find((l) => l.startsWith('2. Every `' + (platform + '_snapshot') + '`')) ?? '';
         expect(rule).toContain('not_learned');
         const driftPart = rule.slice(rule.indexOf('On `drift`'), rule.indexOf('On `unknown`') > 0 ? rule.indexOf('On `unknown`') : undefined);
         expect(driftPart).not.toContain('`unknown`');
@@ -170,7 +167,7 @@ describe('platform operators', () => {
       expect(li).toMatch(/inbox[\s\S]*never answer/i);
     });
     it('naukri: records inbound before replying, never applies', () => {
-      expect(nk.indexOf('record_inbound')).toBeLessThan(nk.indexOf('naukri_send_message({person_id, thread_ref, text, kind: "followup"})'));
+      expect(nk.indexOf('record_inbound')).toBeLessThan(nk.indexOf('naukri_arm_send({person_id, thread_ref, text, kind: "followup"})'));
       expect(nk).toMatch(/never apply/);
       expect(nk).toContain('salary');
     });

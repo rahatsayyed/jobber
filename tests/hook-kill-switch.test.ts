@@ -33,7 +33,8 @@ const SEND_TOOLS = [
   'mcp__linkedin__linkedin_arm_send',
   'mcp__linkedin__linkedin_click',
   'mcp__linkedin__linkedin_type',
-  'mcp__naukri__naukri_send_message',
+  'mcp__naukri__naukri_arm_send',
+  'mcp__naukri__naukri_click',
   'mcp__applier__apply_open',
   'mcp__applier__apply_submit',
   'mcp__applier__site_login',
@@ -127,8 +128,11 @@ describe('rendered settings and committed settings.json', () => {
     'mcp__linkedin__linkedin_click_at',
     'mcp__linkedin__linkedin_search_jobs',
     'mcp__linkedin__linkedin_search_posts',
+    'mcp__naukri__naukri_open',
+    'mcp__naukri__naukri_press_key',
+    'mcp__naukri__naukri_click_at',
+    'mcp__naukri__naukri_arm_apply',
     'mcp__naukri__naukri_discover',
-    'mcp__naukri__naukri_click',
     'mcp__naukri__naukri_type',
   ];
 

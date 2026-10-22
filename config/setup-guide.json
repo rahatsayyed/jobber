@@ -393,6 +393,13 @@
           "purpose": "whether linkedin_screenshot and linkedin_click_at exist; screenshot pixels are not injection-screened (ships false)",
           "where": ".env.example",
           "entered_in": "owner edits .env"
+        },
+        {
+          "name": "NAUKRI_SCREENSHOT",
+          "secret": false,
+          "purpose": "whether naukri_screenshot and naukri_click_at exist; screenshot pixels are not injection-screened (ships false)",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
         }
       ],
       "explain": "Jobber uses a saved browser login for the main LinkedIn account, and a Naukri login. You log in yourself in a real Chrome window that npm run linkedin:login and npm run naukri:login open; passwords and QR codes stay with you.",

@@ -91,7 +91,6 @@ export const TOOL_REQUIRES: Record<string, { kind: KindId; landmarks: readonly L
   // Discovery pages. `jobs` has no MIN_SET until a supervised learning run, so enforce refuses it as unverified.
   linkedin_search_jobs: { kind: 'jobs', landmarks: ['results.cards'] },
   linkedin_search_posts: { kind: 'search', landmarks: ['results.cards'] },
-  naukri_send_message: { kind: 'thread', landmarks: ['chat.input'] },
 };
 
 // ---- ATS form pages (plan 8G-2 task 19) -------------------------------------------------------

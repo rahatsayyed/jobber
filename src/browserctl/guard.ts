@@ -82,6 +82,9 @@ const IRREVERSIBLE_RE = new RegExp(
 );
 const DANGEROUS_HREF_RE = /(?:log-?out|sign-?out|signout|delete|withdraw|\/accept\b|action=(?:accept|send|connect|delete)|\/unfollow)/i;
 
+/** The Naukri Apply button itself (as opposed to a chatbot step control). */
+export const isNaukriApplyName = (name: string): boolean => NAUKRI_APPLY_RE.test(normName(name));
+
 /** Classify one click-like action (click, click_at, Space or Enter on a focused control). */
 export function classify(input: GuardInput): ActionClass {
   const name = normName(input.name);

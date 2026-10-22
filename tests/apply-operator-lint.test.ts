@@ -12,7 +12,7 @@ const EXPECTED = [
   'mcp__applier__site_login',
   'mcp__applier__site_signup',
   'mcp__applier__site_open_link',
-  ...['open', 'state', 'click', 'type', 'layout'].map((t) => `mcp__naukri__naukri_${t}`),
+  ...['open', 'snapshot', 'click', 'type', 'press_key', 'scroll', 'wait_for', 'screenshot', 'click_at', 'arm_apply', 'layout'].map((t) => `mcp__naukri__naukri_${t}`),
 ];
 
 const text = readFileSync('.claude/agents/apply-operator.md', 'utf8');

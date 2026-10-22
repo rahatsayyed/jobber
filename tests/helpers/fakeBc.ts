@@ -6,6 +6,8 @@ export interface FakeBc extends BcPage {
   log: string[];
   /** Replace the live DOM (simulates a re-render between snapshot and action). */
   setHtml(html: string): void;
+  /** The HTML currently served. */
+  currentHtml(): string;
   /** Points to nodes for describeAt. */
   points: Map<string, number>;
   /** Ordinal reported by focused() (null: unknown). */
@@ -19,6 +21,7 @@ export interface FakeBc extends BcPage {
 
 export function fakeBcPage(html: string, url = 'https://example.test/page'): FakeBc {
   let tree: RawTree = buildTreeFromHtml(html, url);
+  let curHtml = html;
   let cur = url;
   const log: string[] = [];
   const points = new Map<string, number>();
@@ -30,7 +33,8 @@ export function fakeBcPage(html: string, url = 'https://example.test/page'): Fak
     responseOk: true,
     get currentUrl() { return cur; },
     set currentUrl(u: string) { cur = u; },
-    setHtml(h: string) { tree = buildTreeFromHtml(h, cur); },
+    setHtml(h: string) { curHtml = h; tree = buildTreeFromHtml(h, cur); },
+    currentHtml: () => curHtml,
     url: () => cur,
     title: async () => tree.title,
     goto: async (u) => { log.push(`goto ${u}`); cur = u; self.onAct?.(`goto ${u}`); },

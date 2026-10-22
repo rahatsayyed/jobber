@@ -7,7 +7,6 @@ const WORKERS = ['linkedin-operator', 'naukri-operator', 'source-operator'] as c
 const FORBIDDEN_EXACT = [
   'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Agent', 'Task',
   'mcp__db__record_outcome', 'mcp__db__raw_query',
-  'mcp__naukri__naukri_click', 'mcp__naukri__naukri_type',
 ];
 const FORBIDDEN_PREFIX = ['mcp__playwright__', 'mcp__claude-in-chrome__', 'mcp__gmail__', 'mcp__apply__', 'mcp__connect__'];
 
@@ -106,12 +105,13 @@ describe('worker agents', () => {
       it('stop rule names halted, rate_limited and killed', () => {
         for (const w of ['halted', 'rate_limited', 'killed']) expect(body).toContain(w);
       });
-      it('has no type tool and click only for the LinkedIn operator (engine refs, commit classes need an armed intent)', () => {
+      it('has no type tool and click only for the platform operators (engine refs, commit classes need an armed intent)', () => {
         for (const t of tools) {
-          if (name !== 'linkedin-operator') expect(t.endsWith('_type')).toBe(false);
+          if (name === 'source-operator') expect(t.endsWith('_type')).toBe(false);
           // scout_click refuses submit-like controls in code (tests/scout-tools.test.ts)
-          if (name !== 'linkedin-operator' && t !== 'mcp__scout__scout_click') expect(t.endsWith('_click')).toBe(false);
+          if (name === 'source-operator' && t !== 'mcp__scout__scout_click') expect(t.endsWith('_click')).toBe(false);
           if (name !== 'linkedin-operator') expect(t.startsWith('mcp__linkedin__')).toBe(false);
+          if (name !== 'naukri-operator') expect(t.startsWith('mcp__naukri__')).toBe(false);
         }
       });
       it('has no mcp__connect reference', () => {
@@ -132,7 +132,7 @@ describe('worker agents', () => {
     expect(li).toContain('https://www.linkedin.com/messaging/');
     const nk = frontmatter('naukri-operator').body;
     expect(nk).toContain('salary');
-    expect(nk.indexOf('record_inbound')).toBeLessThan(nk.indexOf('naukri_send_message({person_id, thread_ref, text, kind: "followup"})'));
+    expect(nk.indexOf('record_inbound')).toBeLessThan(nk.indexOf('naukri_arm_send({person_id, thread_ref, text, kind: "followup"})'));
     expect(nk).toMatch(/never apply/);
   });
   it('linkedin-operator has no inbox LinkedIn send path and cannot record outcomes', () => {

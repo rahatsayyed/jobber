@@ -11,13 +11,17 @@ import { stopFileForRoot } from '../scheduler/control.js';
 import { PROJECT_ROOT } from '../layout/config.js';
 import type { BcPage } from './driver.js';
 import type { IntentStore } from './intent.js';
+import type { PlatformPolicy } from './policy.js';
 import type { RawTree } from './snapshot.js';
 
 export interface EngineDeps {
   db: BetterSqlite3.Database;
   now: () => Date;
   env: NodeJS.ProcessEnv;
-  cfg: LinkedinConfig;
+  /** Dry-run flag and the accept ceiling (LinkedIn only; Naukri passes 0). */
+  cfg: Pick<LinkedinConfig, 'dryRun' | 'maxAcceptsPerDay'>;
+  /** Platform differences (URL rules, page kind, block pages). Default: LinkedIn. */
+  policy?: PlatformPolicy;
   /** The session page. The MCP layer (task 3b) owns launch, lock and idle close; null means no session. */
   getPage: () => Promise<BcPage | null>;
   intents: IntentStore;
@@ -25,7 +29,7 @@ export interface EngineDeps {
   screen: (text: string, purpose: ScreenPurpose) => Promise<ScreenVerdict>;
   /** `.jobber/STOP` path (default: the project's). */
   stopFile?: string;
-  /** LINKEDIN_SCREENSHOT flag (ships off). */
+  /** LINKEDIN_SCREENSHOT or NAUKRI_SCREENSHOT flag (ships off). */
   screenshotEnabled?: boolean;
   /** Advisory layout telemetry: sees every tree the engine reads; never fails an action. */
   layoutFeed?: (tree: RawTree) => void;
@@ -35,6 +39,12 @@ export interface EngineDeps {
   paceMs?: () => number;
   settleMs?: number;
   confirmTimeoutMs?: number;
+  /**
+   * Output gate for text typed into a non-composer field or a Naukri apply chatbot (no URLs, emails,
+   * secrets). Returns a refusal reason or null. The Naukri MCP supplies it; absent means the guard's
+   * own lexical check only.
+   */
+  textGate?: (text: string, mode: 'chatbot' | 'plain') => string | null;
 }
 
 export interface EngineResult {
@@ -54,12 +64,14 @@ export interface EngineResult {
 export const refused = (code: string, reason: string): EngineResult => ({ ok: false, code, reason });
 
 /** Kill switch and halt flags: the reason text, or null when the platform may act. */
-export function killReason(deps: Pick<EngineDeps, 'db' | 'env' | 'stopFile'>): string | null {
+export function killReason(deps: Pick<EngineDeps, 'db' | 'env' | 'stopFile' | 'policy'>): string | null {
   const stop = deps.stopFile ?? stopFileForRoot(PROJECT_ROOT);
   try { if (existsSync(stop)) return 'kill switch: STOP file'; } catch { return 'kill switch: STOP path unreadable'; }
   if (deps.env.JOBBER_KILL === '1') return 'kill switch: JOBBER_KILL';
-  const h = haltReason(deps.db, 'linkedin');
-  return h === null ? null : `linkedin halted: ${h}`;
+  const platform = deps.policy?.platform ?? 'linkedin';
+  let h: string | null;
+  try { h = haltReason(deps.db, platform); } catch { return `${platform} halt state unreadable`; }
+  return h === null ? null : `${platform} halted: ${h}`;
 }
 
 const CAPTCHA_RE = /(quick security check|verify (that )?you('| a)re (a )?human|complete the captcha|captcha)/i;

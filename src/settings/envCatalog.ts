@@ -418,6 +418,14 @@ const hand: EnvSpec[] = [
     restart: 'mcp',
     restartEvidence: 'src/sources/naukri.ts',
   }),
+  e('NAUKRI_SCREENSHOT', 'naukri', 'Naukri', 'bool', {
+    default: 'false',
+    exampleActive: true,
+    about: 'Turn on naukri_screenshot and naukri_click_at (a pointer click needs a snapshot and a screenshot at the current epoch). Screenshot pixels are NOT checked by the injection classifier, so leave it off unless the page tree is not enough.',
+    restart: 'mcp',
+    restartEvidence: 'src/mcp/naukri.ts',
+    ...tier('guarded', 'Feeds unscreened page pixels to the model and allows pointer clicks.', 'true'),
+  }),
 
   // ---- Scheduler
   e('SCHEDULER_ENABLED', 'scheduler', 'scheduler', 'bool', {

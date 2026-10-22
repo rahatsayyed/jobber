@@ -17,7 +17,7 @@ const MAIL_TOOLS = [
 
 // The committed wake tool list (plan 8G task 13). Changing the wake profile means changing this list on purpose.
 const WAKE_ALLOW = [
-  'mcp__naukri__naukri_open', 'mcp__naukri__naukri_state', 'mcp__naukri__naukri_close', 'mcp__naukri__naukri_screenshot',
+  'mcp__naukri__naukri_open', 'mcp__naukri__naukri_snapshot', 'mcp__naukri__naukri_close', 'mcp__naukri__naukri_screenshot',
   'mcp__db__list_queued_outreach', 'mcp__db__get_funnel', 'mcp__db__get_outreach_stats', 'mcp__db__get_job_stats',
   'mcp__outreach__list_due_touches', 'mcp__outreach__next_contacts', 'mcp__outreach__record_inbound', 'mcp__outreach__escalate',
   'mcp__outreach__list_open_escalations',
@@ -25,7 +25,8 @@ const WAKE_ALLOW = [
   'mcp__linkedin__linkedin_type', 'mcp__linkedin__linkedin_press_key', 'mcp__linkedin__linkedin_wait_for', 'mcp__linkedin__linkedin_screenshot',
   'mcp__linkedin__linkedin_click_at', 'mcp__linkedin__linkedin_arm_send',
   'mcp__naukri__naukri_search', 'mcp__naukri__naukri_discover', 'mcp__naukri__naukri_inbox', 'mcp__naukri__naukri_read_thread',
-  'mcp__naukri__naukri_send_message', 'mcp__db__list_jobs', 'mcp__db__update_outreach_status',
+  'mcp__naukri__naukri_scroll', 'mcp__naukri__naukri_wait_for', 'mcp__naukri__naukri_press_key', 'mcp__naukri__naukri_click_at',
+  'mcp__naukri__naukri_arm_send', 'mcp__naukri__naukri_arm_apply', 'mcp__db__list_jobs', 'mcp__db__update_outreach_status',
   'mcp__linkedin__linkedin_layout', 'mcp__naukri__naukri_layout', 'mcp__linkedin__linkedin_search_jobs', 'mcp__linkedin__linkedin_search_posts',
   'mcp__scout__scout_search', 'mcp__scout__scout_open', 'mcp__scout__scout_state', 'mcp__scout__scout_scroll', 'mcp__scout__scout_click',
   'mcp__scout__scout_extract_jobs', 'mcp__scout__scout_save_jobs', 'mcp__scout__scout_capture_fixture', 'mcp__scout__scout_propose_provider',
@@ -91,7 +92,7 @@ describe('mail-operator definition', () => {
     for (const s of MOVED) expect(body, s).toContain(norm(s));
   });
   it('does not send, connect or apply on any non-email channel', () => {
-    expect(d.body).not.toMatch(/linkedin_connect_send|linkedin_send_message|naukri_send_message|apply\.(linkedin|greenhouse|lever|workday|ashby)/);
+    expect(d.body).not.toMatch(/linkedin_connect_send|linkedin_send_message|naukri_send_message|naukri_arm_send|naukri_arm_apply|apply\.(linkedin|greenhouse|lever|workday|ashby)/);
   });
   it('does not raise the cap or ask for approval', () => {
     expect(d.body).toContain('the cap is never raised from here');
