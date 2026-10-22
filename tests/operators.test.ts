@@ -32,6 +32,10 @@ const OLD_UNION = new Set(Object.values(OLD_WORKER_TOOLS).flat());
 const NEW_ALLOWED = new Set([
   'mcp__linkedin__linkedin_layout', 'mcp__naukri__naukri_layout',
   'mcp__linkedin__linkedin_search_jobs', 'mcp__linkedin__linkedin_search_posts', 'mcp__naukri__naukri_discover',
+  // browserctl engine tools (ref-based; commit classes need linkedin_arm_send)
+  'mcp__linkedin__linkedin_snapshot', 'mcp__linkedin__linkedin_type', 'mcp__linkedin__linkedin_press_key',
+  'mcp__linkedin__linkedin_wait_for', 'mcp__linkedin__linkedin_screenshot', 'mcp__linkedin__linkedin_click_at',
+  'mcp__linkedin__linkedin_arm_send',
   'mcp__outreach__list_due_touches', 'mcp__outreach__next_contacts', 'mcp__outreach__record_inbound',
   'mcp__outreach__escalate', 'mcp__db__list_jobs', 'mcp__db__list_queued_outreach', 'mcp__db__update_outreach_status',
 ]);
@@ -63,9 +67,10 @@ describe('platform operators', () => {
     expect(cfg['linkedin-operator']).toEqual([
       'Skill', 'mcp__outreach__list_due_touches', 'mcp__outreach__next_contacts', 'mcp__outreach__record_inbound',
       'mcp__outreach__escalate', 'mcp__linkedin__linkedin_layout', 'mcp__linkedin__linkedin_open',
-      'mcp__linkedin__linkedin_state', 'mcp__linkedin__linkedin_scroll', 'mcp__linkedin__linkedin_click',
-      'mcp__linkedin__linkedin_check_connection_status', 'mcp__linkedin__linkedin_connect_send',
-      'mcp__linkedin__linkedin_send_message', 'mcp__linkedin__linkedin_search_jobs',
+      'mcp__linkedin__linkedin_snapshot', 'mcp__linkedin__linkedin_click', 'mcp__linkedin__linkedin_type',
+      'mcp__linkedin__linkedin_press_key', 'mcp__linkedin__linkedin_scroll', 'mcp__linkedin__linkedin_wait_for',
+      'mcp__linkedin__linkedin_screenshot', 'mcp__linkedin__linkedin_click_at', 'mcp__linkedin__linkedin_arm_send',
+      'mcp__linkedin__linkedin_search_jobs',
       'mcp__linkedin__linkedin_search_posts', 'mcp__db__list_queued_outreach', 'mcp__db__update_outreach_status',
     ]);
   });
@@ -100,10 +105,12 @@ describe('platform operators', () => {
           expect(t).not.toContain('*');
         }
       });
-      it('has no type, screenshot or accept tool, and no naukri click', () => {
+      it('has no accept tool (linkedin may hold the engine type, screenshot and click_at tools; naukri none), and no naukri click', () => {
         for (const t of tools) {
-          expect(t.endsWith('_type')).toBe(false);
-          expect(t.endsWith('_screenshot')).toBe(false);
+          if (platform === 'naukri') {
+            expect(t.endsWith('_type')).toBe(false);
+            expect(t.endsWith('_screenshot')).toBe(false);
+          }
           expect(t.endsWith('_accept_invite')).toBe(false);
           if (platform === 'naukri') expect(t.endsWith('_click')).toBe(false);
         }
@@ -124,7 +131,7 @@ describe('platform operators', () => {
         expect(body).not.toMatch(/mcp__connect/);
       });
       it('treats layout=unknown as not learned yet (reported, never a layout_drift escalation)', () => {
-        const rule = body.split('\n').find((l) => l.startsWith('2. Every `' + platform + '_state`')) ?? '';
+        const rule = body.split('\n').find((l) => l.startsWith('2. Every `' + (platform === 'linkedin' ? 'linkedin_snapshot' : platform + '_state') + '`')) ?? '';
         expect(rule).toContain('not_learned');
         const driftPart = rule.slice(rule.indexOf('On `drift`'), rule.indexOf('On `unknown`') > 0 ? rule.indexOf('On `unknown`') : undefined);
         expect(driftPart).not.toContain('`unknown`');
@@ -153,8 +160,8 @@ describe('platform operators', () => {
     const li = parse('linkedin-operator').body;
     const nk = parse('naukri-operator').body;
     it('linkedin: status check and state read come before drafting and sending', () => {
-      expect(li.indexOf('linkedin_state')).toBeGreaterThan(-1);
-      expect(li.indexOf('linkedin_check_connection_status')).toBeLessThan(li.indexOf('linkedin_connect_send({profile_url'));
+      expect(li.indexOf('linkedin_snapshot')).toBeGreaterThan(-1);
+      expect(li.indexOf('linkedin_snapshot')).toBeLessThan(li.indexOf('linkedin_arm_send({kind: "connect_note"'));
       expect(li).toContain('https://www.linkedin.com/messaging/');
       expect(li).toContain('salary');
     });

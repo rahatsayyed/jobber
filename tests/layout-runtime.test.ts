@@ -6,14 +6,13 @@ import { createLayoutObserver, resolveRunId, actionLabelId, type LayoutEvent } f
 import { loadLayoutConfig } from '../src/layout/config.js';
 import { loadLayout } from '../src/layout/store.js';
 import { formatState } from '../src/linkedin/state.js';
-import { createRuntime } from '../src/linkedin/runtime.js';
+import type { Runtime } from '../src/linkedin/runtime.js';
 import { openDb } from '../src/db.js';
 import type { RawSnapshot } from '../src/linkedin/types.js';
 import { buildHandlers, shutdownHandlers } from '../src/mcp/linkedin.js';
-import { makeFakeLauncher } from './helpers/fakeLinkedin.js';
-import { writeFileSync, chmodSync } from 'node:fs';
-import { buildSnapshotFromHtml } from '../src/linkedin/snapshot.js';
-import { SELECTORS } from '../src/linkedin/selectors.js';
+import { fakeBcPage } from './helpers/fakeBc.js';
+import { IntentStore } from '../src/browserctl/intent.js';
+import { profileHtml, URL_ } from './helpers/bcWorld.js';
 import { DEFAULT_STYLE_CONFIG } from '../src/safety/styleGate.js';
 
 let dir: string;
@@ -193,57 +192,44 @@ describe('formatState layout header', () => {
   });
 });
 
-describe('observer wiring in the runtime and MCP', () => {
-  const STATE = { cookies: [{ name: 'li_at', value: 'SENTINEL-NOT-REAL', domain: '.linkedin.com', path: '/' }], origins: [] };
-  const PROFILE = 'https://www.linkedin.com/in/jane-example/';
-  const html = readFileSync(new URL('./fixtures/linkedin/profile-not-connected.html', import.meta.url), 'utf8');
-
-  function make(layout: Parameters<typeof createRuntime>[0]['layout']) {
-    writeFileSync(path.join(dir, 'state.json'), JSON.stringify(STATE), { mode: 0o600 });
-    chmodSync(path.join(dir, 'state.json'), 0o600);
+describe('observer wiring in the MCP (engine telemetry)', () => {
+  function make(layout: Record<string, unknown>) {
     const db = openDb(':memory:');
-    const snapshot = buildSnapshotFromHtml(html, PROFILE);
-    const els = { [SELECTORS.nameHeadings]: [{ text: 'Jane Example', box: { x: 100, y: 100, height: 30 } }] };
-    const launcher = makeFakeLauncher({ pages: { '/in/jane-example/': { ...snapshot, elements: els } } } as any, []);
-    const rt = createRuntime({
-      db, launcher, sessionPath: path.join(dir, 'state.json'), lockPath: path.join(dir, 'l.lock'), settleMs: 0, env: {}, layout,
-    });
+    const page = fakeBcPage(profileHtml({ extra: `<p>${'Experience and projects. '.repeat(12)}</p>` }), URL_);
+    const rt = { page: () => ({}), touch: () => undefined, discard: async () => true, close: async () => true, layout } as unknown as Runtime;
     const handlers = buildHandlers({
-      db, rt, env: {}, now: () => NOW, layoutCfg: cfg(),
+      db, rt, env: {}, now: () => NOW, layoutCfg: cfg(), intents: new IntentStore(),
       factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
-      sessionPath: path.join(dir, 'state.json'),
+      bcPage: () => page, paceMs: () => 0, settleMs: 0,
     });
-    return { handlers, rt };
+    return { handlers };
   }
 
-  it('linkedin_state carries layout= and survives an observer that throws', async () => {
+  it('linkedin_snapshot carries layout= and survives an observer that throws', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const throwing = {
       observe: () => { throw new Error('observer exploded'); },
       observeNaukri: () => { throw new Error('observer exploded'); },
       last: () => null, recordOutcome: () => undefined, render: () => '',
     };
-    const { handlers, rt } = make(throwing);
-    const opened = (await handlers.linkedin_open({ url: PROFILE })) as string;
-    expect(opened).toContain('page_kind=profile');
-    expect(opened).toContain(' layout=unknown');
-    const state = (await handlers.linkedin_state({})) as string;
-    expect(state).toContain('page_kind=profile');
-    expect(state.split('\n')[0]).toContain('layout=unknown');
-    await rt.close();
+    const { handlers } = make(throwing);
+    const opened = (await handlers.linkedin_open({ url: URL_ })) as string;
+    expect(JSON.parse(opened.split('\n')[0])).toMatchObject({ ok: true, layout: 'unknown' });
+    expect(opened).toContain('<<<PAGE_TEXT');
+    const state = (await handlers.linkedin_snapshot({})) as string;
+    expect(JSON.parse(state.split('\n')[0])).toMatchObject({ ok: true, layout: 'unknown' });
     await shutdownHandlers(handlers);
   });
 
-  it('a real observer writes the layout dir during open and state', async () => {
+  it('a real observer learns from the new snapshot through the layout adapter', async () => {
     const o = createLayoutObserver({ platform: 'linkedin', cfg: cfg(), now: () => NOW, runId: 'r1' });
-    const { handlers, rt } = make(o);
-    await handlers.linkedin_open({ url: PROFILE });
-    const state = (await handlers.linkedin_state({})) as string;
-    expect(state.split('\n')[0]).toMatch(/ layout=unknown$/);
+    const { handlers } = make(o as unknown as Record<string, unknown>);
+    await handlers.linkedin_open({ url: URL_ });
+    const state = (await handlers.linkedin_snapshot({})) as string;
+    expect(JSON.parse(state.split('\n')[0])).toMatchObject({ ok: true, layout: 'unknown' });
     expect(existsSync(path.join(dir, 'linkedin.json'))).toBe(true);
     const lay = JSON.parse((await handlers.linkedin_layout({})) as string);
     expect(lay).toMatchObject({ enforce: 'warn', verdict_last: { kind: 'profile', class: 'unknown' } });
     expect(typeof lay.memory).toBe('string');
-    await rt.close();
   });
 });

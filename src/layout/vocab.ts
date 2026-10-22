@@ -85,14 +85,12 @@ export const MIN_SET: Record<BasePlatform, Record<KindId, readonly LandmarkId[]>
 
 // What each typed tool needs on the page before it acts.
 export const TOOL_REQUIRES: Record<string, { kind: KindId; landmarks: readonly LandmarkId[] }> = {
-  linkedin_check_connection_status: { kind: 'profile', landmarks: ['profile.name'] },
-  linkedin_connect_send: { kind: 'profile', landmarks: ['profile.name', 'action:connect'] },
-  linkedin_send_message: { kind: 'profile', landmarks: ['profile.name', 'profile.message_button'] },
+  // The LinkedIn action tools (connect, message, accept) are gone: the browserctl engine acts and
+  // feeds layout telemetry only, so no landmark precondition exists for them.
   linkedin_find_profiles: { kind: 'search', landmarks: ['results.cards'] },
   // Discovery pages. `jobs` has no MIN_SET until a supervised learning run, so enforce refuses it as unverified.
   linkedin_search_jobs: { kind: 'jobs', landmarks: ['results.cards'] },
   linkedin_search_posts: { kind: 'search', landmarks: ['results.cards'] },
-  linkedin_accept_invite: { kind: 'invitations', landmarks: ['invitations.rows'] },
   naukri_send_message: { kind: 'thread', landmarks: ['chat.input'] },
 };
 

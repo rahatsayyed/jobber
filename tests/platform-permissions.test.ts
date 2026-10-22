@@ -15,8 +15,9 @@ import {
 const real: RawSets = JSON.parse(readFileSync('config/permission-sets.json', 'utf8'));
 
 const SEND_TOOLS = [
-  'mcp__linkedin__linkedin_connect_send',
-  'mcp__linkedin__linkedin_send_message',
+  'mcp__linkedin__linkedin_arm_send',
+  'mcp__linkedin__linkedin_click',
+  'mcp__linkedin__linkedin_type',
   'mcp__gmail__send_email',
   'mcp__naukri__naukri_click',
   'mcp__naukri__naukri_type',

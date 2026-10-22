@@ -30,8 +30,9 @@ const hunt = loadProfiles(join(ROOT, 'tests/fixtures/runner-send-profile.json'),
 
 const SEND_TOOLS = [
   'mcp__gmail__send_email',
-  'mcp__linkedin__linkedin_connect_send',
-  'mcp__linkedin__linkedin_send_message',
+  'mcp__linkedin__linkedin_arm_send',
+  'mcp__linkedin__linkedin_click',
+  'mcp__linkedin__linkedin_type',
   'mcp__naukri__naukri_send_message',
   'mcp__applier__apply_open',
   'mcp__applier__apply_submit',
@@ -121,7 +122,9 @@ describe('rendered settings and committed settings.json', () => {
 
   const COVERED = [
     ...SEND_TOOLS,
-    'mcp__linkedin__linkedin_accept_invite',
+    'mcp__linkedin__linkedin_open',
+    'mcp__linkedin__linkedin_press_key',
+    'mcp__linkedin__linkedin_click_at',
     'mcp__linkedin__linkedin_search_jobs',
     'mcp__linkedin__linkedin_search_posts',
     'mcp__naukri__naukri_discover',

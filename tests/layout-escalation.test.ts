@@ -85,21 +85,22 @@ describe('layout drift side effects', () => {
       for (let i = 0; i < 3; i++) a.observe(drift(), null);
       for (let i = 0; i < 3; i++) b.observe(drift(), null);
       expect(haltReason(db, plat)).toBe(reason);
-      expect(listOpenEscalations(db, 20).map((e) => e.reason)).toEqual(['layout_drift']);
+      expect(listOpenEscalations(db, 20).map((e) => e.reason)).toEqual(['layout_drift', 'layout_drift_halt']);
     }
   });
 
-  it('halts at the halt threshold with the expected reason, once', () => {
+  it('at the halt threshold drift is recorded as an escalation and never halts, once (enforce mode too)', () => {
     const { db, notices, mk } = setup();
     const o = mk('run-c');
     const o2 = mk('run-d');
     for (let i = 0; i < 3; i++) o.observe(drift(), null);
     for (let i = 0; i < 2; i++) o2.observe(drift(), null);
-    expect(haltReason(db, 'linkedin')).toBe('layout_drift:profile');
-    const reasons = listOpenEscalations(db, 20).map((e) => e.reason);
-    expect(reasons).toEqual(['layout_drift', 'layout_drift_halt']);
-    expect(notices.map((n) => n.level)).toEqual(['warn', 'halt']);
-    // already halted: further drift adds nothing
+    expect(haltReason(db, 'linkedin')).toBeNull();
+    const esc = listOpenEscalations(db, 20);
+    expect(esc.map((e) => e.reason)).toEqual(['layout_drift', 'layout_drift_halt']);
+    expect(esc[1].detail).toMatch(/ mode=enforce$/);
+    expect(notices.map((n) => n.level)).toEqual(['warn', 'warn']);
+    // escalation already open: further drift adds nothing
     o.observe(drift(), null);
     expect(listOpenEscalations(db, 20)).toHaveLength(2);
     expect(notices).toHaveLength(2);
@@ -138,7 +139,7 @@ describe('layout drift side effects', () => {
     for (let i = 0; i < 2; i++) o2.observe(drift(), null);
     expect(events).toContain('drift_escalate');
     expect(events).toContain('drift_halt');
-    expect(haltReason(db, 'linkedin')).toBe('layout_drift:profile');
+    expect(haltReason(db, 'linkedin')).toBeNull();
   });
 
   it('off mode records the would-be halt (mode=off) but never halts', () => {

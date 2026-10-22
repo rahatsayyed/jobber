@@ -73,5 +73,5 @@ Return a single JSON array, one entry per input job, preserving the original ord
 invent or guess a contact or profile — use `null`/an empty array when nothing usable was found,
 and never fall back to an unverified email entry as if it were verified.
 
-Do not call `resume`, `gmail`, `linkedin_connect_send`, or any drafting skill — those belong to
+Do not call `resume`, `gmail`, `linkedin_arm_send`, or any drafting skill — those belong to
 later stages.

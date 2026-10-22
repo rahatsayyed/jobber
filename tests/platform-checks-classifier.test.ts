@@ -225,10 +225,10 @@ describe('classifier_wired check', () => {
     expect(screenSmoke).toHaveBeenCalledTimes(1);
   });
   it('fails when a surface file lacks the screen call, naming it', async () => {
-    const files = { ...surfaceFiles(['src/mcp/linkedin.ts']), '/p/src/mcp/linkedin.ts': { text: 'nothing here' }, ...withModel() };
+    const files = { ...surfaceFiles(['src/browserctl/act.ts']), '/p/src/browserctl/act.ts': { text: 'nothing here' }, ...withModel() };
     const r = (await run(mk({ screenSmoke: good() }).checks, makeCtx(files)))['classifier_wired'];
     expect(r.status).toBe('fail');
-    expect(r.detail).toContain('linkedin_state');
+    expect(r.detail).toContain('linkedin_snapshot');
   });
   it('fails on a missing non-pending surface file but skips the pending one', async () => {
     const ok = await wired(mk({ screenSmoke: good() }), withModel());

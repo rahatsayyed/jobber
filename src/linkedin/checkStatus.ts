@@ -1,6 +1,5 @@
 // Typed, read-only connection status check. Never clicks, never touches people or touches.
 import { haltReason } from '../outreach/limits.js';
-import { layoutClassOf } from './layoutGuard.js';
 import { gateField, MAX_FIELD_CHARS } from './state.js';
 import { isProfileUrl } from './urls.js';
 import { verifyProfileUrl } from './verify.js';
@@ -14,8 +13,6 @@ export interface StatusResult {
   degree?: '1st' | '2nd' | '3rd' | null;
   profileContext?: { about?: string };
   injection_suspected?: boolean;
-  /** Layout verdict class for the profile page: match, partial, drift, unknown, blocked, logged_out or unloaded. */
-  layout?: string;
 }
 
 export async function checkConnectionStatus(a: { profile_url: string }, deps: ToolDeps): Promise<StatusResult> {
@@ -34,8 +31,6 @@ export async function checkConnectionStatus(a: { profile_url: string }, deps: To
     status: cs.state,
     code: cs.code,
     degree: p.degree,
-    // Read-only: reports the layout verdict class, never refuses on it.
-    ...layoutClassOf(deps.rt, 'check_connection_status'),
   };
   const name = gateField(p.name ?? '', MAX_FIELD_CHARS.name);
   const about = p.about ? gateField(p.about, MAX_FIELD_CHARS.about) : null;

@@ -271,6 +271,14 @@ const hand: EnvSpec[] = [
     restart: 'mcp',
     restartEvidence: 'src/linkedin/config.ts',
   }),
+  e('LINKEDIN_SCREENSHOT', 'linkedin', 'LinkedIn', 'bool', {
+    default: 'false',
+    exampleActive: true,
+    about: 'Turn on linkedin_screenshot and linkedin_click_at (a pointer click needs a snapshot and a screenshot at the current epoch). Screenshot pixels are NOT checked by the injection classifier, so leave it off unless the page tree is not enough.',
+    restart: 'mcp',
+    restartEvidence: 'src/mcp/linkedin.ts',
+    ...tier('guarded', 'Feeds unscreened page pixels to the model and allows pointer clicks.', 'true'),
+  }),
   e('LINKEDIN_SESSION_MAX_AGE_DAYS', 'linkedin', 'LinkedIn', 'int', {
     default: '45',
     min: 1,

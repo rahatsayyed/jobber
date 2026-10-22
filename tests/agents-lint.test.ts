@@ -7,7 +7,6 @@ const WORKERS = ['linkedin-operator', 'naukri-operator', 'source-operator'] as c
 const FORBIDDEN_EXACT = [
   'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Agent', 'Task',
   'mcp__db__record_outcome', 'mcp__db__raw_query',
-  'mcp__linkedin__linkedin_type', 'mcp__linkedin__linkedin_screenshot',
   'mcp__naukri__naukri_click', 'mcp__naukri__naukri_type',
 ];
 const FORBIDDEN_PREFIX = ['mcp__playwright__', 'mcp__claude-in-chrome__', 'mcp__gmail__', 'mcp__apply__', 'mcp__connect__'];
@@ -66,7 +65,7 @@ const config: Record<string, string[]> = JSON.parse(readFileSync('config/worker-
 describe('worker agents', () => {
   const real = realTools();
   it('sanity: the registry scan found known tools', () => {
-    expect(real.has('mcp__linkedin__linkedin_send_message')).toBe(true);
+    expect(real.has('mcp__linkedin__linkedin_arm_send')).toBe(true);
     expect(real.has('mcp__outreach__escalate')).toBe(true);
     expect(real.has('mcp__db__update_outreach_status')).toBe(true);
     expect(real.has('mcp__db__list_jobs')).toBe(true);
@@ -107,11 +106,12 @@ describe('worker agents', () => {
       it('stop rule names halted, rate_limited and killed', () => {
         for (const w of ['halted', 'rate_limited', 'killed']) expect(body).toContain(w);
       });
-      it('has no type tool, and click only for the LinkedIn inbox reader', () => {
+      it('has no type tool and click only for the LinkedIn operator (engine refs, commit classes need an armed intent)', () => {
         for (const t of tools) {
-          expect(t.endsWith('_type')).toBe(false);
+          if (name !== 'linkedin-operator') expect(t.endsWith('_type')).toBe(false);
           // scout_click refuses submit-like controls in code (tests/scout-tools.test.ts)
           if (name !== 'linkedin-operator' && t !== 'mcp__scout__scout_click') expect(t.endsWith('_click')).toBe(false);
+          if (name !== 'linkedin-operator') expect(t.startsWith('mcp__linkedin__')).toBe(false);
         }
       });
       it('has no mcp__connect reference', () => {
@@ -125,8 +125,8 @@ describe('worker agents', () => {
   it('per-operator body contracts', () => {
     const li = frontmatter('linkedin-operator').body;
     expect(li).toContain('kind');
-    expect(li.indexOf('linkedin_state')).toBeGreaterThan(-1);
-    expect(li.indexOf('linkedin_state')).toBeLessThan(li.indexOf('linkedin_connect_send'));
+    expect(li.indexOf('linkedin_snapshot')).toBeGreaterThan(-1);
+    expect(li.indexOf('linkedin_snapshot')).toBeLessThan(li.indexOf('linkedin_arm_send({kind: "connect_note"'));
     expect(li).toContain('salary');
     expect(li.indexOf('record_inbound')).toBeGreaterThan(-1);
     expect(li).toContain('https://www.linkedin.com/messaging/');

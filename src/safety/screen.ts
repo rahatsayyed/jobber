@@ -64,11 +64,10 @@ export async function screenUntrusted(
 
 /** Source files that must call screenUntrusted (each wiring task adds its lint test). */
 export const SCREENED_SURFACES: ReadonlyArray<{ id: string; file: string }> = [
-  { id: 'linkedin_state', file: 'src/mcp/linkedin.ts' },
+  // The browserctl engine screens every page tree it returns (open, snapshot and each action's re-read).
+  { id: 'linkedin_snapshot', file: 'src/browserctl/act.ts' },
+  { id: 'linkedin_arm_send', file: 'src/browserctl/arm/linkedin.ts' },
   { id: 'linkedin_check_status', file: 'src/linkedin/checkStatus.ts' },
-  { id: 'linkedin_connect_send', file: 'src/linkedin/connectSend.ts' },
-  { id: 'linkedin_send_message', file: 'src/linkedin/sendMessage.ts' },
-  { id: 'linkedin_accept_invite', file: 'src/linkedin/acceptInvite.ts' },
   { id: 'linkedin_find_profiles', file: 'src/linkedin/findProfiles.ts' },
   { id: 'linkedin_search_jobs', file: 'src/linkedin/discoverCommon.ts' },
   { id: 'linkedin_search_posts', file: 'src/linkedin/discoverCommon.ts' },

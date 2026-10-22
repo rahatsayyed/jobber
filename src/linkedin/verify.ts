@@ -24,48 +24,6 @@ export function extractExpectedNameFromTitle(title: string): string {
   return (idx === -1 ? title : title.slice(0, idx)).trim();
 }
 
-export interface Point {
-  x: number;
-  y: number;
-}
-
-// Max plausible 2D distance (px) between the profile's own name and a real header action
-// button. INCIDENT 2026-07-17 (#3): confirmed-working real header buttons sit ~130-145px
-// below the name in the same X column; sidebar-suggestion-card decoys sit ~800-900px away
-// (mostly in X, a different column entirely). 300px is a generous margin above the real
-// case and well under the decoy distance — a candidate farther than this is rejected as
-// implausible rather than accepted just for being the only/closest match available.
-const MAX_PLAUSIBLE_CANDIDATE_DISTANCE_PX = 300;
-
-/**
- * Pure: given the profile name element's position and each selector-match candidate's
- * position, picks the index of the candidate closest by full 2D (Euclidean) distance — the
- * real profile-card element, not a duplicate/decoy elsewhere on the page. Y-only distance is
- * NOT enough (INCIDENT #2: a sidebar card can share the header's Y while sitting in a
- * different X column). Returns -1 if there are no candidates, OR if the single nearest one
- * is farther than `maxDistancePx` — an implausibly distant "nearest" match (e.g. the only
- * candidate on the page is a sidebar decoy, INCIDENT #3) must be rejected, not accepted just
- * for being the closest available. Exported for unit testing.
- */
-export function pickNearestToNameIndex(
-  namePoint: Point,
-  candidates: Point[],
-  maxDistancePx: number = MAX_PLAUSIBLE_CANDIDATE_DISTANCE_PX
-): number {
-  if (candidates.length === 0) return -1;
-  const distanceSq = (p: Point) => (p.x - namePoint.x) ** 2 + (p.y - namePoint.y) ** 2;
-  let bestIndex = 0;
-  let bestDistance = distanceSq(candidates[0]);
-  for (let i = 1; i < candidates.length; i++) {
-    const distance = distanceSq(candidates[i]);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestIndex = i;
-    }
-  }
-  return Math.sqrt(bestDistance) <= maxDistancePx ? bestIndex : -1;
-}
-
 /**
  * Pure: extracts the recipient name from LinkedIn's "...invitation to <Name>" dialog copy.
  * Bounded by the first sentence terminator (`.`/`?`/`!`), a newline, " by adding a note", or
@@ -134,36 +92,6 @@ export function verifyProfileUrl(
   const expectedSlug = extractProfileSlug(expectedUrl);
   const actualSlug = extractProfileSlug(actualUrl);
   return { ok: Boolean(expectedSlug) && expectedSlug === actualSlug, expectedSlug, actualSlug };
-}
-
-/** Minimal structural shape of a response, so tests and non-playwright callers need no Response type. */
-export interface InviteResponseLike {
-  url(): string;
-  status(): number;
-  request(): { method(): string };
-}
-
-// Best-effort heuristic, NOT verified against a real captured request (no live browser
-// access): a POST to a "voyager"-style path mentioning invitation/connect/relationship, 2xx.
-export function isLikelySendInvitationResponse(response: InviteResponseLike): boolean {
-  const url = response.url().toLowerCase();
-  const isLikelyPath = url.includes('voyager') && /invitation|connect|relationship/.test(url);
-  return (
-    isLikelyPath &&
-    response.request().method() === 'POST' &&
-    response.status() >= 200 &&
-    response.status() < 300
-  );
-}
-
-/**
- * Pure: given the bounding-box heights of every `SELECTORS.moreButton` match, picks the
- * index of the first button-shaped one (height >= minHeightPx) — the real profile-header
- * "More" action, as opposed to small "…more" show-more-text toggles. Returns -1 if none
- * qualify. Exported for unit testing without a live Playwright page.
- */
-export function pickButtonShapedIndex(boxes: Array<{ height: number }>, minHeightPx = 40): number {
-  return boxes.findIndex((box) => box.height >= minHeightPx);
 }
 
 /**

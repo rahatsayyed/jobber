@@ -7,8 +7,7 @@ import { TOOL_REQUIRES } from '../layout/vocab.js';
 import type { Runtime } from './runtime.js';
 import type { ToolDeps } from './toolDeps.js';
 
-export type LayoutTool =
-  | 'connect_send' | 'send_message' | 'accept_invite' | 'check_connection_status' | 'search_jobs' | 'search_posts';
+export type LayoutTool = 'search_jobs' | 'search_posts';
 export type LayoutDecision =
   | { ok: true; note?: string }
   | { ok: false; status: 'refused'; code: 'layout_drift' | 'layout_unverified'; reason: string };
@@ -22,7 +21,7 @@ const UNKNOWN: Verdict = { class: 'unknown', score: 0, missing: [], variant: nul
  * observation (`present`), else drift (needed part was learned and is gone) or unverified (never
  * learned in this variant); `unloaded` refuses with a retry hint;
  * `blocked` and `logged_out` are not layout refusals (the existing halt and login codes win).
- * `check_connection_status` is read-only and never refuses. A null verdict counts as `unknown`.
+ * A null verdict counts as `unknown`. Only the data tools use this now; the engine's actions never do.
  */
 export function layoutPrecondition(
   tool: LayoutTool, v: Verdict | null, cfg: LayoutConfig, present?: readonly string[],
@@ -30,7 +29,7 @@ export function layoutPrecondition(
   const verdict = v ?? UNKNOWN;
   const note = verdict.class === 'match' ? undefined : `layout=${verdict.class}`;
   const ok = (): LayoutDecision => (note ? { ok: true, note } : { ok: true });
-  if (cfg.enforce !== 'enforce' || tool === 'check_connection_status') return ok();
+  if (cfg.enforce !== 'enforce') return ok();
   switch (verdict.class) {
     case 'match':
     case 'blocked':
