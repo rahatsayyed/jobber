@@ -975,8 +975,9 @@ Chromium, and stock Playwright headless all got 403. Pure HTTP to `/jobapi/v3/se
 viable (406: it needs a signed `nkparam` header, cookies are not the gate). Tested only from a
 home IP; Akamai may treat a datacenter/VPS IP harder, so re-run the check from the VPS first.
 
-- **Search** (`src/sources/naukri.ts`): `NAUKRI_HEADLESS=true` (in `.env`) switches the browser
-  to the headless recipe above; unset means the old headed Playwright. The apply-URL resolution
+- **Search** (`src/sources/naukri.ts`): always runs the browser headless with
+  the recipe above (the `NAUKRI_HEADLESS` switch and the headed path are gone; the product is headless
+  only, and only the owner login scripts `naukri:login` and `linkedin:login` open a headed window). The apply-URL resolution
   phase (`resolveApplyUrl`) resolved 0 of 10 jobs both headed and headless (not diagnosed, so
   `apply_url` falls back to the Naukri listing URL).
 - **Apply** (`naukri` MCP, `src/mcp/naukri.ts`, built on `src/browserctl`): ONE persistent headless

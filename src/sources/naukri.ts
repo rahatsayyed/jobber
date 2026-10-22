@@ -8,8 +8,8 @@ import type { Browser, BrowserContext, Page } from 'patchright';
 import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS, type LiLauncher } from '../webcore/launch.js';
 
 // Browser launching goes through the shared launcher (patchright + installed Google Chrome, never bundled
-// Chromium or stock Playwright). `NAUKRI_HEADLESS=true` only chooses headless (with the real-UA context
-// Akamai needs) versus headed on the same installed Chrome.
+// Chromium or stock Playwright). Always headless (the product has no display on its target host), with the
+// real-UA context Akamai needs; there is no headed path.
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..', '..');
@@ -171,9 +171,8 @@ function isResolvedApplyUrl(url: string): boolean {
 /**
  * Scrapes Naukri's search-results page for a role/location, then (if a saved session exists)
  * resolves the real apply_url for up to `MAX_APPLY_URL_RESOLUTIONS_PER_FETCH` "new" jobs (per
- * `deps.isNewJob`) via `resolveApplyUrl`. One browser launch on installed Chrome through the shared launcher (headed by default, because Naukri's
- * Akamai bot protection blocks the stock headless UA; `NAUKRI_HEADLESS=true` switches to
- * headless with a real UA, which passes), with two contexts:
+ * `deps.isNewJob`) via `resolveApplyUrl`. One browser launch on installed Chrome through the shared launcher (always headless with a real UA,
+ * because Naukri's Akamai bot protection blocks the stock headless UA), with two contexts:
  * an unauthenticated one for scraping the search-results page, and (if a saved session exists) an
  * authenticated one for the apply-url resolution phase.
  *
@@ -212,15 +211,14 @@ export async function searchNaukri(
   params: { role: string; location?: string },
   deps: NaukriDeps = {}
 ): Promise<{ jobs: Job[]; sample: unknown[] }> {
-  const headless = process.env.NAUKRI_HEADLESS === 'true';
-  const contextOptions = headless ? HEADLESS_CONTEXT_OPTIONS : {};
+  const contextOptions = HEADLESS_CONTEXT_OPTIONS;
   const isNewJob = deps.isNewJob ?? (() => true);
   const sessionStatePath = deps.sessionStatePath ?? DEFAULT_SESSION_STATE_PATH;
   const searchUrl = buildNaukriSearchUrl(params.role, params.location);
 
   let browser: Browser | undefined;
   try {
-    browser = (await launchRealChrome({ headed: !headless, launcher: deps.chromium })) as unknown as Browser;
+    browser = (await launchRealChrome({ launcher: deps.chromium })) as unknown as Browser;
 
     let jobs: Job[] = [];
     let sample: unknown[] = [];

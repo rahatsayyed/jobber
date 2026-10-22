@@ -393,13 +393,6 @@ const hand: EnvSpec[] = [
   }),
 
   // ---- Naukri
-  e('NAUKRI_HEADLESS', 'naukri', 'Naukri', 'bool', {
-    exampleValue: 'true',
-    allowed: ['true'],
-    about: 'Run Naukri search with the headless recipe (patchright plus installed Google Chrome, real user agent). Unset: the old headed browser. Only the exact value true is read. Akamai blocks stock headless Chromium; re-check from a VPS IP before relying on it.',
-    restart: 'mcp',
-    restartEvidence: 'src/sources/naukri.ts',
-  }),
   e('NAUKRI_SCREENSHOT', 'naukri', 'Naukri', 'bool', {
     default: 'true',
     exampleActive: true,

@@ -12,6 +12,7 @@ import {
   type DiscoverIo, type NaukriDiscoveryConfig,
 } from '../src/naukri/discover.js';
 import { searchNaukri } from '../src/sources/naukri.js';
+import { HEADLESS_CONTEXT_OPTIONS } from '../src/webcore/launch.js';
 import { naukriOpen, naukriDiscover, shutdownNaukri, naukriServer, SEARCH_SRC, DETAIL_SRC } from '../src/mcp/naukri.js';
 
 const LIVE = { JOBBER_DRY_RUN: 'false' } as NodeJS.ProcessEnv;
@@ -245,20 +246,20 @@ describe('shared launcher (O-browser)', () => {
   const saved = process.env.NAUKRI_HEADLESS;
   afterEach(() => { if (saved === undefined) delete process.env.NAUKRI_HEADLESS; else process.env.NAUKRI_HEADLESS = saved; });
 
-  it('NAUKRI_HEADLESS unset or false still launches installed Chrome through the shared launcher, headed', async () => {
-    for (const v of [undefined, 'false']) {
+  it('always launches headless real Chrome with the real-UA context, whatever NAUKRI_HEADLESS says', async () => {
+    for (const v of [undefined, 'false', 'true']) {
       if (v === undefined) delete process.env.NAUKRI_HEADLESS; else process.env.NAUKRI_HEADLESS = v;
       const f = fakeLauncher();
       await searchNaukri({ role: 'react' }, { chromium: f.launcher, sessionStatePath: '/nonexistent/s.json' });
-      expect(f.launcher.launch).toHaveBeenCalledWith({ channel: 'chrome', headless: false });
+      expect(f.launcher.launch).toHaveBeenCalledWith(expect.objectContaining({ channel: 'chrome', headless: true, args: ['--headless=new'] }));
+      expect(f.browser.newContext).toHaveBeenCalledWith(HEADLESS_CONTEXT_OPTIONS);
     }
   });
 
-  it('NAUKRI_HEADLESS=true launches headless real Chrome with --headless=new', async () => {
-    process.env.NAUKRI_HEADLESS = 'true';
-    const f = fakeLauncher();
-    await searchNaukri({ role: 'react' }, { chromium: f.launcher, sessionStatePath: '/nonexistent/s.json' });
-    expect(f.launcher.launch).toHaveBeenCalledWith(expect.objectContaining({ channel: 'chrome', headless: true, args: ['--headless=new'] }));
+  it('the provider source has no headed path or NAUKRI_HEADLESS switch', () => {
+    const src = readFileSync('src/sources/naukri.ts', 'utf8');
+    expect(src).not.toContain('NAUKRI_HEADLESS');
+    expect(src).not.toMatch(/headed:/);
   });
 
   it('neither Naukri module imports a browser library or launches directly', () => {

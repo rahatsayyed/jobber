@@ -111,8 +111,8 @@ Real sessions for reads; sends stay dry.
 
 **Flags (names only)**
 - The dry flag stays on: `JOBBER_DRY_RUN=true`.
-- NAUKRI_HEADLESS per `CLAUDE.md` Naukri section (the headless recipe passed from a home IP
-  only).
+- Naukri search is always headless (no flag; the headless recipe in the `CLAUDE.md` Naukri section
+  passed from a home IP only).
 - `LAYOUT_ENFORCE` still `warn`.
 
 **Commands**
