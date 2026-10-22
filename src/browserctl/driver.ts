@@ -13,6 +13,8 @@ export interface BcPage {
   title(): Promise<string>;
   /** Navigate. Used by open() only, after the platform URL allowlist. */
   goto(url: string): Promise<void>;
+  /** Optional: wait for the load event (bounded, never throws). Absent in fakes. */
+  waitForLoad?(timeoutMs: number): Promise<void>;
   /** Stamp ordinals and read the visible tree. */
   snapshot(): Promise<RawTree>;
   /** Re-read one stamped element live; null when it is gone or hidden. */
@@ -58,6 +60,9 @@ export function realBcPage(page: RealPage): BcPage {
     url: () => page.url(),
     title: () => page.title(),
     async goto(url) { await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' }); },
+    async waitForLoad(timeoutMs) {
+      try { await (page as unknown as { waitForLoadState?: (s: string, o: { timeout: number }) => Promise<void> }).waitForLoadState?.('load', { timeout: timeoutMs }); } catch { /* bounded, best effort */ }
+    },
     async snapshot() {
       const t = await run<RawTree>('snapshot');
       if (!t || !Array.isArray(t.nodes)) return { url: page.url(), title: '', nodes: [] };

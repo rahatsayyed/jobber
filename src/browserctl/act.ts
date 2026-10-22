@@ -19,7 +19,12 @@ import { renderTree, type LiveNode, type RawTree } from './snapshot.js';
 export type { EngineDeps, EngineResult } from './engineTypes.js';
 
 export interface Engine {
-  open(url: string): Promise<EngineResult>;
+  /**
+   * Navigate and return a settled snapshot. keepRefs (arm verification only): if the page read after
+   * navigation is the same page as the operator's latest snapshot (same URL, same actionable nodes), the
+   * public epoch and refs are left as they were; any real difference leaves them stale as usual.
+   */
+  open(url: string, opts?: { keepRefs?: boolean }): Promise<EngineResult>;
   snapshot(): Promise<EngineResult>;
   click(ref: string): Promise<EngineResult>;
   type(ref: string, text: string, submit?: boolean): Promise<EngineResult>;
@@ -36,6 +41,17 @@ export interface Engine {
 }
 
 const MAX_WAIT_MS = 10_000;
+/** open(): poll the tree every OPEN_SETTLE_POLL_MS until the node count is unchanged across two reads, at most OPEN_SETTLE_MAX_MS. */
+export const OPEN_SETTLE_POLL_MS = 300;
+export const OPEN_SETTLE_MAX_MS = 6000;
+
+/** Identity of the actionable part of a tree: what a ref resolves against. Text nodes are ignored. */
+function treeSignature(t: RawTree): string {
+  const rows = t.nodes
+    .filter((x) => x.role !== 'text')
+    .map((x) => `${x.n}|${x.role}|${x.name}|${x.href ?? ''}|${x.dialogName ?? ''}|${x.dialog === undefined ? 0 : 1}|${x.disabled ? 1 : 0}`);
+  return `${t.url}\n${rows.join('\n')}`;
+}
 const FREE_KEYS = new Set<string>(['Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Backspace']);
 
 export function createEngine(deps: EngineDeps): Engine {
@@ -159,13 +175,32 @@ export function createEngine(deps: EngineDeps): Engine {
     return finish(page, op === 'click' || op === 'click_at' ? 'clicked' : op === 'press_key' ? 'pressed' : 'typed');
   }
 
-  async function doOpen(url: string): Promise<EngineResult> {
+  /** Wait for load, then re-walk the tree until the node count is stable across two reads. Bounded, never throws. */
+  async function settleAfterOpen(page: BcPage): Promise<void> {
+    const pollMs = Math.max(1, deps.openSettle?.pollMs ?? OPEN_SETTLE_POLL_MS);
+    const maxMs = deps.openSettle?.maxMs ?? OPEN_SETTLE_MAX_MS;
+    const maxPolls = Math.max(1, Math.ceil(maxMs / pollMs));
+    try {
+      await page.waitForLoad?.(maxMs);
+      let prev = -1;
+      for (let i = 0; i < maxPolls; i++) {
+        const t = await page.snapshot().catch(() => null);
+        const n = t ? t.nodes.length : 0;
+        if (n > 0 && n === prev) return;
+        prev = n;
+        await page.waitMs(pollMs).catch(() => undefined);
+      }
+    } catch { /* settling is best effort */ }
+  }
+
+  async function doOpen(url: string, keepRefs = false): Promise<EngineResult> {
     const allowed = P.checkUrl(url);
     if (!allowed.ok) return refused(allowed.code, allowed.why);
     const g = await gate();
     if (!g.ok) return g.res;
     await pace(g.page);
     recordNav(url);
+    const prior = keepRefs && tree && refs.hasSnapshot ? { saved: refs.save(), seen: seenEpoch, sig: treeSignature(tree) } : null;
     try { await g.page.goto(url); } catch { return refused('failed', 'open failed'); }
     refs.invalidate();
     const final = g.page.url();
@@ -173,7 +208,17 @@ export function createEngine(deps: EngineDeps): Engine {
       if (lastGoodUrl) await g.page.goto(lastGoodUrl).catch(() => undefined);
       return refused('blocked_path', 'page redirected to a blocked or off-site URL');
     }
-    return read(g.page);
+    await settleAfterOpen(g.page);
+    const r = await read(g.page);
+    if (prior && r.ok && tree && treeSignature(tree) === prior.sig) {
+      // Same page as the operator's last snapshot: the stamps just re-applied carry the same ordinals,
+      // so the operator's refs still point at the same elements. A screenshot must be retaken.
+      refs.restore(prior.saved);
+      seenEpoch = prior.seen;
+      shotEpoch = -1;
+      return { ...r, epoch: refs.epoch, state: r.state?.replace(/^epoch: \d+/, `epoch: ${refs.epoch}`) };
+    }
+    return r;
   }
   function recordNav(url: string): void {
     if (!deps.cfg.dryRun) return;
@@ -255,7 +300,7 @@ export function createEngine(deps: EngineDeps): Engine {
     refs,
     lastTree: () => tree,
     page: () => deps.getPage(),
-    open: (url) => serial(() => doOpen(url)),
+    open: (url, opts) => serial(() => doOpen(url, opts?.keepRefs === true)),
     snapshot: () => serial(async () => {
       const g = await gate();
       return g.ok ? read(g.page) : g.res;

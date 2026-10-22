@@ -135,7 +135,7 @@ export async function armLinkedinSend(deps: ArmDeps, a: ArmArgs): Promise<ArmRes
   }
 
   // Page verification from the page snapshot.
-  const opened = await deps.engine.open(isAccept ? INVITATIONS_URL : a.profile_url);
+  const opened = await deps.engine.open(isAccept ? INVITATIONS_URL : a.profile_url, { keepRefs: true });
   if (!opened.ok) {
     const halted = opened.code === 'halted' || opened.code === 'killed';
     return fail(halted ? 'halted' : 'failed', opened.code, opened.reason);

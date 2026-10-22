@@ -38,6 +38,8 @@ export interface EngineDeps {
   /** Pause before each action in ms (default 300 to 900). */
   paceMs?: () => number;
   settleMs?: number;
+  /** Post-navigation stability poll for open() (defaults: OPEN_SETTLE_POLL_MS, OPEN_SETTLE_MAX_MS). */
+  openSettle?: { pollMs: number; maxMs: number };
   confirmTimeoutMs?: number;
   /**
    * Output gate for text typed into a non-composer field or a Naukri apply chatbot (no URLs, emails,

@@ -165,7 +165,7 @@ export async function armNaukriMessage(d: NaukriArmDeps, a: NaukriSendArgs): Pro
     if (!c.ok) return fail('rate_limited', 'rate_limited', `${c.used} of ${c.limit} today`);
 
     // (7) live thread and recipient verification on the page
-    const opened = await d.engine.open(threadUrl(a.thread_ref));
+    const opened = await d.engine.open(threadUrl(a.thread_ref), { keepRefs: true });
     if (!opened.ok) {
       const halted = opened.code === 'halted' || opened.code === 'killed';
       return fail(halted ? 'halted' : 'failed', opened.code, opened.reason);
@@ -275,7 +275,7 @@ export async function armNaukriApply(d: Omit<NaukriArmDeps, 'checkText' | 'style
     if (room.used >= room.max) return fail('rate_limited', 'rate_limited', `daily apply limit (${room.max}) reached`);
 
     // Open the job page from the stored URL and verify it is that job
-    const opened = await d.engine.open(url);
+    const opened = await d.engine.open(url, { keepRefs: true });
     if (!opened.ok) {
       const halted = opened.code === 'halted' || opened.code === 'killed';
       return fail(halted ? 'halted' : 'failed', opened.code, opened.reason);

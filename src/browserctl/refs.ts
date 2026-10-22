@@ -26,6 +26,16 @@ export class RefStore {
     return this.epochNo;
   }
 
+  /** Capture the public ref state (arm verification uses it to leave the operator's refs untouched). */
+  save(): { epochNo: number; nodes: Map<number, RawNode>; haveSnapshot: boolean } {
+    return { epochNo: this.epochNo, nodes: this.nodes, haveSnapshot: this.haveSnapshot };
+  }
+  restore(s: { epochNo: number; nodes: Map<number, RawNode>; haveSnapshot: boolean }): void {
+    this.epochNo = s.epochNo;
+    this.nodes = s.nodes;
+    this.haveSnapshot = s.haveSnapshot;
+  }
+
   /** Invalidate every ref without a new snapshot (navigation, reload, dialog close). */
   invalidate(): void {
     this.epochNo += 1;
