@@ -10,6 +10,7 @@ import type { RawTree } from './snapshot.js';
 
 const DEGREE_RE = /^[\s·.]*(1st|2nd|3rd)\b/i;
 const ACTION_NAMES = new Set(['connect', 'message', 'follow', 'more', 'pending', 'send profile in a message', 'view in sales navigator']);
+const SECTION_HEADINGS = new Set(['about', 'activity', 'featured', 'experience', 'education', 'skills', 'highlights', 'interests', 'licenses & certifications', 'recommendations']);
 const BODY_CAP = 60_000;
 const LIST_CAP = 50;
 
@@ -31,20 +32,28 @@ export function treeToRawSnapshot(tree: RawTree): RawSnapshot {
     for (const x of actionable) {
       const nm = normName(x.name);
       if (/^invite .+ to connect$/.test(nm) || nm === 'connect') actions.push('Connect');
+      else if (/^follow .+$/.test(nm)) actions.push('Follow');
       else if (ACTION_NAMES.has(nm)) actions.push(x.name);
     }
-    const headIdx = outside.findIndex((x) => x.role === 'heading' && x.name);
-    const head = headIdx >= 0 ? outside[headIdx] : null;
+    // The profile name is the heading that is not a section heading; prefer the one named by a
+    // "Follow <name>" or "Invite <name> to connect" control, which is stable on real pages.
+    const headings = outside.map((x, i) => ({ x, i })).filter((h) => h.x.role === 'heading' && h.x.name && !SECTION_HEADINGS.has(normName(h.x.name)));
+    const named = headings.find((h) => names.some((n) => n === `follow ${normName(h.x.name)}` || n === `invite ${normName(h.x.name)} to connect`));
+    const pick = named ?? headings[0];
+    const headIdx = pick ? pick.i : -1;
+    const head = pick ? pick.x : null;
     const after = headIdx >= 0 ? outside.slice(headIdx + 1) : [];
     const degreeNode = after.find((x) => x.role === 'text' && DEGREE_RE.test(x.text));
     const degreeMatch = degreeNode ? DEGREE_RE.exec(degreeNode.text) : null;
-    const headline = after.find((x) => x.role === 'text' && x.text && !DEGREE_RE.test(x.text))?.text ?? '';
+    const headline = after.find((x) => x.role === 'text' && x.text.replace(/[\s·.]/g, '').length > 2 && !DEGREE_RE.test(x.text))?.text ?? '';
+    const aboutIdx = outside.findIndex((x) => x.role === 'heading' && normName(x.name) === 'about');
+    const about = aboutIdx >= 0 ? outside.slice(aboutIdx + 1).find((x) => x.role === 'text' && x.text.trim())?.text ?? null : null;
     profile = {
       name: head?.name ?? '',
       headline,
       degree: degreeMatch ? (degreeMatch[1].toLowerCase() as '1st' | '2nd' | '3rd') : null,
       location: '',
-      about: null,
+      about,
       actions,
       pending: names.some((n) => /^pending\b|^withdraw\b/.test(n)),
       hasBell: names.some((n) => /^manage notifications/.test(n)),
@@ -53,9 +62,24 @@ export function treeToRawSnapshot(tree: RawTree): RawSnapshot {
   }
 
   const links = outside.filter((x) => x.role === 'link' && x.href);
+  // Search cards: profile links, or (when hrefs are not exposed) the per-card "Invite <name> to connect"
+  // link and "Follow <name>" button every real card carries.
+  const cardControls = outside.filter((x) => (x.role === 'link' || x.role === 'button') && /^(invite .+ to connect|follow .+)$/.test(normName(x.name)));
   const results = kind === 'search'
-    ? links.filter((x) => /\/in\//.test(x.href ?? '')).slice(0, 12).map((x) => ({ name: x.name, headline: '', href: x.href ?? '' }))
+    ? (links.filter((x) => /\/in\//.test(x.href ?? '')).length > 0
+      ? links.filter((x) => /\/in\//.test(x.href ?? '')).slice(0, 12).map((x) => ({ name: x.name, headline: '', href: x.href ?? '' }))
+      : cardControls.slice(0, 12).map((x) => ({ name: x.name, headline: '', href: x.href ?? '' })))
     : [];
+  const extras: NonNullable<RawSnapshot['extras']> = {};
+  if (kind === 'search') extras.filters = outside.some((x) => x.role === 'radio' && /^filter by /.test(normName(x.name)));
+  if (kind === 'feed') {
+    extras.composer = outside.some((x) => x.role === 'button' && normName(x.name) === 'start a post');
+    extras.posts = outside.filter((x) => x.role === 'button' && /^(open control menu for post by|hide post by) /.test(normName(x.name))).length;
+  }
+  if (kind === 'messaging') {
+    extras.inboxSearch = outside.some((x) => x.role === 'searchbox' && normName(x.name) === 'search messages');
+    extras.conversations = outside.filter((x) => x.role === 'heading' && x.name && normName(x.name) !== 'messaging').length;
+  }
   const jobCards = kind === 'jobs'
     ? links.filter((x) => /\/jobs\/view\//.test(x.href ?? '')).slice(0, LIST_CAP)
       .map((x) => ({ title: x.name, company: '', href: x.href ?? '', snippet: '', easyApply: false }))
@@ -78,6 +102,7 @@ export function treeToRawSnapshot(tree: RawTree): RawSnapshot {
     hasPasswordInput: tree.nodes.some((x) => x.secret === true),
     bodyText,
     ...(jobCards ? { jobCards } : {}),
+    ...(Object.keys(extras).length > 0 ? { extras } : {}),
   };
 }
 

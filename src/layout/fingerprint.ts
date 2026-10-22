@@ -65,6 +65,12 @@ export function observeLinkedin(
   if (raw.messageHeaderName?.trim()) lm.add('message.header');
   if (raw.dialogText?.trim()) lm.add('dialog.open');
   if (raw.notices.length > 0) lm.add('notice.present');
+  const ex = raw.extras;
+  if (ex?.filters) lm.add('search.filters');
+  if (ex?.composer) lm.add('feed.composer');
+  if ((ex?.posts ?? 0) > 0) lm.add('feed.posts');
+  if (ex?.inboxSearch) lm.add('messages.search');
+  if ((ex?.conversations ?? 0) > 0) lm.add('messages.conversations');
 
   let nonDrift: Observation['nonDrift'] = null;
   if (block !== null && block !== 'session_expired') nonDrift = 'blocked';

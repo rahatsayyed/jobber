@@ -109,30 +109,14 @@ describe('fixtures produce the expected landmark sets', () => {
 });
 
 describe('linkedin profile drift simulation', () => {
-  it('learns v1, flags v2 as drift, then learns v2 as a second variant (A/B)', () => {
+  it('v2 loses the bell, message and More controls: relationship ones are ignored, so only More counts (partial, not drift)', () => {
     const f = feeder('linkedin');
     const v1 = learnProfileV1(f);
     expect(f.feed(v1, 'r3').verdict.class).toBe('match');
-    const promotedBefore = f.read().kinds.profile.variants.filter((v) => v.promoted);
-    expect(promotedBefore).toHaveLength(1);
-
     const v2 = liObs('profile-v2', PROFILE);
-    const once = f.feed(v2, 'r4');
-    expect(once.verdict.class).toBe('drift');
-    const afterOnce = f.read().kinds.profile;
-    // the promoted v1 variant is untouched; v2 is only a learning candidate
-    const stillPromoted = afterOnce.variants.filter((v) => v.promoted);
-    expect(stillPromoted).toEqual(promotedBefore);
-    expect(afterOnce.variants.some((v) => !v.promoted)).toBe(true);
-    expect(afterOnce.state).toBe('drifted');
-
-    f.feed(v2, 'r4');
-    const prom = f.feed(v2, 'r5');
-    expect(prom.events).toContain('promoted');
-    expect(f.feed(v2, 'r5').verdict.class).toBe('match');
-    expect(f.feed(v1, 'r6').verdict.class).toBe('match');
+    expect(f.feed(v2, 'r4').verdict.class).toBe('partial');
     const km = f.read().kinds.profile;
-    expect(km.variants.filter((v) => v.promoted)).toHaveLength(2);
+    expect(km.variants.filter((v) => v.promoted)).toHaveLength(1);
     expect(km.state).toBe('stable');
     expect(km.drift_streak).toBe(0);
   });

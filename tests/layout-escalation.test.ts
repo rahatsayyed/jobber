@@ -55,7 +55,7 @@ describe('layout drift side effects', () => {
     const esc = listOpenEscalations(db, 20);
     expect(esc).toHaveLength(1);
     expect(esc[0]).toMatchObject({ platform: 'linkedin', reason: 'layout_drift' });
-    expect(esc[0].detail).toBe('kind=profile streak=3 missing=action:connect,action:more,profile.degree,profile.headline');
+    expect(esc[0].detail).toBe('kind=profile streak=3 missing=action:more,profile.headline');
     for (const tok of esc[0].detail!.split(/[ =,]/).filter(Boolean)) expect(ID_RE.test(tok) || /^\d+$/.test(tok)).toBe(true);
     expect(haltReason(db, 'linkedin')).toBeNull();
     expect(notices).toHaveLength(1);

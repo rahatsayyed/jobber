@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto';
 import type { LandmarkId, LayoutFile, KindMemory, Observation, Variant, Verdict } from './types.js';
 import type { LayoutConfig } from './config.js';
-import { MAX_RUN_IDS, RUN_ID_RE, criticalFor, minSetFor } from './vocab.js';
+import { MAX_RUN_IDS, RUN_ID_RE, coreLandmarks, criticalFor, minSetFor } from './vocab.js';
 
 export type { Verdict } from './types.js';
 
@@ -25,8 +25,9 @@ function best(promoted: Variant[], obs: Observation): { v: Variant; score: numbe
   const have = new Set(obs.landmarks);
   let out: { v: Variant; score: number } | null = null;
   for (const v of promoted) {
-    const inter = v.landmarks.filter((l) => have.has(l)).length;
-    const score = v.landmarks.length === 0 ? 0 : inter / v.landmarks.length;
+    const vl = coreLandmarks(obs.platform, obs.kind, v.landmarks);
+    const inter = vl.filter((l) => have.has(l)).length;
+    const score = vl.length === 0 ? 0 : inter / vl.length;
     if (!out || score > out.score) out = { v, score };
   }
   return out;
@@ -40,7 +41,7 @@ export function classify(file: LayoutFile, obs: Observation, cfg: LayoutConfig):
   const b = best(promoted, obs);
   if (!b) return { class: 'unknown', score: 0, missing: [], variant: null };
   const have = new Set(obs.landmarks);
-  const missing = b.v.landmarks.filter((l) => !have.has(l));
+  const missing = coreLandmarks(obs.platform, obs.kind, b.v.landmarks).filter((l) => !have.has(l));
   const critical = criticalFor(obs.platform, obs.kind);
   const criticalOk = critical.every((l) => have.has(l));
   const base = { score: b.score, missing, variant: b.v.id };
@@ -93,7 +94,7 @@ function learn(km: KindMemory, obs: Observation, now: string, runId: string | nu
   if (!need || !obs.shell) return;
   const have = new Set(obs.landmarks);
   if (!need.every((l) => have.has(l))) return;
-  const landmarks: LandmarkId[] = [...obs.landmarks].sort().slice(0, MAX_LANDMARKS);
+  const landmarks: LandmarkId[] = coreLandmarks(obs.platform, obs.kind, obs.landmarks).sort().slice(0, MAX_LANDMARKS);
 
   let cand: Variant | undefined;
   let merged: Record<string, [number, number]> | null = null;

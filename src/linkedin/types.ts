@@ -36,7 +36,8 @@ export interface RawSnapshot {
   bodyText: string;                   // visible text of the page, capped at 60000, NEVER surfaced to the model
   jobCards?: RawJobCard[];            // only on /jobs/search pages (max 50)
   postCards?: RawPostCard[];          // only on /search/results/content pages (max 50)
-  structure?: StructureCounts;        // counts of visible elements (each capped at 999); numbers only, ignored by formatState
+  extras?: { filters?: boolean; composer?: boolean; posts?: number; inboxSearch?: boolean; conversations?: number }; // browserctl adapter only
+  structure?: StructureCounts;       // counts of visible elements (each capped at 999); numbers only, ignored by formatState
 }
 
 export type StructureKey = 'main' | 'h1' | 'h2' | 'dialog' | 'listitem' | 'button' | 'link' | 'form';

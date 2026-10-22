@@ -42,6 +42,7 @@ export const LANDMARKS: Record<BasePlatform, readonly LandmarkId[]> = {
     'profile.pending', 'profile.message_button',
     ...Object.values(ACTION_LABELS.linkedin), 'action:other',
     'results.cards', 'invitations.rows', 'messages.thread', 'message.header', 'dialog.open', 'notice.present',
+    'search.filters', 'feed.composer', 'feed.posts', 'messages.search', 'messages.conversations',
   ],
   naukri: [
     'button:apply', 'button:applied', 'button:save', 'button:company_site', 'button:other',
@@ -77,10 +78,36 @@ export const MIN_SET: Record<BasePlatform, Record<KindId, readonly LandmarkId[]>
     profile: ['profile.name', 'profile.headline'],
     search: ['results.cards'],
     invitations: ['invitations.rows'],
+    // Seen on real pages: the composer ("Start a post") and the "Search messages" box are always there.
+    feed: ['feed.composer'],
+    messaging: ['messages.search'],
   },
   naukri: {
     thread: ['chat.input'],
   },
+};
+
+// Landmarks that depend on who the page is about (relationship, optional sections), not on the layout.
+// They are still observed and reported, but never stored in a variant or counted as missing, so the
+// profile of a 3rd degree person and the profile of a connection fingerprint as the same layout.
+export const OPTIONAL: Record<BasePlatform, Record<KindId, readonly LandmarkId[]>> = {
+  linkedin: {
+    profile: [
+      'profile.about', 'profile.bell', 'profile.degree', 'profile.pending', 'profile.message_button',
+      'action:connect', 'action:message', 'action:follow', 'action:pending', 'action:send_profile',
+      'action:sales_nav', 'action:other',
+    ],
+    search: ['search.filters', 'notice.present'],
+    messaging: ['messages.thread', 'message.header', 'messages.conversations', 'dialog.open', 'notice.present'],
+    feed: ['feed.posts', 'notice.present'],
+  },
+  naukri: {},
+};
+
+/** The landmarks of a kind that count for comparison and learning (optional ones removed). */
+export const coreLandmarks = (p: Platform, kind: KindId, lms: readonly LandmarkId[]): LandmarkId[] => {
+  const opt = isAtsPlatform(p) ? undefined : (OPTIONAL as Record<string, Record<KindId, readonly LandmarkId[]>>)[p]?.[kind];
+  return opt ? lms.filter((l) => !opt.includes(l)) : [...lms];
 };
 
 // What each typed tool needs on the page before it acts.

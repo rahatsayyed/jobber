@@ -55,7 +55,9 @@ describe('classify', () => {
 
   it('reports score, missing and variant', () => {
     const v = classify(f, obs(FULL.filter((l) => l !== 'action:more')), cfg);
-    expect(v).toEqual({ class: 'partial', score: 0.8, missing: ['action:more'], variant: 'v1' });
+    // profile.degree and action:connect are optional (relationship dependent): the core set is 3 landmarks
+    expect(v).toMatchObject({ class: 'partial', missing: ['action:more'], variant: 'v1' });
+    expect((v as { score: number }).score).toBeCloseTo(0.6667, 3);
   });
 
   it('A/B: two promoted variants, either matches', () => {
@@ -154,7 +156,7 @@ describe('applyObservation: learning and promotion', () => {
 
   it('observations with a different landmark set seed a separate learning variant', () => {
     let f = run(emptyLayout('linkedin', T0), obs(FULL)).file;
-    f = run(f, obs([...FULL, 'profile.about'])).file;
+    f = run(f, obs([...FULL, 'dialog.open'])).file;
     expect(f.kinds.profile.variants).toHaveLength(2);
   });
 
@@ -171,9 +173,9 @@ describe('applyObservation: learning and promotion', () => {
     const mk = (id: string, extra: string[], verified: string) =>
       variant(id, ['profile.name', 'profile.headline', ...extra], { last_verified: verified });
     const f0 = fileWith([
-      mk('old', ['action:follow', 'action:message', 'profile.pending', 'dialog.open'], '2026-10-01T00:00:00.000Z'),
-      mk('mid', ['action:follow', 'action:message', 'profile.pending', 'notice.present'], '2026-10-10T00:00:00.000Z'),
-      mk('new', ['action:follow', 'action:message', 'profile.pending', 'profile.bell'], '2026-10-14T00:00:00.000Z'),
+      mk('old', ['dialog.open', 'notice.present', 'results.cards'], '2026-10-01T00:00:00.000Z'),
+      mk('mid', ['dialog.open', 'notice.present', 'invitations.rows'], '2026-10-10T00:00:00.000Z'),
+      mk('new', ['dialog.open', 'results.cards', 'invitations.rows'], '2026-10-14T00:00:00.000Z'),
     ]);
     const o = obs(['profile.name', 'profile.headline', 'profile.about', 'profile.degree']);
     // With 3 promoted variants a drifting observation is never accumulated: no promoted variant is
@@ -321,7 +323,8 @@ describe('applyObservation: drift', () => {
 
   it('a drift observation that holds MIN_SET feeds a learning variant', () => {
     const o = obs(['profile.name', 'profile.headline', 'profile.about', 'profile.bell', 'profile.pending']);
-    const r = run(base(), o);
+    const wide = fileWith([variant('v1', [...FULL, 'dialog.open', 'notice.present'])]);
+    const r = run(wide, o);
     expect(r.verdict.class).toBe('drift');
     expect(r.file.kinds.profile.variants.filter((v) => !v.promoted)).toHaveLength(1);
   });
