@@ -940,7 +940,7 @@ model (`src/scheduler/`). Each wake: read the kill switch and halts, skip quiet 
 (`planWake`: skip reasons `killed`, `halted`, `quiet_hours`, `ceilings_exhausted`,
 `nothing_due`), launch one bounded `claude` run in a tmux window through
 `scripts/run-claude.ts outreach_wake`, poll its stream-json output against the tool-call, wall
-and token budgets (`RUN_MAX_*`), then finish the run in the `scheduler_runs` log. Wake times,
+and token budgets (`RUN_MAX_*`, defaults 400 tool calls, 3600 s and 1000000 approximate tokens; the stream-json log path is stored in `scheduler_runs.log_path` under `.jobber/runs/`, and `npm run status -- runs` prints tool-call counts per subagent and tool for the latest run), then finish the run in the `scheduler_runs` log. Wake times,
 burst sizes and waits are drawn at random in code (`PACING_*`); a usage-limit hit pauses for
 `USAGE_LIMIT_BACKOFF_MIN` rather than retrying. Escalations go to SQLite and
 `.jobber/notify.jsonl` (and `JOBBER_NOTIFY_CMD` if set). A wake runs the code pass over the script providers itself, before the `claude` run, and then the

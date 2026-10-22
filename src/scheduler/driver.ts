@@ -18,7 +18,7 @@ import type { Notice, Notifier } from './notify.js';
 import { loadPlanKnobs, planWake, stepOrder, type DiscoverSearches, type WakeDecision } from './plan.js';
 import { targetRegionsLine, type CodePassResult } from './pipeline.js';
 import { buildWakePrompt } from './prompt.js';
-import { finishRun, getState, markOrphans, setState, startRun, type RunStatus } from './runLog.js';
+import { finishRun, getState, markOrphans, setRunLogPath, setState, startRun, type RunStatus } from './runLog.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -327,6 +327,13 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       env: childEnv(d.env, dry),
     });
     const h = handle;
+    if (h.logPath) {
+      try {
+        setRunLogPath(d.db, runId, h.logPath);
+      } catch {
+        // the log path is only a convenience for later measurement
+      }
+    }
     const pollMs = d.pollMs ?? DEFAULT_POLL_MS;
     let killFailed = false;
     const kill = async (): Promise<void> => {

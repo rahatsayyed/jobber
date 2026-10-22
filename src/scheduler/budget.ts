@@ -7,7 +7,7 @@ export interface Budget {
   maxTokensApprox: number;
 }
 
-export const BUDGET_DEFAULTS: Budget = { maxToolCalls: 60, maxWallSec: 900, maxTokensApprox: 150000 };
+export const BUDGET_DEFAULTS: Budget = { maxToolCalls: 400, maxWallSec: 3600, maxTokensApprox: 1000000 };
 
 function intInRange(raw: string | undefined, min: number, max: number, dflt: number): number {
   if (raw === undefined) return dflt;

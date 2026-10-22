@@ -106,33 +106,33 @@ describe('loadBudget', () => {
     expect(loadBudget({ RUN_MAX_TOOL_CALLS: '-3', RUN_MAX_WALL_SEC: 'abc' })).toEqual(BUDGET_DEFAULTS);
   });
   it('has the documented defaults', () => {
-    expect(BUDGET_DEFAULTS).toEqual({ maxToolCalls: 60, maxWallSec: 900, maxTokensApprox: 150000 });
+    expect(BUDGET_DEFAULTS).toEqual({ maxToolCalls: 400, maxWallSec: 3600, maxTokensApprox: 1000000 });
     expect(loadBudget({})).toEqual(BUDGET_DEFAULTS);
   });
   it('enforces inclusive ranges', () => {
     expect(loadBudget({ RUN_MAX_TOOL_CALLS: '1000' }).maxToolCalls).toBe(1000);
-    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '1001' }).maxToolCalls).toBe(60);
+    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '1001' }).maxToolCalls).toBe(400);
     expect(loadBudget({ RUN_MAX_TOOL_CALLS: '1' }).maxToolCalls).toBe(1);
-    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '0' }).maxToolCalls).toBe(60);
+    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '0' }).maxToolCalls).toBe(400);
     expect(loadBudget({ RUN_MAX_WALL_SEC: '30' }).maxWallSec).toBe(30);
-    expect(loadBudget({ RUN_MAX_WALL_SEC: '29' }).maxWallSec).toBe(900);
+    expect(loadBudget({ RUN_MAX_WALL_SEC: '29' }).maxWallSec).toBe(3600);
     expect(loadBudget({ RUN_MAX_WALL_SEC: '7200' }).maxWallSec).toBe(7200);
-    expect(loadBudget({ RUN_MAX_WALL_SEC: '7201' }).maxWallSec).toBe(900);
+    expect(loadBudget({ RUN_MAX_WALL_SEC: '7201' }).maxWallSec).toBe(3600);
     expect(loadBudget({ RUN_MAX_TOKENS_APPROX: '1000' }).maxTokensApprox).toBe(1000);
-    expect(loadBudget({ RUN_MAX_TOKENS_APPROX: '999' }).maxTokensApprox).toBe(150000);
+    expect(loadBudget({ RUN_MAX_TOKENS_APPROX: '999' }).maxTokensApprox).toBe(1000000);
     expect(loadBudget({ RUN_MAX_TOKENS_APPROX: '2000000' }).maxTokensApprox).toBe(2000000);
-    expect(loadBudget({ RUN_MAX_TOKENS_APPROX: '2000001' }).maxTokensApprox).toBe(150000);
+    expect(loadBudget({ RUN_MAX_TOKENS_APPROX: '2000001' }).maxTokensApprox).toBe(1000000);
   });
   it('falls back per field, not all-or-nothing', () => {
     expect(loadBudget({ RUN_MAX_TOOL_CALLS: '10', RUN_MAX_WALL_SEC: 'x', RUN_MAX_TOKENS_APPROX: '5000' })).toEqual({
       maxToolCalls: 10,
-      maxWallSec: 900,
+      maxWallSec: 3600,
       maxTokensApprox: 5000,
     });
   });
   it('rejects non-integer strings', () => {
-    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '12.5' }).maxToolCalls).toBe(60);
-    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '10abc' }).maxToolCalls).toBe(60);
+    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '12.5' }).maxToolCalls).toBe(400);
+    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '10abc' }).maxToolCalls).toBe(400);
   });
 });
 

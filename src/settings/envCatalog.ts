@@ -427,7 +427,7 @@ const hand: EnvSpec[] = [
     ...never(R_SESSION),
   }),
   e('RUN_MAX_TOOL_CALLS', 'scheduler', 'scheduler', 'int', {
-    default: '60',
+    default: '400',
     min: 1,
     max: 1000,
     exampleActive: true,
@@ -437,7 +437,7 @@ const hand: EnvSpec[] = [
     restartEvidence: 'src/scheduler/budget.ts',
   }),
   e('RUN_MAX_WALL_SEC', 'scheduler', 'scheduler', 'int', {
-    default: '900',
+    default: '3600',
     min: 30,
     max: 7200,
     exampleActive: true,
@@ -447,7 +447,7 @@ const hand: EnvSpec[] = [
     restartEvidence: 'src/scheduler/budget.ts',
   }),
   e('RUN_MAX_TOKENS_APPROX', 'scheduler', 'scheduler', 'int', {
-    default: '150000',
+    default: '1000000',
     min: 1000,
     max: 2000000,
     exampleActive: true,

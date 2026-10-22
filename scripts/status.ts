@@ -1,6 +1,6 @@
 // scripts/status.ts
 import Database from 'better-sqlite3';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dbPath } from '../src/dbPath.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadLayoutConfig, loadLayoutEnv } from '../src/layout/config.js';
@@ -8,9 +8,10 @@ import { renderSummary, summarize } from '../src/layout/summary.js';
 import { buildSnapshot } from '../src/status/snapshot.js';
 import { renderHealth, renderLimits, renderWorking } from '../src/status/render.js';
 import { buildSourceRows, DEFAULT_WINDOW_HOURS, renderSources } from '../src/status/sources.js';
+import { renderRunToolCounts, summarizeRunLog } from '../src/status/runs.js';
 import { defaultRun, listWindows } from '../src/platform/tmux.js';
 
-const USAGE = 'usage: npm run status -- <limits|working|health|json|layout|sources>';
+const USAGE = 'usage: npm run status -- <limits|working|health|json|layout|sources|runs>';
 const cmd = process.argv[2];
 
 // Read-only layout memory summary (plan 8B). Works without a database; halts are read when one exists.
@@ -31,7 +32,7 @@ function layoutStatus(): number {
 }
 
 async function main(): Promise<number> {
-  if (!cmd || !['limits', 'working', 'health', 'json', 'layout', 'sources'].includes(cmd)) {
+  if (!cmd || !['limits', 'working', 'health', 'json', 'layout', 'sources', 'runs'].includes(cmd)) {
     console.error(USAGE);
     return 2;
   }
@@ -44,6 +45,14 @@ async function main(): Promise<number> {
   let db: Database.Database | undefined;
   try {
     db = new Database(path, { readonly: true, fileMustExist: true });
+    if (cmd === 'runs') {
+      const row = db.prepare('SELECT id, log_path FROM scheduler_runs ORDER BY planned_at DESC LIMIT 1').get() as
+        | { id: string; log_path: string | null } | undefined;
+      if (!row) console.log('no runs yet');
+      else if (!row.log_path || !existsSync(row.log_path)) console.log(`run ${row.id}: no log file recorded`);
+      else console.log(renderRunToolCounts(row.id, summarizeRunLog(readFileSync(row.log_path, 'utf8'))));
+      return 0;
+    }
     if (cmd === 'sources') {
       const since = new Date(Date.now() - DEFAULT_WINDOW_HOURS * 3600_000).toISOString();
       console.log(renderSources(buildSourceRows(db, since), `ran in last ${DEFAULT_WINDOW_HOURS}h (since ${since})`));

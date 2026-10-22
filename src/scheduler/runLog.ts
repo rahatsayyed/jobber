@@ -101,6 +101,10 @@ export function startRun(
   );
 }
 
+export function setRunLogPath(db: Db, id: string, logPath: string): void {
+  db.prepare('UPDATE scheduler_runs SET log_path = ? WHERE id = ?').run(logPath, id);
+}
+
 export function finishRun(
   db: Db,
   id: string,

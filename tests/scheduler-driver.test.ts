@@ -250,6 +250,12 @@ describe('wakeOnce', () => {
     expect((row.summary ?? '').length).toBeLessThanOrEqual(2000);
   });
 
+  it('stores the launcher log path on the run row', async () => {
+    const s = setup();
+    await wakeOnce(s.d);
+    expect(listRuns(s.db)[0].log_path).toBe('l');
+  });
+
   it('usage limit sets a backoff and the daemon does not launch before it', async () => {
     const s = setup({
       launcher: new FakeLauncher([{ out: '{"type":"result","is_error":true}\n' }]),
