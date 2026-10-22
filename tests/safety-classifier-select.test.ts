@@ -111,6 +111,25 @@ describe('CLASSIFIER_MODEL .env fallback and failure reason', () => {
     expect(m.load.mock.calls[0][0].allowUnfitted).toBe(false);
   });
 
+  it('falls back to root/.env on the real MCP path: deps.env is process.env and no root is passed (cwd is the root)', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = mkdtempSync(join(tmpdir(), 'clsenv-'));
+    writeFileSync(join(root, '.env'), 'CLASSIFIER_MODEL=p2\n');
+    const saved = process.env.CLASSIFIER_MODEL;
+    delete process.env.CLASSIFIER_MODEL;
+    const cwd = vi.spyOn(process, 'cwd').mockReturnValue(root);
+    try {
+      const m = mk();
+      await getActiveClassifier('send', { ...m.deps(undefined), env: process.env });
+      expect(m.load.mock.calls[0][0].profile.id).toBe('p2');
+    } finally {
+      cwd.mockRestore();
+      if (saved !== undefined) process.env.CLASSIFIER_MODEL = saved;
+    }
+  });
+
   it('writes a one-line error message (no page text) to stderr when the classifier fails, still fail-closed', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const m = mk({ fail: true });

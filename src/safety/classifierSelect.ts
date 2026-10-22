@@ -49,7 +49,7 @@ export async function getActiveClassifier(use?: ClassifierUse, deps: SelectDeps 
   const baseEnv = deps.env ?? process.env;
   const u = use ?? currentUse(baseEnv);
   // Stdio MCP servers inherit the launching claude's env, which may lack .env keys: read ONLY CLASSIFIER_MODEL from .env.
-  const env = withEnvFileModel(baseEnv, deps.root ?? (deps.env ? undefined : process.cwd()));
+  const env = withEnvFileModel(baseEnv, deps.root ?? (deps.env && deps.env !== process.env ? undefined : process.cwd()));
   const reg = (deps.loadRegistry ?? (() => loadRegistry()))();
   const profile = resolveProfile(reg, env);
   const digest = profile.files.find((f) => f.role === 'model')?.sha256 ?? 'none';
