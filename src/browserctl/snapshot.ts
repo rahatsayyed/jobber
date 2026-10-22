@@ -1,0 +1,439 @@
+// browserctl snapshot: a flat, DOM-ordered node list with ordinals stamped on the page as data-bc.
+// Two builders of the same RawTree: bcScript('snapshot') runs inside the page (real computed styles),
+// buildTreeFromHtml builds it from fixtures through htmlVisible.ts. Keep the role, name, submit,
+// footer and composer rules identical on both sides.
+// The visibility rules are NOT retyped: VIS_SRC is cut out of the LinkedIn snapshot script, so both
+// snapshots hide exactly the same things (a test pins the cut).
+// Password-like inputs: the value is never read (the node carries secret:true and no value).
+import { SNAPSHOT_SRC } from '../linkedin/snapshot.js';
+import { parseHtml, findAll, visibleText, type HtmlNode } from '../linkedin/htmlVisible.js';
+
+export type BcRole =
+  | 'button' | 'link' | 'textbox' | 'searchbox' | 'checkbox' | 'radio' | 'combobox' | 'menuitem' | 'tab'
+  | 'option' | 'file' | 'heading' | 'dialog' | 'text';
+
+export const ACTIONABLE_ROLES: ReadonlySet<BcRole> = new Set<BcRole>([
+  'button', 'link', 'textbox', 'searchbox', 'checkbox', 'radio', 'combobox', 'menuitem', 'tab', 'option', 'file',
+]);
+
+export interface RawNode {
+  /** Ordinal stamped as data-bc on the element (-1: an element found by point that was never stamped). */
+  n: number;
+  role: BcRole;
+  name: string;            // accessible name, capped
+  text: string;            // own text for role 'text', else ''
+  value?: string;          // textbox current value (never for secret fields)
+  href?: string;
+  disabled: boolean;
+  secret?: true;           // password-like field: value never read
+  submit?: true;           // type=submit (or a form button without a type)
+  inFooter?: true;         // inside a footer / action bar of its dialog
+  composer?: true;         // free-text field meant for a message or note (not search, not password), or a button inside a composer form
+  dialog?: number;         // ordinal of the enclosing dialog node
+  dialogName?: string;     // accessible name of the enclosing dialog
+}
+export interface RawTree { url: string; title: string; nodes: RawNode[]; truncated?: true }
+/** A node re-read live at the moment of an action (same shape as a snapshot node). */
+export type LiveNode = RawNode;
+
+export const MAX_NODES = 400;
+export const MAX_NAME = 200;
+export const MAX_TEXT = 300;
+export const MAX_VALUE = 5000;
+export const MAX_RENDER_CHARS = 6000;
+
+// ---- shared visibility rules cut out of the LinkedIn snapshot script ----
+function cutVis(): string {
+  const a = SNAPSHOT_SRC.indexOf('var HIDDEN_TAGS');
+  const b = SNAPSHOT_SRC.indexOf('function vlines(root)');
+  if (a < 0 || b < a) throw new Error('browserctl: cannot cut the visibility rules from the LinkedIn snapshot script');
+  return SNAPSHOT_SRC.slice(a, b);
+}
+export const VIS_SRC = cutVis();
+
+// ---- in-page script (a string on purpose, like linkedin/snapshot.ts) ----
+const BODY_SRC = String.raw`
+  var ACTION = { button:1, link:1, textbox:1, searchbox:1, checkbox:1, radio:1, combobox:1, menuitem:1, tab:1, option:1, file:1 };
+  var ARIA = { button:'button', link:'link', textbox:'textbox', searchbox:'searchbox', checkbox:'checkbox', radio:'radio',
+    combobox:'combobox', menuitem:'menuitem', tab:'tab', option:'option', heading:'heading', dialog:'dialog',
+    alertdialog:'dialog', 'switch':'checkbox' };
+  function norm(s, n) { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n) : s; }
+  function flatText(e) {
+    var parts = [];
+    (function walk(x) {
+      for (var i = 0; i < x.childNodes.length; i++) {
+        var c = x.childNodes[i];
+        if (c.nodeType === 3) { parts.push(c.nodeValue || ''); continue; }
+        if (c.nodeType !== 1 || ownHidden(c)) continue;
+        parts.push(' '); walk(c); parts.push(' ');
+      }
+    })(e);
+    return parts.join('');
+  }
+  function attr(e, k) { var v = e.getAttribute(k); return v === null ? '' : String(v); }
+  function roleOf(e) {
+    var tag = String(e.tagName || '').toUpperCase();
+    var ar = attr(e, 'role').trim().toLowerCase();
+    if (ar && ARIA[ar]) return ARIA[ar];
+    if (tag === 'A') return e.hasAttribute('href') ? 'link' : null;
+    if (tag === 'BUTTON') return 'button';
+    if (tag === 'TEXTAREA') return 'textbox';
+    if (tag === 'SELECT') return 'combobox';
+    if (tag === 'DIALOG') return 'dialog';
+    if (/^H[1-6]$/.test(tag)) return 'heading';
+    if (tag === 'INPUT') {
+      var t = attr(e, 'type').trim().toLowerCase();
+      if (t === 'hidden') return null;
+      if (t === 'submit' || t === 'button' || t === 'reset' || t === 'image') return 'button';
+      if (t === 'checkbox') return 'checkbox';
+      if (t === 'radio') return 'radio';
+      if (t === 'search') return 'searchbox';
+      if (t === 'file') return 'file';
+      return 'textbox';
+    }
+    var ce = e.hasAttribute('contenteditable') ? attr(e, 'contenteditable').trim().toLowerCase() : null;
+    if (ce !== null && ce !== 'false') return 'textbox';
+    return null;
+  }
+  function isSecret(e) {
+    if (String(e.tagName || '').toUpperCase() !== 'INPUT') return false;
+    var t = attr(e, 'type').trim().toLowerCase();
+    var ac = attr(e, 'autocomplete').toLowerCase();
+    return t === 'password' || ac.indexOf('password') >= 0 || ac.indexOf('one-time-code') >= 0 || ac.indexOf('cc-') >= 0;
+  }
+  function nameOf(e, role) {
+    var a = norm(attr(e, 'aria-label'), 200);
+    if (a) return a;
+    var tag = String(e.tagName || '').toUpperCase();
+    if (tag === 'INPUT') {
+      var t = attr(e, 'type').trim().toLowerCase();
+      if (t === 'submit' || t === 'button' || t === 'reset') { var v = norm(attr(e, 'value'), 200); if (v) return v; }
+      return norm(attr(e, 'placeholder') || attr(e, 'title') || attr(e, 'alt'), 200);
+    }
+    if (role === 'textbox' || role === 'searchbox' || role === 'combobox') {
+      return norm(attr(e, 'placeholder') || attr(e, 'title'), 200);
+    }
+    var f = norm(flatText(e), 200);
+    if (f) return f;
+    var ti = norm(attr(e, 'title'), 200);
+    if (ti) return ti;
+    var img = e.querySelector ? e.querySelector('img[alt]') : null;
+    return img ? norm(attr(img, 'alt'), 200) : '';
+  }
+  function dialogNameOf(d) {
+    var a = norm(attr(d, 'aria-label'), 200);
+    if (a) return a;
+    var hs = d.querySelectorAll('h1,h2,h3,h4,[role=heading]');
+    for (var i = 0; i < hs.length; i++) if (vis(hs[i])) { var h = norm(flatText(hs[i]), 200); if (h) return h; }
+    return '';
+  }
+  function enclosingDialog(e) {
+    for (var x = e.parentElement; x; x = x.parentElement) if (roleOf(x) === 'dialog') return x;
+    return null;
+  }
+  function inFooterOf(e, dlg) {
+    if (!dlg) return false;
+    for (var x = e; x && x !== dlg; x = x.parentElement) {
+      if (String(x.tagName || '').toUpperCase() === 'FOOTER') return true;
+      if (/footer|actionbar|action-bar/i.test(attr(x, 'class'))) return true;
+    }
+    return false;
+  }
+  function isSubmitEl(e) {
+    var tag = String(e.tagName || '').toUpperCase();
+    var t = attr(e, 'type').trim().toLowerCase();
+    if (tag === 'INPUT') return t === 'submit' || t === 'image';
+    if (tag !== 'BUTTON') return false;
+    if (t === 'submit') return true;
+    if (t) return false;
+    for (var x = e.parentElement; x; x = x.parentElement) if (String(x.tagName || '').toUpperCase() === 'FORM') return true;
+    return false;
+  }
+  function isComposer(e, role, secret) {
+    if (secret) return false;
+    if (role === 'button' || role === 'menuitem') {
+      for (var y = e.parentElement; y; y = y.parentElement) if (/compose|msg-form|msg-overlay|chatbot|chat/i.test(attr(y, 'class'))) return true;
+      return false;
+    }
+    if (role !== 'textbox') return false;
+    var tag = String(e.tagName || '').toUpperCase();
+    if (tag === 'TEXTAREA' || (tag !== 'INPUT' && e.hasAttribute('contenteditable'))) return true;
+    if (enclosingDialog(e)) return true;
+    for (var x = e.parentElement; x; x = x.parentElement) if (/compose|msg-form|msg-overlay|chatbot|chat/i.test(attr(x, 'class'))) return true;
+    return false;
+  }
+  function stampOf(e) { var s = e.getAttribute('data-bc'); return s === null ? -1 : parseInt(s, 10); }
+  function info(e, role, full) {
+    var secret = role === 'textbox' && isSecret(e);
+    var o = { n: stampOf(e), role: role, name: nameOf(e, role), text: '', disabled: e.hasAttribute('disabled') || attr(e, 'aria-disabled').toLowerCase() === 'true' };
+    if (role === 'text') { o.text = norm(ownText(e), 300); o.name = ''; }
+    if (role === 'heading') o.name = norm(flatText(e), 200);
+    if (role === 'dialog') o.name = dialogNameOf(e);
+    if (role === 'link') { var h = attr(e, 'href'); if (h) o.href = norm(h, 300); }
+    if (secret) o.secret = true;
+    else if (role === 'textbox' || role === 'searchbox') {
+      var tg = String(e.tagName || '').toUpperCase();
+      var val = (tg === 'INPUT' || tg === 'TEXTAREA') ? String(e.value || '') : String(e.innerText || e.textContent || '');
+      o.value = val.length > (full ? 5000 : 300) ? val.slice(0, full ? 5000 : 300) : val;
+    }
+    if (isSubmitEl(e)) o.submit = true;
+    var dlg = role === 'dialog' ? enclosingDialog(e) : enclosingDialog(e);
+    if (inFooterOf(e, dlg)) o.inFooter = true;
+    if (isComposer(e, role, secret)) o.composer = true;
+    if (dlg) { o.dialog = stampOf(dlg); o.dialogName = dialogNameOf(dlg); }
+    return o;
+  }
+  function ownText(e) {
+    var s = '';
+    for (var i = 0; i < e.childNodes.length; i++) { var c = e.childNodes[i]; if (c.nodeType === 3) s += ' ' + (c.nodeValue || ''); }
+    return s;
+  }
+  function nearestActionable(e) {
+    for (var i = 0, x = e; x && i < 8; i++, x = x.parentElement) { var r = roleOf(x); if (r && ACTION[r]) return [x, r]; }
+    return null;
+  }
+  function underAction(e) {
+    for (var x = e.parentElement; x; x = x.parentElement) { var r = roleOf(x); if (r && ACTION[r]) return true; }
+    return false;
+  }
+  if (MODE === 'snapshot') {
+    var old = document.querySelectorAll('[data-bc]');
+    for (var oi = 0; oi < old.length; oi++) old[oi].removeAttribute('data-bc');
+    var all = document.body ? document.body.getElementsByTagName('*') : [];
+    var nodes = [], n = 0, truncated = false;
+    for (var k = 0; k < all.length; k++) {
+      var e = all[k];
+      if (HIDDEN_TAGS[String(e.tagName || '').toUpperCase()]) continue;
+      if (!vis(e)) continue;
+      var role = roleOf(e);
+      if (!role) {
+        if (!/\S/.test(ownText(e)) || underAction(e)) continue;
+        role = 'text';
+      } else if (role === 'text') { continue; }
+      if (nodes.length >= 400) { truncated = true; break; }
+      e.setAttribute('data-bc', String(n));
+      nodes.push(info(e, role, false));
+      n++;
+    }
+    var res = { url: String(location.href || ''), title: norm(document.title, 300), nodes: nodes };
+    if (truncated) res.truncated = true;
+    return res;
+  }
+  if (MODE === 'describe') {
+    var el = document.querySelector('[data-bc="' + (A.n | 0) + '"]');
+    if (!el || !vis(el)) return null;
+    var r0 = roleOf(el) || (/\S/.test(ownText(el)) ? 'text' : null);
+    return r0 ? info(el, r0, true) : null;
+  }
+  if (MODE === 'at') {
+    var pe = document.elementFromPoint(A.x, A.y);
+    if (!pe || !vis(pe)) return null;
+    var na = nearestActionable(pe);
+    if (na) return info(na[0], na[1], true);
+    var r1 = roleOf(pe) || 'text';
+    return info(pe, r1, true);
+  }
+  if (MODE === 'focused') {
+    var fe = document.activeElement;
+    if (!fe || fe === document.body || !vis(fe)) return null;
+    var r2 = roleOf(fe);
+    return r2 ? info(fe, r2, true) : null;
+  }
+  return null;
+`;
+
+/** Build the in-page expression for one mode. Args are JSON-embedded numbers only (never model strings). */
+export function bcScript(mode: 'snapshot' | 'describe' | 'at' | 'focused', args: { n?: number; x?: number; y?: number } = {}): string {
+  const safe: Record<string, number> = {};
+  for (const k of ['n', 'x', 'y'] as const) {
+    const v = args[k];
+    if (v !== undefined) {
+      if (!Number.isFinite(v)) throw new Error('browserctl: non-numeric script argument');
+      safe[k] = v;
+    }
+  }
+  return `(function (MODE, A) { try { ${VIS_SRC}\n${BODY_SRC}\n } catch (err) { return null; } })(${JSON.stringify(mode)}, ${JSON.stringify(safe)})`;
+}
+
+// ---- fixture side ----
+const cap = (s: string, n: number) => (s.length > n ? s.slice(0, n) : s);
+const flatOf = (nd: HtmlNode) => visibleText(nd).replace(/\s+/g, ' ').trim();
+const cls = (nd: HtmlNode) => nd.attrs['class'] ?? '';
+
+function hideClosedDialogs(n: HtmlNode, parentHidden = false): void {
+  const closed = n.tag === 'dialog' && !('open' in n.attrs);
+  if (closed || parentHidden) n.hidden = true;
+  for (const c of n.children) hideClosedDialogs(c, n.hidden);
+}
+
+const ARIA_ROLES: Record<string, BcRole> = {
+  button: 'button', link: 'link', textbox: 'textbox', searchbox: 'searchbox', checkbox: 'checkbox', radio: 'radio',
+  combobox: 'combobox', menuitem: 'menuitem', tab: 'tab', option: 'option', heading: 'heading', dialog: 'dialog',
+  alertdialog: 'dialog', switch: 'checkbox',
+};
+
+function roleOfNode(nd: HtmlNode): BcRole | null {
+  const ar = (nd.attrs['role'] ?? '').trim().toLowerCase();
+  if (ar && ARIA_ROLES[ar]) return ARIA_ROLES[ar];
+  const t = nd.tag;
+  if (t === 'a') return 'href' in nd.attrs ? 'link' : null;
+  if (t === 'button') return 'button';
+  if (t === 'textarea') return 'textbox';
+  if (t === 'select') return 'combobox';
+  if (t === 'dialog') return 'dialog';
+  if (/^h[1-6]$/.test(t)) return 'heading';
+  if (t === 'input') {
+    const ty = (nd.attrs['type'] ?? '').trim().toLowerCase();
+    if (ty === 'hidden') return null;
+    if (ty === 'submit' || ty === 'button' || ty === 'reset' || ty === 'image') return 'button';
+    if (ty === 'checkbox') return 'checkbox';
+    if (ty === 'radio') return 'radio';
+    if (ty === 'search') return 'searchbox';
+    if (ty === 'file') return 'file';
+    return 'textbox';
+  }
+  if ('contenteditable' in nd.attrs) {
+    const ce = (nd.attrs['contenteditable'] ?? '').trim().toLowerCase();
+    if (ce !== 'false') return 'textbox';
+  }
+  return null;
+}
+
+function secretNode(nd: HtmlNode): boolean {
+  if (nd.tag !== 'input') return false;
+  const ty = (nd.attrs['type'] ?? '').trim().toLowerCase();
+  const ac = (nd.attrs['autocomplete'] ?? '').toLowerCase();
+  return ty === 'password' || ac.includes('password') || ac.includes('one-time-code') || ac.includes('cc-');
+}
+
+function ownTextOf(nd: HtmlNode): string {
+  return nd.children.filter((c) => c.tag === '#text').map((c) => c.text ?? '').join(' ');
+}
+
+function nameOfNode(nd: HtmlNode, role: BcRole): string {
+  const a = (nd.attrs['aria-label'] ?? '').replace(/\s+/g, ' ').trim();
+  if (a) return cap(a, MAX_NAME);
+  const clean = (s: string | undefined) => cap((s ?? '').replace(/\s+/g, ' ').trim(), MAX_NAME);
+  if (nd.tag === 'input') {
+    const ty = (nd.attrs['type'] ?? '').trim().toLowerCase();
+    if (ty === 'submit' || ty === 'button' || ty === 'reset') { const v = clean(nd.attrs['value']); if (v) return v; }
+    return clean(nd.attrs['placeholder'] || nd.attrs['title'] || nd.attrs['alt']);
+  }
+  if (role === 'textbox' || role === 'searchbox' || role === 'combobox') return clean(nd.attrs['placeholder'] || nd.attrs['title']);
+  const f = clean(flatOf(nd));
+  if (f) return f;
+  const ti = clean(nd.attrs['title']);
+  if (ti) return ti;
+  const img = findAll(nd, (x) => x.tag === 'img' && 'alt' in x.attrs && !x.hidden)[0];
+  return img ? clean(img.attrs['alt']) : '';
+}
+
+/** Fixture side. Sees inline styles and attributes only: stylesheet/class hiding is the in-page script's job. */
+export function buildTreeFromHtml(html: string, url: string): RawTree {
+  const out: RawTree = { url, title: '', nodes: [] };
+  try {
+    const root = parseHtml(html);
+    hideClosedDialogs(root);
+    const titleNode = findAll(root, (n) => n.tag === 'title')[0];
+    if (titleNode) out.title = cap(titleNode.children.map((c) => c.text ?? '').join('').replace(/\s+/g, ' ').trim(), 300);
+    const body = findAll(root, (n) => n.tag === 'body')[0] ?? root;
+    let n = 0;
+    const stamp = new Map<HtmlNode, number>();
+    const dialogName = (d: HtmlNode): string => {
+      const a = (d.attrs['aria-label'] ?? '').replace(/\s+/g, ' ').trim();
+      if (a) return cap(a, MAX_NAME);
+      const h = findAll(d, (x) => !x.hidden && (/^h[1-4]$/.test(x.tag) || (x.attrs['role'] ?? '').toLowerCase() === 'heading'))
+        .map((x) => cap(flatOf(x), MAX_NAME)).find(Boolean);
+      return h ?? '';
+    };
+    const walk = (nd: HtmlNode, parents: HtmlNode[]) => {
+      if (out.truncated) return;
+      if (nd.tag !== '#text' && nd !== body && nd.tag !== 'html' && !nd.hidden) {
+        let role = roleOfNode(nd);
+        const underAction = parents.some((p) => { const r = roleOfNode(p); return r !== null && ACTIONABLE_ROLES.has(r); });
+        if (!role && /\S/.test(ownTextOf(nd)) && !underAction) role = 'text';
+        if (role) {
+          if (out.nodes.length >= MAX_NODES) { out.truncated = true; return; }
+          stamp.set(nd, n);
+          const dlgNode = [...parents].reverse().find((p) => roleOfNode(p) === 'dialog');
+          const secret = role === 'textbox' && secretNode(nd);
+          const node: RawNode = {
+            n, role, name: '', text: '',
+            disabled: 'disabled' in nd.attrs || (nd.attrs['aria-disabled'] ?? '').toLowerCase() === 'true',
+          };
+          node.name = role === 'text' ? '' : role === 'heading' ? cap(flatOf(nd), MAX_NAME) : role === 'dialog' ? dialogName(nd) : nameOfNode(nd, role);
+          if (role === 'text') node.text = cap(ownTextOf(nd).replace(/\s+/g, ' ').trim(), MAX_TEXT);
+          if (role === 'link' && nd.attrs['href']) node.href = cap(nd.attrs['href'], 300);
+          if (secret) node.secret = true;
+          else if (role === 'textbox' || role === 'searchbox') {
+            const v = nd.tag === 'input' ? (nd.attrs['value'] ?? '') : nd.tag === 'textarea' ? visibleText({ ...nd, hidden: false }) : flatOf(nd);
+            node.value = cap(v, 300);
+          }
+          const ty = (nd.attrs['type'] ?? '').trim().toLowerCase();
+          if (nd.tag === 'input' ? (ty === 'submit' || ty === 'image')
+            : nd.tag === 'button' ? (ty === 'submit' || (!ty && parents.some((p) => p.tag === 'form'))) : false) node.submit = true;
+          if (dlgNode) {
+            const chain = [...parents].reverse();
+            const upTo = chain.slice(0, chain.indexOf(dlgNode));
+            if ([nd, ...upTo].some((x) => x.tag === 'footer' || /footer|actionbar|action-bar/i.test(cls(x)))) node.inFooter = true;
+            node.dialog = stamp.get(dlgNode) ?? -1;
+            node.dialogName = dialogName(dlgNode);
+          }
+          const classComposer = parents.some((p) => /compose|msg-form|msg-overlay|chatbot|chat/i.test(cls(p)));
+          const composer = (role === 'button' || role === 'menuitem') ? classComposer
+            : role === 'textbox' && !secret && (nd.tag === 'textarea' || (nd.tag !== 'input' && 'contenteditable' in nd.attrs)
+              || !!dlgNode || classComposer);
+          if (composer) node.composer = true;
+          out.nodes.push(node);
+          n++;
+        }
+      }
+      for (const c of nd.children) walk(c, nd.tag === '#text' ? parents : [...parents, nd]);
+    };
+    walk(body, []);
+  } catch {
+    out.nodes = [];
+  }
+  return out;
+}
+
+// ---- render ----
+const MARKER = /<<<PAGE_TEXT|PAGE_TEXT>>>/g;
+const CONTROL = new RegExp('[\\u0000-\\u001f\\u007f\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ufeff]', 'g');
+function clean(s: string): string {
+  return s.replace(MARKER, ' ').replace(CONTROL, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Compact text of a tree for the model: one line per node, `[s<E>.<n>] role "name"`, dialog content
+ * indented. The caller wraps and screens it (screenUntrusted 'read') before it reaches a model.
+ * Password-like fields show `secret` and never a value. Text past maxChars is cut with a marker.
+ */
+export function renderTree(tree: RawTree, epoch: number, maxChars = MAX_RENDER_CHARS): string {
+  const lines: string[] = [`url: ${clean(tree.url.split(/[?#]/)[0]).slice(0, 110)}`];
+  if (tree.title) lines.push(`title: ${clean(tree.title).slice(0, 120)}`);
+  for (const nd of tree.nodes) {
+    const ref = `[s${epoch}.${nd.n}]`;
+    const ind = nd.dialog !== undefined ? '  ' : '';
+    let l: string;
+    if (nd.role === 'text') l = `${ind}${ref} text "${clean(nd.text)}"`;
+    else {
+      l = `${ind}${ref} ${nd.role}`;
+      if (nd.name) l += ` "${clean(nd.name)}"`;
+      if (nd.role === 'dialog') l += ' (open)';
+      if (nd.secret) l += ' secret';
+      else if (nd.value) l += ` value="${clean(nd.value).slice(0, 120)}"`;
+      if (nd.disabled) l += ' disabled';
+    }
+    lines.push(l);
+  }
+  if (tree.truncated) lines.push('(page truncated)');
+  let text = lines.join('\n');
+  if (text.length > maxChars) text = text.slice(0, maxChars) + '\n(truncated)';
+  return text;
+}
+
+/** Wrap rendered tree text as untrusted data with the epoch header. */
+export function formatTree(tree: RawTree, epoch: number, maxChars = MAX_RENDER_CHARS): string {
+  return `epoch: ${epoch}\n<<<PAGE_TEXT\n${renderTree(tree, epoch, maxChars)}\nPAGE_TEXT>>>`;
+}
