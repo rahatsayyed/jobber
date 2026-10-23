@@ -5,6 +5,7 @@ import { languageGate, type LanguageConfig } from './languageGate.js';
 import { ageDays, deadlinePassed, staleFlag } from './freshness.js';
 import { assessLegitimacy, type Legitimacy } from './legitimacy.js';
 import { mentionedTargetRegion, specificTargets, targetRegionEvidence, type TargetRegions } from './targetRegions.js';
+import { hasRequirementSignal, POST_EMPTY_REASON, POST_SOURCE, POST_THIN_FLAG, POST_TITLE_FALLBACK_PREFIX } from './lib/postSignals.js';
 import { findRestriction, isRemotePosting, REGION_WORD } from './remotePolicy.js';
 
 // Why a model location FAIL may be shown as a FLAG, or null (FAIL stays). Never when a restriction marker (src/remotePolicy.ts) is in the
@@ -31,7 +32,7 @@ function locationDowngrade(rawJob: { title: string; description: string; locatio
 
 export type Verdict = 'PASS' | 'FAIL' | 'FLAG';
 
-export interface JobFacts { source?: string | null; url?: string | null; apply_url?: string | null; posted_at?: string | null; deadline?: string | null; acted?: boolean; overridden?: boolean; hard_stops?: string[]; repost_count?: number; snapshot_chars?: number; hard_stops_unreadable?: boolean }
+export interface JobFacts { company?: string | null; source?: string | null; url?: string | null; apply_url?: string | null; posted_at?: string | null; deadline?: string | null; acted?: boolean; overridden?: boolean; hard_stops?: string[]; repost_count?: number; snapshot_chars?: number; hard_stops_unreadable?: boolean }
 /** `languagesInvalid` (with `languages: null`) = config file present but an entry is invalid; null alone = file missing. */
 export interface VetoExtras {
   facts?: JobFacts; now?: Date; languages?: LanguageConfig | null; languagesInvalid?: string;
@@ -73,6 +74,14 @@ export function applyVetoes(
   if (extras?.languages === null) soft.push(extras.languagesInvalid ? `language gate config invalid: ${extras.languagesInvalid}` : 'language gate config missing');
   const stale = extras ? staleFlag(extras.facts?.posted_at, now) : null;
   if (stale) soft.push(stale);
+  // LinkedIn hiring posts: the extractor leaves company empty and titles the job "Hiring post by <author>" when it could not read them.
+  let emptyPost = false;
+  if (extras?.facts?.source === POST_SOURCE) {
+    const noCompany = !String(extras.facts.company ?? '').trim();
+    const noRole = !job.title.trim() || job.title.startsWith(POST_TITLE_FALLBACK_PREFIX);
+    emptyPost = noCompany && noRole;
+    if (!emptyPost && (noCompany || !hasRequirementSignal(job.description))) soft.push(POST_THIN_FLAG);
+  }
   if (legit?.tier === 'caution') for (const s of legit.signals.filter((x) => !x.startsWith('info:'))) soft.push(`legitimacy caution: ${s}`);
   const out = (r: Omit<VetoResult, 'legitimacy' | 'language_note'>): VetoResult =>
     ({ ...r, ...more, ...(extras && r.excluded ? { gate_flags: soft } : {}) });
@@ -92,6 +101,7 @@ export function applyVetoes(
   if (extras?.facts?.deadline && !extras.facts.acted && !extras.facts.overridden && deadlinePassed(extras.facts.deadline, now)) {
     return out({ excluded: true, reason: `deadline passed: ${extras.facts.deadline.trim()}`, flags });
   }
+  if (emptyPost) return out({ excluded: true, reason: POST_EMPTY_REASON, flags });
   if (legit?.tier === 'suspicious') return out({ excluded: true, reason: `legitimacy: ${legit.signals.filter((s) => !s.startsWith('info:')).join('; ')}`, flags });
 
   return out({ excluded: false, flags: soft });

@@ -248,8 +248,17 @@ export const SNAPSHOT_SRC = String.raw`(function () {
           if ((pls[pli].getAttribute('href') || '').indexOf('/in/') >= 0) { plink = pls[pli]; break; }
         }
         if (!plink) continue;
+        var plk = '';
+        for (var pmi = 0; pmi < pls.length && !plk; pmi++) {
+          var ph = pls[pmi].getAttribute('href') || '';
+          if (/\/feed\/update\/urn:li:|\/posts\/[^/?#]+-(?:activity|share|ugcPost)-\d+/.test(ph)) plk = ph;
+        }
+        var purn = pcs[pci].getAttribute('data-urn') || pcs[pci].getAttribute('data-id') || '';
+        if (!purn && pcs[pci].closest) { var pan = pcs[pci].closest('[data-urn]'); if (pan) purn = pan.getAttribute('data-urn') || ''; }
+        var pln = lines(pcs[pci]).slice(0, 60);
+        for (var pni = 0; pni < pln.length; pni++) pln[pni] = cap(pln[pni], 400);
         postCards.push({ text: cap(flat(pcs[pci]), 3000), authorName: cap(lines(plink)[0] || '', 200),
-          profileHref: cap(plink.getAttribute('href') || '', 500) });
+          profileHref: cap(plink.getAttribute('href') || '', 500), permalinkHref: cap(plk, 500), urn: cap(purn, 120), lines: pln });
       }
     }
 
@@ -327,6 +336,7 @@ const linesOf = (n: HtmlNode) => (n.hidden ? [] : visibleText(n).split('\n').fil
 const flat = (n: HtmlNode) => linesOf(n).join(' ').replace(/\s+/g, ' ').trim();
 const DEGREE = /^(?:·\s*)?(1st|2nd|3rd)\+?$/;
 /** Trailing connection-degree badge LinkedIn renders inside a search card's name link ("Jane Doe • 3rd+"); keep in step with the in-page script. */
+const POST_PERMALINK = /\/feed\/update\/urn:li:|\/posts\/[^/?#]+-(?:activity|share|ugcPost)-\d+/;
 const DEGREE_BADGE = /\s*[•·]\s*(?:1st|2nd|3rd\+?)\s*$/;
 
 function hideClosedDialogs(n: HtmlNode, parentHidden = false): void {
@@ -418,7 +428,12 @@ export function buildSnapshotFromHtml(html: string, url: string): RawSnapshot {
         if (postCards.length >= 50) break;
         const link = vq(c, (n) => n.tag === 'a' && (n.attrs['href'] ?? '').includes('/in/'))[0];
         if (!link) continue;
-        postCards.push({ text: cap(flat(c), 3000), authorName: cap(linesOf(link)[0] ?? '', 200), profileHref: cap(link.attrs['href'] ?? '', 500) });
+        const permalink = vq(c, (n) => n.tag === 'a' && POST_PERMALINK.test(n.attrs['href'] ?? ''))[0];
+        postCards.push({
+          text: cap(flat(c), 3000), authorName: cap(linesOf(link)[0] ?? '', 200), profileHref: cap(link.attrs['href'] ?? '', 500),
+          permalinkHref: cap(permalink?.attrs['href'] ?? '', 500), urn: cap(c.attrs['data-urn'] ?? '', 120),
+          lines: linesOf(c).slice(0, 60).map((l) => cap(l, 400)),
+        });
       }
       out.postCards = postCards;
     }

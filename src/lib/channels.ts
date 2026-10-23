@@ -92,7 +92,9 @@ export function channelsFor(job: ChannelJob, ctx: ChannelContext = {}): ChannelV
   if (!company) people = 'no_company';
   else if (policy?.hn && ctx.hnCheck !== 'matched') people = 'hn_gate_pending';
   out.push(people ? no('email', people) : { channel: 'email', eligible: true });
-  out.push(people ? no('linkedin', people) : { channel: 'linkedin', eligible: true });
+  // A hiring post's author is already a known contact (registered in `people` when the post is saved), so no company is needed to reach them.
+  const poster = source === 'linkedin-posts' && people === 'no_company';
+  out.push(people && !poster ? no('linkedin', people) : { channel: 'linkedin', eligible: true });
 
   out.push(ctx.naukriThread ? { channel: 'naukri', eligible: true } : no('naukri', 'no_cold_naukri'));
 

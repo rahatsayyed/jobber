@@ -18,7 +18,15 @@ export interface RawResult { name: string; headline: string; href: string }
 /** Job search card (jobs search pages only). All fields are untrusted page text. */
 export interface RawJobCard { title: string; company: string; href: string; snippet: string; easyApply: boolean }
 /** Hiring-post card (content search pages only). `text` is the visible post text, untrusted. */
-export interface RawPostCard { text: string; authorName: string; profileHref: string }
+export interface RawPostCard {
+  text: string; authorName: string; profileHref: string;
+  /** href of the post's own link (/feed/update/urn:li:activity:<id>/ or /posts/<slug>-activity-<id>-...), '' when none was found. */
+  permalinkHref?: string;
+  /** data-urn / data-id of the card or its nearest ancestor that has one (urn:li:activity:<id>), '' when none. */
+  urn?: string;
+  /** Visible lines of the card in order (author, headline, relative time, post text, action bar); untrusted. */
+  lines?: string[];
+}
 export interface RawInvitation { index: number; name: string; headline: string; href: string }
 export interface RawMessage { from: 'them' | 'me'; text: string }
 

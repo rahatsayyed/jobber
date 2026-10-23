@@ -289,7 +289,9 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   const jobCols = new Set((db.prepare('PRAGMA table_info(jobs)').all() as { name: string }[]).map(c => c.name));
   for (const col of ['match_reasons', 'match_missing', 'location_verdict', 'language_gate', 'excluded_reason',
     'posted_at', 'deadline', 'deadline_reported', 'language_note', 'score_dims', 'requirements', 'strengths', 'gaps', 'hard_stops', 'confidence',
-    'title_key', 'company_key', 'legitimacy', 'legitimacy_signals', 'gate_flags', 'jd_snapshot', 'jd_snapshot_at', 'score_cap_reason']) {
+    'title_key', 'company_key', 'legitimacy', 'legitimacy_signals', 'gate_flags', 'jd_snapshot', 'jd_snapshot_at', 'score_cap_reason',
+    // LinkedIn hiring posts: email or external link written in the post (data only, never opened) and the author profile.
+    'apply_email', 'apply_link', 'poster_url']) {
     if (!jobCols.has(col)) db.exec(`ALTER TABLE jobs ADD COLUMN ${col} TEXT`);
   }
   // Count of match-save rejections per job: after MATCH_FAIL_LIMIT the wake pipeline stops re-offering it (plan 8G task 13).
@@ -433,6 +435,12 @@ export interface Job {
   posted_at?: string;
   /** 1 for an owner-submitted job (manual request); absent or 0 for everything else. */
   priority?: number;
+  /** LinkedIn hiring posts: email address written in the post (unverified, data only). */
+  apply_email?: string;
+  /** LinkedIn hiring posts: first external https link in the post (data only, never followed). */
+  apply_link?: string;
+  /** LinkedIn hiring posts: the author's profile URL (the poster, a contact; never the job URL). */
+  poster_url?: string;
   /** True when the platform marked the listing as promoted (Naukri, Wellfound). Only orders work; once stored it is never cleared. */
   promoted?: boolean;
 }
@@ -462,8 +470,8 @@ export function toIsoDay(v: unknown): string | undefined {
 
 export function saveJob(db: BetterSqlite3.Database, job: Job): void {
   db.prepare(`
-    INSERT OR IGNORE INTO jobs (id, source, title, company, url, apply_url, description, score, status, posted_at, title_key, company_key, priority)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO jobs (id, source, title, company, url, apply_url, description, score, status, posted_at, title_key, company_key, priority, apply_email, apply_link, poster_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     job.id,
     job.source,
@@ -477,7 +485,10 @@ export function saveJob(db: BetterSqlite3.Database, job: Job): void {
     job.posted_at ?? null,
     titleIdentityKey(job.title),
     companyKey(job.company),
-    job.priority ?? 0
+    job.priority ?? 0,
+    job.apply_email ?? null,
+    job.apply_link ?? null,
+    job.poster_url ?? null
   );
   // A stored job later seen as promoted becomes promoted; nothing ever clears the flag.
   if (job.promoted === true) db.prepare('UPDATE jobs SET promoted = 1 WHERE id = ? AND COALESCE(promoted, 0) = 0').run(job.id);

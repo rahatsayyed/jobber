@@ -33,7 +33,7 @@ export interface DiscoverResult {
   layout?: string;
 }
 
-export interface ParsedAuthor { profileKey: string; name: string }
+export interface ParsedAuthor { profileKey: string; name: string; headline?: string; company?: string }
 export interface Parsed {
   jobs: Job[];
   /** Verified authors to register, parallel to nothing: independent of `jobs`. */

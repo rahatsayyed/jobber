@@ -11,6 +11,11 @@ present — if neither is available, skip the LinkedIn-profile searches for that
 search a company you don't know) but still attempt the email search using whatever company
 value is available.
 
+**LinkedIn hiring posts.** A job whose `source` is `linkedin-posts` already has its best contact: the post's
+author was registered in `people` (category `hiring_manager`) when the post was saved. For such a job SKIP every
+`linkedin_find_profiles` call (steps 2 and 3), return `linkedin_profiles: []` and still run the email search when a
+company is known. A `linkedin-posts` job with no company gets `notes: "no_company"`.
+
 ## Steps, for EACH job
 
 1. Call `contacts.find_company_emails({company, domain?: <if known>, job_id: <job.id>})`. ALWAYS
