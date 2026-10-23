@@ -146,12 +146,6 @@ export function planWake(i: {
     byPlatform.linkedin.push({ kind: 'discover', quota: Math.min(nameCount, discoverRoom), searches: names });
   }
 
-  const tasks: Assignment[] = ORDER.filter((p) => byPlatform[p].length > 0).map((p) => ({
-    operator: `${p}-operator` as Operator,
-    platform: p,
-    tasks: byPlatform[p],
-  }));
-
   // Non-platform stages. Absent due fields mean "not tracked": nothing is planned from them.
   const stages: Stage[] = [];
   const scriptAge = due.scriptDiscoverLastHoursAgo;
@@ -164,6 +158,25 @@ export function planWake(i: {
   const unmatched = due.unmatchedJobs ?? 0;
   // Email follow-ups need the reply check the pipeline stage starts with (step 0b), so they pull the stage in.
   const pipelineDue = unmatched > 0 || newJobsExpected || (due.emailFollowupsReady ?? 0) > 0;
+
+  // The pipeline creates work in this same wake (matches, enqueued outreach rows), so like mail it pulls in LinkedIn
+  // new_outreach even when the due count was 0 at plan time. The operator reads its real queue (outreach.next_contacts)
+  // and reports done 0 when nothing is ready. Never for Naukri: cold Naukri outreach is not possible by design.
+  if (pipelineDue && remaining > 0 && allowed.has('linkedin') && ceilings.linkedin_invite?.ok && !byPlatform.linkedin.some((t) => t.kind === 'new_outreach')) {
+    const room = Math.max(0, ceilings.linkedin_invite.limit - ceilings.linkedin_invite.used);
+    const q = Math.min(remaining, room);
+    if (q > 0) {
+      byPlatform.linkedin.push({ kind: 'new_outreach', quota: q });
+      remaining -= q;
+    }
+  }
+
+  const tasks: Assignment[] = ORDER.filter((p) => byPlatform[p].length > 0).map((p) => ({
+    operator: `${p}-operator` as Operator,
+    platform: p,
+    tasks: byPlatform[p],
+  }));
+
   if (pipelineDue) stages.push({ operator: 'pipeline', kind: 'pipeline', quota: Math.min(unmatched, PIPELINE_MAX_JOBS_PER_WAKE) });
   const emailWork = (due.emailQueued ?? 0) + (due.emailFollowupsReady ?? 0);
   if (emailWork > 0 || pipelineDue) stages.push({ operator: 'mail-operator', kind: 'mail', quota: emailWork });
@@ -172,7 +185,8 @@ export function planWake(i: {
   const applyQueued = due.applyQueued ?? 0;
   const attempt = ceilings.apply_attempt;
   const applyQuota = Math.min(due.appliesLeftToday ?? 0, attempt ? Math.max(0, attempt.limit - attempt.used) : 0);
-  if (applyQueued > 0 && applyQuota > 0) stages.push({ operator: 'apply-operator', kind: 'apply', quota: applyQuota });
+  // The pipeline pulls apply in too (it may enqueue apply rows this wake); the operator reads db.list_queued_outreach.
+  if ((applyQueued > 0 || pipelineDue) && applyQuota > 0) stages.push({ operator: 'apply-operator', kind: 'apply', quota: applyQuota });
 
   if (tasks.length > 0 || stages.length > 0) return { kind: 'run', burst, tasks, ...(stages.length > 0 ? { stages } : {}) };
 

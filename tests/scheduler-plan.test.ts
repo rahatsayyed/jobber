@@ -431,3 +431,53 @@ describe('planWake: linkedin discover task', () => {
     expect(countDue(db, NOW, TUNING_DEFAULTS).linkedinDiscoverLastHoursAgo).toBeCloseTo(3);
   });
 });
+
+describe('planWake: the pipeline pulls linkedin new_outreach and apply into the same wake', () => {
+  const fresh = (o: Partial<DueCounts> = {}) => due({ unmatchedJobs: 6, appliesLeftToday: 5, ...o });
+  const run = (o: Partial<Parameters<typeof planWake>[0]> = {}) => {
+    const { d } = plan({ due: fresh(), discoverSearches: undefined, ...o });
+    if (d.kind !== 'run') return { d, li: [] as string[], nk: [] as string[], apply: false };
+    const kinds = (p: string) => d.tasks.filter((a) => a.platform === p).flatMap((a) => a.tasks.map((t) => t.kind));
+    return { d, li: kinds('linkedin'), nk: kinds('naukri'), apply: !!d.stages?.some((s) => s.kind === 'apply') };
+  };
+  it('plans linkedin new_outreach and apply with zero due counts', () => {
+    const r = run();
+    expect(r.li).toContain('new_outreach');
+    expect(r.nk).not.toContain('new_outreach');
+    expect(r.apply).toBe(true);
+    if (r.d.kind === 'run') {
+      const q = r.d.tasks.flatMap((a) => a.tasks).find((t) => t.kind === 'new_outreach')!.quota;
+      expect(q).toBeGreaterThan(0);
+      expect(q).toBeLessThanOrEqual(r.d.burst);
+    }
+  });
+  it('keeps the wake order: pipeline, mail, linkedin tasks, apply', () => {
+    const { d } = run();
+    if (d.kind !== 'run') throw new Error('expected run');
+    const ks = stepOrder(d).map((s) => s.kind);
+    expect(ks.indexOf('pipeline')).toBeLessThan(ks.indexOf('mail'));
+    expect(ks.indexOf('mail')).toBeLessThan(ks.indexOf('new_outreach'));
+    expect(ks.indexOf('new_outreach')).toBeLessThan(ks.indexOf('apply'));
+  });
+  it('no linkedin new_outreach when the linkedin_invite ceiling is exhausted', () => {
+    expect(run({ ceilings: ceil(['linkedin_invite']) }).li).not.toContain('new_outreach');
+  });
+  it('no apply when apply_attempt is exhausted or no applies are left today', () => {
+    expect(run({ ceilings: ceil(['apply_attempt']) }).apply).toBe(false);
+    expect(run({ due: fresh({ appliesLeftToday: 0 }) }).apply).toBe(false);
+  });
+  it('no linkedin task when linkedin is halted or not allowed', () => {
+    const c = ctl({ allowed: ['naukri'], halted: { linkedin: 'x', naukri: null } });
+    expect(run({ control: c }).li).toEqual([]);
+  });
+  it('does not exceed the burst together with other tasks', () => {
+    const { d } = run({ due: fresh({ followupsDue: 10 }) });
+    if (d.kind !== 'run') throw new Error('expected run');
+    const spent = d.tasks.flatMap((a) => a.tasks).filter((t) => t.kind === 'followups' || t.kind === 'new_outreach').reduce((n, t) => n + t.quota, 0);
+    expect(spent).toBeLessThanOrEqual(d.burst);
+  });
+  it('invents no work when the pipeline is not due and nothing is queued', () => {
+    const { d } = plan({ due: due({ unmatchedJobs: 0, appliesLeftToday: 5 }), discoverSearches: undefined });
+    expect(d).toMatchObject({ kind: 'skip', reason: 'nothing_due' });
+  });
+});

@@ -20,8 +20,8 @@ function orderLines(order: Step[], pipeline?: PipelinePromptInput): string[] {
     else if (s.operator === 'source-operator') L.push(`${at} Dispatch \`source-operator\` with task discover_agent quota ${s.quota} (queued source tasks only).`);
     else if (s.operator === 'pipeline') L.push(`${at} Pipeline stage (${s.quota} unscored jobs waiting): see the pipeline instructions below.`);
     else if (s.operator === 'mail-operator') L.push(`${at} Dispatch \`mail-operator\` with task mail quota ${s.quota} (queued emails and email follow-ups).`);
-    else if (s.operator === 'apply-operator') L.push(`${at} Dispatch \`apply-operator\` with task apply quota ${s.quota}.`);
-    else L.push(`${at} Dispatch \`${s.operator}\` for platform ${s.platform} with task: ${s.kind} quota ${s.quota}${searchNames(s.platform, s.kind, s.searches)}.`);
+    else if (s.operator === 'apply-operator') L.push(`${at} Dispatch \`apply-operator\` with task apply quota ${s.quota} (first read your own queue with db.list_queued_outreach: the pipeline may have just added rows; report done 0 if nothing is ready).`);
+    else L.push(`${at} Dispatch \`${s.operator}\` for platform ${s.platform} with task: ${s.kind} quota ${s.quota}${searchNames(s.platform, s.kind, s.searches)}${s.kind === 'new_outreach' ? ' (first read your own queue with outreach.next_contacts: the pipeline may have just added people; report done 0 if nothing is ready)' : ''}.`);
   });
   if (order.some((s) => s.operator === 'pipeline' || s.operator === 'mail-operator') && pipeline) L.push(...pipelineLines(pipeline));
   return L;

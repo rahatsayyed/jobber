@@ -72,9 +72,9 @@ describe('planner emits the wake in order', () => {
     expect(d.stages?.find((s) => s.kind === 'mail')?.quota).toBe(3);
   });
 
-  it('a script pass alone plans no agent task, then the pipeline and mail stages', () => {
+  it('a script pass alone plans no agent task except the pipeline-pulled linkedin new_outreach, then the pipeline and mail stages', () => {
     const d = run(plan({ due: due({ scriptDiscoverLastHoursAgo: 7, inboxLastCheckedMinAgo: 1 }) }));
-    expect(d.tasks).toEqual([]);
+    expect(d.tasks.map((a) => [a.platform, a.tasks.map((t) => t.kind)])).toEqual([['linkedin', ['new_outreach']]]);
     expect(d.stages?.map((s) => s.kind)).toEqual(['discover_scripts', 'pipeline', 'mail']);
     expect(d.stages?.[0].operator).toBe('code');
   });
