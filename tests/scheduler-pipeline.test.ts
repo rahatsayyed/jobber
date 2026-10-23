@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,7 +9,7 @@ import type { PacingConfig } from '../src/outreach/pacing.js';
 import type { CeilingStatus, LimitKey } from '../src/outreach/limits.js';
 import type { ControlState } from '../src/scheduler/control.js';
 import { countDue, SCRIPT_DISCOVER_KEY, type DueCounts } from '../src/scheduler/due.js';
-import { planWake, stepOrder, PIPELINE_MAX_JOBS_PER_WAKE, PIPELINE_MAX_PREPARE_PER_WAKE, PIPELINE_LIST_PAGE, type PlanKnobs, type WakeDecision } from '../src/scheduler/plan.js';
+import { planWake, stepOrder, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_WINDOW_HOURS, PIPELINE_MAX_PREPARE_PER_WAKE, PIPELINE_LIST_PAGE, type PlanKnobs, type WakeDecision } from '../src/scheduler/plan.js';
 import { buildWakePrompt } from '../src/scheduler/prompt.js';
 import { runCodePass, statusLines, pipelineLines, targetRegionsLine, loadHuntPreferences, DEFAULT_HUNT_ROLE, DEFAULT_HUNT_LOCATION, type CodePassResult } from '../src/scheduler/pipeline.js';
 import { wakeOnce, type DriverDeps } from '../src/scheduler/driver.js';
@@ -111,7 +111,7 @@ describe('countDue new fields', () => {
   it('counts unscored jobs, queued emails and source tasks, ignoring the daily dead-slug error rows', () => {
     const db = openDb(':memory:');
     const t = NOW.toISOString();
-    db.prepare("INSERT INTO jobs (id, source, title, company) VALUES ('a','greenhouse','t','c'), ('b','greenhouse','t','c')").run();
+    db.prepare("INSERT INTO jobs (id, source, title, company, created_at) VALUES ('a','greenhouse','t','c','2026-10-15 07:00:00'), ('b','greenhouse','t','c','2026-10-15 07:00:00')").run();
     db.prepare("UPDATE jobs SET score = 70 WHERE id = 'b'").run();
     db.prepare("INSERT INTO outreach_queue (job_id, email_to, status) VALUES ('a','x@co.test','queued')").run();
     db.prepare("INSERT INTO source_tasks (platform, company, reason, state, created_at, updated_at) VALUES ('greenhouse','deadco','error','queued',?,?), ('greenhouse',NULL,'shape','queued',?,?), ('naukri',NULL,'error','queued',?,?)").run(t, t, t, t, t, t);
@@ -212,14 +212,16 @@ describe('prompt', () => {
 });
 
 describe('list_unscored_jobs', () => {
-  const add = (db: ReturnType<typeof openDb>, id: string, o: Record<string, unknown> = {}) => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); });
+  afterEach(() => { vi.useRealTimers(); });
+  const add =(db: ReturnType<typeof openDb>, id: string, o: Record<string, unknown> = {}) => {
     db.prepare("INSERT INTO jobs (id, source, title, company, url, apply_url, description, created_at) VALUES (?,?,?,?,?,?,?,?)")
-      .run(id, o.source ?? 'greenhouse', 'React Dev', o.company ?? 'Acme', 'https://x.test/u', o.apply_url ?? 'https://boards.greenhouse.io/a/jobs/1', 'Location: Remote\n\nbody', o.at ?? '2026-10-01 10:00:00');
+      .run(id, o.source ?? 'greenhouse', 'React Dev', o.company ?? 'Acme', 'https://x.test/u', o.apply_url ?? 'https://boards.greenhouse.io/a/jobs/1', 'Location: Remote\n\nbody', o.at ?? '2026-10-14 10:00:00');
   };
   it('returns full rows oldest first, skipping scored, excluded and given-up jobs', () => {
     const db = openDb(':memory:');
-    add(db, 'new', { at: '2026-10-03 10:00:00' });
-    add(db, 'old', { at: '2026-10-01 10:00:00' });
+    add(db, 'new', { at: '2026-10-15 02:00:00' });
+    add(db, 'old', { at: '2026-10-14 10:00:00' });
     add(db, 'scored'); db.prepare("UPDATE jobs SET score = 70 WHERE id = 'scored'").run();
     add(db, 'vetoed'); db.prepare("UPDATE jobs SET excluded_reason = 'x' WHERE id = 'vetoed'").run();
     add(db, 'gaveup');
@@ -232,8 +234,8 @@ describe('list_unscored_jobs', () => {
   });
   it('offers matched jobs without an outreach row first, marked already_matched, at most PREP_OFFER_LIMIT times', () => {
     const db = openDb(':memory:');
-    add(db, 'fresh', { at: '2026-10-01 10:00:00' });
-    add(db, 'pending', { at: '2026-10-02 10:00:00' }); db.prepare("UPDATE jobs SET score = 74 WHERE id = 'pending'").run();
+    add(db, 'fresh', { at: '2026-10-14 10:00:00' });
+    add(db, 'pending', { at: '2026-10-15 01:00:00' }); db.prepare("UPDATE jobs SET score = 74 WHERE id = 'pending'").run();
     add(db, 'low'); db.prepare("UPDATE jobs SET score = 59 WHERE id = 'low'").run();
     add(db, 'queued'); db.prepare("UPDATE jobs SET score = 80 WHERE id = 'queued'").run();
     db.prepare("INSERT INTO outreach_queue (job_id, status) VALUES ('queued', 'queued')").run();
@@ -256,10 +258,10 @@ describe('list_unscored_jobs', () => {
   });
   it('does not let one source starve the others: unscored jobs are taken round-robin by source, oldest first within a source', () => {
     const db = openDb(':memory:');
-    add(db, 'g1', { at: '2026-10-01 10:00:00' });
-    add(db, 'g2', { at: '2026-10-01 11:00:00' });
-    add(db, 'g3', { at: '2026-10-01 12:00:00' });
-    add(db, 'n1', { source: 'naukri', apply_url: 'https://www.naukri.com/job-listings-x', at: '2026-10-05 10:00:00' });
+    add(db, 'g1', { at: '2026-10-14 10:00:00' });
+    add(db, 'g2', { at: '2026-10-14 11:00:00' });
+    add(db, 'g3', { at: '2026-10-14 12:00:00' });
+    add(db, 'n1', { source: 'naukri', apply_url: 'https://www.naukri.com/job-listings-x', at: '2026-10-15 03:00:00' });
     expect(listUnscoredJobs(db, { limit: 2 }).map((r) => r.id)).toEqual(['g1', 'n1']);
     expect(listUnscoredJobs(db, { limit: 4 }).map((r) => r.id)).toEqual(['g1', 'n1', 'g2', 'g3']);
   });
@@ -290,9 +292,8 @@ describe('list_unscored_jobs', () => {
       db.prepare('UPDATE jobs SET description = ? WHERE id = ?').run('y'.repeat(50000), `j${i}`);
     }
     expect(JSON.stringify(listUnscoredJobs(db, { limit: PIPELINE_LIST_PAGE, kind: 'unscored' })).length).toBeLessThan(30000);
-    expect(PIPELINE_MAX_JOBS_PER_WAKE).toBe(100);
     expect(PIPELINE_MAX_PREPARE_PER_WAKE).toBe(15);
-    expect(PIPELINE_LIST_PAGE * Math.ceil(PIPELINE_MAX_JOBS_PER_WAKE / PIPELINE_LIST_PAGE)).toBe(PIPELINE_MAX_JOBS_PER_WAKE);
+    expect(PIPELINE_LIST_PAGE * Math.ceil(PIPELINE_MAX_JOBS_PER_WAKE_CEILING / PIPELINE_LIST_PAGE)).toBe(PIPELINE_MAX_JOBS_PER_WAKE_CEILING);
   });
   it('the description cap shrinks with the batch size and never exceeds the maximum or drops below the floor', () => {
     expect(unscoredDescriptionCap(10)).toBe(UNSCORED_DESCRIPTION_CHARS);
@@ -319,9 +320,9 @@ describe('list_unscored_jobs', () => {
   });
   it('kind matched returns only already-matched jobs up to the full limit; kind unscored pages through the round-robin order', () => {
     const db = openDb(':memory:');
-    for (let i = 0; i < 20; i++) { add(db, `m${i}`, { at: `2026-10-01 10:${String(i).padStart(2, '0')}:00` }); db.prepare('UPDATE jobs SET score = ? WHERE id = ?').run(60 + i, `m${i}`); }
-    for (let i = 0; i < 7; i++) add(db, `g${i}`, { at: `2026-10-02 10:0${i}:00` });
-    for (let i = 0; i < 3; i++) add(db, `n${i}`, { source: 'naukri', apply_url: 'https://www.naukri.com/job-listings-x', at: `2026-10-03 10:0${i}:00` });
+    for (let i = 0; i < 20; i++) { add(db, `m${i}`, { at: `2026-10-14 10:${String(i).padStart(2, '0')}:00` }); db.prepare('UPDATE jobs SET score = ? WHERE id = ?').run(60 + i, `m${i}`); }
+    for (let i = 0; i < 7; i++) add(db, `g${i}`, { at: `2026-10-15 01:0${i}:00` });
+    for (let i = 0; i < 3; i++) add(db, `n${i}`, { source: 'naukri', apply_url: 'https://www.naukri.com/job-listings-x', at: `2026-10-15 02:0${i}:00` });
     const m = listUnscoredJobs(db, { kind: 'matched', limit: 15, matchThreshold: 60 });
     expect(m).toHaveLength(15);
     expect(m.every((r) => r.already_matched)).toBe(true);
@@ -351,10 +352,13 @@ describe('list_unscored_jobs', () => {
     expect(by).toEqual({ gh: 'apply_capable', wd: 'discover_only_source', odd: 'apply_tier:unknown_host' });
     expect(listUnscoredJobs(db)[0].channels.map((c) => c.channel)).toEqual(['email', 'linkedin', 'naukri', 'apply']);
   });
-  it('the pipeline quota is capped per wake', () => {
-    const d = run(plan({ due: due({ unmatchedJobs: 400, inboxLastCheckedMinAgo: 1 }) }));
-    expect(d.stages?.find((s) => s.kind === 'pipeline')?.quota).toBe(PIPELINE_MAX_JOBS_PER_WAKE);
-    expect(PIPELINE_MAX_JOBS_PER_WAKE).toBe(100);
+  it('the pipeline quota is every unscored job of the window, capped only by the safety ceiling', () => {
+    const d = run(plan({ due: due({ unmatchedJobs: 250, inboxLastCheckedMinAgo: 1 }) }));
+    expect(d.stages?.find((s) => s.kind === 'pipeline')?.quota).toBe(250);
+    const big = run(plan({ due: due({ unmatchedJobs: 5000, inboxLastCheckedMinAgo: 1 }) }));
+    expect(big.stages?.find((s) => s.kind === 'pipeline')?.quota).toBe(PIPELINE_MAX_JOBS_PER_WAKE_CEILING);
+    expect(PIPELINE_MAX_JOBS_PER_WAKE_CEILING).toBe(400);
+    expect(PIPELINE_WINDOW_HOURS).toBe(24);
   });
   it('P1 names the tool, the cap and apply_class; the direct-call list names every tool used', () => {
     const t = pipelineLines({ matchThreshold: 60, sendLimit: 1, targetRegions: 'T', followupsAutonomous: false }).join('\n');
@@ -362,12 +366,20 @@ describe('list_unscored_jobs', () => {
     expect(t).toContain('`db.list_unscored_jobs({kind: "unscored", limit: 20, offset: 0})`');
     expect(t).toContain('already_matched');
     expect(t).toContain('apply_class');
-    expect(t).toContain('at most 100 per wake');
-    expect(t).toContain('up to 20 batches');
+    expect(t).toContain('EVERY unscored job saved in the last 24 hours');
+    expect(t).toContain('KEEP PAGING');
+    expect(t).toContain('fewer than 20 rows');
+    expect(t).toContain('never reading more than 400 jobs');
+    expect(t).toContain('running low on wall time or tokens');
+    expect(t).toContain('the unscored jobs simply wait for the next wake');
+    expect(t).toContain('never skip the veto step (P2b) for the jobs you did score');
+    expect(t).toContain('duplicates of a job already considered');
+    expect(t).not.toContain('at most 100 per wake');
     expect(t).toContain('WAVES of at most 6 matchers');
     expect(t).toContain('wait for the whole wave');
     expect(t).toContain('batches of at most 5');
-    expect(t).toContain('not against the match cap');
+    expect(t).toContain('not windowed');
+    expect(t).toContain('never uses a slot');
     expect(t).toContain('only the first 15');
     expect(t).toContain('offered again next wake as already_matched');
     for (const c of ['db.sweep_deadlines', 'db.list_unscored_jobs', 'db.save_match_result', 'gates.apply_vetoes', 'db.mark_excluded', 'job-fetch.source_status', 'job-fetch.board_status']) {

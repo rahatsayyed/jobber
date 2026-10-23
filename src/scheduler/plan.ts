@@ -39,13 +39,14 @@ export const NAUKRI_DETAIL_QUOTA = 5;
 export const LINKEDIN_DISCOVER_EVERY_HOURS = 6;
 /** Hours between code passes over the script providers (a constant, no env key). */
 export const SCRIPT_DISCOVER_EVERY_HOURS = 6;
-/** Most unscored jobs one wake's pipeline stage takes (a constant, no env key); the rest wait for the next wake. */
-export const PIPELINE_MAX_JOBS_PER_WAKE = 100; // 20 matcher batches of 5 in waves of PIPELINE_MATCH_WAVE; read in pages of PIPELINE_LIST_PAGE because one list_unscored_jobs result must stay one tool result (22KB passed, 54KB did not)
+/** The pipeline stage considers every unscored job saved in the last PIPELINE_WINDOW_HOURS hours (no fixed count), read in pages of PIPELINE_LIST_PAGE (one list_unscored_jobs result must stay one tool result: 22KB passed, 54KB did not), up to a hard ceiling. Defined in src/pipelineWork.ts beside the window and dedupe rules. */
+export { PIPELINE_WINDOW_HOURS, PIPELINE_MAX_JOBS_PER_WAKE_CEILING } from '../pipelineWork.js';
+import { PIPELINE_MAX_JOBS_PER_WAKE_CEILING as JOBS_CEILING } from '../pipelineWork.js';
 /** Matcher agents dispatched at once; the wake waits for a wave to finish before the next. */
 export const PIPELINE_MATCH_WAVE = 6;
 /** Unscored jobs read per `db.list_unscored_jobs` call (kind unscored, offset 0, 20, 40 ...). */
 export const PIPELINE_LIST_PAGE = 20;
-/** Most matched jobs one wake sends to outreach-preparer (about 7 calls and a PDF render each): the highest stored scores. The rest stay matched without an outreach row and come back as already_matched. */
+/** Most matched jobs one wake sends to outreach-preparer (about 7 calls and a PDF render each): the highest stored scores; only jobs with a contact, a profile or apply_capable count toward it. The rest stay matched without an outreach row and come back as already_matched. */
 export const PIPELINE_MAX_PREPARE_PER_WAKE = 15;
 /** Most source_tasks one source-operator task may work per wake. */
 export const SOURCE_TASK_QUOTA = 10;
@@ -183,7 +184,7 @@ export function planWake(i: {
     tasks: byPlatform[p],
   }));
 
-  if (pipelineDue) stages.push({ operator: 'pipeline', kind: 'pipeline', quota: Math.min(unmatched, PIPELINE_MAX_JOBS_PER_WAKE) });
+  if (pipelineDue) stages.push({ operator: 'pipeline', kind: 'pipeline', quota: Math.min(unmatched, JOBS_CEILING) });
   const emailWork = (due.emailQueued ?? 0) + (due.emailFollowupsReady ?? 0);
   if (emailWork > 0 || pipelineDue) stages.push({ operator: 'mail-operator', kind: 'mail', quota: emailWork });
   // Apply: its own quota (not the burst) = the smaller of what is left of MAX_APPLIES_PER_DAY and of APPLY_MAX_ATTEMPTS_PER_DAY.

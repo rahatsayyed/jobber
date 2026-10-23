@@ -8,6 +8,7 @@ import { companyKey, repostCount, titleIdentityKey } from './reposts.js';
 import { isApplyBlockedSource, isHeldSource } from './lib/discoverOnly.js';
 import { classifyApplyUrl } from './apply/registry.js';
 import { channelsFor, type ChannelVerdict } from './lib/channels.js';
+import { applyPipelineSkips, planPipelineWork, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_SKIP_SQL, PIPELINE_WINDOW_HOURS, sqlTime } from './pipelineWork.js';
 import { migrateOutreachTables } from './outreach/schema.js';
 import { migrateSchedulerTables } from './scheduler/runLog.js';
 import { buildEmailParts, loadEmailLinks, stripMarkers, type EmailLink } from './emailHtml.js';
@@ -984,7 +985,7 @@ export const PREP_OFFER_LIMIT = 4; // was 2: with a prepare cap per wake a match
  */
 export function listUnscoredJobs(
   db: BetterSqlite3.Database,
-  opts: { limit?: number; matchThreshold?: number; kind?: 'all' | 'matched' | 'unscored'; offset?: number } = {},
+  opts: { limit?: number; matchThreshold?: number; kind?: 'all' | 'matched' | 'unscored'; offset?: number; now?: Date } = {},
 ): UnscoredJob[] {
   const limit = Math.max(1, Math.min(100, Math.floor(opts.limit ?? 25)));
   const kind = opts.kind ?? 'all';
@@ -992,13 +993,19 @@ export function listUnscoredJobs(
   // kind `matched`: only the already-matched jobs, up to the full limit (they count against the prepare cap, not the match cap).
   // kind `unscored`: only unscored jobs, `offset` rows into the round-robin order (the wake reads them in pages).
   // kind `all` (default): both, matched capped at half of the limit.
+  // Window and dedupe: unscored jobs are the ones saved in the last PIPELINE_WINDOW_HOURS hours. A duplicate (same company and title
+  // as a scored job, or an earlier or ATS-hosted job of the batch) or a repeated contact (outreach, connection or application on
+  // file within 90 days) is marked in jobs.status ('duplicate', 'repeat_contact') and not offered. Rows are never deleted.
+  const now = opts.now ?? new Date();
+  applyPipelineSkips(db, planPipelineWork(db, { now, failLimit: MATCH_FAIL_LIMIT, matchThreshold: opts.matchThreshold, prepOfferLimit: PREP_OFFER_LIMIT }).skips);
+  const windowStart = sqlTime(new Date(now.getTime() - PIPELINE_WINDOW_HOURS * 3600_000));
   const pendingLimit = kind === 'matched' ? limit : Math.max(1, Math.floor(limit / 2));
   type Row = Record<string, string | number | null>;
   const cols = 'id, source, title, company, url, apply_url, description, posted_at, score';
   const pending: Row[] = typeof opts.matchThreshold === 'number' && kind !== 'unscored'
     ? db.prepare(
       `SELECT ${cols} FROM jobs
-        WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ?
+        WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ? AND ${PIPELINE_SKIP_SQL}
           AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id)
         ORDER BY score DESC, created_at ASC, rowid ASC LIMIT ?`,
     ).all(opts.matchThreshold, PREP_OFFER_LIMIT, pendingLimit) as Row[]
@@ -1010,9 +1017,9 @@ export function listUnscoredJobs(
   const fresh: Row[] = kind === 'matched' ? [] : db.prepare(
     `SELECT ${cols} FROM (
        SELECT *, rowid AS rid, ROW_NUMBER() OVER (PARTITION BY source ORDER BY created_at ASC, rowid ASC) AS rn FROM jobs
-        WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ?)
+        WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ? AND created_at >= ? AND ${PIPELINE_SKIP_SQL})
       ORDER BY rn ASC, created_at ASC, rid ASC LIMIT ? OFFSET ?`,
-  ).all(MATCH_FAIL_LIMIT, Math.max(0, limit - pending.length), offset) as Row[];
+  ).all(MATCH_FAIL_LIMIT, windowStart, Math.max(0, Math.min(limit - pending.length, PIPELINE_MAX_JOBS_PER_WAKE_CEILING - offset)), offset) as Row[];
   const toJob = (r: Row, matched: boolean): UnscoredJob => {
     const job: Job = {
       id: r.id as string, source: (r.source ?? '') as string, title: (r.title ?? '') as string, company: (r.company ?? '') as string,
