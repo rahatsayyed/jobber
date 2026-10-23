@@ -262,7 +262,7 @@ describe('csrf and origin', () => {
   it('session endpoint returns the csrf token; POST without it is 403, foreign origin 403, correct passes', async () => {
     const { h: hh, cookie } = await authed();
     const s = JSON.parse((await hh.call('GET', '/api/session', { headers: { cookie } })).body);
-    expect(Object.keys(s).sort()).toEqual(['authAt', 'chatEnabled', 'csrf', 'expiresAt', 'reauthRequired']);
+    expect(Object.keys(s).sort()).toEqual(['applyEnabled', 'authAt', 'chatEnabled', 'csrf', 'expiresAt', 'reauthRequired']);
     const origin = `http://127.0.0.1:${hh.port}`;
     expect((await hh.call('POST', '/api/logout', { headers: { cookie, origin } })).status).toBe(403);
     expect((await hh.call('POST', '/api/logout', { headers: { cookie, origin, 'x-csrf-token': 'nope' } })).status).toBe(403);
@@ -418,7 +418,7 @@ describe('session payload mode', () => {
     try {
       const j = JSON.parse((await x.get('/api/session')).body);
       expect(j.mode).toEqual({ mode: 'DRY RUN', flags: { JOBBER_DRY_RUN: '1' } });
-      expect(Object.keys(j).sort()).toEqual(['authAt', 'chatEnabled', 'csrf', 'expiresAt', 'mode', 'reauthRequired']);
+      expect(Object.keys(j).sort()).toEqual(['applyEnabled', 'authAt', 'chatEnabled', 'csrf', 'expiresAt', 'mode', 'reauthRequired']);
     } finally {
       await x.h.close();
     }

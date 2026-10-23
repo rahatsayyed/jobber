@@ -20,6 +20,8 @@ import { createOidc } from '../src/dash/oidc.js';
 import { tokenStatus } from '../src/dash/accessToken.js';
 import { loadDesktopKeys, keysFailureMessage, oidcConfigForDesktop, type DesktopClient } from '../src/dash/desktopClient.js';
 import { openReadOnlyDb } from '../src/dash/readDb.js';
+import { dbPath } from '../src/dbPath.js';
+import { enqueueManualRequest } from '../src/manual/webRequest.js';
 
 let maskLiterals: string[] = [];
 process.on('unhandledRejection', (reason) => {
@@ -175,6 +177,7 @@ async function main(): Promise<number> {
       run: defaultRun,
       sessionsToShow: [cfg.session],
       secrets: allSecrets,
+      apply: { enabled: cfg.applyRequestEnabled, enqueue: (url, force, now) => enqueueManualRequest(dbPath(), url, force, now) },
       chat: {
         enabled: cfg.chatEnabled,
         session: cfg.session,

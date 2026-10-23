@@ -436,6 +436,8 @@ describe('web and dashboard-login checks', () => {
     expect((await run(OWNER + 'WEB_TRUST_PROXY=true\n')).login.status).toBe('warn');
     expect((await run(OWNER + 'WEB_CHAT_ENABLED=true\n', { set: 'full' })).login.status).toBe('warn');
     expect((await run(OWNER + 'WEB_CHAT_ENABLED=true\n', { set: 'read_only' })).login.status).toBe('pass');
+    expect((await run(OWNER + 'WEB_APPLY_REQUEST_ENABLED=true\n')).login.status).toBe('pass');
+    expect((await run(OWNER + 'WEB_APPLY_REQUEST_ENABLED=true\nWEB_BIND=192.168.1.5\nWEB_ALLOW_REMOTE_BIND=true\n')).login.status).toBe('warn');
   });
   it('web check fails on invalid port or bind, passes otherwise; process env wins', async () => {
     expect((await run(OWNER + 'WEB_PORT=80\n')).web.status).toBe('fail');

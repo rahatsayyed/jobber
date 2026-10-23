@@ -600,6 +600,9 @@ export const ccgramChecks: Check[] = [
         }
         if (set !== 'read_only') warns.push('WEB_CHAT_ENABLED=true while the permission set is not read_only');
       }
+      if ((env.WEB_APPLY_REQUEST_ENABLED ?? '').trim().toLowerCase() === 'true' && !isLoopbackBind(bind)) {
+        warns.push('WEB_APPLY_REQUEST_ENABLED=true on a non-loopback WEB_BIND (anyone who signs in can queue priority requests)');
+      }
       if (warns.length) return warn(`${mode} mode: ${warns.join('; ')}`, fix);
       return pass(mode === 'token' ? `token mode, token set${tokenInfo}` : `${mode} mode, account pinned, files private, config valid`);
     },

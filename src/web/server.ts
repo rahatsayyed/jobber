@@ -36,6 +36,7 @@ import { sessionsPanel } from '../dash/sessionsPanel.js';
 import { buildConfigView } from '../dash/configView.js';
 import { loadStatic } from './page.js';
 import { createSettingsRoutes, type SettingsDeps } from './settingsRoutes.js';
+import { createApplyRoutes, type ApplyDeps } from './applyRoutes.js';
 import { applySecurityHeaders, HttpError, json, readJson, securityHeaders, type Ctx } from './router.js';
 
 export interface WebDeps {
@@ -62,6 +63,7 @@ export interface WebDeps {
   root?: string; // project root for the config view, default cwd
   staticDir?: string; // default: ./static next to this file
   settings?: SettingsDeps; // dashboard settings editor (plan 8H); routes exist only when set. Never given to chat.
+  apply?: ApplyDeps; // /apply request box (WEB_APPLY_REQUEST_ENABLED); absent or enabled false: its routes answer 404
 }
 
 export { STATUS_COMMANDS };
@@ -326,6 +328,7 @@ export function createWebServer(deps: WebDeps): http.Server {
       expiresAt: s.expiresAt,
       authAt: s.authAt,
       chatEnabled: deps.chat.enabled,
+      applyEnabled: deps.apply?.enabled === true,
       reauthRequired: !isFresh(s, now(), reauthMaxAgeSec),
       ...(deps.settings?.currentMode ? { mode: deps.settings.currentMode() } : {}),
     });
@@ -500,6 +503,12 @@ export function createWebServer(deps: WebDeps): http.Server {
     audit(deps.auth, 'chat_send', { ip: c.ip, textHash: textHash(v.text) }, t);
     json(c.res, 200, { ok: true });
   });
+
+  for (const r of createApplyRoutes(deps.apply ?? { enabled: false, enqueue: () => ({ ok: false, reason: 'disabled' }) }, {
+    auth: deps.auth, data: deps.data, now, reauthMaxAgeSec,
+    reauthUrl: authMode === 'token' ? '/#/login?reauth=1' : '/auth/login?reauth=1',
+    root: deps.root ?? process.cwd(), processEnv: deps.env ?? process.env,
+  })) add(r.method, r.pattern, false, r.fn);
 
   if (deps.settings) {
     for (const r of createSettingsRoutes(deps.settings, { auth: deps.auth, now, authMode, reauthMaxAgeSec })) {

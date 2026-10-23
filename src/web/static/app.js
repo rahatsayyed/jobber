@@ -14,12 +14,14 @@ import * as runs from './views/runs.js';
 import * as config from './views/config.js';
 import * as audit from './views/audit.js';
 import * as chat from './views/chat.js';
+import * as apply from './views/apply.js';
 import * as settings from './views/settings.js';
 
 const VIEWS = [
   ['overview', 'Overview', overview], ['jobs', 'Jobs', jobs], ['people', 'People', people], ['mail', 'Mail', mail],
   ['outcomes', 'Outcomes', outcomes], ['sessions', 'Sessions', sessions], ['runs', 'Runs', runs],
   ['config', 'Config', config], ['settings', 'Settings', settings], ['audit', 'Audit', audit], ['chat', 'Chat', chat],
+  ['apply', 'Apply', apply],
 ];
 
 const root = document.getElementById('app');
@@ -102,7 +104,7 @@ async function signOut() {
 }
 
 function nav(active) {
-  const items = VIEWS.filter(([n]) => n !== 'chat' || (current && current.chatEnabled));
+  const items = VIEWS.filter(([n]) => (n !== 'chat' || (current && current.chatEnabled)) && (n !== 'apply' || (current && current.applyEnabled)));
   return el('nav', { 'aria-label': 'Sections' },
     items.map(([n, label]) => button(label, () => { location.hash = `#/${n}`; }, {
       class: n === active ? 'tab active' : 'tab', 'aria-current': n === active ? 'page' : null,

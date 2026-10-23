@@ -16,6 +16,7 @@ export interface WebConfig {
   trustProxy: boolean;
   authDb: string;
   chatEnabled: boolean;
+  applyRequestEnabled: boolean;
   session: string;
   window: string;
   issuer: string;
@@ -129,6 +130,7 @@ export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: bool
   }
   const trustProxy = bool(env, 'WEB_TRUST_PROXY', errs);
   const chatEnabled = bool(env, 'WEB_CHAT_ENABLED', errs);
+  const applyRequestEnabled = bool(env, 'WEB_APPLY_REQUEST_ENABLED', errs);
   const authDb = authDbPathFromEnv(env);
   const settingsEdit = bool(env, 'WEB_SETTINGS_EDIT', errs);
   const settingsRemoteSafety = bool(env, 'WEB_SETTINGS_REMOTE_SAFETY', errs);
@@ -215,7 +217,7 @@ export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: bool
   return {
     ok: true,
     config: {
-      port, bind, allowRemoteBind, allowedHosts, trustProxy, authDb, chatEnabled, session, window,
+      port, bind, allowRemoteBind, allowedHosts, trustProxy, authDb, chatEnabled, applyRequestEnabled, session, window,
       issuer, clientId, clientSecret,
       redirectUri: authMode === 'google_desktop' ? redirectFor(googleRedirectShape, port) : redirectUri,
       reauthPrompt, reauthMaxAgeSec, allowedEmail, authMode, authModeImplicit, googleKeysPath, googleRedirectShape,

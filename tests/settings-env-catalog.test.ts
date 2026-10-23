@@ -188,7 +188,7 @@ describe('rules (D22) over the whole catalog', () => {
       'BACKUP_AGE_RECIPIENT', 'BACKUP_RCLONE_REMOTE', 'BACKUP_INCLUDE_SECRETS',
     ];
     // Reviewed additions: a path rule hit (SITE_ACCOUNTS_FILE) and tmux session names (R_SESSION, same risk as WEB_TMUX_*).
-    const ADDED = ['SITE_ACCOUNTS_FILE', 'SCHEDULER_TMUX_SESSION', 'STACK_TMUX_SESSION'];
+    const ADDED = ['SITE_ACCOUNTS_FILE', 'SCHEDULER_TMUX_SESSION', 'STACK_TMUX_SESSION', 'WEB_APPLY_REQUEST_ENABLED'];
     for (const k of PLAN) expect(spec(k).tier, k).toBe('never');
     const never = ENV_CATALOG.filter((s) => s.tier === 'never').map((s) => s.key).sort();
     expect(never).toEqual([...PLAN, ...ADDED].sort());
