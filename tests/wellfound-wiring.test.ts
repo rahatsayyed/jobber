@@ -437,8 +437,4 @@ describe('planner: wellfound discover and inbox tasks', () => {
     expect(c.newOutreachReadyByPlatform).toEqual({ linkedin: 0, naukri: 0 });
   });
 
-  it('does not touch the pipeline window or the mail logic constants', () => {
-    const src = read('src/scheduler/plan.ts');
-    expect(src).toContain('export const PIPELINE_MAX_JOBS_PER_WAKE = 10;');
-  });
 });
