@@ -11,7 +11,7 @@ import { hostMatches } from '../lib/hostClass.js';
 import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS, type LiLauncher } from '../webcore/launch.js';
 import { slugify, buildSearchUrl } from '../naukri/url.js';
 import { isNaukriUrl, THREAD_REF_RE, threadUrl } from '../naukri/page.js';
-import { runNaukriDiscover, type DiscoverIo, type NaukriDiscoverResult } from '../naukri/discover.js';
+import { discoverGapMs, runNaukriDiscover, type DiscoverIo, type NaukriDiscoverResult } from '../naukri/discover.js';
 import { gateInput } from '../safety/inputGate.js';
 import { isDryRun } from '../safety/dryRun.js';
 import { checkStyle, loadStyleConfigSafe } from '../safety/styleGate.js';
@@ -204,6 +204,8 @@ interface Session {
 }
 
 let session: Session | null = null;
+/** The session a discover search last ran on; a new session (or none) means the next search needs no pacing pause. */
+let discoveredOn: Session | null = null;
 let lazyDb: BetterSqlite3.Database | null = null;
 let chain: Promise<unknown> = Promise.resolve();
 
@@ -775,6 +777,9 @@ export function naukriDiscover(
     if (!session) return jsonOut({ status: 'no_session', hint: 'call naukri_open first' });
     const io: DiscoverIo = {
       load: async (url) => {
+        // Pace the named searches: a random 2 to 5 s pause before every search after the first one of this session.
+        if (discoveredOn === session) await session!.page.waitForTimeout(discoverGapMs()).catch(() => {});
+        discoveredOn = session;
         const refused = await loadPage(url, deps);
         if (!refused) return 'ok';
         return (JSON.parse(refused) as { status?: string }).status === 'login_required' ? 'login_required' : 'failed';

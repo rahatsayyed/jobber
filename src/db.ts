@@ -949,6 +949,17 @@ export const MATCH_FAIL_LIMIT = 2;
  */
 export const UNSCORED_DESCRIPTION_CHARS = 1500;
 
+/** Whole-result budget (characters) for one list_unscored_jobs call, under the 54KB result that failed; each row also carries about 450 characters of fields and channels. */
+const UNSCORED_RESULT_BUDGET = 29000;
+const UNSCORED_ROW_OVERHEAD = 450;
+const UNSCORED_DESCRIPTION_FLOOR = 500;
+
+/** Description cap for a batch of `limit` rows: the full UNSCORED_DESCRIPTION_CHARS for small batches, shrinking so a big batch still fits one tool result. */
+export function unscoredDescriptionCap(limit: number): number {
+  const n = Math.max(1, Math.floor(limit));
+  return Math.max(UNSCORED_DESCRIPTION_FLOOR, Math.min(UNSCORED_DESCRIPTION_CHARS, Math.floor(UNSCORED_RESULT_BUDGET / n) - UNSCORED_ROW_OVERHEAD));
+}
+
 export interface UnscoredJob extends Job {
   /** `apply_capable`, or the closed reason code from channelsFor (`discover_only_source`, `apply_tier:<tier>`, `held_review`). */
   apply_class: string;
@@ -962,7 +973,7 @@ export interface UnscoredJob extends Job {
 }
 
 /** Times a matched job without an outreach row is handed back before it is dropped (a job with no contact and no profile never gets a row). */
-export const PREP_OFFER_LIMIT = 2;
+export const PREP_OFFER_LIMIT = 4; // was 2: with a prepare cap per wake a matched job can wait a few wakes for a slot
 
 /**
  * The wake pipeline's input. First the jobs scored at or above `matchThreshold`, not excluded, with no outreach row yet (at most
@@ -971,28 +982,37 @@ export const PREP_OFFER_LIMIT = 2;
  * cannot starve the others. Full Job rows plus the channelsFor result (computed without a Hacker News domain check, so an HN job shows
  * hn_gate_pending until the contact stage). Without `matchThreshold` no matched job is returned.
  */
-export function listUnscoredJobs(db: BetterSqlite3.Database, opts: { limit?: number; matchThreshold?: number } = {}): UnscoredJob[] {
+export function listUnscoredJobs(
+  db: BetterSqlite3.Database,
+  opts: { limit?: number; matchThreshold?: number; kind?: 'all' | 'matched' | 'unscored'; offset?: number } = {},
+): UnscoredJob[] {
   const limit = Math.max(1, Math.min(100, Math.floor(opts.limit ?? 25)));
+  const kind = opts.kind ?? 'all';
+  const offset = Math.max(0, Math.floor(opts.offset ?? 0));
+  // kind `matched`: only the already-matched jobs, up to the full limit (they count against the prepare cap, not the match cap).
+  // kind `unscored`: only unscored jobs, `offset` rows into the round-robin order (the wake reads them in pages).
+  // kind `all` (default): both, matched capped at half of the limit.
+  const pendingLimit = kind === 'matched' ? limit : Math.max(1, Math.floor(limit / 2));
   type Row = Record<string, string | number | null>;
   const cols = 'id, source, title, company, url, apply_url, description, posted_at, score';
-  const pending: Row[] = typeof opts.matchThreshold === 'number'
+  const pending: Row[] = typeof opts.matchThreshold === 'number' && kind !== 'unscored'
     ? db.prepare(
       `SELECT ${cols} FROM jobs
         WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ?
           AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id)
         ORDER BY score DESC, created_at ASC, rowid ASC LIMIT ?`,
-    ).all(opts.matchThreshold, PREP_OFFER_LIMIT, Math.max(1, Math.floor(limit / 2))) as Row[]
+    ).all(opts.matchThreshold, PREP_OFFER_LIMIT, pendingLimit) as Row[]
     : [];
   if (pending.length) {
     const bump = db.prepare('UPDATE jobs SET prep_offers = prep_offers + 1 WHERE id = ?');
     db.transaction(() => { for (const r of pending) bump.run(r.id as string); })();
   }
-  const fresh = db.prepare(
+  const fresh: Row[] = kind === 'matched' ? [] : db.prepare(
     `SELECT ${cols} FROM (
        SELECT *, rowid AS rid, ROW_NUMBER() OVER (PARTITION BY source ORDER BY created_at ASC, rowid ASC) AS rn FROM jobs
         WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ?)
-      ORDER BY rn ASC, created_at ASC, rid ASC LIMIT ?`,
-  ).all(MATCH_FAIL_LIMIT, Math.max(0, limit - pending.length)) as Row[];
+      ORDER BY rn ASC, created_at ASC, rid ASC LIMIT ? OFFSET ?`,
+  ).all(MATCH_FAIL_LIMIT, Math.max(0, limit - pending.length), offset) as Row[];
   const toJob = (r: Row, matched: boolean): UnscoredJob => {
     const job: Job = {
       id: r.id as string, source: (r.source ?? '') as string, title: (r.title ?? '') as string, company: (r.company ?? '') as string,
@@ -1001,10 +1021,11 @@ export function listUnscoredJobs(db: BetterSqlite3.Database, opts: { limit?: num
     };
     const channels = channelsFor(job);
     const apply = channels.find((c) => c.channel === 'apply');
-    const cut = job.description.length > UNSCORED_DESCRIPTION_CHARS;
+    const cap = unscoredDescriptionCap(limit);
+    const cut = job.description.length > cap;
     return {
       ...job,
-      ...(cut ? { description: job.description.slice(0, UNSCORED_DESCRIPTION_CHARS), description_truncated: true as const } : {}),
+      ...(cut ? { description: job.description.slice(0, cap), description_truncated: true as const } : {}),
       apply_class: apply?.eligible ? 'apply_capable' : (apply?.reason ?? 'apply_tier:none'),
       channels,
       ...(matched ? { already_matched: true as const, score: r.score as number } : {}),

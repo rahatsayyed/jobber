@@ -42,7 +42,12 @@ export function loadNaukriDiscoveryConfig(file: string = NAUKRI_DISCOVERY_CONFIG
   }
 }
 
-export const LAST_RUN_KEY = 'naukri_search_last_at';
+/** Pause before every search after the first in one session, 2000 to 5000 ms, so the named searches are not fired back to back at Naukri. */
+export function discoverGapMs(rng: () => number = Math.random): number {
+  return 2000 + Math.floor(Math.min(0.999999, Math.max(0, rng())) * 3001);
+}
+
+export const LAST_RUN_KEY ='naukri_search_last_at';
 export const MAX_DETAIL_PAGES = 10;
 export const DEFAULT_DETAIL_PAGES = 5;
 const DESCRIPTION_MAX = 8000;

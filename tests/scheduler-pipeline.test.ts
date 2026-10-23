@@ -2,14 +2,14 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, listUnscoredJobs, saveMatchResultsChecked, MATCH_FAIL_LIMIT, UNSCORED_DESCRIPTION_CHARS, type Job } from '../src/db.js';
+import { openDb, listUnscoredJobs, saveMatchResultsChecked, MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT, UNSCORED_DESCRIPTION_CHARS, unscoredDescriptionCap, type Job } from '../src/db.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
 import type { PacingConfig } from '../src/outreach/pacing.js';
 import type { CeilingStatus, LimitKey } from '../src/outreach/limits.js';
 import type { ControlState } from '../src/scheduler/control.js';
 import { countDue, SCRIPT_DISCOVER_KEY, type DueCounts } from '../src/scheduler/due.js';
-import { planWake, stepOrder, PIPELINE_MAX_JOBS_PER_WAKE, type PlanKnobs, type WakeDecision } from '../src/scheduler/plan.js';
+import { planWake, stepOrder, PIPELINE_MAX_JOBS_PER_WAKE, PIPELINE_MAX_PREPARE_PER_WAKE, PIPELINE_LIST_PAGE, type PlanKnobs, type WakeDecision } from '../src/scheduler/plan.js';
 import { buildWakePrompt } from '../src/scheduler/prompt.js';
 import { runCodePass, statusLines, pipelineLines, targetRegionsLine, loadHuntPreferences, DEFAULT_HUNT_ROLE, DEFAULT_HUNT_LOCATION, type CodePassResult } from '../src/scheduler/pipeline.js';
 import { wakeOnce, type DriverDeps } from '../src/scheduler/driver.js';
@@ -230,7 +230,7 @@ describe('list_unscored_jobs', () => {
     expect(countDue(db, NOW, loadTuning({}), {}).unmatchedJobs).toBe(2);
     expect(listUnscoredJobs(db, { limit: 1 })).toHaveLength(1);
   });
-  it('offers matched jobs without an outreach row first, marked already_matched, at most twice', () => {
+  it('offers matched jobs without an outreach row first, marked already_matched, at most PREP_OFFER_LIMIT times', () => {
     const db = openDb(':memory:');
     add(db, 'fresh', { at: '2026-10-01 10:00:00' });
     add(db, 'pending', { at: '2026-10-02 10:00:00' }); db.prepare("UPDATE jobs SET score = 74 WHERE id = 'pending'").run();
@@ -242,7 +242,7 @@ describe('list_unscored_jobs', () => {
     expect(first.map((r) => r.id)).toEqual(['pending', 'fresh']);
     expect(first[0]).toMatchObject({ already_matched: true, score: 74 });
     expect(first[1].already_matched).toBeUndefined();
-    expect(listUnscoredJobs(db, { limit: 10, matchThreshold: 60 }).map((r) => r.id)).toEqual(['pending', 'fresh']);
+    for (let n = 1; n < PREP_OFFER_LIMIT; n++) expect(listUnscoredJobs(db, { limit: 10, matchThreshold: 60 }).map((r) => r.id)).toEqual(['pending', 'fresh']);
     expect(listUnscoredJobs(db, { limit: 10, matchThreshold: 60 }).map((r) => r.id)).toEqual(['fresh']);
     expect(listUnscoredJobs(db, { limit: 10 }).map((r) => r.id)).toEqual(['fresh']);
   });
@@ -285,11 +285,62 @@ describe('list_unscored_jobs', () => {
   });
   it('a full wake batch of oversized postings serializes under 30000 characters (one tool result: 22KB passed, 54KB did not)', () => {
     const db = openDb(':memory:');
-    for (let i = 0; i < PIPELINE_MAX_JOBS_PER_WAKE; i++) {
+    for (let i = 0; i < PIPELINE_LIST_PAGE; i++) {
       add(db, `j${i}`);
       db.prepare('UPDATE jobs SET description = ? WHERE id = ?').run('y'.repeat(50000), `j${i}`);
     }
-    expect(JSON.stringify(listUnscoredJobs(db, { limit: PIPELINE_MAX_JOBS_PER_WAKE })).length).toBeLessThan(30000);
+    expect(JSON.stringify(listUnscoredJobs(db, { limit: PIPELINE_LIST_PAGE, kind: 'unscored' })).length).toBeLessThan(30000);
+    expect(PIPELINE_MAX_JOBS_PER_WAKE).toBe(100);
+    expect(PIPELINE_MAX_PREPARE_PER_WAKE).toBe(15);
+    expect(PIPELINE_LIST_PAGE * Math.ceil(PIPELINE_MAX_JOBS_PER_WAKE / PIPELINE_LIST_PAGE)).toBe(PIPELINE_MAX_JOBS_PER_WAKE);
+  });
+  it('the description cap shrinks with the batch size and never exceeds the maximum or drops below the floor', () => {
+    expect(unscoredDescriptionCap(10)).toBe(UNSCORED_DESCRIPTION_CHARS);
+    expect(unscoredDescriptionCap(1)).toBe(UNSCORED_DESCRIPTION_CHARS);
+    expect(unscoredDescriptionCap(25)).toBeLessThan(UNSCORED_DESCRIPTION_CHARS);
+    expect(unscoredDescriptionCap(25)).toBeGreaterThanOrEqual(500);
+    expect(unscoredDescriptionCap(100)).toBe(500);
+  });
+  it('a full 25-job wake batch keeps small postings whole and still serializes under 30000 characters', () => {
+    const db = openDb(':memory:');
+    for (let i = 0; i < 25; i++) { add(db, `k${i}`); db.prepare('UPDATE jobs SET description = ? WHERE id = ?').run('z'.repeat(400), `k${i}`); }
+    const rows = listUnscoredJobs(db, { limit: 25 });
+    expect(rows).toHaveLength(25);
+    expect(rows.every((r) => r.description.length === 400 && !r.description_truncated)).toBe(true);
+  });
+  it('at most half of a 25-job batch is already_matched; the rest is round-robin by source', () => {
+    const db = openDb(':memory:');
+    for (let i = 0; i < 20; i++) { add(db, `m${i}`); db.prepare('UPDATE jobs SET score = 80 WHERE id = ?').run(`m${i}`); }
+    for (let i = 0; i < 20; i++) add(db, `u${i}`);
+    const rows = listUnscoredJobs(db, { limit: 25, matchThreshold: 60 });
+    expect(rows).toHaveLength(25);
+    expect(rows.filter((r) => r.already_matched)).toHaveLength(12);
+    expect(rows.filter((r) => !r.already_matched)).toHaveLength(13);
+  });
+  it('kind matched returns only already-matched jobs up to the full limit; kind unscored pages through the round-robin order', () => {
+    const db = openDb(':memory:');
+    for (let i = 0; i < 20; i++) { add(db, `m${i}`, { at: `2026-10-01 10:${String(i).padStart(2, '0')}:00` }); db.prepare('UPDATE jobs SET score = ? WHERE id = ?').run(60 + i, `m${i}`); }
+    for (let i = 0; i < 7; i++) add(db, `g${i}`, { at: `2026-10-02 10:0${i}:00` });
+    for (let i = 0; i < 3; i++) add(db, `n${i}`, { source: 'naukri', apply_url: 'https://www.naukri.com/job-listings-x', at: `2026-10-03 10:0${i}:00` });
+    const m = listUnscoredJobs(db, { kind: 'matched', limit: 15, matchThreshold: 60 });
+    expect(m).toHaveLength(15);
+    expect(m.every((r) => r.already_matched)).toBe(true);
+    expect(m[0].id).toBe('m19');
+    const p0 = listUnscoredJobs(db, { kind: 'unscored', limit: 4, offset: 0, matchThreshold: 60 }).map((r) => r.id);
+    const p1 = listUnscoredJobs(db, { kind: 'unscored', limit: 4, offset: 4 }).map((r) => r.id);
+    const p2 = listUnscoredJobs(db, { kind: 'unscored', limit: 4, offset: 8 }).map((r) => r.id);
+    expect(p0).toEqual(['g0', 'n0', 'g1', 'n1']);
+    expect([...p0, ...p1, ...p2]).toEqual(listUnscoredJobs(db, { kind: 'unscored', limit: 12 }).map((r) => r.id));
+    expect(new Set([...p0, ...p1, ...p2]).size).toBe(10);
+    expect(p2).toHaveLength(2);
+  });
+  it('matched jobs deferred past the prepare cap stay offered for PREP_OFFER_LIMIT wakes, highest score first', () => {
+    const db = openDb(':memory:');
+    for (let i = 0; i < 30; i++) { add(db, `d${i}`); db.prepare('UPDATE jobs SET score = ? WHERE id = ?').run(60 + i, `d${i}`); }
+    const w1 = listUnscoredJobs(db, { kind: 'matched', limit: 15, matchThreshold: 60 }).map((r) => r.id);
+    const w2 = listUnscoredJobs(db, { kind: 'matched', limit: 15, matchThreshold: 60 }).map((r) => r.id);
+    expect(w1).toEqual(w2);
+    expect(w1[0]).toBe('d29');
   });
   it('apply_class is deterministic from channelsFor', () => {
     const db = openDb(':memory:');
@@ -303,13 +354,22 @@ describe('list_unscored_jobs', () => {
   it('the pipeline quota is capped per wake', () => {
     const d = run(plan({ due: due({ unmatchedJobs: 400, inboxLastCheckedMinAgo: 1 }) }));
     expect(d.stages?.find((s) => s.kind === 'pipeline')?.quota).toBe(PIPELINE_MAX_JOBS_PER_WAKE);
-    expect(PIPELINE_MAX_JOBS_PER_WAKE).toBe(10);
+    expect(PIPELINE_MAX_JOBS_PER_WAKE).toBe(100);
   });
   it('P1 names the tool, the cap and apply_class; the direct-call list names every tool used', () => {
     const t = pipelineLines({ matchThreshold: 60, sendLimit: 1, targetRegions: 'T', followupsAutonomous: false }).join('\n');
-    expect(t).toContain(`\`db.list_unscored_jobs({limit: ${PIPELINE_MAX_JOBS_PER_WAKE}, match_threshold: 60})\``);
+    expect(t).toContain('`db.list_unscored_jobs({kind: "matched", limit: 15, match_threshold: 60})`');
+    expect(t).toContain('`db.list_unscored_jobs({kind: "unscored", limit: 20, offset: 0})`');
     expect(t).toContain('already_matched');
     expect(t).toContain('apply_class');
+    expect(t).toContain('at most 100 per wake');
+    expect(t).toContain('up to 20 batches');
+    expect(t).toContain('WAVES of at most 6 matchers');
+    expect(t).toContain('wait for the whole wave');
+    expect(t).toContain('batches of at most 5');
+    expect(t).toContain('not against the match cap');
+    expect(t).toContain('only the first 15');
+    expect(t).toContain('offered again next wake as already_matched');
     for (const c of ['db.sweep_deadlines', 'db.list_unscored_jobs', 'db.save_match_result', 'gates.apply_vetoes', 'db.mark_excluded', 'job-fetch.source_status', 'job-fetch.board_status']) {
       expect(t.split('\n')[0]).toContain(`\`${c}\``);
     }

@@ -8,7 +8,7 @@ import { loadLayoutConfig } from '../src/layout/config.js';
 import { getState } from '../src/scheduler/runLog.js';
 import { SCREENED_SURFACES, callsScreen, type ScreenVerdict } from '../src/safety/screen.js';
 import {
-  loadNaukriDiscoveryConfig, parseDiscoverCards, runNaukriDiscover, LAST_RUN_KEY,
+  loadNaukriDiscoveryConfig, discoverGapMs, parseDiscoverCards, runNaukriDiscover, LAST_RUN_KEY,
   type DiscoverIo, type NaukriDiscoveryConfig,
 } from '../src/naukri/discover.js';
 import { searchNaukri } from '../src/sources/naukri.js';
@@ -50,6 +50,36 @@ describe('config', () => {
     const bad = path.join(dir, 'c.json');
     writeFileSync(bad, JSON.stringify({ searches: [{ name: 'bad name!', query: 'x' }] }));
     expect(loadNaukriDiscoveryConfig(bad)).toEqual({ searches: [] });
+  });
+});
+
+describe('shipped searches', () => {
+  it('has at most four searches with distinct names and queries, each within the loader limits', () => {
+    const s = loadNaukriDiscoveryConfig().searches;
+    expect(s.length).toBeGreaterThanOrEqual(4);
+    expect(s.length).toBeLessThanOrEqual(4);
+    expect(new Set(s.map((x) => x.name)).size).toBe(s.length);
+    expect(new Set(s.map((x) => x.query.toLowerCase())).size).toBe(s.length);
+    expect(s[0].name).toBe('full-stack-react-india');
+    expect(s.every((x) => x.limit <= 20)).toBe(true);
+    expect(s.some((x) => /remote/i.test(x.query))).toBe(true);
+  });
+  it('drops a job another search already saved, by job id', async () => {
+    const d = deps();
+    const cfg: NaukriDiscoveryConfig = { searches: [
+      { name: 'a', query: 'react developer', location: 'india', limit: 20 },
+      { name: 'b', query: 'frontend developer', location: 'india', limit: 20 },
+    ] };
+    const r1 = await runNaukriDiscover({ search: 'a' }, fakeIo([card(1), card(2)]).io, d, { config: cfg });
+    const r2 = await runNaukriDiscover({ search: 'b' }, fakeIo([card(2), card(3)]).io, d, { config: cfg });
+    expect(r1).toMatchObject({ new: 2, seen: 0 });
+    expect(r2).toMatchObject({ new: 1, seen: 1 });
+    expect(r2.job_ids).toEqual(['naukri:101026000003']);
+  });
+  it('the pause between searches is 2 to 5 seconds', () => {
+    expect(discoverGapMs(() => 0)).toBe(2000);
+    expect(discoverGapMs(() => 0.999999)).toBeLessThanOrEqual(5000);
+    expect(discoverGapMs(() => 0.999999)).toBeGreaterThanOrEqual(4990);
   });
 });
 
@@ -221,6 +251,20 @@ describe('naukri_discover MCP tool', () => {
     expect(isSeen(d.db, 'naukri:101026000001')).toBe(true);
     const row = d.db.prepare('SELECT description FROM jobs WHERE id = ?').get('naukri:101026000001') as { description: string };
     expect(row.description).toBe('Detailed description text');
+  });
+
+  it('waits 2 to 5 seconds before the second search of a session, not before the first', async () => {
+    const h = harness();
+    const d = mcpDeps(h);
+    await naukriOpen({ url: 'https://www.naukri.com/' }, d);
+    h.page.waitForTimeout.mockClear();
+    const names = loadNaukriDiscoveryConfig().searches.map((s) => s.name);
+    await naukriDiscover({ search: names[0] }, d);
+    const waits = () => h.page.waitForTimeout.mock.calls.map((c: unknown[]) => c[0] as number).filter((ms: number) => ms >= 2000);
+    expect(waits()).toHaveLength(0);
+    await naukriDiscover({ search: names[1] }, d);
+    expect(waits()).toHaveLength(1);
+    expect(waits()[0]).toBeLessThanOrEqual(5000);
   });
 
   it('is registered, screened through the discover file, and in the kill-switch matcher', () => {

@@ -40,7 +40,13 @@ export const LINKEDIN_DISCOVER_EVERY_HOURS = 6;
 /** Hours between code passes over the script providers (a constant, no env key). */
 export const SCRIPT_DISCOVER_EVERY_HOURS = 6;
 /** Most unscored jobs one wake's pipeline stage takes (a constant, no env key); the rest wait for the next wake. */
-export const PIPELINE_MAX_JOBS_PER_WAKE = 10; // two matcher batches of 5; larger batches exceed one tool result (22KB passed, 54KB did not)
+export const PIPELINE_MAX_JOBS_PER_WAKE = 100; // 20 matcher batches of 5 in waves of PIPELINE_MATCH_WAVE; read in pages of PIPELINE_LIST_PAGE because one list_unscored_jobs result must stay one tool result (22KB passed, 54KB did not)
+/** Matcher agents dispatched at once; the wake waits for a wave to finish before the next. */
+export const PIPELINE_MATCH_WAVE = 6;
+/** Unscored jobs read per `db.list_unscored_jobs` call (kind unscored, offset 0, 20, 40 ...). */
+export const PIPELINE_LIST_PAGE = 20;
+/** Most matched jobs one wake sends to outreach-preparer (about 7 calls and a PDF render each): the highest stored scores. The rest stay matched without an outreach row and come back as already_matched. */
+export const PIPELINE_MAX_PREPARE_PER_WAKE = 15;
 /** Most source_tasks one source-operator task may work per wake. */
 export const SOURCE_TASK_QUOTA = 10;
 

@@ -5,6 +5,24 @@
       "query": "full stack developer react",
       "location": "india",
       "limit": 20
+    },
+    {
+      "name": "mern-stack-india",
+      "query": "mern stack developer",
+      "location": "india",
+      "limit": 20
+    },
+    {
+      "name": "react-frontend-india",
+      "query": "react js frontend developer",
+      "location": "india",
+      "limit": 20
+    },
+    {
+      "name": "remote-react-fullstack",
+      "query": "remote react full stack developer",
+      "location": "india",
+      "limit": 20
     }
   ]
 }
