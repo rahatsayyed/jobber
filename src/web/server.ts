@@ -63,7 +63,7 @@ export interface WebDeps {
   root?: string; // project root for the config view, default cwd
   staticDir?: string; // default: ./static next to this file
   settings?: SettingsDeps; // dashboard settings editor (plan 8H); routes exist only when set. Never given to chat.
-  apply?: ApplyDeps; // /apply request box (WEB_APPLY_REQUEST_ENABLED); absent or enabled false: its routes answer 404
+  apply?: ApplyDeps; // /apply request box write; absent: confirm answers a refusal and nothing is written
 }
 
 export { STATUS_COMMANDS };
@@ -328,7 +328,6 @@ export function createWebServer(deps: WebDeps): http.Server {
       expiresAt: s.expiresAt,
       authAt: s.authAt,
       chatEnabled: deps.chat.enabled,
-      applyEnabled: deps.apply?.enabled === true,
       reauthRequired: !isFresh(s, now(), reauthMaxAgeSec),
       ...(deps.settings?.currentMode ? { mode: deps.settings.currentMode() } : {}),
     });
@@ -504,7 +503,7 @@ export function createWebServer(deps: WebDeps): http.Server {
     json(c.res, 200, { ok: true });
   });
 
-  for (const r of createApplyRoutes(deps.apply ?? { enabled: false, enqueue: () => ({ ok: false, reason: 'disabled' }) }, {
+  for (const r of createApplyRoutes(deps.apply ?? { enqueue: () => ({ ok: false, reason: 'no apply writer configured' }) }, {
     auth: deps.auth, data: deps.data, now, reauthMaxAgeSec,
     reauthUrl: authMode === 'token' ? '/#/login?reauth=1' : '/auth/login?reauth=1',
     root: deps.root ?? process.cwd(), processEnv: deps.env ?? process.env,

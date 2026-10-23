@@ -18,13 +18,13 @@ afterEach(async () => {
 
 const GH = 'https://boards.greenhouse.io/acme/jobs/12345';
 
-async function setup(over: Parameters<typeof makeHarness>[0] = {}, enabled = true) {
+async function setup(over: Parameters<typeof makeHarness>[0] = {}) {
   h = await makeHarness({
-    apply: { enabled, enqueue: (url, force, now) => createManualRequest(h!.data, url, { force, now }) },
+    apply: { enqueue: (url, force, now) => createManualRequest(h!.data, url, { force, now }) },
     ...over,
   });
   const { cookie } = await h.login();
-  const s = JSON.parse((await h.call('GET', '/api/session', { headers: { cookie } })).body) as { csrf: string; applyEnabled: boolean };
+  const s = JSON.parse((await h.call('GET', '/api/session', { headers: { cookie } })).body) as { csrf: string };
   const origin = `http://127.0.0.1:${h.port}`;
   const post = (path: string, body: unknown, extra: Record<string, string> = {}) =>
     h!.call('POST', path, {
@@ -32,27 +32,12 @@ async function setup(over: Parameters<typeof makeHarness>[0] = {}, enabled = tru
       body: JSON.stringify(body),
     });
   const get = (path: string) => h!.call('GET', path, { headers: { cookie } });
-  return { cookie, csrf: s.csrf, applyEnabled: s.applyEnabled, origin, post, get };
+  return { cookie, csrf: s.csrf, origin, post, get };
 }
 
 const rows = () => h!.data.prepare('SELECT * FROM manual_requests ORDER BY id').all() as { id: number; url: string; force: number; status: string }[];
 
 describe('dashboard apply box', () => {
-  it('flag off: every route is 404 and the session says so', async () => {
-    const c = await setup({}, false);
-    expect(c.applyEnabled).toBe(false);
-    expect((await c.post('/api/apply/prepare', { url: GH })).status).toBe(404);
-    expect((await c.post('/api/apply/confirm', { url: GH, token: 'x' })).status).toBe(404);
-    expect((await c.get('/api/apply/requests')).status).toBe(404);
-    expect(rows()).toHaveLength(0);
-  });
-
-  it('no apply deps at all behaves as off', async () => {
-    h = await makeHarness();
-    const { cookie } = await h.login();
-    expect((await h.call('GET', '/api/apply/requests', { headers: { cookie } })).status).toBe(404);
-  });
-
   it('unauthenticated requests are refused and write nothing', async () => {
     await setup();
     const origin = `http://127.0.0.1:${h!.port}`;
@@ -167,7 +152,7 @@ describe('dashboard apply box', () => {
   });
 
   it('a failing write is a 502 and leaves nothing behind', async () => {
-    const c = await setup({ apply: { enabled: true, enqueue: () => { throw new Error('disk'); } } });
+    const c = await setup({ apply: { enqueue: () => { throw new Error('disk'); } } });
     const t = JSON.parse((await c.post('/api/apply/prepare', { url: GH })).body) as { token: string };
     expect((await c.post('/api/apply/confirm', { url: GH, token: t.token })).status).toBe(502);
     expect(rows()).toHaveLength(0);

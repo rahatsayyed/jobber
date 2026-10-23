@@ -696,14 +696,6 @@ const hand: EnvSpec[] = [
     restart: 'dashboard',
     restartEvidence: 'src/web/env.ts',
   }),
-  e('WEB_APPLY_REQUEST_ENABLED', 'dashboard', 'dashboard apply box', 'bool', {
-    default: 'false',
-    exampleActive: true,
-    about: 'Enable the two-step /apply request box on the dashboard (queues one manual request per confirmed URL, 10 per hour per session). It only queues a row; the scheduler does the work and the safety limits still apply.',
-    ...never(R_DASH),
-    restart: 'dashboard',
-    restartEvidence: 'src/web/env.ts',
-  }),
   e('WEB_SETTINGS_EDIT', 'dashboard', 'settings editor', 'bool', {
     blankMeansDefault: true,
     default: 'false',

@@ -177,7 +177,7 @@ async function main(): Promise<number> {
       run: defaultRun,
       sessionsToShow: [cfg.session],
       secrets: allSecrets,
-      apply: { enabled: cfg.applyRequestEnabled, enqueue: (url, force, now) => enqueueManualRequest(dbPath(), url, force, now) },
+      apply: { enqueue: (url, force, now) => enqueueManualRequest(dbPath(), url, force, now) },
       chat: {
         enabled: cfg.chatEnabled,
         session: cfg.session,

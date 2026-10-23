@@ -108,11 +108,6 @@ describe('validateRunnerConfig refusals', () => {
   it('booleans, prompt, reauth age and tmux names', () => {
     expect(msgs({ ...GOOD, WEB_TRUST_PROXY: 'yes' }).join(' ')).toContain('WEB_TRUST_PROXY');
     expect(msgs({ ...GOOD, WEB_CHAT_ENABLED: '1' }).join(' ')).toContain('WEB_CHAT_ENABLED');
-    expect(msgs({ ...GOOD, WEB_APPLY_REQUEST_ENABLED: '1' }).join(' ')).toContain('WEB_APPLY_REQUEST_ENABLED');
-    const on = validateRunnerConfig({ ...GOOD, WEB_APPLY_REQUEST_ENABLED: 'true' }, { accountStored: true });
-    expect(on.ok && on.config.applyRequestEnabled).toBe(true);
-    const off = validateRunnerConfig(GOOD, { accountStored: true });
-    expect(off.ok && off.config.applyRequestEnabled).toBe(false);
     expect(msgs({ ...GOOD, WEB_OIDC_REAUTH_PROMPT: 'consent' }).join(' ')).toContain('WEB_OIDC_REAUTH_PROMPT');
     for (const v of ['59', '3601', 'x']) expect(msgs({ ...GOOD, WEB_REAUTH_MAX_AGE_SEC: v }).join(' ')).toContain('WEB_REAUTH_MAX_AGE_SEC');
     expect(msgs({ ...GOOD, WEB_REAUTH_MAX_AGE_SEC: '60' })).toEqual([]);

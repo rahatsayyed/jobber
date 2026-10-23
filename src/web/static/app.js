@@ -104,7 +104,7 @@ async function signOut() {
 }
 
 function nav(active) {
-  const items = VIEWS.filter(([n]) => (n !== 'chat' || (current && current.chatEnabled)) && (n !== 'apply' || (current && current.applyEnabled)));
+  const items = VIEWS.filter(([n]) => (n !== 'chat' || (current && current.chatEnabled)));
   return el('nav', { 'aria-label': 'Sections' },
     items.map(([n, label]) => button(label, () => { location.hash = `#/${n}`; }, {
       class: n === active ? 'tab active' : 'tab', 'aria-current': n === active ? 'page' : null,

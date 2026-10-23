@@ -9,10 +9,6 @@ const STOP_NOTE = 'The scheduler will not run while it is stopped or halted. The
 
 export async function render({ root, session }) {
   root.append(el('h2', null, 'Apply request'));
-  if (!session.applyEnabled) {
-    root.append(notice('The apply request box is turned off for this dashboard.'));
-    return;
-  }
   root.append(el('p', { class: 'muted' }, 'Paste a job page or a company careers page. It is queued for the next scheduler wake at priority; nothing is fetched or sent from here.'));
   const input = el('input', { type: 'text', placeholder: 'https://boards.greenhouse.io/company/jobs/123', 'aria-label': 'Job or careers page URL' });
   const forceBox = el('input', { type: 'checkbox', id: 'apply-force' });

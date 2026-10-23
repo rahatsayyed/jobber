@@ -682,13 +682,6 @@
           "purpose": "turns on the dashboard chat box (keep off)",
           "where": "docs/dashboard-exposure.md",
           "entered_in": "owner edits .env"
-        },
-        {
-          "name": "WEB_APPLY_REQUEST_ENABLED",
-          "secret": false,
-          "purpose": "turns on the dashboard apply request box (queues one request per confirmed URL; keep off unless you use it)",
-          "where": "docs/dashboard-exposure.md",
-          "entered_in": "owner edits .env"
         }
       ],
       "explain": "A permission set decides what a Claude session may do. read_only sends nothing and is the safe default; keep it unless you have a reason. Changing the set is your own command, never the guide.",
