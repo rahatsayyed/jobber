@@ -30,7 +30,7 @@ Return the usual result object with `sent`, `failed`, `capped` or `skipped` coun
 
 ## Part 1: queued cold emails
 
-1. Call `db.list_queued_outreach()`. This is your full backlog, including rows from this wake's pipeline and rows left `queued` by an earlier wake that hit a cap. Process every row in the order returned, but only its email action: leave the connect and apply fields alone (other operators own them).
+1. Call `db.list_queued_outreach()`. This is your full backlog, including rows from this wake's pipeline and rows left `queued` by an earlier wake that hit a cap. Process every row in the order returned (rows of owner-submitted priority jobs come first; keep that order), but only its email action: leave the connect and apply fields alone (other operators own them).
 
 2. For each row with `email_to` set and `email_status` not already `'sent'`:
    - **Dedup by `job_id` first, before sending anything**: a job with multiple LinkedIn profiles (recruiter + peer) produces multiple queue rows that intentionally share the SAME `email_subject`/`email_body`/`email_to` — they are the same email, not separate ones. Before acting on this row's email fields, check whether any OTHER row already processed in this backlog (this dispatch, from `db.list_queued_outreach()`'s full result) has the same `job_id` and an `email_status` of `"sent"` or `"failed"`. If so, do NOT call `gmail.send_email` again — for `"failed"`, copy that status onto this row via `db.update_outreach_status(row.id, "email_status", "failed")`; for `"sent"` there is nothing to copy (`record_email_sent` already marked the duplicate rows). Only send once per distinct `job_id`.

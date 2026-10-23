@@ -31,7 +31,7 @@ Task result: sent `[{person_id, platform}]`, skipped `[{person_id, why}]`, escal
 
 ## Task: new_outreach
 
-You make first contact with new people. The task gives you a `quota` and may name companies; otherwise take companies from `mcp__db__list_queued_outreach` rows.
+You make first contact with new people. The task gives you a `quota` and may name companies; otherwise take companies from `mcp__db__list_queued_outreach` rows, in the order returned (rows of owner-submitted priority jobs come first; never reorder them behind older rows).
 
 1. For each company or queued row call `mcp__outreach__next_contacts({platform: "linkedin", company_key, limit})`. Only people it returns may be contacted; it enforces the per-company limit.
 2. One touch per person per run; stop when sent reaches quota.

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 export const DEFAULT_PORTALS_PATH = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'), 'config', 'portals.json');
 
-export interface TaskRow { id: number; platform: string; company: string | null; reason: string; state: string }
+export interface TaskRow { id: number; platform: string; company: string | null; reason: string; state: string; url?: string | null; request_id?: number | null }
 export interface TaskTarget { url: string; hosts: string[]; platform: string; company: string }
 
 /** Vendor board hosts a scout may open (the "registry host" rule). */
@@ -70,7 +70,22 @@ function vendorUrl(c: any): URL | null {
   }
 }
 
+/** Company label for a manual page, from its host only (never from page text): careers.acme.co.uk -> "Acme". */
+export function companyFromHost(host: string): string {
+  const parts = host.toLowerCase().split('.').filter(Boolean);
+  const tld2 = parts.length >= 3 && parts[parts.length - 1]!.length === 2 && ['co', 'com', 'org', 'net', 'ac'].includes(parts[parts.length - 2]!);
+  const label = parts[Math.max(0, parts.length - (tld2 ? 3 : 2))] ?? host;
+  return label.replace(/[^a-z0-9]+/g, ' ').trim().replace(/\b[a-z]/g, (c) => c.toUpperCase()).slice(0, 100) || host;
+}
+
 export function resolveTaskTarget(row: TaskRow, portalsPath: string = DEFAULT_PORTALS_PATH): TaskTarget | null {
+  // An owner-submitted page (`manual_url` task): the task row itself carries the URL, validated by code when the request was created
+  // (src/manual/url.ts). The task URL is allowed like the board of a source task; nothing found on the page ever extends it.
+  if (row.platform === 'manual') {
+    const u = safeHttps(row.url ?? '');
+    if (!u || u.port) return null;
+    return { url: u.toString(), hosts: [u.hostname.toLowerCase()], platform: 'manual', company: companyFromHost(u.hostname) };
+  }
   if (!row.company) return null;
   const company = row.company.toLowerCase();
   if (row.platform === 'custom') {

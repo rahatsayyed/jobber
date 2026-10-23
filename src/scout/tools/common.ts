@@ -61,9 +61,9 @@ export const hostOfUrl = (raw: string): string => {
   try { return new URL(raw).hostname.toLowerCase(); } catch { return ''; }
 };
 
-export interface TaskRowDb { id: number; platform: string; company: string | null; reason: string; state: string }
+export interface TaskRowDb { id: number; platform: string; company: string | null; reason: string; state: string; url: string | null; request_id: number | null }
 
 export function getTask(db: BetterSqlite3.Database, id: unknown): TaskRowDb | null {
   if (!Number.isInteger(id)) return null;
-  return (db.prepare('SELECT id, platform, company, reason, state FROM source_tasks WHERE id = ?').get(id) as TaskRowDb | undefined) ?? null;
+  return (db.prepare('SELECT id, platform, company, reason, state, url, request_id FROM source_tasks WHERE id = ?').get(id) as TaskRowDb | undefined) ?? null;
 }

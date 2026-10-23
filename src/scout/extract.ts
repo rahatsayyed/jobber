@@ -58,3 +58,22 @@ export function extractJobs(raw: RawAnchorPage, o: ExtractOptions): Job[] {
   }
   return out;
 }
+
+/**
+ * The one posting a single job page IS (a manual_url task for a job URL): title from the page title, description from the visible
+ * text, url from the open page (the caller has already checked it is on the task host). Text is capped and stripped like job cards.
+ * Returns null when the page has no usable title or text.
+ */
+export function singleJobFromPage(raw: RawAnchorPage, o: { company: string }): Job | null {
+  let u: URL;
+  try { u = new URL(raw.url); } catch { return null; }
+  if (u.protocol !== 'https:' || u.username || u.password) return null;
+  u.hash = '';
+  // The page title, else the first non-empty line of the visible text (often the posting's own heading).
+  const firstLine = String(raw.text ?? '').split(/\r?\n/).map((l) => clean(l, 140)).find((l) => l.length >= 4) ?? '';
+  const title = clean(raw.title, 140).length >= 4 ? clean(raw.title, 140) : firstLine;
+  const description = clean(raw.text, 8000);
+  if (title.length < 4 || description.length < 40) return null;
+  const url = u.toString();
+  return { id: jobIdFor('manual', url), source: 'gen:manual', title, company: clean(o.company, 100) || 'unknown', url, apply_url: url, description };
+}

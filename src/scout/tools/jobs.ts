@@ -8,7 +8,8 @@ import { loadPortals, titlePasses } from '../../sources/boards/filters.js';
 import { loadRegistry } from '../../sources/registry.js';
 import { hostAllowed } from '../../webcore/runtime.js';
 import { ANCHORS_SCRIPT, type RawAnchorPage } from '../page.js';
-import { extractJobs } from '../extract.js';
+import { extractJobs, singleJobFromPage } from '../extract.js';
+import { saveManualJobs } from '../../manual/requests.js';
 import { customSites, resolveTaskTarget, type TaskRow } from '../targets.js';
 import { blockedJson, getTask, json, untrustedBlock, type ScoutCtx } from './common.js';
 
@@ -25,7 +26,8 @@ export async function scoutTasks(_a: unknown, deps: ScoutCtx): Promise<string> {
       deps.db.prepare("INSERT INTO source_tasks (platform, company, reason, state, created_at, updated_at) VALUES ('custom', ?, 'new_site', 'queued', ?, ?)").run(s.name, at, at);
     }
   }
-  const rows = deps.db.prepare("SELECT id, platform, company, reason, state FROM source_tasks WHERE state IN ('queued','running') ORDER BY id LIMIT 20").all() as TaskRow[];
+  // Owner-submitted (manual_url) tasks first, then the rest by id.
+  const rows = deps.db.prepare("SELECT id, platform, company, reason, state, url, request_id FROM source_tasks WHERE state IN ('queued','running') ORDER BY (reason = 'manual_url') DESC, id LIMIT 20").all() as TaskRow[];
   const pendingCustom = !dry ? [] : customSites(deps.portalsPath)
     .filter((s) => !rows.some((r) => r.platform === 'custom' && r.company === s.name))
     .map((s) => ({ task_id: null, platform: 'custom', company: s.name, reason: 'new_site', state: 'dry_run', has_target: true, url: s.url }));
@@ -74,7 +76,14 @@ export async function scoutExtractJobs(a: { task_id: number }, deps: ScoutCtx): 
   if (!t.ok) return t.out;
   const raw = await deps.runtime.serial(async () => deps.runtime.page()?.evaluate<RawAnchorPage>(ANCHORS_SCRIPT) ?? null);
   if (!raw) return json({ ok: false, code: 'failed' });
-  const candidates = extractJobs(raw, { platform: t.target.platform, company: t.target.company, hosts: t.target.hosts });
+  // A manual_url task for ONE job URL: the page is the posting (no card extraction, related-job links on it are ignored).
+  const manualKind = t.row.platform === 'manual' && t.row.request_id
+    ? (deps.db.prepare('SELECT kind FROM manual_requests WHERE id = ?').get(t.row.request_id) as { kind: string } | undefined)?.kind
+    : undefined;
+  const single = manualKind === 'url' ? singleJobFromPage(raw, { company: t.target.company }) : null;
+  const candidates = manualKind === 'url'
+    ? (single ? [single] : [])
+    : extractJobs(raw, { platform: t.target.platform, company: t.target.company, hosts: t.target.hosts });
   if (candidates.length === 0) return json({ ok: true, count: 0 });
   // Screen exactly what is persisted (title + description, which is page context text), one job at a
   // time; a job the screen blocks is dropped and never reaches the jobs table.
@@ -102,6 +111,7 @@ export async function scoutSaveJobs(a: { task_id: number; source: string }, deps
   if (!row || !OPEN_STATES.includes(row.state)) return json({ ok: false, code: 'refused', reason: 'unknown_or_closed_task' });
   const source = String(a?.source ?? '');
   const target = resolveTaskTarget(row, deps.portalsPath);
+  if (row.platform === 'manual') return saveManualTask(row, source, deps);
   const registryIds = new Set(loadRegistry(deps.registryPath).platforms.map((p) => p.id));
   const okSource = SOURCE_RE.test(source) && (source.startsWith('gen:') ? !!target && source === `gen:${target.platform}` : registryIds.has(source));
   if (!okSource) return json({ ok: false, code: 'refused', reason: 'invalid_source' });
@@ -132,4 +142,20 @@ export async function scoutSaveJobs(a: { task_id: number; source: string }, deps
   }
   deps.pending.delete(row.id);
   return json({ ok: true, status: 'saved', saved, known, duplicates, filtered });
+}
+
+// An owner-submitted page: the owner asked for exactly these jobs, so the portals title filter and the 30-day duplicate check do not
+// apply. They are saved at priority 1 under manual:other, linked to their request; scout_task_update closes the task.
+function saveManualTask(row: NonNullable<ReturnType<typeof getTask>>, source: string, deps: ScoutCtx): string {
+  if (source !== 'manual:other' || !row.request_id) return json({ ok: false, code: 'refused', reason: 'invalid_source' });
+  const jobs = deps.pending.get(row.id);
+  if (!jobs || jobs.length === 0) return json({ ok: false, code: 'refused', reason: 'nothing_extracted' });
+  const target = resolveTaskTarget(row, deps.portalsPath);
+  if (isDryRun(deps.env)) {
+    recordDryRun(deps.db, { runId: null, action: 'scout_save_jobs', platform: 'web', payload: { task_id: row.id, source, count: jobs.length, host: target?.hosts[0] ?? '' } }, deps.now(), deps.env);
+    return json({ ok: true, status: 'dry_run', would_save: jobs.length });
+  }
+  const r = saveManualJobs(deps.db, row.request_id, jobs.map((j) => ({ ...j, id: j.id.replace(/^gen:/, ''), source })), source);
+  deps.pending.delete(row.id);
+  return json({ ok: true, status: 'saved', saved: r.fresh, known: r.existing, duplicates: 0, filtered: 0, truncated: r.truncated });
 }

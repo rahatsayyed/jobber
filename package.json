@@ -34,6 +34,7 @@
     "user-data": "tsx scripts/user-data.ts",
     "site:account": "tsx scripts/site-account.ts",
     "providers": "tsx scripts/providers.ts",
+    "apply:request": "tsx scripts/apply-request.ts",
     "build": "tsc -p .",
     "mcp:job-fetch": "tsx src/mcp/job-fetch.ts",
     "mcp:resume": "tsx src/mcp/resume.ts",
