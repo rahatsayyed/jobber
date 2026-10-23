@@ -209,6 +209,20 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
       updated_at TEXT NOT NULL
     );
     -- Declarative generated providers (plan 8G task 8): state candidate, validated, trusted; approved is the owner's release of held outreach.
+    -- Owner-submitted manual requests (a job URL or a careers page): ingested by code at the start of a wake, jobs run at priority 1.
+    CREATE TABLE IF NOT EXISTS manual_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      url TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'url',
+      status TEXT NOT NULL DEFAULT 'pending',
+      force INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      started_at TEXT,
+      finished_at TEXT,
+      run_id TEXT,
+      job_ids TEXT,
+      report TEXT
+    );
     CREATE TABLE IF NOT EXISTS generated_providers (
       id TEXT PRIMARY KEY,
       state TEXT NOT NULL,
@@ -279,6 +293,12 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   }
   // Count of match-save rejections per job: after MATCH_FAIL_LIMIT the wake pipeline stops re-offering it (plan 8G task 13).
   if (!jobCols.has('match_fails')) db.exec('ALTER TABLE jobs ADD COLUMN match_fails INTEGER NOT NULL DEFAULT 0');
+  // Owner-submitted jobs (manual requests) run at priority 1 ahead of everything else.
+  if (!jobCols.has('priority')) db.exec('ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0');
+  // A manual_url source task carries the owner's URL and the request it belongs to.
+  const taskCols = new Set((db.prepare('PRAGMA table_info(source_tasks)').all() as { name: string }[]).map((c) => c.name));
+  if (!taskCols.has('url')) db.exec('ALTER TABLE source_tasks ADD COLUMN url TEXT');
+  if (!taskCols.has('request_id')) db.exec('ALTER TABLE source_tasks ADD COLUMN request_id INTEGER');
   const followupCols = new Set((db.prepare('PRAGMA table_info(followups)').all() as { name: string }[]).map(c => c.name));
   if (!followupCols.has('body_html')) db.exec('ALTER TABLE followups ADD COLUMN body_html TEXT');
   // Hand-backs of a matched job without an outreach row to the wake pipeline (PREP_OFFER_LIMIT).
@@ -408,6 +428,8 @@ export interface Job {
   score?: number;
   status?: string;
   posted_at?: string;
+  /** 1 for an owner-submitted job (manual request); absent or 0 for everything else. */
+  priority?: number;
 }
 
 /** Normalize a source's posting date to UTC 'YYYY-MM-DD'; undefined when absent or invalid. */
@@ -435,8 +457,8 @@ export function toIsoDay(v: unknown): string | undefined {
 
 export function saveJob(db: BetterSqlite3.Database, job: Job): void {
   db.prepare(`
-    INSERT OR IGNORE INTO jobs (id, source, title, company, url, apply_url, description, score, status, posted_at, title_key, company_key)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO jobs (id, source, title, company, url, apply_url, description, score, status, posted_at, title_key, company_key, priority)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     job.id,
     job.source,
@@ -449,7 +471,8 @@ export function saveJob(db: BetterSqlite3.Database, job: Job): void {
     job.status ?? null,
     job.posted_at ?? null,
     titleIdentityKey(job.title),
-    companyKey(job.company)
+    companyKey(job.company),
+    job.priority ?? 0
   );
 }
 
@@ -811,7 +834,7 @@ export function listQueuedOutreach(db: BetterSqlite3.Database): OutreachQueueIte
       FROM outreach_queue
       WHERE status = 'queued'
         AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = outreach_queue.job_id AND j.excluded_reason IS NULL)
-      ORDER BY created_at ASC`)
+      ORDER BY COALESCE((SELECT j.priority FROM jobs j WHERE j.id = outreach_queue.job_id), 0) DESC, created_at ASC, id ASC`)
     .all()
     // A draft queued before the HTML part existed gets it built now from its stored text (links, no emphasis).
     .map((r) => {
@@ -971,7 +994,14 @@ export interface UnscoredJob extends Job {
   already_matched?: true;
   /** The stored score, only on an already_matched job. */
   score?: number;
+  /** Set on an owner-submitted job (priority 1): it goes first through every stage. */
+  priority?: number;
+  /** Set on an owner-submitted job whose request is forced: P2c does not drop it for a score below the threshold (vetoes still apply). */
+  force_prepare?: true;
 }
+
+/** Most owner-submitted (priority) jobs one wake's pipeline takes; the rest stay pending for the next wake. */
+export const MANUAL_PRIORITY_PER_WAKE = 10;
 
 /** Times a matched job without an outreach row is handed back before it is dropped (a job with no contact and no profile never gets a row). */
 export const PREP_OFFER_LIMIT = 4; // was 2: with a prepare cap per wake a matched job can wait a few wakes for a slot
@@ -1002,13 +1032,31 @@ export function listUnscoredJobs(
   const pendingLimit = kind === 'matched' ? limit : Math.max(1, Math.floor(limit / 2));
   type Row = Record<string, string | number | null>;
   const cols = 'id, source, title, company, url, apply_url, description, posted_at, score';
-  const pending: Row[] = typeof opts.matchThreshold === 'number' && kind !== 'unscored'
+  // Owner-submitted jobs (priority > 0) come first, outside the normal cap (at most MANUAL_PRIORITY_PER_WAKE per call, the rest wait).
+  // They bypass the window, the same-posting dedupe and prep_offers; the 90-day repeat-contact guard still applies (see applyPriorityRepeats).
+  // A scored one is offered only while it has no outreach row and (it met the threshold or its request is forced).
+  const forcedSql = `EXISTS (SELECT 1 FROM manual_requests r WHERE r.force = 1 AND r.status IN ('pending', 'running')
+    AND instr(COALESCE(r.job_ids, ''), '"' || jobs.id || '"') > 0)`;
+  let prio: Row[] = offset > 0 && kind === 'unscored' ? [] : db.prepare(
+    `SELECT ${cols}, ${forcedSql} AS forced FROM jobs
+      WHERE priority > 0 AND excluded_reason IS NULL AND match_fails < ? AND (status IS NULL OR status <> '${JOB_STATUS_REPEAT_CONTACT}')
+        AND (score IS NULL OR (prep_offers < ? AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id) AND (score >= ? OR ${forcedSql})))
+      ORDER BY priority DESC, created_at ASC, rowid ASC LIMIT ?`,
+  ).all(MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT + 1, typeof opts.matchThreshold === 'number' ? opts.matchThreshold : 101, MANUAL_PRIORITY_PER_WAKE) as Row[];
+  prio = applyPriorityRepeats(db, prio, now);
+  if (kind === 'matched') prio = prio.filter((r) => r.score !== null && r.score !== undefined);
+  if (kind === 'unscored') prio = prio.filter((r) => r.score === null || r.score === undefined);
+  const bumpPrio = db.prepare('UPDATE jobs SET prep_offers = prep_offers + 1 WHERE id = ?');
+  db.transaction(() => { for (const r of prio) if (r.score !== null && r.score !== undefined) bumpPrio.run(r.id as string); })();
+  const rest = Math.max(0, limit - prio.length);
+  const pendingLimitRest = rest === 0 ? 0 : kind === 'matched' ? rest : Math.max(1, Math.floor(rest / 2));
+  const pending: Row[] = typeof opts.matchThreshold === 'number' && kind !== 'unscored' && pendingLimitRest > 0
     ? db.prepare(
       `SELECT ${cols} FROM jobs
-        WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ? AND ${PIPELINE_SKIP_SQL}
+        WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ? AND priority = 0 AND ${PIPELINE_SKIP_SQL}
           AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id)
         ORDER BY score DESC, created_at ASC, rowid ASC LIMIT ?`,
-    ).all(opts.matchThreshold, PREP_OFFER_LIMIT, pendingLimit) as Row[]
+    ).all(opts.matchThreshold, PREP_OFFER_LIMIT, pendingLimitRest) as Row[]
     : [];
   if (pending.length) {
     const bump = db.prepare('UPDATE jobs SET prep_offers = prep_offers + 1 WHERE id = ?');
@@ -1017,10 +1065,10 @@ export function listUnscoredJobs(
   const fresh: Row[] = kind === 'matched' ? [] : db.prepare(
     `SELECT ${cols} FROM (
        SELECT *, rowid AS rid, ROW_NUMBER() OVER (PARTITION BY source ORDER BY created_at ASC, rowid ASC) AS rn FROM jobs
-        WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ? AND created_at >= ? AND ${PIPELINE_SKIP_SQL})
+        WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ? AND created_at >= ? AND priority = 0 AND ${PIPELINE_SKIP_SQL})
       ORDER BY rn ASC, created_at ASC, rid ASC LIMIT ? OFFSET ?`,
-  ).all(MATCH_FAIL_LIMIT, windowStart, Math.max(0, Math.min(limit - pending.length, PIPELINE_MAX_JOBS_PER_WAKE_CEILING - offset)), offset) as Row[];
-  const toJob = (r: Row, matched: boolean): UnscoredJob => {
+  ).all(MATCH_FAIL_LIMIT, windowStart, Math.max(0, Math.min(rest - pending.length, PIPELINE_MAX_JOBS_PER_WAKE_CEILING - offset)), offset) as Row[];
+  const toJob = (r: Row, matched: boolean, manual = false): UnscoredJob => {
     const job: Job = {
       id: r.id as string, source: (r.source ?? '') as string, title: (r.title ?? '') as string, company: (r.company ?? '') as string,
       url: (r.url ?? '') as string, apply_url: (r.apply_url ?? '') as string, description: (r.description ?? '') as string,
@@ -1036,9 +1084,15 @@ export function listUnscoredJobs(
       apply_class: apply?.eligible ? 'apply_capable' : (apply?.reason ?? 'apply_tier:none'),
       channels,
       ...(matched ? { already_matched: true as const, score: r.score as number } : {}),
+      ...(manual ? { priority: 1 as const } : {}),
+      ...(manual && r.forced ? { force_prepare: true as const } : {}),
     };
   };
-  return [...pending.map((r) => toJob(r, true)), ...fresh.map((r) => toJob(r, false))];
+  return [
+    ...prio.map((r) => toJob(r, r.score !== null && r.score !== undefined, true)),
+    ...pending.map((r) => toJob(r, true)),
+    ...fresh.map((r) => toJob(r, false)),
+  ];
 }
 
 export function markExcluded(

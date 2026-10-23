@@ -69,12 +69,12 @@ export function planPipelineWork(db: BetterSqlite3.Database, o: PipelineWorkOpts
   const cols = 'id, source, apply_url, created_at, company_key, title_key, rowid AS rid';
   const fresh = db.prepare(
     `SELECT ${cols} FROM jobs
-      WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ? AND created_at >= ? AND ${PIPELINE_SKIP_SQL}`,
+      WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ? AND created_at >= ? AND priority = 0 AND ${PIPELINE_SKIP_SQL}`,
   ).all(o.failLimit, cutoff) as Cand[];
   const matched = typeof o.matchThreshold === 'number'
     ? db.prepare(
       `SELECT ${cols} FROM jobs
-        WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ? AND ${PIPELINE_SKIP_SQL}
+        WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ? AND priority = 0 AND ${PIPELINE_SKIP_SQL}
           AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id)`,
     ).all(o.matchThreshold, o.prepOfferLimit ?? 4) as Cand[]
     : [];
@@ -122,6 +122,39 @@ export function planPipelineWork(db: BetterSqlite3.Database, o: PipelineWorkOpts
     for (const r of g.slice(1)) { skips.push({ job_id: r.id, reason: JOB_STATUS_DUPLICATE, of: g[0].id }); skipped.add(r.id); }
   }
   return { offer: survivors.filter((r) => !skipped.has(r.id)).map((r) => r.id), skips };
+}
+
+/** The id of another job with the same company and title that was contacted (outreach, connection, application) within REPEAT_CONTACT_DAYS, if any. */
+export function repeatContactOf(db: BetterSqlite3.Database, jobId: string, now: Date = new Date()): string | undefined {
+  const j = db.prepare('SELECT company_key, title_key FROM jobs WHERE id = ?').get(jobId) as { company_key: string | null; title_key: string | null } | undefined;
+  if (!j || !j.company_key || !j.title_key) return undefined;
+  const c = sqlTime(new Date(now.getTime() - REPEAT_CONTACT_DAYS * 86400_000));
+  return (db.prepare(
+    `SELECT j2.id AS id FROM jobs j2
+      WHERE j2.id != ? AND j2.company_key = ? AND j2.title_key = ? AND (
+        EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = j2.id AND q.created_at >= ? AND coalesce(q.status, '') != 'skipped')
+        OR EXISTS (SELECT 1 FROM outreach o WHERE o.job_id = j2.id AND o.created_at >= ? AND o.status = 'sent')
+        OR EXISTS (SELECT 1 FROM connections c WHERE c.job_id = j2.id AND c.created_at >= ?)
+        OR EXISTS (SELECT 1 FROM applications a WHERE a.job_id = j2.id AND a.created_at >= ?))
+      LIMIT 1`,
+  ).get(jobId, j.company_key, j.title_key, c, c, c, c) as { id: string } | undefined)?.id;
+}
+
+/**
+ * Owner-submitted (priority) rows keep the 90-day repeat-contact guard. A row of a forced request (`forced` truthy) passes it.
+ * Any other row that repeats is marked jobs.status 'repeat_contact' (kept, never deleted) and dropped from the offer; the owner report says so.
+ */
+export function applyPriorityRepeats<T extends { id: unknown; forced?: unknown }>(db: BetterSqlite3.Database, rows: T[], now: Date = new Date()): T[] {
+  const skips: PipelineSkip[] = [];
+  const kept = rows.filter((r) => {
+    if (r.forced) return true;
+    const of = repeatContactOf(db, String(r.id), now);
+    if (!of) return true;
+    skips.push({ job_id: String(r.id), reason: JOB_STATUS_REPEAT_CONTACT, of });
+    return false;
+  });
+  applyPipelineSkips(db, skips);
+  return kept;
 }
 
 /** Persists skips as `jobs.status`; rows are never deleted. Returns rows changed. */

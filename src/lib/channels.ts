@@ -1,6 +1,6 @@
 // Which outreach and apply channels a job is eligible for, as pure data (plan 8G task 13).
 // Closed reason codes only: the wake pipeline and the reports show these, never free text.
-import { isDiscoverOnlySource, isHeldSource } from './discoverOnly.js';
+import { baseSource, isDiscoverOnlySource, isHeldSource } from './discoverOnly.js';
 
 export type Channel = 'email' | 'linkedin' | 'naukri' | 'apply';
 export const CHANNELS: readonly Channel[] = ['email', 'linkedin', 'naukri', 'apply'];
@@ -80,7 +80,7 @@ export function applyTierFor(applyUrl: string | null | undefined): ApplyTier {
 }
 
 export function channelsFor(job: ChannelJob, ctx: ChannelContext = {}): ChannelVerdict[] {
-  const source = (job.source ?? '').trim().toLowerCase();
+  const source = baseSource(job.source ?? '');
   const no = (channel: Channel, reason: ReasonCode): ChannelVerdict => ({ channel, eligible: false, reason });
   if (isHeldSource(source)) return CHANNELS.map((c) => no(c, 'held_review'));
 

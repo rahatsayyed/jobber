@@ -13,11 +13,17 @@ export const DISCOVER_ONLY_SOURCES: ReadonlySet<string> = new Set([
 // Aggregator feeds: their apply_url is an aggregator page or an arbitrary host, never an apply target.
 export const AGGREGATOR_SOURCES: ReadonlySet<string> = new Set(['hackernews', 'himalayas', 'weworkremotely']);
 
+/** Lower-cased source id; an owner-submitted `manual:<kind>` source inherits the rules of `<kind>` (manual:workday is discover-only like workday). */
+export function baseSource(source: string): string {
+  const s = source.trim().toLowerCase();
+  return s.startsWith('manual:') ? s.slice(7) : s;
+}
+
 // True when a source may never reach an apply attempt: discover-only, aggregator, or a generated provider (`gen:*`).
 // No gen provider has an owner approval record yet, so every `gen:*` source counts as not yet approved (held_review).
 export function isApplyBlockedSource(source: string | null | undefined): boolean {
   if (typeof source !== 'string') return false;
-  const s = source.trim().toLowerCase();
+  const s = baseSource(source);
   return DISCOVER_ONLY_SOURCES.has(s) || AGGREGATOR_SOURCES.has(s) || s.startsWith('gen:');
 }
 
@@ -27,5 +33,5 @@ export function isHeldSource(source: string | null | undefined): boolean {
 }
 
 export function isDiscoverOnlySource(source: string | null | undefined): boolean {
-  return typeof source === 'string' && DISCOVER_ONLY_SOURCES.has(source.trim().toLowerCase());
+  return typeof source === 'string' && DISCOVER_ONLY_SOURCES.has(baseSource(source));
 }
