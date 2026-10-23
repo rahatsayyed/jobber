@@ -42,7 +42,7 @@ function getDb(deps: OutreachDeps): Db {
 const nowOf = (deps: OutreachDeps): Date => (deps.now ? deps.now() : new Date());
 
 const THREAD_REF = /^[A-Za-z0-9_:./-]{1,120}$/;
-const PLATFORM =z.enum(['linkedin', 'naukri']);
+const PLATFORM =z.enum(['linkedin', 'naukri', 'wellfound']);
 const KLASS = z.enum(['recruiter_inquiry', 'reply', 'rejection', 'interview', 'noise', 'injection_suspect']);
 
 export function handleListDueTouches(deps: OutreachDeps, a: { platform?: Platform; limit?: number }) {
@@ -135,7 +135,7 @@ export function buildServer(deps: OutreachDeps = {}): McpServer {
       description: 'Escalate to the owner. detail is clamped to 200 chars and sanitized.',
       inputSchema: {
         run_id: z.string().max(100).optional(),
-        platform: z.enum(['linkedin', 'naukri', 'scheduler']),
+        platform: z.enum(['linkedin', 'naukri', 'wellfound', 'scheduler']),
         person_id: z.number().int().optional(),
         thread_ref: z.string().regex(THREAD_REF).optional(),
         reason: z.string().min(1).max(200),

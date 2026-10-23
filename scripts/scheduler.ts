@@ -22,6 +22,7 @@ import { fileNotifier } from '../src/scheduler/notify.js';
 import { loadPlanKnobs, planWake, type DiscoverSearches } from '../src/scheduler/plan.js';
 import { loadDiscoveryConfig } from '../src/linkedin/discoveryConfig.js';
 import { loadNaukriDiscoveryConfig } from '../src/naukri/discover.js';
+import { loadWellfoundDiscoveryConfig } from '../src/wellfound/discover.js';
 import { getState, listRuns } from '../src/scheduler/runLog.js';
 import { makeAfterWakeHooks } from '../src/scheduler/hooks.js';
 import { parseSchedulerArgs } from '../src/scheduler/args.js';
@@ -29,6 +30,8 @@ import { parseSchedulerArgs } from '../src/scheduler/args.js';
 const projectRoot = resolve(process.cwd());
 const root = join(projectRoot, '.jobber');
 const stopFile = join(root, 'STOP');
+/** Existence only is checked (never read): the Wellfound operator is planned once the owner login has been captured. */
+const WELLFOUND_STATE_PATH = join(projectRoot, 'secrets', 'wellfound-state.json');
 
 const safe = (v: unknown): string => redactPane(String(v ?? '')).replace(/\s+/g, ' ').slice(0, 200);
 
@@ -72,7 +75,12 @@ function status(env: NodeJS.ProcessEnv): void {
 /** Search names only (never definitions) from config/linkedin-discovery.json and config/naukri-discovery.json, for the discover tasks. */
 function discoverNames(): DiscoverSearches {
   const c = loadDiscoveryConfig();
-  return { jobs: c.jobs.map((j) => j.name), posts: c.posts.map((p) => p.name), naukri: loadNaukriDiscoveryConfig().searches.map((s) => s.name) };
+  return {
+    jobs: c.jobs.map((j) => j.name), posts: c.posts.map((p) => p.name),
+    naukri: loadNaukriDiscoveryConfig().searches.map((s) => s.name),
+    // Wellfound is planned only once its owner login exists (secrets/wellfound-state.json): no session, no dispatch.
+    wellfound: existsSync(WELLFOUND_STATE_PATH) ? loadWellfoundDiscoveryConfig().searches.map((s) => s.name) : [],
+  };
 }
 
 function dryRunPlan(env: NodeJS.ProcessEnv): void {

@@ -11,13 +11,18 @@ import { getState } from './runLog.js';
 
 type Db = BetterSqlite3.Database;
 
+/** Platforms with followup and new-outreach work counted by the db. Wellfound has none: it only discovers, reads its inbox and applies. */
+export type DuePlatform = Exclude<Platform, 'wellfound'>;
+
 export interface DueCounts {
   followupsDue: number;
   newOutreachReady: number;
-  followupsDueByPlatform: Record<Platform, number>;
-  newOutreachReadyByPlatform: Record<Platform, number>;
+  followupsDueByPlatform: Record<DuePlatform, number>;
+  newOutreachReadyByPlatform: Record<DuePlatform, number>;
   inboxLastCheckedMinAgo: number | null;
   naukriSearchLastHoursAgo: number | null;
+  /** Hours since the last Wellfound discovery run (set by the discover tool); null when never, undefined: not tracked (never due). */
+  wellfoundDiscoverLastHoursAgo?: number | null;
   /** Hours since the last LinkedIn discovery run (set by the discovery tools); null when never. */
   linkedinDiscoverLastHoursAgo?: number | null;
   /** Hours since the last code pass over the script providers; null when never, undefined: not tracked (never due). */
@@ -64,10 +69,10 @@ function agoMs(db: Db, key: string, now: Date): number | null {
  * Email-only and apply-only rows are not counted. Counts are also split per platform.
  */
 export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, env: NodeJS.ProcessEnv = process.env): DueCounts {
-  const zero = (): Record<Platform, number> => ({ linkedin: 0, naukri: 0 });
+  const zero = (): Record<DuePlatform, number> => ({ linkedin: 0, naukri: 0 });
   const followupsDueByPlatform = zero();
   for (const t of dueTouchesFor(db, now, tuning)) {
-    if (t.platform in followupsDueByPlatform) followupsDueByPlatform[t.platform as Platform]++;
+    if (t.platform in followupsDueByPlatform) followupsDueByPlatform[t.platform as DuePlatform]++;
   }
   const seen = new Set<string>();
   const newByPlatform = zero();
@@ -76,7 +81,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
     const k = `${platform}:${key}`;
     if (seen.has(k)) return;
     seen.add(k);
-    newByPlatform[platform as Platform]++;
+    newByPlatform[platform as DuePlatform]++;
   };
   const queuedTouches = db
     .prepare(
@@ -114,9 +119,10 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
         | undefined
     )?.count ?? 0;
   const appliesLeftToday = Math.max(0, maxAppliesPerDay(env) - usedToday);
-  const sum = (r: Record<Platform, number>): number => r.linkedin + r.naukri;
+  const sum = (r: Record<DuePlatform, number>): number => r.linkedin + r.naukri;
   const inbox = agoMs(db, 'inbox_last_checked_at', now);
   const naukri = agoMs(db, 'naukri_search_last_at', now);
+  const wellfound = agoMs(db, 'wellfound_discover_last_at', now);
   const discover = agoMs(db, 'linkedin_discover_last_at', now);
   const script = agoMs(db, SCRIPT_DISCOVER_KEY, now);
   const n = (sql: string): number => {
@@ -150,6 +156,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
     newOutreachReadyByPlatform: newByPlatform,
     inboxLastCheckedMinAgo: inbox === null ? null : Math.floor(inbox / 60000),
     naukriSearchLastHoursAgo: naukri === null ? null : naukri / 3600000,
+    wellfoundDiscoverLastHoursAgo: wellfound === null ? null : wellfound / 3600000,
     linkedinDiscoverLastHoursAgo: discover === null ? null : discover / 3600000,
     scriptDiscoverLastHoursAgo: script === null ? null : script / 3600000,
     sourceTasksQueued: n("SELECT COUNT(*) AS n FROM source_tasks WHERE state = 'queued' AND NOT (reason = 'error' AND company IS NOT NULL)"),

@@ -8,7 +8,7 @@ import type { BlockKind } from '../linkedin/state.js';
 import type { RawSnapshot } from '../linkedin/types.js';
 import type { LayoutConfig } from './config.js';
 import { applyObservation, type ApplyResult } from './classify.js';
-import { observeAts, observeLinkedin, observeNaukri, type NaukriRawSnapshot } from './fingerprint.js';
+import { observeAts, observeLinkedin, observeNaukri, observeWellfound, type NaukriRawSnapshot, type WellfoundRawSnapshot } from './fingerprint.js';
 import type { FormModel } from '../webcore/formModel.js';
 import { renderLayout } from './render.js';
 import { emptyLayout, loadLayout, saveLayout, withLayoutLock } from './store.js';
@@ -26,6 +26,8 @@ export interface LayoutObserver {
   observe(raw: RawSnapshot, block: BlockKind | null): Verdict;      // classify + learn + persist + events
   /** Naukri: the same pipeline from the already parsed snapshot; it never touches the page. */
   observeNaukri(raw: NaukriRawSnapshot, loginRequired: boolean): Verdict;
+  /** Wellfound: the same pipeline from a snapshot built from the engine tree; it never touches the page. */
+  observeWellfound(raw: WellfoundRawSnapshot, loginRequired: boolean): Verdict;
   /** Browser-applier ATS pages (platform `ats_<id>`): the same pipeline from a form model; ids only. */
   observeAts?(model: FormModel): Verdict;
   /** `landmarks` is the observation's own landmark set (what is on the page now). */
@@ -165,6 +167,9 @@ export function createLayoutObserver(d: {
   const observeNaukriSnapshot = (raw: NaukriRawSnapshot, loginRequired: boolean): Verdict =>
     platform !== 'naukri' ? UNKNOWN : commit(() => observeNaukri(raw, { loginRequired }));
 
+  const observeWellfoundSnapshot = (raw: WellfoundRawSnapshot, loginRequired: boolean): Verdict =>
+    platform !== 'wellfound' ? UNKNOWN : commit(() => observeWellfound(raw, { loginRequired }));
+
   function recordOutcome(label: string, ok: boolean, action: Recipe['action'] = 'click'): void {
     try {
       const seen = lastSeen;
@@ -211,5 +216,5 @@ export function createLayoutObserver(d: {
   const observeAtsModel = (model: FormModel): Verdict =>
     !ats ? UNKNOWN : commit(() => observeAts(model, platform));
 
-  return { observe, observeNaukri: observeNaukriSnapshot, observeAts: observeAtsModel, last: () => lastSeen, recordOutcome, render };
+  return { observe, observeNaukri: observeNaukriSnapshot, observeWellfound: observeWellfoundSnapshot, observeAts: observeAtsModel, last: () => lastSeen, recordOutcome, render };
 }

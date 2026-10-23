@@ -2,9 +2,9 @@
 import type { CeilingStatus, LimitKey } from '../outreach/limits.js';
 import { drawBurstSize, inQuietHours, type PacingConfig, type Rng } from '../outreach/pacing.js';
 import type { ControlState, Platform } from './control.js';
-import type { DueCounts } from './due.js';
+import type { DueCounts, DuePlatform } from './due.js';
 
-export type Operator = 'linkedin-operator' | 'naukri-operator';
+export type Operator = 'linkedin-operator' | 'naukri-operator' | 'wellfound-operator';
 /**
  * discover_scripts: the code pass over the script providers (zero LLM, no agent). discover_agent: `source-operator` for queued source_tasks.
  * discover: LinkedIn / Naukri discovery by their operators. pipeline: sweep, reply check, match, vetoes, contacts, prepare.
@@ -19,7 +19,7 @@ export interface Stage { operator: StageOperator; kind: TaskKind; quota: number 
 /** One step of the wake, in execution order (see `stepOrder`). */
 export interface Step { operator: Operator | StageOperator; kind: TaskKind; quota: number; platform?: Platform; searches?: DiscoverSearches }
 /** Names of the searches the discover tasks may run: LinkedIn from config/linkedin-discovery.json, Naukri (`naukri`) from config/naukri-discovery.json. */
-export interface DiscoverSearches { jobs: string[]; posts: string[]; naukri?: string[] }
+export interface DiscoverSearches { jobs: string[]; posts: string[]; naukri?: string[]; wellfound?: string[] }
 /** `quota` of a LinkedIn discover task is the number of searches it may run this wake; of a Naukri one, the job pages it may open for descriptions. `searches` names them. */
 export interface OperatorTask { kind: TaskKind; quota: number; searches?: DiscoverSearches }
 export interface Assignment { operator: Operator; platform: Platform; tasks: OperatorTask[] }
@@ -32,10 +32,14 @@ export interface PlanKnobs {
   naukriDiscoverEveryHours: number;
   /** Hours between LinkedIn discover tasks; absent means the default (a constant, no env key). */
   linkedinDiscoverEveryHours?: number;
+  /** Hours between Wellfound discover tasks (WELLFOUND_DISCOVER_EVERY_HOURS); absent means WELLFOUND_DISCOVER_EVERY_HOURS_DEFAULT. */
+  wellfoundDiscoverEveryHours?: number;
 }
 
 export const INBOX_QUOTA = 5;
 export const NAUKRI_DETAIL_QUOTA = 5;
+export const WELLFOUND_DETAIL_QUOTA = 5;
+export const WELLFOUND_DISCOVER_EVERY_HOURS_DEFAULT = 6;
 export const LINKEDIN_DISCOVER_EVERY_HOURS = 6;
 /** Hours between code passes over the script providers (a constant, no env key). */
 export const SCRIPT_DISCOVER_EVERY_HOURS = 6;
@@ -61,6 +65,9 @@ export function loadPlanKnobs(env: NodeJS.ProcessEnv = process.env): PlanKnobs {
   return {
     inboxEveryMin: posInt(env.INBOX_EVERY_MIN, 60),
     naukriDiscoverEveryHours: posInt(env.NAUKRI_DISCOVER_EVERY_HOURS, 6),
+    ...(env.WELLFOUND_DISCOVER_EVERY_HOURS !== undefined
+      ? { wellfoundDiscoverEveryHours: posInt(env.WELLFOUND_DISCOVER_EVERY_HOURS, WELLFOUND_DISCOVER_EVERY_HOURS_DEFAULT) }
+      : {}),
   };
 }
 
@@ -91,17 +98,22 @@ export function planWake(i: {
   const burst = drawBurstSize(i.rng, i.pacing); // the only RNG draw
   const allowed = new Set<Platform>(control.allowed);
   const ok = (k: LimitKey): boolean => ceilings[k].ok;
-  const plats = (pairs: [Platform, LimitKey[]][]): Platform[] =>
+  const plats = (pairs: [DuePlatform, LimitKey[]][]): DuePlatform[] =>
     pairs.filter(([p, keys]) => allowed.has(p) && keys.some(ok)).map(([p]) => p);
 
-  const ORDER: Platform[] = ['linkedin', 'naukri']; // stable order: linkedin first
-  const byPlatform: Record<Platform, OperatorTask[]> = { linkedin: [], naukri: [] };
+  const ORDER: Platform[] = ['linkedin', 'naukri', 'wellfound']; // stable order: linkedin first
+  const byPlatform: Record<Platform, OperatorTask[]> = { linkedin: [], naukri: [], wellfound: [] };
   let remaining = burst;
 
-  const inboxDue = due.inboxLastCheckedMinAgo === null || due.inboxLastCheckedMinAgo >= knobs.inboxEveryMin;
-  if (inboxDue) for (const p of control.allowed) byPlatform[p].push({ kind: 'inbox', quota: INBOX_QUOTA });
+  // Wellfound is planned only when its discovery config names a search (the scheduler passes the names only when
+  // its session file exists): no session, no dispatch, so no operator call is wasted before the owner logs in.
+  const wellfoundNames = i.discoverSearches?.wellfound ?? [];
+  const wellfoundOn = wellfoundNames.length > 0 && allowed.has('wellfound');
 
-  const withWork = (ps: Platform[], by: Record<Platform, number>): Platform[] => ps.filter((p) => by[p] > 0);
+  const inboxDue = due.inboxLastCheckedMinAgo === null || due.inboxLastCheckedMinAgo >= knobs.inboxEveryMin;
+  if (inboxDue) for (const p of control.allowed) if (p !== 'wellfound' || wellfoundOn) byPlatform[p].push({ kind: 'inbox', quota: INBOX_QUOTA });
+
+  const withWork = (ps: DuePlatform[], by: Record<DuePlatform, number>): DuePlatform[] => ps.filter((p) => by[p] > 0);
   const followPlats = withWork(
     plats([
       ['linkedin', ['linkedin_message']],
@@ -140,6 +152,13 @@ export function planWake(i: {
   if (naukriDiscoverDue && discoverPlats.length > 0) {
     byPlatform.naukri.push({ kind: 'discover', quota: NAUKRI_DETAIL_QUOTA, searches: { jobs: naukriNames, posts: [] } });
   }
+  // Wellfound discovery: a named search, the daily wellfound_discover ceiling, and a last-run age (undefined: not tracked, never due).
+  const wellfoundAge = due.wellfoundDiscoverLastHoursAgo;
+  const wellfoundDiscoverDue =
+    wellfoundAge === null || (wellfoundAge !== undefined && wellfoundAge >= (knobs.wellfoundDiscoverEveryHours ?? WELLFOUND_DISCOVER_EVERY_HOURS_DEFAULT));
+  if (wellfoundOn && wellfoundDiscoverDue && ceilings.wellfound_discover?.ok !== false) {
+    byPlatform.wellfound.push({ kind: 'discover', quota: WELLFOUND_DETAIL_QUOTA, searches: { jobs: wellfoundNames, posts: [] } });
+  }
 
   // Discovery reads and saves jobs, it sends nothing, so it does not spend the burst. It needs the
   // linkedin_discover ceiling, a named search and a last-run age (undefined: not tracked, never due).
@@ -161,7 +180,7 @@ export function planWake(i: {
   const sourceTasks = due.sourceTasksQueued ?? 0;
   if (sourceTasks > 0) stages.push({ operator: 'source-operator', kind: 'discover_agent', quota: Math.min(sourceTasks, SOURCE_TASK_QUOTA) });
   const newJobsExpected =
-    scriptDue || sourceTasks > 0 || byPlatform.linkedin.some((t) => t.kind === 'discover') || byPlatform.naukri.some((t) => t.kind === 'discover');
+    scriptDue || sourceTasks > 0 || byPlatform.linkedin.some((t) => t.kind === 'discover') || byPlatform.naukri.some((t) => t.kind === 'discover') || byPlatform.wellfound.some((t) => t.kind === 'discover');
   const unmatched = due.unmatchedJobs ?? 0;
   // Email follow-ups need the reply check the pipeline stage starts with (step 0b), so they pull the stage in.
   const pipelineDue = unmatched > 0 || newJobsExpected || (due.emailFollowupsReady ?? 0) > 0;
@@ -197,11 +216,12 @@ export function planWake(i: {
 
   if (tasks.length > 0 || stages.length > 0) return { kind: 'run', burst, tasks, ...(stages.length > 0 ? { stages } : {}) };
 
-  const allowedTotal = (by: Record<Platform, number>): number => control.allowed.reduce((n, p) => n + by[p], 0);
+  const allowedTotal = (by: Record<DuePlatform, number>): number => control.allowed.reduce((n, p) => n + (p === 'wellfound' ? 0 : by[p]), 0);
   const workExists =
     allowedTotal(due.followupsDueByPlatform) > 0 ||
     allowedTotal(due.newOutreachReadyByPlatform) > 0 ||
     (naukriDiscoverDue && naukriNames.length > 0 && allowed.has('naukri')) ||
+    (wellfoundOn && wellfoundDiscoverDue) ||
     applyQueued > 0;
   return { kind: 'skip', reason: workExists ? 'ceilings_exhausted' : 'nothing_due' };
 }

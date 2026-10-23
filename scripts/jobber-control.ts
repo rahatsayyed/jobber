@@ -57,6 +57,7 @@ function main(): void {
       if (s.readError) console.log(`read error: ${s.readError}`);
       console.log(`linkedin halt: ${s.halted.linkedin ?? 'none'}`);
       console.log(`naukri halt: ${s.halted.naukri ?? 'none'}`);
+      console.log(`wellfound halt: ${s.halted.wellfound ?? 'none'}`);
       console.log(`apply halt: ${activeApplyHalt(db) ?? 'none'}`);
       console.log(`allowed: ${s.allowed.join(', ') || 'none'}`);
     } else {

@@ -7,8 +7,6 @@ import { IMPORTED_IDS } from '../sources/providers/index.js';
 // Imported feeds (src/sources/providers, adapted from career-ops) are discover-only too.
 export const DISCOVER_ONLY_SOURCES: ReadonlySet<string> = new Set([
   'workable', 'recruitee', 'personio', 'workday', 'smartrecruiters', 'hackernews', 'himalayas', 'weworkremotely',
-  // Wellfound: agent-tier custom site read by the source-operator, never an apply target.
-  'wellfound',
   ...IMPORTED_IDS,
 ]);
 

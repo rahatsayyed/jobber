@@ -20,7 +20,7 @@ const pacing: PacingConfig = {
 const knobs: PlanKnobs = { inboxEveryMin: 60, naukriDiscoverEveryHours: 6 };
 const NAUKRI_NAMES = { jobs: [], posts: [], naukri: ['react-india'] };
 const ctl = (o: Partial<ControlState> = {}): ControlState => ({
-  killed: false, killReason: null, halted: { linkedin: null, naukri: null },
+  killed: false, killReason: null, halted: { linkedin: null, naukri: null, wellfound: null },
   allowed: ['linkedin', 'naukri'], readError: null, ...o,
 });
 const ceil = (bad: LimitKey[] = []): Record<LimitKey, CeilingStatus> => {
@@ -59,7 +59,7 @@ describe('planWake', () => {
   });
   it('skips halted when both platforms halted', () => {
     const { d, calls } = plan({
-      control: ctl({ allowed: [], halted: { linkedin: 'a', naukri: 'b' } }),
+      control: ctl({ allowed: [], halted: { linkedin: 'a', naukri: 'b', wellfound: null } }),
     });
     expect(d).toMatchObject({ kind: 'skip', reason: 'halted' });
     expect(calls).toBe(0);
@@ -128,7 +128,7 @@ describe('planWake', () => {
   });
   it('inbox is assigned per allowed platform', () => {
     const { d } = plan({
-      control: ctl({ allowed: ['naukri'], halted: { linkedin: 'x', naukri: null } }),
+      control: ctl({ allowed: ['naukri'], halted: { linkedin: 'x', naukri: null, wellfound: null } }),
       due: due({ inboxLastCheckedMinAgo: null }),
     });
     if (d.kind !== 'run') throw new Error('expected run');
@@ -137,7 +137,7 @@ describe('planWake', () => {
   });
   it('linkedin halted leaves only the naukri assignment', () => {
     const { d } = plan({
-      control: ctl({ allowed: ['naukri'], halted: { linkedin: 'x', naukri: null } }),
+      control: ctl({ allowed: ['naukri'], halted: { linkedin: 'x', naukri: null, wellfound: null } }),
       due: due({ followupsDue: 2, newOutreachReady: 2, naukriSearchLastHoursAgo: null }),
     });
     if (d.kind !== 'run') throw new Error('expected run');
@@ -186,7 +186,7 @@ describe('planWake', () => {
   });
   it('plans nothing when only a halted platform has work (I4, M1)', () => {
     const { d } = plan({
-      control: ctl({ allowed: ['linkedin'], halted: { linkedin: null, naukri: 'x' } }),
+      control: ctl({ allowed: ['linkedin'], halted: { linkedin: null, naukri: 'x', wellfound: null } }),
       due: due({ followupsDueByPlatform: { linkedin: 0, naukri: 5 }, followupsDue: 5 }),
       ceilings: ceil(['linkedin_message', 'linkedin_invite']),
     });
@@ -195,7 +195,7 @@ describe('planWake', () => {
   it('quota is sized only from the kept platform (I4)', () => {
     const { d } = plan(
       {
-        control: ctl({ allowed: ['linkedin'], halted: { linkedin: null, naukri: 'x' } }),
+        control: ctl({ allowed: ['linkedin'], halted: { linkedin: null, naukri: 'x', wellfound: null } }),
         due: due({ followupsDueByPlatform: { linkedin: 1, naukri: 9 }, followupsDue: 10 }),
       },
       0.99,
@@ -419,7 +419,7 @@ describe('planWake: linkedin discover task', () => {
     expect(discover({ discoverSearches: { jobs: [], posts: [] } })).toBeUndefined();
     expect(discover({ discoverSearches: undefined })).toBeUndefined();
     expect(discover({ ceilings: withDiscover(['linkedin_discover']) })).toBeUndefined();
-    expect(discover({ control: ctl({ allowed: ['naukri'], halted: { linkedin: 'x', naukri: null } }) })).toBeUndefined();
+    expect(discover({ control: ctl({ allowed: ['naukri'], halted: { linkedin: 'x', naukri: null, wellfound: null } }) })).toBeUndefined();
   });
   it('an untracked last-run age (field absent) never plans discover', () => {
     expect(discover({ due: due() })).toBeUndefined();
@@ -467,7 +467,7 @@ describe('planWake: the pipeline pulls linkedin new_outreach and apply into the 
     expect(run({ due: fresh({ appliesLeftToday: 0 }) }).apply).toBe(false);
   });
   it('no linkedin task when linkedin is halted or not allowed', () => {
-    const c = ctl({ allowed: ['naukri'], halted: { linkedin: 'x', naukri: null } });
+    const c = ctl({ allowed: ['naukri'], halted: { linkedin: 'x', naukri: null, wellfound: null } });
     expect(run({ control: c }).li).toEqual([]);
   });
   it('does not exceed the burst together with other tasks', () => {

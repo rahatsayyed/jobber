@@ -82,6 +82,7 @@ const SECTION_TITLES: Record<SectionId, string> = {
   limits: 'Limits',
   linkedin: 'LinkedIn',
   naukri: 'Naukri',
+  wellfound: 'Wellfound',
   scheduler: 'Scheduler',
   dashboard: 'Dashboard',
   telegram: 'Telegram',

@@ -1,5 +1,5 @@
 // Shared contracts for layout memory (plan 8B). Pure types, no I/O.
-export type BasePlatform = 'linkedin' | 'naukri';
+export type BasePlatform = 'linkedin' | 'naukri' | 'wellfound';
 // Browser-applier ATS pages (plan 8G-2 task 19): one layout file per ATS, e.g. ats_greenhouse.
 export type AtsPlatform = `ats_${string}`;
 export type Platform = BasePlatform | AtsPlatform;

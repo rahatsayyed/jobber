@@ -1,0 +1,11 @@
+{
+  "searches": [
+    {
+      "name": "full-stack-react-india-remote",
+      "role": "full-stack-engineer",
+      "location": "india",
+      "remote": true,
+      "limit": 20
+    }
+  ]
+}

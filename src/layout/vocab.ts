@@ -11,6 +11,7 @@ export const MAX_RUN_IDS = 5;
 export const KINDS: Record<BasePlatform, readonly KindId[]> = {
   linkedin: ['profile', 'search', 'feed', 'messaging', 'invitations', 'jobs', 'login', 'checkpoint', 'other'],
   naukri: ['job', 'search', 'inbox', 'thread', 'login', 'home', 'other'],
+  wellfound: ['job', 'search', 'inbox', 'thread', 'login', 'home', 'other'],
 };
 
 export const ACTION_LABELS: Record<BasePlatform, Record<string, string>> = {
@@ -24,6 +25,7 @@ export const ACTION_LABELS: Record<BasePlatform, Record<string, string>> = {
     'view in sales navigator': 'action:sales_nav',
   },
   naukri: {},
+  wellfound: {},
 };
 
 /**
@@ -49,6 +51,11 @@ export const LANDMARKS: Record<BasePlatform, readonly LandmarkId[]> = {
     'chat.open', 'chat.input', 'chat.send', 'chat.options', 'chat.messages',
     'notice.present', 'login.password',
   ],
+  wellfound: [
+    'button:apply', 'button:applied', 'button:save', 'button:company_site', 'button:other',
+    'form.open', 'form.note', 'form.submit', 'chat.input', 'chat.send',
+    'notice.present', 'login.password',
+  ],
 };
 
 // Count keys that may appear in Observation.counts.
@@ -70,6 +77,9 @@ export const CRITICAL: Record<BasePlatform, Record<KindId, readonly LandmarkId[]
   naukri: {
     thread: ['chat.input'],
   },
+  wellfound: {
+    thread: ['chat.input'],
+  },
 };
 
 // Smallest landmark set a page of that kind is expected to show for layout to count as known.
@@ -83,6 +93,9 @@ export const MIN_SET: Record<BasePlatform, Record<KindId, readonly LandmarkId[]>
     messaging: ['messages.search'],
   },
   naukri: {
+    thread: ['chat.input'],
+  },
+  wellfound: {
     thread: ['chat.input'],
   },
 };
@@ -102,6 +115,7 @@ export const OPTIONAL: Record<BasePlatform, Record<KindId, readonly LandmarkId[]
     feed: ['feed.posts', 'notice.present'],
   },
   naukri: {},
+  wellfound: {},
 };
 
 /** The landmarks of a kind that count for comparison and learning (optional ones removed). */

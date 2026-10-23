@@ -49,6 +49,11 @@ const WAKE_ALLOW = [
   'mcp__applier__apply_upload', 'mcp__applier__apply_next', 'mcp__applier__apply_submit', 'mcp__applier__apply_escalate', 'mcp__applier__apply_recipe',
   'mcp__applier__apply_propose_recipe', 'mcp__applier__apply_limits', 'mcp__applier__apply_close', 'mcp__applier__site_login',
   'mcp__applier__site_signup', 'mcp__applier__site_open_link', 'mcp__naukri__naukri_click', 'mcp__naukri__naukri_type',
+  // wellfound (the operator, the apply operator and the arm tools; same shape as the naukri block)
+  'mcp__wellfound__wellfound_open', 'mcp__wellfound__wellfound_snapshot', 'mcp__wellfound__wellfound_close', 'mcp__wellfound__wellfound_screenshot',
+  'mcp__wellfound__wellfound_discover', 'mcp__wellfound__wellfound_inbox', 'mcp__wellfound__wellfound_read_thread', 'mcp__wellfound__wellfound_scroll',
+  'mcp__wellfound__wellfound_wait_for', 'mcp__wellfound__wellfound_press_key', 'mcp__wellfound__wellfound_click_at', 'mcp__wellfound__wellfound_arm_send',
+  'mcp__wellfound__wellfound_arm_apply', 'mcp__wellfound__wellfound_layout', 'mcp__wellfound__wellfound_click', 'mcp__wellfound__wellfound_type',
 ];
 
 // Sentences moved verbatim from the sender: the dedupe rule and the follow-up guards.

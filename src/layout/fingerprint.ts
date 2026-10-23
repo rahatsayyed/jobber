@@ -6,6 +6,18 @@ import { classifyUrl } from '../linkedin/urls.js';
 import type { LandmarkId, Observation, Platform } from './types.js';
 import { ATS_CONTROL_KINDS, ATS_KINDS, actionLabelFor, isAtsPlatform } from './vocab.js';
 import type { FormModel } from '../webcore/formModel.js';
+import { wellfoundKind } from '../wellfound/page.js';
+
+// Wellfound snapshot shape, built from the browserctl tree (src/browserctl/layoutAdapter.ts): ids and booleans only.
+export interface WellfoundRawSnapshot {
+  title: string;
+  url: string;
+  buttons: string[];
+  form: { open: boolean; hasNote: boolean; hasSubmit: boolean };
+  composer: { present: boolean; sendLabel: string | null };
+  notices: string[];
+  hasPasswordInput: boolean;
+}
 
 // Structural copy of the Naukri RawSnapshot (src/mcp/naukri.ts); importing that module has side effects.
 export interface NaukriRawSnapshot {
@@ -173,6 +185,46 @@ export function observeNaukri(raw: NaukriRawSnapshot, flags: { loginRequired: bo
       messages: bucket(c.messages.length),
       notices: bucket(raw.notices.length),
     },
+    shell: kind !== 'other' && hasContent && !loginWall && !errorPage && !denied,
+    nonDrift,
+  };
+}
+
+export function observeWellfound(raw: WellfoundRawSnapshot, flags: { loginRequired: boolean }): Observation {
+  const lm = new Set<LandmarkId>();
+  for (const b of raw.buttons) {
+    const t = b.trim().toLowerCase();
+    if (t === 'apply' || t === 'apply now') lm.add('button:apply');
+    else if (t === 'applied') lm.add('button:applied');
+    else if (t === 'save' || t === 'saved') lm.add('button:save');
+    else if (t.startsWith('apply on') || t.startsWith('apply externally')) lm.add('button:company_site');
+    else lm.add('button:other');
+  }
+  if (raw.form.open) lm.add('form.open');
+  if (raw.form.hasNote) lm.add('form.note');
+  if (raw.form.hasSubmit) lm.add('form.submit');
+  if (raw.composer.present) lm.add('chat.input');
+  if (raw.composer.sendLabel) lm.add('chat.send');
+  if (raw.notices.length > 0) lm.add('notice.present');
+  if (raw.hasPasswordInput) lm.add('login.password');
+
+  const kind = wellfoundKind(raw.url);
+  const hasContent = raw.title.trim().length > 0 || raw.buttons.length > 0 || raw.composer.present;
+  const probe = [raw.title, ...raw.notices].join('\n');
+  const denied = ACCESS_DENIED_RE.test(probe) || /captcha|verify (?:that )?you/i.test(probe);
+  const errorPage = ERROR_PAGE_RE.test(raw.title);
+  const loginWall = kind === 'login' || raw.hasPasswordInput;
+
+  let nonDrift: Observation['nonDrift'] = null;
+  if (denied) nonDrift = 'blocked';
+  else if (flags.loginRequired) nonDrift = 'logged_out';
+  else if (kind !== 'other' && (!hasContent || errorPage)) nonDrift = 'unloaded';
+
+  return {
+    platform: 'wellfound',
+    kind,
+    landmarks: finish(lm),
+    counts: { buttons: bucket(raw.buttons.length), notices: bucket(raw.notices.length) },
     shell: kind !== 'other' && hasContent && !loginWall && !errorPage && !denied,
     nonDrift,
   };

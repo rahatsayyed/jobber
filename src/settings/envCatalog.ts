@@ -33,6 +33,7 @@ export const INTERNAL_NAMES: Record<string, string> = {
   APPLIER_NO_MAIN: 'import guard so tests can load the applier MCP module',
   SCOUT_NO_MAIN: 'import guard so tests can load the scout MCP module',
   NAUKRI_NO_MAIN: 'import guard so tests can load the naukri MCP module',
+  WELLFOUND_NO_MAIN: 'import guard so tests can load the wellfound MCP module',
   OUTREACH_NO_MAIN: 'import guard so tests can load the outreach MCP module',
   CLAUDE_PROJECT_DIR: 'set by Claude Code for hooks',
   PLAYWRIGHT_BROWSERS_PATH: 'third-party Playwright variable, read only to locate browsers',
@@ -389,6 +390,15 @@ const hand: EnvSpec[] = [
     restartEvidence: 'src/mcp/naukri.ts',
     ...tier('guarded', 'Feeds unscreened page pixels to the model and allows pointer clicks.'),
   }),
+  // ---- Wellfound
+  e('WELLFOUND_SCREENSHOT', 'wellfound', 'Wellfound', 'bool', {
+    default: 'true',
+    exampleActive: true,
+    about: 'On by default: wellfound_screenshot and wellfound_click_at (a pointer click needs a snapshot and a screenshot at the current epoch). Set false to disable. Screenshot pixels are NOT checked by the injection classifier.',
+    restart: 'mcp',
+    restartEvidence: 'src/mcp/wellfound.ts',
+    ...tier('guarded', 'Feeds unscreened page pixels to the model and allows pointer clicks.'),
+  }),
   e('SCOUT_SCREENSHOT', 'apply', 'source scout', 'bool', {
     default: 'true',
     exampleActive: true,
@@ -465,6 +475,15 @@ const hand: EnvSpec[] = [
     max: 10000,
     exampleActive: true,
     about: 'Hours between Naukri discover runs.',
+    restart: 'scheduler',
+    restartEvidence: 'src/scheduler/plan.ts',
+  }),
+  e('WELLFOUND_DISCOVER_EVERY_HOURS', 'scheduler', 'scheduler', 'int', {
+    default: '6',
+    min: 1,
+    max: 10000,
+    exampleActive: true,
+    about: 'Hours between Wellfound discover runs (planned only once secrets/wellfound-state.json exists).',
     restart: 'scheduler',
     restartEvidence: 'src/scheduler/plan.ts',
   }),
@@ -940,7 +959,8 @@ const hand: EnvSpec[] = [
 // Keys whose loader treats a blank value exactly like an unset one (a test runs the real loaders to prove it).
 const BLANK_OK = new Set<string>([
   'LINKEDIN_MAX_INVITES_PER_WEEK', 'LINKEDIN_MAX_MESSAGES_PER_WEEK', 'NAUKRI_MAX_APPLIES_PER_DAY',
-  'NAUKRI_MAX_MESSAGES_PER_DAY', 'APPLY_MAX_ATTEMPTS_PER_DAY', 'SITE_MAX_ACCOUNTS_PER_DAY',
+  'NAUKRI_MAX_MESSAGES_PER_DAY', 'WELLFOUND_MAX_APPLIES_PER_DAY', 'WELLFOUND_MAX_MESSAGES_PER_DAY',
+  'WELLFOUND_MAX_DISCOVER_PER_DAY', 'APPLY_MAX_ATTEMPTS_PER_DAY', 'SITE_MAX_ACCOUNTS_PER_DAY',
   'LINKEDIN_MAX_DISCOVER_PER_DAY', 'COMPANY_CONTACT_LIMIT', 'SPECULATIVE_COMPANY_LIMIT', 'QUIET_HOURS_START',
   'QUIET_HOURS_END', 'PACING_MIN_BURST', 'PACING_MAX_BURST', 'PACING_MIN_ACTION_GAP_SEC',
   'PACING_MAX_ACTION_GAP_SEC', 'PACING_MIN_WAIT_MIN', 'PACING_MAX_WAIT_MIN', 'PACING_JITTER_PCT',
@@ -981,7 +1001,7 @@ const fromLimits: EnvSpec[] = LIMITS.map((l) => fromLimit(l, limitOverride(l.key
 
 const SECTION_ORDER: SectionId[] = [
   'credentials-sources', 'contact-finding', 'credentials-gmail', 'safety', 'classifier', 'limits', 'linkedin',
-  'apply', 'web-core', 'search', 'naukri', 'scheduler', 'dashboard', 'telegram', 'layout', 'update-backup', 'advanced',
+  'apply', 'web-core', 'search', 'naukri', 'wellfound', 'scheduler', 'dashboard', 'telegram', 'layout', 'update-backup', 'advanced',
 ];
 
 /** Every owner-settable key, grouped by section in display order (the sort is stable inside a section). */

@@ -4,6 +4,9 @@ export interface OutreachConfig {
   linkedinMaxMessagesPerWeek: number;
   naukriMaxAppliesPerDay: number;
   naukriMaxMessagesPerDay: number;
+  wellfoundMaxAppliesPerDay: number;
+  wellfoundMaxMessagesPerDay: number;
+  wellfoundMaxDiscoverPerDay: number;
   applyMaxAttemptsPerDay: number;
   siteMaxAccountsPerDay: number;
   linkedinMaxDiscoverPerDay: number;
@@ -18,6 +21,9 @@ const DEFAULTS: OutreachConfig = {
   linkedinMaxMessagesPerWeek: 100,
   naukriMaxAppliesPerDay: 30,
   naukriMaxMessagesPerDay: 40,
+  wellfoundMaxAppliesPerDay: 20,
+  wellfoundMaxMessagesPerDay: 20,
+  wellfoundMaxDiscoverPerDay: 12,
   applyMaxAttemptsPerDay: 30,
   siteMaxAccountsPerDay: 2,
   linkedinMaxDiscoverPerDay: 12,
@@ -32,6 +38,9 @@ const ENV_KEYS: Record<keyof OutreachConfig, string> = {
   linkedinMaxMessagesPerWeek: 'LINKEDIN_MAX_MESSAGES_PER_WEEK',
   naukriMaxAppliesPerDay: 'NAUKRI_MAX_APPLIES_PER_DAY',
   naukriMaxMessagesPerDay: 'NAUKRI_MAX_MESSAGES_PER_DAY',
+  wellfoundMaxAppliesPerDay: 'WELLFOUND_MAX_APPLIES_PER_DAY',
+  wellfoundMaxMessagesPerDay: 'WELLFOUND_MAX_MESSAGES_PER_DAY',
+  wellfoundMaxDiscoverPerDay: 'WELLFOUND_MAX_DISCOVER_PER_DAY',
   applyMaxAttemptsPerDay: 'APPLY_MAX_ATTEMPTS_PER_DAY',
   siteMaxAccountsPerDay: 'SITE_MAX_ACCOUNTS_PER_DAY',
   linkedinMaxDiscoverPerDay: 'LINKEDIN_MAX_DISCOVER_PER_DAY',

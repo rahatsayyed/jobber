@@ -14,8 +14,9 @@ const warn = (detail: string, fix?: string): CheckResult => ({ status: 'warn', d
 const fail = (detail: string, fix?: string): CheckResult => ({ status: 'fail', detail, fix });
 
 const OPERATORS = [
-  { name: 'linkedin-operator', otherPrefix: 'mcp__naukri__' },
-  { name: 'naukri-operator', otherPrefix: 'mcp__linkedin__' },
+  { name: 'linkedin-operator', otherPrefixes: ['mcp__naukri__', 'mcp__wellfound__'] },
+  { name: 'naukri-operator', otherPrefixes: ['mcp__linkedin__', 'mcp__wellfound__'] },
+  { name: 'wellfound-operator', otherPrefixes: ['mcp__linkedin__', 'mcp__naukri__'] },
 ] as const;
 // The four per-task workers were replaced by the operators; their files must not come back.
 const RETIRED_WORKERS = ['due-followups', 'new-outreach', 'inbox-recruiter-replies', 'naukri-search'] as const;
@@ -149,7 +150,7 @@ export function schedulerChecks(): Check[] {
             bad.push(`${w}: retired worker file still exists`);
           }
         }
-        for (const { name: w, otherPrefix } of OPERATORS) {
+        for (const { name: w, otherPrefixes } of OPERATORS) {
           const file = join(ctx.root, '.claude', 'agents', `${w}.md`);
           if (!ctx.fs.exists(file)) {
             bad.push(`${w}: agent file missing`);
@@ -164,11 +165,11 @@ export function schedulerChecks(): Check[] {
           if (!Array.isArray(want) || want.join(', ') !== tools.join(', ')) bad.push(`${w}: tools differ from config`);
           for (const t of tools) {
             if (FORBIDDEN_OPERATOR_TOOLS.includes(t)) bad.push(`${w}: lists ${t}`);
-            else if (t.startsWith(otherPrefix)) bad.push(`${w}: lists ${t} (other platform)`);
+            else if (otherPrefixes.some((p) => t.startsWith(p))) bad.push(`${w}: lists ${t} (other platform)`);
           }
         }
         return bad.length === 0
-          ? pass('two operator agents match config/worker-tools.json')
+          ? pass('three operator agents match config/worker-tools.json')
           : fail(bad.join('; '), 'align the agent tools line with config/worker-tools.json');
       },
     },

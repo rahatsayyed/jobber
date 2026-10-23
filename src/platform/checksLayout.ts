@@ -17,7 +17,7 @@ const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
 const warn = (detail: string, fix?: string): CheckResult => ({ status: 'warn', detail, fix });
 const fail = (detail: string, fix?: string): CheckResult => ({ status: 'fail', detail, fix });
 
-const PLATFORMS: readonly Platform[] = ['linkedin', 'naukri'];
+const PLATFORMS: readonly Platform[] = ['linkedin', 'naukri', 'wellfound'];
 const CORRUPT_KEEP_DAYS = 7;
 const DAY_MS = 86_400_000;
 
@@ -151,7 +151,7 @@ export function layoutChecks(deps: LayoutCheckDeps = {}): Check[] {
         if (cfg.enforce !== 'warn') return pass(`LAYOUT_ENFORCE=${cfg.enforce}`);
         const unready: string[] = [];
         for (const s of sums) {
-          for (const kindId of Object.keys(CRITICAL[s.platform as 'linkedin' | 'naukri'])) {
+          for (const kindId of Object.keys(CRITICAL[s.platform as 'linkedin' | 'naukri' | 'wellfound'])) {
             const k = s.kinds.find((x) => x.kind === kindId);
             if (!k || k.state !== 'stable' || k.drift_streak !== 0 || k.drift_total !== 0) unready.push(`${s.platform}/${kindId}`);
           }

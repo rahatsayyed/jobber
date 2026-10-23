@@ -12,6 +12,7 @@ const SYNC_ONLY = new Set([
   'src/webcore/state.ts',
   'src/safety/fieldGate.ts',
   'src/naukri/parse.ts',
+  'src/wellfound/parse.ts',
   'src/naukri/inbound.ts',
   'src/outreach/service.ts',
   'src/mcp/naukri.ts',

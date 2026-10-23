@@ -30,6 +30,7 @@ const run = async (ctx: DoctorContext) => {
 const TOOLS = {
   'linkedin-operator': ['Skill', 'mcp__linkedin__linkedin_layout', 'mcp__outreach__escalate'],
   'naukri-operator': ['Skill', 'mcp__naukri__naukri_layout', 'mcp__outreach__escalate'],
+  'wellfound-operator': ['Skill', 'mcp__wellfound__wellfound_layout', 'mcp__outreach__escalate'],
 };
 const agent = (tools: string[]) => `---\nname: x\ntools: ${tools.join(', ')}\n---\nbody\n`;
 const goodAgents = (): Files => {
@@ -145,6 +146,8 @@ describe('scheduler doctor checks', () => {
       ['linkedin-operator', 'Agent'], ['linkedin-operator', 'Bash'], ['linkedin-operator', 'Read'],
       ['linkedin-operator', 'Write'], ['linkedin-operator', 'Edit'],
       ['linkedin-operator', 'mcp__naukri__naukri_search'], ['naukri-operator', 'mcp__linkedin__linkedin_state'],
+      ['wellfound-operator', 'mcp__naukri__naukri_search'], ['wellfound-operator', 'mcp__linkedin__linkedin_state'],
+      ['linkedin-operator', 'mcp__wellfound__wellfound_discover'], ['naukri-operator', 'mcp__wellfound__wellfound_discover'],
     ];
     for (const [op, tool] of bad) {
       // config and agent file agree, so only the policy check can fail

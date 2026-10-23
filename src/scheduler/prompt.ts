@@ -7,7 +7,7 @@ import { pipelineLines, type PipelinePromptInput } from './pipeline.js';
 /** The named searches of a discover task; the operator runs only these, so a missing list would leave it with nothing to do. */
 function searchNames(platform: Platform | undefined, kind: string, s: DiscoverSearches | undefined): string {
   if (!s || kind !== 'discover') return '';
-  return platform === 'naukri'
+  return platform === 'naukri' || platform === 'wellfound'
     ? ` (searches: ${s.jobs.join(', ') || 'none'}; quota is the job pages you may open for descriptions)`
     : ` (job searches: ${s.jobs.join(', ') || 'none'}; post searches: ${s.posts.join(', ') || 'none'})`;
 }
@@ -54,7 +54,7 @@ export function buildWakePrompt(i: {
       .map((k) => {
         const s = k.searches;
         const names = s && k.kind === 'discover'
-          ? t.platform === 'naukri'
+          ? t.platform === 'naukri' || t.platform === 'wellfound'
             ? ` (searches: ${s.jobs.join(', ') || 'none'}; quota is the job pages you may open for descriptions)`
             : ` (job searches: ${s.jobs.join(', ') || 'none'}; post searches: ${s.posts.join(', ') || 'none'})`
           : '';

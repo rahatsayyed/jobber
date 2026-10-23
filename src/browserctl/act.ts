@@ -6,9 +6,11 @@
 import { haltPlatform } from '../outreach/limits.js';
 import { profileKeyOf } from '../linkedin/urls.js';
 import { naukriJobIdOfUrl, threadRefOfUrl } from '../naukri/page.js';
+import { threadRefOfUrl as wellfoundThreadRefOfUrl, wellfoundJobIdOfUrl } from '../wellfound/page.js';
 import { recordDryRun } from '../safety/dryRun.js';
 import { commitAction } from './commit.js';
 import { applyCounted, commitNaukri, observeApplyConfirmation } from './commitNaukri.js';
+import { commitWellfound, observeWellfoundApplyConfirmation, wellfoundApplyCounted } from './commitWellfound.js';
 import { BC_KEYS, type BcKey, type BcPage } from './driver.js';
 import { killReason, refused, type EngineDeps, type EngineResult } from './engineTypes.js';
 import { checkType, classify, classifyKey, classifyPoint, guardInputOf, type ActionClass, type CommitClass } from './guard.js';
@@ -97,6 +99,8 @@ export function createEngine(deps: EngineDeps): Engine {
     if (P.platform === 'naukri') {
       // A confirmation that shows up after a chatbot answer (no commit-class click) is still recorded once.
       try { observeApplyConfirmation(deps, t); } catch { /* bookkeeping only */ }
+    } else if (P.platform === 'wellfound') {
+      try { observeWellfoundApplyConfirmation(deps, t); } catch { /* bookkeeping only */ }
     }
     if (P.checkUrl(t.url).ok) lastGoodUrl = t.url;
     const state = `epoch: ${epoch}\n${v.unscreened ? 'screen: unscreened\n' : ''}<<<PAGE_TEXT\n${v.text}\nPAGE_TEXT>>>`;
@@ -157,12 +161,16 @@ export function createEngine(deps: EngineDeps): Engine {
     op: string, page: BcPage, cls: ActionClass, live: LiveNode, act: () => Promise<void>, redescribe: () => Promise<LiveNode | null>,
   ): Promise<EngineResult> {
     if (cls === 'irreversible_other') return refused('irreversible_refused', 'this control is never clicked through the engine');
-    const naukriClass = cls === 'naukri_send' || cls === 'naukri_apply';
-    if (naukriClass !== (P.platform === 'naukri') && cls !== 'free') return refused('wrong_platform', `not a ${P.tool} control`);
+    // Each platform owns its commit classes: a class of another platform never reaches a commit path.
+    const owner = cls === 'naukri_send' || cls === 'naukri_apply' ? 'naukri'
+      : cls === 'wellfound_send' || cls === 'wellfound_apply' ? 'wellfound' : 'linkedin';
+    if (cls !== 'free' && owner !== P.platform) return refused('wrong_platform', `not a ${P.tool} control`);
     if (cls !== 'free') {
       const res = P.platform === 'naukri'
         ? await commitNaukri({ deps, page, cls: cls as 'naukri_send' | 'naukri_apply', live, act, redescribe })
-        : await commitAction({ deps, page, cls: cls as CommitClass, live, act, redescribe });
+        : P.platform === 'wellfound'
+          ? await commitWellfound({ deps, page, cls: cls as 'wellfound_send' | 'wellfound_apply', live, act, redescribe })
+          : await commitAction({ deps, page, cls: cls as CommitClass, live, act, redescribe });
       refs.invalidate();
       return res;
     }
@@ -254,6 +262,24 @@ export function createEngine(deps: EngineDeps): Engine {
     if (P.platform === 'linkedin') {
       if (chk.mode === 'composer' && armed && armed.class !== 'commit_accept_invite') {
         if (!armed.profileKey || profileKeyOf(t.page.url()) !== armed.profileKey) return refused('profile_url_mismatch', 'browser is not on the armed profile');
+      }
+    } else if (P.platform === 'wellfound') {
+      // Wellfound: the thread composer only on the armed thread; the application note field only on the armed
+      // job's page, after its Apply click was counted, and only the exact armed note (checkType); plain fields
+      // go through the text gate.
+      if (chk.mode === 'composer') {
+        if (!armed) return refused('no_armed_intent', 'composer text needs an armed intent');
+        if (armed.class === 'wellfound_send') {
+          if (!armed.threadRef || wellfoundThreadRefOfUrl(t.page.url()) !== armed.threadRef) return refused('thread_mismatch', 'browser is not on the armed thread');
+        } else if (armed.class === 'wellfound_apply') {
+          if (!armed.pageKey || wellfoundJobIdOfUrl(t.page.url()) !== armed.pageKey) return refused('job_mismatch', 'browser is not on the armed job page');
+          if (!wellfoundApplyCounted(deps.intents).has(armed.pageKey)) return refused('apply_not_started', 'click Apply under the armed intent before typing the note');
+        } else {
+          return refused('intent_class_mismatch', 'the armed intent is not a Wellfound send or apply');
+        }
+      } else {
+        const why = deps.textGate?.(text, 'plain');
+        if (why) return refused('output_gate', `text refused: ${why}`);
       }
     } else {
       // Naukri: the thread composer only on the armed thread; the apply chatbot only on the armed job's

@@ -25,7 +25,7 @@ const pacing: PacingConfig = {
 };
 const knobs: PlanKnobs = { inboxEveryMin: 60, naukriDiscoverEveryHours: 6 };
 const ctl = (): ControlState => ({
-  killed: false, killReason: null, halted: { linkedin: null, naukri: null }, allowed: ['linkedin', 'naukri'], readError: null,
+  killed: false, killReason: null, halted: { linkedin: null, naukri: null, wellfound: null }, allowed: ['linkedin', 'naukri'], readError: null,
 });
 const ceil = (): Record<LimitKey, CeilingStatus> =>
   Object.fromEntries(
@@ -100,7 +100,7 @@ describe('planner emits the wake in order', () => {
   });
 
   it('a halted platform still gets the code pass only when something is allowed', () => {
-    const c: ControlState = { ...ctl(), allowed: [], halted: { linkedin: 'x', naukri: 'y' } };
+    const c: ControlState = { ...ctl(), allowed: [], halted: { linkedin: 'x', naukri: 'y', wellfound: null } };
     expect(plan({ control: c, due: due({ scriptDiscoverLastHoursAgo: null }) })).toMatchObject({ kind: 'skip', reason: 'halted' });
   });
 });

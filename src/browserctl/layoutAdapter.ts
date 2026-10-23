@@ -2,7 +2,7 @@
 // already understands, so layout memory keeps learning from linkedin_snapshot. Advisory telemetry
 // only: it carries no page text beyond what the observer's own fingerprinting reads (counts and
 // landmark ids come out of it), and a wrong guess here never blocks or refuses anything.
-import type { NaukriRawSnapshot } from '../layout/fingerprint.js';
+import type { NaukriRawSnapshot, WellfoundRawSnapshot } from '../layout/fingerprint.js';
 import { classifyUrl } from '../linkedin/urls.js';
 import type { RawSnapshot } from '../linkedin/types.js';
 import { normName } from './guard.js';
@@ -138,6 +138,35 @@ export function treeToNaukriSnapshot(tree: RawTree): NaukriRawSnapshot {
       sendLabel: send ? send.name : null,
       options,
     },
+    notices: [],
+    hasPasswordInput: tree.nodes.some((x) => x.secret === true),
+  };
+}
+
+// ---- Wellfound ----
+const WELLFOUND_BUTTON_RE = /^(apply|apply now|applied|save|saved|login|log in|sign up|apply on .+|apply externally)\b/i;
+
+/**
+ * Engine tree to the Wellfound snapshot shape the layout observer understands (telemetry only; a wrong
+ * guess never blocks anything). Only booleans and short control names come out; no page text.
+ */
+export function treeToWellfoundSnapshot(tree: RawTree): WellfoundRawSnapshot {
+  const buttons: string[] = [];
+  for (const x of tree.nodes) {
+    if (x.composer || (x.role !== 'button' && x.role !== 'link')) continue;
+    const nm = x.name.replace(/\s+/g, ' ').trim();
+    if (nm && nm.length <= 40 && WELLFOUND_BUTTON_RE.test(nm) && !buttons.includes(nm)) buttons.push(nm);
+  }
+  const box = tree.nodes.find((x) => x.role === 'textbox' && x.composer && !x.secret);
+  const send = tree.nodes.find((x) => x.role === 'button' && x.composer && /^(send|send message)$/i.test(x.name.trim()));
+  const dialogOpen = tree.nodes.some((x) => x.dialog !== undefined || x.role === 'dialog');
+  const submit = tree.nodes.some((x) => x.role === 'button' && x.dialog !== undefined && /^(submit application|send application|submit)\b/i.test(x.name.trim()));
+  return {
+    title: tree.title,
+    url: tree.url,
+    buttons,
+    form: { open: dialogOpen, hasNote: dialogOpen && !!box, hasSubmit: submit },
+    composer: { present: !!box && !dialogOpen, sendLabel: send ? send.name : null },
     notices: [],
     hasPasswordInput: tree.nodes.some((x) => x.secret === true),
   };

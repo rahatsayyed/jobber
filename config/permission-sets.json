@@ -30,6 +30,9 @@
       "mcp__naukri__naukri_screenshot",
       "mcp__linkedin__linkedin_layout",
       "mcp__naukri__naukri_layout",
+      "mcp__wellfound__wellfound_snapshot",
+      "mcp__wellfound__wellfound_screenshot",
+      "mcp__wellfound__wellfound_layout",
       "mcp__applier__apply_state",
       "mcp__applier__apply_recipe",
       "mcp__applier__apply_limits",
@@ -98,6 +101,17 @@
       "mcp__naukri__naukri_wait_for",
       "mcp__naukri__naukri_click_at",
       "mcp__naukri__naukri_close",
+      "mcp__wellfound__wellfound_arm_send",
+      "mcp__wellfound__wellfound_arm_apply",
+      "mcp__wellfound__wellfound_discover",
+      "mcp__wellfound__wellfound_open",
+      "mcp__wellfound__wellfound_click",
+      "mcp__wellfound__wellfound_type",
+      "mcp__wellfound__wellfound_press_key",
+      "mcp__wellfound__wellfound_scroll",
+      "mcp__wellfound__wellfound_wait_for",
+      "mcp__wellfound__wellfound_click_at",
+      "mcp__wellfound__wellfound_close",
       "mcp__gmail__send_email"
     ]
   },
@@ -111,6 +125,7 @@
       "mcp__gates",
       "mcp__applier",
       "mcp__naukri",
+      "mcp__wellfound",
       "mcp__gmail",
       "mcp__scout"
     ]

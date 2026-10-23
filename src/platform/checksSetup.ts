@@ -477,6 +477,27 @@ export const setupAccountChecks: Check[] = [
       return pass(`${ok.join(', ')} look valid`);
     },
   },
+  {
+    // Wellfound is an optional platform: no session file is a skip (the operator is simply not planned), a file that is
+    // there must be private, hold cookies and not be expired. The auth cookie name is unverified (no live login has run).
+    id: 'wellfound-session',
+    title: 'Wellfound session captured (optional)',
+    async run(ctx) {
+      const path = join(ctx.root, 'secrets', 'wellfound-state.json');
+      const fix = 'npm run wellfound:login';
+      if (!ctx.fs.exists(path)) return skip('not captured: Wellfound discovery, inbox and apply stay off', fix);
+      const mode = ctx.fs.mode(path);
+      if (mode !== null && (mode & 0o077) !== 0) return fail(`Wellfound: mode ${(mode & 0o777).toString(8)}, expected 600`, 'chmod 600 secrets/wellfound-state.json');
+      const r = readJson(ctx, path);
+      const cookies = r.ok && isObj(r.value) && Array.isArray(r.value.cookies) ? r.value.cookies.filter(isObj) : [];
+      if (cookies.length === 0) return fail('Wellfound: no cookies', fix);
+      const nowSec = (ctx.now ? ctx.now() : new Date()).getTime() / 1000;
+      // Only names and expiry are inspected; values are never read into output.
+      const auth = cookies.filter((c) => /^_?(wellfound|angellist)/i.test(typeof c.name === 'string' ? c.name : ''));
+      if (auth.length > 0 && auth.every((c) => typeof c.expires === 'number' && c.expires > 0 && c.expires < nowSec)) return fail('Wellfound: session expired', fix);
+      return pass('Wellfound session looks valid');
+    },
+  },
   placeholder('mcp-connect', 'MCP servers connect', 'skipped: needs a live launch, run the owner checklist in plan 7B'),
   placeholder('sessions-live', 'sessions log in headless', 'skipped: headless login check is owner-run: npm run linkedin:check and npm run naukri:check'),
   placeholder('dashboard-login', 'dashboard sign-in', 'judged by the doctor per auth mode (plan 8C)'),

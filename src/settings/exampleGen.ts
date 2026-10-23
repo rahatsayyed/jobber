@@ -30,6 +30,7 @@ export const SECTION_BANNERS: Record<SectionId, SectionBanner> = {
   'web-core': { title: 'Web core (shared browser for company sites)' },
   search: { title: 'Generated job sources and search' },
   naukri: { title: 'Naukri' },
+  wellfound: { title: 'Wellfound' },
   scheduler: { title: 'Scheduler' },
   dashboard: { title: 'Dashboard (npm run web)' },
   telegram: { title: 'Telegram (ccgram bridge)' },

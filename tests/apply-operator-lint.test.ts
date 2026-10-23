@@ -13,6 +13,8 @@ const EXPECTED = [
   'mcp__applier__site_signup',
   'mcp__applier__site_open_link',
   ...['open', 'snapshot', 'click', 'type', 'press_key', 'scroll', 'wait_for', 'screenshot', 'click_at', 'arm_apply', 'layout'].map((t) => `mcp__naukri__naukri_${t}`),
+  // Wellfound exactly as Naukri: the apply operator holds wellfound_arm_apply and never wellfound_arm_send
+  ...['open', 'snapshot', 'click', 'type', 'press_key', 'scroll', 'wait_for', 'screenshot', 'click_at', 'arm_apply', 'layout'].map((t) => `mcp__wellfound__wellfound_${t}`),
 ];
 
 const text = readFileSync('.claude/agents/apply-operator.md', 'utf8');

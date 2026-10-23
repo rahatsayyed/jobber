@@ -5,7 +5,7 @@ import { isDiscoverOnlySource, isHeldSource } from './discoverOnly.js';
 export type Channel = 'email' | 'linkedin' | 'naukri' | 'apply';
 export const CHANNELS: readonly Channel[] = ['email', 'linkedin', 'naukri', 'apply'];
 
-export type ApplyTier = 'ats_form' | 'linkedin_easy' | 'account_gated' | 'naukri_agent' | 'unknown_host' | 'none';
+export type ApplyTier = 'ats_form' | 'linkedin_easy' | 'account_gated' | 'naukri_agent' | 'wellfound_agent' | 'unknown_host' | 'none';
 export type ReasonCode =
   | 'hn_gate_pending'
   | 'no_company'
@@ -51,8 +51,8 @@ export const SOURCE_POLICY: Readonly<Record<string, SourcePolicy>> = {
   cryptocurrencyjobs: { apply: 'none' }, jobspresso: { apply: 'none' }, larajobs: { apply: 'none' }, nodesk: { apply: 'none' },
   pythonorg: { apply: 'none' }, 'startup-jobs': { apply: 'none' },
   naukri: { apply: 'url' },
-  // Agent-tier custom site (source-operator): its jobs arrive as gen:custom and are held; the bare id is discover-only too.
-  wellfound: { apply: 'none' },
+  // Wellfound has its own MCP and a native Apply (apply-operator), so it is an apply target like Naukri.
+  wellfound: { apply: 'url' },
   'linkedin-jobs': { apply: 'url' }, 'linkedin-posts': { apply: 'none' },
 };
 
@@ -75,6 +75,7 @@ export function applyTierFor(applyUrl: string | null | undefined): ApplyTier {
   if (under(h, 'myworkdayjobs.com')) return 'account_gated';
   if (under(h, 'linkedin.com')) return 'linkedin_easy';
   if (under(h, 'naukri.com')) return 'naukri_agent';
+  if (under(h, 'wellfound.com')) return 'wellfound_agent';
   return 'unknown_host';
 }
 
@@ -99,7 +100,7 @@ export function channelsFor(job: ChannelJob, ctx: ChannelContext = {}): ChannelV
     out.push(no('apply', isDiscoverOnlySource(source) ? 'discover_only_source' : 'apply_tier:none'));
   } else {
     const tier = applyTierFor(job.apply_url);
-    const ok = tier === 'ats_form' || (tier === 'linkedin_easy' && ctx.linkedinEasy === true) || (tier === 'unknown_host' && ctx.allowUnknownHosts === true);
+    const ok = tier === 'ats_form' || tier === 'wellfound_agent' || (tier === 'linkedin_easy' && ctx.linkedinEasy === true) || (tier === 'unknown_host' && ctx.allowUnknownHosts === true);
     out.push(ok ? { channel: 'apply', eligible: true } : no('apply', `apply_tier:${tier}`));
   }
   return out;

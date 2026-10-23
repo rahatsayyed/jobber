@@ -20,7 +20,7 @@ describe('isApplyBlockedSource', () => {
 
 describe('isDiscoverOnlySource', () => {
   it('lists exactly the new vendors and aggregators', () => {
-    const base = ['hackernews', 'himalayas', 'personio', 'recruitee', 'smartrecruiters', 'weworkremotely', 'wellfound', 'workable', 'workday'];
+    const base = ['hackernews', 'himalayas', 'personio', 'recruitee', 'smartrecruiters', 'weworkremotely', 'workable', 'workday'];
     // The feeds imported from career-ops (src/sources/providers) are discover-only too.
     expect([...DISCOVER_ONLY_SOURCES].sort()).toEqual([...base, ...IMPORTED_IDS].sort());
     for (const s of IMPORTED_IDS) expect(isDiscoverOnlySource(s)).toBe(true);

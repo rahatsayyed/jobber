@@ -33,7 +33,7 @@ describe('readControl', () => {
   it('allows both platforms with no signals', () => {
     const s = readControl(db, deps());
     expect(s.killed).toBe(false);
-    expect(s.allowed).toEqual(['linkedin', 'naukri']);
+    expect(s.allowed).toEqual(['linkedin', 'naukri', 'wellfound']);
     expect(s.readError).toBeNull();
   });
 
@@ -64,10 +64,15 @@ describe('readControl', () => {
     let s = readControl(db, deps());
     expect(s.killed).toBe(false);
     expect(s.halted.linkedin).toBe('restricted');
-    expect(s.allowed).toEqual(['naukri']);
+    expect(s.allowed).toEqual(['naukri', 'wellfound']);
     clearHalt(db, 'linkedin', NOW);
     s = readControl(db, deps());
+    expect(s.allowed).toEqual(['linkedin', 'naukri', 'wellfound']);
+    // a wellfound halt stops only wellfound
+    haltPlatform(db, 'wellfound', 'bot wall', NOW);
+    s = readControl(db, deps());
     expect(s.allowed).toEqual(['linkedin', 'naukri']);
+    expect(s.halted.wellfound).toBe('bot wall');
   });
 
   it('fails closed when exists throws', () => {
@@ -103,7 +108,7 @@ describe('fail closed hardening', () => {
     const t = readControl(db, deps());
     expect(t.killed).toBe(false);
     expect(t.halted.naukri).toBe('halt flag set (no reason)');
-    expect(t.allowed).toEqual(['linkedin']);
+    expect(t.allowed).toEqual(['linkedin', 'wellfound']);
   });
 
   it('all plus platform halt together is killed', () => {

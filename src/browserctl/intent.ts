@@ -7,7 +7,7 @@ import { textMatches, type CommitClass } from './guard.js';
 import { finishTouch } from '../linkedin/touches.js';
 
 export const INTENT_TTL_MS = 120_000;
-export type IntentPlatform = 'linkedin' | 'naukri';
+export type IntentPlatform = 'linkedin' | 'naukri' | 'wellfound';
 
 export interface ArmedIntent {
   id: string;
@@ -18,9 +18,9 @@ export interface ArmedIntent {
   profileKey?: string;
   threadRef?: string;
   jobId?: number | string;
-  /** Naukri apply: the job key (`naukri:<n>`) the live page URL must carry. */
+  /** Naukri or Wellfound apply: the job key (`naukri:<n>`, `wellfound:<n>`) the live page URL must carry. */
   pageKey?: string;
-  /** Exact outbound text (null for accept and apply). */
+  /** Exact outbound text (null for accept and apply; a Wellfound apply may carry its armed note). */
   text: string | null;
   personId?: number;
   touchId?: number;

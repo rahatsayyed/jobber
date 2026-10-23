@@ -204,7 +204,7 @@ server.registerTool(
       connect_profile_url: z.string().optional(),
       connect_category: z.enum(['recruiter', 'peer']).optional(),
       connect_company: z.string().optional(),
-      apply_platform: z.enum(['linkedin_easy', 'linkedin', 'naukri', 'browser', 'none', ...ATS_REGISTRY.map((a) => a.id)]).optional(),
+      apply_platform: z.enum(['linkedin_easy', 'linkedin', 'naukri', 'wellfound', 'browser', 'none', ...ATS_REGISTRY.map((a) => a.id)]).optional(),
       apply_url: z.string().optional(),
       resume_json: z.string().optional(),
       ats_coverage: atsCoverageSchema,

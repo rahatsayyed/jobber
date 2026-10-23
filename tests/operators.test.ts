@@ -61,7 +61,7 @@ const wake = profiles.outreach_wake;
 
 describe('platform operators', () => {
   it('worker-tools.json has the operators, mail-operator and the apply operator', () => {
-    expect(Object.keys(cfg).sort()).toEqual(['apply-operator', 'linkedin-operator', 'mail-operator', 'naukri-operator', 'source-operator']);
+    expect(Object.keys(cfg).sort()).toEqual(['apply-operator', 'linkedin-operator', 'mail-operator', 'naukri-operator', 'source-operator', 'wellfound-operator']);
   });
   it('the four old worker files are gone', () => {
     for (const w of Object.keys(OLD_WORKER_TOOLS)) expect(existsSync(`.claude/agents/${w}.md`)).toBe(false);

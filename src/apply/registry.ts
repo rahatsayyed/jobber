@@ -45,6 +45,7 @@ export function classifyApplyUrl(url: string | null, source: string | null, env:
     return env.APPLY_LINKEDIN_EASY === 'true' ? { platform: 'linkedin_easy', tier: 'agent' } : none('easy_apply_off');
   }
   if (hostMatches(url, 'naukri.com')) return { platform: 'naukri', tier: 'agent' };
+  if (hostMatches(url, 'wellfound.com')) return { platform: 'wellfound', tier: 'agent' };
   for (const a of ATS_REGISTRY) {
     if (a.apexes.some((x) => hostMatches(url, x))) return { platform: a.id, tier: a.tier };
   }

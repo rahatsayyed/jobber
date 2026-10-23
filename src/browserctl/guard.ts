@@ -5,7 +5,7 @@
 // list is irreversible_other. English labels are required; EXTRA_LABELS holds a short extension list.
 import type { LiveNode } from './snapshot.js';
 
-export type Platform = 'linkedin' | 'naukri' | 'scout';
+export type Platform = 'linkedin' | 'naukri' | 'wellfound' | 'scout';
 export type ActionClass =
   | 'free'
   | 'commit_connect_send'
@@ -13,6 +13,8 @@ export type ActionClass =
   | 'commit_accept_invite'
   | 'naukri_send'
   | 'naukri_apply'
+  | 'wellfound_send'
+  | 'wellfound_apply'
   | 'irreversible_other';
 export type CommitClass = Exclude<ActionClass, 'free' | 'irreversible_other'>;
 export type DialogKind = 'invite' | 'message' | 'other';
@@ -85,6 +87,19 @@ const DANGEROUS_HREF_RE = /(?:log-?out|sign-?out|signout|delete|withdraw|\/accep
 /** The Naukri Apply button itself (as opposed to a chatbot step control). */
 export const isNaukriApplyName = (name: string): boolean => NAUKRI_APPLY_RE.test(normName(name));
 
+// Wellfound: the job page "Apply" button (counted once), the application form's "Submit application" /
+// "Send application" step control, and the thread composer's "Send". "Apply on company site" and similar
+// off-site apply links are never clicked. English labels only: a page in another language fails closed
+// (an unknown dialog-footer or submit button is irreversible_other).
+const WELLFOUND_APPLY_RE = /^(?:apply|apply now)$/;
+const WELLFOUND_OFFSITE_RE = /^apply (?:on|at|via|through) (?:the )?(?:company(?:'s)? )?(?:site|website)\b|^apply externally\b/;
+const WELLFOUND_SUBMIT_RE = /^(?:submit application|send application|submit your application|apply to .+)$/;
+const WELLFOUND_SEND_RE = /^(?:send|send message)$/;
+const WELLFOUND_STEP_RE = /^(?:submit|continue|done|next)$/;
+
+/** The Wellfound Apply button itself (as opposed to a form step control such as Submit application). */
+export const isWellfoundApplyName = (name: string): boolean => WELLFOUND_APPLY_RE.test(normName(name));
+
 /** Classify one click-like action (click, click_at, Space or Enter on a focused control). */
 export function classify(input: GuardInput): ActionClass {
   const name = normName(input.name);
@@ -127,6 +142,15 @@ export function classify(input: GuardInput): ActionClass {
       return 'irreversible_other';
     }
     if (NAUKRI_CHATBOT_RE.test(name)) return inDialog || composerCtx ? 'naukri_apply' : 'irreversible_other';
+  } else if (platform === 'wellfound') {
+    if (WELLFOUND_OFFSITE_RE.test(name)) return 'irreversible_other';
+    if (WELLFOUND_APPLY_RE.test(name) || WELLFOUND_SUBMIT_RE.test(name)) return 'wellfound_apply';
+    if (WELLFOUND_SEND_RE.test(name)) {
+      if (input.pageKind === 'thread') return 'wellfound_send';
+      if (inDialog || composerCtx) return 'wellfound_apply';
+      return 'irreversible_other';
+    }
+    if (WELLFOUND_STEP_RE.test(name)) return inDialog || composerCtx ? 'wellfound_apply' : 'irreversible_other';
   }
 
   if (IRREVERSIBLE_RE.test(name)) return 'irreversible_other';
@@ -148,6 +172,7 @@ export function classifyKey(input: GuardInput & { key: string }): ActionClass {
     if (!input.inComposer) return input.isSubmit ? 'irreversible_other' : 'free';
     const dk = input.dialogKind ?? dialogKindOf(input.dialogName);
     if (input.platform === 'naukri') return input.pageKind === 'thread' ? 'naukri_send' : 'naukri_apply';
+    if (input.platform === 'wellfound') return input.pageKind === 'thread' ? 'wellfound_send' : 'wellfound_apply';
     if (input.platform === 'linkedin') return dk === 'invite' ? 'commit_connect_send' : 'commit_message_send';
     return 'irreversible_other';
   }
@@ -224,6 +249,12 @@ export function checkType(
   if (node.composer) {
     if (!armed) return { ok: false, code: 'no_armed_intent', reason: 'composer text needs an armed intent' };
     if (armed.class === 'naukri_apply') return plainCheck(text, MAX_CHATBOT_TYPE, 'chatbot');
+    if (armed.class === 'wellfound_apply') {
+      // The application note: only the exact text armed (and gated) by wellfound_arm_apply, never a free answer.
+      if (armed.text === null) return { ok: false, code: 'text_not_allowed', reason: 'no note was armed for this application; leave the note empty' };
+      if (!textMatches(armed.text, text)) return { ok: false, code: 'intent_text_mismatch', reason: 'text differs from the armed note' };
+      return { ok: true, mode: 'composer' };
+    }
     if (armed.text === null || !textMatches(armed.text, text)) {
       return { ok: false, code: 'intent_text_mismatch', reason: 'text differs from the armed text' };
     }

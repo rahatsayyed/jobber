@@ -46,6 +46,28 @@
     "mcp__db__list_queued_outreach",
     "mcp__db__update_outreach_status"
   ],
+  "wellfound-operator": [
+    "Skill",
+    "mcp__outreach__record_inbound",
+    "mcp__outreach__escalate",
+    "mcp__wellfound__wellfound_layout",
+    "mcp__wellfound__wellfound_open",
+    "mcp__wellfound__wellfound_snapshot",
+    "mcp__wellfound__wellfound_click",
+    "mcp__wellfound__wellfound_type",
+    "mcp__wellfound__wellfound_press_key",
+    "mcp__wellfound__wellfound_scroll",
+    "mcp__wellfound__wellfound_wait_for",
+    "mcp__wellfound__wellfound_screenshot",
+    "mcp__wellfound__wellfound_click_at",
+    "mcp__wellfound__wellfound_arm_send",
+    "mcp__wellfound__wellfound_discover",
+    "mcp__wellfound__wellfound_inbox",
+    "mcp__wellfound__wellfound_read_thread",
+    "mcp__db__list_jobs",
+    "mcp__db__list_queued_outreach",
+    "mcp__db__update_outreach_status"
+  ],
   "source-operator": [
     "mcp__scout__scout_search",
     "mcp__scout__scout_open",
@@ -111,6 +133,17 @@
     "mcp__naukri__naukri_screenshot",
     "mcp__naukri__naukri_click_at",
     "mcp__naukri__naukri_arm_apply",
-    "mcp__naukri__naukri_layout"
+    "mcp__naukri__naukri_layout",
+    "mcp__wellfound__wellfound_open",
+    "mcp__wellfound__wellfound_snapshot",
+    "mcp__wellfound__wellfound_click",
+    "mcp__wellfound__wellfound_type",
+    "mcp__wellfound__wellfound_press_key",
+    "mcp__wellfound__wellfound_scroll",
+    "mcp__wellfound__wellfound_wait_for",
+    "mcp__wellfound__wellfound_screenshot",
+    "mcp__wellfound__wellfound_click_at",
+    "mcp__wellfound__wellfound_arm_apply",
+    "mcp__wellfound__wellfound_layout"
   ]
 }

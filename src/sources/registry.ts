@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
-export type PlatformKind = 'board' | 'aggregator' | 'api' | 'search' | 'linkedin' | 'naukri' | 'generated';
+export type PlatformKind = 'board' | 'aggregator' | 'api' | 'search' | 'linkedin' | 'naukri' | 'wellfound' | 'generated';
 export interface PlatformDef {
   id: string; kind: PlatformKind; label: string;
   /** Module path under src/sources, or null for operator-only sources (LinkedIn). */
@@ -18,7 +18,7 @@ export interface PlatformDef {
 
 const rowSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/),
-  kind: z.enum(['board', 'aggregator', 'api', 'search', 'linkedin', 'naukri', 'generated']),
+  kind: z.enum(['board', 'aggregator', 'api', 'search', 'linkedin', 'naukri', 'wellfound', 'generated']),
   label: z.string().min(1).max(100),
   provider: z.string().min(1).max(100).nullable(),
   tier: z.enum(['script', 'agent']),

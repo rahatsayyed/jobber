@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { loadProfiles } from '../src/platform/runner.js';
 
-const WORKERS = ['linkedin-operator', 'naukri-operator', 'source-operator'] as const;
+const WORKERS = ['linkedin-operator', 'naukri-operator', 'wellfound-operator', 'source-operator'] as const;
 
 const FORBIDDEN_EXACT = [
   'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Agent', 'Task',
@@ -54,6 +54,8 @@ function realTools(): Set<string> {
   all.add('mcp__gmail__send_email');
   const nk = readFileSync('src/mcp/naukri.ts', 'utf8');
   for (const m of nk.matchAll(/'(naukri_[a-z_]+)'/g)) all.add(`mcp__naukri__${m[1]}`);
+  const wf = /TOOL_NAMES = \[([\s\S]*?)\]/.exec(readFileSync('src/mcp/wellfound.ts', 'utf8'))![1];
+  for (const m of wf.matchAll(/'([a-z_]+)'/g)) all.add(`mcp__wellfound__${m[1]}`);
   const sc = readFileSync('src/mcp/scout.ts', 'utf8');
   for (const m of /TOOL_NAMES = \[([\s\S]*?)\]/.exec(sc)![1].matchAll(/'([a-z_]+)'/g)) all.add(`mcp__scout__${m[1]}`);
   return all;
@@ -112,6 +114,7 @@ describe('worker agents', () => {
           if (name === 'source-operator' && t !== 'mcp__scout__scout_click') expect(t.endsWith('_click')).toBe(false);
           if (name !== 'linkedin-operator') expect(t.startsWith('mcp__linkedin__')).toBe(false);
           if (name !== 'naukri-operator') expect(t.startsWith('mcp__naukri__')).toBe(false);
+          if (name !== 'wellfound-operator') expect(t.startsWith('mcp__wellfound__')).toBe(false);
         }
       });
       it('has no mcp__connect reference', () => {

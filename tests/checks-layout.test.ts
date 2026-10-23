@@ -19,7 +19,7 @@ function kind(over: Partial<KindMemory> = {}): KindMemory {
   return { state: 'stable', variants: [variant()], counters: { match: 5, partial: 0, drift: 0 },
     drift_streak: 0, drift_window_start: null, last_drift_at: null, drift_run_ids: [], ...over };
 }
-function file(platform: 'linkedin' | 'naukri', kinds: Record<string, KindMemory>, updated = '2026-10-14T00:00:00.000Z'): string {
+function file(platform: 'linkedin' | 'naukri' | 'wellfound', kinds: Record<string, KindMemory>, updated = '2026-10-14T00:00:00.000Z'): string {
   const f: LayoutFile = { schema: 1, platform, updated_at: updated, kinds };
   return JSON.stringify(f);
 }
@@ -27,6 +27,7 @@ function file(platform: 'linkedin' | 'naukri', kinds: Record<string, KindMemory>
 const allStable = (): Record<string, string> => ({
   [`${DIR}/linkedin.json`]: file('linkedin', { profile: kind(), search: kind(), invitations: kind() }),
   [`${DIR}/naukri.json`]: file('naukri', { thread: kind() }),
+  [`${DIR}/wellfound.json`]: file('wellfound', { thread: kind() }),
 });
 
 interface Opts { env?: NodeJS.ProcessEnv; modes?: Record<string, number>; list?: string[]; envFile?: string }

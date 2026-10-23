@@ -21,6 +21,11 @@ const SEND_TOOLS = [
   'mcp__gmail__send_email',
   'mcp__naukri__naukri_click',
   'mcp__naukri__naukri_type',
+  'mcp__wellfound__wellfound_arm_send',
+  'mcp__wellfound__wellfound_arm_apply',
+  'mcp__wellfound__wellfound_click',
+  'mcp__wellfound__wellfound_type',
+  'mcp__wellfound__wellfound_discover',
 ];
 
 const base = join('.superpowers', 'tmp-perm-tests');
@@ -43,7 +48,7 @@ describe('shipped permission sets', () => {
   });
   it('full adds whole-server entries and never an unscoped shell or file tool', () => {
     const full = resolveSet(real, 'full');
-    for (const s of ['mcp__gmail', 'mcp__applier', 'mcp__scout', 'mcp__naukri', 'mcp__db']) expect(full).toContain(s);
+    for (const s of ['mcp__gmail', 'mcp__applier', 'mcp__scout', 'mcp__naukri', 'mcp__wellfound', 'mcp__db']) expect(full).toContain(s);
     expect(full.filter((e) => !e.startsWith('mcp__')).sort()).toEqual([
       'Bash(npx tsx scripts/status.ts health)',
       'Bash(npx tsx scripts/status.ts limits)',

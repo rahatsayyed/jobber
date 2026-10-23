@@ -7,8 +7,8 @@ import { haltPlatform, clearHalt } from '../outreach/limits.js';
 
 type Db = BetterSqlite3.Database;
 
-export type Platform = 'linkedin' | 'naukri';
-export const PLATFORMS: Platform[] = ['linkedin', 'naukri'];
+export type Platform = 'linkedin' | 'naukri' | 'wellfound';
+export const PLATFORMS: Platform[] = ['linkedin', 'naukri', 'wellfound'];
 export const DEFAULT_STOP_FILE = '.jobber/STOP';
 const MAX_REASON = 200;
 const NO_REASON = 'halt flag set (no reason)';
@@ -62,7 +62,7 @@ function activeHalt(db: Db, platform: string): string | null {
 }
 
 export function readControl(db: Db, deps: ControlDeps): ControlState {
-  const halted: Record<Platform, string | null> = { linkedin: null, naukri: null };
+  const halted: Record<Platform, string | null> = { linkedin: null, naukri: null, wellfound: null };
   const reasons: string[] = [];
   const errors: string[] = [];
 
@@ -114,7 +114,7 @@ export function setStop(
 
 /** Fixed prefix on every halt reason and STOP reason the CLI writes; resume clears only these. */
 export const STOP_PREFIX = 'jobber-control stop: ';
-export const HALT_TARGETS = ['all', 'linkedin', 'naukri'] as const;
+export const HALT_TARGETS = ['all', 'linkedin', 'naukri', 'wellfound'] as const;
 
 /** The STOP file path for a project root (the scheduler daemon uses the same one). */
 export function stopFileForRoot(projectRoot: string): string {

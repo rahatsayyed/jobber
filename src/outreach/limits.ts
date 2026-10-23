@@ -6,6 +6,7 @@ type Db = BetterSqlite3.Database;
 
 export type LimitKey =
   | 'linkedin_invite' | 'linkedin_message' | 'naukri_apply' | 'naukri_message'
+  | 'wellfound_apply' | 'wellfound_message' | 'wellfound_discover'
   | 'apply_attempt' | 'site_account' | 'linkedin_discover';
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -16,6 +17,9 @@ const WINDOW_MS: Record<LimitKey, number> = {
   linkedin_message: WEEK_MS,
   naukri_apply: DAY_MS,
   naukri_message: DAY_MS,
+  wellfound_apply: DAY_MS,
+  wellfound_message: DAY_MS,
+  wellfound_discover: DAY_MS,
   apply_attempt: DAY_MS,
   site_account: DAY_MS,
   linkedin_discover: DAY_MS,
@@ -31,6 +35,12 @@ function limitFor(key: LimitKey, cfg: OutreachConfig): number {
       return cfg.naukriMaxAppliesPerDay;
     case 'naukri_message':
       return cfg.naukriMaxMessagesPerDay;
+    case 'wellfound_apply':
+      return cfg.wellfoundMaxAppliesPerDay;
+    case 'wellfound_message':
+      return cfg.wellfoundMaxMessagesPerDay;
+    case 'wellfound_discover':
+      return cfg.wellfoundMaxDiscoverPerDay;
     case 'apply_attempt':
       return cfg.applyMaxAttemptsPerDay;
     case 'site_account':

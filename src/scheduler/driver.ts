@@ -65,7 +65,7 @@ const DEFAULT_SESSION = 'jobber-wake';
 const PASS_KEYS = new Set([
   'TZ', 'QUIET_HOURS_START', 'QUIET_HOURS_END', 'COMPANY_CONTACT_LIMIT', 'SPECULATIVE_COMPANY_LIMIT',
 ]);
-const PASS_PREFIXES = ['PACING_', 'COOLDOWN_', 'CADENCE_', 'LINKEDIN_MAX_', 'NAUKRI_MAX_', 'CLASSIFIER_'];
+const PASS_PREFIXES = ['PACING_', 'COOLDOWN_', 'CADENCE_', 'LINKEDIN_MAX_', 'NAUKRI_MAX_', 'WELLFOUND_MAX_', 'CLASSIFIER_'];
 
 /**
  * A wake is dry only when JOBBER_DRY_RUN is `1` or `true`; unset or anything else is live.

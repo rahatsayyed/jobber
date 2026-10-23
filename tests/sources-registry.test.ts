@@ -39,11 +39,11 @@ describe('shipped config/platforms.json', () => {
 });
 
 describe('wellfound registry row', () => {
-  it('is an enabled, unverified, agent-tier generated row with no provider', () => {
+  it('is an enabled, unverified, agent-tier wellfound-kind row with no provider', () => {
     const { platforms, errors } = loadRegistry();
     expect(errors).toEqual([]);
     expect(platforms.find((p) => p.id === 'wellfound')).toEqual({
-      id: 'wellfound', kind: 'generated', label: 'Wellfound', provider: null, tier: 'agent', enabled: true, stability: 'unverified',
+      id: 'wellfound', kind: 'wellfound', label: 'Wellfound (operator)', provider: null, tier: 'agent', enabled: true, stability: 'unverified',
     });
   });
 });

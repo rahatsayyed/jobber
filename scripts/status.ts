@@ -21,7 +21,7 @@ function layoutStatus(): number {
   let db: Database.Database | undefined;
   try {
     if (p !== ':memory:' && existsSync(p)) db = new Database(p, { readonly: true, fileMustExist: true });
-    for (const platform of ['linkedin', 'naukri'] as const) console.log(renderSummary(summarize(platform, cfg, new Date(), db)));
+    for (const platform of ['linkedin', 'naukri', 'wellfound'] as const) console.log(renderSummary(summarize(platform, cfg, new Date(), db)));
     return 0;
   } catch (e) {
     console.log(`status error: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`);

@@ -80,6 +80,13 @@ export const SCREENED_SURFACES: ReadonlyArray<{ id: string; file: string }> = [
   { id: 'naukri_inbox', file: 'src/mcp/naukri.ts' },
   { id: 'naukri_read_thread', file: 'src/mcp/naukri.ts' },
   { id: 'naukri_inbound_classify', file: 'src/naukri/inbound.ts' },
+  // Wellfound: the engine screens every tree it returns; the data tools screen their own reads.
+  { id: 'wellfound_snapshot', file: 'src/browserctl/act.ts' },
+  { id: 'wellfound_arm_send', file: 'src/browserctl/arm/wellfound.ts' },
+  { id: 'wellfound_arm_apply', file: 'src/browserctl/arm/wellfound.ts' },
+  { id: 'wellfound_discover', file: 'src/wellfound/discover.ts' },
+  { id: 'wellfound_inbox', file: 'src/mcp/wellfound.ts' },
+  { id: 'wellfound_read_thread', file: 'src/mcp/wellfound.ts' },
   { id: 'outreach_escalate', file: 'src/mcp/outreach.ts' },
   { id: 'apply_state', file: 'src/applier/tools/state.ts' },
   { id: 'apply_escalate', file: 'src/applier/escalate.ts' },

@@ -31,7 +31,7 @@ export interface CliDeps {
   fs?: { exists(p: string): boolean; rename(from: string, to: string): void };
 }
 
-const BASE_PLATFORMS: readonly Platform[] = ['linkedin', 'naukri'];
+const BASE_PLATFORMS: readonly Platform[] = ['linkedin', 'naukri', 'wellfound'];
 
 // The two fixed platforms plus every ats_<id> layout file the browser applier has written.
 function listPlatforms(cfg: LayoutConfig): Platform[] {

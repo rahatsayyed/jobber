@@ -134,6 +134,14 @@ describe('rendered settings and committed settings.json', () => {
     'mcp__naukri__naukri_arm_apply',
     'mcp__naukri__naukri_discover',
     'mcp__naukri__naukri_type',
+    'mcp__wellfound__wellfound_open',
+    'mcp__wellfound__wellfound_click',
+    'mcp__wellfound__wellfound_type',
+    'mcp__wellfound__wellfound_press_key',
+    'mcp__wellfound__wellfound_click_at',
+    'mcp__wellfound__wellfound_arm_send',
+    'mcp__wellfound__wellfound_arm_apply',
+    'mcp__wellfound__wellfound_discover',
   ];
 
   function registered(file: string): Set<string> {
@@ -147,6 +155,7 @@ describe('rendered settings and committed settings.json', () => {
     const arr = /TOOL_NAMES = \[([\s\S]*?)\]/.exec(li)![1];
     for (const m of arr.matchAll(/'([a-z_]+)'/g)) all.add(`mcp__linkedin__${m[1]}`);
     for (const m of readFileSync(join(ROOT, 'src/mcp/naukri.ts'), 'utf8').matchAll(/'(naukri_[a-z_]+)'/g)) all.add(`mcp__naukri__${m[1]}`);
+    for (const m of /TOOL_NAMES = \[([\s\S]*?)\]/.exec(readFileSync(join(ROOT, 'src/mcp/wellfound.ts'), 'utf8'))![1].matchAll(/'([a-z_]+)'/g)) all.add(`mcp__wellfound__${m[1]}`);
     const ap = readFileSync(join(ROOT, 'src/mcp/applier.ts'), 'utf8');
     for (const m of /TOOL_NAMES = \[([\s\S]*?)\] as const/.exec(ap)![1].matchAll(/'([a-z_]+)'/g)) all.add(`mcp__applier__${m[1]}`);
     const sc = readFileSync(join(ROOT, 'src/mcp/scout.ts'), 'utf8');
@@ -186,7 +195,7 @@ describe('rendered settings and committed settings.json', () => {
     for (const t of sets.outreach_send.allow) {
       const m = /^mcp__([a-z0-9-]+)__(.+)$/.exec(t);
       if (!m) continue;
-      if (!['gmail', 'apply', 'connect', 'linkedin', 'naukri'].includes(m[1])) continue;
+      if (!['gmail', 'apply', 'connect', 'linkedin', 'naukri', 'wellfound'].includes(m[1])) continue;
       if (!/(send|apply|connect|accept|submit|click|type)/.test(m[2])) continue;
       if (/(check_connection_status|record_connection_status)$/.test(m[2])) continue; // read-only status tools
       expect(COVERED, `${t} missing from the covered list`).toContain(t);

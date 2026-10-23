@@ -17,6 +17,7 @@
     "restore": "tsx scripts/restore.ts",
     "linkedin:login": "tsx scripts/linkedin-login.ts",
     "naukri:login": "tsx scripts/naukri-login.ts",
+    "wellfound:login": "tsx scripts/wellfound-login.ts",
     "linkedin:check": "tsx scripts/linkedin-check.ts",
     "naukri:check": "tsx scripts/naukri-check.ts",
     "linkedin:clear-halt": "tsx scripts/linkedin-clear-halt.ts",

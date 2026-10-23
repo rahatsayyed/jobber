@@ -26,7 +26,7 @@ describe('applyStop / applyResume', () => {
       const f = stopFileForRoot(dir);
       const r = applyStop(db, f, 'maintenance', NOW);
       expect(r.kept).toEqual({ linkedin: 'checkpoint seen' });
-      expect(r.written.sort()).toEqual(['all', 'naukri']);
+      expect(r.written.sort()).toEqual(['all', 'naukri', 'wellfound']);
       expect(haltReason(db, 'linkedin')).toBe('checkpoint seen');
       expect(haltReason(db, 'all')).toBe(`${STOP_PREFIX}maintenance`);
       expect(readFileSync(f, 'utf8').startsWith(`${STOP_PREFIX}maintenance`)).toBe(true);
@@ -47,7 +47,7 @@ describe('applyStop / applyResume', () => {
       const r = applyResume(db, f, NOW);
       expect(r.stopFileRemoved).toBe(true);
       expect(existsSync(f)).toBe(false);
-      expect(r.cleared).toEqual(['all']);
+      expect(r.cleared.sort()).toEqual(['all', 'wellfound']);
       expect(r.remaining).toEqual({ linkedin: 'checkpoint seen', naukri: 'consecutive failures' });
       expect(haltReason(db, 'all')).toBeNull();
       expect(haltReason(db, 'linkedin')).toBe('checkpoint seen');
@@ -66,7 +66,7 @@ describe('applyStop / applyResume', () => {
       const f = stopFileForRoot(dir);
       applyStop(db, f, 'x', NOW);
       const r = applyResume(db, f, NOW);
-      expect(r.cleared.sort()).toEqual(['all', 'linkedin', 'naukri']);
+      expect(r.cleared.sort()).toEqual(['all', 'linkedin', 'naukri', 'wellfound']);
       expect(r.remaining).toEqual({});
     } finally {
       db.close();

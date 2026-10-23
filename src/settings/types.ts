@@ -9,6 +9,7 @@ export type SectionId =
   | 'limits'
   | 'linkedin'
   | 'naukri'
+  | 'wellfound'
   | 'scheduler'
   | 'dashboard'
   | 'telegram'
