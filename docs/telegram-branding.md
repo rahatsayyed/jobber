@@ -27,7 +27,7 @@ Jobber finds roles, tailors resumes and handles outreach within strict limits. B
 runhunt - Run one wake now: discover, match, contacts, send, apply
 status - Funnel, rates and benchmarks
 followups - Draft follow-ups for approval, resolve stale
-apply - Status of a job in the browser-apply queue
+apply - Priority run on a job URL or careers page, or status of job #N
 connect - Draft + send a LinkedIn connect request
 include - Un-exclude a vetoed job (manual override)
 outcome - Record a job outcome (replied/interview/offer/rejected...)

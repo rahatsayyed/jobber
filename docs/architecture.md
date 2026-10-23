@@ -1,7 +1,7 @@
 # Architecture
 
 Audience: owner
-Last verified against: 37942b4
+Last verified against: 50917c8
 Source files: .mcp.json, src/mcp/, .claude/agents/, .claude/hooks/, .claude/settings.json, config/run-profiles.json, config/worker-tools.json, src/db.ts, src/scheduler/, src/outreach/limits.ts, src/safety/, src/layout/, src/web/, src/dash/, scripts/, run-hunt.sh, config/platforms.json, src/sources/, src/applier/, src/scout/, src/search/, src/webcore/
 
 This page is the map. It shows what runs where, which store holds what, and where to
@@ -24,7 +24,10 @@ flowchart LR
     CODE["Code pass: script providers, no model"]
     SESS["One restricted claude run, profile outreach_wake"]
     AG["Agents: matcher, contact-finder, outreach-preparer, reply-watcher, followup-drafter"]
-    OPS["Operators: source, linkedin, naukri, mail, apply"]
+    OPS["Operators: source, linkedin, naukri, wellfound, apply"]
+  end
+  subgraph DRIP["Mail drip lane (scheduler daemon, beside the wakes)"]
+    MD["code tick every 30 s, then one tiny claude run per email: profile mail_drip, mail-operator"]
   end
   subgraph SRC["Job sources"]
     S1["Boards, APIs, feeds: config/platforms.json, config/portals.json"]
@@ -38,6 +41,7 @@ flowchart LR
     M6["scout: job pages, read only"]
     M7["linkedin: LinkedIn main account"]
     M8["naukri: Naukri"]
+    M9["wellfound: Wellfound"]
   end
   subgraph SAFE["Safety band"]
     S2["runner and profiles"]
@@ -62,6 +66,8 @@ flowchart LR
   DASH --> DB
   PLAN --> CODE
   PLAN --> SESS
+  DB --> MD
+  MD --> M4
   CODE --> S1
   CODE --> DB
   SESS --> AG
@@ -79,19 +85,24 @@ ASCII twin (same content, readable in a terminal):
  -----                ---------------------------------------------------------------
  Telegram (ccgram) -> plan: kill switch, halts, quiet hours, ceilings, run lock
  Terminal scripts  -> 1 code pass over the script providers (no model) --> job sources
- Dashboard (web)      2 source-operator (fallback pages, custom sites)
-   |                  3 linkedin-operator, naukri-operator: discover
+ Dashboard (web)      2 source-operator (owner pages, fallback pages, custom sites)
+   |                  3 platform operators: owner pages (manual_url), then discover (linkedin, naukri, wellfound)
    |                  4 pipeline: sweep, reply-watcher, matcher (batches of 5),
    |                    contact-finder, outreach-preparer (per job)
-   |                  5 mail-operator: cold email and email follow-ups
-   |                  6 linkedin-operator, naukri-operator: inbox, follow-ups, new outreach
-   |                  7 apply-operator: browser apply
+   |                  5 platform operators: inbox, follow-ups, new outreach
+   |                  6 apply-operator: browser apply
+   |                  (no mail step: a wake only queues email)
+   |
+   |                MAIL DRIP LANE (scheduler daemon only, own lock `mail`)
+   |                tick every 30 s in code -> one tiny run per email (profile mail_drip)
+   |                window, spacing, batches of 2 to 3; cold email, then follow-ups
    |
    |                MCP SERVERS
    |                job-fetch (source status, search)   resume, contacts, gates (local logic)
    |                db, outreach (SQLite)               gmail (Gmail)
    |                applier (ATS and company sites)     scout (job pages, read only)
    |                linkedin (LinkedIn main account)    naukri (Naukri)
+   |                wellfound (Wellfound)
    |
  SAFETY BAND (every tool call passes through it)
  [runner/profiles][hooks][input gate][classifier][output gate][ceilings/halts][kill switch][dry run]
@@ -111,8 +122,10 @@ pass over the script providers itself, then launches one bounded, restricted `cl
 sees only compact JSON back. `/runhunt` and `./run-hunt.sh` run one wake now (`npm run scheduler
 -- --once --now`); the plan, the caps and the dry-run flags are the same as for a scheduled
 wake. The run lock keeps two wakes from overlapping, but an interactive session and a wake can
-still collide on the single LinkedIn session (`session_locked`). Email follow-ups are sent by the
-`mail-operator` in the wake's mail stage. Stage order and names: CLAUDE.md, "Running a wake" and
+still collide on the single LinkedIn session (`session_locked`). A wake only queues email: cold
+emails and email follow-ups are sent by the mail drip lane (`src/scheduler/mailDrip.ts`), which runs in the daemon beside
+the wakes, one tiny `mail_drip` run per email with random spacing inside a send window. A priority request
+(`/apply <url>`) makes the daemon run an early wake whose first step, `manual`, ingests it in code. Stage order and names: CLAUDE.md, "Running a wake" and
 "Scheduler". Owner procedures: [operations.md](operations.md), [rollout.md](rollout.md),
 [scheduler-install.md](scheduler-install.md), [sources-and-platforms.md](sources-and-platforms.md),
 [apply.md](apply.md).
@@ -121,7 +134,7 @@ still collide on the single LinkedIn session (`session_locked`). Email follow-up
 
 | Component | Where | Notes |
 |---|---|---|
-| MCP servers | `.mcp.json`, `src/mcp/` | One file per server: job-fetch, resume, contacts, db, gates, applier, scout, naukri, linkedin, outreach. gmail is an external package. `src/mcp/email.ts` backs `npm run mcp:email`. |
+| MCP servers | `.mcp.json`, `src/mcp/` | One file per server: job-fetch, resume, contacts, db, gates, applier, scout, naukri, wellfound, linkedin, outreach. gmail is an external package. `src/mcp/email.ts` backs `npm run mcp:email`. |
 | Stage and operator agents | `.claude/agents/` | Tool lists are in each file's frontmatter; operator tools also in `config/worker-tools.json`. |
 | Run profiles | `config/run-profiles.json`, `scripts/run-claude.ts` | Exact tool names, allowlisted child env. |
 | Permission sets | `config/permission-sets.json`, `scripts/permissions.ts` | Written to the git-ignored `.claude/settings.local.json`. |

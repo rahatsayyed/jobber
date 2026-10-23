@@ -1,7 +1,7 @@
 # Config reference
 
 Audience: owner
-Last verified against: 37942b4
+Last verified against: 50917c8
 Source files: src/sources/boards/filters.ts, src/targetRegions.ts, src/vetoes.ts, src/replies.ts, src/linkedin/discoveryConfig.ts, src/safety/styleGate.ts, src/lib/userData.ts, src/languageGate.ts, src/resumeFacts.ts, src/platform/permissions.ts, scripts/permissions.ts, scripts/models.ts, scripts/check-portal.ts, scripts/user-data.ts, .env.example, src/setup/limitsCatalog.ts, src/sources/registry.ts, src/sources/runner.ts
 
 This page lists every file you may edit in `config/` and `user-data/`, what reads it, whether a restart is needed, and how to check an edit. It does not repeat safety rules or caps: those live in `CLAUDE.md` (sections "Safety" and "Outreach safety layers"). All example values below are synthetic.
@@ -16,6 +16,8 @@ Restart rule of thumb: an MCP server keeps what it loaded at start. After you ch
 | `config/portals.json` | Which company boards and aggregator feeds to fetch, plus the title and location filters | `src/sources/boards/filters.ts` (`loadPortals`), used by the code pass and `job-fetch.list_new_jobs` | per fetch; a restart is needed only if the server was started before the file existed (unverified) | `npm run doctor` check `config-files` (parses and needs a `tracked_companies` array); slugs: `npx tsx scripts/check-portal.ts` |
 | `config/target-regions.json` | Home region, target regions (Gulf), remote and `remote_anywhere` switches for the location gate | `src/targetRegions.ts`, called by `gates.apply_vetoes` | per call | `npm run doctor` check `config-files` (needs `home` and `targets` arrays) |
 | `config/linkedin-discovery.json` | Named LinkedIn job searches and hiring-post searches | `src/linkedin/discoveryConfig.ts` | read with each search call (unverified for posts) | `npm run doctor` check `config-files` (parses, must be a JSON object only) |
+| `config/naukri-discovery.json` | Named Naukri searches (`searches[]`: `name`, `query`, optional `location`, `limit` 1 to 40, default 20); the `naukri-operator` runs them by name, with a random 2 to 5 second pause before every search after the first | `src/naukri/discover.ts` (`loadNaukriDiscoveryConfig`), `scripts/scheduler.ts` (names only) | read when the scheduler starts a wake and by each `naukri_discover` call | an invalid file yields no searches and a note on stderr |
+| `config/wellfound-discovery.json` | Named Wellfound searches (`searches[]`: `name`, `role`, optional `location`, `remote`, `limit` 1 to 40, default 20); the planner schedules Wellfound only when this names a search AND `secrets/wellfound-state.json` exists | `src/wellfound/discover.ts` (`loadWellfoundDiscoveryConfig`), `scripts/scheduler.ts` | as the Naukri file | an invalid file yields no searches (and no Wellfound task) |
 | `config/deal-breakers.json` | Keywords that exclude a job | `src/vetoes.ts` (`loadDealBreakers`) | per call | `npm run doctor` check `config-files` (parses, must be a JSON object; it does not check `keywords`) |
 | `config/replies.json` | Whether detected replies may be auto-recorded | `src/replies.ts` (`loadRepliesConfig`) | per call | `npm run doctor` check `config-files` (parses, must be a JSON object) |
 | `user-data/resume.json` | Base resume the agent tailors (the agent never edits it) | resume MCP, matcher | restart after a change (unverified inference: MCP servers keep what they loaded) | none found |
@@ -153,17 +155,17 @@ Add an allow entry only for a fact you confirmed, and add that fact to `user-dat
 |---|---|---|---|---|
 | `config/ai-tells.json` | Style gate for outbound LinkedIn and Naukri text: banned phrases, dash bans, markdown ban, word limits per kind | `src/safety/styleGate.ts` (`loadStyleConfigSafe`), cached by `src/mcp/linkedin.ts` and `src/mcp/naukri.ts` | restart | a bad value falls back to the built-in default and a note is logged; Naukri sends refuse with `style_config_unavailable` when a note exists |
 | `config/permission-sets.json` | The three permission sets `read_only`, `outreach_send`, `full` | `scripts/permissions.ts`, launchers | read when the command or launcher starts | `npm run permissions -- --status` |
-| `config/run-profiles.json` | Restricted-run profiles: `outreach_wake`, `setup_guide` (tools, env, turn limits) | `scripts/run-claude.ts`, `src/platform/checks.ts` | read at each launch | `npm run doctor` |
-| `config/worker-tools.json` | Exact tool list per operator agent (`linkedin-operator`, `naukri-operator`) | `src/platform/checksScheduler.ts` (doctor check `agents-worker-tools`) | read at launch and by doctor | `npm run doctor` |
+| `config/run-profiles.json` | Restricted-run profiles: `outreach_wake` (every wake), `mail_drip` (one run per email in the mail drip lane), `setup_guide` (tools, env, turn limits) | `scripts/run-claude.ts`, `src/platform/checks.ts` | read at each launch | `npm run doctor` |
+| `config/worker-tools.json` | Exact tool list per operator agent (`linkedin-operator`, `naukri-operator`, `wellfound-operator`, `source-operator`, `mail-operator`, `apply-operator`) | `src/platform/checksScheduler.ts` (doctor check `agents-worker-tools`) | read at launch and by doctor | `npm run doctor` |
 | `config/manager-windows.json` | Named tmux windows the manager can start (`hunt`, `followups`) and the protected ones | `scripts/manager.ts`, `src/stack/up.ts`, `src/stack/down.ts` | read when the command runs | `npm run doctor` |
 | `config/setup-guide.json` | Step text for the guided setup session | the `setup-guide` skill (`.claude/skills/setup-guide/SKILL.md`); shape checked by `tests/setup-guide.test.ts` | read by the guide session when it starts (from the skill text) | `npm run doctor` check `setup_guide_ready` covers the profile and skill, not this file |
 | `config/update-known-failures.json` | Known failing test files and counts for the auto-update test gate | `scripts/auto-update.ts` | read per update run | keep in step with the test baseline in `CLAUDE.md` |
-| `config/runner/` | MCP config files for restricted runs (`mcp.platform.json`, `mcp.none.json`) and a probe settings file | `src/platform/runner.ts`, `src/platform/checks.ts` | read at launch | `npm run doctor` |
+| `config/runner/` | MCP config files for restricted runs (`mcp.platform.json`, `mcp.mail.json` for the drip lane, `mcp.none.json`) and a probe settings file | `src/platform/runner.ts`, `src/platform/checks.ts` | read at launch | `npm run doctor` |
 
 Notes:
 - The `outreach_wake` tool list must stay a subset of `config/worker-tools.json` and the servers in `config/runner/mcp.platform.json`; the doctor warns on an unconfigured server. Wildcards are rejected.
 - A permission set applies to the git-ignored `.claude/settings.local.json`. Changing which set is active is an owner action, never an agent action (see "Platform and sessions" in `CLAUDE.md`).
-- A sample edit that only touches the style gate (text limits) needs one restart, because both MCP servers cache the parsed file.
+- A sample edit that only touches the style gate (text limits) needs one restart, because the MCP servers cache the parsed file.
 
 ```json
 { "max_exclamations": 0, "forbid_markdown": true }
@@ -193,16 +195,18 @@ This prints today's limits and usage. To walk the limits interactively use `npm 
 
 Groups in `.env.example` (one line each):
 
-- Job sources: the Adzuna key. See [api-keys](api-keys.md) and `.env.example`.
+- Job sources: none needs a key (Remotive and RemoteOK are keyless); the optional Serper and Hunter keys below are for contact finding. See [api-keys](api-keys.md) and `.env.example`.
 - Contact finding: Serper and Hunter keys, the dork and search budgets, the Hunter enable switch and monthly cap.
 - Browser apply and web: `APPLY_SUBMIT_MODE`, the per-host caps and the account flags; see [apply.md](apply.md).
 - Email: Gmail OAuth paths and the legacy SMTP fallback.
 - Telegram: bot token and allowed user ids for the ccgram bridge.
-- Agent tuning: `MATCH_THRESHOLD`, `SEND_LIMIT_PER_RUN`, `MAX_APPLIES_PER_DAY`, `MAX_LINKEDIN_SEARCHES_PER_DAY`, and the follow-up switches (`FOLLOWUPS_AUTONOMOUS`, `EMAIL_FOLLOWUP_GAPS_DAYS`).
+- Platform ceilings: the daily and weekly caps per platform (LinkedIn, Naukri and the Wellfound `WELLFOUND_MAX_APPLIES_PER_DAY`, `WELLFOUND_MAX_MESSAGES_PER_DAY`, `WELLFOUND_MAX_DISCOVER_PER_DAY`); `npm run status -- limits` prints them.
+- Email drip lane (all optional, commented in `.env.example`; read by the scheduler daemon at start, so restart it after a change): `EMAIL_SEND_WINDOW_START` / `EMAIL_SEND_WINDOW_END` (HH:MM, IST), `EMAIL_DRIP_MIN_BATCH` / `EMAIL_DRIP_MAX_BATCH`, `EMAIL_DRIP_MIN_GAP_MIN` / `EMAIL_DRIP_MAX_GAP_MIN`, `EMAIL_DRIP_INTRA_PAUSE_MIN_SEC` / `EMAIL_DRIP_INTRA_PAUSE_MAX_SEC` and `EMAIL_MAX_PER_DAY` (`0` or unset means no daily cap). The defaults are in `src/setup/limitsCatalog.ts` and `.env.example`. An invalid value stops the lane and the doctor check `mail-drip-config` says why.
+- Agent tuning: `MATCH_THRESHOLD`, `SEND_LIMIT_PER_RUN` (the daily email limit for `/followups` sessions; the drip lane uses `EMAIL_MAX_PER_DAY` instead), `MAX_APPLIES_PER_DAY`, `MAX_LINKEDIN_SEARCHES_PER_DAY`, and the follow-up switches (`FOLLOWUPS_AUTONOMOUS`, `EMAIL_FOLLOWUP_GAPS_DAYS`).
 - Dashboard: `WEB_PORT`, `WEB_AUTH_MODE` and the other `WEB_*` keys; see `docs/dashboard-exposure.md`.
-- LinkedIn tools: accept limits, allow-lists for URLs and emails, idle time, and the on-by-default (set `false` to disable) `LINKEDIN_SCREENSHOT`, `NAUKRI_SCREENSHOT` and `SCOUT_SCREENSHOT` flags (screenshot and pointer-click tools; the pixels are not screened by the classifier).
+- LinkedIn tools: accept limits, allow-lists for URLs and emails, idle time, and the on-by-default (set `false` to disable) `LINKEDIN_SCREENSHOT`, `NAUKRI_SCREENSHOT`, `WELLFOUND_SCREENSHOT` and `SCOUT_SCREENSHOT` flags (screenshot and pointer-click tools; the pixels are not screened by the classifier).
 - Dry run: the single flag `JOBBER_DRY_RUN` (`true` or `1` = dry; unset, `false` or anything else = LIVE). The old per-area dry-run keys (one each for the scheduler, LinkedIn, web, apply and scout) are ignored.
-- Scheduler: enable flag, run budgets (`RUN_MAX_*`, defaults 3600 s, 1000000 approximate tokens), inbox and Naukri search cadence, `USAGE_LIMIT_BACKOFF_MIN`, kill switch `JOBBER_KILL`.
+- Scheduler: enable flag, run budgets (`RUN_MAX_WALL_SEC` and `RUN_MAX_TOKENS_APPROX`, defaults 3600 s and 1000000 approximate tokens; the number of tool calls is reported, never limited), inbox, Naukri and Wellfound search cadence (`INBOX_EVERY_MIN`, `NAUKRI_DISCOVER_EVERY_HOURS`, `WELLFOUND_DISCOVER_EVERY_HOURS`), `USAGE_LIMIT_BACKOFF_MIN`, kill switch `JOBBER_KILL`.
 - Auto-update and backup: `AUTO_UPDATE*` and `BACKUP_*`; see `docs/backup-and-restore.md`.
 - Layout memory: `LAYOUT_ENFORCE` and the other `LAYOUT_*` keys, all optional and commented.
 - Stack and bootstrap: `STACK_TMUX_SESSION`, `STACK_DOWN_WAIT_SEC`, `BOOTSTRAP_MODEL_PROFILE`.

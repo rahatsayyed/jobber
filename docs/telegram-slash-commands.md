@@ -15,7 +15,7 @@ Jobber uses explicit slash commands (`/runhunt`, `/status`, etc.) for reliable, 
    runhunt - Run one wake now: discover, match, contacts, send, apply
    status - Funnel, rates and benchmarks
    followups - Draft and send email follow-ups, resolve stale
-   apply - Status of a job in the browser-apply queue
+   apply - Priority run on a job URL or careers page, or status of job #N
    applyall - Apply queue and caps for today's matched jobs
    connect - Draft + send a LinkedIn connect request or message
    include - Un-exclude a vetoed job (manual override)
@@ -42,6 +42,9 @@ Examples:
 /status           → shows current job/outreach/thread counts
 /followups        → drafts and sends email follow-ups (needs your approval unless FOLLOWUPS_AUTONOMOUS=true)
 /apply #123       → shows job #123 in the apply queue (applying happens in a wake)
+/apply https://example.com/jobs/1 [--force]
+                  → a priority run on one job page or careers page: validated in code, queued, picked up by an early wake
+                    (the hunt window needs the rule Bash(npm run apply:request:*)); the report comes back on Telegram
 /sources          → the per-source status table
 ```
 

@@ -1,8 +1,8 @@
 # Sources and platforms
 
 Audience: owner
-Last verified against: 37942b4
-Source files: config/platforms.json, config/portals.json, src/sources/registry.ts, src/sources/runner.ts, src/sources/status.ts, src/sources/providers/index.ts, src/sources/generated/store.ts, src/sources/generated/spec.ts, src/sources/generated/validate.ts, src/lib/discoverOnly.ts, src/search/index.ts, src/scheduler/pipeline.ts, scripts/providers.ts, scripts/import-career-ops.ts, scripts/check-portal.ts, scripts/status.ts, src/platform/checksSources.ts, .claude/agents/source-operator.md
+Last verified against: 50917c8
+Source files: config/platforms.json, config/portals.json, config/wellfound-discovery.json, config/naukri-discovery.json, src/manual/url.ts, src/manual/ingest.ts, src/manual/platformJob.ts, src/wellfound/discover.ts, src/sources/registry.ts, src/sources/runner.ts, src/sources/status.ts, src/sources/providers/index.ts, src/sources/generated/store.ts, src/sources/generated/spec.ts, src/sources/generated/validate.ts, src/lib/discoverOnly.ts, src/search/index.ts, src/scheduler/pipeline.ts, scripts/providers.ts, scripts/import-career-ops.ts, scripts/check-portal.ts, scripts/status.ts, src/platform/checksSources.ts, .claude/agents/source-operator.md
 
 This page explains where Jobber's jobs come from, how to switch a source on, what happens when a
 source breaks, and how generated providers are approved. It does not restate safety rules: those live
@@ -15,7 +15,7 @@ in [CLAUDE.md](../CLAUDE.md) under "Sources and operators" and "Safety".
 
 | Field | Values | Meaning |
 |---|---|---|
-| `kind` | `board`, `aggregator`, `api`, `search`, `linkedin`, `naukri`, `generated` | what sort of source it is |
+| `kind` | `board`, `aggregator`, `api`, `search`, `linkedin`, `naukri`, `wellfound`, `generated` | what sort of source it is |
 | `tier` | `script`, `agent` | `script`: a deterministic provider module exists. `agent`: only an operator reads it (`provider` is `null`) |
 | `enabled` | `true` or `false` | must be the boolean `true` to count as on |
 | `stability` | `unverified`, `fixture`, `live_ok`, `flaky` | how far the source has been checked (see "What is verified") |
@@ -30,10 +30,18 @@ What ships:
 |---|---|---|
 | Company boards (tenants in `config/portals.json`) | Greenhouse, Lever, Ashby, Workable, Recruitee, Personio, SmartRecruiters, Workday | rows enabled; each company is switched on in `config/portals.json` |
 | Aggregators | Hacker News Who is hiring, Himalayas, We Work Remotely | off |
-| API sources | Adzuna, Remotive, RemoteOK | on (`live_ok`) |
-| Naukri | Naukri search | on (`unverified`) |
+| API sources | Remotive, RemoteOK | on (`live_ok`) |
+| Naukri | Naukri search (four named searches in `config/naukri-discovery.json`, a random 2 to 5 second pause between searches) | on (`unverified`) |
 | LinkedIn (agent tier, run by the `linkedin-operator`) | job search, hiring posts | on (`unverified`) |
+| Wellfound (agent tier, run by the `wellfound-operator`) | named searches from `config/wellfound-discovery.json` | row on (`unverified`), but only planned once you have run `npm run wellfound:login` |
 | Imported feeds | 18 board-wide feeds adapted from career-ops (below) | off |
+
+Wellfound is the third platform next to LinkedIn and Naukri: a logged-in, headless session on your account
+(`secrets/wellfound-state.json`), one named search, discovery every `WELLFOUND_DISCOVER_EVERY_HOURS` hours (default 6), an
+inbox sweep, and the native Apply through the `apply-operator`. It never messages anyone cold. Nothing about it
+has been checked against the real site yet (URL shapes, selectors, labels, the login cookie name, the promoted marker).
+The wake plans it only when the session file exists and the discovery file names a search, so with no login nothing
+is dispatched.
 
 Serper and Hunter are not job sources. They are contact-finding services (see
 [api-keys.md](api-keys.md)).
@@ -50,7 +58,10 @@ Serper and Hunter are not job sources. They are contact-finding services (see
 3. Sites with no provider: add a `tracked_companies` entry with `"ats": "custom"`, a `name`, an
    https `url` and `"enabled": true`. The `source-operator` reads such a site through the `scout`
    tools and saves what it finds under the source `gen:custom`.
-4. After the next wake run `npm run status -- sources` and read the row for the source. `npm run doctor` has the checks `source_status`, `search_providers` and `generated_providers`.
+4. Wellfound: run `npm run wellfound:login` (a headed Chrome window for a manual login; it saves
+   `secrets/wellfound-state.json`), edit the search in `config/wellfound-discovery.json` if you want a different role or
+   location, then `npm run doctor` (check `wellfound-session`). Remove the session file to switch Wellfound off.
+5. After the next wake run `npm run status -- sources` and read the row for the source. `npm run doctor` has the checks `source_status`, `search_providers` and `generated_providers`.
 
 ## Reading the source table
 
@@ -112,18 +123,33 @@ only and have not been checked against the live sites, and the terms of use and 
 site are unreviewed. `scripts/import-career-ops.ts` is an offline inventory tool for a local
 checkout; it never fetches, ports code or enables anything.
 
+## Owner-submitted pages (manual requests)
+
+You can hand Jobber one job page or one company careers page at any time, from Telegram (`/apply <https url> [--force]`),
+from a shell (`npm run apply:request -- <https url> [--force]`) or from the dashboard Apply tab. The URL is checked in code
+(https only, no credentials or port, no look-alike ATS host, at most 500 characters; a LinkedIn, Naukri or Wellfound URL must
+be a job page). The scheduler wakes within about 30 seconds outside quiet hours and ingests the request: a known ATS vendor
+URL is fetched in code (the whole board, capped at 25 jobs, for a careers URL), a LinkedIn, Naukri or Wellfound job page is read
+by that platform's operator (`linkedin_manual_job`, `naukri_manual_job`, `wellfound_manual_job`), any other page by the
+`source-operator` (task `manual_url`). The jobs are saved at priority under `manual:<kind>` (for example `manual:greenhouse`,
+`manual:other`), go through the whole pipeline FIRST (at most 10 per wake, outside the 24-hour window and the duplicate rule),
+and you get a per-request report on Telegram written by code. The apply and discover-only rules of a `manual:<kind>`
+source are those of `<kind>`. Every gate, cap and veto still applies; `--force` also prepares a score below the match
+threshold and lifts the 90-day repeat-contact guard.
+
 ## Discover-only sources
 
 Jobs from Workable, Recruitee, Personio, Workday, SmartRecruiters, the three aggregators, every
-imported feed and every `gen:*` source are matched and get email and LinkedIn outreach, but are never
+imported feed and every `gen:*` source (and their `manual:` twins) are matched and get email and LinkedIn outreach, but are never
 applied to: `db.enqueue_outreach` stores `apply_platform: none` and `apply_open` refuses them. Hacker
 News text is untrusted comment text, and outreach for a Hacker News job is held back unless the
-company domain found in the posting matches the resolved company domain.
+company domain found in the posting matches the resolved company domain. Wellfound is not discover-only.
 
 ## What is verified
 
 Everything here is covered by unit tests with fakes and fixtures only. The `stability` column says
-the same thing per source: only Adzuna, Remotive and RemoteOK are marked `live_ok`; the vendor boards
-and Hacker News, Himalayas and We Work Remotely are `fixture` or `unverified`. The terms of the
+the same thing per source: only Remotive and RemoteOK are marked `live_ok`; the vendor boards
+and Hacker News, Himalayas and We Work Remotely are `fixture` or `unverified`, and so are LinkedIn, Naukri and
+Wellfound (Wellfound, the manual page readers and the promoted markers have never seen a live page). The terms of the
 search engine used by the browser dork, and of every site a scout may read, are unreviewed.
 `CLAUDE.md` "Known limits and not yet live-verified" is the authority.

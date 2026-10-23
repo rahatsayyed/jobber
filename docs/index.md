@@ -1,7 +1,7 @@
 # Owner docs index
 
 Audience: owner
-Last verified against: 37942b4
+Last verified against: 50917c8
 Source files: docs/, README.md, CLAUDE.md, tests/docs-owner.test.ts, docs/sources-and-platforms.md, docs/apply.md
 
 This page lists every owner doc in `docs/`. Start with the ordered list, then use the topic list as a reference.
@@ -26,7 +26,7 @@ This page lists every owner doc in `docs/`. Start with the ordered list, then us
 
 - [Backup and restore](backup-and-restore.md): encrypted backup, restore drill and auto-update runbook.
 - [Classifier models](classifier-models.md): the prompt-injection classifier and how to fetch, pin and fit a model.
-- [Dashboard exposure](dashboard-exposure.md): how to reach the dashboard from elsewhere and the sign-in modes.
+- [Dashboard exposure](dashboard-exposure.md): how to reach the dashboard from elsewhere, the sign-in modes and the Apply tab.
 - [Gmail MCP setup](gmail-mcp-setup.md): Gmail sending and reading runbook.
 - [LinkedIn sessions setup](linkedin-sessions-setup.md): the main LinkedIn session (`npm run linkedin:login`); [Naukri session setup](naukri-session-setup.md) covers `npm run naukri:login`.
 - [Model auth setup](model-auth-setup.md): how Claude Code picks the model and how it is authenticated.

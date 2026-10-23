@@ -49,8 +49,8 @@ In this order:
 - `claude`: checks that the Claude Code CLI is installed and logged in, and tells you how to log in if it is not.
 - `telegram`: walks you through creating a bot with @BotFather, tells you to enable Topics and turn Group Privacy off, stores the bot token in `.env` (never echoed), asks you to confirm Threaded Mode (topics) is on, records your numeric Telegram ID in `ALLOWED_USERS` (a comma-separated list of numeric IDs; each extra ID needs an explicit extra confirmation), and sends a test message. Skippable (RECOMMENDED): without it there is no phone control, no Telegram alerts and no approved email follow-ups, and `npm run up` starts no bridge or ccgram windows.
 - `gmail`: guides you through creating a Desktop OAuth client in your own Google Cloud project, then runs the consent screen so the send token stays on this machine. Skippable (NEEDED FOR EMAIL OUTREACH): without it there is no cold email, no email follow-ups and no reply watching; LinkedIn and Naukri outreach still run.
-- `apikeys`: optional keys, each skippable: Adzuna (a job source) and Serper and Hunter (contact finding only, not job sources); Hunter stays off unless you confirm. Skipping it leaves the matching feature off (OPTIONAL). See [docs/api-keys.md](docs/api-keys.md).
-- `sessions`: opens real Chrome so you log in once to the main LinkedIn account (people search, connection requests and messages) and Naukri (`npm run linkedin:login`, `npm run naukri:login`; each prints a short instruction, you log in, then press Enter); the saved sessions live in `secrets/`.
+- `apikeys`: optional keys, each skippable: Serper and Hunter (contact finding only, not job sources); Hunter stays off unless you confirm. Skipping it leaves the matching feature off (OPTIONAL). See [docs/api-keys.md](docs/api-keys.md).
+- `sessions`: opens real Chrome so you log in once to the main LinkedIn account (people search, connection requests and messages) and Naukri (`npm run linkedin:login`, `npm run naukri:login`; each prints a short instruction, you log in, then press Enter); the saved sessions live in `secrets/`. The optional Wellfound session is not part of the wizard: run `npm run wellfound:login` yourself (it saves `secrets/wellfound-state.json`); until it exists no Wellfound task is planned.
 - `resume`: has a model transcribe your resume text into `user-data/resume.json`, rejects any number that is not in your source text, and writes nothing until you confirm.
 - `profile`: asks for roles, locations, remote preference, salary floors and targets, notice period and work authorization, and writes `user-data/profile.json`, the application answers file and the language list.
 - `limits`: shows every daily cap, quiet hour and pacing value with its default and an explanation, and writes the ones you choose to `.env`.
@@ -150,19 +150,19 @@ Start it with `npm run web`; on first run use `npm run dashboard -- token` (setu
 
 There is no separate batch hunt any more. The scheduler plans each wake in code, runs the script providers itself, then launches one restricted `claude` run that executes these steps in order, one subagent or operator per step (see [docs/architecture.md](docs/architecture.md)):
 
-1. **Discover**: the code pass over the enabled sources (Adzuna, Remotive, RemoteOK, Naukri, company boards and any imported feeds you enabled; see [docs/sources-and-platforms.md](docs/sources-and-platforms.md)); the `source-operator` reads pages a script provider could not; the `linkedin-operator` and `naukri-operator` run their named searches.
+1. **Discover**: the code pass over the enabled sources (Remotive, RemoteOK, Naukri, company boards and any imported feeds you enabled; see [docs/sources-and-platforms.md](docs/sources-and-platforms.md)); the `source-operator` reads pages a script provider could not; the `linkedin-operator`, `naukri-operator` and (once you have logged in) `wellfound-operator` run their named searches.
 2. **Match** (`matcher`): scores each job against your base resume; code vetoes (location, language, deal-breakers, legitimacy) then apply. Jobs below `MATCH_THRESHOLD` (default 60) are skipped.
 3. **Find contacts** (`contact-finder`): a verified email and up to two LinkedIn profiles per job.
 4. **Prepare** (`outreach-preparer`): tailors the resume, drafts the email and connect notes, reviews and fact-checks them, then queues them.
-5. **Send**: the `mail-operator` sends queued email and email follow-ups; the `linkedin-operator` and `naukri-operator` send connects, messages and replies; the `apply-operator` applies through the browser ([docs/apply.md](docs/apply.md)). All within the caps.
+5. **Send**: the `linkedin-operator` and `naukri-operator` send connects, messages and replies (the `wellfound-operator` replies in existing threads); the `apply-operator` applies through the browser ([docs/apply.md](docs/apply.md)). All within the caps. A wake only queues email: the **mail drip lane** of the scheduler daemon sends queued emails and email follow-ups slowly through the day (batches of 2 to 3, minutes apart, inside a send window; see [docs/operations.md](docs/operations.md)).
 
-`/runhunt` and `./run-hunt.sh` run one such wake on demand.
+`/runhunt` and `./run-hunt.sh` run one such wake on demand. To work one job page or careers page first, at priority, use `/apply <https url> [--force]` in the `hunt` Telegram window, `npm run apply:request -- <https url> [--force]` or the dashboard Apply tab: the daemon wakes within a minute (outside quiet hours) and Telegram gets a report per request.
 
 Tune the basics in the Preferences block of `CLAUDE.md` and the limits in `.env`:
 
 ```
 MATCH_THRESHOLD=60        # min score to pursue a job
-SEND_LIMIT_PER_RUN=1      # max real emails per day (a daily counter, not per invocation)
+SEND_LIMIT_PER_RUN=1      # daily email limit for the followups command; the mail drip lane is capped by EMAIL_MAX_PER_DAY (0 or unset: no cap)
 ```
 
 ---
@@ -170,7 +170,7 @@ SEND_LIMIT_PER_RUN=1      # max real emails per day (a daily counter, not per in
 ## Safety model
 
 - Email goes only to addresses marked verified; an unverified guess is never sent to.
-- Caps (daily emails and applies, weekly LinkedIn invites and messages) are enforced in code, not by prompts; items over a cap stay queued.
+- Caps (daily emails and applies, weekly LinkedIn invites and messages) are enforced in code, not by prompts; items over a cap stay queued. The email cap is `EMAIL_MAX_PER_DAY`, which is unset (no cap) by default: the slow drip spacing is the protection until you set it.
 - A fact gate blocks resumes and emails that contain claims not supported by your own resume.
 - The scout and the applier use typed tools only: they never type free text into a page, never solve a CAPTCHA, MFA or phone check, never tick a marketing box, and create accounts only when you allow it. Generated job-source providers stay held until you approve them.
 - Reply outcomes need your explicit approval; auto-recording of outcomes ships off. Email follow-ups need your approval by default; with `FOLLOWUPS_AUTONOMOUS=true` (ships `false`) they send without approval under four code guards (fresh clean reply check, claim step, block list, fact gate) and the same daily send cap.
@@ -203,6 +203,7 @@ Capture the LinkedIn and Naukri sessions on a machine with a display, or run the
 - **xAI "Invalid message role", OpenRouter 402 or Claude Code Router problems:** see [model auth setup](docs/model-auth-setup.md).
 - **Anything looks wrong:** `npm run doctor` names the failing check and the fix.
 - **Gmail not authorized:** rerun `npm run setup -- --step gmail` (see [Gmail setup](docs/gmail-mcp-setup.md)).
+- **Wellfound session missing or expired:** run `npm run wellfound:login`.
 - **LinkedIn or Naukri session expired:** rerun `npm run setup -- --step sessions` (see [LinkedIn sessions](docs/linkedin-sessions-setup.md) and [Naukri session](docs/naukri-session-setup.md)).
 - **Resume PDF rendering fails:** the PDF is printed by headless installed Google Chrome; install Chrome (`npm run doctor`, check `chrome`). `npm run render` renders the resume by hand.
 - **A source returns nothing or errors:** `npm run status -- sources` shows the per-source table; see [docs/sources-and-platforms.md](docs/sources-and-platforms.md).

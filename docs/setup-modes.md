@@ -1,7 +1,7 @@
 # Setup modes and the bring-up commands
 
 Audience: owner
-Last verified against: 384fcd7
+Last verified against: 50917c8
 Source files: src/setup/io.ts, src/ui/term.ts, scripts/bootstrap.sh, scripts/bootstrap.ts, scripts/setup.ts, scripts/stack.ts, scripts/dry-run.ts, src/setup/cli.ts, src/setup/mode.ts, src/setup/guide.ts, src/setup/skips.ts, src/setup/state.ts, src/setup/runner.ts, src/setup/steps/index.ts, src/setup/steps/final.ts, src/bootstrap/exec.ts, src/bootstrap/catalog.ts, src/stack/up.ts, src/stack/down.ts, src/stack/mode.ts, src/verify/cli.ts, src/verify/stages.ts
 
 This page is the map of the owner path. It does not repeat the wizard's prompt wording: each
@@ -123,7 +123,7 @@ for you in any step. Writes to `.env` go through the comment-preserving writer.
 | 2 | `claude` | Claude Code installed and logged in | nothing | the `claude` login | no |
 | 3 | `telegram` | Bot token from BotFather, Threaded Mode, chat id, a test message | `.env` (`TELEGRAM_BOT_TOKEN` and the allowed-user key) | creating the bot, pasting the token | yes, id `telegram` |
 | 4 | `gmail` | Google Cloud project, consent screen, OAuth client file, authorisation | Creates the directory of `GMAIL_OAUTH_PATH` (mode 700) and chmods the keys file 600 if present; the auth helper writes the credentials file at `GMAIL_CREDENTIALS_PATH` (chmod 600). It never writes the OAuth keys file: you download it to `GMAIL_OAUTH_PATH` yourself | Downloading the OAuth keys file, OAuth consent in a browser | yes, id `gmail` |
-| 5 | `apikeys` | Adzuna, Serper, Hunter keys, each checked with one best-effort call | `.env` | creating each key | yes, id `apikeys`, per provider |
+| 5 | `apikeys` | Serper and Hunter keys (contact finding), each checked with one best-effort call | `.env` | creating each key | yes, id `apikeys`, per provider |
 | 6 | `sessions` | LinkedIn main and Naukri login sessions (real Chrome) | files under `secrets/` | every login (password, 2FA, QR) | per account, can be deferred |
 | 7 | `resume` | Converts your resume file to `user-data/resume.json` | `user-data/resume.json` | supplying your resume | can stop with the step skipped |
 | 8 | `profile` | Job questions and the answers file | `user-data/profile.json`, the Easy Apply answers file | answering about yourself | no |
@@ -165,7 +165,7 @@ is recorded, a skip recorded earlier is cleared, and the doctor, `npm run up` an
 | `telegram` | RECOMMENDED | No phone control, no Telegram alerts, and email follow-ups cannot be approved, so none are sent. `up` starts neither the bridge nor the ccgram windows. |
 | `dashboard` | RECOMMENDED | No status page in a browser. `/limits`, `/working`, `/health` and `npm run status` still work. `up` starts no web window. |
 | `gmail` | NEEDED FOR EMAIL OUTREACH | No cold email, no email follow-ups and no reply watching. LinkedIn and Naukri outreach still run. |
-| `apikeys` | OPTIONAL | Adzuna off as a job source, fewer verified contacts without Serper, no last-resort email lookup without Hunter. |
+| `apikeys` | OPTIONAL | Fewer verified contacts without Serper, no last-resort email lookup without Hunter. |
 
 The doctor rule: a fail or warn of that feature's allowlisted checks (`telegram-api`,
 `ccgram-env`, `daemon`; `web`, `dashboard-login`; `gmail-oauth`; `api-keys`) is shown as `skip`
@@ -185,7 +185,7 @@ wizard text as a best guess until you have checked it yourself.
   absence never fails the step.
 - Whether ccgram needs topics in a private chat or a forum supergroup: check upstream (ccgram
   docs).
-- The Adzuna, Serper and Hunter verification endpoints, credit cost and limits: unverified. A
+- The Serper and Hunter verification endpoints, credit cost and limits: unverified. A
   rejected key offers keep-anyway.
 - Hidden secret input in a real terminal: unverified.
 - That a skipped Telegram is safe for every consumer of `TELEGRAM_BOT_TOKEN`: traced by reading

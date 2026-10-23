@@ -1,8 +1,8 @@
 # Browser apply
 
 Audience: owner
-Last verified against: 37942b4
-Source files: src/mcp/applier.ts, src/applier/tools/open.ts, src/applier/tools/submit.ts, src/applier/escalate.ts, src/applier/cooldown.ts, src/applier/confirm.ts, src/applier/recipes/store.ts, src/applier/recipes/learn.ts, src/applier/recipes/layoutGuard.ts, src/apply/registry.ts, src/apply/answers.ts, src/webcore/hostCaps.ts, src/webcore/accounts.ts, src/webcore/checkboxes.ts, src/webcore/launch.ts, scripts/site-account.ts, config/ats-recipes/, .claude/agents/apply-operator.md, .env.example
+Last verified against: 50917c8
+Source files: src/mcp/wellfound.ts, src/browserctl/arm/wellfound.ts, src/manual/url.ts, scripts/apply-request.ts, .claude/commands/apply.md, src/mcp/applier.ts, src/applier/tools/open.ts, src/applier/tools/submit.ts, src/applier/escalate.ts, src/applier/cooldown.ts, src/applier/confirm.ts, src/applier/recipes/store.ts, src/applier/recipes/learn.ts, src/applier/recipes/layoutGuard.ts, src/apply/registry.ts, src/apply/answers.ts, src/webcore/hostCaps.ts, src/webcore/accounts.ts, src/webcore/checkboxes.ts, src/webcore/launch.ts, scripts/site-account.ts, config/ats-recipes/, .claude/agents/apply-operator.md, .env.example
 
 This page explains how Jobber applies to jobs through the browser, what limits it, where accounts and
 credentials live, what it hands back to you, and which checks only you can do. Safety rules are not
@@ -11,7 +11,7 @@ and 17).
 
 ## How it works
 
-The `apply-operator` runs as the last step of a wake. It works the queued rows that carry an apply
+The `apply-operator` runs as the last step of a wake (it is planned when apply rows are queued, and whenever the pipeline is planned, since the pipeline may queue rows). It works the queued rows that carry an apply
 platform, one application at a time, up to a quota computed in code from the remaining daily budgets.
 It uses the typed tools of the `applier` MCP and nothing else:
 
@@ -45,16 +45,31 @@ from the stored apply URL (`src/apply/registry.ts`):
 | `browser` | any other host | only when `APPLY_ALLOW_UNKNOWN_HOSTS` is `true` |
 | `linkedin_easy` | linkedin.com | only when `APPLY_LINKEDIN_EASY` is `true`; uses the burner session |
 | `naukri` | naukri.com | the native Naukri Apply through the Naukri tools; it also consumes `NAUKRI_MAX_APPLIES_PER_DAY` |
+| `wellfound` | wellfound.com | the native Wellfound Apply through the Wellfound tools (`wellfound_arm_apply`, then a click by ref); it also consumes `WELLFOUND_MAX_APPLIES_PER_DAY`; needs `npm run wellfound:login`; live-unverified |
 | never | everything else | discover-only and generated sources, no apply URL, look-alike hosts, credentials in the URL, non-http(s) URLs, an unknown host or LinkedIn while the matching flag is off |
 
 Jobs from discover-only sources never reach the queue with an apply platform; see
-[sources-and-platforms.md](sources-and-platforms.md).
+[sources-and-platforms.md](sources-and-platforms.md). Wellfound is not discover-only. On Wellfound the optional note to
+the company is never written by the agent (a note exists only for a text you approved, at most 600 characters, and it passes the
+style, fact and output gates and the classifier screen); any other question the form asks is escalated to you as
+`needs_owner`, and an "Apply on company site" link is never clicked (it is counted as `manual_review`). Naukri and Wellfound applies
+honour `JOBBER_DRY_RUN` like every other action.
+
+## Applying to a job you pick (`/apply <url>`)
+
+To have Jobber work one job or one careers page at priority, send `/apply <https url>` in the `hunt` Telegram window (or run
+`npm run apply:request -- <https url>`, or use the dashboard Apply tab). The scheduler wakes early (outside quiet hours), reads
+the page, runs the whole pipeline on it first, and the apply stage works the queue in the usual order under the usual caps: a
+manual request changes the order, never a gate or a cap. Add `--force` to also prepare a job scored below the match threshold
+(vetoes and hard stops still apply). If the command prompts for permission in the `hunt` window, allow the Bash permission rule for the
+`apply:request` script (the pattern is in `.claude/commands/apply.md`). `/apply #N` is only a status lookup for job N. A job from a `manual:<kind>` source follows the
+apply rules of `<kind>`.
 
 ## Limits
 
 | Limit | Key | Default |
 |---|---|---|
-| Applications per day (all kinds, shared with Naukri) | `MAX_APPLIES_PER_DAY` | 5 |
+| Applications per day (all kinds, shared with Naukri and Wellfound) | `MAX_APPLIES_PER_DAY` | 5 |
 | Application attempts per day (counted at open) | `APPLY_MAX_ATTEMPTS_PER_DAY` | 30 |
 | Applications per host per day | `APPLY_MAX_PER_HOST` | 10 (range 1 to 50, out of range is clamped and the doctor warns) |
 | Per-platform override | `APPLY_MAX_PER_HOST_GREENHOUSE`, `_LEVER`, `_ASHBY`, `_WORKABLE`, `_SMARTRECRUITERS`, `_WORKDAY`, `_RECRUITEE`, `_PERSONIO`, `_BROWSER` | falls back to `APPLY_MAX_PER_HOST`, then 10 |
@@ -146,10 +161,11 @@ these yourself, in order, after backing up `data.sqlite` and fully restarting Cl
    `APPLY_ALLOW_ACCOUNT_CREATION` on one tenant.
 4. Blocks: note which sites show a CAPTCHA, MFA or phone check; confirm the stop, the escalation and
    the cooldown after two blocks.
-5. Kill switch: during an apply run `npm run jobber:control -- stop test`; the next acting call must
+5. Wellfound: after `npm run wellfound:login`, one job with `JOBBER_DRY_RUN` `true` first (the arm tool records and creates a dry intent), then one live job you watch (`APPLY_SUBMIT_MODE` does not apply to the Wellfound and Naukri native Apply, only the dry-run flag and the caps do): confirm the page really is that job, the Apply control by name and that no text is typed unless you armed a note. Nothing about Wellfound (URL shapes, labels, the Apply flow) has been seen live.
+6. Kill switch: during an apply run `npm run jobber:control -- stop test`; the next acting call must
    be denied.
 
 `npm run doctor` has the checks `web_flags`, `apply_limits`, `apply_recipes`, `site_accounts`,
-`browser_launch` and `login_commands`. All browsers (LinkedIn, Naukri, scout, applier) run on
+`browser_launch` and `login_commands`. All browsers (LinkedIn, Naukri, Wellfound, scout, applier) run on
 patchright with the installed Google Chrome; a site that blocks it has no bundled-browser fallback.
 Terms of service of the sites you apply to are your responsibility.

@@ -167,6 +167,7 @@ Protects: nothing is exposed; SSH keys gate access. Does not protect: the laptop
 - For `oidc`: redirect URI identical at the provider and in `.env`.
 - For Google modes: OAuth consent screen in testing mode with only you as test user.
 - Keep `WEB_CHAT_ENABLED=false` unless you need the chat box, and keep its permission set `read_only`.
+- Remember the Apply tab (section 6) is always on: a signed-in session can queue priority runs, so treat a signed-in browser like the keys to the agent.
 - Run `npm run doctor`.
 - Review sign-ins with `npm run dashboard -- audit`.
 - Back up `.dashboard/auth.sqlite` only encrypted.
@@ -177,3 +178,21 @@ The dashboard shows company contacts, email addresses, recruiter names, outreach
 conversation state. That is personal data about you and other people. A page like that should
 not sit on the public internet by default: one misconfiguration or a leaked token or Google
 session would expose it. Prefer the tailnet or an SSH tunnel.
+
+## 6. The Apply tab (the one place the dashboard writes)
+
+The dashboard is read-only except for the **Apply** tab, which has no on/off flag: any authenticated session can use it. It
+queues the same priority request as `/apply <https url> [--force]` in Telegram or `npm run apply:request`: one job page or one
+company careers page that Jobber then runs through the whole pipeline first (match, vets, contacts, outreach, apply, all under
+the usual caps, quiet hours, halts, kill switch and dry run). The tab does not fetch the URL.
+
+- Two steps: the first checks the URL and shows how it will be handled (a job page, a careers page, or an unknown host read by the page
+  reader) and issues a one-time token; the second consumes the token and writes ONE pending row through a short-lived write
+  connection. The dashboard's own database handle stays read-only.
+- A fresh sign-in is required (a stale session gets `reauth_required` and is sent to sign in again), the server's CSRF, Origin and Host
+  checks apply to every POST, and a session can confirm at most 10 requests per hour.
+- With the kill switch on, a request is still stored and waits; the answer says so (`stopped`).
+- The tab also lists the latest 20 requests with the report the scheduler wrote for each one (text derived from the postings, with
+  control characters and angle brackets removed).
+- It reaches an exposed page's owner only: keep the exposure options in section 3 as tight as for the rest of the page. This
+  tab has not been exercised in a real browser yet.

@@ -1,7 +1,7 @@
 # Rollout: five phases from dry run to autonomous
 
 Audience: owner
-Last verified against: 37942b4
+Last verified against: 50917c8
 Source files: CLAUDE.md, src/safety/dryRun.ts, src/stack/mode.ts, src/verify/cli.ts, scripts/dry-run.ts, scripts/stack.ts, scripts/jobber-control.ts, scripts/status.ts, scripts/layout.ts, scripts/linkedin-seed-person.ts, scripts/scheduler.ts, .env.example, docs/superpowers/plans/2026-10-14-6d-scheduler-agents-naukri.md, docs/superpowers/plans/2026-10-15-8a-wiring-and-legacy-removal.md, docs/backup-and-restore.md, src/webcore/hostCaps.ts, src/sources/runner.ts
 
 Each phase is gated on the one before. Do not skip ahead. Steps marked `[owner]` can only
@@ -209,8 +209,8 @@ Real sends under temporary low ceilings, supervised.
 - Phase 2 exit criteria and the layout learning run met.
 - `[owner]` Permission set moved to `outreach_send` on purpose:
   `npm run permissions -- outreach_send`. Check with `--status`.
-- `[owner]` Low ceilings set in `.env` for this phase: `SEND_LIMIT_PER_RUN`,
-  `MAX_APPLIES_PER_DAY`, `LINKEDIN_MAX_INVITES_PER_WEEK`, `LINKEDIN_MAX_MESSAGES_PER_WEEK`,
+- `[owner]` Low ceilings set in `.env` for this phase: `EMAIL_MAX_PER_DAY` (the mail drip lane's
+  daily cap; `SEND_LIMIT_PER_RUN` does not limit the drip lane), `MAX_APPLIES_PER_DAY`, `LINKEDIN_MAX_INVITES_PER_WEEK`, `LINKEDIN_MAX_MESSAGES_PER_WEEK`,
   `NAUKRI_MAX_MESSAGES_PER_DAY`. Defaults and ranges: `src/setup/limitsCatalog.ts`; current
   usage: `npm run status -- limits`.
 - Gmail OAuth done (`docs/gmail-mcp-setup.md`). Sending rules: see `CLAUDE.md` "Safety".
@@ -259,7 +259,7 @@ you expected to catch it, or a checkpoint or CAPTCHA appeared. Run
   `docs/backup-and-restore.md`. Backups are `unverified` until you run the drill.
 
 **Flags (names only)**
-- Raise ceilings one at a time, never two in the same day: `SEND_LIMIT_PER_RUN`,
+- Raise ceilings one at a time, never two in the same day: `EMAIL_MAX_PER_DAY`,
   `MAX_APPLIES_PER_DAY`, `LINKEDIN_MAX_INVITES_PER_WEEK`, `LINKEDIN_MAX_MESSAGES_PER_WEEK`.
 - Optional, each its own decision: `FOLLOWUPS_AUTONOMOUS` (autonomous follow-ups never ran
   against real Gmail: `unverified`; they raise deliverability risk), `AUTO_UPDATE`,

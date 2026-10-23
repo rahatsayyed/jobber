@@ -1,8 +1,8 @@
 # Operations
 
 Audience: owner
-Last verified against: 37942b4
-Source files: scripts/jobber-control.ts, src/scheduler/control.ts, .claude/hooks/kill-switch.cjs, run-hunt.sh, scripts/linkedin-clear-halt.ts, scripts/layout.ts, src/safety/dryRun.ts, scripts/dry-run-report.ts, scripts/status.ts, src/status/render.ts, src/scheduler/plan.ts, src/scheduler/runLog.ts, src/scheduler/notify.ts, src/scheduler/launch.ts, scripts/stack.ts, src/stack/up.ts, src/stack/down.ts, src/verify/cli.ts, src/platform/checksSetup.ts, src/platform/checksLayout.ts, src/platform/checksScheduler.ts, src/applier/cooldown.ts, src/sources/status.ts
+Last verified against: 50917c8
+Source files: scripts/jobber-control.ts, src/scheduler/control.ts, .claude/hooks/kill-switch.cjs, run-hunt.sh, scripts/linkedin-clear-halt.ts, scripts/layout.ts, src/safety/dryRun.ts, scripts/dry-run-report.ts, scripts/status.ts, src/status/render.ts, src/scheduler/plan.ts, src/scheduler/runLog.ts, src/scheduler/notify.ts, src/scheduler/launch.ts, src/scheduler/mailDrip.ts, src/scheduler/driver.ts, scripts/apply-request.ts, src/manual/requests.ts, src/web/applyRoutes.ts, scripts/stack.ts, src/stack/up.ts, src/stack/down.ts, src/verify/cli.ts, src/platform/checksSetup.ts, src/platform/checksLayout.ts, src/platform/checksScheduler.ts, src/applier/cooldown.ts, src/sources/status.ts
 
 Day-to-day running of Jobber: stop it, resume it, read its state, find its files, fix common failures.
 Safety rules are not restated here; they live in `CLAUDE.md` under "Safety" and "Outreach safety layers". Read layer 6 there for the full kill switch scope.
@@ -13,18 +13,18 @@ Safety rules are not restated here; they live in `CLAUDE.md` under "Safety" and 
 npm run jobber:control -- stop "why you stopped it"
 ```
 
-Writes `.jobber/STOP` (reason and timestamp) and records an active halt for `all`, `linkedin` and `naukri` in the database. A halt that was already active is kept and printed as `kept existing <platform> halt`.
+Writes `.jobber/STOP` (reason and timestamp) and records an active halt for `all`, `linkedin`, `naukri` and `wellfound` in the database. A halt that was already active is kept and printed as `kept existing <platform> halt`.
 
 ```bash
 npm run jobber:control -- status
 ```
 
-Prints `killed`, the reason, the `linkedin halt` and `naukri halt` lines and which platforms are `allowed`.
+Prints `killed`, the reason, the `linkedin halt`, `naukri halt` and `wellfound halt` lines and which platforms are `allowed`.
 
 What stops:
 
-- The scheduler: the next wake sees the kill switch and skips (reason `killed`); a running wake window is killed within one poll.
-- Every tool call in restricted runs, and the irreversible tools (Gmail send, the applier's acting tools, the scout tools, typed LinkedIn and Naukri sends) in any session in this project, through `.claude/hooks/kill-switch.cjs`.
+- The scheduler: the next wake sees the kill switch and skips (reason `killed`); a running wake window is killed within one poll. The mail drip lane stops too: no new email run starts, and a drip run in flight is killed within one poll.
+- Every tool call in restricted runs, and the irreversible tools (Gmail send, the applier's acting tools, the scout tools, typed LinkedIn, Naukri and Wellfound page and send tools) in any session in this project, through `.claude/hooks/kill-switch.cjs`.
 - The launcher refuses to start and exits with code 4 (stderr: `kill switch active, not starting`); a forced wake from `./run-hunt.sh` is skipped with reason `killed`.
 - `npm run up` refuses to start the stack and exits with code 4.
 - `JOBBER_KILL=1` in the process environment has the same effect as the STOP file for the hook and the launcher. The hook reads only the process environment (`.claude/hooks/kill-switch.cjs`), not `.env`.
@@ -48,6 +48,7 @@ Never hand-edit SQLite. Pick the command by what set the halt.
 | `STOP file` or `jobber-control stop: ...` halts | You, via `jobber:control stop` | `npm run jobber:control -- resume` |
 | `layout_drift:<kind>` on a platform (ATS pages, or an old row) | Layout memory (needs `LAYOUT_ENFORCE=enforce` to halt; LinkedIn and Naukri drift is telemetry only) | `npm run layout -- clear-halt <platform>` |
 | LinkedIn checkpoint, CAPTCHA or restriction halt | The LinkedIn typed tools | `npm run linkedin:clear-halt -- --yes` (see the warning below it) |
+| Wellfound unconfirmed or failed sends (three in a row) | The Wellfound send path | No supported command clears it, the same as Naukri below: read the reason with `npm run jobber:control -- status`, fix the cause (usually the session: `npm run wellfound:login`), then decide yourself how to proceed. Only `jobber:control resume` clears halts it wrote itself |
 | Naukri consecutive send failures | The Naukri send path | No supported command clears it. Read the reason with `npm run jobber:control -- status`, fix the cause (usually the Naukri session, see `docs/naukri-session-setup.md`), then decide yourself how to proceed. Only the jobber-control, layout and LinkedIn scripts call the halt-clearing code, and none of them applies to a Naukri halt. Do not hand-edit SQLite |
 | `JOBBER_KILL=1` | The shell or `.env` | Unset it where it is set; `resume` only prints a note |
 
@@ -111,7 +112,7 @@ npm start
 
 `npm start` is the same as `npm run up`, and `npm stop` is the same as `npm run down`. Extra flags go after `--`, for example `npm start -- --status`.
 
-Order: kill-switch check, doctor gate, then bridge, windows, scheduler and dashboard. Exit codes:
+Order: kill-switch check, doctor gate, then bridge, windows, scheduler and dashboard. The scheduler and the dashboard run in the tmux session `jobber-stack` (`STACK_TMUX_SESSION`); the scheduler daemon is also what runs the mail drip lane and the early wake for a priority request. Exit codes:
 
 | Code | Meaning |
 |---|---|
@@ -132,6 +133,29 @@ npm stop -- --force --yes
 
 Stops the windows and scheduler this stack started. A scheduler that belongs to a launchd or systemd unit is not stopped here; the command prints the unload or disable line to run yourself. Without `--force` a scheduler finishing a wake is left to finish: re-run `npm run down`. It asks before stopping the `hunt` and `followups` windows; without a terminal they are left running unless you pass `--yes`. It does not touch the scheduler's wake session (`jobber-runs`; the STOP file is what kills a wake window), and it does not stop a hunt you started from a shell with `./run-hunt.sh`. Exit codes: 0 ok, 1 a stop failed, 2 usage error (unknown flag).
 
+## The mail drip lane (how email goes out)
+
+A wake never sends email. It only queues cold emails and follow-ups (`outreach_queue`). The scheduler daemon (`npm start`, or `npm run scheduler -- --daemon`; never `--once` or `--now`) runs a separate lane beside the wakes: every 30 seconds it checks, in code and with no model call, whether a send is due. It sends only when all of these hold: no kill switch (`.jobber/STOP`, `JOBBER_KILL=1`, an `all` halt), outside `QUIET_HOURS_START` to `QUIET_HOURS_END`, inside the send window (`EMAIL_SEND_WINDOW_START` to `EMAIL_SEND_WINDOW_END`, IST), no usage-limit pause, a valid configuration, enough time since the last send and since the stored next-tick time, room under `EMAIL_MAX_PER_DAY` when you set it, and a sendable item. Then it sends a small batch (`EMAIL_DRIP_MIN_BATCH` to `EMAIL_DRIP_MAX_BATCH` emails), one tiny `claude` run per email (profile `mail_drip`, trigger `mail_drip` in `scheduler_runs`, one email each), with a random pause (`EMAIL_DRIP_INTRA_PAUSE_MIN_SEC` to `EMAIL_DRIP_INTRA_PAUSE_MAX_SEC`) between two emails and a random wait (`EMAIL_DRIP_MIN_GAP_MIN` to `EMAIL_DRIP_MAX_GAP_MIN` minutes) before the next tick. The defaults are in `src/setup/limitsCatalog.ts` and `.env.example`. Order: queued cold emails first (never the same exact address twice), then approved follow-ups, which wait for a clean, fresh reply check (run `/checkreplies`, or let a wake's reply check do it).
+
+Things to know:
+
+- `EMAIL_MAX_PER_DAY` is the only daily cap of the lane; `0` or unset means no cap (the slow spacing is the protection). `SEND_LIMIT_PER_RUN` does not limit the lane; it still limits an interactive `/followups` session. Decide on `EMAIL_MAX_PER_DAY` before the first live day.
+- An invalid `EMAIL_*` value stops the lane (`bad_config`) and the doctor check `mail-drip-config` says which key.
+- A drip run that ends without a recorded send leaves its row quarantined (it is never picked again automatically) and writes a notice to `.jobber/notify.jsonl`: check Gmail Sent first. No supported command clears that quarantine (it is the `mail_drip_quarantine` entry of `scheduler_state`); `npm run mail:release -- <job_id>` (or `--reset`) only repairs a row whose email was marked `failed`, so a quarantined row stays unsent until you decide by hand.
+- `npm run scheduler -- --status` prints `next mail drip not before: <time>`. The lane has its own lock (name `mail`), so a long wake never pauses it.
+- Under `JOBBER_DRY_RUN=true` the drip runs record what they would send and send nothing.
+- Email follow-ups follow the mode in `FOLLOWUPS_AUTONOMOUS`: in legacy mode (the shipped default) the lane sends a follow-up only after you approved it in `/followups`.
+
+## Priority requests (`/apply <url>`)
+
+Hand Jobber one job page or careers page and it runs the whole pipeline on it first:
+
+```bash
+npm run apply:request -- <https url> [--force]
+```
+
+The command only validates the URL and writes one pending request (`manual_requests`); it fetches nothing. The same request can be made from Telegram (`/apply <https url> [--force]`, in the `hunt` window) and from the dashboard Apply tab (signed in recently; two steps, a confirmation token, 10 requests per hour per session). The scheduler daemon checks for a pending request every 30 seconds and runs an early wake outside quiet hours; the wake ingests it in code, reads a platform job page with the platform operator, matches, vets, finds contacts, prepares and queues outreach and apply, taking these jobs first (at most 10 per wake), and a report for each request arrives on Telegram, written by code. Every gate and cap still applies; `--force` also prepares a score below `MATCH_THRESHOLD` and skips the 90-day repeat-contact guard. A request made while the kill switch is on is stored and waits. If `/apply <url>` is refused with a permission prompt in the `hunt` window, allow the Bash permission rule for the `apply:request` script (the pattern is in `.claude/commands/apply.md`) there. A `/apply #N` lookup only reports the state of job N.
+
 ## Scheduler skip reasons
 
 Each wake either runs or is skipped with one reason (`planWake` in `src/scheduler/plan.ts`). The result is stored in `scheduler_runs`.
@@ -139,12 +163,12 @@ Each wake either runs or is skipped with one reason (`planWake` in `src/schedule
 | Reason | Meaning | What to do |
 |---|---|---|
 | `killed` | STOP file, `JOBBER_KILL=1`, a global `all` halt, or the control state could not be read (fails closed) | `npm run jobber:control -- status`, then `resume` if it is yours |
-| `halted` | Every platform has an active halt | Read the detail, clear per "Resume and clear halts" |
+| `halted` | Every platform (LinkedIn, Naukri, Wellfound) has an active halt | Read the detail, clear per "Resume and clear halts" |
 | `quiet_hours` | Inside `QUIET_HOURS_START` to `QUIET_HOURS_END` (hours in IST) | Nothing; it wakes after the window |
 | `ceilings_exhausted` | Work exists but every relevant rolling ceiling is full | `npm run status -- limits`; wait, or raise a ceiling deliberately (catalog: `src/setup/limitsCatalog.ts`) |
 | `nothing_due` | No follow-ups, outreach, inbox check or search is due | Nothing |
 
-A wake that runs ends in one of these run statuses (`src/scheduler/runLog.ts`): `planned`, `running`, `ok`, `budget_exceeded`, `killed`, `failed`, `crashed`, `usage_limit`, `skipped`. `usage_limit` means the subscription limit was hit and the scheduler pauses for `USAGE_LIMIT_BACKOFF_MIN` minutes instead of retrying. Leftover `running` rows from a crashed process become status `crashed` with `stop_reason` `orphaned` on the next start.
+A wake that runs ends in one of these run statuses (`src/scheduler/runLog.ts`): `planned`, `running`, `ok`, `budget_exceeded`, `killed`, `failed`, `crashed`, `usage_limit`, `skipped`. `usage_limit` means the subscription limit was hit and the scheduler pauses for `USAGE_LIMIT_BACKOFF_MIN` minutes instead of retrying, for wakes and for the mail drip lane. A wake is stopped only by its wall-clock or token budget (`RUN_MAX_WALL_SEC`, `RUN_MAX_TOKENS_APPROX`); the number of tool calls is reported, never a stop condition. Leftover `running` rows from a crashed process become status `crashed` with `stop_reason` `orphaned` on the next start.
 
 ```bash
 npm run scheduler -- --status
@@ -162,7 +186,7 @@ npm run status -- limits
 
 Output lines, in order:
 
-- One line per rolling ceiling: `linkedin_invite`, `linkedin_message` (per week), `naukri_apply`, `naukri_message` (per day), as `used/limit per <period>`, with `FULL` appended when it is exhausted.
+- One line per rolling ceiling: `linkedin_invite`, `linkedin_message` (per week), `naukri_apply`, `naukri_message`, `wellfound_apply`, `wellfound_message`, `wellfound_discover` (per day), as `used/limit per <period>`, with `FULL` appended when it is exhausted.
 - One line per daily counter, as `<key> <count> today` (for example the email send counter).
 - Halt lines: `HALT <platform>: <reason> (since <time> IST)`, or `no halts`.
 - `degraded: ...` when part of the snapshot could not be read.
@@ -255,7 +279,7 @@ Every cold email and email follow-up is sent as multipart/alternative. The plain
 | `unknown_recipient` | The profile was never registered in `people` | Let the next wake run the pipeline for that job, or call `linkedin_find_profiles` first | Register through `linkedin_find_profiles`; do not insert rows by hand |
 | `no_clean_reply_check` on a follow-up claim | No recent reply check without errors | Dispatch `reply-watcher` (`/checkreplies`) | Run the reply check, then re-run `/followups` |
 | `stuck_sending` follow-up rows | A claim was made but the send was never confirmed | The `/followups` report | The email may or may not have gone out; check Gmail Sent, then decide. They are never re-sent automatically |
-| LinkedIn or Naukri tools say logged out; doctor `sessions` warns | Saved session expired | `npm run doctor`, then `npm run linkedin:check` / `npm run naukri:check` (one line, `OK session valid` or `FAIL <reason>`) | `npm run linkedin:login` for LinkedIn, `npm run naukri:login` for Naukri; see `docs/linkedin-sessions-setup.md` and `docs/naukri-session-setup.md` |
+| LinkedIn, Naukri or Wellfound tools say logged out; doctor `sessions` or `wellfound-session` warns | Saved session expired | `npm run doctor`, then `npm run linkedin:check` / `npm run naukri:check` (one line, `OK session valid` or `FAIL <reason>`; there is no check script for Wellfound, the doctor reads its file) | `npm run linkedin:login` for LinkedIn, `npm run naukri:login` for Naukri, `npm run wellfound:login` for Wellfound; see `docs/linkedin-sessions-setup.md` and `docs/naukri-session-setup.md` |
 | Gmail send fails or doctor `gmail-oauth` warns: no refresh token | Token expired or revoked | `npm run doctor` | Re-run the Gmail auth per `docs/gmail-mcp-setup.md` |
 | Run status `usage_limit`, wakes pausing | Claude subscription usage limit hit | `scheduler_runs` rows via the dashboard or `npm run status -- working` | Wait; the pause length is `USAGE_LIMIT_BACKOFF_MIN` |
 | Tools behave as before an update | MCP servers keep old code in running sessions | Compare the update time with the session start | Fully quit and restart Claude sessions (`CLAUDE.md` "After merge: user checklist" item 1) |

@@ -1,7 +1,7 @@
 # Start here: from clone to first supervised send
 
 Audience: owner
-Last verified against: 37942b4
+Last verified against: 50917c8
 Source files: package.json, scripts/setup.ts, scripts/bootstrap.sh, scripts/stack.ts, scripts/dry-run.ts, scripts/dry-run-report.ts, scripts/linkedin-seed-person.ts, src/setup/steps/index.ts, src/setup/skips.ts, README.md, config/platforms.json, run-hunt.sh
 
 This page is the ordered map. Each row points to the page that holds the detail; it does not
@@ -25,7 +25,7 @@ before you flip anything live. Nothing on this path flips a dry-run flag for you
 | 8 | Dry-run end to end | `npm run dry-run` | 5 to 15 min | agent can run | it ends without a failed stage |
 | 9 | Read the dry-run report | `npm run dry-run:report` | 10 to 20 min | owner only (you judge the output) | you read every recorded action and nothing surprised you |
 | 10 | Fetch and verify the classifier, then set `CLASSIFIER_MODEL` ([classifier-models.md](classifier-models.md); pin and fit only for a profile that is not already pinned and fitted) | `npm run setup -- --step classifier` | download depends on network, fit 5 to 15 min | owner only (licence, pin review) | doctor checks `classifier_model` and `classifier_smoke` are ok |
-| 11 | Enable sessions ([telegram-bot-setup.md](telegram-bot-setup.md), [gmail-mcp-setup.md](gmail-mcp-setup.md), [linkedin-sessions-setup.md](linkedin-sessions-setup.md), [naukri-session-setup.md](naukri-session-setup.md)) | `npm run setup -- --step sessions`, `npm run linkedin:login`, `npm run naukri:login` | 20 to 60 min | owner only (QR, password, consent) | doctor session checks are ok |
+| 11 | Enable sessions ([telegram-bot-setup.md](telegram-bot-setup.md), [gmail-mcp-setup.md](gmail-mcp-setup.md), [linkedin-sessions-setup.md](linkedin-sessions-setup.md), [naukri-session-setup.md](naukri-session-setup.md)) | `npm run setup -- --step sessions`, `npm run linkedin:login`, `npm run naukri:login`, optionally `npm run wellfound:login` | 20 to 60 min | owner only (QR, password, consent) | doctor session checks are ok |
 | 12 | Dashboard sign-in ([dashboard-login.md](dashboard-login.md)) | `npm run dashboard -- token` | 5 min | owner only | you can sign in on loopback |
 | 13 | Canary send, supervised, low ceilings | `npm run linkedin:seed` with `--url`, `--name`, `--company`, `--category`, then one send you watch | 30 to 60 min | owner only (you watch it) | the one message arrived at the person you chose and a row exists in the DB |
 | 14 | First supervised wake (`/runhunt` is a shim for one forced wake) | `./run-hunt.sh` (or `/runhunt` in the hunt window), with the dry-run flags still on | 20 to 60 min | owner only (read resumes, emails, ATS lines yourself) | the run prints its one-line result, `npm run status -- sources` shows the source table, and you reviewed the first outputs |
@@ -56,7 +56,12 @@ before you flip anything live. Nothing on this path flips a dry-run flag for you
   `npm run status -- limits`, not repeated here). Live LinkedIn and Naukri paths are
   live-unverified (see `CLAUDE.md` section `Known limits and not yet live-verified`), which is
   why this step is supervised.
-- Step 16: `npm stop` (same as `npm run down`) stops the stack. `up` refuses while the kill switch is set.
+- Step 11: Wellfound is optional and is not part of the wizard: until `secrets/wellfound-state.json` exists no Wellfound
+  operator is planned. Its pages, selectors and login cookie name are live-unverified (see [sources-and-platforms.md](sources-and-platforms.md)).
+- Step 16: `npm stop` (same as `npm run down`) stops the stack. `up` refuses while the kill switch is set. The stack
+  includes the scheduler daemon, and the daemon also runs the mail drip lane (email goes out slowly through the day, never
+  in a burst from a wake; see [operations.md](operations.md)) and wakes early for a priority request made with
+  `/apply <url>` or `npm run apply:request`.
 
 ## If something is red
 
@@ -68,7 +73,7 @@ check. To stop everything at once, the kill switch is `npm run jobber:control --
 
 - [prerequisites.md](prerequisites.md): tools and versions, how to verify each.
 - [setup-modes.md](setup-modes.md): bootstrap, wizard modes, dry-run, up and down.
-- [api-keys.md](api-keys.md): Adzuna, Serper, Hunter, Gmail, Telegram, where each goes.
+- [api-keys.md](api-keys.md): Serper, Hunter, Gmail, Telegram, where each goes.
 - [sources-and-platforms.md](sources-and-platforms.md): the source registry, the source table, generated providers and imported feeds.
 - [apply.md](apply.md): how browser apply works, its caps, accounts, escalations and the live checks.
 - [config-reference.md](config-reference.md): every owner-edited file in `config/` and `user-data/`.

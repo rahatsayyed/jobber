@@ -1,16 +1,16 @@
 # Layout memory
 
 Audience: owner
-Last verified against: cc51247
+Last verified against: 50917c8
 Source files: scripts/layout.ts, src/layout/summary.ts, src/layout/vocab.ts, src/layout/render.ts, src/layout/store.ts, src/layout/classify.ts, src/layout/types.ts, src/layout/config.ts, scripts/status.ts, .env.example
 
-Layout memory is a small file per platform that records what the LinkedIn and Naukri pages looked like the last times the code parsed them, so the scheduled operators can skip exploratory reads when a page matches and stop when a page has drifted. It is not HTML and nothing in it is written by the model: it holds only ids from a closed vocabulary (`src/layout/vocab.ts`: page kinds, landmark ids, count keys, action labels), integers, dates and run ids, so page text can never reach it. It is advisory on reads and, only in `enforce` mode, a precondition for the irreversible typed tools.
+Layout memory is a small file per platform that records what the LinkedIn, Naukri and Wellfound pages looked like the last times the code parsed them, so the scheduled operators can skip exploratory reads when a page matches and stop when a page has drifted. It is not HTML and nothing in it is written by the model: it holds only ids from a closed vocabulary (`src/layout/vocab.ts`: page kinds, landmark ids, count keys, action labels), integers, dates and run ids, so page text can never reach it. It is advisory on reads and, only in `enforce` mode, a precondition for the irreversible typed tools.
 
 The commands below are offline: they start no browser and make no network call. Status, show and learn never write anything.
 
 ## What the verdicts mean
 
-The `layout=` token on `linkedin_open`, `linkedin_snapshot` and the Naukri snapshot header carries one of these. It is telemetry: since the browserctl rebuild (live-unverified) no verdict stops an operator, which adapts by snapshot, scroll, screenshot, pointer and escalation instead.
+The `layout=` token on `linkedin_open`, `linkedin_snapshot` and the Naukri and Wellfound snapshot headers carries one of these. It is telemetry: since the browserctl rebuild (live-unverified) no verdict stops an operator, which adapts by snapshot, scroll, screenshot, pointer and escalation instead.
 
 | Verdict | Meaning | What you do |
 |---|---|---|
@@ -30,7 +30,7 @@ Per kind, the stored state is `learning`, `stable`, `stale` (not verified for `L
 npm run layout -- status
 ```
 
-Prints one block per platform (linkedin, then naukri) and exits 0. `npm run status -- layout` prints the same summary. Synthetic example:
+Prints one block per platform (linkedin, naukri, then wellfound) and exits 0. `npm run status -- layout` prints the same summary. Synthetic example:
 
 ```
 linkedin: enforce=warn updated=2026-10-15 age=0d
@@ -48,7 +48,7 @@ naukri: enforce=warn
 npm run layout -- show linkedin
 ```
 
-Prints the compact memory text given to the operator (one line per kind, vocabulary ids only) and exits 0, or exits 1 with `layout memory invalid` when the file is bad. Platform is `linkedin` or `naukri`. Synthetic example:
+Prints the compact memory text given to the operator (one line per kind, vocabulary ids only) and exits 0, or exits 1 with `layout memory invalid` when the file is bad. Platform is `linkedin`, `naukri` or `wellfound`. Synthetic example:
 
 ```
 profile: stable v1 verified 2026-10-14 ok=41 fail=0 drift=0 | needs: profile.name profile.headline action:connect
@@ -111,7 +111,7 @@ Steps marked `[owner]` need you watching a real session.
 
 ## Drift escalation and halt
 
-`LAYOUT_DRIFT_ESCALATE_N` drift observations within `LAYOUT_DRIFT_WINDOW_HOURS` write an owner info escalation and a notification. For LinkedIn and Naukri drift is telemetry only and writes no halt. A `layout_drift:<kind>` halt (streak of `LAYOUT_DRIFT_HALT_N` and two run ids, under `enforce`) can still come from an ATS `ats_<id>` file; in `warn` and `off` the same event records a `layout_drift_halt` escalation (detail ends `mode=warn` or `mode=off`) and halts nothing. Block pages, CAPTCHAs and checkpoints still halt a platform, independently of layout.
+`LAYOUT_DRIFT_ESCALATE_N` drift observations within `LAYOUT_DRIFT_WINDOW_HOURS` write an owner info escalation and a notification. For LinkedIn, Naukri and Wellfound drift is telemetry only and writes no halt. A `layout_drift:<kind>` halt (streak of `LAYOUT_DRIFT_HALT_N` and two run ids, under `enforce`) can still come from an ATS `ats_<id>` file; in `warn` and `off` the same event records a `layout_drift_halt` escalation (detail ends `mode=warn` or `mode=off`) and halts nothing. Block pages, CAPTCHAs and checkpoints still halt a platform, independently of layout.
 
 When halted:
 
