@@ -8,6 +8,7 @@
     { "name": "Channable", "ats": "recruitee", "slug": "channable", "enabled": false, "note": "unverified example slug (from career-ops fixtures); run check-portal.ts first, then enable" },
     { "name": "SGS", "ats": "smartrecruiters", "slug": "sgs", "enabled": false, "note": "unverified example slug (from career-ops fixtures; SmartRecruiters slugs may be case-sensitive); run check-portal.ts first, then enable" },
     { "name": "CrowdStrike", "ats": "workday", "slug": "crowdstrike", "wd": "wd5", "site": "crowdstrikecareers", "max_detail": 40, "enabled": false, "note": "unverified example tenant (from career-ops fixtures); run check-portal.ts first, then enable" },
+    { "name": "Wellfound", "ats": "custom", "url": "https://wellfound.com/role/r/full-stack-engineer", "enabled": true, "note": "owner-listed site read by the source-operator (agent tier); the exact search URL is unverified, no live check has run. Wellfound has no public API and login walls: a block is escalated, never worked around." },
     { "name": "NVIDIA", "ats": "workday", "slug": "nvidia", "wd": "wd5", "site": "NVIDIAExternalCareerSite", "max_detail": 40, "enabled": false, "note": "unverified example tenant (from career-ops fixtures); run check-portal.ts first, then enable" }
   ],
   "aggregators": {

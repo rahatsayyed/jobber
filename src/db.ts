@@ -5,7 +5,7 @@ import { classifyDeadlines, type DeadlineSweep } from './freshness.js';
 import type { Legitimacy } from './legitimacy.js';
 import { dbPath } from './dbPath.js';
 import { companyKey, repostCount, titleIdentityKey } from './reposts.js';
-import { isDiscoverOnlySource, isHeldSource } from './lib/discoverOnly.js';
+import { isApplyBlockedSource, isHeldSource } from './lib/discoverOnly.js';
 import { classifyApplyUrl } from './apply/registry.js';
 import { channelsFor, type ChannelVerdict } from './lib/channels.js';
 import { migrateOutreachTables } from './outreach/schema.js';
@@ -760,7 +760,7 @@ export function enqueueOutreachResult(
   // Discover-only sources (see src/lib/discoverOnly.ts) never get an apply attempt, whatever the preparer asked for: 'none' keeps
   // the sender away from the shared daily apply counter while email and connect outreach on the same row still run.
   const source = (db.prepare('SELECT source FROM jobs WHERE id = ?').get(item.job_id) as { source: string | null } | undefined)?.source;
-  const applyPlatform = isDiscoverOnlySource(source) ? 'none' : item.apply_platform;
+  const applyPlatform = isApplyBlockedSource(source) ? 'none' : item.apply_platform;
   // Generated-provider jobs (source gen:*) are matched and listed, but their outreach rows wait for the owner (plan 8G D7): held_review
   // until `npm run providers -- approve <id>` releases them. list_queued_outreach returns only status 'queued', so a held row is never sent.
   const held = isHeldSource(source) && !(db.prepare('SELECT approved FROM generated_providers WHERE id = ?').get(String(source).slice(4)) as { approved: number } | undefined)?.approved;

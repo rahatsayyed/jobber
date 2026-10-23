@@ -38,6 +38,16 @@ describe('shipped config/platforms.json', () => {
   });
 });
 
+describe('wellfound registry row', () => {
+  it('is an enabled, unverified, agent-tier generated row with no provider', () => {
+    const { platforms, errors } = loadRegistry();
+    expect(errors).toEqual([]);
+    expect(platforms.find((p) => p.id === 'wellfound')).toEqual({
+      id: 'wellfound', kind: 'generated', label: 'Wellfound', provider: null, tier: 'agent', enabled: true, stability: 'unverified',
+    });
+  });
+});
+
 describe('loadRegistry validation', () => {
   it('reports an invalid row and still loads the others', () => {
     const p = tmpConfig({ platforms: [good('a'), { id: 'b', kind: 'nonsense' }, good('c')] });

@@ -33,6 +33,7 @@
     { "id": "startup-jobs", "kind": "api", "label": "startup.jobs (imported feed)", "provider": "providers/startup-jobs", "tier": "script", "enabled": false, "stability": "fixture", "attribution": { "source": "career-ops-hq/career-ops providers/startup-jobs.mjs", "license": "MIT", "url": "https://github.com/career-ops-hq/career-ops" } },
     { "id": "naukri", "kind": "naukri", "label": "Naukri search", "provider": "naukri", "tier": "script", "enabled": true, "stability": "unverified" },
     { "id": "linkedin-jobs", "kind": "linkedin", "label": "LinkedIn job search (operator)", "provider": null, "tier": "agent", "enabled": true, "stability": "unverified" },
-    { "id": "linkedin-posts", "kind": "linkedin", "label": "LinkedIn hiring posts (operator)", "provider": null, "tier": "agent", "enabled": true, "stability": "unverified" }
+    { "id": "linkedin-posts", "kind": "linkedin", "label": "LinkedIn hiring posts (operator)", "provider": null, "tier": "agent", "enabled": true, "stability": "unverified" },
+    { "id": "wellfound", "kind": "generated", "label": "Wellfound", "provider": null, "tier": "agent", "enabled": true, "stability": "unverified" }
   ]
 }

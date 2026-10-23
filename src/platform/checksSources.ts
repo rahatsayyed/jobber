@@ -75,7 +75,7 @@ function enabledTenantVendors(ctx: DoctorContext): { vendors: string[]; error?: 
   try {
     const cfg = JSON.parse(ctx.fs.read(p)) as { tracked_companies?: Array<{ ats?: unknown; enabled?: unknown }> };
     const set = new Set<string>();
-    for (const c of cfg.tracked_companies ?? []) if (c?.enabled === true && typeof c.ats === 'string') set.add(c.ats);
+    for (const c of cfg.tracked_companies ?? []) if (c?.enabled === true && typeof c.ats === 'string' && c.ats !== 'custom') set.add(c.ats);
     return { vendors: [...set] };
   } catch {
     return { vendors: [], error: 'config/portals.json is not valid JSON' };

@@ -51,6 +51,8 @@ export const SOURCE_POLICY: Readonly<Record<string, SourcePolicy>> = {
   cryptocurrencyjobs: { apply: 'none' }, jobspresso: { apply: 'none' }, larajobs: { apply: 'none' }, nodesk: { apply: 'none' },
   pythonorg: { apply: 'none' }, 'startup-jobs': { apply: 'none' },
   naukri: { apply: 'url' },
+  // Agent-tier custom site (source-operator): its jobs arrive as gen:custom and are held; the bare id is discover-only too.
+  wellfound: { apply: 'none' },
   'linkedin-jobs': { apply: 'url' }, 'linkedin-posts': { apply: 'none' },
 };
 
