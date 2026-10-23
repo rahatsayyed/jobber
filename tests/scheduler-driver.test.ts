@@ -410,6 +410,42 @@ describe('daemonLoop', () => {
     expect(getState(s.db, 'next_wake_at')).toBe(future);
   });
 
+  it('a pending manual request wakes the daemon within a minute without moving the regular next wake, ingests first and reports after', async () => {
+    const s = setup();
+    const future = new Date(NOON_IST.getTime() + 3 * 3600000).toISOString();
+    setState(s.db, 'next_wake_at', future, NOON_IST);
+    s.db.prepare("INSERT INTO manual_requests (url, kind, status) VALUES ('https://boards.greenhouse.io/acme/jobs/1', 'url', 'pending')").run();
+    const calls: string[] = [];
+    s.d.manualIngest = async (runId) => { calls.push(`ingest:${runId}`); s.db.prepare("UPDATE manual_requests SET status = 'running'").run(); };
+    s.d.manualReport = async (st) => { calls.push(`report:${st}`); };
+    const stop = { stopped: false };
+    const base = s.d.sleep;
+    s.d.sleep = async (ms) => {
+      await base(ms);
+      if (s.launcher.starts.length > 0 || s.clock().getTime() >= NOON_IST.getTime() + 5 * 60000) stop.stopped = true;
+    };
+    await daemonLoop(s.d, stop);
+    expect(s.launcher.starts).toHaveLength(1);
+    expect(s.clock().getTime() - NOON_IST.getTime()).toBeLessThanOrEqual(120000);
+    expect(calls).toEqual(['ingest:run00000001', 'report:ok']);
+    expect(s.launcher.starts[0]!.prompt).toContain('manual:');
+    expect(getState(s.db, 'next_wake_at')).toBe(future);
+  });
+
+  it('a pending manual request does not wake the daemon in quiet hours', async () => {
+    const s = setup({ start: QUIET });
+    setState(s.db, 'next_wake_at', new Date(QUIET.getTime() + 3 * 3600000).toISOString(), QUIET);
+    s.db.prepare("INSERT INTO manual_requests (url, kind, status) VALUES ('https://jobs.lever.co/acme', 'careers', 'pending')").run();
+    const stop = { stopped: false };
+    const base = s.d.sleep;
+    s.d.sleep = async (ms) => {
+      await base(ms);
+      if (s.clock().getTime() >= QUIET.getTime() + 10 * 60000) stop.stopped = true;
+    };
+    await daemonLoop(s.d, stop);
+    expect(s.launcher.starts).toHaveLength(0);
+  });
+
   it('a missing next_wake_at draws one wait, never an immediate wake', async () => {
     const s = setup();
     const stop = { stopped: true };

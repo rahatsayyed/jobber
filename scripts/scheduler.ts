@@ -26,6 +26,9 @@ import { loadWellfoundDiscoveryConfig } from '../src/wellfound/discover.js';
 import { getState, listRuns } from '../src/scheduler/runLog.js';
 import { makeAfterWakeHooks } from '../src/scheduler/hooks.js';
 import { parseSchedulerArgs } from '../src/scheduler/args.js';
+import { ingestManualRequests } from '../src/manual/ingest.js';
+import { finalizeManualRequests } from '../src/manual/report.js';
+import { telegramNotifier } from '../src/platform/notify.js';
 
 const projectRoot = resolve(process.cwd());
 const root = join(projectRoot, '.jobber');
@@ -139,6 +142,20 @@ async function main(): Promise<void> {
     codePass: () => runCodePass({ db, now, projectRoot }),
     // The slow email lane beside the wakes (src/scheduler/mailDrip.ts); only the daemon runs it, never --once or --now.
     mailDrip: args.mode === 'daemon',
+    manualIngest: (runId) => ingestManualRequests(db, { runId, now }),
+    manualReport: async (runStatus) => {
+      const tg = telegramNotifier(env);
+      const r = await finalizeManualRequests(db, runStatus, {
+        now,
+        matchThreshold: Number.isInteger(Number(env.MATCH_THRESHOLD)) && env.MATCH_THRESHOLD ? Number(env.MATCH_THRESHOLD) : 60,
+        send: async (text) => {
+          const sent = await tg.send(text);
+          // The text is always kept in the request row; the notify file gets only a title so a missing Telegram setup is visible.
+          if (!sent.ok) await notifier.notify({ level: 'warn', title: 'manual request report not delivered to Telegram', detail: sent.detail });
+        },
+      });
+      if (r.reported.length) await notifier.notify({ level: 'info', title: `manual request report sent: ${r.reported.map((i) => `#${i}`).join(' ')}` });
+    },
     afterWake: makeAfterWakeHooks({
       db, env, projectRoot, now, pacing: pacingFromConfig(cfg, tuning), notifier,
     }),

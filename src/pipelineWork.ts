@@ -144,13 +144,13 @@ export function repeatContactOf(db: BetterSqlite3.Database, jobId: string, now: 
  * Owner-submitted (priority) rows keep the 90-day repeat-contact guard. A row of a forced request (`forced` truthy) passes it.
  * Any other row that repeats is marked jobs.status 'repeat_contact' (kept, never deleted) and dropped from the offer; the owner report says so.
  */
-export function applyPriorityRepeats<T extends { id: unknown; forced?: unknown }>(db: BetterSqlite3.Database, rows: T[], now: Date = new Date()): T[] {
+export function applyPriorityRepeats<T extends Record<string, unknown>>(db: BetterSqlite3.Database, rows: T[], now: Date = new Date()): T[] {
   const skips: PipelineSkip[] = [];
   const kept = rows.filter((r) => {
-    if (r.forced) return true;
-    const of = repeatContactOf(db, String(r.id), now);
+    if (r['forced']) return true;
+    const of = repeatContactOf(db, String(r['id']), now);
     if (!of) return true;
-    skips.push({ job_id: String(r.id), reason: JOB_STATUS_REPEAT_CONTACT, of });
+    skips.push({ job_id: String(r['id']), reason: JOB_STATUS_REPEAT_CONTACT, of });
     return false;
   });
   applyPipelineSkips(db, skips);

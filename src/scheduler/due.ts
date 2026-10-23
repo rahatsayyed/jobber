@@ -3,6 +3,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { MATCH_FAIL_LIMIT } from '../db.js';
 import { planPipelineWork } from '../pipelineWork.js';
 import { followupMode, listApprovedFollowups, listFollowupCandidates } from '../followups.js';
+import { manualRequestsPending } from '../manual/requests.js';
 import { dueTouchesFor } from '../outreach/dueTouches.js';
 import { normalizeProfileKey } from '../outreach/people.js';
 import { TUNING_DEFAULTS, type Tuning } from '../outreach/tuning.js';
@@ -39,6 +40,8 @@ export interface DueCounts {
   applyQueued?: number;
   /** MAX_APPLIES_PER_DAY minus today's easy_apply counter, never below 0. */
   appliesLeftToday?: number;
+  /** Owner-submitted manual requests not yet ingested (status pending): a wake is planned for them even when nothing else is due. */
+  manualRequestsPending?: number;
 }
 
 // Same parsing as the apply tools: a non-negative integer, otherwise 5.
@@ -169,5 +172,6 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
     emailFollowupsReady,
     applyQueued,
     appliesLeftToday,
+    manualRequestsPending: manualRequestsPending(db),
   };
 }

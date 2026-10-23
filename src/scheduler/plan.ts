@@ -12,7 +12,9 @@ export type Operator = 'linkedin-operator' | 'naukri-operator' | 'wellfound-oper
  */
 export type TaskKind =
   | 'inbox' | 'followups' | 'new_outreach' | 'discover'
-  | 'discover_scripts' | 'discover_agent' | 'pipeline' | 'mail' | 'apply';
+  | 'discover_scripts' | 'discover_agent' | 'pipeline' | 'mail' | 'apply'
+  // manual: owner-submitted job URLs and careers pages, ingested by the scheduler in code before the session (always the first step).
+  | 'manual';
 /** Who executes a wake stage that is not a platform operator. `code` is run by the scheduler itself before the claude run starts. */
 export type StageOperator = 'code' | 'source-operator' | 'pipeline' | 'mail-operator' | 'apply-operator';
 export interface Stage { operator: StageOperator; kind: TaskKind; quota: number }
@@ -176,11 +178,15 @@ export function planWake(i: {
   const stages: Stage[] = [];
   const scriptAge = due.scriptDiscoverLastHoursAgo;
   const scriptDue = i.codePassEnabled === true && (scriptAge === null || (scriptAge !== undefined && scriptAge >= SCRIPT_DISCOVER_EVERY_HOURS));
+  // Owner-submitted requests: ingested in code at the start of the wake. They may create manual_url source tasks (unknown hosts), so
+  // the source-operator and the pipeline are planned for them even though the rows do not exist yet at plan time.
+  const manualPending = due.manualRequestsPending ?? 0;
+  if (manualPending > 0) stages.push({ operator: 'code', kind: 'manual', quota: manualPending });
   if (scriptDue) stages.push({ operator: 'code', kind: 'discover_scripts', quota: 1 });
-  const sourceTasks = due.sourceTasksQueued ?? 0;
+  const sourceTasks = (due.sourceTasksQueued ?? 0) + manualPending;
   if (sourceTasks > 0) stages.push({ operator: 'source-operator', kind: 'discover_agent', quota: Math.min(sourceTasks, SOURCE_TASK_QUOTA) });
   const newJobsExpected =
-    scriptDue || sourceTasks > 0 || byPlatform.linkedin.some((t) => t.kind === 'discover') || byPlatform.naukri.some((t) => t.kind === 'discover') || byPlatform.wellfound.some((t) => t.kind === 'discover');
+    scriptDue || sourceTasks > 0 || manualPending > 0 || byPlatform.linkedin.some((t) => t.kind === 'discover') || byPlatform.naukri.some((t) => t.kind === 'discover') || byPlatform.wellfound.some((t) => t.kind === 'discover');
   const unmatched = due.unmatchedJobs ?? 0;
   // Email follow-ups need the reply check the pipeline stage starts with (step 0b), so they pull the stage in.
   const pipelineDue = unmatched > 0 || newJobsExpected || (due.emailFollowupsReady ?? 0) > 0;
@@ -203,7 +209,7 @@ export function planWake(i: {
     tasks: byPlatform[p],
   }));
 
-  if (pipelineDue) stages.push({ operator: 'pipeline', kind: 'pipeline', quota: Math.min(unmatched, JOBS_CEILING) });
+  if (pipelineDue) stages.push({ operator: 'pipeline', kind: 'pipeline', quota: Math.max(Math.min(unmatched, JOBS_CEILING), manualPending > 0 ? 1 : 0) });
   // No mail stage: the wake only enqueues email. Cold emails and email follow-ups are sent one at a time by the mail drip lane
   // (src/scheduler/mailDrip.ts), never in a burst inside a wake, so queued email alone is not wake work.
   // Apply: its own quota (not the burst) = the smaller of what is left of MAX_APPLIES_PER_DAY and of APPLY_MAX_ATTEMPTS_PER_DAY.
@@ -227,7 +233,7 @@ export function planWake(i: {
 }
 
 /**
- * The wake in execution order: 1 code pass over the script providers, 2 source-operator, 3 LinkedIn then Naukri discover,
+ * The wake in execution order: 0 manual requests (code, only when some are pending), 1 code pass over the script providers, 2 source-operator, 3 LinkedIn then Naukri discover,
  * 4 pipeline (sweep, reply check, match, vetoes, contacts, prepare), 5 mail-operator, 6 linkedin-operator then naukri-operator
  * for inbox, followups and new_outreach, 7 apply-operator.
  */
@@ -237,6 +243,7 @@ export function stepOrder(d: Extract<WakeDecision, { kind: 'run' }>): Step[] {
     const s = d.stages?.find((x) => x.kind === kind);
     if (s) out.push({ operator: s.operator, kind: s.kind, quota: s.quota });
   };
+  stage('manual');
   stage('discover_scripts');
   stage('discover_agent');
   for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'discover') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota, searches: t.searches });

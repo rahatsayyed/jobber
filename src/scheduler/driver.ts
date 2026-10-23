@@ -9,6 +9,7 @@ import type { OutreachConfig } from '../outreach/config.js';
 import type { Tuning } from '../outreach/tuning.js';
 import { ceilings } from '../outreach/limits.js';
 import { drawWaitMs, inQuietHours, nextWake, pacingFromConfig, type Rng } from '../outreach/pacing.js';
+import { manualRequestsPending } from '../manual/requests.js';
 import { BudgetTracker, loadBudget, type StopReason } from './budget.js';
 import { readControl, statExists, type ControlDeps, type ControlState } from './control.js';
 import { countDue } from './due.js';
@@ -48,6 +49,10 @@ export interface DriverDeps {
   codePass?: () => Promise<CodePassResult>;
   /** Run the mail drip lane (src/scheduler/mailDrip.ts) beside the wakes in the daemon loop. Absent or false: no drip. */
   mailDrip?: boolean;
+  /** Stage `manual`, run in code before the model session when a manual request is pending: ingests the requests (src/manual/ingest.ts). Never throws into the wake. */
+  manualIngest?: (runId: string) => Promise<unknown>;
+  /** After every wake that launched a session: reports finished manual requests to the owner (src/manual/report.ts finalizeManualRequests). */
+  manualReport?: (runStatus: string) => Promise<unknown>;
   heartbeat?: () => void; // called on every poll tick (the daemon lock heartbeat)
   /** Seam for 7D hooks. Called AFTER the run lock is released; errors are swallowed and noticed. */
   afterWake?: (r: WakeResult) => Promise<void>;
@@ -292,7 +297,14 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
     });
     started = true;
     wakeStartIso = startAt.toISOString();
-    // Stage 1 runs in code, before the model session: failures are noticed but never stop the wake.
+    // Stage 0 (manual requests) and stage 1 run in code, before the model session: failures are noticed but never stop the wake.
+    if (decision.stages?.some((s) => s.kind === 'manual') && d.manualIngest) {
+      try {
+        await d.manualIngest(runId);
+      } catch (e) {
+        await say(d, { level: 'warn', title: 'scheduler manual request ingest failed', detail: safeMsg(e), runId });
+      }
+    }
     let codePass: CodePassResult | null = null;
     if (decision.stages?.some((s) => s.kind === 'discover_scripts') && d.codePass) {
       try {
@@ -441,6 +453,14 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
     if (!skippedResult) nextWakeAt = drawNext();
   }
   if (skippedResult) return skippedResult;
+  // Owner-submitted requests whose jobs are all settled get their report now (code composes and sends it; never fatal).
+  if (started && launchTried && d.manualReport) {
+    try {
+      await d.manualReport(status);
+    } catch (e) {
+      await say(d, { level: 'warn', title: 'scheduler manual report failed', detail: safeMsg(e), runId });
+    }
+  }
   // Source summary after the whole wake (code pass and model session), so agent rows are in it too.
   if (started && wakeStartIso) {
     const sn = sourcesNotice(d.db, { runId, sinceIso: wakeStartIso, note: codePassNote });
@@ -538,9 +558,27 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     let stopSeen = stopPresent();
     // The mail drip lane runs beside the wakes (its own `mail` lock), so a long wake never pauses the slow email trickle.
     drip = deps.mailDrip ? dripLoop(deps, stop) : null;
+    // A manual request must not wait for the next random wake: every slice (30 s) the daemon checks for a pending one and wakes early,
+    // outside quiet hours, at most once per backoff. The regular pacing (`next`) is left alone.
+    let manualBackoffUntil = 0;
+    const manualWakeDue = (): boolean => {
+      const t = d.now();
+      if (t.getTime() < manualBackoffUntil || inQuietHours(t, pacing)) return false;
+      try {
+        return manualRequestsPending(d.db) > 0;
+      } catch {
+        return false;
+      }
+    };
     while (!stop.stopped) {
       let woke = false;
+      let manualWake = false;
       while (!stop.stopped) {
+        if (manualWakeDue()) {
+          woke = true;
+          manualWake = true;
+          break;
+        }
         const remaining = next.getTime() - d.now().getTime();
         if (remaining <= 0) {
           woke = true;
@@ -558,7 +596,15 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
       }
       if (!woke || stop.stopped) break;
       const r = await wakeOnce(deps, { abort: () => stop.stopped });
-      next = new Date(r.nextWakeAt);
+      if (manualWake) {
+        // Keep the regular schedule: the wake drew a new next_wake_at, put the old one back.
+        manualBackoffUntil = d.now().getTime() + (r.status === 'ok' ? 60_000 : 300_000);
+        try {
+          setState(d.db, 'next_wake_at', next.toISOString(), d.now());
+        } catch {
+          // ignore
+        }
+      } else next = new Date(r.nextWakeAt);
     }
   } finally {
     stop.stopped = true; // the drip loop (if any) exits on the same flag

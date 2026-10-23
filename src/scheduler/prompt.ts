@@ -16,8 +16,9 @@ function orderLines(order: Step[], pipeline?: PipelinePromptInput): string[] {
   const L: string[] = ['Wake order (execute the steps in exactly this order, one Agent call per operator step; never reorder or skip ahead):'];
   order.forEach((s, n) => {
     const at = `${n + 1}.`;
-    if (s.operator === 'code') L.push(`${at} ${s.kind}: the scheduler runs this stage itself, in code, outside this session. Do nothing for this step.`);
-    else if (s.operator === 'source-operator') L.push(`${at} Dispatch \`source-operator\` with task discover_agent quota ${s.quota} (queued source tasks only).`);
+    if (s.operator === 'code' && s.kind === 'manual') L.push(`${at} manual: ${s.quota} owner-submitted request(s) were ingested by the scheduler in code before this session (priority 1 jobs; pages of unknown hosts are queued as manual_url tasks for the source-operator step). Do nothing for this step: the pipeline stage takes priority jobs first and the owner gets the final report from code, not from you.`);
+    else if (s.operator === 'code') L.push(`${at} ${s.kind}: the scheduler runs this stage itself, in code, outside this session. Do nothing for this step.`);
+    else if (s.operator === 'source-operator') L.push(`${at} Dispatch \`source-operator\` with task discover_agent quota ${s.quota} (queued source tasks only; work every \`manual_url\` task first, those are owner-submitted pages).`);
     else if (s.operator === 'pipeline') L.push(`${at} Pipeline stage (${s.quota} unscored jobs waiting): see the pipeline instructions below.`);
     else if (s.operator === 'mail-operator') L.push(`${at} Dispatch \`mail-operator\` with task mail quota ${s.quota} (queued emails and email follow-ups).`);
     else if (s.operator === 'apply-operator') L.push(`${at} Dispatch \`apply-operator\` with task apply quota ${s.quota} (first read your own queue with db.list_queued_outreach: the pipeline may have just added rows; report done 0 if nothing is ready).`);

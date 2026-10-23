@@ -8,7 +8,7 @@ import { companyKey, repostCount, titleIdentityKey } from './reposts.js';
 import { isApplyBlockedSource, isHeldSource } from './lib/discoverOnly.js';
 import { classifyApplyUrl } from './apply/registry.js';
 import { channelsFor, type ChannelVerdict } from './lib/channels.js';
-import { applyPipelineSkips, planPipelineWork, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_SKIP_SQL, PIPELINE_WINDOW_HOURS, sqlTime } from './pipelineWork.js';
+import { applyPipelineSkips, applyPriorityRepeats, JOB_STATUS_REPEAT_CONTACT, planPipelineWork, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_SKIP_SQL, PIPELINE_WINDOW_HOURS, sqlTime } from './pipelineWork.js';
 import { migrateOutreachTables } from './outreach/schema.js';
 import { migrateSchedulerTables } from './scheduler/runLog.js';
 import { buildEmailParts, loadEmailLinks, stripMarkers, type EmailLink } from './emailHtml.js';
