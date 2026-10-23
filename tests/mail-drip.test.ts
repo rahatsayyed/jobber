@@ -10,7 +10,7 @@ import { acquireLock } from '../src/platform/lock.js';
 import type { DriverDeps } from '../src/scheduler/driver.js';
 import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
 import type { Notice } from '../src/scheduler/notify.js';
-import { buildDripPrompt, dripTick, inSendWindow, loadDripConfig, NO_CAP_LIMIT, STATE_NEXT_AT } from '../src/scheduler/mailDrip.js';
+import { buildDripPrompt, dripTick, listDripQuarantine, releaseDripQuarantine, pickDripItem, inSendWindow, loadDripConfig, NO_CAP_LIMIT, STATE_NEXT_AT } from '../src/scheduler/mailDrip.js';
 import { getState, listRuns } from '../src/scheduler/runLog.js';
 import { planWake, stepOrder, type PlanKnobs } from '../src/scheduler/plan.js';
 import { pipelineLines } from '../src/scheduler/pipeline.js';
@@ -88,16 +88,18 @@ function setup(opts: { start?: Date; env?: NodeJS.ProcessEnv; rng?: () => number
     control: opts.stopExists ? { exists: opts.stopExists, read: () => 'stop it' } : undefined,
     pollMs: 5000,
   };
-  const queue = (n: number, to: (i: number) => string = (i) => `person${i}@co${i}.example`): number[] => {
+  const verify = (addr: string): void => void db.prepare("INSERT INTO contacts (company, email, type, verified, source, confidence) VALUES ('C', ?, 'hr', 1, 't', 0.9)").run(addr);
+  const queue = (n: number, to: (i: number) => string = (i) => `person${i}@co${i}.example`, verified = true): number[] => {
     const ids: number[] = [];
     for (let i = 1; i <= n; i++) {
+      if (verified) verify(to(i));
       db.prepare("INSERT INTO jobs (id, source, title, company, url) VALUES (?, 't', 'T', 'C', 'u')").run(`job${i}`);
       ids.push(Number(db.prepare("INSERT INTO outreach_queue (job_id, email_subject, email_body, email_to) VALUES (?, 's', 'b', ?)").run(`job${i}`, to(i)).lastInsertRowid));
     }
     return ids;
   };
   const sent = (): number => (db.prepare("SELECT COUNT(*) AS n FROM outreach_queue WHERE email_status = 'sent'").get() as { n: number }).n;
-  return { d, db, launcher, notices, queue, sent, advance: (ms: number) => void (t += ms), clock, setNow: (x: Date) => void (t = x.getTime()) };
+  return { d, db, launcher, notices, queue, verify, sent, advance: (ms: number) => void (t += ms), clock, setNow: (x: Date) => void (t = x.getTime()) };
 }
 
 describe('config and window', () => {
@@ -295,10 +297,90 @@ describe('dripTick', () => {
 
   it('never sends a row whose job was excluded or an address a contacts row marks unverified', async () => {
     const s = setup({ rng: () => 0 });
-    s.queue(2);
+    s.queue(2, undefined, false);
+    s.verify('person1@co1.example');
     s.db.prepare("UPDATE jobs SET excluded_reason = 'x' WHERE id = 'job1'").run();
     s.db.prepare("INSERT INTO contacts (company, email, type, verified, source, confidence) VALUES ('C', 'person2@co2.example', 'hr', 0, 't', 0.1)").run();
     expect(await dripTick(s.d)).toMatchObject({ reason: 'nothing_queued' });
+  });
+});
+
+describe('fail closed on unverified addresses (Safety rule 1)', () => {
+  it('a row with NO contacts row is never picked or sent', async () => {
+    const s = setup({ rng: () => 0 });
+    s.queue(2, undefined, false);
+    expect(pickDripItem(s.db, NOON_IST, {})).toMatchObject({ item: null, reason: 'nothing_queued' });
+    expect(await dripTick(s.d)).toMatchObject({ reason: 'nothing_queued' });
+    expect(s.launcher.starts).toHaveLength(0);
+  });
+  it('an unverified contacts row is refused, a verified one is sent, case does not matter', async () => {
+    const s = setup({ rng: () => 0 });
+    s.queue(3, (i) => (i === 3 ? 'Person3@Co3.Example' : `person${i}@co${i}.example`), false);
+    s.db.prepare("INSERT INTO contacts (company, email, type, verified, source, confidence) VALUES ('C', 'person1@co1.example', 'hr', 0, 't', 0.1)").run();
+    s.verify('PERSON3@co3.example');
+    const r = await dripTick(s.d);
+    expect(r.runs).toHaveLength(1);
+    expect(s.launcher.starts[0].prompt).toContain('row id 3');
+  });
+  it('a verified post email is sent, a free-mail post email (never verified, so no contacts row) is not', () => {
+    const s = setup();
+    s.queue(2, (i) => (i === 1 ? 'hiring@startup.example' : 'someone@gmail.com'), false);
+    s.db.prepare("INSERT INTO contacts (company, email, type, verified, source, confidence) VALUES ('C', 'hiring@startup.example', 'generic', 1, 'post', 0.5)").run();
+    const p = pickDripItem(s.db, NOON_IST, {});
+    expect(p).toMatchObject({ item: { kind: 'cold', address: 'hiring@startup.example' } });
+    s.db.prepare("UPDATE outreach_queue SET email_status = 'sent' WHERE job_id = 'job1'").run();
+    expect(pickDripItem(s.db, NOON_IST, {})).toMatchObject({ item: null });
+  });
+});
+
+describe('caps: EMAIL_MAX_PER_DAY is the drip cap, SEND_LIMIT_PER_RUN=0 is the emergency brake', () => {
+  it('unset or 0 EMAIL_MAX_PER_DAY means no cap, whatever SEND_LIMIT_PER_RUN says', async () => {
+    const s = setup({ rng: () => 0, env: { SEND_LIMIT_PER_RUN: '1' } });
+    s.queue(4);
+    await dripTick(s.d);
+    expect(s.launcher.starts.every((p) => p.prompt.includes(`DAILY_SEND_LIMIT=${NO_CAP_LIMIT}`))).toBe(true);
+  });
+  it('EMAIL_MAX_PER_DAY caps the drip and is the daily limit handed to the operator', async () => {
+    const s = setup({ rng: () => 0.99, env: { EMAIL_MAX_PER_DAY: '2', SEND_LIMIT_PER_RUN: '1' } });
+    s.queue(5);
+    const r = await dripTick(s.d);
+    expect(r.runs).toHaveLength(2);
+    expect(s.launcher.starts[0].prompt).toContain('DAILY_SEND_LIMIT=2');
+  });
+  it('SEND_LIMIT_PER_RUN=0 stops all email even with EMAIL_MAX_PER_DAY set or unset', async () => {
+    for (const env of [{ SEND_LIMIT_PER_RUN: '0' }, { SEND_LIMIT_PER_RUN: ' 0 ', EMAIL_MAX_PER_DAY: '50' }]) {
+      const s = setup({ rng: () => 0, env });
+      s.queue(3);
+      expect(await dripTick(s.d)).toMatchObject({ status: 'skipped', reason: 'send_limit_zero' });
+      expect(s.launcher.starts).toHaveLength(0);
+    }
+  });
+});
+
+describe('quarantined drip rows can be listed and released by the owner', () => {
+  it('lists the held row and releases it by id without sending anything', async () => {
+    const s = setup({ rng: () => 0, sends: false });
+    s.launcher.exitCode = 1;
+    const [id] = s.queue(1);
+    await dripTick(s.d);
+    expect(listDripQuarantine(s.db)).toEqual([expect.objectContaining({ id, job_id: 'job1' })]);
+    s.advance(60 * 60_000);
+    expect(pickDripItem(s.db, s.clock(), {})).toMatchObject({ item: null });
+    expect(releaseDripQuarantine(s.db, id, s.clock())).toMatchObject({ released: true });
+    expect(listDripQuarantine(s.db)).toEqual([]);
+    expect(pickDripItem(s.db, s.clock(), {})).toMatchObject({ item: { id } });
+    expect(s.sent()).toBe(0);
+  });
+  it('refuses an unknown id, a row that is not quarantined and a row that was in fact sent', async () => {
+    const s = setup({ rng: () => 0, sends: false });
+    s.launcher.exitCode = 1;
+    const [id] = s.queue(1);
+    expect(releaseDripQuarantine(s.db, id, s.clock())).toMatchObject({ released: false, reason: 'not_quarantined' });
+    await dripTick(s.d);
+    expect(releaseDripQuarantine(s.db, 9999, s.clock())).toMatchObject({ released: false, reason: 'not_quarantined' });
+    s.db.prepare("UPDATE outreach_queue SET email_status = 'sent' WHERE id = ?").run(id);
+    expect(releaseDripQuarantine(s.db, id, s.clock())).toMatchObject({ released: false, reason: 'already_sent' });
+    expect(listDripQuarantine(s.db)).toHaveLength(1);
   });
 });
 

@@ -194,6 +194,7 @@ describe('outreach_queue', () => {
   it('listQueuedOutreach omits resume_json but keeps every other column', () => {
     const db = openDb(':memory:');
     seedJobs(db, 'job-e');
+    db.prepare("INSERT INTO contacts (company, email, type, verified, source, confidence) VALUES ('Echo', 'e@y.com', 'hr', 1, 't', 0.9)").run();
     enqueueOutreach(db, {
       job_id: 'job-e', resume_pdf_path: '/tmp/e.pdf', email_subject: 'S', email_body: 'B',
       email_to: 'e@y.com', connect_note: 'note', connect_profile_url: 'https://linkedin.com/in/e',

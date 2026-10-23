@@ -10,6 +10,7 @@ import { classifyApplyUrl } from './apply/registry.js';
 import { channelsFor, type ChannelVerdict } from './lib/channels.js';
 import { applyPipelineSkips, applyPriorityRepeats, JOB_STATUS_REPEAT_CONTACT, planPipelineWork, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_SKIP_SQL, PIPELINE_WINDOW_HOURS, sqlTime } from './pipelineWork.js';
 import { laneOrder } from './promoted.js';
+import { UNVERIFIED_ADDRESS, isVerifiedAddress } from './lib/verifiedAddress.js';
 import { migrateOutreachTables } from './outreach/schema.js';
 import { migrateSchedulerTables } from './scheduler/runLog.js';
 import { buildEmailParts, loadEmailLinks, stripMarkers, type EmailLink } from './emailHtml.js';
@@ -711,6 +712,8 @@ export function saveConnection(db: BetterSqlite3.Database, connection: Connectio
 export interface OutreachQueueItem {
   /** HTML part of the email, built in code from email_body (null when there is no email). */
   email_html?: string | null;
+  /** Set to `unverified_address` when email_to was withheld because no contacts row marks that address verified (Safety rule 1). */
+  email_refused?: string;
   id: number;
   job_id: string;
   resume_pdf_path: string | null;
@@ -858,22 +861,33 @@ export function listQueuedOutreach(db: BetterSqlite3.Database): OutreachQueueIte
     .all()
     // A draft queued before the HTML part existed gets it built now from its stored text (links, no emphasis).
     .map((r) => {
-      const row = r as OutreachQueueItem;
-      return row.email_body && !row.email_html ? { ...row, email_html: buildEmailParts(row.email_body, loadEmailLinks()).html } : row;
+      let row = r as OutreachQueueItem;
+      if (row.email_body && !row.email_html) row = { ...row, email_html: buildEmailParts(row.email_body, loadEmailLinks()).html };
+      // Safety rule 1, fail closed at the db layer: the sender only ever sees an email address that a contacts row marks verified.
+      // An unverified or unknown address is withheld (the row stays for the other channels) and the refusal is named.
+      if (row.email_to && !isVerifiedAddress(db, row.email_to)) row = { ...row, email_to: null, email_refused: UNVERIFIED_ADDRESS };
+      return row;
     });
 }
 
 // Queued rows that listQueuedOutreach skips because their job was excluded after the row was queued
 // (the sender reports these instead of sending).
 export function listExcludedQueuedOutreach(
-  db: BetterSqlite3.Database
+  db: BetterSqlite3.Database,
+  opts: { includeUnverified?: boolean } = {},
 ): { id: number; job_id: string; reason: string }[] {
-  return db
+  const rows = db
     .prepare(`SELECT q.id AS id, q.job_id AS job_id, coalesce(j.excluded_reason, 'unknown job') AS reason
       FROM outreach_queue q LEFT JOIN jobs j ON j.id = q.job_id
       WHERE q.status = 'queued' AND (j.id IS NULL OR j.excluded_reason IS NOT NULL)
       ORDER BY q.created_at ASC, q.id ASC`)
     .all() as { id: number; job_id: string; reason: string }[];
+  if (!opts.includeUnverified) return rows;
+  // Rows whose email address listQueuedOutreach withheld (pending email, not yet sent): reported, never sent.
+  const refused = listQueuedOutreach(db)
+    .filter((r) => r.email_refused === UNVERIFIED_ADDRESS && (!r.email_status || r.email_status === 'queued'))
+    .map((r) => ({ id: r.id, job_id: r.job_id, reason: UNVERIFIED_ADDRESS }));
+  return [...rows, ...refused];
 }
 
 const UPDATABLE_FIELDS = ['email_status', 'connect_status', 'apply_status', 'status'] as const;

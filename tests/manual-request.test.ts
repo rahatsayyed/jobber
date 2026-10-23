@@ -385,6 +385,7 @@ describe('mail drip lane reads priority first', () => {
     for (const id of ['a', 'b', 'c']) saveJob(db, job(id, { title: `Role ${id}`, company: `Co ${id}` }));
     db.prepare("UPDATE jobs SET priority = 1 WHERE id = 'c'").run();
     const ins = db.prepare("INSERT INTO outreach_queue (job_id, status, created_at, email_to, email_status) VALUES (?, 'queued', ?, ?, 'queued')");
+    for (const e of ['a@a.test', 'b@b.test', 'c@c.test']) db.prepare("INSERT INTO contacts (company, email, type, verified, source, confidence) VALUES ('X', ?, 'hr', 1, 't', 0.9)").run(e);
     ins.run('a', '2026-10-01 00:00:00', 'a@a.test'); ins.run('b', '2026-10-02 00:00:00', 'b@b.test'); ins.run('c', '2026-10-03 00:00:00', 'c@c.test');
     expect(pickDripItem(db, NOW, env)).toMatchObject({ item: { kind: 'cold', job_id: 'c', address: 'c@c.test' } });
     // the priority address was already emailed (another job): skipped for good, the next row is used

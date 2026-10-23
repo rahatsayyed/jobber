@@ -25,6 +25,7 @@ const BODY = 'Hi team, I am still very interested in the Frontend Developer role
 function addJob(db: BetterSqlite3.Database, id: string, to: string, sentAt: string, company = 'Zentrix') {
   saveJob(db, { id, source: 's', title: 'Frontend Developer', company, url: 'u', apply_url: 'u', description: 'd' });
   const q = enqueueOutreach(db, { job_id: id, resume_pdf_path: null, email_subject: 'Frontend role', email_body: 'Hi, I cut load time by 11 seconds.', email_to: to, connect_note: null, connect_profile_url: null, connect_category: null, connect_company: null, apply_platform: null, apply_url: null });
+  db.prepare("INSERT INTO contacts (company, email, type, verified, source, confidence) VALUES (?, ?, 'hr', 1, 't', 0.9)").run(company, to);
   recordEmailSent(db, q, `m-${id}`);
   setEmailThread(db, `m-${id}`, `t-${id}`);
   db.prepare('UPDATE outreach_queue SET email_sent_at = ? WHERE job_id = ?').run(sentAt, id);

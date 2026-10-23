@@ -18,6 +18,7 @@ function addJob(db: BetterSqlite3.Database, id: string, to: string, sentAt: stri
   saveJob(db, { id, source: 's', title: 'Frontend Developer', company: 'Acme', url: 'u', apply_url: 'u', description: 'd' });
   const base = { job_id: id, resume_pdf_path: null, email_subject: 'Frontend role', email_body: 'Hi, I cut load time by 11 seconds.', email_to: to, connect_note: 'n', connect_category: 'peer', connect_company: 'Acme', apply_platform: null, apply_url: null };
   const a = enqueueOutreach(db, { ...base, connect_profile_url: `https://linkedin.com/in/${id}a` });
+  db.prepare("INSERT INTO contacts (company, email, type, verified, source, confidence) VALUES ('Acme', ?, 'hr', 1, 't', 0.9)").run(to);
   recordEmailSent(db, a, `m-${id}`);
   db.prepare('UPDATE outreach_queue SET email_sent_at = ? WHERE job_id = ?').run(sentAt, id);
 }

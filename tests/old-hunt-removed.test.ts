@@ -74,6 +74,7 @@ describe('queue drain after the upgrade', () => {
   it('a pre-upgrade row with email, connect and apply parts is still returned by list_queued_outreach unchanged', () => {
     const db = openDb(':memory:');
     saveJob(db, { id: 'li-job:3891234567', source: 'linkedin-jobs', title: 'Dev', company: 'Acme', url: 'https://www.linkedin.com/jobs/view/3891234567/', apply_url: 'https://boards.greenhouse.io/acme/jobs/1', description: 'x' });
+    db.prepare("INSERT INTO contacts (company, email, type, verified, source, confidence) VALUES ('Acme', 'a@acme.example', 'hr', 1, 't', 0.9)").run();
     const id = enqueueOutreach(db, {
       job_id: 'li-job:3891234567', resume_pdf_path: 'generated/r.pdf', email_subject: 'Hello', email_body: 'Body', email_to: 'a@acme.example',
       connect_note: 'Hi there', connect_profile_url: 'https://www.linkedin.com/in/pat/', connect_category: 'recruiter', connect_company: 'Acme',

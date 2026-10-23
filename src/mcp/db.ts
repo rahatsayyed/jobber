@@ -340,7 +340,7 @@ server.registerTool(
     description: 'List queued outreach_queue rows that list_queued_outreach does NOT return because their job was excluded after the row was queued: [{id, job_id, reason}]. The sender reports these as skipped and never sends them.',
     inputSchema: {},
   },
-  async () => ({ content: [{ type: 'text', text: JSON.stringify(listExcludedQueuedOutreach(db)) }] })
+  async () => ({ content: [{ type: 'text', text: JSON.stringify(listExcludedQueuedOutreach(db, { includeUnverified: true })) }] })
 );
 
 server.registerTool(

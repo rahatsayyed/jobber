@@ -4,6 +4,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { recordOutcome } from './db.js';
 import { checkAndIncrement } from './lib/rateLimit.js';
+import { UNVERIFIED_ADDRESS, isVerifiedAddress } from './lib/verifiedAddress.js';
 import { normalizeText } from './atsText.js';
 import { getBaseResume } from './resume.js';
 import { checkTextWithNormalized } from './resumeFacts.js';
@@ -213,7 +214,9 @@ export function claimFollowupForSend(db: BetterSqlite3.Database, id: number): bo
   return db.transaction(() => {
     const row = db.prepare("SELECT job_id FROM followups WHERE id = ? AND status = 'approved'").get(id) as { job_id: string } | undefined;
     if (!row) return false;
-    if (!listApprovedFollowups(db).some((r) => r.id === id)) return false;
+    const listed = listApprovedFollowups(db).find((r) => r.id === id);
+    if (!listed) return false;
+    if (!isVerifiedAddress(db, listed.email_to)) return false; // Safety rule 1: no verified contact, no send
     return db.prepare("UPDATE followups SET status = 'sending' WHERE id = ? AND status = 'approved'").run(id).changes > 0;
   }).immediate();
 }
@@ -301,7 +304,7 @@ export function hasFreshCleanReplyCheck(db: BetterSqlite3.Database, now: Date, m
   return age >= 0 && age <= maxAgeMin * 60_000;
 }
 
-export type ClaimResult = { claimed: true } | { claimed: false; reason: 'not_approved' | 'blocked' | 'no_clean_reply_check' | 'cap' };
+export type ClaimResult = { claimed: true } | { claimed: false; reason: 'not_approved' | 'blocked' | 'unverified_address' | 'no_clean_reply_check' | 'cap' };
 
 /** Autonomous claim: ONE immediate transaction. approved (and not blocked), then a fresh clean reply check, then the shared send_email counter
  *  (consumed only here, on success), then approved -> sending. Any refusal writes nothing. */
@@ -309,7 +312,9 @@ export function claimFollowupGuarded(db: BetterSqlite3.Database, id: number, g: 
   return db.transaction((): ClaimResult => {
     const row = db.prepare("SELECT job_id FROM followups WHERE id = ? AND status = 'approved'").get(id) as { job_id: string } | undefined;
     if (!row) return { claimed: false, reason: 'not_approved' };
-    if (!listApprovedFollowups(db).some((r) => r.id === id)) return { claimed: false, reason: 'blocked' };
+    const listed = listApprovedFollowups(db).find((r) => r.id === id);
+    if (!listed) return { claimed: false, reason: 'blocked' };
+    if (!isVerifiedAddress(db, listed.email_to)) return { claimed: false, reason: UNVERIFIED_ADDRESS };
     if (!hasFreshCleanReplyCheck(db, g.now, g.maxAgeMin)) return { claimed: false, reason: 'no_clean_reply_check' };
     if (!checkAndIncrement(db, 'send_email', g.sendLimit)) return { claimed: false, reason: 'cap' };
     const ok = db.prepare("UPDATE followups SET status = 'sending' WHERE id = ? AND status = 'approved'").run(id).changes > 0;

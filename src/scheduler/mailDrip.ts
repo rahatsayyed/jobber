@@ -9,6 +9,7 @@ import { acquireLock } from '../platform/lock.js';
 import { redactPane } from '../platform/redact.js';
 import { isDryRun } from '../safety/dryRun.js';
 import { listQueuedOutreach } from '../db.js';
+import { addrOf, isVerifiedAddress } from '../lib/verifiedAddress.js';
 import {
   approveDraftedFollowups, followupCheckMaxAgeMin, followupMode, hasFreshCleanReplyCheck, listApprovedFollowups,
 } from '../followups.js';
@@ -24,7 +25,7 @@ export const DRIP_TRIGGER = 'mail_drip';
 export const DRIP_LOCK = 'mail';
 /** Seconds between daemon drip ticks. */
 export const DRIP_TICK_MS = 30_000;
-/** daily_counters limit handed to the mail-operator when EMAIL_MAX_PER_DAY is unset: effectively no cap. */
+/** daily_counters limit handed to the mail-operator when EMAIL_MAX_PER_DAY is 0 or unset: effectively no cap. EMAIL_MAX_PER_DAY is the drip cap; SEND_LIMIT_PER_RUN only acts as the 0 brake (emailBrakeOn). */
 export const NO_CAP_LIMIT = 100000;
 export const STATE_NEXT_AT = 'mail_drip_next_at';
 export const STATE_LAST_AT = 'mail_drip_last_at';
@@ -108,13 +109,51 @@ export function inSendWindow(at: Date, cfg: Pick<DripConfig, 'windowStartMin' | 
   return local >= cfg.windowStartMin && local < cfg.windowEndMin;
 }
 
-/** The bare lower-case address (the part inside angle brackets when present). */
-export function addrOf(addr: string | null | undefined): string | null {
-  if (!addr) return null;
-  const t = addr.trim().toLowerCase();
-  const m = /<([^<>\s]+@[^<>\s]+)>/.exec(t);
-  const a = m ? m[1] : t;
-  return /^[^@\s]+@[^@\s]+$/.test(a) ? a : null;
+export { addrOf };
+
+/** One quarantined cold row (a drip run ended without a recorded send; the owner checks Gmail before releasing it). */
+export interface QuarantinedRow { id: number; job_id: string; email_to: string | null; email_status: string | null }
+
+/** Quarantined cold rows still held, oldest id first. Rows that no longer exist are left out. */
+export function listDripQuarantine(db: DriverDeps['db']): QuarantinedRow[] {
+  const out: QuarantinedRow[] = [];
+  for (const k of quarantined(db)) {
+    const m = /^cold:(\d+)$/.exec(k);
+    if (!m) continue;
+    const r = db.prepare('SELECT id, job_id, email_to, email_status FROM outreach_queue WHERE id = ?').get(Number(m[1])) as QuarantinedRow | undefined;
+    if (r) out.push(r);
+  }
+  return out.sort((a, b) => a.id - b.id);
+}
+
+export type ReleaseResult = { released: true; id: number; job_id: string } | { released: false; reason: 'not_quarantined' | 'already_sent' };
+
+/**
+ * Owner repair (npm run mail:release -- --quarantine <row_id>): makes a quarantined cold row eligible for the drip picker again. It NEVER sends
+ * and never touches the send counter; the owner has checked Gmail Sent first. A row that is marked sent (or carries a sent time or message id)
+ * is refused: nothing to release, and its quarantine entry is left alone. Only the `cold:<id>` and `job:<job_id>` entries of that row change.
+ */
+export function releaseDripQuarantine(db: DriverDeps['db'], id: number, now: Date): ReleaseResult {
+  const s = quarantined(db);
+  if (!s.has(`cold:${id}`)) return { released: false, reason: 'not_quarantined' };
+  const r = db.prepare('SELECT job_id, email_status, email_sent_at, email_message_id FROM outreach_queue WHERE id = ?').get(id) as
+    | { job_id: string; email_status: string | null; email_sent_at: string | null; email_message_id: string | null }
+    | undefined;
+  if (r && (r.email_status === 'sent' || r.email_sent_at || r.email_message_id)) return { released: false, reason: 'already_sent' };
+  s.delete(`cold:${id}`);
+  if (r) s.delete(`job:${r.job_id}`);
+  setState(db, STATE_QUARANTINE, JSON.stringify([...s]), now);
+  return { released: true, id, job_id: r?.job_id ?? '' };
+}
+
+/**
+ * Emergency brake: SEND_LIMIT_PER_RUN=0 stops ALL email. It is the same meaning as in db.check_and_increment, where a limit of 0 never allows an
+ * increment (count < 0 is never true). The drip hands the operator EMAIL_MAX_PER_DAY (or NO_CAP_LIMIT) as the daily limit, so it must check the
+ * brake itself, in code, before anything is launched. Unset, blank or any other value is not the brake.
+ */
+export function emailBrakeOn(env: NodeJS.ProcessEnv): boolean {
+  const v = (env.SEND_LIMIT_PER_RUN ?? '').trim();
+  return v !== '' && Number(v) === 0;
 }
 
 export type DripItem =
@@ -179,19 +218,11 @@ export type PickResult = { item: DripItem } | { item: null; reason: 'nothing_que
  * The next item to send, in code. Cold emails first (the eligibility of db.list_queued_outreach: queued row, job not excluded, an address,
  * email not yet sent), then approved follow-ups when a clean reply check younger than FOLLOWUP_CHECK_MAX_AGE_MIN exists. A cold row is
  * skipped when its exact address was ever sent a cold email (dedupe is per address, never per domain), when the row or address is in
- * `exclude` (already tried in this tick), when a failed drip run left it unsent (quarantine) and for an address a contacts row marks unverified.
+ * `exclude` (already tried in this tick), when a failed drip run left it unsent (quarantine) and for any address without a verified contacts row (Safety rule 1, fail closed: no row is not verified).
  */
 export function pickDripItem(db: DriverDeps['db'], now: Date, env: NodeJS.ProcessEnv, exclude: ReadonlySet<string> = new Set()): PickResult {
   const already = sentAddresses(db);
   const held = quarantined(db);
-  const unverified = (to: string): boolean => {
-    try {
-      const r = db.prepare('SELECT 1 FROM contacts WHERE lower(email) = ? AND verified = 0 AND NOT EXISTS (SELECT 1 FROM contacts c2 WHERE lower(c2.email) = ? AND c2.verified = 1)').get(to.toLowerCase(), to.toLowerCase());
-      return r !== undefined;
-    } catch {
-      return false;
-    }
-  };
   let anyCandidate = false;
   const seenJobs = new Set<string>();
   for (const r of listQueuedOutreach(db)) {
@@ -199,9 +230,10 @@ export function pickDripItem(db: DriverDeps['db'], now: Date, env: NodeJS.Proces
     if (!to || (r.email_status && r.email_status !== 'queued')) continue;
     if (seenJobs.has(r.job_id)) continue; // sibling rows of one job carry the same email
     if (held.has(`cold:${r.id}`) || held.has(`job:${r.job_id}`) || exclude.has(`cold:${r.id}`)) continue;
-    if (unverified(to)) continue;
     const addr = addrOf(to);
-    if (!addr) continue;
+    // Safety rule 1, fail closed: only an address with a verified contacts row (no row means not verified) is ever picked.
+    // listQueuedOutreach already withholds unverified addresses; this explicit check keeps the picker safe on its own.
+    if (!addr || !isVerifiedAddress(db, addr)) continue;
     seenJobs.add(r.job_id);
     // a sibling row of the same job already sent: record_email_sent marks every row, so this is only defence in depth
     const dup = db.prepare("SELECT 1 FROM outreach_queue WHERE job_id = ? AND email_status = 'sent' LIMIT 1").get(r.job_id);
@@ -299,6 +331,7 @@ function gate(d: DriverDeps, cfg: DripConfig, now: Date, spacing: boolean): stri
   } catch {
     return 'killed'; // unreadable control state means stop
   }
+  if (emailBrakeOn(d.env)) return 'send_limit_zero'; // SEND_LIMIT_PER_RUN=0: the emergency brake stops all email, EMAIL_MAX_PER_DAY or not
   if (inQuietHours(now, pacingFromConfig(d.cfg, d.tuning))) return 'quiet_hours';
   if (!inSendWindow(now, cfg)) return 'outside_window';
   try {
