@@ -188,13 +188,13 @@ describe('dropBoardDuplicates', () => {
   it('drops board jobs already seen from any source or earlier in the batch; never drops non-board jobs', () => {
     const jobs = [
       job('gh:acme:1', 'greenhouse', 'Acme', 'Frontend Engineer'),       // same company+title as recent linkedin row -> dropped
-      job('gh:acme:2', 'greenhouse', 'Acme', 'Backend Engineer'),        // an adzuna job in this batch has the same key -> dropped
-      job('adzuna:9', 'adzuna', 'Acme Inc.', 'Backend Engineer'),        // non-board, kept
+      job('gh:acme:2', 'greenhouse', 'Acme', 'Backend Engineer'),        // an remotive job in this batch has the same key -> dropped
+      job('remotive:9', 'remotive', 'Acme Inc.', 'Backend Engineer'),        // non-board, kept
       job('gh:acme:3', 'greenhouse', 'Acme', 'Data Engineer'),           // first of its key -> kept
       job('gh:acme:4', 'greenhouse', 'Acme', 'Engineer, Data'),          // same board, same key, different id (another city) -> kept
       job('li:2', 'linkedin', 'Acme', 'Frontend Engineer'),              // non-board duplicate of a recent row, kept (not our job to drop)
     ];
-    expect(dropBoardDuplicates(jobs, recent).map((j) => j.id)).toEqual(['adzuna:9', 'gh:acme:3', 'gh:acme:4', 'li:2']);
+    expect(dropBoardDuplicates(jobs, recent).map((j) => j.id)).toEqual(['remotive:9', 'gh:acme:3', 'gh:acme:4', 'li:2']);
   });
   it('keeps same-board same-title postings with different ids, but drops a different board or a recent row from another source', () => {
     const same = [job('gh:acme:1', 'greenhouse', 'Acme', 'Data Engineer'), job('gh:acme:2', 'greenhouse', 'Acme', 'Data Engineer')];

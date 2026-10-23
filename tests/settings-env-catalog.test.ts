@@ -65,12 +65,10 @@ describe('catalog shape', () => {
       if (s.weakens === 'increase' || s.weakens === 'decrease') expect(['int', 'intList'], s.key).toContain(s.type);
     }
   });
-  it('puts the contact finding keys in their own section and Adzuna under credentials', () => {
+  it('puts the contact finding keys in their own section', () => {
     for (const k of ['SERPER_API_KEY', 'HUNTER_API_KEY', 'HUNTER_ENABLED', 'HUNTER_MONTHLY_CAP', 'SERPER_DAILY_BUDGET', 'SERPER_MONTHLY_BUDGET', 'DORK_DAILY_BUDGET', 'DORK_ENABLED']) {
       expect(spec(k).section, k).toBe('contact-finding');
     }
-    expect(spec('ADZUNA_APP_ID').section).toBe('credentials-sources');
-    expect(spec('ADZUNA_APP_KEY').section).toBe('credentials-sources');
   });
 });
 
@@ -216,7 +214,7 @@ describe('rules (D22) over the whole catalog', () => {
     }
   });
   it('secrets: tier is never unless it is an API key for a fixed vendor host', () => {
-    const VENDOR = ['ADZUNA_APP_KEY', 'GMAIL_APP_PASSWORD', 'HUNTER_API_KEY', 'SERPER_API_KEY'];
+    const VENDOR = ['GMAIL_APP_PASSWORD', 'HUNTER_API_KEY', 'SERPER_API_KEY'];
     for (const s of ENV_CATALOG.filter(isSecret)) {
       if (!VENDOR.includes(s.key)) expect(s.tier, s.key).toBe('never');
     }
@@ -237,7 +235,7 @@ describe('secrets', () => {
   });
   it('the secret keys are exactly this list (credentialed url and command keys included)', () => {
     expect(ENV_CATALOG.filter(isSecret).map((s) => s.key).sort()).toEqual([
-      'ADZUNA_APP_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'GMAIL_APP_PASSWORD', 'HUNTER_API_KEY',
+      'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'GMAIL_APP_PASSWORD', 'HUNTER_API_KEY',
       'JOBBER_NOTIFY_CMD', 'SERPER_API_KEY', 'TELEGRAM_BOT_TOKEN', 'WEB_OIDC_CLIENT_SECRET',
     ]);
   });

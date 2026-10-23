@@ -126,26 +126,12 @@
     },
     {
       "id": "apikeys",
-      "title": "Optional API keys (Adzuna for jobs; Serper and Hunter for contact finding)",
+      "title": "Optional API keys (Serper and Hunter for contact finding)",
       "owner_command": "npm run setup -- --step apikeys",
       "doctor_checks": [
         "api-keys"
       ],
       "keys": [
-        {
-          "name": "ADZUNA_APP_ID",
-          "secret": false,
-          "purpose": "Adzuna developer app id",
-          "where": "CLAUDE.md, Preferences",
-          "entered_in": "owner edits .env"
-        },
-        {
-          "name": "ADZUNA_APP_KEY",
-          "secret": true,
-          "purpose": "Adzuna developer key",
-          "where": "CLAUDE.md, Preferences",
-          "entered_in": "owner edits .env"
-        },
         {
           "name": "SERPER_API_KEY",
           "secret": true,
@@ -217,11 +203,11 @@
           "entered_in": "owner edits .env"
         }
       ],
-      "explain": "Three optional services: Adzuna (a job source), Serper (contact finding) and Hunter (contact finding, last-resort email lookup, off unless you confirm). Each can be skipped and added later. Keys are typed hidden into the wizard and never shown. Skipping only records the choice.",
+      "explain": "Two optional services: Serper (contact finding) and Hunter (contact finding, last-resort email lookup, off unless you confirm). Each can be skipped and added later. Keys are typed hidden into the wizard and never shown. Skipping only records the choice.",
       "fixes": {
         "api-keys": "Run the wizard apikeys step to add the keys you want, or leave them unset; this is a warning only."
       },
-      "skip": "Skippable per key (OPTIONAL). Adzuna off: one job source off. Serper off: fewer verified contacts (contact finding). Hunter off: last-resort email lookup stays off. Doctor shows api-keys as skipped."
+      "skip": "Skippable per key (OPTIONAL). Serper off: fewer verified contacts (contact finding). Hunter off: last-resort email lookup stays off. Doctor shows api-keys as skipped."
     },
     {
       "id": "sessions",

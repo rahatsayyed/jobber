@@ -14,7 +14,7 @@ const job = (id: string, source: string, apply_url: string) =>
 describe('isApplyBlockedSource', () => {
   it('blocks discover-only, aggregator and gen sources, not board or search sources', () => {
     for (const s of ['workday', 'hackernews', 'himalayas', 'weworkremotely', 'gen:acme', 'GEN:Acme']) expect(isApplyBlockedSource(s)).toBe(true);
-    for (const s of ['greenhouse', 'lever', 'ashby', 'adzuna', 'naukri', '', null, undefined]) expect(isApplyBlockedSource(s)).toBe(false);
+    for (const s of ['greenhouse', 'lever', 'ashby', 'remotive', 'naukri', '', null, undefined]) expect(isApplyBlockedSource(s)).toBe(false);
   });
 });
 
@@ -24,7 +24,7 @@ describe('isDiscoverOnlySource', () => {
     // The feeds imported from career-ops (src/sources/providers) are discover-only too.
     expect([...DISCOVER_ONLY_SOURCES].sort()).toEqual([...base, ...IMPORTED_IDS].sort());
     for (const s of IMPORTED_IDS) expect(isDiscoverOnlySource(s)).toBe(true);
-    for (const s of ['greenhouse', 'lever', 'ashby', 'linkedin', 'adzuna', 'remotive', 'naukri', '', null, undefined]) expect(isDiscoverOnlySource(s)).toBe(false);
+    for (const s of ['greenhouse', 'lever', 'ashby', 'linkedin', 'remotive', 'remotive', 'naukri', '', null, undefined]) expect(isDiscoverOnlySource(s)).toBe(false);
     expect(isDiscoverOnlySource('workday')).toBe(true);
     for (const s of ['Workday', ' workday ', 'HACKERNEWS']) expect(isDiscoverOnlySource(s)).toBe(true);
   });

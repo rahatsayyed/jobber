@@ -1,41 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeAdzuna } from '../src/sources/adzuna.js';
 import { normalizeRemotive } from '../src/sources/remotive.js';
 import { normalizeRemoteok } from '../src/sources/remoteok.js';
-
-describe('normalizeAdzuna', () => {
-  it('maps adzuna results to Job[]', () => {
-    const jobs = normalizeAdzuna({
-      results: [
-        {
-          id: 1,
-          title: 'X',
-          company: { display_name: 'Y' },
-          redirect_url: 'u',
-          description: 'd',
-        },
-      ],
-    });
-
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0]).toEqual({
-      id: 'adzuna:1',
-      source: 'adzuna',
-      title: 'X',
-      company: 'Y',
-      url: 'u',
-      apply_url: 'u',
-      description: 'd',
-    });
-  });
-
-  it('handles missing company gracefully', () => {
-    const jobs = normalizeAdzuna({
-      results: [{ id: 2, title: 'X', redirect_url: 'u', description: 'd' }],
-    });
-    expect(jobs[0].company).toBe('');
-  });
-});
 
 describe('normalizeRemotive', () => {
   it('maps remotive jobs to Job[]', () => {

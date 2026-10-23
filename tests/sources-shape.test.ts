@@ -89,27 +89,6 @@ describe('every ported board provider accepts a fixture of its own format', () =
 });
 
 describe('ported API providers', () => {
-  it('adzuna', async () => {
-    vi.stubEnv('ADZUNA_APP_ID', 'test-id');
-    vi.stubEnv('ADZUNA_APP_KEY', 'test-key');
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ results: [{ id: 9, title: 'Dev', redirect_url: 'https://x/y', company: { display_name: 'Co' }, description: 'd', created: '2026-10-01T00:00:00Z' }] })));
-    const { provider } = await import('../src/sources/adzuna.js');
-    const r = await provider.fetch({ params: { role: 'dev' } });
-    expect(r.jobs).toHaveLength(1);
-    expect(checkShape(provider.shapeSpec, r.sample).ok).toBe(true);
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ results: [{ id: 9, label: 'Dev' }] })));
-    const bad = await provider.fetch({ params: { role: 'dev' } });
-    expect(checkShape(provider.shapeSpec, bad.sample).ok).toBe(false);
-  });
-  it('a failing HTTP status makes provider.fetch throw (the legacy fetchAdzuna still returns [])', async () => {
-    vi.stubEnv('ADZUNA_APP_ID', 'test-id');
-    vi.stubEnv('ADZUNA_APP_KEY', 'test-key');
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('no', { status: 500 })));
-    const m = await import('../src/sources/adzuna.js');
-    await expect(m.provider.fetch({ params: { role: 'dev' } })).rejects.toThrow(/500/);
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    expect(await m.fetchAdzuna({ role: 'dev' })).toEqual([]);
-  });
   it('remotive', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ jobs: [{ id: 3, title: 'Dev', company_name: 'Co', url: 'https://remotive.com/x', description: 'd', publication_date: '2026-10-01' }] })));
     const { provider } = await import('../src/sources/remotive.js');

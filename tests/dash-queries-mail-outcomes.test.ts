@@ -11,7 +11,7 @@ import { funnelStats } from '../src/funnel.js';
 let db: BetterSqlite3.Database;
 beforeEach(() => { db = openDb(':memory:'); migrateOutreachTables(db); });
 function mail(job: string, sentAt: string | null, o: Record<string, unknown> = {}) {
-  db.prepare('INSERT OR IGNORE INTO jobs (id, source, title, company) VALUES (?,?,?,?)').run(job, 'adzuna', `T ${job}`, `Co ${job}`);
+  db.prepare('INSERT OR IGNORE INTO jobs (id, source, title, company) VALUES (?,?,?,?)').run(job, 'remotive', `T ${job}`, `Co ${job}`);
   return Number(db.prepare(`INSERT INTO outreach_queue (job_id, email_to, email_subject, email_body, email_status, email_sent_at, email_thread_id)
     VALUES (?,?,?,?,?,?,?)`).run(job, o.to ?? `hr@${job}.com`, o.subject ?? `Hello ${job}`, o.body ?? 'body', 'sent', sentAt, 't-' + job).lastInsertRowid);
 }

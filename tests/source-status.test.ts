@@ -12,12 +12,12 @@ beforeEach(() => resetSourceStatusForTests());
 describe('collectSources', () => {
   it('a throwing provider yields a redacted error row and the others still return', async () => {
     const providers: SourceProvider[] = [
-      { id: 'adzuna', run: async () => { throw new Error('GET https://api.adzuna.com/x?app_id=1&app_key=SECRET failed'); } },
+      { id: 'remoteok', run: async () => { throw new Error('GET https://api.remoteok.com/x?app_id=1&app_key=SECRET failed'); } },
       { id: 'remotive', run: async () => [job('remotive:1', 'remotive'), job('remotive:2', 'remotive')] },
     ];
     const { jobs, outcomes } = await collectSources(providers);
     expect(jobs.map((j) => j.id)).toEqual(['remotive:1', 'remotive:2']);
-    const a = outcomes.find((o) => o.id === 'adzuna')!;
+    const a = outcomes.find((o) => o.id === 'remoteok')!;
     expect(a.error).toBeDefined();
     expect(a.error).not.toContain('SECRET');
     expect(a.fetched).toBe(0);
@@ -51,31 +51,31 @@ describe('sourceStatusPayload', () => {
     const db = openDb(':memory:');
     const { outcomes } = await collectSources([
       { id: 'remotive', run: async () => [job('remotive:1', 'remotive'), job('remotive:2', 'remotive'), job('remotive:3', 'remotive')] },
-      { id: 'adzuna', run: async () => [job('adzuna:1', 'adzuna')] },
+      { id: 'remoteok', run: async () => [job('remoteok:1', 'remoteok')] },
     ]);
-    finishRun(db, outcomes, [job('remotive:1', 'remotive')]);
+    finishRun(db, outcomes, [job('remoteok:1', 'remoteok')]);
     const p = sourceStatusPayload(db);
     expect(p.ran).toBe(true);
     const rem = p.rows.find((r) => r.source === 'remotive')!;
-    expect(rem).toMatchObject({ fetched: 3, kept: 3, new: 1, kind: 'script', group: 'api', fallback_used: false });
-    expect(p.rows.find((r) => r.source === 'adzuna')).toMatchObject({ new: 0 });
+    expect(p.rows.find((r) => r.source === 'remoteok')).toMatchObject({ new: 1 });
+    expect(rem).toMatchObject({ fetched: 3, kept: 3, new: 0, kind: 'script', group: 'api', fallback_used: false });
     // a second run overwrites new
     finishRun(db, outcomes, []);
     expect(sourceStatusPayload(db).rows.find((r) => r.source === 'remotive')!.new).toBe(0);
   });
   it('stores a redacted error and a failure streak that resets on success', () => {
     const db = openDb(':memory:');
-    recordRun(db, 'adzuna', { fetched: 0, kept: 0, new: 0, error: 'bad https://x.test/?app_key=SECRET' });
-    recordRun(db, 'adzuna', { fetched: 0, kept: 0, new: 0, error: 'again' });
-    const streak = () => (db.prepare('SELECT streak_fail s FROM platform_status WHERE id=?').get('adzuna') as { s: number }).s;
+    recordRun(db, 'remotive', { fetched: 0, kept: 0, new: 0, error: 'bad https://x.test/?app_key=SECRET' });
+    recordRun(db, 'remotive', { fetched: 0, kept: 0, new: 0, error: 'again' });
+    const streak = () => (db.prepare('SELECT streak_fail s FROM platform_status WHERE id=?').get('remotive') as { s: number }).s;
     expect(streak()).toBe(2);
-    const row = sourceStatusPayload(db).rows.find((r) => r.source === 'adzuna')!;
+    const row = sourceStatusPayload(db).rows.find((r) => r.source === 'remotive')!;
     expect(row.error).toBe('again');
-    recordRun(db, 'adzuna', { fetched: 1, kept: 1, new: 1 });
+    recordRun(db, 'remotive', { fetched: 1, kept: 1, new: 1 });
     expect(streak()).toBe(0);
-    expect(sourceStatusPayload(db).rows.find((r) => r.source === 'adzuna')!.error).toBeUndefined();
-    recordRun(db, 'adzuna', { fetched: 0, kept: 0, new: 0, error: 'x?app_key=SECRET', fallback_used: true });
-    const r2 = sourceStatusPayload(db).rows.find((r) => r.source === 'adzuna')!;
+    expect(sourceStatusPayload(db).rows.find((r) => r.source === 'remotive')!.error).toBeUndefined();
+    recordRun(db, 'remotive', { fetched: 0, kept: 0, new: 0, error: 'x?app_key=SECRET', fallback_used: true });
+    const r2 = sourceStatusPayload(db).rows.find((r) => r.source === 'remotive')!;
     expect(r2.error).not.toContain('SECRET');
     expect(r2.fallback_used).toBe(true);
   });

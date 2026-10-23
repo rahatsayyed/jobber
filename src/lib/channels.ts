@@ -43,7 +43,7 @@ export const SOURCE_POLICY: Readonly<Record<string, SourcePolicy>> = {
   workable: { apply: 'none' }, recruitee: { apply: 'none' }, personio: { apply: 'none' },
   smartrecruiters: { apply: 'none' }, workday: { apply: 'none' },
   hackernews: { hn: true, apply: 'none' }, himalayas: { apply: 'none' }, weworkremotely: { apply: 'none' },
-  adzuna: { apply: 'url' }, remotive: { apply: 'url' }, remoteok: { apply: 'url' },
+  remotive: { apply: 'url' }, remoteok: { apply: 'url' },
   // Imported feeds (career-ops providers): discover-only, so email and LinkedIn contact are allowed and apply never.
   '4dayweek': { apply: 'none' }, arbeitnow: { apply: 'none' }, jobicy: { apply: 'none' }, workingnomads: { apply: 'none' },
   themuse: { apply: 'none' }, landingjobs: { apply: 'none' }, thehub: { apply: 'none' }, flowxtra: { apply: 'none' },

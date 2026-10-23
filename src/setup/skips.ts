@@ -89,12 +89,11 @@ export const SKIP_SPECS: readonly SkipSpec[] = [
     title: 'Optional API keys',
     label: 'OPTIONAL',
     lose: [
-      'Adzuna: one job source off. Serper and Hunter: contact finding has fewer verified contacts.',
+      'Serper and Hunter: contact finding has fewer verified contacts.',
       'Hunter: last-resort email lookup stays off.',
     ],
     checkIds: ['api-keys'],
     configured: (env) =>
-      (set(env, 'ADZUNA_APP_ID') && set(env, 'ADZUNA_APP_KEY')) ||
       set(env, 'SERPER_API_KEY') ||
       set(env, 'HUNTER_API_KEY'),
   },

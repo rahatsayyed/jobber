@@ -72,5 +72,5 @@ describe('hnDomainCheck', () => {
   it('no domain', () => expect(hnDomainCheck(hn('no links here'), 'acme.io')).toBe('no_domain_in_posting'));
   it('null description', () => expect(hnDomainCheck(hn(null), 'acme.io')).toBe('no_domain_in_posting'));
   it('non-HN is not_applicable', () =>
-    expect(hnDomainCheck({ source: 'adzuna', description: null }, 'acme.io')).toBe('not_applicable'));
+    expect(hnDomainCheck({ source: 'remotive', description: null }, 'acme.io')).toBe('not_applicable'));
 });

@@ -135,7 +135,7 @@ describe('runCodePass', () => {
         jobs: [job('j1'), job('j2')], rows: [],
         outcomes: [
           { id: 'greenhouse', fetched: 2, kept: 2, shape_hash: 'h1' },
-          { id: 'adzuna', fetched: 0, kept: 0, error: 'timeout', fallback_used: true },
+          { id: 'remotive', fetched: 0, kept: 0, error: 'timeout', fallback_used: true },
         ],
       };
     };
@@ -144,14 +144,14 @@ describe('runCodePass', () => {
     expect(r1.newJobs).toBe(2);
     expect(db.prepare('SELECT COUNT(*) AS n FROM jobs').get()).toEqual({ n: 2 });
     expect(db.prepare("SELECT new_count, streak_fail, shape_hash FROM platform_status WHERE id = 'greenhouse'").get()).toEqual({ new_count: 2, streak_fail: 0, shape_hash: 'h1' });
-    expect(db.prepare("SELECT streak_fail, fallback_used FROM platform_status WHERE id = 'adzuna'").get()).toEqual({ streak_fail: 1, fallback_used: 1 });
+    expect(db.prepare("SELECT streak_fail, fallback_used FROM platform_status WHERE id = 'remotive'").get()).toEqual({ streak_fail: 1, fallback_used: 1 });
     expect(getState(db, SCRIPT_DISCOVER_KEY)).toBe(NOW.toISOString());
     expect(r1.sourceStatusLine).toMatch(/^SOURCE_STATUS: \{/);
-    expect(r1.sourceStatusLine).toContain('adzuna');
+    expect(r1.sourceStatusLine).toContain('remotive');
     const r2 = await runCodePass({ db, now: () => NOW, run: fake });
     expect(calls).toBe(2);
     expect(r2.newJobs).toBe(0); // already seen
-    expect(db.prepare("SELECT streak_fail FROM platform_status WHERE id = 'adzuna'").get()).toEqual({ streak_fail: 2 });
+    expect(db.prepare("SELECT streak_fail FROM platform_status WHERE id = 'remotive'").get()).toEqual({ streak_fail: 2 });
   });
 
   it('never throws: a failing runner is a redacted error and the state is not stamped', async () => {
@@ -295,7 +295,7 @@ describe('list_unscored_jobs', () => {
     const db = openDb(':memory:');
     add(db, 'gh');
     add(db, 'wd', { source: 'workday', apply_url: 'https://t.myworkdayjobs.com/x' });
-    add(db, 'odd', { source: 'adzuna', apply_url: 'https://acme.example/j' });
+    add(db, 'odd', { source: 'remotive', apply_url: 'https://acme.example/j' });
     const by = Object.fromEntries(listUnscoredJobs(db).map((r) => [r.id, r.apply_class]));
     expect(by).toEqual({ gh: 'apply_capable', wd: 'discover_only_source', odd: 'apply_tier:unknown_host' });
     expect(listUnscoredJobs(db)[0].channels.map((c) => c.channel)).toEqual(['email', 'linkedin', 'naukri', 'apply']);

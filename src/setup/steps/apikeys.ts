@@ -1,5 +1,5 @@
 // src/setup/steps/apikeys.ts
-// Step: optional API keys (Adzuna for jobs; Serper and Hunter for contact finding). Each provider is offered separately and can be
+// Step: optional API keys (Serper and Hunter for contact finding). Each provider is offered separately and can be
 // skipped. Keys come only from askSecret, are checked with one best-effort call through ctx.fetch,
 // and reach .env only through updateEnvText. A URL carrying a key is never logged and a thrown
 // network error is replaced by a fixed message.
@@ -12,7 +12,7 @@ type Verdict = 'ok' | 'rejected' | 'unknown';
 type Init = { method?: string; headers?: Record<string, string>; body?: string };
 
 interface Provider {
-  id: 'adzuna' | 'serper' | 'hunter';
+  id: 'serper' | 'hunter';
   name: string;
   does: string;
   where: string;
@@ -26,27 +26,6 @@ interface Provider {
 // could not be checked offline. This table is the only place they live. 401 and 403 mean rejected;
 // any other non-ok status, or a thrown error, means "could not verify".
 const PROVIDERS: Provider[] = [
-  {
-    id: 'adzuna',
-    name: 'Adzuna',
-    does: 'a job-search API; one of the job sources',
-    where: 'developer.adzuna.com (free developer account; check the site for current limits)',
-    keys: [
-      { env: 'ADZUNA_APP_ID', prompt: 'Adzuna app ID (input is hidden)' },
-      { env: 'ADZUNA_APP_KEY', prompt: 'Adzuna app key (input is hidden)' },
-    ],
-    lose: 'Adzuna: one job source off (boards, Remotive and Naukri remain).',
-    defaultChoice: 'now',
-    request: (v) => {
-      const q = new URLSearchParams({
-        app_id: v.ADZUNA_APP_ID,
-        app_key: v.ADZUNA_APP_KEY,
-        results_per_page: '1',
-        what: 'developer',
-      });
-      return { url: `https://api.adzuna.com/v1/api/jobs/in/search/1?${q.toString()}` };
-    },
-  },
   {
     id: 'serper',
     name: 'Serper',
@@ -99,7 +78,7 @@ function readEnvText(ctx: SetupContext): string {
 
 export const apikeysStep: SetupStep = {
   id: 'apikeys',
-  title: 'Optional API keys (Adzuna for jobs; Serper and Hunter for contact finding)',
+  title: 'Optional API keys (Serper and Hunter for contact finding)',
   checkIds: ['api-keys'],
   async run(ctx) {
     const { io } = ctx;

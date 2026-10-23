@@ -24,7 +24,7 @@ describe('patternStats', () => {
   it('buckets contacted jobs by latest outcome', () => {
     const db = openDb(':memory:');
     for (let i = 1; i <= 6; i++) {
-      saveJob(db, { id: `j${i}`, source: i <= 3 ? 'remotive' : 'adzuna', title: i === 1 ? 'Senior React Dev' : 'React Dev', company: `C${i}`, url: 'u', apply_url: 'https://boards.greenhouse.io/x/jobs/1', description: 'Remote, work from anywhere' });
+      saveJob(db, { id: `j${i}`, source: i <= 3 ? 'remotive' : 'remoteok', title: i === 1 ? 'Senior React Dev' : 'React Dev', company: `C${i}`, url: 'u', apply_url: 'https://boards.greenhouse.io/x/jobs/1', description: 'Remote, work from anywhere' });
       saveMatchResult(db, { job_id: `j${i}`, score: 60 + i * 3, reasons: '', missing_keywords: [] });
       const q = enqueueOutreach(db, { job_id: `j${i}`, resume_pdf_path: null, email_subject: 's', email_body: 'b', email_to: `a@c${i}.dev`, connect_note: null, connect_profile_url: null, connect_category: null, connect_company: null, apply_platform: null, apply_url: null });
       recordEmailSent(db, q, `m${i}`);
@@ -36,7 +36,7 @@ describe('patternStats', () => {
     const r = patternStats(db);
     expect(r.insufficient).toBe(false);
     expect(r.by.source).toEqual([
-      { key: 'adzuna', n: 3, positive: 0, negative: 1, pending: 2, conversion: 0, decided: 0, sufficient: false, note: null },
+      { key: 'remoteok', n: 3, positive: 0, negative: 1, pending: 2, conversion: 0, decided: 0, sufficient: false, note: null },
       { key: 'remotive', n: 3, positive: 1, negative: 1, pending: 1, conversion: 0.333, decided: 0.5, sufficient: false, note: null },
     ]);
     expect(r.by.ats_vendor).toEqual([{ key: 'greenhouse', n: 6, positive: 1, negative: 2, pending: 3, conversion: 0.167, decided: 0.333, sufficient: false, note: null }]);

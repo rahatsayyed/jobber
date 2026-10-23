@@ -11,7 +11,6 @@
     { "id": "hackernews", "kind": "aggregator", "label": "Hacker News Who is hiring", "provider": "boards/hackernews", "tier": "script", "enabled": false, "stability": "fixture" },
     { "id": "himalayas", "kind": "aggregator", "label": "Himalayas", "provider": "boards/himalayas", "tier": "script", "enabled": false, "stability": "fixture" },
     { "id": "weworkremotely", "kind": "aggregator", "label": "We Work Remotely", "provider": "boards/weworkremotely", "tier": "script", "enabled": false, "stability": "fixture" },
-    { "id": "adzuna", "kind": "api", "label": "Adzuna", "provider": "adzuna", "tier": "script", "enabled": true, "stability": "live_ok" },
     { "id": "remotive", "kind": "api", "label": "Remotive", "provider": "remotive", "tier": "script", "enabled": true, "stability": "live_ok" },
     { "id": "remoteok", "kind": "api", "label": "RemoteOK", "provider": "remoteok", "tier": "script", "enabled": true, "stability": "live_ok" },
     { "id": "4dayweek", "kind": "api", "label": "4 Day Week (imported feed)", "provider": "providers/4dayweek", "tier": "script", "enabled": false, "stability": "fixture", "attribution": { "source": "career-ops-hq/career-ops providers/4dayweek.mjs", "license": "MIT", "url": "https://github.com/career-ops-hq/career-ops" } },

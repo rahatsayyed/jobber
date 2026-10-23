@@ -43,7 +43,7 @@ describe('dropBoardDuplicatesDetailed with aggregators', () => {
   });
   it('every aggregator loses to a non-board source copy, whatever the batch order', () => {
     for (const agg of ['hackernews', 'himalayas', 'weworkremotely']) {
-      for (const src of ['linkedin', 'adzuna', 'remotive']) {
+      for (const src of ['linkedin', 'remoteok', 'remotive']) {
         const a = job(`${agg}:1`, agg);
         const b = job(`${src}:1`, src);
         for (const jobs of [[a, b], [b, a]]) {

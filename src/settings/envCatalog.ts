@@ -83,18 +83,6 @@ const R_SEND = 'Turns on a path that sends, applies or creates accounts for real
 const R_VENDOR = 'Replacing a key for a fixed vendor host cannot redirect anything. The value is write-only.';
 
 const hand: EnvSpec[] = [
-  // ---- Credentials: job sources
-  e('ADZUNA_APP_ID', 'credentials-sources', 'job sources', 'string', {
-    exampleActive: true,
-    about: 'Adzuna developer app id (developer.adzuna.com). Optional, enables the Adzuna job source (country in). Unset: Adzuna is skipped.',
-    ...tier('normal', R_VENDOR),
-  }),
-  e('ADZUNA_APP_KEY', 'credentials-sources', 'job sources', 'secret', {
-    exampleActive: true,
-    about: 'Adzuna developer key. Optional, pairs with the app id. Unset: Adzuna is skipped.',
-    ...tier('normal', R_VENDOR),
-  }),
-
   // ---- Contact finding (Serper, Hunter, dorking, search cache)
   e('SERPER_API_KEY', 'contact-finding', 'contact finding', 'secret', {
     exampleActive: true,

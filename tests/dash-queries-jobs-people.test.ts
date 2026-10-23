@@ -9,7 +9,7 @@ import { listPeople, personThread } from '../src/dash/queries/people.js';
 
 let db: BetterSqlite3.Database;
 function job(id: string, o: Record<string, unknown> = {}) {
-  const r: Record<string, unknown> = { source: 'adzuna', title: `Title ${id}`, company: `Co ${id}`, score: 80, excluded_reason: null, description: 'SECRET DESC', jd_snapshot: 'SECRET SNAP', ...o };
+  const r: Record<string, unknown> = { source: 'remotive', title: `Title ${id}`, company: `Co ${id}`, score: 80, excluded_reason: null, description: 'SECRET DESC', jd_snapshot: 'SECRET SNAP', ...o };
   db.prepare('INSERT INTO jobs (id, source, title, company, score, excluded_reason, description, jd_snapshot, strengths, gaps, requirements) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
     .run(id, r.source, r.title, r.company, r.score, r.excluded_reason, r.description, r.jd_snapshot, r.strengths ?? null, r.gaps ?? null, r.requirements ?? null);
 }

@@ -60,7 +60,7 @@ describe('config/setup-guide.json', () => {
     expect(guide.steps.slice(1).map((s) => s.id)).toEqual(ALL_STEPS.map((s) => s.id));
     const ak = guide.steps.find((s) => s.id === 'apikeys');
     expect(ak?.keys.map((k) => k.name)).toEqual(
-      expect.arrayContaining(['ADZUNA_APP_ID', 'ADZUNA_APP_KEY', 'SERPER_API_KEY', 'HUNTER_API_KEY', 'HUNTER_ENABLED']),
+      expect.arrayContaining(['SERPER_API_KEY', 'HUNTER_API_KEY', 'HUNTER_ENABLED']),
     );
     expect(guide.steps.find((s) => s.id === 'profile')?.keys).toEqual([]);
     for (const id of ['telegram', 'dashboard', 'gmail', 'apikeys']) {
@@ -190,7 +190,7 @@ describe('setup_guide profile and skill', () => {
 const SECRETS = {
   telegram: '918273645:AAqzxwvutsrqponmlkjihgfedcbaZYXWVUT',
   googleClient: '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',
-  adzuna: 'adz7f3b9c1e5d2a64870bc9e1f3d5a7b',
+  hunter: 'hnt7f3b9c1e5d2a64870bc9e1f3d5a7b',
   serper: 'srp_4Qm8Lx2Vn7Zt9Ks1Wb6Yc3Hd5Jf0Gp',
   dashboardToken: 'Zk3Tq9Wv5Xn1Lb7Rc4Hy8Md2Pf6Jg0Sa-Ue_Ox4Ni',
   oidcSecret: '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a1U',
@@ -200,7 +200,7 @@ function corpusCtx(): DoctorContext {
   const envText = [
     `TELEGRAM_BOT_TOKEN=${SECRETS.telegram}`,
     'ALLOWED_USERS=111,222',
-    `ADZUNA_APP_KEY=${SECRETS.adzuna}`,
+    `HUNTER_API_KEY=${SECRETS.hunter}`,
     `SERPER_API_KEY=${SECRETS.serper}`,
     `WEB_TOKEN=${SECRETS.dashboardToken}`,
     `WEB_OIDC_CLIENT_SECRET=${SECRETS.oidcSecret}`,
@@ -221,7 +221,7 @@ function corpusCtx(): DoctorContext {
     root,
     env: {
       TELEGRAM_BOT_TOKEN: SECRETS.telegram,
-      ADZUNA_APP_KEY: SECRETS.adzuna,
+      HUNTER_API_KEY: SECRETS.hunter,
       SERPER_API_KEY: SECRETS.serper,
       WEB_TOKEN: SECRETS.dashboardToken,
       WEB_OIDC_CLIENT_SECRET: SECRETS.oidcSecret,

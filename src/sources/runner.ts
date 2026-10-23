@@ -62,7 +62,6 @@ const PROCESS_RUN_ID = `proc-${process.pid}-${Date.now()}`;
 
 // API and search sources are loaded from a fixed map (registry strings select, they never become import paths).
 const API_LOADERS: Record<string, () => Promise<{ provider: Provider }>> = {
-  adzuna: () => import('./adzuna.js'),
   remotive: () => import('./remotive.js'),
   remoteok: () => import('./remoteok.js'),
   naukri: () => import('./naukri.js'),

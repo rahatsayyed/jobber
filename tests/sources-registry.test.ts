@@ -28,7 +28,7 @@ describe('shipped config/platforms.json', () => {
   });
   it('seeds the api, naukri and the operator-only linkedin entries', () => {
     const by = new Map(platforms.map((p) => [p.id, p]));
-    for (const id of ['adzuna', 'remotive', 'remoteok', 'naukri']) expect(by.get(id)?.tier, id).toBe('script');
+    for (const id of ['remotive', 'remoteok', 'naukri']) expect(by.get(id)?.tier, id).toBe('script');
     for (const id of ['linkedin-jobs', 'linkedin-posts']) {
       expect(by.get(id)?.tier, id).toBe('agent');
       expect(by.get(id)?.provider, id).toBeNull();

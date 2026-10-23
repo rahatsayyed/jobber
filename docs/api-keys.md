@@ -2,7 +2,7 @@
 
 Audience: owner
 Last verified against: 37942b4
-Source files: .env.example, src/setup/steps/apikeys.ts, src/setup/skips.ts, src/platform/checksApiKeys.ts, src/sources/adzuna.ts, src/mcp/contacts.ts, src/lib/hunter.ts, docs/gmail-mcp-setup.md, docs/telegram-bot-setup.md, src/search/index.ts, src/search/serper.ts, src/search/budget.ts
+Source files: .env.example, src/setup/steps/apikeys.ts, src/setup/skips.ts, src/platform/checksApiKeys.ts, src/mcp/contacts.ts, src/lib/hunter.ts, docs/gmail-mcp-setup.md, docs/telegram-bot-setup.md, src/search/index.ts, src/search/serper.ts, src/search/budget.ts
 
 This page lists every key Jobber can use, what degrades without it, where it goes and how to
 check it. Provider free tiers, limits and prices change: each section says `check upstream`
@@ -16,18 +16,17 @@ spaces.
 
 | Credential | Needed for a first dry run | Without it |
 |---|---|---|
-| `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` | No | One job source returns nothing |
 | `SERPER_API_KEY` | No | Fewer verified contacts (the cache and the browser dork still run first) |
 | `HUNTER_API_KEY`, `HUNTER_ENABLED` | No | Last-resort email lookup stays off |
 | Gmail OAuth file | No for a dry run; yes for real email | No cold email, follow-ups or reply watching |
 | `TELEGRAM_BOT_TOKEN`, `ALLOWED_USERS` | No | No phone control or alerts |
 
-A first dry run needs none of them. The three API keys are optional and the wizard lets you
+A first dry run needs none of them. The two API keys are optional and the wizard lets you
 skip each one.
 
 ## How the wizard handles the optional keys
 
-The `apikeys` setup step offers Adzuna, Serper and Hunter one at a time.
+The `apikeys` setup step offers Serper and Hunter one at a time.
 
 ```bash
 npm run setup -- --step apikeys
@@ -36,42 +35,30 @@ npm run setup -- --step apikeys
 Expected: the wizard asks for each provider in turn and writes accepted values to `.env`.
 
 - Input is hidden and never echoed or logged.
-- For each provider you can choose now or later. Adzuna and Serper default to now, Hunter
+- For each provider you can choose now or later. Serper defaults to now, Hunter
   defaults to later.
 - Each key is checked with one best-effort call to the provider. A 401 or 403 means rejected:
   you get one retry, then a "keep it anyway" question. Any other failure or a network error
   means "could not verify": the key is kept with a warning and the doctor reports later.
 - The endpoints the wizard calls and the credit cost of that one check are unverified: see
   `src/setup/steps/apikeys.ts`.
-- An existing key is kept if you confirm. A provider with only part of its keys set (Adzuna
-  needs both) is treated as not configured.
+- An existing key is kept if you confirm.
 - After a Hunter key, the wizard asks whether to turn `HUNTER_ENABLED` on (default no).
 - Skipping the whole step is recorded as skipped; the doctor then shows a skip instead of a
   warn, with the last line `Skipped by choice: apikeys`. Setting any key by hand overrides the
   skip record.
 
-What skipping costs (from `src/setup/skips.ts`): Adzuna, one job source off; Serper, fewer
+What skipping costs (from `src/setup/skips.ts`): Serper, fewer
 verified contacts; Hunter, last-resort email lookup stays off. The step is labelled OPTIONAL.
 
-Check all four key variables at once:
+Check all the key variables at once:
 
 ```bash
 npm run doctor
 ```
 
-Expected: the `api-keys` check passes when all four are set, otherwise it warns and names the
+Expected: the `api-keys` check passes when all are set, otherwise it warns and names the
 unset variables (never values).
-
-## Adzuna
-
-- What it is: a job-search API, one job source (registry row `adzuna` in `config/platforms.json`), fetched by the code pass of each wake.
-- Variables: `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` (both needed).
-- Used by: the code pass (`src/sources/adzuna.ts`).
-- Without it: the request is sent with empty values, fails, is logged to stderr and returns
-  no jobs. Company boards, Remotive and Naukri still run.
-- Set by: the wizard (`apikeys` step) or by editing `.env`.
-- Verify: `npm run doctor` (`api-keys`), or `npm run status -- sources` after a wake and read the `adzuna` row.
-- Provider: developer.adzuna.com. check upstream: free tier, limits and price.
 
 ## Serper
 

@@ -25,9 +25,6 @@ export const COACH_TEXT: Record<string, string[]> = {
   'apikeys.intro': [
     'These keys are optional extras. Each one can be skipped and added later with npm run setup -- --step apikeys.',
   ],
-  'apikeys.adzuna': [
-    'Adzuna is a job-search service. Sign up for a free developer account to get an app ID and an app key.',
-  ],
   'apikeys.serper': [
     'Serper is used for contact finding: it searches Google for a company site and contact pages.',
     'It runs only after the cache and the browser search miss. Each check uses one search credit.',

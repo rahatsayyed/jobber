@@ -84,17 +84,17 @@ describe('drift detection', () => {
   it('an API provider: optional-field variance is not drift, a required type change with nothing kept is', async () => {
     const db = openDb(':memory:');
     const spec = z.object({ id: z.union([z.number(), z.string()]), title: z.string() }).passthrough();
-    const mk = (sample: unknown[], jobsOut: any[]): Provider => ({ id: 'adzuna', shapeSpec: spec, fetch: async () => ({ jobs: jobsOut, sample }) });
-    const o = (p: Provider) => ({ role: 'r', portalsPath: portals(), registryPath: registry([apiRow('adzuna')]), providers: { adzuna: p }, now: () => NOW });
-    const aj = { id: 'adzuna:1', source: 'adzuna', title: 'T', company: 'C', url: 'u', apply_url: 'u', description: 'd' };
+    const mk = (sample: unknown[], jobsOut: any[]): Provider => ({ id: 'remotive', shapeSpec: spec, fetch: async () => ({ jobs: jobsOut, sample }) });
+    const o = (p: Provider) => ({ role: 'r', portalsPath: portals(), registryPath: registry([apiRow('remotive')]), providers: { remotive: p }, now: () => NOW });
+    const aj = { id: 'remotive:1', source: 'remotive', title: 'T', company: 'C', url: 'u', apply_url: 'u', description: 'd' };
     const first = await runScriptSources(db, o(mk([{ id: 1, title: 't' }], [aj])));
-    recordRun(db, 'adzuna', { fetched: 1, kept: 1, new: 0, shape_hash: first.outcomes.find((x) => x.id === 'adzuna')!.shape_hash });
+    recordRun(db, 'remotive', { fetched: 1, kept: 1, new: 0, shape_hash: first.outcomes.find((x) => x.id === 'remotive')!.shape_hash });
     const same = await runScriptSources(db, o(mk([{ id: 2, title: 't', extra: 1 }], [])));
-    expect(same.rows.find((x) => x.source === 'adzuna')!.fallback_used).toBe(false);
+    expect(same.rows.find((x) => x.source === 'remotive')!.fallback_used).toBe(false);
     const drift = await runScriptSources(db, o(mk([{ id: 'two', title: 't' }], [])));
-    expect(drift.rows.find((x) => x.source === 'adzuna')!.error).toMatch(/drift/);
+    expect(drift.rows.find((x) => x.source === 'remotive')!.error).toMatch(/drift/);
     // an API source has no target URL: note instead of a source task (finding 8)
-    expect(tasks(db).filter((t) => t.platform === 'adzuna')).toEqual([]);
+    expect(tasks(db).filter((t) => t.platform === 'remotive')).toEqual([]);
   });
 
   it('recordRun keeps the stored shape_hash when a failed run passes none', () => {

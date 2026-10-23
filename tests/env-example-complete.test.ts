@@ -113,7 +113,7 @@ describe('.env.example completeness', () => {
   it('keeps the dry-run flags at their safe values and secrets blank', () => {
     const val = (k: string): string | undefined => lines.find((l) => l.startsWith(`${k}=`))?.slice(k.length + 1);
     expect(val('JOBBER_DRY_RUN')).toBe('true');
-    for (const k of ['TELEGRAM_BOT_TOKEN', 'GMAIL_APP_PASSWORD', 'ADZUNA_APP_KEY', 'SERPER_API_KEY', 'HUNTER_API_KEY', 'WEB_OIDC_CLIENT_SECRET', 'CLASSIFIER_MODEL']) {
+    for (const k of ['TELEGRAM_BOT_TOKEN', 'GMAIL_APP_PASSWORD', 'SERPER_API_KEY', 'HUNTER_API_KEY', 'WEB_OIDC_CLIENT_SECRET', 'CLASSIFIER_MODEL']) {
       expect(val(k), k).toBe('');
     }
   });

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { Check, CheckResult, DoctorContext } from './doctor.js';
 import { parseEnv } from './envFile.js';
 
-const VARS = ['ADZUNA_APP_ID', 'ADZUNA_APP_KEY', 'SERPER_API_KEY', 'HUNTER_API_KEY'];
+const VARS = ['SERPER_API_KEY', 'HUNTER_API_KEY'];
 
 export const apiKeysChecks: Check[] = [
   {
@@ -20,7 +20,7 @@ export const apiKeysChecks: Check[] = [
       }
       const env: Record<string, string | undefined> = { ...fileEnv, ...ctx.env };
       const unset = VARS.filter((v) => (env[v] ?? '').trim() === '');
-      if (unset.length === 0) return { status: 'pass', detail: 'Adzuna (jobs) and Serper, Hunter (contact finding) keys are set' };
+      if (unset.length === 0) return { status: 'pass', detail: 'Serper and Hunter (contact finding) keys are set' };
       return { status: 'warn', detail: `not set: ${unset.join(', ')}`, fix: 'npm run setup -- --step apikeys' };
     },
   },

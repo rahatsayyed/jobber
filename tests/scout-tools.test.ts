@@ -226,7 +226,7 @@ describe('extract and save', () => {
     const s = setup({ [LEVER]: 'listing-a.html' }, LIVE);
     const t = s.task('lever', 'Acme');
     const { companyKey, titleIdentityKey } = await import('../src/reposts.js');
-    s.db.prepare("INSERT INTO jobs (id, source, title, company, url, apply_url, description, title_key, company_key) VALUES ('adz-1','adzuna','Frontend Engineer','Acme','u','u','d',?,?)").run(titleIdentityKey('Frontend Engineer'), companyKey('Acme'));
+    s.db.prepare("INSERT INTO jobs (id, source, title, company, url, apply_url, description, title_key, company_key) VALUES ('adz-1','remotive','Frontend Engineer','Acme','u','u','d',?,?)").run(titleIdentityKey('Frontend Engineer'), companyKey('Acme'));
     await s.call('scout_open', { url: LEVER, task_id: t });
     await s.call('scout_extract_jobs', { task_id: t });
     expect(body(await s.call('scout_save_jobs', { task_id: t, source: 'gen:lever' }))).toMatchObject({ saved: 1, duplicates: 1, filtered: 1 });

@@ -1,5 +1,5 @@
 // tests/setup-apikeys.test.ts
-// Plan 8F Task 7: the optional API keys step (Adzuna, Serper, Hunter).
+// Plan 8F Task 7: the optional API keys step (Serper, Hunter).
 import { describe, expect, it } from 'vitest';
 import type { DoctorContext } from '../src/platform/doctor.js';
 import { redactingIO, scriptedIO, type ScriptItem } from '../src/setup/io.js';
@@ -8,8 +8,6 @@ import { emptyState, type SetupMode } from '../src/setup/state.js';
 import { apikeysStep } from '../src/setup/steps/apikeys.js';
 import { ALL_STEPS } from '../src/setup/steps/index.js';
 
-const ADZ_ID = 'adzid-synthetic-1111';
-const ADZ_KEY = 'adzkey-synthetic-2222aaaa';
 const SERP = 'serper-synthetic-3333bbbb';
 const HUNT = 'hunter-synthetic-4444cccc';
 
@@ -71,7 +69,7 @@ function mk(o: {
 }
 
 const env = (t: ReturnType<typeof mk>): string => t.files.get('proj/.env') ?? '';
-const SECRETS = [ADZ_ID, ADZ_KEY, SERP, HUNT];
+const SECRETS = [SERP, HUNT];
 
 describe('apikeysStep', () => {
   it('is wired right after gmail', () => {
@@ -80,7 +78,7 @@ describe('apikeysStep', () => {
   });
 
   it('skipping every provider returns skipped and writes nothing', async () => {
-    const t = mk({ script: [{ choose: 'later' }, { choose: 'later' }, { choose: 'later' }] });
+    const t = mk({ script: [{ choose: 'later' }, { choose: 'later' }] });
     expect(await apikeysStep.run(t.ctx)).toBe('skipped');
     expect(t.files.has('proj/.env')).toBe(false);
     expect(t.calls).toEqual([]);
@@ -88,43 +86,41 @@ describe('apikeysStep', () => {
     t.sio.assertDone();
   });
 
-  it('sets Adzuna and Serper, skips Hunter; HUNTER_ENABLED untouched', async () => {
+  it('sets Serper, skips Hunter; HUNTER_ENABLED untouched', async () => {
     const t = mk({
       env: 'HUNTER_ENABLED=false\n',
       script: [
-        { choose: 'now' }, { secret: ADZ_ID }, { secret: ADZ_KEY },
         { choose: 'now' }, { secret: SERP },
         { choose: 'later' },
       ],
     });
     expect(await apikeysStep.run(t.ctx)).toBe('done');
     const e = env(t);
-    expect(e).toContain(`ADZUNA_APP_ID=${ADZ_ID}`);
     expect(e).toContain(`SERPER_API_KEY=${SERP}`);
     expect(e).toContain('HUNTER_ENABLED=false');
-    expect(t.calls).toHaveLength(2);
+    expect(t.calls).toHaveLength(1);
     t.sio.assertDone();
   });
 
   it('Hunter: key kept, HUNTER_ENABLED stays unchanged unless explicit yes', async () => {
     const no = mk({
       env: 'HUNTER_ENABLED=false\n',
-      script: [{ choose: 'later' }, { choose: 'later' }, { choose: 'now' }, { secret: HUNT }, { confirm: false }],
+      script: [{ choose: 'later' }, { choose: 'now' }, { secret: HUNT }, { confirm: false }],
     });
     expect(await apikeysStep.run(no.ctx)).toBe('done');
     expect(env(no)).toContain(`HUNTER_API_KEY=${HUNT}`);
     expect(env(no)).toContain('HUNTER_ENABLED=false');
     const yes = mk({
       env: 'HUNTER_ENABLED=false\n',
-      script: [{ choose: 'later' }, { choose: 'later' }, { choose: 'now' }, { secret: HUNT }, { confirm: true }],
+      script: [{ choose: 'later' }, { choose: 'now' }, { secret: HUNT }, { confirm: true }],
     });
     await apikeysStep.run(yes.ctx);
     expect(env(yes)).toContain('HUNTER_ENABLED=true');
   });
 
   it('reuses existing values after one confirm and does not rewrite', async () => {
-    const e0 = `ADZUNA_APP_ID=${ADZ_ID}\nADZUNA_APP_KEY=${ADZ_KEY}\nSERPER_API_KEY=${SERP}\nHUNTER_API_KEY=${HUNT}\n`;
-    const t = mk({ env: e0, script: [{ confirm: true }, { confirm: true }, { confirm: true }] });
+    const e0 = `SERPER_API_KEY=${SERP}\nHUNTER_API_KEY=${HUNT}\n`;
+    const t = mk({ env: e0, script: [{ confirm: true }, { confirm: true }] });
     expect(await apikeysStep.run(t.ctx)).toBe('done');
     expect(env(t)).toBe(e0);
     expect(t.calls).toEqual([]);
@@ -136,7 +132,6 @@ describe('apikeysStep', () => {
     const t = mk({
       status: () => 401,
       script: [
-        { choose: 'later' },
         { choose: 'now' }, { secret: SERP }, { secret: SERP }, { confirm: true },
         { choose: 'later' },
       ],
@@ -153,7 +148,6 @@ describe('apikeysStep', () => {
     const t = mk({
       status: () => 403,
       script: [
-        { choose: 'later' },
         { choose: 'now' }, { secret: SERP }, { secret: SERP }, { confirm: false },
         { choose: 'later' },
       ],
@@ -171,7 +165,6 @@ describe('apikeysStep', () => {
       env: `SERPER_API_KEY=${SERP}\n`,
       status: () => 401,
       script: [
-        { choose: 'later' },
         { confirm: false }, { secret: 'new-synthetic-key-5555' }, { secret: 'new-synthetic-key-5555' }, { confirm: false },
         { choose: 'later' },
       ],
@@ -184,58 +177,21 @@ describe('apikeysStep', () => {
   });
 
   it('replacing a key: a blank answer keeps the stored value and it is never shown', async () => {
-    const e0 = `ADZUNA_APP_ID=${ADZ_ID}\nADZUNA_APP_KEY=${ADZ_KEY}\n`;
+    const e0 = `SERPER_API_KEY=${SERP}\n`;
     const t = mk({
       env: e0,
-      script: [{ confirm: false }, { secret: '' }, { secret: '' }, { choose: 'later' }, { choose: 'later' }],
+      script: [{ confirm: false }, { secret: '' }, { choose: 'later' }],
     });
     expect(await apikeysStep.run(t.ctx)).toBe('done');
     expect(env(t)).toBe(e0);
-    const out = t.sio.transcript.join('\n');
-    expect(out).not.toContain(ADZ_ID);
-    expect(out).not.toContain(ADZ_KEY);
+    expect(t.sio.transcript.join('\n')).not.toContain(SERP);
     t.sio.assertDone();
-  });
-
-  it('a half-set pair: a blank keeps the stored half, the typed half is written', async () => {
-    const t = mk({
-      env: `ADZUNA_APP_ID=${ADZ_ID}\n`,
-      script: [{ choose: 'now' }, { secret: '' }, { secret: ADZ_KEY }, { choose: 'later' }, { choose: 'later' }],
-    });
-    expect(await apikeysStep.run(t.ctx)).toBe('done');
-    expect(env(t)).toContain(`ADZUNA_APP_ID=${ADZ_ID}`);
-    expect(env(t)).toContain(`ADZUNA_APP_KEY=${ADZ_KEY}`);
-    t.sio.assertDone();
-  });
-
-  it('partly set Adzuna names the missing variable and is treated as not configured', async () => {
-    const t = mk({
-      env: `ADZUNA_APP_ID=${ADZ_ID}\n`,
-      script: [{ choose: 'later' }, { choose: 'later' }, { choose: 'later' }],
-    });
-    expect(await apikeysStep.run(t.ctx)).toBe('skipped');
-    const out = t.sio.transcript.join('\n');
-    expect(out).toContain('not set: ADZUNA_APP_KEY');
-    expect(out).not.toContain(ADZ_ID);
-    t.sio.assertDone();
-  });
-
-  it('registers the existing half of a partly set pair as a secret', async () => {
-    const t = mk({
-      env: `ADZUNA_APP_ID=${ADZ_ID}\n`,
-      script: [{ choose: 'later' }, { choose: 'later' }, { choose: 'later' }],
-    });
-    const seen: string[] = [];
-    const base = t.ctx.io;
-    t.ctx.io = { ...base, registerSecret: (v: string) => { seen.push(v); base.registerSecret(v); } };
-    await apikeysStep.run(t.ctx);
-    expect(seen).toContain(ADZ_ID);
   });
 
   it('network failure keeps the key with a warning and never logs the URL or key', async () => {
     const t = mk({
       status: () => 'throw',
-      script: [{ choose: 'later' }, { choose: 'now' }, { secret: SERP }, { choose: 'later' }],
+      script: [{ choose: 'now' }, { secret: SERP }, { choose: 'later' }],
     });
     expect(await apikeysStep.run(t.ctx)).toBe('done');
     expect(env(t)).toContain(`SERPER_API_KEY=${SERP}`);
@@ -247,8 +203,8 @@ describe('apikeysStep', () => {
 
   it('agent and terminal mode ask the same prompts and write the same .env', async () => {
     const script = (): ScriptItem[] => [
-      { choose: 'now' }, { secret: ADZ_ID }, { secret: ADZ_KEY },
-      { choose: 'later' }, { choose: 'later' },
+      { choose: 'now' }, { secret: SERP },
+      { choose: 'later' },
     ];
     const a = mk({ mode: 'agent', script: script() });
     const b = mk({ mode: 'terminal', script: script() });

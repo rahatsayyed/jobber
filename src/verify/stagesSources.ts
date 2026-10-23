@@ -26,7 +26,7 @@ export const providerShapeBreak: Stage = {
       const registry = join(ctx.tmp, 'platforms.json');
       ctx.fs.write(portals, JSON.stringify({ tracked_companies: [], title_filter: { positive: [], negative: [] }, location_filter: { allow: [], global: [] } }));
       ctx.fs.write(registry, JSON.stringify({ platforms: [
-        { id: 'adzuna', kind: 'api', label: 'fixture', provider: 'adzuna', tier: 'script', enabled: true, stability: 'fixture' },
+        { id: 'remoteok', kind: 'api', label: 'fixture', provider: 'remoteok', tier: 'script', enabled: true, stability: 'fixture' },
         { id: 'remotive', kind: 'api', label: 'fixture', provider: 'remotive', tier: 'script', enabled: true, stability: 'fixture' },
       ] }));
       const spec = z.object({ id: z.number(), title: z.string() }).passthrough();
@@ -40,7 +40,7 @@ export const providerShapeBreak: Stage = {
           role: 'fixture', portalsPath: portals, registryPath: registry, now: ctx.now,
           providers: {
             // healthy provider
-            adzuna: { id: 'adzuna', shapeSpec: spec, fetch: async () => ({ jobs: [job('fx-ok:1', 'adzuna')], sample: [{ id: 1, title: 't' }] }) },
+            remoteok: { id: 'remoteok', shapeSpec: spec, fetch: async () => ({ jobs: [job('fx-ok:1', 'remoteok')], sample: [{ id: 1, title: 't' }] }) },
             // forced shape break: the vendor renamed `title` to `name`
             remotive: { id: 'remotive', shapeSpec: spec, fetch: async () => ({ jobs: [job('fx-bad:1', 'remotive')], sample: [{ id: 1, name: 't' }] }) },
           },
@@ -52,7 +52,7 @@ export const providerShapeBreak: Stage = {
       if (rows.length !== 0 || !bad || !(bad.error ?? '').includes('shape') || !(bad.note ?? '').includes('no board url')) {
         return fail(`expected a shape error with a no-board-url note and no source task for the broken API provider, got tasks ${JSON.stringify(rows)}`, 'src/sources/runner.ts');
       }
-      const ok = r.rows.find((x) => x.source === 'adzuna');
+      const ok = r.rows.find((x) => x.source === 'remoteok');
       if (!ok || ok.error || ok.fallback_used) return fail('the healthy provider was affected by the broken one', 'src/sources/runner.ts');
       return pass('healthy provider clean; broken API provider recorded a shape error with a note and queued no source_tasks row');
     } catch (e) {
@@ -136,7 +136,7 @@ export const applierFixture: Stage = {
         const applyUrl = 'https://boards.greenhouse.io/acme/jobs/1';
         db = ctx.openDb(join(dir, 'applier.sqlite'));
         db.prepare('INSERT INTO jobs (id, source, title, company, url, apply_url, description) VALUES (?,?,?,?,?,?,?)')
-          .run('fx-apply', 'adzuna', 'Senior Engineer', 'Acme', applyUrl, applyUrl, 'Location: Pune, India\n\nBuild things.');
+          .run('fx-apply', 'remotive', 'Senior Engineer', 'Acme', applyUrl, applyUrl, 'Location: Pune, India\n\nBuild things.');
         db.prepare('INSERT INTO outreach_queue (job_id, resume_pdf_path, apply_platform, apply_tier, apply_url, status) VALUES (?,?,?,?,?,?)')
           .run('fx-apply', join(resumeDir, 'resume.pdf'), 'greenhouse', 'fast', applyUrl, 'queued');
         // Flags are explicit on this in-process env object only; the fake launcher cannot reach a real site.

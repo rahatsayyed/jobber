@@ -36,7 +36,7 @@ describe('repostCount', () => {
   it('same URL, other source, other company or invalid date never count', () => {
     expect(repostCount(t, [
       p('a', '2026-09-20 10:00:00', { url: t.url }),
-      p('b', '2026-09-20 10:00:00', { source: 'adzuna' }),
+      p('b', '2026-09-20 10:00:00', { source: 'remoteok' }),
       p('c', '2026-09-20 10:00:00', { company: 'Globex' }),
       p('d', '2023-02-29 10:00:00'),
     ])).toBe(0);

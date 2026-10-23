@@ -156,7 +156,7 @@ const boardGroup = (id: string, source: string | null | undefined): string => {
 };
 
 /**
- * Cross-source dedupe: the same posting often arrives via LinkedIn or Adzuna AND a company board under different ids.
+ * Cross-source dedupe: the same posting often arrives via LinkedIn or Remotive AND a company board under different ids.
  * A board job is dropped when its normalized company+title (Plan 2's companyKey/titleIdentityKey) already exists from a
  * DIFFERENT source or a different board (vendor+slug): in `recent` (rows saved lately) or elsewhere in this batch.
  * Two postings from the SAME board with the same title and different ids (one role in two cities) are both kept.

@@ -62,10 +62,10 @@ describe('channelsFor', () => {
     expect(applyTierFor('javascript:alert(1)')).toBe('none');
     expect(applyTierFor('https://u:p@lever.co/x')).toBe('none');
     const v = (src: string, url: string, ctx = {}) => by(channelsFor({ source: src, company: 'A', apply_url: url }, ctx)).apply;
-    expect(v('adzuna', 'https://www.linkedin.com/jobs/view/1').reason).toBe('apply_tier:linkedin_easy');
-    expect(v('adzuna', 'https://www.linkedin.com/jobs/view/1', { linkedinEasy: true }).eligible).toBe(true);
-    expect(v('adzuna', 'https://acme.example/jobs/1').reason).toBe('apply_tier:unknown_host');
-    expect(v('adzuna', 'https://acme.example/jobs/1', { allowUnknownHosts: true }).eligible).toBe(true);
-    expect(v('adzuna', 'https://x.myworkdayjobs.com/a').reason).toBe('apply_tier:account_gated');
+    expect(v('remotive', 'https://www.linkedin.com/jobs/view/1').reason).toBe('apply_tier:linkedin_easy');
+    expect(v('remotive', 'https://www.linkedin.com/jobs/view/1', { linkedinEasy: true }).eligible).toBe(true);
+    expect(v('remotive', 'https://acme.example/jobs/1').reason).toBe('apply_tier:unknown_host');
+    expect(v('remotive', 'https://acme.example/jobs/1', { allowUnknownHosts: true }).eligible).toBe(true);
+    expect(v('remotive', 'https://x.myworkdayjobs.com/a').reason).toBe('apply_tier:account_gated');
   });
 });

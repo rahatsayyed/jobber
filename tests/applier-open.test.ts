@@ -32,9 +32,9 @@ describe('apply_open refusals', () => {
 
   it('open refuses: class none, look-alike and non-http(s)', async () => {
     for (const [url, source] of [
-      ['https://evil-greenhouse.io/acme/1', 'adzuna'],
-      ['javascript:alert(1)', 'adzuna'],
-      ['https://unknown-company.example/jobs/1', 'adzuna'],
+      ['https://evil-greenhouse.io/acme/1', 'remotive'],
+      ['javascript:alert(1)', 'remotive'],
+      ['https://unknown-company.example/jobs/1', 'remotive'],
       ['https://boards.greenhouse.io/acme/1', 'workday'],
     ] as const) {
       const x = setup({ applyUrl: url, source, jobId: 'job-1' });

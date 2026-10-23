@@ -17,7 +17,7 @@ describe('withHnGate (contacts tool seam)', () => {
   it('runs work when matched or not applicable', async () => {
     const work = vi.fn(async () => [1]);
     const a = await withHnGate({ source: 'hackernews', description: 'x@acme.io' }, 'acme.io', work);
-    const b = await withHnGate({ source: 'adzuna', description: null }, 'acme.io', work);
+    const b = await withHnGate({ source: 'remotive', description: null }, 'acme.io', work);
     expect([a.hn_check, b.hn_check]).toEqual(['matched', 'not_applicable']);
     expect(work).toHaveBeenCalledTimes(2);
   });

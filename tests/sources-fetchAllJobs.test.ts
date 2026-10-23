@@ -12,14 +12,10 @@ import { openDb, isSeen, saveJob } from '../src/db.js';
 // the seam contract: what `fetchAllJobs` returns must survive a `list_new_jobs`-shaped
 // isSeen-filter-then-saveJob pass, for every source including Naukri.
 // The runner (src/sources/runner.ts) loads each source's `provider` export, so each mock exposes one that forwards to the mocked fetch function.
-vi.mock('../src/sources/adzuna.js', () => {
-  const fetchAdzuna = vi.fn().mockResolvedValue([
-    { id: 'adzuna:1', source: 'adzuna', title: 'A', company: 'Co', url: 'u1', apply_url: 'u1', description: '' },
-  ]);
-  return { fetchAdzuna, provider: { id: 'adzuna', shapeSpec: {}, fetch: async () => ({ jobs: await fetchAdzuna(), sample: [] }) } };
-});
 vi.mock('../src/sources/remotive.js', () => {
-  const fetchRemotive = vi.fn().mockResolvedValue([]);
+  const fetchRemotive = vi.fn().mockResolvedValue([
+    { id: 'remotive:1', source: 'remotive', title: 'A', company: 'Co', url: 'u1', apply_url: 'u1', description: '' },
+  ]);
   return { fetchRemotive, provider: { id: 'remotive', shapeSpec: {}, fetch: async () => ({ jobs: await fetchRemotive(), sample: [] }) } };
 });
 vi.mock('../src/sources/remoteok.js', () => {
@@ -52,7 +48,7 @@ describe('fetchAllJobs resilience', () => {
     vi.mocked(fetchBoards).mockResolvedValueOnce({ jobs: [{ id: 'gh:a:1', source: 'greenhouse', title: 'T', company: 'A', url: 'u', apply_url: 'u', description: '' }], errors: [], stats: [] });
     const { fetchAllJobs } = await import('../src/sources/index.js');
     const jobs = await fetchAllJobs({ role: 'r' });
-    expect(jobs.map((j) => j.id)).toEqual(expect.arrayContaining(['adzuna:1', 'naukri:12345', 'gh:a:1']));
+    expect(jobs.map((j) => j.id)).toEqual(expect.arrayContaining(['remotive:1', 'naukri:12345', 'gh:a:1']));
   });
 });
 

@@ -8,20 +8,16 @@ import { apiKeysChecks } from '../src/platform/checksApiKeys.js';
 import { LIMITS, specFor, validateLimit } from '../src/setup/limitsCatalog.js';
 import { openDb } from '../src/db.js';
 
-const TITLE = 'Optional API keys (Adzuna for jobs; Serper and Hunter for contact finding)';
+const TITLE = 'Optional API keys (Serper and Hunter for contact finding)';
 
 describe('contact finding relabel', () => {
-  it('.env.example groups Serper and Hunter under a Contact finding heading, Adzuna stays under job sources', () => {
+  it('.env.example groups Serper and Hunter under a Contact finding heading', () => {
     const t = readFileSync('.env.example', 'utf8');
     const heading = (name: string) => t.indexOf(`# Credentials: ${name}`);
-    const jobs = heading('job sources');
     const contact = heading('contact finding');
-    expect(jobs).toBeGreaterThan(-1);
-    expect(contact).toBeGreaterThan(jobs);
+    expect(contact).toBeGreaterThan(-1);
+    expect(heading('job sources')).toBe(-1);
     const at = (k: string) => t.search(new RegExp(`^${k}=`, 'm'));
-    expect(at('ADZUNA_APP_ID')).toBeGreaterThan(jobs);
-    expect(at('ADZUNA_APP_ID')).toBeLessThan(contact);
-    expect(at('ADZUNA_APP_KEY')).toBeLessThan(contact);
     expect(at('SERPER_API_KEY')).toBeGreaterThan(contact);
     expect(at('HUNTER_API_KEY')).toBeGreaterThan(contact);
     expect(t).not.toMatch(/job sources and contact lookup/);
@@ -59,9 +55,9 @@ describe('contact finding relabel', () => {
   it('coach text and doctor api-keys label say contact finding', async () => {
     expect(COACH_TEXT['apikeys.serper'].join(' ')).toContain('contact finding');
     expect(COACH_TEXT['apikeys.hunter'].join(' ')).toContain('contact finding');
-    const ctx = { root: '/x', env: { ADZUNA_APP_ID: 'a', ADZUNA_APP_KEY: 'b', SERPER_API_KEY: 'c', HUNTER_API_KEY: 'd' }, fs: { exists: () => false, read: () => '' } } as never;
+    const ctx = { root: '/x', env: { SERPER_API_KEY: 'c', HUNTER_API_KEY: 'd' }, fs: { exists: () => false, read: () => '' } } as never;
     const r = await apiKeysChecks[0].run(ctx);
-    expect(r.detail).toBe('Adzuna (jobs) and Serper, Hunter (contact finding) keys are set');
+    expect(r.detail).toBe('Serper and Hunter (contact finding) keys are set');
   });
 });
 

@@ -100,7 +100,7 @@ export function inventory(src: string, known: Known): Row[] {
     let status: Status = 'skipped';
     let reason: string;
     if (known.imported.has(id)) { status = 'imported'; reason = 'ported as src/sources/providers/' + id + '.ts, disabled, discover-only'; }
-    else if (known.ids.has(id)) { status = 'already_present'; reason = 'already ported earlier (plan 4/5 boards or the Adzuna/Remotive/RemoteOK sources)'; }
+    else if (known.ids.has(id)) { status = 'already_present'; reason = 'already ported earlier (plan 4/5 boards or the Remotive/RemoteOK sources)'; }
     else if (scope === 'tenant') reason = SKIP_REASON.tenant;
     else if (kind === 'needs_js' || kind === 'needs_login' || kind === 'html_list' || kind === 'unclear') reason = SKIP_REASON[kind];
     else reason = SKIP_REASON.candidate;

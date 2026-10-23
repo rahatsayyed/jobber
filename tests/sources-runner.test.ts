@@ -41,14 +41,14 @@ describe('runScriptSources', () => {
   it('runs boards and api providers, keeps filters and the location line, queues nothing when healthy', async () => {
     const db = openDb(':memory:');
     ghFetch([ghItem(), ghItem({ id: 2, title: 'Data Analyst' })]);
-    const adz = fakeProvider('adzuna', async () => ({ jobs: [job('adzuna:1', 'adzuna')], sample: [{ id: 1, title: 't' }] }));
-    const r = await runScriptSources(db, { role: 'r', portalsPath: portals(), registryPath: registry([apiRow('adzuna')]), providers: { adzuna: adz }, now: () => NOW });
-    expect(r.jobs.map((j) => j.id).sort()).toEqual(['adzuna:1', 'gh:a:1']);
+    const adz = fakeProvider('naukri', async () => ({ jobs: [job('naukri:1', 'naukri')], sample: [{ id: 1, title: 't' }] }));
+    const r = await runScriptSources(db, { role: 'r', portalsPath: portals(), registryPath: registry([apiRow('naukri')]), providers: { naukri: adz }, now: () => NOW });
+    expect(r.jobs.map((j) => j.id).sort()).toEqual(['gh:a:1', 'naukri:1']);
     expect(r.jobs.find((j) => j.id === 'gh:a:1')!.description.startsWith('Location: Bengaluru\n\n')).toBe(true);
     const gh = r.rows.find((x) => x.source === 'greenhouse')!;
     expect(gh).toMatchObject({ fetched: 2, kept: 1, fallback_used: false, kind: 'script', group: 'board' });
     expect(gh.error).toBeUndefined();
-    expect(r.rows.find((x) => x.source === 'adzuna')).toMatchObject({ fetched: 1, kept: 1, fallback_used: false });
+    expect(r.rows.find((x) => x.source === 'naukri')).toMatchObject({ fetched: 1, kept: 1, fallback_used: false });
     expect(tasks(db)).toEqual([]);
     expect(r.outcomes.find((o) => o.id === 'greenhouse')!.shape_hash).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -70,11 +70,11 @@ describe('runScriptSources', () => {
 
   it('a shape-failed provider keeps the valid jobs it returned', async () => {
     const db = openDb(':memory:');
-    const p = fakeProvider('adzuna', async () => ({ jobs: [job('adzuna:1', 'adzuna')], sample: [{ id: 'x', nope: 1 }] }));
-    const r = await runScriptSources(db, { role: 'r', portalsPath: portals(), registryPath: registry([apiRow('adzuna')]), providers: { adzuna: p }, now: () => NOW });
-    expect(r.jobs.map((j) => j.id)).toContain('adzuna:1');
-    expect(r.rows.find((x) => x.source === 'adzuna')).toMatchObject({ fallback_used: false, note: expect.stringMatching(/no board url/) });
-    expect(r.rows.find((x) => x.source === 'adzuna')!.error).toMatch(/shape/);
+    const p = fakeProvider('naukri', async () => ({ jobs: [job('naukri:1', 'naukri')], sample: [{ id: 'x', nope: 1 }] }));
+    const r = await runScriptSources(db, { role: 'r', portalsPath: portals(), registryPath: registry([apiRow('naukri')]), providers: { naukri: p }, now: () => NOW });
+    expect(r.jobs.map((j) => j.id)).toContain('naukri:1');
+    expect(r.rows.find((x) => x.source === 'naukri')).toMatchObject({ fallback_used: false, note: expect.stringMatching(/no board url/) });
+    expect(r.rows.find((x) => x.source === 'naukri')!.error).toMatch(/shape/);
     // an API source has no target URL: a note, not a source task (finding 8)
     expect(tasks(db)).toEqual([]);
   });
@@ -108,13 +108,13 @@ describe('runScriptSources', () => {
     ghFetch([ghItem()]);
     const boom = fakeProvider('remotive', async () => { throw new Error('remotive down app_key=SECRET'); });
     const hang = fakeProvider('remoteok', () => new Promise(() => {}));
-    const ok = fakeProvider('adzuna', async () => ({ jobs: [job('adzuna:1', 'adzuna')], sample: [] }));
+    const ok = fakeProvider('naukri', async () => ({ jobs: [job('naukri:1', 'naukri')], sample: [] }));
     const r = await runScriptSources(db, {
       role: 'r', portalsPath: portals(), providerTimeoutMs: 30, now: () => NOW,
-      registryPath: registry([apiRow('adzuna'), apiRow('remotive'), apiRow('remoteok')]),
-      providers: { adzuna: ok, remotive: boom, remoteok: hang },
+      registryPath: registry([apiRow('naukri'), apiRow('remotive'), apiRow('remoteok')]),
+      providers: { naukri: ok, remotive: boom, remoteok: hang },
     });
-    expect(r.jobs.map((j) => j.id).sort()).toEqual(['adzuna:1', 'gh:a:1']);
+    expect(r.jobs.map((j) => j.id).sort()).toEqual(['gh:a:1', 'naukri:1']);
     const rem = r.rows.find((x) => x.source === 'remotive')!;
     expect(rem.error).toContain('remotive down');
     expect(rem.error).not.toContain('SECRET');
@@ -148,8 +148,8 @@ describe('runScriptSources', () => {
   it('a disabled api row is not run', async () => {
     const db = openDb(':memory:');
     ghFetch([]);
-    const p = fakeProvider('adzuna', async () => { throw new Error('should not run'); });
-    const r = await runScriptSources(db, { role: 'r', portalsPath: portals(), registryPath: registry([apiRow('adzuna', { enabled: false })]), providers: { adzuna: p }, now: () => NOW });
-    expect(r.rows.find((x) => x.source === 'adzuna')).toBeUndefined();
+    const p = fakeProvider('naukri', async () => { throw new Error('should not run'); });
+    const r = await runScriptSources(db, { role: 'r', portalsPath: portals(), registryPath: registry([apiRow('naukri', { enabled: false })]), providers: { naukri: p }, now: () => NOW });
+    expect(r.rows.find((x) => x.source === 'naukri')).toBeUndefined();
   });
 });

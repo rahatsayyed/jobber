@@ -27,19 +27,19 @@ const registry = (rows: unknown[]) => file('platforms.json', { platforms: [
   ...rows,
 ] });
 const spec = z.object({ id: z.number(), title: z.string() }).passthrough();
-const failing = (id: string): Provider => ({ id, shapeSpec: spec, fetch: async () => { throw new Error('Adzuna request failed: 400 (params: app_id, what)'); } });
+const failing = (id: string): Provider => ({ id, shapeSpec: spec, fetch: async () => { throw new Error('remotive request failed: 400 (params: app_id, what)'); } });
 const NOW = new Date('2026-10-19T10:00:00Z');
 const tasks = (db: ReturnType<typeof openDb>) => db.prepare('SELECT platform, company, reason FROM source_tasks').all();
 
 describe('failed source without a target URL', () => {
   it('an API source that throws gets an error and a note, and no source_task', async () => {
     const db = openDb(':memory:');
-    const r = await runScriptSources(db, { role: 'r', portalsPath: portals(), registryPath: registry([apiRow('adzuna')]), providers: { adzuna: failing('adzuna') }, now: () => NOW });
-    const row = r.rows.find((x) => x.source === 'adzuna')!;
+    const r = await runScriptSources(db, { role: 'r', portalsPath: portals(), registryPath: registry([apiRow('remotive')]), providers: { remotive: failing('remotive') }, now: () => NOW });
+    const row = r.rows.find((x) => x.source === 'remotive')!;
     expect(row.error).toMatch(/400/);
     expect(row.fallback_used).toBe(false);
     expect(row.note).toMatch(/no board url/);
-    expect(tasks(db).filter((t: any) => t.platform === 'adzuna')).toEqual([]);
+    expect(tasks(db).filter((t: any) => t.platform === 'remotive')).toEqual([]);
   });
 
   it('a shape-failed API source is handled the same way', async () => {

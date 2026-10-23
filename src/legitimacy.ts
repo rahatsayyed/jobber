@@ -12,7 +12,7 @@ export interface Legitimacy { tier: 'high' | 'caution' | 'suspicious'; signals: 
 
 const SHORTENER_HOSTS = ['bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'forms.gle', 'shorturl.at', 'rebrand.ly', 'cutt.ly', 'wa.me', 'chat.whatsapp.com', 't.me'];
 // These sources store a snippet or a location string, not the posting: a short description there is our scraper, not the employer.
-const SNIPPET_SOURCES = new Set(['linkedin-jobs', 'naukri', 'adzuna']);
+const SNIPPET_SOURCES = new Set(['linkedin-jobs', 'naukri']);
 // Descriptions are untrusted scraped text: scan a bounded prefix, clause by clause, with every pattern bounded.
 const MAX_SCAN_CHARS = 20000;
 const MAX_CLAUSE_CHARS = 400;

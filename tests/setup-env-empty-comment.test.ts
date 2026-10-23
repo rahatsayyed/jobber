@@ -11,13 +11,12 @@ const current = readFileSync(join(import.meta.dirname, '..', '.env.example'), 'u
 // The shape older copies of .env.example had (inline comments after the value). Kept as a fixture
 // because an owner's existing .env may still carry it.
 const example = [
-  'ADZUNA_APP_ID=                   # developer.adzuna.com',
   'SERPER_API_KEY=                  # serper.dev (dorks + contact search)',
   'HUNTER_API_KEY=                  # hunter.io (LAST resort only)',
   'HUNTER_MONTHLY_CAP=50            # hard cap on Hunter credits/month',
   '',
 ].join('\n');
-const KEYS = ['ADZUNA_APP_ID', 'SERPER_API_KEY', 'HUNTER_API_KEY'];
+const KEYS = ['SERPER_API_KEY', 'HUNTER_API_KEY'];
 
 function ctxWith(env: string): DoctorContext {
   const p = '/proj/.env';

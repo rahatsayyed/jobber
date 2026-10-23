@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest';
 
 // The runner (src/sources/runner.ts) loads each source's `provider` export; the mocks expose one that forwards to the mocked fetch.
 const mockSource = (fn: string, id: string) => ({ [fn]: vi.fn().mockResolvedValue([]), provider: { id, shapeSpec: {}, fetch: async () => ({ jobs: [], sample: [] }) } });
-vi.mock('../src/sources/adzuna.js', () => mockSource('fetchAdzuna', 'adzuna'));
 vi.mock('../src/sources/remotive.js', () => mockSource('fetchRemotive', 'remotive'));
 vi.mock('../src/sources/remoteok.js', () => mockSource('fetchRemoteok', 'remoteok'));
 vi.mock('../src/sources/naukri.js', () => mockSource('fetchNaukri', 'naukri'));

@@ -104,24 +104,22 @@ describe('api-keys check', () => {
   it('warns with names only, never fails', async () => {
     const r = await run({});
     expect(r.status).toBe('warn');
-    expect(r.detail).toBe('not set: ADZUNA_APP_ID, ADZUNA_APP_KEY, SERPER_API_KEY, HUNTER_API_KEY');
+    expect(r.detail).toBe('not set: SERPER_API_KEY, HUNTER_API_KEY');
   });
   it('passes when all are set, and leaks no value', async () => {
     const env = {
-      ADZUNA_APP_ID: 'invented-id-aaaa1111',
-      ADZUNA_APP_KEY: 'invented-key-bbbb2222',
       SERPER_API_KEY: 'invented-serper-cccc3333',
       HUNTER_API_KEY: 'invented-hunter-dddd4444',
     };
     const r = await run(env);
     expect(r.status).toBe('pass');
-    const partial = await run({ ADZUNA_APP_ID: env.ADZUNA_APP_ID });
+    const partial = await run({ SERPER_API_KEY: env.SERPER_API_KEY });
     const text = JSON.stringify([r, partial]);
     for (const v of Object.values(env)) {
       for (let i = 0; i + 8 <= v.length; i++) expect(text).not.toContain(v.slice(i, i + 8));
     }
-    expect(partial.detail).not.toContain('ADZUNA_APP_ID');
-    expect(partial.detail).toContain('ADZUNA_APP_KEY');
+    expect(partial.detail).not.toContain('SERPER_API_KEY');
+    expect(partial.detail).toContain('HUNTER_API_KEY');
   });
 });
 

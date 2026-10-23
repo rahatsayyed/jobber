@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { getJob, openDb, saveJob, toIsoDay } from '../src/db.js';
 import { normalizeRemotive } from '../src/sources/remotive.js';
 import { normalizeRemoteok } from '../src/sources/remoteok.js';
-import { normalizeAdzuna } from '../src/sources/adzuna.js';
 
 describe('toIsoDay', () => {
   it.each([
@@ -42,9 +41,6 @@ describe('sources emit posted_at', () => {
   it('remoteok date or epoch', () => {
     expect(normalizeRemoteok([{ id: 1, position: 'React dev', company: 'c', url: 'u', date: '2026-10-01T08:00:00+00:00' }])[0].posted_at).toBe('2026-10-01');
     expect(normalizeRemoteok([{ id: 2, position: 'React dev', company: 'c', url: 'u', epoch: 1759190400 }])[0].posted_at).toBe('2025-09-30');
-  });
-  it('adzuna created', () => {
-    expect(normalizeAdzuna({ results: [{ id: 1, title: 't', company: { display_name: 'c' }, redirect_url: 'u', description: 'd', created: '2026-10-02T12:00:00Z' }] })[0].posted_at).toBe('2026-10-02');
   });
   it('no date -> property absent (keeps existing toEqual tests valid)', () => {
     expect('posted_at' in normalizeRemotive({ jobs: [{ id: 1, title: 't', company_name: 'c', url: 'u', description: 'd' }] })[0]).toBe(false);

@@ -52,8 +52,6 @@ describe('skip catalog', () => {
     const a = spec('apikeys');
     expect(a.checkIds).toEqual(['api-keys']);
     expect(a.configured({}, fsNone, '/r')).toBe(false);
-    expect(a.configured({ ADZUNA_APP_ID: 'x' }, fsNone, '/r')).toBe(false);
-    expect(a.configured({ ADZUNA_APP_ID: 'x', ADZUNA_APP_KEY: 'y' }, fsNone, '/r')).toBe(true);
     expect(a.configured({ SERPER_API_KEY: 'x' }, fsNone, '/r')).toBe(true);
     expect(a.configured({ HUNTER_API_KEY: 'x' }, fsNone, '/r')).toBe(true);
   });

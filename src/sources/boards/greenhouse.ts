@@ -22,7 +22,7 @@ export interface FetchCtx {
   deadlineAt?: number;
   /** The tracked company being fetched (set by Provider.fetch callers). */
   company?: TrackedCompany;
-  /** Role and location for the search-style API providers (Adzuna, Remotive, Naukri); boards ignore them. */
+  /** Role and location for the search-style API providers (Remotive, Naukri); boards ignore them. */
   params?: { role: string; location?: string };
   /** Non-fatal notes (partial results, skipped postings) that end up in board_status errors. */
   warn?: (message: string) => void;

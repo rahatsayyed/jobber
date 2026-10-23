@@ -95,7 +95,7 @@ describe('resolveDomainForJob (contacts wiring)', () => {
 
   it('reads apply_url and source from the jobs row and reports domain_source', async () => {
     const db = openDb(':memory:');
-    insert(db, 'j1', 'adzuna', 'https://careers.acme.io/1', 'x');
+    insert(db, 'j1', 'remotive', 'https://careers.acme.io/1', 'x');
     insert(db, 'j2', 'hackernews', 'https://news.ycombinator.com/item?id=1', 'Mail jobs@acme.dev');
     const a = await resolveDomainForJob(db, { company: 'Acme', job_id: 'j1' }, deps);
     expect(a.ladder).toEqual({ domain: 'acme.io', domain_source: 'apply_url' });

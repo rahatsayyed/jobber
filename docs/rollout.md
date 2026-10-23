@@ -183,7 +183,7 @@ fakes only. Keep every apply and web flag dry until the step that says otherwise
 1. Sources: run a wake with the dry flags on, then `npm run status -- sources`. Enable an imported
    feed only after you read the site's terms of use and robots.txt, one at a time
    ([sources-and-platforms.md](sources-and-platforms.md)). Force one failure (unset
-   `ADZUNA_APP_KEY` on a copy of `.env`) and confirm the table shows an error row.
+   a bad slug on a copy of `config/portals.json`) and confirm the table shows an error row.
 2. LinkedIn discover: with the classifier fitted, one supervised wake with `JOBBER_DRY_RUN` set to
    `false`; confirm new jobs from the `linkedin-jobs` and `linkedin-posts` sources, no
    checkpoint halt, and `layout=` verdicts learned (the layout learning run above covers the new page

@@ -114,7 +114,7 @@ export interface NaukriDeps {
    * Injectable predicate deciding whether a job id is "new" — used ONLY to gate the expensive
    * apply-URL-resolution phase (skip re-resolving jobs the caller already knows about), never to
    * filter what this function returns and never to persist anything. Dedup/persistence is the
-   * caller's responsibility (`src/mcp/job-fetch.ts`), matching `adzuna`/`remotive`/`remoteok`'s
+   * caller's responsibility (`src/mcp/job-fetch.ts`), matching `remotive`/`remoteok`'s
    * convention — this module owns no db handle. Defaults to "treat every job as new" (resolve
    * apply-urls for everything returned by the search phase, capped by
    * `MAX_APPLY_URL_RESOLUTIONS_PER_FETCH`) if not given.

@@ -41,7 +41,7 @@ describe('assessLegitimacy', () => {
   it('thin-description caution skips snippet sources unless a snapshot exists, and measures description OR snapshot length', () => {
     expect(assessLegitimacy({ ...base, source: 'linkedin-jobs', description: 'India (Remote)' })).toEqual({ tier: 'high', signals: [] });
     expect(assessLegitimacy({ ...base, source: 'naukri', description: 'Bengaluru' }).tier).toBe('high');
-    expect(assessLegitimacy({ ...base, source: 'adzuna', description: 'Short snippet...' }).tier).toBe('high');
+    expect(assessLegitimacy({ ...base, source: 'naukri', description: 'Short snippet...' }).tier).toBe('high');
     expect(assessLegitimacy({ ...base, source: 'remotive', description: 'React dev needed.' }).signals).toEqual(['thin description (17 chars)']);
     expect(assessLegitimacy({ ...base, source: 'remotive', description: 'React dev needed.', snapshot_chars: 5000 }).tier).toBe('high');
     expect(assessLegitimacy({ ...base, source: 'naukri', description: 'Bengaluru', snapshot_chars: 150 }).signals).toEqual(['thin description (150 chars)']);

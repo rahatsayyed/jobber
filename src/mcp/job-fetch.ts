@@ -14,7 +14,7 @@ const server = new McpServer({ name: 'job-fetch', version: '0.1.0' });
 server.registerTool(
   'search_jobs',
   {
-    description: 'Search job boards (Adzuna, Remotive, RemoteOK, Naukri, and the company boards (Greenhouse, Lever, Ashby, Workable, Recruitee, Personio, SmartRecruiters, Workday) and aggregator feeds (Hacker News Who is hiring, Himalayas, We Work Remotely) enabled in config/portals.json; boards use only the portals.json filters, not role/location) for a role',
+    description: 'Search job boards (Remotive, RemoteOK, Naukri, and the company boards (Greenhouse, Lever, Ashby, Workable, Recruitee, Personio, SmartRecruiters, Workday) and aggregator feeds (Hacker News Who is hiring, Himalayas, We Work Remotely) enabled in config/portals.json; boards use only the portals.json filters, not role/location) for a role',
     inputSchema: {
       role: z.string(),
       location: z.string().optional(),
@@ -32,7 +32,7 @@ server.registerTool(
   'list_new_jobs',
   {
     description:
-      'Fetch jobs from all sources (Adzuna, Remotive, RemoteOK, Naukri, and the company boards (Greenhouse, Lever, Ashby, Workable, Recruitee, Personio, SmartRecruiters, Workday) and aggregator feeds (Hacker News Who is hiring, Himalayas, We Work Remotely) enabled in config/portals.json; boards use only the portals.json filters, not role/location) and return only ones not seen before, saving them to the db',
+      'Fetch jobs from all sources (Remotive, RemoteOK, Naukri, and the company boards (Greenhouse, Lever, Ashby, Workable, Recruitee, Personio, SmartRecruiters, Workday) and aggregator feeds (Hacker News Who is hiring, Himalayas, We Work Remotely) enabled in config/portals.json; boards use only the portals.json filters, not role/location) and return only ones not seen before, saving them to the db',
     inputSchema: {
       role: z.string(),
       location: z.string().optional(),

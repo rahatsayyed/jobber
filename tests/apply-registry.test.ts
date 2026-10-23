@@ -14,9 +14,9 @@ describe('classifyApplyUrl', () => {
     expect(c('https://jobs.ashbyhq.com/acme/abc')).toMatchObject({ platform: 'ashby', tier: 'fast' });
     expect(c('https://apply.workable.com/acme/j/1', 'remotive')).toMatchObject({ platform: 'workable', tier: 'fast' });
     expect(c('https://jobs.smartrecruiters.com/Acme/1', 'remotive')).toMatchObject({ platform: 'smartrecruiters', tier: 'fast' });
-    expect(c('https://acme.wd5.myworkdayjobs.com/ext/job/x', 'adzuna')).toMatchObject({ platform: 'workday', tier: 'agent' });
-    expect(c('https://acme.recruitee.com/o/dev', 'adzuna')).toMatchObject({ platform: 'recruitee', tier: 'agent' });
-    expect(c('https://acme.jobs.personio.de/job/1', 'adzuna')).toMatchObject({ platform: 'personio', tier: 'agent' });
+    expect(c('https://acme.wd5.myworkdayjobs.com/ext/job/x', 'remotive')).toMatchObject({ platform: 'workday', tier: 'agent' });
+    expect(c('https://acme.recruitee.com/o/dev', 'remotive')).toMatchObject({ platform: 'recruitee', tier: 'agent' });
+    expect(c('https://acme.jobs.personio.de/job/1', 'remotive')).toMatchObject({ platform: 'personio', tier: 'agent' });
   });
 
   it('look-alike hosts are none', () => {
@@ -28,7 +28,7 @@ describe('classifyApplyUrl', () => {
 
   it('non-http schemes and credentials are none', () => {
     for (const u of ['javascript:alert(1)', 'file:///etc/passwd', 'data:text/html,x', '//boards.greenhouse.io/x', 'not a url', 'https://u:p@boards.greenhouse.io/x', '']) {
-      expect(c(u, 'adzuna', { APPLY_ALLOW_UNKNOWN_HOSTS: 'true' }).platform).toBe('none');
+      expect(c(u, 'remotive', { APPLY_ALLOW_UNKNOWN_HOSTS: 'true' }).platform).toBe('none');
     }
     expect(c(null).platform).toBe('none');
   });
@@ -53,10 +53,10 @@ describe('classifyApplyUrl', () => {
 
   it('unknown https host is none unless APPLY_ALLOW_UNKNOWN_HOSTS=true', () => {
     const u = 'https://careers.acme.example/jobs/1';
-    expect(c(u, 'adzuna')).toMatchObject({ platform: 'none', tier: 'never', reason: 'host_unknown' });
-    expect(c(u, 'adzuna', { APPLY_ALLOW_UNKNOWN_HOSTS: 'TRUE' }).platform).toBe('none');
-    expect(c(u, 'adzuna', { APPLY_ALLOW_UNKNOWN_HOSTS: 'true' })).toMatchObject({ platform: 'browser', tier: 'agent' });
-    expect(c('http://careers.acme.example/jobs/1', 'adzuna', { APPLY_ALLOW_UNKNOWN_HOSTS: 'true' }).platform).toBe('browser');
+    expect(c(u, 'remotive')).toMatchObject({ platform: 'none', tier: 'never', reason: 'host_unknown' });
+    expect(c(u, 'remotive', { APPLY_ALLOW_UNKNOWN_HOSTS: 'TRUE' }).platform).toBe('none');
+    expect(c(u, 'remotive', { APPLY_ALLOW_UNKNOWN_HOSTS: 'true' })).toMatchObject({ platform: 'browser', tier: 'agent' });
+    expect(c('http://careers.acme.example/jobs/1', 'remotive', { APPLY_ALLOW_UNKNOWN_HOSTS: 'true' }).platform).toBe('browser');
   });
 
   it('every ATS_REGISTRY id has a per-host cap catalog entry', () => {

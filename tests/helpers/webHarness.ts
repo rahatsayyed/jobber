@@ -136,6 +136,6 @@ export async function makeHarness(over: Partial<WebDeps> = {}, opts: { allow?: b
 }
 
 export function insertJob(db: BetterSqlite3.Database, id: string, title: string, company = 'Acme', score: number | null = 80): void {
-  db.prepare('INSERT OR IGNORE INTO jobs (id, source, title, company) VALUES (?,?,?,?)').run(id, 'adzuna', title, company);
+  db.prepare('INSERT OR IGNORE INTO jobs (id, source, title, company) VALUES (?,?,?,?)').run(id, 'remotive', title, company);
   if (score !== null) db.prepare('UPDATE jobs SET score = ? WHERE id = ?').run(score, id);
 }

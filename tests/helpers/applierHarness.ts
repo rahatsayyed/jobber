@@ -60,7 +60,7 @@ export function makeApplier(o: HarnessOpts = {}): ApplierHarness {
   const jobId = o.jobId ?? 'job-1';
   const applyUrl = o.applyUrl ?? APPLY_URL;
   db.prepare('INSERT INTO jobs (id, source, title, company, url, apply_url, description) VALUES (?,?,?,?,?,?,?)')
-    .run(jobId, o.source ?? 'adzuna', 'Senior Engineer', 'Acme', applyUrl, applyUrl, o.description ?? 'Location: Pune, India\n\nBuild things.');
+    .run(jobId, o.source ?? 'remotive', 'Senior Engineer', 'Acme', applyUrl, applyUrl, o.description ?? 'Location: Pune, India\n\nBuild things.');
   const resumeRoot = path.join(dir, 'renderer', 'automation');
   const resumeDir = path.join(resumeRoot, 'abc');
   fs.mkdirSync(resumeDir, { recursive: true });
