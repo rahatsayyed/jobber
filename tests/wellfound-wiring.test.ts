@@ -47,7 +47,7 @@ describe('tool list and TOOL_NAMES', () => {
   it('TOOL_NAMES is the 16 tools the brief names, with no search or cold-send tool', () => {
     expect([...TOOL_NAMES].sort()).toEqual([
       ...ENGINE.map((n) => `wellfound_${n}`), 'wellfound_arm_send', 'wellfound_arm_apply',
-      'wellfound_discover', 'wellfound_inbox', 'wellfound_read_thread', 'wellfound_layout', 'wellfound_close',
+      'wellfound_discover', 'wellfound_manual_job', 'wellfound_inbox', 'wellfound_read_thread', 'wellfound_layout', 'wellfound_close',
     ].sort());
   });
   it('every name is registered in the module source', () => {
@@ -65,7 +65,7 @@ describe('operators: tool lists', () => {
     expect(t).toEqual(cfg['wellfound-operator']);
     expect(t).toEqual([
       'Skill', 'mcp__outreach__record_inbound', 'mcp__outreach__escalate',
-      ...['layout', 'open', 'snapshot', 'click', 'type', 'press_key', 'scroll', 'wait_for', 'screenshot', 'click_at', 'arm_send', 'discover', 'inbox', 'read_thread'].map(WF),
+      ...['layout', 'open', 'snapshot', 'click', 'type', 'press_key', 'scroll', 'wait_for', 'screenshot', 'click_at', 'arm_send', 'discover', 'manual_job', 'inbox', 'read_thread'].map(WF),
       'mcp__db__list_jobs', 'mcp__db__list_queued_outreach', 'mcp__db__update_outreach_status',
     ]);
     expect(t).not.toContain(WF('arm_apply'));
@@ -201,7 +201,7 @@ describe('permission sets, run profile, MCP registration and the kill-switch mat
 describe('screened surfaces', () => {
   it('lists snapshot, arm_send, arm_apply, discover, inbox and read_thread, each file really screens', () => {
     const ids = SCREENED_SURFACES.filter((s) => s.id.startsWith('wellfound_')).map((s) => s.id).sort();
-    expect(ids).toEqual(['wellfound_arm_apply', 'wellfound_arm_send', 'wellfound_discover', 'wellfound_inbox', 'wellfound_read_thread', 'wellfound_snapshot']);
+    expect(ids).toEqual(['wellfound_arm_apply', 'wellfound_arm_send', 'wellfound_discover', 'wellfound_inbox', 'wellfound_manual_job', 'wellfound_read_thread', 'wellfound_snapshot']);
     for (const s of SCREENED_SURFACES.filter((x) => x.id.startsWith('wellfound_'))) expect(callsScreen(read(s.file)), s.id).toBe(true);
   });
 });

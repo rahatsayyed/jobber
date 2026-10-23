@@ -10,6 +10,7 @@ import { dbPath } from '../dbPath.js';
 import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS, type LiLauncher } from '../webcore/launch.js';
 import { acquireLock, type LockHandle } from '../linkedin/session.js';
 import { isWellfoundUrl, THREAD_REF_RE, threadRefOfUrl, threadUrl, wellfoundKind } from '../wellfound/page.js';
+import { saveNextManualPlatformJob, MANUAL_PAGE_SRC, type ManualJobIo, type PageRead } from '../manual/platformJob.js';
 import { runWellfoundDiscover, type DiscoverIo, type WellfoundDiscoverResult } from '../wellfound/discover.js';
 import { gateInput } from '../safety/inputGate.js';
 import { isDryRun } from '../safety/dryRun.js';
@@ -61,7 +62,7 @@ export const TOOL_NAMES = [
   'wellfound_open', 'wellfound_snapshot', 'wellfound_click', 'wellfound_type', 'wellfound_press_key',
   'wellfound_scroll', 'wellfound_wait_for', 'wellfound_screenshot', 'wellfound_click_at',
   'wellfound_arm_send', 'wellfound_arm_apply',
-  'wellfound_discover', 'wellfound_inbox', 'wellfound_read_thread', 'wellfound_layout', 'wellfound_close',
+  'wellfound_discover', 'wellfound_manual_job', 'wellfound_inbox', 'wellfound_read_thread', 'wellfound_layout', 'wellfound_close',
 ] as const;
 
 // ---------------------------------------------------------------------------------------------
@@ -719,6 +720,33 @@ export function wellfoundDiscover(
   });
 }
 
+/**
+ * Owner-submitted job page: takes no arguments. Code picks the next queued manual_url task of this platform, loads its URL (from SQLite) in the
+ * open session, reads and screens the posting and saves it as a priority job. Read-only toward Wellfound: no send, no apply. Needs wellfound_open first.
+ * UNVERIFIED live: no Wellfound page has ever been read by this tool.
+ */
+export function wellfoundManualJob(deps: WellfoundDeps = {}): Promise<string> {
+  return serial(async () => {
+    if (!session) return jsonOut({ status: 'no_session', hint: 'call wellfound_open first' });
+    const io: ManualJobIo = {
+      load: async (url) => {
+        if (!isWellfoundUrl(url)) return 'failed';
+        const refused = await loadPage(url, deps);
+        if (!refused) return 'ok';
+        const st = (JSON.parse(refused) as { status?: string }).status;
+        return st === 'login_required' ? 'login_required' : st === 'halted' ? 'halted' : 'failed';
+      },
+      read: async () => ((await session!.page.evaluate(MANUAL_PAGE_SRC)) as PageRead | null) ?? null,
+    };
+    try {
+      return jsonOut(await saveNextManualPlatformJob('wellfound', io, { db: getDb(deps), env: deps.env ?? process.env, now: deps.now ?? (() => new Date()), screen: screenFn(deps) }));
+    } catch (err) {
+      void err; // exception text can carry page content
+      return jsonOut({ status: 'failed', code: 'manual_job_error' });
+    }
+  });
+}
+
 export function wellfoundInbox({ unread_only }: { unread_only?: boolean } = {}, deps: WellfoundDeps = {}): Promise<string> {
   return serial(async () => {
     const halted = haltGate(deps);
@@ -1004,6 +1032,17 @@ server.registerTool(
     inputSchema: { search: z.string().max(49), detail_quota: z.number().int().min(0).max(10).optional() },
   },
   async ({ search, detail_quota }) => text(await wellfoundDiscover({ search, detail_quota }))
+);
+
+server.registerTool(
+  'wellfound_manual_job',
+  {
+    description:
+      'Takes no arguments. Code picks the next queued owner-submitted Wellfound job page (the URL comes from SQLite), loads it in the open session, reads and screens the posting and saves it as a priority job in code. ' +
+      'Read-only toward Wellfound: never sends or applies. Needs wellfound_open first. The Wellfound page shapes are unverified live. Returns {status: ok|dry_run|halted|failed, code, task_id, job_ids, remaining}; never page text. ' + UNTRUSTED_NOTE,
+    inputSchema: {},
+  },
+  async () => text(await wellfoundManualJob())
 );
 
 server.registerTool(

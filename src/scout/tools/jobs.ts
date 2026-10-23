@@ -27,7 +27,7 @@ export async function scoutTasks(_a: unknown, deps: ScoutCtx): Promise<string> {
     }
   }
   // Owner-submitted (manual_url) tasks first, then the rest by id.
-  const rows = deps.db.prepare("SELECT id, platform, company, reason, state, url, request_id FROM source_tasks WHERE state IN ('queued','running') ORDER BY (reason = 'manual_url') DESC, id LIMIT 20").all() as TaskRow[];
+  const rows = deps.db.prepare("SELECT id, platform, company, reason, state, url, request_id FROM source_tasks WHERE state IN ('queued','running') AND NOT (reason = 'manual_url' AND platform <> 'manual') ORDER BY (reason = 'manual_url') DESC, id LIMIT 20").all() as TaskRow[];
   const pendingCustom = !dry ? [] : customSites(deps.portalsPath)
     .filter((s) => !rows.some((r) => r.platform === 'custom' && r.company === s.name))
     .map((s) => ({ task_id: null, platform: 'custom', company: s.name, reason: 'new_site', state: 'dry_run', has_target: true, url: s.url }));

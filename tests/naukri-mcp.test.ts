@@ -96,7 +96,7 @@ describe('tool surface', () => {
     const tools = Object.keys((naukriServer as unknown as { _registeredTools: Record<string, unknown> })._registeredTools).sort();
     expect(tools).toEqual([
       'naukri_arm_apply', 'naukri_arm_send', 'naukri_click', 'naukri_click_at', 'naukri_close', 'naukri_discover',
-      'naukri_inbox', 'naukri_layout', 'naukri_open', 'naukri_press_key', 'naukri_read_thread', 'naukri_screenshot',
+      'naukri_inbox', 'naukri_layout', 'naukri_manual_job', 'naukri_open', 'naukri_press_key', 'naukri_read_thread', 'naukri_screenshot',
       'naukri_scroll', 'naukri_search', 'naukri_snapshot', 'naukri_type', 'naukri_wait_for',
     ]);
     for (const gone of ['naukri_state', 'naukri_send_message']) expect(tools).not.toContain(gone);

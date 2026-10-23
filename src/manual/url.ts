@@ -3,6 +3,11 @@
 // which fetch path it takes. Nothing here touches the network.
 import { hostMatches, lookAlikeAtsHost } from '../lib/hostClass.js';
 import { slugProblem, SITE_RE, WD_RE, type CompanyAts } from '../sources/boards/filters.js';
+import { canonicalJobUrl, extractLinkedInJobId } from '../linkedin/jobIds.js';
+import { extractNaukriJobId } from '../sources/naukri.js';
+import { extractWellfoundJobId } from '../wellfound/page.js';
+
+export type ManualPlatform = 'linkedin' | 'naukri' | 'wellfound';
 
 export const MANUAL_URL_MAX_CHARS = 500;
 
@@ -32,6 +37,7 @@ export function validateManualUrl(raw: unknown): ManualUrlCheck {
 
 export type ManualClass =
   | { kind: 'ats'; ats: CompanyAts; slug: string; wd?: string; site?: string; region?: 'eu'; domain?: 'de' | 'com'; jobToken: string | null; sourceKind: string; requestKind: 'url' | 'careers' }
+  | { kind: 'platform'; platform: ManualPlatform; jobId: string; canonicalUrl: string; sourceKind: string; requestKind: 'url' }
   | { kind: 'other'; sourceKind: 'manual:other'; requestKind: 'url' | 'careers' }
   | { kind: 'unsupported'; reason: string };
 
@@ -52,15 +58,25 @@ function ats(
 
 const SINGLE_JOB_PATH = /\/(?:jobs?|positions?|openings?|vacanc\w*|requisitions?|roles?|postings?)\/[^/]*\d[^/]*|\/(?:jobs?|positions?|openings?|careers?)\/[^/]{12,}|[?&](?:gh_jid|jid|jobid|job_id|id)=[\w-]{3,}|\/[0-9a-f]{8}-[0-9a-f]{4}-/i;
 
-/** Which fetch path a validated URL takes. LinkedIn and Naukri pages are not supported yet (they need their own operators). */
+/** Which fetch path a validated URL takes. LinkedIn, Naukri and Wellfound job pages go to their platform operator; other pages of those sites are refused. */
 export function classifyManualUrl(validUrl: string): ManualClass {
   let u: URL;
   try { u = new URL(validUrl); } catch { return { kind: 'unsupported', reason: 'not a valid url' }; }
-  if (hostMatches(validUrl, 'linkedin.com') || hostMatches(validUrl, 'lnkd.in')) {
-    return { kind: 'unsupported', reason: 'LinkedIn urls are not supported yet; send the company careers page or the ATS apply link instead' };
+  const plat = (platform: ManualPlatform, jobId: string, canonicalUrl: string): ManualClass =>
+    ({ kind: 'platform', platform, jobId, canonicalUrl, sourceKind: `manual:${platform}`, requestKind: 'url' });
+  if (hostMatches(validUrl, 'linkedin.com')) {
+    const cur = u.searchParams.get('currentJobId') ?? '';
+    const id = extractLinkedInJobId(u.pathname) ?? (/^\/jobs\/(?:search|collections)/.test(u.pathname) && /^\d{5,15}$/.test(cur) ? cur : null);
+    return id ? plat('linkedin', `li-job:${id}`, canonicalJobUrl(id)) : { kind: 'unsupported', reason: 'only a LinkedIn job page (linkedin.com/jobs/view/<id>) is supported; send that link or the company careers page' };
   }
   if (hostMatches(validUrl, 'naukri.com')) {
-    return { kind: 'unsupported', reason: 'Naukri urls are not supported yet; send the company careers page or the ATS apply link instead' };
+    const id = extractNaukriJobId(`${u.origin}${u.pathname}`);
+    const path = u.pathname.replace(/\/+$/, '');
+    return id && /job-listings-/.test(path) ? plat('naukri', `naukri:${id}`, `${u.origin}${path}`) : { kind: 'unsupported', reason: 'only a Naukri job page (naukri.com/job-listings-...) is supported; send that link or the company careers page' };
+  }
+  if (hostMatches(validUrl, 'wellfound.com')) {
+    const id = extractWellfoundJobId(validUrl);
+    return id ? plat('wellfound', `wellfound:${id}`, `${u.origin}${u.pathname}`) : { kind: 'unsupported', reason: 'only a Wellfound job page (wellfound.com/jobs/<id> or /company/<name>/jobs/<id>) is supported' };
   }
   const host = u.hostname.toLowerCase().replace(/\.$/, '');
   const p = segs(u);

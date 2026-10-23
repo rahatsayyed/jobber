@@ -58,6 +58,15 @@ async function ingestOne(db: Db, r: ManualRequest, d: IngestDeps): Promise<'jobs
   if (!v.ok) return fail(v.reason);
   const cls = classifyManualUrl(v.url);
   if (cls.kind === 'unsupported') return fail(cls.reason);
+  if (cls.kind === 'platform') {
+    // LinkedIn, Naukri and Wellfound job pages: one manual_url task for that platform's operator (typed tool `<platform>_manual_job`).
+    const at = d.now().toISOString();
+    db.transaction(() => {
+      markRunning(db, r.id, d.runId, d.now());
+      db.prepare("INSERT INTO source_tasks (platform, company, reason, state, created_at, updated_at, url, request_id) VALUES (?, NULL, 'manual_url', 'queued', ?, ?, ?, ?)").run(cls.platform, at, at, cls.canonicalUrl, r.id);
+    })();
+    return 'task';
+  }
   if (cls.kind === 'other') {
     const at = d.now().toISOString();
     db.transaction(() => {

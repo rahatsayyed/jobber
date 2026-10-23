@@ -19,6 +19,8 @@ import type { ClassifierPort } from '../safety/inputGate.js';
 import { findProfiles } from '../linkedin/findProfiles.js';
 import { searchJobs } from '../linkedin/searchJobs.js';
 import { searchPosts } from '../linkedin/searchPosts.js';
+import { saveNextManualPlatformJob, type ManualJobIo } from '../manual/platformJob.js';
+import type { RawSnapshot } from '../linkedin/types.js';
 import { SEARCH_NAME_RE, type DiscoveryConfig } from '../linkedin/discoveryConfig.js';
 import { loadLayoutConfig, type LayoutConfig } from '../layout/config.js';
 import { createLayoutObserver, resolveRunId } from '../layout/runtime.js';
@@ -44,7 +46,7 @@ export const TOOL_NAMES = [
   'linkedin_open', 'linkedin_snapshot', 'linkedin_click', 'linkedin_type', 'linkedin_press_key',
   'linkedin_scroll', 'linkedin_wait_for', 'linkedin_screenshot', 'linkedin_click_at', 'linkedin_arm_send',
   'linkedin_close', 'linkedin_limits', 'linkedin_layout',
-  'linkedin_find_profiles', 'linkedin_search_jobs', 'linkedin_search_posts',
+  'linkedin_find_profiles', 'linkedin_search_jobs', 'linkedin_search_posts', 'linkedin_manual_job',
 ] as const;
 type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -78,6 +80,8 @@ export const schemas = {
   // Discovery takes only the NAME of a search in config/linkedin-discovery.json: no URL, no keywords.
   linkedin_search_jobs: { search: z.string().regex(SEARCH_NAME_RE) },
   linkedin_search_posts: { search: z.string().regex(SEARCH_NAME_RE) },
+  // Takes nothing: code picks the next owner-submitted job page.
+  linkedin_manual_job: {},
 } as const;
 
 export interface HandlerDeps {
@@ -309,6 +313,20 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
     linkedin_find_profiles: safe(async (a) => json(await findProfiles(a, toolDeps()))),
     linkedin_search_jobs: safe(async (a) => json(await searchJobs(a, toolDeps(), { config: deps.discoveryConfig }))),
     linkedin_search_posts: safe(async (a) => json(await searchPosts(a, toolDeps(), { config: deps.discoveryConfig }))),
+    linkedin_manual_job: safe(async () => {
+      const td = toolDeps();
+      let snap: RawSnapshot | null = null;
+      const io: ManualJobIo = {
+        load: async (url) => {
+          const r = await td.rt.open(url);
+          if (!r.ok) return r.code === 'halted' ? 'halted' : 'failed';
+          snap = r.snapshot;
+          return /\/(?:login|authwall|checkpoint|uas\/login)/.test(snap.url) ? 'login_required' : 'ok';
+        },
+        read: async () => (snap ? { docTitle: snap.title, heading: '', text: snap.bodyText } : null),
+      };
+      return json(await saveNextManualPlatformJob('linkedin', io, { db: td.db, env: td.env, now: td.now, screen: td.screen }));
+    }),
   };
   lifecycles.set(handlers, {
     close: async () => {
@@ -334,6 +352,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   linkedin_layout: 'Read-only: layout memory enforcement mode, the verdict class of the last observed page, and a compact vocabulary-only summary of learned page layouts (no page text).',
   linkedin_find_profiles: 'TYPED, read-only toward LinkedIn: searches people by company (and optional role_hint) and returns at most 3 verified profile candidates (canonical profile_url, name, headline), registering them as people rows for the given category. Shares the daily search ceiling. Never clicks or sends. ' + UNTRUSTED,
   linkedin_search_jobs: 'TYPED, read-only toward LinkedIn: runs ONE named jobs search from config/linkedin-discovery.json (pass only its name), saves new jobs in code and returns counts and new job ids, never page text. Shares the daily search ceiling plus the discover ceiling. Dry run saves nothing. ' + UNTRUSTED,
+  linkedin_manual_job: 'TYPED, read-only toward LinkedIn: takes no arguments. Code picks the next queued owner-submitted LinkedIn job page (the URL comes from SQLite), loads it in this session, reads and screens the posting and saves it as a priority job in code. Returns {status: ok|dry_run|halted|failed, code, task_id, job_ids, remaining}; never page text. Never sends or applies. ' + UNTRUSTED,
   linkedin_search_posts: 'TYPED, read-only toward LinkedIn: runs ONE named hiring-post search from config/linkedin-discovery.json (pass only its name), saves hiring posts as jobs in code and returns counts and new job ids, never page text. Shares the daily search ceiling plus the discover ceiling. Dry run saves nothing. ' + UNTRUSTED,
 };
 

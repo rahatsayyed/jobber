@@ -14,7 +14,9 @@ export type TaskKind =
   | 'inbox' | 'followups' | 'new_outreach' | 'discover'
   | 'discover_scripts' | 'discover_agent' | 'pipeline' | 'mail' | 'apply'
   // manual: owner-submitted job URLs and careers pages, ingested by the scheduler in code before the session (always the first step).
-  | 'manual';
+  | 'manual'
+  // manual_url: one owner-submitted job page for a platform operator (LinkedIn, Naukri, Wellfound); the operator's typed `<platform>_manual_job` tool reads and saves it.
+  | 'manual_url';
 /** Who executes a wake stage that is not a platform operator. `code` is run by the scheduler itself before the claude run starts. */
 export type StageOperator = 'code' | 'source-operator' | 'pipeline' | 'mail-operator' | 'apply-operator';
 export interface Stage { operator: StageOperator; kind: TaskKind; quota: number }
@@ -112,6 +114,11 @@ export function planWake(i: {
   const wellfoundNames = i.discoverSearches?.wellfound ?? [];
   const wellfoundOn = wellfoundNames.length > 0 && allowed.has('wellfound');
 
+  // Owner-submitted job pages for a platform operator. Planned even when nothing else is due, for every platform that is allowed
+  // (not halted) and, for Wellfound, switched on (its session exists). Reading and saving a page sends nothing, so it spends no burst.
+  const mp = due.manualPlatformTasks;
+  if (mp) for (const p of ORDER) if ((mp[p] ?? 0) > 0 && allowed.has(p) && (p !== 'wellfound' || wellfoundOn)) byPlatform[p].push({ kind: 'manual_url', quota: mp[p] });
+
   const inboxDue = due.inboxLastCheckedMinAgo === null || due.inboxLastCheckedMinAgo >= knobs.inboxEveryMin;
   if (inboxDue) for (const p of control.allowed) if (p !== 'wellfound' || wellfoundOn) byPlatform[p].push({ kind: 'inbox', quota: INBOX_QUOTA });
 
@@ -186,7 +193,7 @@ export function planWake(i: {
   const sourceTasks = (due.sourceTasksQueued ?? 0) + manualPending;
   if (sourceTasks > 0) stages.push({ operator: 'source-operator', kind: 'discover_agent', quota: Math.min(sourceTasks, SOURCE_TASK_QUOTA) });
   const newJobsExpected =
-    scriptDue || sourceTasks > 0 || manualPending > 0 || byPlatform.linkedin.some((t) => t.kind === 'discover') || byPlatform.naukri.some((t) => t.kind === 'discover') || byPlatform.wellfound.some((t) => t.kind === 'discover');
+    scriptDue || sourceTasks > 0 || manualPending > 0 || ORDER.some((p) => byPlatform[p].some((t) => t.kind === 'manual_url')) || byPlatform.linkedin.some((t) => t.kind === 'discover') || byPlatform.naukri.some((t) => t.kind === 'discover') || byPlatform.wellfound.some((t) => t.kind === 'discover');
   const unmatched = due.unmatchedJobs ?? 0;
   // Email follow-ups need the reply check the pipeline stage starts with (step 0b), so they pull the stage in.
   const pipelineDue = unmatched > 0 || newJobsExpected || (due.emailFollowupsReady ?? 0) > 0;
@@ -246,10 +253,11 @@ export function stepOrder(d: Extract<WakeDecision, { kind: 'run' }>): Step[] {
   stage('manual');
   stage('discover_scripts');
   stage('discover_agent');
+  for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'manual_url') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });
   for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'discover') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota, searches: t.searches });
   stage('pipeline');
   stage('mail');
-  for (const a of d.tasks) for (const t of a.tasks) if (t.kind !== 'discover') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });
+  for (const a of d.tasks) for (const t of a.tasks) if (t.kind !== 'discover' && t.kind !== 'manual_url') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });
   stage('apply');
   return out;
 }

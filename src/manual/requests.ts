@@ -1,7 +1,7 @@
 // manual_requests lifecycle: pending -> running (a wake ingested it) -> done | failed. Code only; the model never touches this table.
 import type BetterSqlite3 from 'better-sqlite3';
 import { saveJob, type Job } from '../db.js';
-import { classifyManualUrl, validateManualUrl } from './url.js';
+import { classifyManualUrl, validateManualUrl, type ManualPlatform } from './url.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -46,6 +46,26 @@ export function manualRequestsPending(db: Db): number {
   } catch {
     return 0;
   }
+}
+
+/**
+ * Owner-submitted job pages per platform operator: queued manual_url tasks of that platform, plus pending requests whose URL classifies to it
+ * (their task is created when the wake starts, after the plan was made).
+ */
+export function manualPlatformTasks(db: Db): Record<ManualPlatform, number> {
+  const out: Record<ManualPlatform, number> = { linkedin: 0, naukri: 0, wellfound: 0 };
+  try {
+    for (const r of db.prepare("SELECT platform, COUNT(*) AS n FROM source_tasks WHERE reason = 'manual_url' AND state = 'queued' AND platform <> 'manual' GROUP BY platform").all() as { platform: string; n: number }[]) {
+      if (r.platform in out) out[r.platform as ManualPlatform] += r.n;
+    }
+    for (const r of db.prepare("SELECT url FROM manual_requests WHERE status = 'pending'").all() as { url: string }[]) {
+      const c = classifyManualUrl(r.url);
+      if (c.kind === 'platform') out[c.platform]++;
+    }
+  } catch {
+    // counts are advisory
+  }
+  return out;
 }
 
 export function listManualRequests(db: Db, statuses: ManualStatus[]): ManualRequest[] {

@@ -74,7 +74,7 @@ describe('linkedin MCP handlers', () => {
     const { handlers } = make();
     expect(Object.keys(handlers).sort()).toEqual([
       'linkedin_arm_send', 'linkedin_click', 'linkedin_click_at', 'linkedin_close', 'linkedin_find_profiles',
-      'linkedin_layout', 'linkedin_limits', 'linkedin_open', 'linkedin_press_key', 'linkedin_screenshot',
+      'linkedin_layout', 'linkedin_limits', 'linkedin_manual_job', 'linkedin_open', 'linkedin_press_key', 'linkedin_screenshot',
       'linkedin_scroll', 'linkedin_search_jobs', 'linkedin_search_posts', 'linkedin_snapshot', 'linkedin_type',
       'linkedin_wait_for',
     ]);

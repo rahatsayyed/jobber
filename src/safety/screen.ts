@@ -87,6 +87,10 @@ export const SCREENED_SURFACES: ReadonlyArray<{ id: string; file: string }> = [
   { id: 'wellfound_discover', file: 'src/wellfound/discover.ts' },
   { id: 'wellfound_inbox', file: 'src/mcp/wellfound.ts' },
   { id: 'wellfound_read_thread', file: 'src/mcp/wellfound.ts' },
+  // Owner-submitted job pages (manual requests): one typed read per platform, all in src/manual/platformJob.ts.
+  { id: 'linkedin_manual_job', file: 'src/manual/platformJob.ts' },
+  { id: 'naukri_manual_job', file: 'src/manual/platformJob.ts' },
+  { id: 'wellfound_manual_job', file: 'src/manual/platformJob.ts' },
   { id: 'outreach_escalate', file: 'src/mcp/outreach.ts' },
   { id: 'apply_state', file: 'src/applier/tools/state.ts' },
   { id: 'apply_escalate', file: 'src/applier/escalate.ts' },

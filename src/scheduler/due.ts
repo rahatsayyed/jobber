@@ -3,7 +3,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { MATCH_FAIL_LIMIT } from '../db.js';
 import { planPipelineWork } from '../pipelineWork.js';
 import { followupMode, listApprovedFollowups, listFollowupCandidates } from '../followups.js';
-import { manualRequestsPending } from '../manual/requests.js';
+import { manualPlatformTasks, manualRequestsPending } from '../manual/requests.js';
 import { dueTouchesFor } from '../outreach/dueTouches.js';
 import { normalizeProfileKey } from '../outreach/people.js';
 import { TUNING_DEFAULTS, type Tuning } from '../outreach/tuning.js';
@@ -42,6 +42,8 @@ export interface DueCounts {
   appliesLeftToday?: number;
   /** Owner-submitted manual requests not yet ingested (status pending): a wake is planned for them even when nothing else is due. */
   manualRequestsPending?: number;
+  /** Owner-submitted job pages per platform operator: queued manual_url source tasks plus pending requests whose URL classifies to that platform. */
+  manualPlatformTasks?: Record<Platform, number>;
 }
 
 // Same parsing as the apply tools: a non-negative integer, otherwise 5.
@@ -162,7 +164,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
     wellfoundDiscoverLastHoursAgo: wellfound === null ? null : wellfound / 3600000,
     linkedinDiscoverLastHoursAgo: discover === null ? null : discover / 3600000,
     scriptDiscoverLastHoursAgo: script === null ? null : script / 3600000,
-    sourceTasksQueued: n("SELECT COUNT(*) AS n FROM source_tasks WHERE state = 'queued' AND NOT (reason = 'error' AND company IS NOT NULL)"),
+    sourceTasksQueued: n("SELECT COUNT(*) AS n FROM source_tasks WHERE state = 'queued' AND NOT (reason = 'error' AND company IS NOT NULL) AND NOT (reason = 'manual_url' AND platform <> 'manual')"),
     unmatchedJobs,
     emailQueued: n(
       `SELECT COUNT(*) AS n FROM outreach_queue q
@@ -173,5 +175,6 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
     applyQueued,
     appliesLeftToday,
     manualRequestsPending: manualRequestsPending(db),
+    manualPlatformTasks: manualPlatformTasks(db),
   };
 }

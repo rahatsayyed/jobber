@@ -31,7 +31,7 @@ const OLD_WORKER_TOOLS: Record<string, string[]> = {
 const OLD_UNION = new Set(Object.values(OLD_WORKER_TOOLS).flat());
 const NEW_ALLOWED = new Set([
   'mcp__linkedin__linkedin_layout', 'mcp__naukri__naukri_layout',
-  'mcp__linkedin__linkedin_search_jobs', 'mcp__linkedin__linkedin_search_posts', 'mcp__naukri__naukri_discover',
+  'mcp__linkedin__linkedin_search_jobs', 'mcp__linkedin__linkedin_manual_job', 'mcp__linkedin__linkedin_search_posts', 'mcp__naukri__naukri_discover', 'mcp__naukri__naukri_manual_job',
   // browserctl engine tools (ref-based; commit classes need linkedin_arm_send)
   'mcp__linkedin__linkedin_snapshot', 'mcp__linkedin__linkedin_type', 'mcp__linkedin__linkedin_press_key',
   'mcp__linkedin__linkedin_wait_for', 'mcp__linkedin__linkedin_screenshot', 'mcp__linkedin__linkedin_click_at',
@@ -42,7 +42,7 @@ const NEW_ALLOWED = new Set([
   'mcp__outreach__escalate', 'mcp__db__list_jobs', 'mcp__db__list_queued_outreach', 'mcp__db__update_outreach_status',
 ]);
 const FORBIDDEN = ['Agent', 'Task', 'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch'];
-const NKOP = ['layout', 'open', 'snapshot', 'click', 'type', 'press_key', 'scroll', 'wait_for', 'screenshot', 'click_at', 'arm_send', 'search', 'discover', 'inbox', 'read_thread'];
+const NKOP = ['layout', 'open', 'snapshot', 'click', 'type', 'press_key', 'scroll', 'wait_for', 'screenshot', 'click_at', 'arm_send', 'search', 'discover', 'manual_job', 'inbox', 'read_thread'];
 const OTHER: Record<string, string> = { linkedin: 'mcp__naukri__', naukri: 'mcp__linkedin__' };
 
 function parse(name: string): { fm: string; body: string; tools: string[] } {
@@ -73,7 +73,7 @@ describe('platform operators', () => {
       'mcp__linkedin__linkedin_snapshot', 'mcp__linkedin__linkedin_click', 'mcp__linkedin__linkedin_type',
       'mcp__linkedin__linkedin_press_key', 'mcp__linkedin__linkedin_scroll', 'mcp__linkedin__linkedin_wait_for',
       'mcp__linkedin__linkedin_screenshot', 'mcp__linkedin__linkedin_click_at', 'mcp__linkedin__linkedin_arm_send',
-      'mcp__linkedin__linkedin_search_jobs',
+      'mcp__linkedin__linkedin_search_jobs', 'mcp__linkedin__linkedin_manual_job',
       'mcp__linkedin__linkedin_search_posts', 'mcp__db__list_queued_outreach', 'mcp__db__update_outreach_status',
     ]);
   });

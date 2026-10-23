@@ -24,10 +24,10 @@ const WAKE_ALLOW = [
   'mcp__linkedin__linkedin_open', 'mcp__linkedin__linkedin_snapshot', 'mcp__linkedin__linkedin_scroll', 'mcp__linkedin__linkedin_click',
   'mcp__linkedin__linkedin_type', 'mcp__linkedin__linkedin_press_key', 'mcp__linkedin__linkedin_wait_for', 'mcp__linkedin__linkedin_screenshot',
   'mcp__linkedin__linkedin_click_at', 'mcp__linkedin__linkedin_arm_send',
-  'mcp__naukri__naukri_search', 'mcp__naukri__naukri_discover', 'mcp__naukri__naukri_inbox', 'mcp__naukri__naukri_read_thread',
+  'mcp__naukri__naukri_search', 'mcp__naukri__naukri_discover', 'mcp__naukri__naukri_manual_job', 'mcp__naukri__naukri_inbox', 'mcp__naukri__naukri_read_thread',
   'mcp__naukri__naukri_scroll', 'mcp__naukri__naukri_wait_for', 'mcp__naukri__naukri_press_key', 'mcp__naukri__naukri_click_at',
   'mcp__naukri__naukri_arm_send', 'mcp__naukri__naukri_arm_apply', 'mcp__db__list_jobs', 'mcp__db__update_outreach_status',
-  'mcp__linkedin__linkedin_layout', 'mcp__naukri__naukri_layout', 'mcp__linkedin__linkedin_search_jobs', 'mcp__linkedin__linkedin_search_posts',
+  'mcp__linkedin__linkedin_layout', 'mcp__naukri__naukri_layout', 'mcp__linkedin__linkedin_search_jobs', 'mcp__linkedin__linkedin_manual_job', 'mcp__linkedin__linkedin_search_posts',
   'mcp__scout__scout_search', 'mcp__scout__scout_open', 'mcp__scout__scout_state', 'mcp__scout__scout_scroll', 'mcp__scout__scout_click',
   'mcp__scout__scout_screenshot', 'mcp__scout__scout_click_at',
   'mcp__scout__scout_extract_jobs', 'mcp__scout__scout_save_jobs', 'mcp__scout__scout_capture_fixture', 'mcp__scout__scout_propose_provider',
@@ -51,7 +51,7 @@ const WAKE_ALLOW = [
   'mcp__applier__site_signup', 'mcp__applier__site_open_link', 'mcp__naukri__naukri_click', 'mcp__naukri__naukri_type',
   // wellfound (the operator, the apply operator and the arm tools; same shape as the naukri block)
   'mcp__wellfound__wellfound_open', 'mcp__wellfound__wellfound_snapshot', 'mcp__wellfound__wellfound_close', 'mcp__wellfound__wellfound_screenshot',
-  'mcp__wellfound__wellfound_discover', 'mcp__wellfound__wellfound_inbox', 'mcp__wellfound__wellfound_read_thread', 'mcp__wellfound__wellfound_scroll',
+  'mcp__wellfound__wellfound_discover', 'mcp__wellfound__wellfound_manual_job', 'mcp__wellfound__wellfound_inbox', 'mcp__wellfound__wellfound_read_thread', 'mcp__wellfound__wellfound_scroll',
   'mcp__wellfound__wellfound_wait_for', 'mcp__wellfound__wellfound_press_key', 'mcp__wellfound__wellfound_click_at', 'mcp__wellfound__wellfound_arm_send',
   'mcp__wellfound__wellfound_arm_apply', 'mcp__wellfound__wellfound_layout', 'mcp__wellfound__wellfound_click', 'mcp__wellfound__wellfound_type',
 ];

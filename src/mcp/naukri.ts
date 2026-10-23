@@ -1,3 +1,4 @@
+import { saveNextManualPlatformJob, MANUAL_PAGE_SRC, type ManualJobIo, type PageRead } from '../manual/platformJob.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -807,6 +808,32 @@ export function naukriDiscover(
   });
 }
 
+/**
+ * Owner-submitted job page: takes no arguments. Code picks the next queued manual_url task of this platform, loads its URL (from SQLite) in the
+ * open session, reads and screens the posting and saves it as a priority job. Read-only toward Naukri: no send, no apply. Needs naukri_open first.
+ */
+export function naukriManualJob(deps: NaukriDeps = {}): Promise<string> {
+  return serial(async () => {
+    if (!session) return jsonOut({ status: 'no_session', hint: 'call naukri_open first' });
+    const io: ManualJobIo = {
+      load: async (url) => {
+        if (!isNaukriUrl(url)) return 'failed';
+        const refused = await loadPage(url, deps);
+        if (!refused) return 'ok';
+        const st = (JSON.parse(refused) as { status?: string }).status;
+        return st === 'login_required' ? 'login_required' : st === 'halted' ? 'halted' : 'failed';
+      },
+      read: async () => ((await session!.page.evaluate(MANUAL_PAGE_SRC)) as PageRead | null) ?? null,
+    };
+    try {
+      return jsonOut(await saveNextManualPlatformJob('naukri', io, { db: getDb(deps), env: deps.env ?? process.env, now: deps.now ?? (() => new Date()), screen: screenFn(deps) }));
+    } catch (err) {
+      void err; // exception text can carry page content
+      return jsonOut({ status: 'failed', code: 'manual_job_error' });
+    }
+  });
+}
+
 export function naukriInbox({ unread_only }: { unread_only?: boolean } = {}, deps: NaukriDeps = {}): Promise<string> {
   return serial(async () => {
     const halted = haltGate(deps);
@@ -1103,6 +1130,17 @@ server.registerTool(
     inputSchema: { search: z.string().max(49), detail_quota: z.number().int().min(0).max(10).optional() },
   },
   async ({ search, detail_quota }) => text(await naukriDiscover({ search, detail_quota }))
+);
+
+server.registerTool(
+  'naukri_manual_job',
+  {
+    description:
+      'Takes no arguments. Code picks the next queued owner-submitted Naukri job page (the URL comes from SQLite), loads it in the open session, reads and screens the posting and saves it as a priority job in code. ' +
+      'Read-only toward Naukri: never sends or applies. Needs naukri_open first. Returns {status: ok|dry_run|halted|failed, code, task_id, job_ids, remaining}; never page text. ' + UNTRUSTED_NOTE,
+    inputSchema: {},
+  },
+  async () => text(await naukriManualJob())
 );
 
 server.registerTool(
