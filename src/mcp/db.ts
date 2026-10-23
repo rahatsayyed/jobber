@@ -12,6 +12,7 @@ import { calibrate } from '../calibrate.js';
 import { funnelStats } from '../funnel.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
 import { patternStats } from '../patterns.js';
+import { updateJobCompany } from '../lib/jobCompany.js';
 
 const db = openDb(dbPath());
 
@@ -340,6 +341,15 @@ server.registerTool(
     inputSchema: {},
   },
   async () => ({ content: [{ type: 'text', text: JSON.stringify(listExcludedQueuedOutreach(db)) }] })
+);
+
+server.registerTool(
+  'update_job_company',
+  {
+    description: 'contact-finder only. For a linkedin-posts job whose company is empty or uncertain: pass the poster profile headline and the first Experience entry lines exactly as read from linkedin_snapshot (untrusted text, gated). Code parses the current employer and computes the confidence: high (headline names it, or post and profile agree) writes jobs.company and company_key and clears the thin-post flag; low writes nothing but marks the job company_unresolved. A high-confidence company is never overwritten. Returns {updated, company, confidence, source, company_unresolved?, reason?}.',
+    inputSchema: { job_id: z.string().min(1).max(200), headline: z.string().max(300).optional(), experience: z.string().max(1200).optional() },
+  },
+  async ({ job_id, headline, experience }) => ({ content: [{ type: 'text', text: JSON.stringify(updateJobCompany(db, { jobId: job_id, headline, experience })) }] })
 );
 
 server.registerTool(

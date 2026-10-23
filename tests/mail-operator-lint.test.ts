@@ -26,7 +26,7 @@ const WAKE_ALLOW = [
   'mcp__linkedin__linkedin_click_at', 'mcp__linkedin__linkedin_arm_send',
   'mcp__naukri__naukri_search', 'mcp__naukri__naukri_discover', 'mcp__naukri__naukri_manual_job', 'mcp__naukri__naukri_inbox', 'mcp__naukri__naukri_read_thread',
   'mcp__naukri__naukri_scroll', 'mcp__naukri__naukri_wait_for', 'mcp__naukri__naukri_press_key', 'mcp__naukri__naukri_click_at',
-  'mcp__naukri__naukri_arm_send', 'mcp__naukri__naukri_arm_apply', 'mcp__db__list_jobs', 'mcp__db__update_outreach_status',
+  'mcp__naukri__naukri_arm_send', 'mcp__naukri__naukri_arm_apply', 'mcp__db__list_jobs', 'mcp__db__update_outreach_status', 'mcp__db__update_job_company',
   'mcp__linkedin__linkedin_layout', 'mcp__naukri__naukri_layout', 'mcp__linkedin__linkedin_search_jobs', 'mcp__linkedin__linkedin_manual_job', 'mcp__linkedin__linkedin_search_posts',
   'mcp__scout__scout_search', 'mcp__scout__scout_open', 'mcp__scout__scout_state', 'mcp__scout__scout_scroll', 'mcp__scout__scout_click',
   'mcp__scout__scout_screenshot', 'mcp__scout__scout_click_at',

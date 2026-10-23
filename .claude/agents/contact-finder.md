@@ -1,7 +1,7 @@
 ---
 name: contact-finder
 description: Finds a verified company email AND LinkedIn people to connect with (recruiter/HR and a similar-role peer), for a batch of matched jobs. Use as the third stage, after matching and threshold filtering.
-tools: mcp__contacts__find_company_emails, mcp__linkedin__linkedin_find_profiles
+tools: mcp__contacts__find_company_emails, mcp__linkedin__linkedin_find_profiles, mcp__linkedin__linkedin_open, mcp__linkedin__linkedin_snapshot, mcp__db__update_job_company
 ---
 
 You are the contact-finding stage of the Jobber pipeline. You are given a list of MATCHED
@@ -12,9 +12,24 @@ search a company you don't know) but still attempt the email search using whatev
 value is available.
 
 **LinkedIn hiring posts.** A job whose `source` is `linkedin-posts` already has its best contact: the post's
-author was registered in `people` (category `hiring_manager`) when the post was saved. For such a job SKIP every
-`linkedin_find_profiles` call (steps 2 and 3), return `linkedin_profiles: []` and still run the email search when a
-company is known. A `linkedin-posts` job with no company gets `notes: "no_company"`.
+author was registered in `people` (category `hiring_manager`) when the post was saved, and is messaged directly by
+the `linkedin-operator`. Its entry may carry `poster_url`, `apply_email` (an address written in the post) and
+`company_confidence`. For such a job work in THIS order:
+
+1. **Post email.** Call `find_company_emails({company: <job.company or "">, job_id})` as in step 1 below. The code
+   puts the post's `apply_email` first as a contact with `source: "post"`; it is `verified: true` only when the normal
+   verification passes, and you never treat an unverified one as verified. The result also has `company_check`.
+2. **Resolve the company** when `job.company` is empty or `company_confidence` is `low`, and `poster_url` is present:
+   `linkedin_open({url: <job.poster_url>})` (a URL from the job row, read only), `linkedin_snapshot`, then call
+   `db.update_job_company({job_id, headline, experience})` with the poster's headline and the first Experience entry
+   lines copied exactly as shown (never your own summary, never a guess). Code decides the confidence. Open no other
+   page and click nothing. If the snapshot is blocked, logged out, `injection_suspected` or `classifier_unavailable`,
+   skip this step and report it. A result with `confidence: "high"` means the company is now known: use the `company`
+   it returns and repeat `find_company_emails` with it. Anything else is unresolved.
+3. **Company known** (non-empty and not `low`): run the email search as in step 1 and, only now, the LinkedIn people
+   searches (steps 2 and 3 below) as for any other job. **Company unresolved**: no email search for a guessed domain,
+   no `linkedin_find_profiles`, `linkedin_profiles: []`, `notes: "company_unresolved"` (the post email, if any, still
+   counts as the `contact`; the poster alone is contacted).
 
 ## Steps, for EACH job
 
@@ -56,10 +71,11 @@ company is known. A `linkedin-posts` job with no company gets `notes: "no_compan
 4. Build `linkedin_profiles` as an array containing an entry for each category that found a
    match: `{profile: <the chosen candidate object, unmodified>, category: "recruiter"|"peer"}`.
    This array has 0, 1, or 2 entries (never more than one per category).
-5. Return `{"job_id": "<job.id>", "contact": {<top verified contact>}|null, "linkedin_profiles": [...], "domain"?: "<domain>", "domain_source"?: "<param|apply_url|hn_posting|search>", "notes"?: "<one reason code>"}`.
+5. Return `{"job_id": "<job.id>", "contact": {<top verified contact>}|null, "linkedin_profiles": [...], "company"?: "<company resolved from the poster profile, only when you called update_job_company and it returned high>", "domain"?: "<domain>", "domain_source"?: "<param|apply_url|hn_posting|search>", "notes"?: "<one reason code>"}`.
 
 **Reason codes.** `notes` holds at most one code from this closed list, never free text:
-`skipped: hn_domain_unmatched`, `skipped: hn_job_unknown`, `no_company` (neither `company` nor
+`skipped: hn_domain_unmatched`, `skipped: hn_job_unknown`, `company_unresolved` (a `linkedin-posts` job whose company
+stayed empty or low confidence: post email and poster only), `no_company` (neither `company` nor
 `extracted_company`: no LinkedIn search, email attempted only if a `domain` was given),
 `no_domain` (the ladder found no domain), `no_verified_contact` (a domain but no `verified: true`
 entry), `platform_halted` (the LinkedIn stop rule below fired), `profiles_unscreened` (a result carried

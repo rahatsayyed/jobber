@@ -291,7 +291,9 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
     'posted_at', 'deadline', 'deadline_reported', 'language_note', 'score_dims', 'requirements', 'strengths', 'gaps', 'hard_stops', 'confidence',
     'title_key', 'company_key', 'legitimacy', 'legitimacy_signals', 'gate_flags', 'jd_snapshot', 'jd_snapshot_at', 'score_cap_reason',
     // LinkedIn hiring posts: email or external link written in the post (data only, never opened) and the author profile.
-    'apply_email', 'apply_link', 'poster_url']) {
+    'apply_email', 'apply_link', 'poster_url',
+    // Company resolved from a post author's profile: confidence (high or low) and where it came from.
+    'company_confidence', 'company_source']) {
     if (!jobCols.has(col)) db.exec(`ALTER TABLE jobs ADD COLUMN ${col} TEXT`);
   }
   // Count of match-save rejections per job: after MATCH_FAIL_LIMIT the wake pipeline stops re-offering it (plan 8G task 13).
@@ -1006,6 +1008,8 @@ export interface UnscoredJob extends Job {
   /** `apply_capable`, or the closed reason code from channelsFor (`discover_only_source`, `apply_tier:<tier>`, `held_review`). */
   apply_class: string;
   channels: ChannelVerdict[];
+  /** LinkedIn hiring posts: `low` when the company is uncertain (set by update_job_company), `high` when confirmed. */
+  company_confidence?: string;
   /** Set only when `description` was cut to UNSCORED_DESCRIPTION_CHARS. */
   description_truncated?: true;
   /** Set on a job already scored at or above the threshold and vetoed clean that never got an outreach row: skip matching, go to contacts. */
@@ -1051,7 +1055,7 @@ export function listUnscoredJobs(
   const windowStart = sqlTime(new Date(now.getTime() - PIPELINE_WINDOW_HOURS * 3600_000));
   const pendingLimit = kind === 'matched' ? limit : Math.max(1, Math.floor(limit / 2));
   type Row = Record<string, string | number | null>;
-  const cols = 'id, source, title, company, url, apply_url, description, posted_at, score, COALESCE(promoted, 0) AS promoted';
+  const cols = 'id, source, title, company, url, apply_url, description, posted_at, score, COALESCE(promoted, 0) AS promoted, poster_url, apply_email, company_confidence';
   // Owner-submitted jobs (priority > 0) come first, outside the normal cap (at most MANUAL_PRIORITY_PER_WAKE per call, the rest wait).
   // They bypass the window, the same-posting dedupe and prep_offers; the 90-day repeat-contact guard still applies (see applyPriorityRepeats).
   // A scored one is offered only while it has no outreach row and (it met the threshold or its request is forced).
@@ -1101,6 +1105,9 @@ export function listUnscoredJobs(
       id: r.id as string, source: (r.source ?? '') as string, title: (r.title ?? '') as string, company: (r.company ?? '') as string,
       url: (r.url ?? '') as string, apply_url: (r.apply_url ?? '') as string, description: (r.description ?? '') as string,
       ...(r.posted_at ? { posted_at: r.posted_at as string } : {}),
+      // LinkedIn hiring posts: the contact stage needs the author profile, the post email and how sure the company is.
+      ...(r.poster_url ? { poster_url: r.poster_url as string } : {}),
+      ...(r.apply_email ? { apply_email: r.apply_email as string } : {}),
     };
     const channels = channelsFor(job);
     const apply = channels.find((c) => c.channel === 'apply');
@@ -1111,6 +1118,7 @@ export function listUnscoredJobs(
       ...(cut ? { description: job.description.slice(0, cap), description_truncated: true as const } : {}),
       apply_class: apply?.eligible ? 'apply_capable' : (apply?.reason ?? 'apply_tier:none'),
       channels,
+      ...(r.company_confidence ? { company_confidence: r.company_confidence as string } : {}),
       ...(matched ? { already_matched: true as const, score: r.score as number } : {}),
       ...(r.promoted === 1 ? { promoted: true as const } : {}),
       ...(manual ? { priority: 1 as const } : {}),

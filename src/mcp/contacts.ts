@@ -8,6 +8,7 @@ import { scrapeEmails } from '../lib/scrape.js';
 import { verifyEmail } from '../lib/verify.js';
 import { hunterDomainSearch } from '../lib/hunter.js';
 import { withHnGate } from '../lib/postingDomains.js';
+import { composePostContacts } from '../lib/postEmail.js';
 import { loadContactsEnv } from '../lib/contactsEnv.js';
 import { searchWithBudget } from '../search/index.js';
 import { resolveDomainForJob } from '../search/ladder.js';
@@ -51,6 +52,24 @@ server.registerTool(
     },
   },
   async ({ company, domain, person_name, job_id }) => {
+    // LinkedIn hiring post: the post email first, the company search only when the company is known and not uncertain
+    // (an empty or low-confidence company never reaches domain search: no generic-domain guesses).
+    const postJob = job_id === undefined ? undefined : (db
+      .prepare("SELECT source, apply_email, company, company_confidence FROM jobs WHERE id = ? AND source = 'linkedin-posts'")
+      .get(job_id) as { source: string; apply_email: string | null; company: string | null; company_confidence: string | null } | undefined);
+    if (postJob) {
+      const co = (postJob.company ?? '').trim() || company.trim();
+      let domainOut: { domain: string | null; domain_source: string | null } = { domain: null, domain_source: null };
+      const composed = await composePostContacts({ ...postJob, company: co }, co, async () => {
+        const r = await resolveDomainForJob(db, { company: co, domain, job_id }, searchDeps);
+        domainOut = r.ladder;
+        return r.ladder.domain ? gather(co, r.ladder.domain, person_name) : [];
+      });
+      for (const c of composed.contacts as Contact[]) if (c.source === 'post') saveContact(db, c);
+      const result = { contacts: composed.contacts, hn_check: 'not_applicable', domain: domainOut.domain, domain_source: domainOut.domain_source, company_check: composed.company_check };
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+
     // source, apply_url and description come from the jobs table, never from the model.
     const { job, ladder } = await resolveDomainForJob(db, { company, domain, job_id }, searchDeps);
     const resolvedDomain = ladder.domain;

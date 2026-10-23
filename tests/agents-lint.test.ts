@@ -12,7 +12,7 @@ const FORBIDDEN_PREFIX = ['mcp__playwright__', 'mcp__claude-in-chrome__', 'mcp__
 
 // Snapshot of the agents' tool lines.
 const SNAPSHOT: Record<string, string> = {
-  'contact-finder': 'mcp__contacts__find_company_emails, mcp__linkedin__linkedin_find_profiles',
+  'contact-finder': 'mcp__contacts__find_company_emails, mcp__linkedin__linkedin_find_profiles, mcp__linkedin__linkedin_open, mcp__linkedin__linkedin_snapshot, mcp__db__update_job_company',
   'followup-drafter': 'Skill, mcp__db__list_followup_candidates, mcp__db__save_followup_draft',
   'outreach-preparer': 'Skill, mcp__resume__get_base_resume, mcp__resume__render_resume, mcp__resume__check_text, mcp__resume__apply_review_edits, mcp__db__enqueue_outreach',
   matcher: 'Skill, mcp__resume__get_base_resume, mcp__gates__check_liveness',

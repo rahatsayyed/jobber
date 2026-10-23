@@ -125,7 +125,90 @@ export function nextContactsForCompany(
   return picked.map((c) => ({ ...c, ...meta.get(c.personId)! }));
 }
 
-export type InboundClass = 'recruiter_inquiry' | 'reply' | 'rejection' | 'interview' | 'noise' | 'injection_suspect';
+export interface PosterContact extends ContactCandidate {
+  job_id: string;
+  job_title: string;
+  /** The job's company when one is known, else null (never guessed). */
+  company: string | null;
+  post_url: string;
+  /** Post text (untrusted data, already gated at save time), at most POST_TEXT_CHARS. */
+  post_text: string;
+  priority: boolean;
+}
+
+export const POST_TEXT_CHARS = 1500;
+const DEFAULT_MIN_SCORE = 60;
+
+/**
+ * New (not yet contacted) authors of matched LinkedIn hiring posts. A post with no company has no company key, so the
+ * company path never returns its author; this path is keyed by the person and the job instead. Every rule of the
+ * company path still applies: only people in `people` in stage `new` and not paused, once per person (any sent,
+ * sending or unconfirmed touch removes them, and the reserveTouch ledger refuses a repeat anyway), the per-company
+ * limit and pause only when the job names a company. Weekly ceilings, quiet hours, halts and dry run are enforced by
+ * the arm tool, as for every other send. Priority jobs first, then oldest first.
+ */
+export function nextPosterContacts(
+  db: Db,
+  cfg: Pick<OutreachConfig, 'companyContactLimit'>,
+  platform: Platform,
+  opts: { jobId?: string; limit?: number; minScore?: number } = {},
+): PosterContact[] {
+  if (platform !== 'linkedin') return [];
+  const minScore = opts.minScore ?? DEFAULT_MIN_SCORE;
+  const jobs = db
+    .prepare(
+      `SELECT id, title, company, url, description, poster_url, COALESCE(priority, 0) AS priority
+         FROM jobs
+        WHERE source = 'linkedin-posts' AND poster_url IS NOT NULL AND poster_url != ''
+          AND excluded_reason IS NULL AND score IS NOT NULL AND score >= ?
+          AND (? IS NULL OR id = ?)
+        ORDER BY COALESCE(priority, 0) DESC, rowid ASC`,
+    )
+    .all(minScore, opts.jobId ?? null, opts.jobId ?? null) as {
+    id: string; title: string; company: string | null; url: string; description: string | null; poster_url: string; priority: number;
+  }[];
+  const personStmt = db.prepare(
+    `SELECT p.id, p.profile_key, p.name, p.category, COALESCE(s.stage, 'new') AS stage, s.paused_reason AS paused_reason
+       FROM people p LEFT JOIN contact_state s ON s.person_id = p.id WHERE p.platform = ? AND p.profile_key = ?`,
+  );
+  const touchedStmt = db.prepare("SELECT 1 AS hit FROM touches WHERE person_id = ? AND status IN ('sent','sending','unconfirmed') LIMIT 1");
+  const connectedKeys = loadConnectedKeys(db);
+  const msgStmt = db.prepare("SELECT 1 AS hit FROM touches WHERE person_id = ? AND status = 'sent' AND kind != 'connect' LIMIT 1");
+  const seen = new Set<number>();
+  const out: PosterContact[] = [];
+  const limit = clampLimit(opts.limit);
+  for (const j of jobs) {
+    if (out.length >= limit) break;
+    const key = normalizeProfileKey(j.poster_url);
+    const p = personStmt.get(platform, key) as
+      | { id: number; profile_key: string; name: string | null; category: Category; stage: string; paused_reason: string | null }
+      | undefined;
+    if (!p || seen.has(p.id)) continue;
+    seen.add(p.id);
+    if (p.stage !== 'new' || p.paused_reason !== null || touchedStmt.get(p.id) !== undefined) continue;
+    const company = (j.company ?? '').trim();
+    if (company) {
+      const ck = normalizeCompany(company);
+      if (ck && (companyPaused(db, platform, ck) || activeContactCount(db, platform, ck, false) >= cfg.companyContactLimit)) continue;
+    }
+    out.push({
+      personId: p.id,
+      category: p.category,
+      connected: msgStmt.get(p.id) !== undefined || connectedKeys.has(normalizeProfileKey(p.profile_key)),
+      name: p.name,
+      profile_url: profileUrlFor(platform, p.profile_key),
+      job_id: j.id,
+      job_title: j.title,
+      company: company || null,
+      post_url: j.url,
+      post_text: String(j.description ?? '').slice(0, POST_TEXT_CHARS),
+      priority: j.priority > 0,
+    });
+  }
+  return out;
+}
+
+export type InboundClass ='recruiter_inquiry' | 'reply' | 'rejection' | 'interview' | 'noise' | 'injection_suspect';
 
 const THREAD_RE = /^[A-Za-z0-9_:./-]{1,120}$/;
 const HASH_RE = /^[0-9a-f]{16,128}$/;

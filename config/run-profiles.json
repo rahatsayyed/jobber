@@ -46,6 +46,7 @@
         "mcp__naukri__naukri_arm_apply",
         "mcp__db__list_jobs",
         "mcp__db__update_outreach_status",
+        "mcp__db__update_job_company",
         "mcp__linkedin__linkedin_layout",
         "mcp__naukri__naukri_layout",
         "mcp__linkedin__linkedin_search_jobs",

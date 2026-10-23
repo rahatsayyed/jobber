@@ -15,6 +15,7 @@ const SYNC_ONLY = new Set([
   'src/wellfound/parse.ts',
   'src/naukri/inbound.ts',
   'src/outreach/service.ts',
+  'src/lib/jobCompany.ts',
   'src/mcp/naukri.ts',
   'src/safety/screen.ts',
   'src/safety/inputGate.ts',
