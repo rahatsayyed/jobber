@@ -494,13 +494,6 @@
           "entered_in": "owner edits .env"
         },
         {
-          "name": "RUN_MAX_TOOL_CALLS",
-          "secret": false,
-          "purpose": "tool call budget per wake",
-          "where": "src/setup/limitsCatalog.ts",
-          "entered_in": "owner edits .env"
-        },
-        {
           "name": "RUN_MAX_WALL_SEC",
           "secret": false,
           "purpose": "time budget per wake",

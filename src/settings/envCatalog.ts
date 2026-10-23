@@ -426,16 +426,6 @@ const hand: EnvSpec[] = [
     about: 'tmux session that holds the wake windows. Letters, digits, underscore and hyphen.',
     ...never(R_SESSION),
   }),
-  e('RUN_MAX_TOOL_CALLS', 'scheduler', 'scheduler', 'int', {
-    default: '400',
-    min: 1,
-    max: 1000,
-    exampleActive: true,
-    about: 'Tool call budget per wake.',
-    ...tier('guarded', 'A larger budget lets one unattended run act more before it is stopped.', 'increase'),
-    restart: 'scheduler',
-    restartEvidence: 'src/scheduler/budget.ts',
-  }),
   e('RUN_MAX_WALL_SEC', 'scheduler', 'scheduler', 'int', {
     default: '3600',
     min: 30,

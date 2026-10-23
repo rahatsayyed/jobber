@@ -12,7 +12,7 @@ export interface DryRunReport {
   runs: number;
   statusCounts: Record<string, number>;
   skipReasons: Record<string, number>;
-  budget: { toolCalls: number; tokensApprox: number; wallSec: number; maxToolCalls: number; maxTokensApprox: number; maxWallSec: number };
+  budget: { toolCalls: number; tokensApprox: number; wallSec: number; peakToolCalls: number; maxTokensApprox: number; maxWallSec: number };
   wouldDo: WouldDo[];
   escalations: Array<{ id: number; platform: string | null; reason: string; detail: string | null; created_at: string }>;
 }
@@ -45,7 +45,7 @@ export function buildReport(db: Db, opts: { limit?: number } = {}): DryRunReport
   const runs: RunRow[] = tableExists(db, 'scheduler_runs') ? listRuns(db, limit) : [];
   const statusCounts: Record<string, number> = {};
   const skipReasons: Record<string, number> = {};
-  const budget = { toolCalls: 0, tokensApprox: 0, wallSec: 0, maxToolCalls: 0, maxTokensApprox: 0, maxWallSec: 0 };
+  const budget = { toolCalls: 0, tokensApprox: 0, wallSec: 0, peakToolCalls: 0, maxTokensApprox: 0, maxWallSec: 0 };
   for (const r of runs) {
     statusCounts[r.status] = (statusCounts[r.status] ?? 0) + 1;
     if (r.status === 'skipped') {
@@ -55,7 +55,7 @@ export function buildReport(db: Db, opts: { limit?: number } = {}): DryRunReport
     budget.toolCalls += r.tool_calls ?? 0;
     budget.tokensApprox += r.tokens_approx ?? 0;
     budget.wallSec += r.wall_sec ?? 0;
-    budget.maxToolCalls = Math.max(budget.maxToolCalls, r.tool_calls ?? 0);
+    budget.peakToolCalls = Math.max(budget.peakToolCalls, r.tool_calls ?? 0);
     budget.maxTokensApprox = Math.max(budget.maxTokensApprox, r.tokens_approx ?? 0);
     budget.maxWallSec = Math.max(budget.maxWallSec, r.wall_sec ?? 0);
   }
@@ -119,7 +119,7 @@ export function formatReport(r: DryRunReport): string {
   out.push(`status: ${kv(r.statusCounts)}`);
   out.push(`skip reasons: ${kv(r.skipReasons)}`);
   out.push(
-    `budget used: tool_calls ${r.budget.toolCalls} (max ${r.budget.maxToolCalls}), ` +
+    `budget used: tool_calls ${r.budget.toolCalls} (peak ${r.budget.peakToolCalls} in one run), ` +
       `tokens_approx ${r.budget.tokensApprox} (max ${r.budget.maxTokensApprox}), ` +
       `wall_sec ${r.budget.wallSec} (max ${r.budget.maxWallSec})`,
   );

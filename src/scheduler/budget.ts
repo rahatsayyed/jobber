@@ -2,12 +2,13 @@
 // Pure: no fs, no Date.now(), no randomness. The clock is injected.
 
 export interface Budget {
-  maxToolCalls: number;
   maxWallSec: number;
   maxTokensApprox: number;
 }
 
-export const BUDGET_DEFAULTS: Budget = { maxToolCalls: 400, maxWallSec: 3600, maxTokensApprox: 1000000 };
+// Tool calls are counted for reporting only; the real limits are the send, connect, message and
+// apply counters in src/outreach/limits.ts, so the count is never a stop condition.
+export const BUDGET_DEFAULTS: Budget = { maxWallSec: 3600, maxTokensApprox: 1000000 };
 
 function intInRange(raw: string | undefined, min: number, max: number, dflt: number): number {
   if (raw === undefined) return dflt;
@@ -19,13 +20,12 @@ function intInRange(raw: string | undefined, min: number, max: number, dflt: num
 
 export function loadBudget(env: NodeJS.ProcessEnv = process.env): Budget {
   return {
-    maxToolCalls: intInRange(env.RUN_MAX_TOOL_CALLS, 1, 1000, BUDGET_DEFAULTS.maxToolCalls),
     maxWallSec: intInRange(env.RUN_MAX_WALL_SEC, 30, 7200, BUDGET_DEFAULTS.maxWallSec),
     maxTokensApprox: intInRange(env.RUN_MAX_TOKENS_APPROX, 1000, 2000000, BUDGET_DEFAULTS.maxTokensApprox),
   };
 }
 
-export type StopReason = 'tool_calls' | 'wall_clock' | 'tokens' | 'usage_limit';
+export type StopReason = 'wall_clock' | 'tokens' | 'usage_limit';
 
 const MAX_BUFFER = 1_000_000;
 const LIMIT_RE = /(usage|rate) limit (reached|exceeded)|limit reached/i;
@@ -112,7 +112,6 @@ export class BudgetTracker {
       this.processLine(this.buffer);
     }
     if (this.usageLimit) return 'usage_limit';
-    if (this.toolCalls > this.budget.maxToolCalls) return 'tool_calls';
     if (this.wallSecAt(now) > this.budget.maxWallSec) return 'wall_clock';
     if (Math.ceil(this.chars / 4) > this.budget.maxTokensApprox) return 'tokens';
     return null;

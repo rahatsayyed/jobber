@@ -238,16 +238,14 @@ describe('wakeOnce', () => {
     expect(s.launcher.kills).toBe(1);
   });
 
-  it('budget trip by tool calls kills and keeps last lines only', async () => {
+  it('many tool calls do not stop the run; the count is still recorded', async () => {
     const tool = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use' }] } });
-    const chunk = Array.from({ length: 12 }, () => tool).join('\n') + '\n';
-    const s = setup({ env: { RUN_MAX_TOOL_CALLS: '3' }, launcher: new FakeLauncher([{ out: chunk }]) });
+    const chunk = Array.from({ length: 500 }, () => tool).join('\n') + '\n';
+    const s = setup({ env: { RUN_MAX_TOOL_CALLS: '3' }, launcher: new FakeLauncher([{ out: chunk }, { exited: true, code: 0 }]) });
     const r = await wakeOnce(s.d);
-    expect(r.status).toBe('budget_exceeded');
-    expect(s.launcher.kills).toBe(1);
-    const row = listRuns(s.db)[0];
-    expect(row.summary?.split('\n').length).toBeLessThanOrEqual(5);
-    expect((row.summary ?? '').length).toBeLessThanOrEqual(2000);
+    expect(r.reason).toBeUndefined();
+    expect(s.launcher.kills).toBe(0);
+    expect(listRuns(s.db)[0].tool_calls).toBe(500);
   });
 
   it('stores the launcher log path on the run row', async () => {

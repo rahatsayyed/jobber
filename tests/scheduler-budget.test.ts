@@ -4,34 +4,34 @@ import { BudgetTracker, loadBudget, BUDGET_DEFAULTS } from '../src/scheduler/bud
 const t0 = new Date(Date.UTC(2026, 9, 14, 6, 0, 0));
 const tool = (n = 1) =>
   JSON.stringify({ type: 'assistant', message: { content: Array.from({ length: n }, () => ({ type: 'tool_use', name: 'x', input: {} })) } }) + '\n';
-const big = { maxToolCalls: 99, maxWallSec: 900, maxTokensApprox: 1e6 };
+const big = { maxWallSec: 900, maxTokensApprox: 1e6 };
 
 describe('BudgetTracker', () => {
-  it('counts tool calls and trips only past the limit', () => {
-    const b = new BudgetTracker({ maxToolCalls: 2, maxWallSec: 900, maxTokensApprox: 1e6 }, t0);
+  it('counts tool calls for reporting but never stops on them', () => {
+    const b = new BudgetTracker(big, t0);
     b.feed(tool(2), t0);
+    b.feed(tool(1000), t0);
     expect(b.check(t0)).toBeNull();
-    b.feed(tool(1), t0);
-    expect(b.check(t0)).toBe('tool_calls');
+    expect(b.snapshot().toolCalls).toBe(1002);
   });
 
   it('handles a line split across two chunks', () => {
-    const b = new BudgetTracker({ maxToolCalls: 1, maxWallSec: 900, maxTokensApprox: 1e6 }, t0);
+    const b = new BudgetTracker(big, t0);
     const line = tool(2);
     b.feed(line.slice(0, 20), t0);
     expect(b.snapshot().toolCalls).toBe(0);
     b.feed(line.slice(20), t0);
-    expect(b.check(t0)).toBe('tool_calls');
+    expect(b.snapshot().toolCalls).toBe(2);
   });
 
   it('trips wall clock using the injected clock', () => {
-    const b = new BudgetTracker({ maxToolCalls: 99, maxWallSec: 60, maxTokensApprox: 1e6 }, t0);
+    const b = new BudgetTracker({ maxWallSec: 60, maxTokensApprox: 1e6 }, t0);
     expect(b.check(new Date(t0.getTime() + 59000))).toBeNull();
     expect(b.check(new Date(t0.getTime() + 61000))).toBe('wall_clock');
   });
 
   it('trips approximate tokens and reports usage_limit with priority', () => {
-    const b = new BudgetTracker({ maxToolCalls: 99, maxWallSec: 900, maxTokensApprox: 10 }, t0);
+    const b = new BudgetTracker({ maxWallSec: 900, maxTokensApprox: 10 }, t0);
     b.feed('x'.repeat(100) + '\n', t0);
     expect(b.check(t0)).toBe('tokens');
     b.feed(JSON.stringify({ type: 'result', is_error: true, result: 'Claude usage limit reached' }) + '\n', t0);
@@ -42,13 +42,6 @@ describe('BudgetTracker', () => {
     const b = new BudgetTracker(BUDGET_DEFAULTS, t0);
     b.feed('y'.repeat(2_000_000), t0);
     expect(b.snapshot().tokensApprox).toBeGreaterThan(400000);
-  });
-
-  it('a tool call exactly at the limit is fine', () => {
-    const b = new BudgetTracker({ ...big, maxToolCalls: 3 }, t0);
-    b.feed(tool(3), t0);
-    expect(b.check(t0)).toBeNull();
-    expect(b.snapshot().toolCalls).toBe(3);
   });
 
   it('unparseable JSON counts chars but no tool calls', () => {
@@ -94,26 +87,23 @@ describe('BudgetTracker', () => {
     expect(b.snapshot().wallSec).toBe(12);
   });
 
-  it('first exceeded wins: tool_calls before wall_clock before tokens', () => {
-    const b = new BudgetTracker({ maxToolCalls: 1, maxWallSec: 30, maxTokensApprox: 1000 }, t0);
-    b.feed(tool(2), t0);
-    expect(b.check(new Date(t0.getTime() + 40000))).toBe('tool_calls');
+  it('first exceeded wins: wall_clock before tokens', () => {
+    const b = new BudgetTracker({ maxWallSec: 30, maxTokensApprox: 10 }, t0);
+    b.feed('x'.repeat(100) + '\n', t0);
+    expect(b.check(new Date(t0.getTime() + 40000))).toBe('wall_clock');
   });
 });
 
 describe('loadBudget', () => {
   it('falls back to defaults on invalid env', () => {
-    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '-3', RUN_MAX_WALL_SEC: 'abc' })).toEqual(BUDGET_DEFAULTS);
+    expect(loadBudget({ RUN_MAX_WALL_SEC: '-3', RUN_MAX_TOKENS_APPROX: 'abc' })).toEqual(BUDGET_DEFAULTS);
   });
   it('has the documented defaults', () => {
-    expect(BUDGET_DEFAULTS).toEqual({ maxToolCalls: 400, maxWallSec: 3600, maxTokensApprox: 1000000 });
+    expect(BUDGET_DEFAULTS).toEqual({ maxWallSec: 3600, maxTokensApprox: 1000000 });
     expect(loadBudget({})).toEqual(BUDGET_DEFAULTS);
   });
   it('enforces inclusive ranges', () => {
-    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '1000' }).maxToolCalls).toBe(1000);
-    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '1001' }).maxToolCalls).toBe(400);
-    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '1' }).maxToolCalls).toBe(1);
-    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '0' }).maxToolCalls).toBe(400);
+    expect('maxToolCalls' in loadBudget({ RUN_MAX_TOOL_CALLS: '5' })).toBe(false);
     expect(loadBudget({ RUN_MAX_WALL_SEC: '30' }).maxWallSec).toBe(30);
     expect(loadBudget({ RUN_MAX_WALL_SEC: '29' }).maxWallSec).toBe(3600);
     expect(loadBudget({ RUN_MAX_WALL_SEC: '7200' }).maxWallSec).toBe(7200);
@@ -124,15 +114,14 @@ describe('loadBudget', () => {
     expect(loadBudget({ RUN_MAX_TOKENS_APPROX: '2000001' }).maxTokensApprox).toBe(1000000);
   });
   it('falls back per field, not all-or-nothing', () => {
-    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '10', RUN_MAX_WALL_SEC: 'x', RUN_MAX_TOKENS_APPROX: '5000' })).toEqual({
-      maxToolCalls: 10,
+    expect(loadBudget({ RUN_MAX_WALL_SEC: 'x', RUN_MAX_TOKENS_APPROX: '5000' })).toEqual({
       maxWallSec: 3600,
       maxTokensApprox: 5000,
     });
   });
   it('rejects non-integer strings', () => {
-    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '12.5' }).maxToolCalls).toBe(400);
-    expect(loadBudget({ RUN_MAX_TOOL_CALLS: '10abc' }).maxToolCalls).toBe(400);
+    expect(loadBudget({ RUN_MAX_WALL_SEC: '12.5' }).maxWallSec).toBe(3600);
+    expect(loadBudget({ RUN_MAX_WALL_SEC: '100abc' }).maxWallSec).toBe(3600);
   });
 });
 

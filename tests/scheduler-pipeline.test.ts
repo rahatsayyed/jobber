@@ -174,7 +174,7 @@ describe('prompt', () => {
   it('lists the wake order and the pipeline and mail instructions', () => {
     const d = run(plan({ due: due({ scriptDiscoverLastHoursAgo: null, sourceTasksQueued: 1, inboxLastCheckedMinAgo: null }) }));
     const p = buildWakePrompt({
-      runId: 'r1', dryRun: true, burst: d.burst, tasks: d.tasks, budget: { maxToolCalls: 60, maxWallSec: 900, maxTokensApprox: 150000 },
+      runId: 'r1', dryRun: true, burst: d.burst, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 },
       allowed: ['linkedin', 'naukri'], now: NOW, order: stepOrder(d), pipeline: pipe,
     });
     expect(p).toContain('Wake order');
@@ -190,7 +190,7 @@ describe('prompt', () => {
   it('names the discover searches in the ordered wake prompt', () => {
     const d = run(plan({ due: due({ linkedinDiscoverLastHoursAgo: null, naukriSearchLastHoursAgo: null }) }));
     const p = buildWakePrompt({
-      runId: 'r1', dryRun: true, burst: d.burst, tasks: d.tasks, budget: { maxToolCalls: 60, maxWallSec: 900, maxTokensApprox: 150000 },
+      runId: 'r1', dryRun: true, burst: d.burst, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 },
       allowed: ['linkedin', 'naukri'], now: NOW, order: stepOrder(d), pipeline: pipe,
     });
     expect(p).toContain('job searches: react; post searches: none');

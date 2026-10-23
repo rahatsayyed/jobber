@@ -202,7 +202,7 @@ Groups in `.env.example` (one line each):
 - Dashboard: `WEB_PORT`, `WEB_AUTH_MODE` and the other `WEB_*` keys; see `docs/dashboard-exposure.md`.
 - LinkedIn tools: accept limits, allow-lists for URLs and emails, idle time, and the on-by-default (set `false` to disable) `LINKEDIN_SCREENSHOT`, `NAUKRI_SCREENSHOT` and `SCOUT_SCREENSHOT` flags (screenshot and pointer-click tools; the pixels are not screened by the classifier).
 - Dry run: the single flag `JOBBER_DRY_RUN` (`true` or `1` = dry; unset, `false` or anything else = LIVE). The old per-area dry-run keys (one each for the scheduler, LinkedIn, web, apply and scout) are ignored.
-- Scheduler: enable flag, run budgets (`RUN_MAX_*`, defaults 400 tool calls, 3600 s, 1000000 approximate tokens), inbox and Naukri search cadence, `USAGE_LIMIT_BACKOFF_MIN`, kill switch `JOBBER_KILL`.
+- Scheduler: enable flag, run budgets (`RUN_MAX_*`, defaults 3600 s, 1000000 approximate tokens), inbox and Naukri search cadence, `USAGE_LIMIT_BACKOFF_MIN`, kill switch `JOBBER_KILL`.
 - Auto-update and backup: `AUTO_UPDATE*` and `BACKUP_*`; see `docs/backup-and-restore.md`.
 - Layout memory: `LAYOUT_ENFORCE` and the other `LAYOUT_*` keys, all optional and commented.
 - Stack and bootstrap: `STACK_TMUX_SESSION`, `STACK_DOWN_WAIT_SEC`, `BOOTSTRAP_MODEL_PROFILE`.
