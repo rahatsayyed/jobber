@@ -6,6 +6,7 @@ import type { Check, CheckResult, DoctorContext } from './doctor.js';
 import { skip } from './doctor.js';
 import { parseEnv } from './envFile.js';
 import { isDryRun, LEGACY_DRY_RUN_KEYS } from '../safety/dryRun.js';
+import { loadDripConfig } from '../scheduler/mailDrip.js';
 import { DEFAULT_LABEL, SERVICE_NAME } from '../scheduler/units.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -93,6 +94,16 @@ export function schedulerChecks(): Check[] {
             : 'MODE: LIVE (real sends are enabled)',
           'set JOBBER_DRY_RUN=true in .env to go back to dry',
         );
+      },
+    },
+    {
+      id: 'mail-drip-config',
+      title: 'mail drip lane: window, batch, gap and pause settings are sane',
+      async run(ctx) {
+        const c = loadDripConfig(mergedEnv(ctx));
+        return c.problems.length === 0
+          ? pass(`window ${Math.floor(c.windowStartMin / 60)}:${String(c.windowStartMin % 60).padStart(2, '0')}-${Math.floor(c.windowEndMin / 60)}:${String(c.windowEndMin % 60).padStart(2, '0')} IST, batch ${c.minBatch}-${c.maxBatch}, gap ${c.minGapMin}-${c.maxGapMin} min, pause ${c.pauseMinSec}-${c.pauseMaxSec} s, daily cap ${c.maxPerDay || 'none'}`)
+          : fail(`the mail drip lane sends nothing until fixed: ${c.problems.join('; ')}`, 'fix the EMAIL_SEND_WINDOW_*, EMAIL_DRIP_* and EMAIL_MAX_PER_DAY values in .env');
       },
     },
     {

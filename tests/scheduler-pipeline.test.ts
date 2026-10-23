@@ -48,7 +48,7 @@ const job = (id: string, o: Partial<Job> = {}): Job => ({
 });
 
 describe('planner emits the wake in order', () => {
-  it('code pass, source-operator, discover, pipeline, mail, then the platform operators', () => {
+  it('code pass, source-operator, discover, pipeline, then the platform operators (no mail stage)', () => {
     const d = run(plan({
       due: due({
         scriptDiscoverLastHoursAgo: null, sourceTasksQueued: 3, unmatchedJobs: 4, emailQueued: 2, emailFollowupsReady: 1,
@@ -63,19 +63,18 @@ describe('planner emits the wake in order', () => {
       'linkedin-operator:discover',
       'naukri-operator:discover',
       'pipeline:pipeline',
-      'mail-operator:mail',
       'linkedin-operator:inbox',
       'linkedin-operator:new_outreach',
       'naukri-operator:inbox',
     ]);
     expect(d.stages?.find((s) => s.kind === 'discover_agent')?.quota).toBe(3);
-    expect(d.stages?.find((s) => s.kind === 'mail')?.quota).toBe(3);
+    expect(d.stages?.some((s) => s.kind === 'mail')).toBe(false);
   });
 
-  it('a script pass alone plans no agent task except the pipeline-pulled linkedin new_outreach, then the pipeline and mail stages', () => {
+  it('a script pass alone plans no agent task except the pipeline-pulled linkedin new_outreach, then the pipeline stage', () => {
     const d = run(plan({ due: due({ scriptDiscoverLastHoursAgo: 7, inboxLastCheckedMinAgo: 1 }) }));
     expect(d.tasks.map((a) => [a.platform, a.tasks.map((t) => t.kind)])).toEqual([['linkedin', ['new_outreach']]]);
-    expect(d.stages?.map((s) => s.kind)).toEqual(['discover_scripts', 'pipeline', 'mail']);
+    expect(d.stages?.map((s) => s.kind)).toEqual(['discover_scripts', 'pipeline']);
     expect(d.stages?.[0].operator).toBe('code');
   });
 
@@ -89,16 +88,15 @@ describe('planner emits the wake in order', () => {
     expect(d).toMatchObject({ kind: 'skip' });
   });
 
-  it('unscored jobs pull in the pipeline and mail, queued email alone plans only mail', () => {
+  it('unscored jobs pull in the pipeline only, queued email alone plans nothing (the drip lane sends it)', () => {
     const a = run(plan({ due: due({ unmatchedJobs: 2, inboxLastCheckedMinAgo: 1 }) }));
-    expect(a.stages?.map((s) => s.kind)).toEqual(['pipeline', 'mail']);
-    const b = run(plan({ due: due({ emailQueued: 2, inboxLastCheckedMinAgo: 1 }) }));
-    expect(b.stages?.map((s) => s.kind)).toEqual(['mail']);
+    expect(a.stages?.map((s) => s.kind)).toEqual(['pipeline']);
+    expect(plan({ due: due({ emailQueued: 2, inboxLastCheckedMinAgo: 1 }) })).toMatchObject({ kind: 'skip', reason: 'nothing_due' });
   });
 
   it('email follow-ups pull in the pipeline stage so the reply check runs first', () => {
     const d = run(plan({ due: due({ emailFollowupsReady: 1, inboxLastCheckedMinAgo: 1 }) }));
-    expect(d.stages?.map((s) => s.kind)).toEqual(['pipeline', 'mail']);
+    expect(d.stages?.map((s) => s.kind)).toEqual(['pipeline']);
   });
 
   it('a halted platform still gets the code pass only when something is allowed', () => {
@@ -171,7 +169,7 @@ describe('runCodePass', () => {
 
 describe('prompt', () => {
   const pipe = { matchThreshold: 60, sendLimit: 1, targetRegions: 'Target regions: home=India; targets=UAE', followupsAutonomous: false };
-  it('lists the wake order and the pipeline and mail instructions', () => {
+  it('lists the wake order and the pipeline instructions; the wake only enqueues email', () => {
     const d = run(plan({ due: due({ scriptDiscoverLastHoursAgo: null, sourceTasksQueued: 1, inboxLastCheckedMinAgo: null }) }));
     const p = buildWakePrompt({
       runId: 'r1', dryRun: true, burst: d.burst, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 },
@@ -180,12 +178,12 @@ describe('prompt', () => {
     expect(p).toContain('Wake order');
     expect(p.indexOf('discover_scripts')).toBeLessThan(p.indexOf('`source-operator`'));
     expect(p.indexOf('`source-operator`')).toBeLessThan(p.indexOf('Pipeline stage'));
-    expect(p.indexOf('Pipeline stage')).toBeLessThan(p.indexOf('`mail-operator`'));
+    expect(p).toContain('Do NOT dispatch `mail-operator`');
+    expect(p).not.toContain('Dispatch `mail-operator`');
     expect(p).toContain('SOURCE_STATUS:');
     expect(p).toContain('BOARD_STATUS:');
     expect(p).toContain('Target regions: home=India');
-    expect(p).toContain('SEND_LIMIT_PER_RUN=1');
-    expect(p).toContain('pre-send reply check completed with no errors');
+    expect(p).not.toContain('SEND_LIMIT_PER_RUN=1');
   });
   it('names the discover searches in the ordered wake prompt', () => {
     const d = run(plan({ due: due({ linkedinDiscoverLastHoursAgo: null, naukriSearchLastHoursAgo: null }) }));

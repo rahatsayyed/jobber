@@ -451,12 +451,12 @@ describe('planWake: the pipeline pulls linkedin new_outreach and apply into the 
       expect(q).toBeLessThanOrEqual(r.d.burst);
     }
   });
-  it('keeps the wake order: pipeline, mail, linkedin tasks, apply', () => {
+  it('keeps the wake order: pipeline, linkedin tasks, apply (no mail step)', () => {
     const { d } = run();
     if (d.kind !== 'run') throw new Error('expected run');
     const ks = stepOrder(d).map((s) => s.kind);
-    expect(ks.indexOf('pipeline')).toBeLessThan(ks.indexOf('mail'));
-    expect(ks.indexOf('mail')).toBeLessThan(ks.indexOf('new_outreach'));
+    expect(ks).not.toContain('mail');
+    expect(ks.indexOf('pipeline')).toBeLessThan(ks.indexOf('new_outreach'));
     expect(ks.indexOf('new_outreach')).toBeLessThan(ks.indexOf('apply'));
   });
   it('no linkedin new_outreach when the linkedin_invite ceiling is exhausted', () => {

@@ -56,6 +56,11 @@ export function drawActionGapMs(rng: Rng, cfg: PacingConfig): number {
   return Math.round(jittered(rng, uniform(rng, cfg.minActionGapSec, cfg.maxActionGapSec), cfg.jitter) * 1000);
 }
 
+/** A uniform draw between lo and hi minutes, in ms (the mail drip gap; the range is the randomness, no jitter on top). */
+export function drawUniformMinMs(rng: Rng, loMin: number, hiMin: number): number {
+  return Math.round(uniform(rng, loMin, hiMin) * 60000);
+}
+
 export function drawWaitMs(rng: Rng, cfg: PacingConfig): number {
   return Math.round(jittered(rng, uniform(rng, cfg.minWaitMin, cfg.maxWaitMin), cfg.jitter) * 60000);
 }

@@ -414,6 +414,22 @@ const hand: EnvSpec[] = [
     about: 'tmux session that holds the wake windows. Letters, digits, underscore and hyphen.',
     ...never(R_SESSION),
   }),
+  e('EMAIL_SEND_WINDOW_START', 'scheduler', 'mail drip lane', 'string', {
+    default: '09:30',
+    maxLen: 5,
+    about: 'Start of the daily window (HH:MM, IST like quiet hours) in which the mail drip lane may send. Must be before EMAIL_SEND_WINDOW_END; an invalid value stops the lane and the doctor warns.',
+    ...tier('guarded', 'A wider window lets email go out at more hours of the day.', 'any'),
+    restart: 'scheduler',
+    restartEvidence: 'src/scheduler/mailDrip.ts',
+  }),
+  e('EMAIL_SEND_WINDOW_END', 'scheduler', 'mail drip lane', 'string', {
+    default: '19:00',
+    maxLen: 5,
+    about: 'End of the daily window (HH:MM, IST) in which the mail drip lane may send. Must be after EMAIL_SEND_WINDOW_START.',
+    ...tier('guarded', 'A wider window lets email go out at more hours of the day.', 'any'),
+    restart: 'scheduler',
+    restartEvidence: 'src/scheduler/mailDrip.ts',
+  }),
   e('RUN_MAX_WALL_SEC', 'scheduler', 'scheduler', 'int', {
     default: '3600',
     min: 30,
@@ -929,6 +945,8 @@ const BLANK_OK = new Set<string>([
   'QUIET_HOURS_END', 'PACING_MIN_BURST', 'PACING_MAX_BURST', 'PACING_MIN_ACTION_GAP_SEC',
   'PACING_MAX_ACTION_GAP_SEC', 'PACING_MIN_WAIT_MIN', 'PACING_MAX_WAIT_MIN', 'PACING_JITTER_PCT',
   'COOLDOWN_IGNORED_DAYS', 'COOLDOWN_NOT_NOW_DAYS', 'COOLDOWN_EXPLICIT_STOP_DAYS', 'CADENCE_GAPS_DAYS',
+  'EMAIL_MAX_PER_DAY', 'EMAIL_DRIP_MIN_BATCH', 'EMAIL_DRIP_MAX_BATCH', 'EMAIL_DRIP_MIN_GAP_MIN', 'EMAIL_DRIP_MAX_GAP_MIN',
+  'EMAIL_DRIP_INTRA_PAUSE_MIN_SEC', 'EMAIL_DRIP_INTRA_PAUSE_MAX_SEC',
   TOP_LEVEL_KEY, ...APPLY_HOST_PLATFORM_IDS.map(hostCapKey),
 ]);
 const ACTIVE_IN_EXAMPLE = new Set([
@@ -947,6 +965,12 @@ function limitOverride(key: string): LimitOverride {
   } else if (APPLY_KEYS.has(key) || key === TOP_LEVEL_KEY || key.startsWith(`${TOP_LEVEL_KEY}_`)) {
     o.section = 'apply';
     o.feature = 'browser apply';
+  }
+  if (key.startsWith('EMAIL_DRIP_') || key === 'EMAIL_MAX_PER_DAY') {
+    o.section = 'scheduler';
+    o.feature = 'mail drip lane';
+    o.restart = 'scheduler';
+    o.restartEvidence = 'src/scheduler/mailDrip.ts';
   }
   if (key === 'HUNTER_MONTHLY_CAP') o.aboutExtra = 'Needed only when HUNTER_ENABLED=true.';
   if (key === 'FOLLOWUP_CHECK_MAX_AGE_MIN') o.aboutExtra = 'Used only when FOLLOWUPS_AUTONOMOUS=true.';

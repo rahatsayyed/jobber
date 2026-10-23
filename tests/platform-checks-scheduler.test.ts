@@ -39,9 +39,18 @@ const goodAgents = (): Files => {
 };
 
 describe('scheduler doctor checks', () => {
-  it('has the seven kebab-case ids', () => {
+  it('mail-drip-config: defaults pass, an inverted window or gap fails', async () => {
+    expect((await run(ctxWith({})))['mail-drip-config'].status).toBe('pass');
+    const bad = (env: NodeJS.ProcessEnv) => run(ctxWith({}, { env }));
+    expect((await bad({ EMAIL_SEND_WINDOW_START: '19:00', EMAIL_SEND_WINDOW_END: '09:30' }))['mail-drip-config'].status).toBe('fail');
+    expect((await bad({ EMAIL_DRIP_MIN_GAP_MIN: '9', EMAIL_DRIP_MAX_GAP_MIN: '8' }))['mail-drip-config'].status).toBe('fail');
+    expect((await bad({ EMAIL_DRIP_MIN_BATCH: '4', EMAIL_DRIP_MAX_BATCH: '3' }))['mail-drip-config'].status).toBe('fail');
+    expect((await bad({ EMAIL_SEND_WINDOW_START: 'nine' }))['mail-drip-config'].status).toBe('fail');
+  });
+
+  it('has the eight kebab-case ids', () => {
     expect(schedulerChecks().map((c) => c.id)).toEqual([
-      'scheduler-tmux', 'scheduler-lock-dir', 'scheduler-stop-file', 'scheduler-dry-run', 'dry-run-legacy-keys', 'scheduler-units', 'agents-worker-tools',
+      'scheduler-tmux', 'scheduler-lock-dir', 'scheduler-stop-file', 'scheduler-dry-run', 'mail-drip-config', 'dry-run-legacy-keys', 'scheduler-units', 'agents-worker-tools',
     ]);
   });
 

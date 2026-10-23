@@ -22,6 +22,8 @@ export interface LaunchPlan {
   projectRoot: string;
   /** Pass --no-classifier (driver sets this only for dry runs). Default false. */
   noClassifier?: boolean;
+  /** Run profile of scripts/run-claude.ts; default RUNNER_PROFILE (the wake). The mail drip lane uses `mail_drip`. */
+  profile?: string;
   /** Small explicit env for the runner. Never put secrets here by default. */
   env?: Record<string, string>;
 }
@@ -63,6 +65,7 @@ export const defaultFsOps: FsOps = {
 };
 
 const RUN_ID_RE = /^[a-z0-9]{8,20}$/;
+const PROFILE_RE = /^[a-z][a-z0-9_]{0,40}$/;
 const ENV_KEY_RE = /^[A-Z][A-Z0-9_]{0,63}$/;
 const RESERVED_ENV = new Set([
   'PATH', 'NODE_OPTIONS', 'LD_PRELOAD', 'LD_LIBRARY_PATH', 'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH', 'HOME',
@@ -90,8 +93,10 @@ export function buildRunnerArgv(p: {
   exitPath: string;
   env?: Record<string, string>;
   noClassifier?: boolean;
+  profile?: string;
 }): string[] {
   if (!RUN_ID_RE.test(p.runId)) throw new Error('invalid run id');
+  if (p.profile !== undefined && !PROFILE_RE.test(p.profile)) throw new Error('invalid profile');
   for (const [k, v] of Object.entries(p.env ?? {})) {
     if (!ENV_KEY_RE.test(k)) throw new Error(`invalid env key: ${JSON.stringify(k)}`);
     if (k.startsWith('JOBBER_') || k.startsWith('SCHEDULER_') || RESERVED_ENV.has(k)) {
@@ -117,7 +122,7 @@ export function buildRunnerArgv(p: {
     'npx',
     'tsx',
     'scripts/run-claude.ts',
-    RUNNER_PROFILE,
+    p.profile ?? RUNNER_PROFILE,
     ...(p.noClassifier ? ['--no-classifier'] : []),
   ];
 }
@@ -139,6 +144,7 @@ export function tmuxLauncher(run: Run, fsOps: FsOps = defaultFsOps): Launcher {
         exitPath,
         env: plan.env,
         noClassifier: plan.noClassifier,
+        profile: plan.profile,
       });
       fsOps.mkdir(plan.runDir);
       fsOps.writeFile(promptPath, plan.prompt, 0o600);

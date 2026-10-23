@@ -18,6 +18,7 @@ import type { Notice, Notifier } from './notify.js';
 import { loadPlanKnobs, planWake, stepOrder, type DiscoverSearches, type WakeDecision } from './plan.js';
 import { targetRegionsLine, type CodePassResult } from './pipeline.js';
 import { buildWakePrompt } from './prompt.js';
+import { dripLoop } from './mailDrip.js';
 import { finishRun, getState, markOrphans, setRunLogPath, setState, startRun, type RunStatus } from './runLog.js';
 
 type Db = BetterSqlite3.Database;
@@ -45,6 +46,8 @@ export interface DriverDeps {
   discoverSearches?: DiscoverSearches;
   /** The zero-LLM code pass over the script providers (runCodePass); absent means the stage is planned but not run. Never throws. */
   codePass?: () => Promise<CodePassResult>;
+  /** Run the mail drip lane (src/scheduler/mailDrip.ts) beside the wakes in the daemon loop. Absent or false: no drip. */
+  mailDrip?: boolean;
   heartbeat?: () => void; // called on every poll tick (the daemon lock heartbeat)
   /** Seam for 7D hooks. Called AFTER the run lock is released; errors are swallowed and noticed. */
   afterWake?: (r: WakeResult) => Promise<void>;
@@ -496,6 +499,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
       return false;
     }
   };
+  let drip: Promise<void> | null = null;
   try {
     // Orphans from a previous daemon: kill their windows BEFORE marking them crashed, unless a live
     // run lock shows another process owns a run right now (then leave its rows untouched).
@@ -532,6 +536,8 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
       }
     }
     let stopSeen = stopPresent();
+    // The mail drip lane runs beside the wakes (its own `mail` lock), so a long wake never pauses the slow email trickle.
+    drip = deps.mailDrip ? dripLoop(deps, stop) : null;
     while (!stop.stopped) {
       let woke = false;
       while (!stop.stopped) {
@@ -555,6 +561,8 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
       next = new Date(r.nextWakeAt);
     }
   } finally {
+    stop.stopped = true; // the drip loop (if any) exits on the same flag
+    if (drip) await drip;
     try {
       dl.release();
     } catch {

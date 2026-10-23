@@ -185,8 +185,8 @@ export function planWake(i: {
   }));
 
   if (pipelineDue) stages.push({ operator: 'pipeline', kind: 'pipeline', quota: Math.min(unmatched, JOBS_CEILING) });
-  const emailWork = (due.emailQueued ?? 0) + (due.emailFollowupsReady ?? 0);
-  if (emailWork > 0 || pipelineDue) stages.push({ operator: 'mail-operator', kind: 'mail', quota: emailWork });
+  // No mail stage: the wake only enqueues email. Cold emails and email follow-ups are sent one at a time by the mail drip lane
+  // (src/scheduler/mailDrip.ts), never in a burst inside a wake, so queued email alone is not wake work.
   // Apply: its own quota (not the burst) = the smaller of what is left of MAX_APPLIES_PER_DAY and of APPLY_MAX_ATTEMPTS_PER_DAY.
   // Emitted last, only when queued apply rows exist and quota remains (plan 8G-2 task 21).
   const applyQueued = due.applyQueued ?? 0;

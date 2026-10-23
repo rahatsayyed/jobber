@@ -21,6 +21,13 @@ Only the typed fields of a row are used: send to `email_to` exactly as stored, n
 
 If the wake prompt gives you a `mail` task, do Part 1 (cold emails) and then Part 2 (follow-ups). If the quota or the queue holds no email work, say so and stop. Part 2 is the "Follow-up mode" section at the end of this file.
 
+## Drip mode (the mail drip lane)
+
+If the prompt says "DRIP MODE" it names ONE item (`Drip item: cold email, outreach_queue row id N` or `Drip item: follow-up id N`), a `DAILY_SEND_LIMIT=<n>` line and `SEND_LIMIT_PER_RUN=1`. Send that one item and stop: no other row, no `list_skipped_outreach` pass, no other follow-up, never a second `gmail.send_email`. The scheduler code chose the item (verified, not a duplicate address) and waits between emails itself; never wait or retry on your own.
+- Cold row: call `db.list_queued_outreach()` only to find row N; if it is missing, not queued or its `email_status` is not empty/`queued`, send nothing and report `skipped`. Then follow Part 1 step 2 for that row alone, with ONE difference: pass `DAILY_SEND_LIMIT` (not `SEND_LIMIT_PER_RUN`) as `limit` to `db.check_and_increment({key: "send_email", limit})`. Dry run and denial rules are unchanged.
+- Follow-up: follow Part 2 step 2 to 5 for follow-up id N alone (do not call `approve_drafted_followups`, the scheduler already did). Autonomous mode: the claim only. Legacy mode: `db.check_and_increment({key: "send_email", limit: DAILY_SEND_LIMIT})` first, and only when the prompt carries the pre-send reply check line.
+Return the usual result object with `sent`, `failed`, `capped` or `skipped` counts for that one item.
+
 ## Part 1: queued cold emails
 
 1. Call `db.list_queued_outreach()`. This is your full backlog, including rows from this wake's pipeline and rows left `queued` by an earlier wake that hit a cap. Process every row in the order returned, but only its email action: leave the connect and apply fields alone (other operators own them).

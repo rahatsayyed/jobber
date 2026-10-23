@@ -52,6 +52,7 @@ function status(env: NodeJS.ProcessEnv): void {
   const ctl = readControl(db, controlDefaults(env, stopFile));
   console.log(`next wake: ${getState(db, 'next_wake_at') ?? 'not set'}`);
   console.log(`usage backoff until: ${getState(db, 'usage_backoff_until') ?? 'none'}`);
+  console.log(`next mail drip not before: ${getState(db, 'mail_drip_next_at') ?? 'not set'}`);
   console.log(`kill: ${ctl.killed ? `ON (${safe(ctl.killReason)})` : 'off'}`);
   for (const [p, r] of Object.entries(ctl.halted)) if (r) console.log(`halted ${p}: ${safe(r)}`);
   let open = 0;
@@ -128,6 +129,8 @@ async function main(): Promise<void> {
     session: env.SCHEDULER_TMUX_SESSION || undefined,
     discoverSearches: discoverNames(),
     codePass: () => runCodePass({ db, now, projectRoot }),
+    // The slow email lane beside the wakes (src/scheduler/mailDrip.ts); only the daemon runs it, never --once or --now.
+    mailDrip: args.mode === 'daemon',
     afterWake: makeAfterWakeHooks({
       db, env, projectRoot, now, pacing: pacingFromConfig(cfg, tuning), notifier,
     }),

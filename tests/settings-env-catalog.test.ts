@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { installNoRealEnv } from './helpers/noRealEnv.js';
 import { ENV_CATALOG, INTERNAL_NAMES } from '../src/settings/envCatalog.js';
 import { fromLimit, limitWeakens } from '../src/settings/fromLimits.js';
+import { loadDripConfig } from '../src/scheduler/mailDrip.js';
 import { isSecret, type EnvSpec } from '../src/settings/types.js';
 import { validateEnvValue, weakens } from '../src/settings/valueCheck.js';
 import { LIMITS, type LimitSpec } from '../src/setup/limitsCatalog.js';
@@ -329,6 +330,7 @@ describe('blankMeansDefault (real loaders)', () => {
     'PACING_MAX_WAIT_MIN', 'PACING_JITTER_PCT', 'COOLDOWN_IGNORED_DAYS', 'COOLDOWN_NOT_NOW_DAYS', 'COOLDOWN_EXPLICIT_STOP_DAYS',
     'CADENCE_GAPS_DAYS',
   ];
+  const DRIP_KEYS = ['EMAIL_MAX_PER_DAY', 'EMAIL_DRIP_MIN_BATCH', 'EMAIL_DRIP_MAX_BATCH', 'EMAIL_DRIP_MIN_GAP_MIN', 'EMAIL_DRIP_MAX_GAP_MIN', 'EMAIL_DRIP_INTRA_PAUSE_MIN_SEC', 'EMAIL_DRIP_INTRA_PAUSE_MAX_SEC'];
   const LAYOUT_KEYS = ENV_CATALOG.filter((s) => s.key.startsWith('LAYOUT_')).map((s) => s.key);
   const HOST_KEYS: Array<[string, string]> = [[TOP_LEVEL_KEY, 'greenhouse'], ...APPLY_HOST_PLATFORM_IDS.map((id): [string, string] => [hostCapKey(id), id])];
 
@@ -337,6 +339,7 @@ describe('blankMeansDefault (real loaders)', () => {
     ...TUNING_KEYS.map((k): [string, Loader] => [k, tuning]),
     ...LAYOUT_KEYS.map((k): [string, Loader] => [k, layout]),
     ...HOST_KEYS.map(([k, id]): [string, Loader] => [k, hostCap(id)]),
+    ...DRIP_KEYS.map((k): [string, Loader] => [k, (e) => loadDripConfig(e)]),
   ];
 
   it('each covered loader reads the key and treats blank like unset', () => {

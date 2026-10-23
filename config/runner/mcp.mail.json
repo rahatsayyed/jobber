@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "db": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "src/mcp/db.ts"
+      ]
+    },
+    "gmail": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@gongrzhe/server-gmail-autoauth-mcp"
+      ],
+      "env": {
+        "GMAIL_OAUTH_PATH": "secrets/gcp-oauth.keys.json",
+        "GMAIL_CREDENTIALS_PATH": "secrets/gmail-credentials.json"
+      }
+    }
+  }
+}

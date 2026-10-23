@@ -164,6 +164,6 @@ export function pipelineLines(i: PipelinePromptInput): string[] {
     if (i.codePass.sourceStatusLine) L.push(i.codePass.sourceStatusLine);
   }
   L.push('If no code pass ran in this wake, call `job-fetch.source_status` (read-only, never fetches) and copy its result as a `SOURCE_STATUS:` line; call `job-fetch.board_status` for the `BOARD_STATUS:` line.');
-  L.push(`Mail stage: dispatch \`mail-operator\` after the pipeline with the line "SEND_LIMIT_PER_RUN=${i.sendLimit}" (and "dry run" when this wake is a dry run). Add the line "pre-send reply check completed with no errors" ONLY if the P0b \`reply-watcher\` call succeeded and returned an empty \`errors\`. The mail-operator sends queued emails and email follow-ups under the daily send_email counter; it sends nothing else.`);
+  L.push('Mail: this wake only ENQUEUES email (P4). Do NOT dispatch `mail-operator` and call no send tool: cold emails and email follow-ups are sent one at a time through the day by the scheduler\'s mail drip lane, never in a burst from a wake. Report how many email rows were queued.');
   return L;
 }
