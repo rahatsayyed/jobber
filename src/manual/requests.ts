@@ -26,7 +26,13 @@ export function createManualRequest(db: Db, rawUrl: unknown, opts: { force?: boo
   if (cls.kind === 'unsupported') return { ok: false, reason: cls.reason };
   const open = db.prepare("SELECT id, force FROM manual_requests WHERE url = ? AND status IN ('pending', 'running') ORDER BY id LIMIT 1").get(v.url) as { id: number; force: number } | undefined;
   if (open) {
-    if (opts.force && !open.force) db.prepare('UPDATE manual_requests SET force = 1 WHERE id = ?').run(open.id);
+    if (opts.force && !open.force) {
+      db.prepare('UPDATE manual_requests SET force = 1 WHERE id = ?').run(open.id);
+      // The force override lifts a repeat_contact mark the guard already put on this request's jobs.
+      for (const id of jobIdsOf(db.prepare('SELECT job_ids FROM manual_requests WHERE id = ?').get(open.id) as { job_ids: string | null })) {
+        db.prepare("UPDATE jobs SET status = NULL, prep_offers = 0 WHERE id = ? AND status = 'repeat_contact'").run(id);
+      }
+    }
     return { ok: true, id: open.id, duplicate: true, kind: cls.requestKind };
   }
   const at = (opts.now ?? new Date()).toISOString();
@@ -70,7 +76,7 @@ export function finishManualRequest(db: Db, id: number, status: 'done' | 'failed
 
 /**
  * Saves owner-submitted jobs at priority 1 under source `<sourceKind>` and links them to the request. A job that is already stored keeps its
- * source and score, gets priority 1 and fresh retry counters (its veto, if any, stays: a manual request never skips a gate).
+ * source and score, gets priority 1 and fresh retry counters (its veto, if any, stays: a manual request never skips a gate; a duplicate or repeat_contact mark is cleared so the guard is judged again).
  * Returns the ids linked (at most MANUAL_MAX_JOBS_PER_REQUEST in total) and how many were cut.
  */
 export function saveManualJobs(db: Db, requestId: number, jobs: Job[], sourceKind: string): { linked: string[]; fresh: number; existing: number; truncated: number } {
@@ -85,7 +91,8 @@ export function saveManualJobs(db: Db, requestId: number, jobs: Job[], sourceKin
       const before = db.prepare('SELECT 1 FROM jobs WHERE id = ?').get(j.id);
       if (before) {
         existing++;
-        db.prepare('UPDATE jobs SET priority = MAX(priority, 1), prep_offers = 0, match_fails = 0 WHERE id = ?').run(j.id);
+        db.prepare(`UPDATE jobs SET priority = MAX(priority, 1), prep_offers = 0, match_fails = 0,
+          status = CASE WHEN status IN ('duplicate', 'repeat_contact') THEN NULL ELSE status END WHERE id = ?`).run(j.id);
       } else {
         saveJob(db, { ...j, source: sourceKind, priority: 1 });
         fresh++;

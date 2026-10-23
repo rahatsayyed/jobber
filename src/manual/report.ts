@@ -2,6 +2,7 @@
 // field escaped as untrusted. Email goes out later through the mail stage, so it says "queued", never "sent", unless the db says sent.
 import type BetterSqlite3 from 'better-sqlite3';
 import { MATCH_FAIL_LIMIT } from '../db.js';
+import { JOB_STATUS_REPEAT_CONTACT, repeatContactOf } from '../pipelineWork.js';
 import { finishManualRequest, jobIdsOf, listManualRequests, type ManualRequest } from './requests.js';
 
 type Db = BetterSqlite3.Database;
@@ -49,7 +50,7 @@ function flagsOf(json: string | null): string[] {
 
 interface JobRow {
   id: string; title: string | null; company: string | null; source: string | null; score: number | null; confidence: string | null;
-  strengths: string | null; gaps: string | null; excluded_reason: string | null; gate_flags: string | null; match_fails: number; company_key: string | null;
+  strengths: string | null; gaps: string | null; excluded_reason: string | null; gate_flags: string | null; match_fails: number; company_key: string | null; status: string | null;
 }
 interface QueueRow {
   email_to: string | null; email_status: string | null; email_sent_at: string | null; connect_profile_url: string | null;
@@ -57,12 +58,12 @@ interface QueueRow {
 }
 
 /** A job is settled once the pipeline is done with it: vetoed, scored, or given up on after repeated rejected match saves. */
-export function jobSettled(j: Pick<JobRow, 'score' | 'excluded_reason' | 'match_fails'>): boolean {
-  return j.excluded_reason !== null || j.score !== null || j.match_fails >= MATCH_FAIL_LIMIT;
+export function jobSettled(j: Pick<JobRow, 'score' | 'excluded_reason' | 'match_fails'> & { status?: string | null }): boolean {
+  return j.excluded_reason !== null || j.status === JOB_STATUS_REPEAT_CONTACT || j.score !== null || j.match_fails >= MATCH_FAIL_LIMIT;
 }
 
 function jobLines(db: Db, r: ManualRequest, jobId: string, threshold: number): string[] {
-  const j = db.prepare('SELECT id, title, company, source, score, confidence, strengths, gaps, excluded_reason, gate_flags, match_fails, company_key FROM jobs WHERE id = ?').get(jobId) as JobRow | undefined;
+  const j = db.prepare('SELECT id, title, company, source, score, confidence, strengths, gaps, excluded_reason, gate_flags, match_fails, company_key, status FROM jobs WHERE id = ?').get(jobId) as JobRow | undefined;
   if (!j) return [`- job ${cleanUntrusted(jobId, 60)}: no longer in the database`];
   const head = `${cleanUntrusted(j.title, 90) || 'Untitled'} at ${cleanUntrusted(j.company, 60) || 'unknown company'}`;
   const out: string[] = [];
@@ -70,11 +71,20 @@ function jobLines(db: Db, r: ManualRequest, jobId: string, threshold: number): s
     out.push(`- ${head}: VETOED (${cleanUntrusted(j.excluded_reason, 160)})${j.score !== null ? `, score ${j.score}` : ''}. Not contacted. /include can override.`);
     return out;
   }
+  if (j.status === JOB_STATUS_REPEAT_CONTACT) {
+    const of = repeatContactOf(db, j.id);
+    out.push(`- ${head}: SKIPPED by the 90-day repeat-contact guard (this company and title was already contacted${of ? `, earlier job ${cleanUntrusted(of, 60)}` : ''}). Nothing was matched or sent. Resubmit with --force to override.`);
+    return out;
+  }
   if (j.score === null) {
     out.push(`- ${head}: ${j.match_fails >= MATCH_FAIL_LIMIT ? 'match failed twice, given up (see the wake log)' : 'not scored yet, waiting for the next wake'}.`);
     return out;
   }
   out.push(`- ${head}: score ${j.score}${j.confidence ? ` (${cleanUntrusted(j.confidence, 12)})` : ''}`);
+  if (r.force) {
+    const of = repeatContactOf(db, j.id);
+    if (of) out.push(`  note: the 90-day repeat-contact guard was overridden by --force (this company and title was contacted before, earlier job ${cleanUntrusted(of, 60)})`);
+  }
   const s = firstText(j.strengths);
   const g = firstText(j.gaps);
   if (s) out.push(`  strength: ${cleanUntrusted(s, 140)}`);
@@ -160,7 +170,7 @@ export async function finalizeManualRequests(db: Db, runStatus: string, d: Final
     const stale = r.started_at ? d.now().getTime() - Date.parse(r.started_at) > STALE_MS : false;
     let unsettled = 0;
     for (const id of ids) {
-      const j = db.prepare('SELECT score, excluded_reason, match_fails FROM jobs WHERE id = ?').get(id) as JobRow | undefined;
+      const j = db.prepare('SELECT score, excluded_reason, match_fails, status FROM jobs WHERE id = ?').get(id) as JobRow | undefined;
       if (j && !jobSettled(j)) unsettled++;
     }
     if (open.length > 0 && runStatus !== 'ok' && !stale) { out.waiting.push(r.id); continue; }

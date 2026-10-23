@@ -12,6 +12,7 @@ import { planWake, stepOrder, type PlanKnobs } from '../src/scheduler/plan.js';
 import { buildWakePrompt } from '../src/scheduler/prompt.js';
 import { loadBudget } from '../src/scheduler/budget.js';
 import { TUNING_DEFAULTS } from '../src/outreach/tuning.js';
+import { pickDripItem } from '../src/scheduler/mailDrip.js';
 import { run as applyRequestCli } from '../scripts/apply-request.js';
 import { isApplyBlockedSource } from '../src/lib/discoverOnly.js';
 import { classifyApplyUrl } from '../src/apply/registry.js';
@@ -31,7 +32,7 @@ const pacing: PacingConfig = {
   minBurst: 1, maxBurst: 4, minActionGapSec: 120, maxActionGapSec: 360, minWaitMin: 8, maxWaitMin: 40, jitter: 0.25,
 };
 const knobs: PlanKnobs = { inboxEveryMin: 60, naukriDiscoverEveryHours: 6 };
-const ctl = (o: Partial<ControlState> = {}): ControlState => ({ killed: false, killReason: null, halted: { linkedin: null, naukri: null }, allowed: ['linkedin', 'naukri'], readError: null, ...o });
+const ctl = (o: Partial<ControlState> = {}): ControlState => ({ killed: false, killReason: null, halted: { linkedin: null, naukri: null, wellfound: null }, allowed: ['linkedin', 'naukri', 'wellfound'], readError: null, ...o });
 const ceil = (bad: LimitKey[] = []): Record<LimitKey, CeilingStatus> => Object.fromEntries(
   (['linkedin_invite', 'linkedin_message', 'naukri_apply', 'naukri_message', 'apply_attempt'] as LimitKey[]).map((k) => [k, bad.includes(k) ? { used: 5, limit: 5, ok: false } : { used: 0, limit: 5, ok: true }]),
 ) as Record<LimitKey, CeilingStatus>;
@@ -134,13 +135,13 @@ describe('planWake with a manual request', () => {
     if (d.kind !== 'run') return;
     const order = stepOrder(d);
     expect(order[0]).toMatchObject({ operator: 'code', kind: 'manual', quota: 1 });
-    expect(order.map((s) => s.kind)).toEqual(expect.arrayContaining(['manual', 'discover_agent', 'pipeline', 'mail']));
+    expect(order.map((s) => s.kind)).toEqual(expect.arrayContaining(['manual', 'discover_agent', 'pipeline']));
     expect(order.findIndex((s) => s.kind === 'discover_agent')).toBeGreaterThan(0);
   });
   it('still respects the kill switch, halts and quiet hours', () => {
     const due = idleDue({ manualRequestsPending: 2 });
     expect(plan(due, { control: ctl({ killed: true, killReason: 'stop' }) })).toMatchObject({ kind: 'skip', reason: 'killed' });
-    expect(plan(due, { control: ctl({ allowed: [], halted: { linkedin: 'x', naukri: 'y' } }) })).toMatchObject({ kind: 'skip', reason: 'halted' });
+    expect(plan(due, { control: ctl({ allowed: [], halted: { linkedin: 'x', naukri: 'y', wellfound: 'z' } }) })).toMatchObject({ kind: 'skip', reason: 'halted' });
     expect(plan(due, { now: QUIET })).toMatchObject({ kind: 'skip', reason: 'quiet_hours' });
   });
   it('countDue reports pending requests only', () => {
@@ -242,7 +243,7 @@ describe('priority in the pipeline input and the queues', () => {
   }
   it('priority jobs come first, ahead of older normal jobs and matched hand-backs, and are flagged', () => {
     const db = openDb(':memory:');
-    saveJob(db, job('old')); db.prepare("UPDATE jobs SET created_at = '2026-01-01 00:00:00' WHERE id = 'old'").run();
+    saveJob(db, job('old')); db.prepare("UPDATE jobs SET created_at = datetime('now', '-2 hours') WHERE id = 'old'").run();
     saveJob(db, job('pending')); db.prepare("UPDATE jobs SET score = 80 WHERE id = 'pending'").run();
     addPrio(db, 'm1', { at: '2026-10-14 10:00:00' });
     addPrio(db, 'm2', { score: 75, at: '2026-10-13 10:00:00' });
@@ -301,6 +302,85 @@ describe('priority in the pipeline input and the queues', () => {
     expect(classifyApplyUrl('https://boards.greenhouse.io/acme/jobs/1', 'manual:greenhouse')).toMatchObject({ platform: 'greenhouse' });
     expect(classifyApplyUrl('https://boards.greenhouse.io/acme/jobs/1', 'manual:workday')).toMatchObject({ platform: 'none' });
     expect(classifyApplyUrl('https://careers.acme.test/jobs/1', 'manual:other', {})).toMatchObject({ platform: 'none', reason: 'host_unknown' });
+  });
+});
+
+describe('priority versus the 24-hour window, dedupe and the 90-day repeat guard', () => {
+  function twinContacted(db: ReturnType<typeof openDb>) {
+    saveJob(db, job('twin', { title: 'Platform Engineer', company: 'Globex' }));
+    db.prepare("UPDATE jobs SET score = 80 WHERE id = 'twin'").run();
+    db.prepare("INSERT INTO outreach_queue (job_id, status, email_to) VALUES ('twin', 'queued', 'hr@globex.test')").run();
+  }
+  function manual(db: ReturnType<typeof openDb>, id: string, force = 0, o: { title?: string; score?: number | null } = {}) {
+    saveJob(db, job(id, { title: o.title ?? 'Platform Engineer', company: 'Globex' }));
+    db.prepare("UPDATE jobs SET priority = 1, created_at = '2026-01-01 00:00:00', score = ? WHERE id = ?").run(o.score ?? null, id);
+    db.prepare("INSERT INTO manual_requests (url, kind, status, force, job_ids) VALUES ('https://a.test/x', 'url', 'running', ?, ?)").run(force, JSON.stringify([id]));
+  }
+  it('an old priority job bypasses the window and a scored twin does not mark it duplicate', () => {
+    const db = openDb(':memory:');
+    saveJob(db, job('scored', { title: 'Platform Engineer', company: 'Globex' }));
+    db.prepare('UPDATE jobs SET score = 50 WHERE id = ?').run('scored');
+    manual(db, 'm');
+    const rows = listUnscoredJobs(db, { limit: 10, matchThreshold: 60 });
+    expect(rows.map((r) => r.id)).toEqual(['m']);
+    expect(db.prepare("SELECT status FROM jobs WHERE id = 'm'").get()).toEqual({ status: null });
+  });
+  it('without force a repeat contact is marked repeat_contact, not offered, and the report explains it', async () => {
+    const db = openDb(':memory:');
+    twinContacted(db);
+    manual(db, 'm');
+    expect(listUnscoredJobs(db, { limit: 10, matchThreshold: 60 })).toEqual([]);
+    expect(db.prepare("SELECT status FROM jobs WHERE id = 'm'").get()).toEqual({ status: 'repeat_contact' });
+    expect(listUnscoredJobs(db, { limit: 10, matchThreshold: 60 })).toEqual([]);
+    const text = composeManualReport(db, getManualRequest(db, 1)!).join('\n');
+    expect(text).toContain('SKIPPED by the 90-day repeat-contact guard');
+    expect(text).toContain('earlier job twin');
+    expect(text).toContain('--force');
+    // the job is visible and settled, so the request is reported, not held for 24 hours
+    const sent: string[] = [];
+    expect((await finalizeManualRequests(db, 'ok', { send: async (t) => { sent.push(t); }, now: () => NOW })).reported).toEqual([1]);
+    expect(sent.join('\n')).toContain('repeat-contact guard');
+  });
+  it('a forced request overrides the repeat guard and its report says so', () => {
+    const db = openDb(':memory:');
+    twinContacted(db);
+    manual(db, 'm', 1, { score: 75 });
+    const rows = listUnscoredJobs(db, { limit: 10, matchThreshold: 60 });
+    expect(rows.map((r) => r.id)).toEqual(['m']);
+    expect(rows[0]).toMatchObject({ force_prepare: true, priority: 1 });
+    expect(composeManualReport(db, getManualRequest(db, 1)!).join('\n')).toContain('overridden by --force');
+  });
+  it('resubmitting with force clears an earlier repeat_contact mark', () => {
+    const db = openDb(':memory:');
+    twinContacted(db);
+    manual(db, 'm');
+    listUnscoredJobs(db, { limit: 10, matchThreshold: 60 });
+    expect(db.prepare("SELECT status FROM jobs WHERE id = 'm'").get()).toEqual({ status: 'repeat_contact' });
+    expect(createManualRequest(db, 'https://a.test/x', { force: true })).toMatchObject({ ok: true, duplicate: true });
+    expect(db.prepare("SELECT status FROM jobs WHERE id = 'm'").get()).toEqual({ status: null });
+    expect(listUnscoredJobs(db, { limit: 10, matchThreshold: 60 }).map((r) => r.id)).toEqual(['m']);
+  });
+  it('the normal pipeline still skips the same repeat for non-priority jobs', () => {
+    const db = openDb(':memory:');
+    twinContacted(db);
+    saveJob(db, job('plain', { title: 'Platform Engineer', company: 'Globex' }));
+    expect(listUnscoredJobs(db, { limit: 10, matchThreshold: 60 })).toEqual([]);
+    expect(db.prepare("SELECT status FROM jobs WHERE id = 'plain'").get()).toEqual({ status: 'repeat_contact' });
+  });
+});
+
+describe('mail drip lane reads priority first', () => {
+  const env = {} as NodeJS.ProcessEnv;
+  it('pickDripItem returns the priority row before older ones, and per-address dedupe still holds', () => {
+    const db = openDb(':memory:');
+    for (const id of ['a', 'b', 'c']) saveJob(db, job(id, { title: `Role ${id}`, company: `Co ${id}` }));
+    db.prepare("UPDATE jobs SET priority = 1 WHERE id = 'c'").run();
+    const ins = db.prepare("INSERT INTO outreach_queue (job_id, status, created_at, email_to, email_status) VALUES (?, 'queued', ?, ?, 'queued')");
+    ins.run('a', '2026-10-01 00:00:00', 'a@a.test'); ins.run('b', '2026-10-02 00:00:00', 'b@b.test'); ins.run('c', '2026-10-03 00:00:00', 'c@c.test');
+    expect(pickDripItem(db, NOW, env)).toMatchObject({ item: { kind: 'cold', job_id: 'c', address: 'c@c.test' } });
+    // the priority address was already emailed (another job): skipped for good, the next row is used
+    db.prepare("INSERT INTO outreach_queue (job_id, status, created_at, email_to, email_status) VALUES ('old', 'done', '2026-09-01 00:00:00', 'c@c.test', 'sent')").run();
+    expect(pickDripItem(db, NOW, env)).toMatchObject({ item: { job_id: 'a' } });
   });
 });
 
