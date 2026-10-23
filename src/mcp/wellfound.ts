@@ -551,7 +551,13 @@ export const SEARCH_SRC = `(() => {
     seen.add(href);
     const card = a.closest('[class*="styles_component"], [data-test], li, article, section') || a.parentElement;
     const comp = card ? card.querySelector('a[href*="/company/"], h2') : null;
-    out.push({ title: txt(a), href, company: txt(comp), snippet: txt(card).slice(0, 1500) });
+    // Promotion channels only (short badge texts, class and aria hints), never the snippet. Selectors are guesses, see src/wellfound/promoted.ts.
+    const hints = card ? Array.from(card.querySelectorAll('[class*="romot"], [class*="eatured"], [class*="ponsor"], [class*="remium"], [class*="hot"], [class*="badge"], [class*="tag"], [aria-label]')).slice(0, 12) : [];
+    out.push({
+      title: txt(a), href, company: txt(comp), snippet: txt(card).slice(0, 1500),
+      badges: hints.map(txt).filter((t) => t && t.length <= 40).slice(0, 10),
+      attrs: [String((card && card.getAttribute('class')) || '')].concat(hints.map((h) => String(h.getAttribute('class') || '') + ' ' + String(h.getAttribute('aria-label') || ''))),
+    });
   });
   return out.slice(0, 40);
 })()`;

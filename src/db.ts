@@ -9,6 +9,7 @@ import { isApplyBlockedSource, isHeldSource } from './lib/discoverOnly.js';
 import { classifyApplyUrl } from './apply/registry.js';
 import { channelsFor, type ChannelVerdict } from './lib/channels.js';
 import { applyPipelineSkips, applyPriorityRepeats, JOB_STATUS_REPEAT_CONTACT, planPipelineWork, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_SKIP_SQL, PIPELINE_WINDOW_HOURS, sqlTime } from './pipelineWork.js';
+import { laneOrder } from './promoted.js';
 import { migrateOutreachTables } from './outreach/schema.js';
 import { migrateSchedulerTables } from './scheduler/runLog.js';
 import { buildEmailParts, loadEmailLinks, stripMarkers, type EmailLink } from './emailHtml.js';
@@ -295,6 +296,8 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   if (!jobCols.has('match_fails')) db.exec('ALTER TABLE jobs ADD COLUMN match_fails INTEGER NOT NULL DEFAULT 0');
   // Owner-submitted jobs (manual requests) run at priority 1 ahead of everything else.
   if (!jobCols.has('priority')) db.exec('ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0');
+  // Promoted listing on Naukri or Wellfound (set by code from a card marker, never cleared): ordering only, see src/promoted.ts.
+  if (!jobCols.has('promoted')) db.exec('ALTER TABLE jobs ADD COLUMN promoted INTEGER DEFAULT 0');
   // A manual_url source task carries the owner's URL and the request it belongs to.
   const taskCols = new Set((db.prepare('PRAGMA table_info(source_tasks)').all() as { name: string }[]).map((c) => c.name));
   if (!taskCols.has('url')) db.exec('ALTER TABLE source_tasks ADD COLUMN url TEXT');
@@ -430,6 +433,8 @@ export interface Job {
   posted_at?: string;
   /** 1 for an owner-submitted job (manual request); absent or 0 for everything else. */
   priority?: number;
+  /** True when the platform marked the listing as promoted (Naukri, Wellfound). Only orders work; once stored it is never cleared. */
+  promoted?: boolean;
 }
 
 /** Normalize a source's posting date to UTC 'YYYY-MM-DD'; undefined when absent or invalid. */
@@ -474,6 +479,8 @@ export function saveJob(db: BetterSqlite3.Database, job: Job): void {
     companyKey(job.company),
     job.priority ?? 0
   );
+  // A stored job later seen as promoted becomes promoted; nothing ever clears the flag.
+  if (job.promoted === true) db.prepare('UPDATE jobs SET promoted = 1 WHERE id = ? AND COALESCE(promoted, 0) = 0').run(job.id);
 }
 
 /** Fill title_key/company_key for rows saved before those columns existed. Returns rows updated. */
@@ -996,6 +1003,8 @@ export interface UnscoredJob extends Job {
   score?: number;
   /** Set on an owner-submitted job (priority 1): it goes first through every stage. */
   priority?: number;
+  /** Set on a job the platform marked promoted (Naukri, Wellfound): taken first within a 40 percent lane, wins ties in the prepare pool. */
+  promoted?: boolean;
   /** Set on an owner-submitted job whose request is forced: P2c does not drop it for a score below the threshold (vetoes still apply). */
   force_prepare?: true;
 }
@@ -1031,7 +1040,7 @@ export function listUnscoredJobs(
   const windowStart = sqlTime(new Date(now.getTime() - PIPELINE_WINDOW_HOURS * 3600_000));
   const pendingLimit = kind === 'matched' ? limit : Math.max(1, Math.floor(limit / 2));
   type Row = Record<string, string | number | null>;
-  const cols = 'id, source, title, company, url, apply_url, description, posted_at, score';
+  const cols = 'id, source, title, company, url, apply_url, description, posted_at, score, COALESCE(promoted, 0) AS promoted';
   // Owner-submitted jobs (priority > 0) come first, outside the normal cap (at most MANUAL_PRIORITY_PER_WAKE per call, the rest wait).
   // They bypass the window, the same-posting dedupe and prep_offers; the 90-day repeat-contact guard still applies (see applyPriorityRepeats).
   // A scored one is offered only while it has no outreach row and (it met the threshold or its request is forced).
@@ -1041,7 +1050,7 @@ export function listUnscoredJobs(
     `SELECT ${cols}, ${forcedSql} AS forced FROM jobs
       WHERE priority > 0 AND excluded_reason IS NULL AND match_fails < ? AND (status IS NULL OR status <> '${JOB_STATUS_REPEAT_CONTACT}')
         AND (score IS NULL OR (prep_offers < ? AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id) AND (score >= ? OR ${forcedSql})))
-      ORDER BY priority DESC, created_at ASC, rowid ASC LIMIT ?`,
+      ORDER BY priority DESC, COALESCE(promoted, 0) DESC, created_at ASC, rowid ASC LIMIT ?`,
   ).all(MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT + 1, typeof opts.matchThreshold === 'number' ? opts.matchThreshold : 101, MANUAL_PRIORITY_PER_WAKE) as Row[];
   prio = applyPriorityRepeats(db, prio, now);
   if (kind === 'matched') prio = prio.filter((r) => r.score !== null && r.score !== undefined);
@@ -1055,19 +1064,27 @@ export function listUnscoredJobs(
       `SELECT ${cols} FROM jobs
         WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ? AND priority = 0 AND ${PIPELINE_SKIP_SQL}
           AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id)
-        ORDER BY score DESC, created_at ASC, rowid ASC LIMIT ?`,
-    ).all(opts.matchThreshold, PREP_OFFER_LIMIT, pendingLimitRest) as Row[]
+        ORDER BY score DESC, created_at ASC, rowid ASC`,
+    ).all(opts.matchThreshold, PREP_OFFER_LIMIT) as Row[]
     : [];
+  // Promoted jobs take at most 40 percent of the carry-over batch, first; the rest follow in the normal order (score desc).
+  const pendingTaken = laneOrder(pending.map((r) => ({ r, promoted: r.promoted === 1 })), pendingLimitRest).slice(0, pendingLimitRest).map((x) => x.r);
+  pending.length = 0;
+  pending.push(...pendingTaken);
   if (pending.length) {
     const bump = db.prepare('UPDATE jobs SET prep_offers = prep_offers + 1 WHERE id = ?');
     db.transaction(() => { for (const r of pending) bump.run(r.id as string); })();
   }
-  const fresh: Row[] = kind === 'matched' ? [] : db.prepare(
+  const freshCount = Math.max(0, Math.min(rest - pending.length, PIPELINE_MAX_JOBS_PER_WAKE_CEILING - offset));
+  const freshAll: Row[] = kind === 'matched' || freshCount === 0 ? [] : db.prepare(
     `SELECT ${cols} FROM (
        SELECT *, rowid AS rid, ROW_NUMBER() OVER (PARTITION BY source ORDER BY created_at ASC, rowid ASC) AS rn FROM jobs
         WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ? AND created_at >= ? AND priority = 0 AND ${PIPELINE_SKIP_SQL})
-      ORDER BY rn ASC, created_at ASC, rid ASC LIMIT ? OFFSET ?`,
-  ).all(MATCH_FAIL_LIMIT, windowStart, Math.max(0, Math.min(rest - pending.length, PIPELINE_MAX_JOBS_PER_WAKE_CEILING - offset)), offset) as Row[];
+      ORDER BY rn ASC, created_at ASC, rid ASC LIMIT ?`,
+  ).all(MATCH_FAIL_LIMIT, windowStart, PIPELINE_MAX_JOBS_PER_WAKE_CEILING) as Row[];
+  // Round-robin order first, then the promoted-first lane (at most 40 percent of each page, of the whole batch in kind `all`) is pulled forward.
+  const fresh: Row[] = laneOrder(freshAll.map((r) => ({ r, promoted: r.promoted === 1 })), kind === 'all' ? freshCount : limit)
+    .map((x) => x.r).slice(offset, offset + freshCount);
   const toJob = (r: Row, matched: boolean, manual = false): UnscoredJob => {
     const job: Job = {
       id: r.id as string, source: (r.source ?? '') as string, title: (r.title ?? '') as string, company: (r.company ?? '') as string,
@@ -1084,6 +1101,7 @@ export function listUnscoredJobs(
       apply_class: apply?.eligible ? 'apply_capable' : (apply?.reason ?? 'apply_tier:none'),
       channels,
       ...(matched ? { already_matched: true as const, score: r.score as number } : {}),
+      ...(r.promoted === 1 ? { promoted: true as const } : {}),
       ...(manual ? { priority: 1 as const } : {}),
       ...(manual && r.forced ? { force_prepare: true as const } : {}),
     };

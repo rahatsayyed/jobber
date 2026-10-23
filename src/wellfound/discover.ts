@@ -17,6 +17,7 @@ import type { ScreenPurpose, ScreenVerdict } from '../safety/screen.js';
 import { setState } from '../scheduler/runLog.js';
 import { extractWellfoundJobId } from './page.js';
 import { buildSearchUrl } from './url.js';
+import { isWellfoundPromoted } from './promoted.js';
 
 export const SEARCH_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,48}$/;
 const searchDef = z.object({
@@ -69,6 +70,8 @@ export interface WellfoundDiscoverResult {
 
 export interface RawDiscoverCard {
   title?: unknown; company?: unknown; href?: unknown; snippet?: unknown;
+  /** Short badge texts and class or aria attributes of the card (the promotion channels; never the snippet). */
+  badges?: unknown; attrs?: unknown;
 }
 
 export interface ParsedCards {
@@ -115,7 +118,10 @@ export function parseDiscoverCards(raw: unknown, limit: number): ParsedCards {
     if (title.blocked || company.blocked || snippet.blocked) { injection = true; skipped++; continue; }
     if (!title.text) { skipped++; continue; }
     ids.add(id);
-    jobs.push({ id, source: 'wellfound', title: title.text, company: company.text, url, apply_url: url, description: snippet.text });
+    jobs.push({
+      id, source: 'wellfound', title: title.text, company: company.text, url, apply_url: url, description: snippet.text,
+      ...(isWellfoundPromoted({ badges: c.badges, attrs: c.attrs }) ? { promoted: true } : {}),
+    });
     text.push(`${title.text}\n${company.text}\n${snippet.text}`);
   }
   return { jobs, fetched: cards.length, skipped, injection, screenText: text.join('\n') };
@@ -187,7 +193,8 @@ export async function runWellfoundDiscover(
     unscreened = v.unscreened;
   }
 
-  const fresh = parsed.jobs.filter((j) => !isSeen(db, j.id));
+  // Promoted cards first: they get the detail-page quota before the others (stable, so the order is otherwise unchanged).
+  const fresh = parsed.jobs.filter((j) => !isSeen(db, j.id)).sort((a, b) => Number(!!b.promoted) - Number(!!a.promoted));
   const seen = parsed.jobs.length - fresh.length;
 
   if (dry) {
@@ -226,6 +233,8 @@ export async function runWellfoundDiscover(
     keep.push(job);
   }
 
+  // An already stored job seen as promoted now is marked promoted (saveJob on an existing id only sets the flag, never clears it).
+  for (const j of parsed.jobs) if (j.promoted && isSeen(db, j.id)) saveJob(db, j);
   const ids: string[] = [];
   for (const j of keep) {
     saveJob(db, j);

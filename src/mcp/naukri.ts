@@ -589,6 +589,9 @@ export const SEARCH_SRC = `(() => {
       salary: pick('.sal-wrap, [class*="sal"]'),
       postedText: pick('.job-post-day, [class*="job-post-day"]'),
       snippet: pick('.job-desc, [class*="job-desc"]'),
+      // Promotion channels only (short badge texts, class and aria hints), never the snippet. Selectors are guesses, see src/naukri/promoted.ts.
+      badges: Array.from(el.querySelectorAll('[class*="romot"], [class*="eatured"], [class*="ponsor"], [class*="remium"], [class*="hot"], [class*="badge"], [class*="tag"]')).map(txt).filter((t) => t && t.length <= 40).slice(0, 10),
+      attrs: [String(el.getAttribute('class') || '')].concat(Array.from(el.querySelectorAll('[class*="romot"], [class*="eatured"], [class*="ponsor"], [class*="remium"], [class*="hot"], [aria-label]')).slice(0, 10).map((h) => String(h.getAttribute('class') || '') + ' ' + String(h.getAttribute('aria-label') || ''))),
     });
   });
   return out.slice(0, 40);
@@ -757,7 +760,7 @@ export function naukriSearch(
     const lines = results.map(
       (r) =>
         `- job_id=${r.job_id} url=${trimUrl(r.url)} | ${clip(r.title, 100)} | ${clip(r.company, 80)} | ${clip(r.location, 60)}` +
-        `${r.salary ? ` | ${clip(r.salary, 40)}` : ''}${r.posted ? ` | ${clip(r.posted, 40)}` : ''}`
+        `${r.salary ? ` | ${clip(r.salary, 40)}` : ''}${r.posted ? ` | ${clip(r.posted, 40)}` : ''}${r.promoted ? ' | promoted' : ''}`
     );
     return emit(untrustedBlock(`status=ok count=${results.length} search_url=${url}`, lines), deps);
   });

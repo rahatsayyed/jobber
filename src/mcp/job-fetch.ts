@@ -51,6 +51,7 @@ server.registerTool(
     for (const job of newJobs) {
       saveJob(db, job);
     }
+    for (const job of jobs) if (job.promoted && isSeen(db, job.id)) saveJob(db, job);
     // Status never fails the fetch: a status write error is logged and the jobs are still returned.
     try { finishRun(db, outcomes, newJobs); } catch (e) { console.error('[job-fetch] source status not recorded:', e); }
     return {

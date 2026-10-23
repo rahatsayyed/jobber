@@ -1,14 +1,17 @@
 // Pure Naukri snapshot parsers. No browser: the MCP layer hands over plain objects.
 import { extractNaukriJobId } from '../sources/naukri.js';
 import { gateInput } from '../safety/inputGate.js';
+import { isNaukriPromoted } from './promoted.js';
 
 export interface RawSearchCard {
   title: string; company: string; location: string; experience?: string; salary?: string;
   href: string; postedText?: string; snippet?: string;
+  badges?: unknown; attrs?: unknown;
 }
 export interface SearchResult {
   job_id: string; url: string; title: string; company: string; location: string;
   salary: string | null; posted: string | null;
+  promoted: boolean;
 }
 export interface RawThread {
   threadRef: string; sender: string; company?: string; preview: string; unread: boolean; at?: string;
@@ -60,6 +63,7 @@ export function parseSearchCards(cards: RawSearchCard[], max: number): SearchRes
       location: clean(c.location) ?? '',
       salary: clean(c.salary) ?? null,
       posted: clean(c.postedText, 80) ?? null,
+      promoted: isNaukriPromoted({ badges: c.badges, attrs: c.attrs }),
     });
   }
   return out;

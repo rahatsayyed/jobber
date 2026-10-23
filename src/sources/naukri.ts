@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, BrowserContext, Page } from 'patchright';
+import { isNaukriPromoted } from '../naukri/promoted.js';
 import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS, type LiLauncher } from '../webcore/launch.js';
 
 // Browser launching goes through the shared launcher (patchright + installed Google Chrome, never bundled
@@ -60,6 +61,9 @@ export interface RawNaukriCard {
   companyText: string | null;
   hrefRaw: string | null;
   descriptionText: string | null;
+  /** Promotion channels (short badge texts, class and aria hints), never the description. Optional: older fixtures omit them. */
+  badges?: unknown;
+  attrs?: unknown;
 }
 
 export interface NaukriParseResult {
@@ -96,6 +100,7 @@ export function parseNaukriCards(rawCards: RawNaukriCard[]): NaukriParseResult {
         url: card.hrefRaw,
         apply_url: card.hrefRaw,
         description: (card.descriptionText ?? '').trim(),
+        ...(isNaukriPromoted({ badges: card.badges, attrs: card.attrs }) ? { promoted: true } : {}),
       });
       parsed++;
     } catch (err) {
@@ -246,6 +251,12 @@ export async function searchNaukri(
             companyText: companyEl?.textContent ?? null,
             hrefRaw: titleEl?.href ?? null,
             descriptionText: descEl?.textContent ?? null,
+            // Promotion channels only, guessed selectors (see src/naukri/promoted.ts).
+            badges: Array.from(n.querySelectorAll('[class*="romot"], [class*="eatured"], [class*="ponsor"], [class*="remium"], [class*="hot"], [class*="badge"]'))
+              .map((e) => (e.textContent ?? '').replace(/\s+/g, ' ').trim()).filter((t) => t && t.length <= 40).slice(0, 10),
+            attrs: [n.getAttribute('class') ?? ''].concat(
+              Array.from(n.querySelectorAll('[class*="romot"], [class*="eatured"], [class*="ponsor"], [class*="remium"], [class*="hot"], [aria-label]'))
+                .slice(0, 10).map((e) => `${e.getAttribute('class') ?? ''} ${e.getAttribute('aria-label') ?? ''}`)),
           };
         })
       );
