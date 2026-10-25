@@ -75,7 +75,7 @@ export function nkWorld(o: {
   const engine = createEngine({
     db, now: () => NOW, env, cfg: { dryRun: isDryRun(env), maxAcceptsPerDay: 0 }, policy: NAUKRI_POLICY,
     getPage: async () => page, intents, screen: screen as never, stopFile, textGate,
-    screenshotEnabled: o.screenshot === true, paceMs: () => 0, settleMs: 0, confirmTimeoutMs: 50,
+    screenshotEnabled: o.screenshot === true, paceMs: () => 0, settleMs: 0, confirmTimeoutMs: 50, diagDir: path.join(dir, 'diag'),
     ...(o.layoutFeed ? { layoutFeed: o.layoutFeed as never } : {}),
   });
   const armDeps: NaukriArmDeps = {

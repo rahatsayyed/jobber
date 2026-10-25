@@ -2,7 +2,8 @@
 // fixed operations; there is no evaluate, no selector and no storage or cookie access for callers.
 // Real implementation wraps the patchright page used across the project (LiPage structural type);
 // tests supply a fake BcPage.
-import type { LiPage } from '../linkedin/types.js';
+import type { LiLocator, LiPage } from '../linkedin/types.js';
+import type { PageDiag } from './diag.js';
 import { bcScript, MAX_VALUE, type LiveNode, type RawTree } from './snapshot.js';
 
 export type BcKey = 'Enter' | 'Escape' | 'Tab' | 'ArrowDown' | 'ArrowUp' | 'PageDown' | 'PageUp' | 'Backspace' | 'Space';
@@ -23,6 +24,8 @@ export interface BcPage {
   describeAt(x: number, y: number): Promise<LiveNode | null>;
   /** The focused element, or null. */
   focused(): Promise<LiveNode | null>;
+  // Optional: structure-only page facts for failure diagnostics (counts and short control names). Absent in fakes.
+  diag?(): Promise<PageDiag | null>;
   clickNode(n: number): Promise<void>;
   clickPoint(x: number, y: number): Promise<void>;
   /** Replace the value of a stamped text field with exactly this text. */
@@ -48,7 +51,7 @@ function coord(v: number): number {
 const CLICK_TIMEOUT_MS = 5000;
 
 export function realBcPage(page: RealPage): BcPage {
-  const run = async <T>(mode: 'snapshot' | 'describe' | 'at' | 'focused', args: { n?: number; x?: number; y?: number } = {}): Promise<T | null> => {
+  const run = async <T>(mode: 'snapshot' | 'describe' | 'at' | 'focused' | 'diag', args: { n?: number; x?: number; y?: number } = {}): Promise<T | null> => {
     try {
       return (await page.evaluate<T | null>(bcScript(mode, args))) ?? null;
     } catch {
@@ -56,6 +59,20 @@ export function realBcPage(page: RealPage): BcPage {
     }
   };
   const sel = (n: number) => `[data-bc="${ordinal(n)}"]`;
+  // Playwright CSS selectors pierce OPEN shadow roots by themselves; a same-origin iframe is a separate
+  // frame, so when the main frame has no match the stamped element is looked up in the other frames.
+  const locate = async (n: number): Promise<LiLocator> => {
+    const main = page.locator(sel(n));
+    try {
+      if ((await main.count()) > 0) return main.first();
+      const frames = (page as unknown as { frames?: () => { locator(s: string): LiLocator }[] }).frames?.() ?? [];
+      for (const f of frames) {
+        const l = f.locator(sel(n));
+        if ((await l.count()) > 0) return l.first();
+      }
+    } catch { /* fall through to the main-frame locator, which then fails the way it always did */ }
+    return main.first();
+  };
   return {
     url: () => page.url(),
     title: () => page.title(),
@@ -71,14 +88,15 @@ export function realBcPage(page: RealPage): BcPage {
     describe: (n) => run<LiveNode>('describe', { n: ordinal(n) }),
     describeAt: (x, y) => run<LiveNode>('at', { x: coord(x), y: coord(y) }),
     focused: () => run<LiveNode>('focused'),
-    async clickNode(n) { await page.locator(sel(n)).first().click({ timeout: CLICK_TIMEOUT_MS }); },
+    diag: () => run<PageDiag>('diag'),
+    async clickNode(n) { await (await locate(n)).click({ timeout: CLICK_TIMEOUT_MS }); },
     async clickPoint(x, y) {
       if (!page.mouse) throw new Error('browserctl: page has no mouse');
       await page.mouse.click(coord(x), coord(y));
     },
     async fillNode(n, text) {
       if (typeof text !== 'string' || text.length > MAX_VALUE) throw new Error('browserctl: bad text');
-      await page.locator(sel(n)).first().fill(text, { timeout: CLICK_TIMEOUT_MS });
+      await (await locate(n)).fill(text, { timeout: CLICK_TIMEOUT_MS });
     },
     async press(key) {
       if (!BC_KEYS.includes(key)) throw new Error('browserctl: key not allowed');

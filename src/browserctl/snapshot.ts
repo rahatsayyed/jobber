@@ -72,6 +72,55 @@ const BODY_SRC = String.raw`
     })(e);
     return parts.join('');
   }
+  function par(e) {
+    if (e.parentElement) return e.parentElement;
+    var r = e.getRootNode ? e.getRootNode() : null;
+    return r && r.host ? r.host : null;
+  }
+  function visD(e) {
+    if (!e) return false;
+    var chain = [], x = e;
+    while (x && !allMemo.has(x)) { chain.push(x); x = par(x); }
+    var res = x ? allMemo.get(x) : true;
+    for (var i = chain.length - 1; i >= 0; i--) {
+      res = res && !ownHidden(chain[i]);
+      allMemo.set(chain[i], res);
+    }
+    return allMemo.get(e);
+  }
+  // An iframe is entered only when it is itself visible and same-origin (a cross-origin contentDocument throws).
+  function ifrOk(f) {
+    try {
+      var pp = par(f);
+      if (pp && !visD(pp)) return false;
+      var cs = getComputedStyle(f);
+      if (!cs || cs.display === 'none' || cs.visibility === 'hidden') return false;
+      var r = f.getBoundingClientRect();
+      return !!r && r.width > 0 && r.height > 0;
+    } catch (err) { return false; }
+  }
+  // Every element under start in document order, entering OPEN shadow roots (their content comes right after
+  // the host) and visible same-origin iframes. Closed shadow roots are invisible to script and stay unseen.
+  function deepList(start) {
+    var out = [], stack = [], LIM = 30000;
+    function kids(node, into) {
+      var ks = [];
+      for (var c = node.firstElementChild; c; c = c.nextElementSibling) ks.push(c);
+      for (var i = ks.length - 1; i >= 0; i--) into.push(ks[i]);
+    }
+    kids(start, stack);
+    while (stack.length && out.length < LIM) {
+      var e = stack.pop();
+      out.push(e);
+      kids(e, stack);
+      if (String(e.tagName || '').toUpperCase() === 'IFRAME' && ifrOk(e)) {
+        try { var idoc = e.contentDocument; if (idoc && idoc.body) kids(idoc.body, stack); } catch (err2) { /* cross-origin */ }
+      }
+      if (e.shadowRoot) kids(e.shadowRoot, stack);
+    }
+    return out;
+  }
+  function deepRoot() { return document.body || document.documentElement; }
   function attr(e, k) { var v = e.getAttribute(k); return v === null ? '' : String(v); }
   function roleOf(e) {
     var tag = String(e.tagName || '').toUpperCase();
@@ -125,17 +174,20 @@ const BODY_SRC = String.raw`
   function dialogNameOf(d) {
     var a = norm(attr(d, 'aria-label'), 200);
     if (a) return a;
-    var hs = d.querySelectorAll('h1,h2,h3,h4,[role=heading]');
-    for (var i = 0; i < hs.length; i++) if (vis(hs[i])) { var h = norm(flatText(hs[i]), 200); if (h) return h; }
+    var hs = deepList(d);
+    for (var i = 0; i < hs.length; i++) {
+      if (roleOf(hs[i]) !== 'heading' || !visD(hs[i])) continue;
+      var h = norm(flatText(hs[i]), 200); if (h) return h;
+    }
     return '';
   }
   function enclosingDialog(e) {
-    for (var x = e.parentElement; x; x = x.parentElement) if (roleOf(x) === 'dialog') return x;
+    for (var x = par(e); x; x = par(x)) if (roleOf(x) === 'dialog') return x;
     return null;
   }
   function inFooterOf(e, dlg) {
     if (!dlg) return false;
-    for (var x = e; x && x !== dlg; x = x.parentElement) {
+    for (var x = e; x && x !== dlg; x = par(x)) {
       if (String(x.tagName || '').toUpperCase() === 'FOOTER') return true;
       if (/footer|actionbar|action-bar/i.test(attr(x, 'class'))) return true;
     }
@@ -148,20 +200,20 @@ const BODY_SRC = String.raw`
     if (tag !== 'BUTTON') return false;
     if (t === 'submit') return true;
     if (t) return false;
-    for (var x = e.parentElement; x; x = x.parentElement) if (String(x.tagName || '').toUpperCase() === 'FORM') return true;
+    for (var x = par(e); x; x = par(x)) if (String(x.tagName || '').toUpperCase() === 'FORM') return true;
     return false;
   }
   function isComposer(e, role, secret) {
     if (secret) return false;
     if (role === 'button' || role === 'menuitem') {
-      for (var y = e.parentElement; y; y = y.parentElement) if (/compose|msg-form|msg-overlay|chatbot|chat/i.test(attr(y, 'class'))) return true;
+      for (var y = par(e); y; y = par(y)) if (/compose|msg-form|msg-overlay|chatbot|chat/i.test(attr(y, 'class'))) return true;
       return false;
     }
     if (role !== 'textbox') return false;
     var tag = String(e.tagName || '').toUpperCase();
     if (tag === 'TEXTAREA' || (tag !== 'INPUT' && e.hasAttribute('contenteditable'))) return true;
     if (enclosingDialog(e)) return true;
-    for (var x = e.parentElement; x; x = x.parentElement) if (/compose|msg-form|msg-overlay|chatbot|chat/i.test(attr(x, 'class'))) return true;
+    for (var x = par(e); x; x = par(x)) if (/compose|msg-form|msg-overlay|chatbot|chat/i.test(attr(x, 'class'))) return true;
     return false;
   }
   function stampOf(e) { var s = e.getAttribute('data-bc'); return s === null ? -1 : parseInt(s, 10); }
@@ -191,22 +243,21 @@ const BODY_SRC = String.raw`
     return s;
   }
   function nearestActionable(e) {
-    for (var i = 0, x = e; x && i < 8; i++, x = x.parentElement) { var r = roleOf(x); if (r && ACTION[r]) return [x, r]; }
+    for (var i = 0, x = e; x && i < 8; i++, x = par(x)) { var r = roleOf(x); if (r && ACTION[r]) return [x, r]; }
     return null;
   }
   function underAction(e) {
-    for (var x = e.parentElement; x; x = x.parentElement) { var r = roleOf(x); if (r && ACTION[r]) return true; }
+    for (var x = par(e); x; x = par(x)) { var r = roleOf(x); if (r && ACTION[r]) return true; }
     return false;
   }
   if (MODE === 'snapshot') {
-    var old = document.querySelectorAll('[data-bc]');
-    for (var oi = 0; oi < old.length; oi++) old[oi].removeAttribute('data-bc');
-    var all = document.body ? document.body.getElementsByTagName('*') : [];
+    var all = document.body ? deepList(document.body) : [];
+    for (var oi = 0; oi < all.length; oi++) if (all[oi].hasAttribute('data-bc')) all[oi].removeAttribute('data-bc');
     var nodes = [], n = 0, truncated = false;
     for (var k = 0; k < all.length; k++) {
       var e = all[k];
       if (HIDDEN_TAGS[String(e.tagName || '').toUpperCase()]) continue;
-      if (!vis(e)) continue;
+      if (!visD(e)) continue;
       var role = roleOf(e);
       if (!role) {
         if (!/\S/.test(ownText(e)) || underAction(e)) continue;
@@ -221,15 +272,49 @@ const BODY_SRC = String.raw`
     if (truncated) res.truncated = true;
     return res;
   }
+  if (MODE === 'diag') {
+    var dall = document.body ? deepList(document.body) : [];
+    var sr = 0, ifc = 0, chc = 0, dls = [];
+    for (var qi = 0; qi < dall.length; qi++) {
+      var de = dall[qi], dtag = String(de.tagName || '').toUpperCase();
+      if (de.shadowRoot) sr++;
+      else if (dtag.indexOf('-') > 0) chc++;
+      if (dtag === 'IFRAME') ifc++;
+      if (roleOf(de) === 'dialog' && visD(de) && dls.length < 6) {
+        var bs = [], dd = deepList(de);
+        for (var bi = 0; bi < dd.length && bs.length < 12; bi++) {
+          var br = roleOf(dd[bi]);
+          if ((br === 'button' || br === 'link') && visD(dd[bi])) bs.push(norm(nameOf(dd[bi], br), 60));
+        }
+        dls.push({ role: attr(de, 'role') || dtag.toLowerCase(), name: dialogNameOf(de).slice(0, 60), buttons: bs });
+      }
+    }
+    return { shadowRoots: sr, iframes: ifc, closedHostCandidates: chc, dialogs: dls };
+  }
   if (MODE === 'describe') {
-    var el = document.querySelector('[data-bc="' + (A.n | 0) + '"]');
-    if (!el || !vis(el)) return null;
+    var el = null, want = String(A.n | 0), dl = deepList(deepRoot());
+    for (var di = 0; di < dl.length; di++) if (dl[di].getAttribute('data-bc') === want) { el = dl[di]; break; }
+    if (!el || !visD(el)) return null;
     var r0 = roleOf(el) || (/\S/.test(ownText(el)) ? 'text' : null);
     return r0 ? info(el, r0, true) : null;
   }
   if (MODE === 'at') {
-    var pe = document.elementFromPoint(A.x, A.y);
-    if (!pe || !vis(pe)) return null;
+    var pe = document.elementFromPoint(A.x, A.y), px = A.x, py = A.y;
+    for (var hop = 0; pe && hop < 6; hop++) {
+      if (pe.shadowRoot && pe.shadowRoot.elementFromPoint) {
+        var sp = pe.shadowRoot.elementFromPoint(px, py);
+        if (sp && sp !== pe) { pe = sp; continue; }
+      }
+      if (String(pe.tagName || '').toUpperCase() === 'IFRAME') {
+        try {
+          var ir = pe.getBoundingClientRect(), idc = pe.contentDocument;
+          var ip = idc && idc.elementFromPoint ? idc.elementFromPoint(px - ir.left, py - ir.top) : null;
+          if (ip && ifrOk(pe)) { px -= ir.left; py -= ir.top; pe = ip; continue; }
+        } catch (err3) { /* cross-origin */ }
+      }
+      break;
+    }
+    if (!pe || !visD(pe)) return null;
     var na = nearestActionable(pe);
     if (na) return info(na[0], na[1], true);
     var r1 = roleOf(pe) || 'text';
@@ -237,7 +322,14 @@ const BODY_SRC = String.raw`
   }
   if (MODE === 'focused') {
     var fe = document.activeElement;
-    if (!fe || fe === document.body || !vis(fe)) return null;
+    for (var fh = 0; fe && fh < 6; fh++) {
+      var inner = null;
+      if (fe.shadowRoot && fe.shadowRoot.activeElement) inner = fe.shadowRoot.activeElement;
+      else if (String(fe.tagName || '').toUpperCase() === 'IFRAME') { try { inner = fe.contentDocument && fe.contentDocument.activeElement; } catch (err4) { inner = null; } }
+      if (!inner || inner === fe) break;
+      fe = inner;
+    }
+    if (!fe || fe === document.body || !visD(fe)) return null;
     var r2 = roleOf(fe);
     return r2 ? info(fe, r2, true) : null;
   }
@@ -245,7 +337,7 @@ const BODY_SRC = String.raw`
 `;
 
 /** Build the in-page expression for one mode. Args are JSON-embedded numbers only (never model strings). */
-export function bcScript(mode: 'snapshot' | 'describe' | 'at' | 'focused', args: { n?: number; x?: number; y?: number } = {}): string {
+export function bcScript(mode: 'snapshot' | 'describe' | 'at' | 'focused' | 'diag', args: { n?: number; x?: number; y?: number } = {}): string {
   const safe: Record<string, number> = {};
   for (const k of ['n', 'x', 'y'] as const) {
     const v = args[k];
@@ -258,6 +350,38 @@ export function bcScript(mode: 'snapshot' | 'describe' | 'at' | 'focused', args:
 }
 
 // ---- fixture side ----
+const SHADOW_OPEN_RE = /<template\b[^>]*\bshadowrootmode\s*=\s*["']?open["']?[^>]*>/i;
+const SRCDOC_RE = /<iframe\b[^>]*\bsrcdoc\s*=\s*"([^"]*)"[^>]*>(?:\s*<\/iframe>)?/gi;
+
+// Fixture side of shadow roots and iframes: the in-page walker enters OPEN shadow roots and same-origin
+// iframes, so fixtures spell them as <template shadowrootmode="open"> and <iframe srcdoc="...">. Both are
+// unwrapped into plain wrapper elements here (other templates stay hidden, closed roots stay unseen).
+export function flattenShadowFixture(html: string, depth = 0): string {
+  const out = html.replace(SRCDOC_RE, (_m, doc: string) => {
+    if (depth > 3) return '';
+    const inner = doc.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    return `<div data-bc-frame="1">${flattenShadowFixture(inner, depth + 1)}</div>`;
+  });
+  // Walk <template> open and close tokens with a stack so a plain nested template keeps its own close tag.
+  const tok = /<template\b[^>]*>|<\/template\s*>/gi;
+  const stack: boolean[] = [];
+  let res = '';
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = tok.exec(out)) !== null) {
+    res += out.slice(last, m.index);
+    last = m.index + m[0].length;
+    if (m[0][1] === '/') {
+      res += stack.pop() ? '</div>' : m[0];
+    } else {
+      const shadow = SHADOW_OPEN_RE.test(m[0]);
+      stack.push(shadow);
+      res += shadow ? '<div data-bc-shadow="1">' : m[0];
+    }
+  }
+  return res + out.slice(last);
+}
+
 const cap = (s: string, n: number) => (s.length > n ? s.slice(0, n) : s);
 const flatOf = (nd: HtmlNode) => visibleText(nd).replace(/\s+/g, ' ').trim();
 const cls = (nd: HtmlNode) => nd.attrs['class'] ?? '';
@@ -334,7 +458,7 @@ function nameOfNode(nd: HtmlNode, role: BcRole): string {
 export function buildTreeFromHtml(html: string, url: string): RawTree {
   const out: RawTree = { url, title: '', nodes: [] };
   try {
-    const root = parseHtml(html);
+    const root = parseHtml(flattenShadowFixture(html));
     hideClosedDialogs(root);
     const titleNode = findAll(root, (n) => n.tag === 'title')[0];
     if (titleNode) out.title = cap(titleNode.children.map((c) => c.text ?? '').join('').replace(/\s+/g, ' ').trim(), 300);

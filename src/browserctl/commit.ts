@@ -14,6 +14,7 @@ import { finishTouch } from '../linkedin/touches.js';
 import { loadOutreachConfig } from '../outreach/config.js';
 import { tryConsume } from '../outreach/limits.js';
 import { recordDryRun } from '../safety/dryRun.js';
+import { diagNote, writeCommitDiag } from './diag.js';
 import type { BcPage } from './driver.js';
 import { killReason, type EngineDeps, type EngineResult } from './engineTypes.js';
 import { dialogKindOf, normName, type CommitClass } from './guard.js';
@@ -272,7 +273,8 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
       if (surface === 'dialog') { keepArmed = true; return { ok: true, code: 'dialog_opened', reason: 'invite dialog is open; type the armed note and click Send' }; }
       if (surface === 'page') { keepArmed = true; return { ok: true, code: 'invite_page_opened', reason: 'LinkedIn opened an invite page; take a snapshot and continue only if it shows the armed person' }; }
       release('unconfirmed');
-      return { ok: false, status: 'unconfirmed', code: 'no_dialog_after_connect', reason: 'Connect clicked but no invite dialog appeared; verify manually' };
+      const dg = await writeCommitDiag(deps, page, { platform, code: 'no_dialog_after_connect', live, urlBefore: url, after });
+      return { ok: false, status: 'unconfirmed', code: 'no_dialog_after_connect', reason: `Connect clicked but no invite dialog appeared; verify manually${diagNote(dg)}` };
     }
     const dialogGone = cls === 'commit_accept_invite' ? acceptCount(after) < acceptBefore
       : cls === 'commit_connect_send' ? !after.nodes.some((x) => x.role === 'dialog' && x.name === live.dialogName)
@@ -294,10 +296,15 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
       return { ok: true, status: 'sent', code: 'sent', ...(intent.touchId !== undefined ? { touch_id: intent.touchId } : {}) };
     }
     release('unconfirmed');
-    return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `clicked but not confirmed (${confirmedNet ? 'response seen' : 'no response'}, ${dialogGone ? 'dialog gone' : 'dialog still open'}); verify manually`, ...(intent.touchId !== undefined ? { touch_id: intent.touchId } : {}) };
+    const dg2 = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore: url, after });
+    return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `clicked but not confirmed (${confirmedNet ? 'response seen' : 'no response'}, ${dialogGone ? 'dialog gone' : 'dialog still open'}); verify manually${diagNote(dg2)}`, ...(intent.touchId !== undefined ? { touch_id: intent.touchId } : {}) };
   } catch {
     // A throw before the click is a failure; after it the send may have gone out.
-    if (clickIssued) { release('unconfirmed'); return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: 'error after the click; verify manually' }; }
+    if (clickIssued) {
+      release('unconfirmed');
+      const dg3 = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore: url, after: null });
+      return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `error after the click; verify manually${diagNote(dg3)}` };
+    }
     release('failed');
     return { ok: false, status: 'failed', code: 'error', reason: 'unexpected error before sending' };
   } finally {

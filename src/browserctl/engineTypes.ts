@@ -43,6 +43,8 @@ export interface EngineDeps {
   confirmTimeoutMs?: number;
   /** After a LinkedIn Connect click: how long to poll for the invite dialog or page (default 4000 ms). */
   dialogWaitMs?: number;
+  // Directory for structural failure diagnostics (default: <project>/.jobber/diag, see diag.ts).
+  diagDir?: string;
   /**
    * Output gate for text typed into a non-composer field or a Naukri apply chatbot (no URLs, emails,
    * secrets). Returns a refusal reason or null. The Naukri MCP supplies it; absent means the guard's

@@ -53,7 +53,7 @@ export function world(o: {
   const screen = o.screen ?? okScreen;
   const engine = createEngine({
     db, now: () => NOW, env, cfg, getPage: async () => page, intents, screen: screen as never, stopFile,
-    screenshotEnabled: o.screenshot === true, paceMs: () => 0, settleMs: 0, confirmTimeoutMs: 50,
+    screenshotEnabled: o.screenshot === true, paceMs: () => 0, settleMs: 0, confirmTimeoutMs: 50, diagDir: path.join(dir, 'diag'),
     ...(o.layoutFeed ? { layoutFeed: o.layoutFeed as never } : {}),
   });
   const armDeps: ArmDeps = {

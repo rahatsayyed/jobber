@@ -24,6 +24,7 @@ import { loadOutreachConfig } from '../outreach/config.js';
 import { tryConsume } from '../outreach/limits.js';
 import { loadTuning } from '../outreach/tuning.js';
 import { recordDryRun } from '../safety/dryRun.js';
+import { diagNote, writeCommitDiag } from './diag.js';
 import type { BcPage } from './driver.js';
 import { killReason, type EngineDeps, type EngineResult } from './engineTypes.js';
 import { isNaukriApplyName, normName } from './guard.js';
@@ -241,16 +242,18 @@ async function commitSend(i: NaukriCommitInput): Promise<EngineResult> {
     }
     release('unconfirmed');
     try { bumpFailures(db, runId, now()); } catch { /* best effort */ }
+    const dg = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore: url, after });
     return {
       ok: false, status: 'unconfirmed', code: 'unconfirmed', ...touch,
-      reason: `clicked but not confirmed (${confirmedNet ? 'response seen' : 'no response'}, ${echoed ? 'echo seen' : 'no echo'}, ${cleared ? 'composer cleared' : 'composer not cleared'}); verify manually`,
+      reason: `clicked but not confirmed (${confirmedNet ? 'response seen' : 'no response'}, ${echoed ? 'echo seen' : 'no echo'}, ${cleared ? 'composer cleared' : 'composer not cleared'}); verify manually${diagNote(dg)}`,
     };
   } catch {
     // A throw before the click is a failure; after it the message may have gone out: never auto-retry.
     if (clickIssued) {
       release('unconfirmed');
       try { bumpFailures(db, runId, now()); } catch { /* best effort */ }
-      return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: 'error after the click; verify manually' };
+      const dg0 = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore: url, after: null });
+      return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `error after the click; verify manually${diagNote(dg0)}` };
     }
     release('failed');
     return { ok: false, status: 'failed', code: 'error', reason: 'unexpected error before sending' };
@@ -282,6 +285,7 @@ async function commitApply(i: NaukriCommitInput): Promise<EngineResult> {
   const key = intent.pageKey;
   if (!key || intent.jobId === undefined) return abort('no_armed_intent', 'the armed intent has no job');
   const jobId = String(intent.jobId);
+  const urlBefore = page.url();
 
   // Live re-checks of the job: vetoes and an earlier application can appear after arming.
   if (getExcludedReason(db, jobId)) return abort('vetoed', 'the job is excluded');
@@ -352,13 +356,15 @@ async function commitApply(i: NaukriCommitInput): Promise<EngineResult> {
   } catch {
     // The click may have gone through: the apply is unresolved, the counters stay spent.
     deps.intents.disarm(platform);
-    return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: 'error after the click; check the application by hand' };
+    const dga = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after: null });
+    return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `error after the click; check the application by hand${diagNote(dga)}` };
   }
   await page.waitMs(deps.settleMs ?? 800).catch(() => undefined);
   let after: RawTree;
   try { after = await page.snapshot(); } catch {
     deps.intents.disarm(platform);
-    return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: 'could not read the page after the click; check the application by hand' };
+    const dgb = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after: null });
+    return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `could not read the page after the click; check the application by hand${diagNote(dgb)}` };
   }
   const base = st.baseline.get(key) ?? pageTexts(before);
   if (confirmedNew(base, after)) {
@@ -372,5 +378,6 @@ async function commitApply(i: NaukriCommitInput): Promise<EngineResult> {
     return { ok: true, code: isApplyClick ? 'chatbot_opened' : 'chatbot_step', reason: 'answer the chatbot with naukri_type and continue with its controls' };
   }
   deps.intents.disarm(platform);
-  return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: 'clicked but no confirmation or chatbot appeared; check the application by hand' };
+  const dgc = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after });
+  return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `clicked but no confirmation or chatbot appeared; check the application by hand${diagNote(dgc)}` };
 }
