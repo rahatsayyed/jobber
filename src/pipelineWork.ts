@@ -51,6 +51,8 @@ export interface PipelineWorkOpts {
 export interface PipelineWork {
   /** Unscored candidates that are offered: inside the window, not duplicates, not repeats. */
   offer: string[];
+  /** Matched jobs (score >= matchThreshold, no outreach row, prep offers left) that are offered: not skipped as repeat contacts. Empty without a matchThreshold. */
+  matchedOffer: string[];
   skips: PipelineSkip[];
 }
 
@@ -121,7 +123,11 @@ export function planPipelineWork(db: BetterSqlite3.Database, o: PipelineWorkOpts
     g.sort((a, b) => atsRank(a) - atsRank(b) || (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0) || a.rid - b.rid);
     for (const r of g.slice(1)) { skips.push({ job_id: r.id, reason: JOB_STATUS_DUPLICATE, of: g[0].id }); skipped.add(r.id); }
   }
-  return { offer: survivors.filter((r) => !skipped.has(r.id)).map((r) => r.id), skips };
+  return {
+    offer: survivors.filter((r) => !skipped.has(r.id)).map((r) => r.id),
+    matchedOffer: matched.filter((r) => !skipped.has(r.id)).map((r) => r.id),
+    skips,
+  };
 }
 
 /** The id of another job with the same company and title that was contacted (outreach, connection, application) within REPEAT_CONTACT_DAYS, if any. */

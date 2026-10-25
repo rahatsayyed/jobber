@@ -1,6 +1,6 @@
 // src/scheduler/due.ts
 import type BetterSqlite3 from 'better-sqlite3';
-import { MATCH_FAIL_LIMIT } from '../db.js';
+import { MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT } from '../db.js';
 import { planPipelineWork } from '../pipelineWork.js';
 import { followupMode, listApprovedFollowups, listFollowupCandidates } from '../followups.js';
 import { manualPlatformTasks, manualRequestsPending } from '../manual/requests.js';
@@ -32,6 +32,8 @@ export interface DueCounts {
   sourceTasksQueued?: number;
   /** Jobs saved but not scored yet and not excluded: the pipeline's input. */
   unmatchedJobs?: number;
+  /** Matched jobs (stored score >= MATCH_THRESHOLD) with no outreach row and prep offers left: P1's `matched` list, never prepared yet. */
+  matchedAwaitingPrepare?: number;
   /** Queued outreach rows with an email not yet sent. */
   emailQueued?: number;
   /** Email follow-ups the mail-operator may act on: approved rows, plus (autonomous mode only) drafted rows and candidates. */
@@ -139,8 +141,13 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
   };
   // Same window, duplicate and repeated-contact rules as db.list_unscored_jobs (read-only here: nothing is marked).
   let unmatchedJobs = 0;
+  let matchedAwaitingPrepare = 0;
   try {
-    unmatchedJobs = planPipelineWork(db, { now, failLimit: MATCH_FAIL_LIMIT }).offer.length;
+    const raw = env.MATCH_THRESHOLD?.trim();
+    const matchThreshold = raw && /^\d+$/.test(raw) && Number(raw) <= 100 ? Number(raw) : 60;
+    const work = planPipelineWork(db, { now, failLimit: MATCH_FAIL_LIMIT, matchThreshold, prepOfferLimit: PREP_OFFER_LIMIT });
+    unmatchedJobs = work.offer.length;
+    matchedAwaitingPrepare = work.matchedOffer.length;
   } catch {
     // counts are advisory
   }
@@ -166,6 +173,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
     scriptDiscoverLastHoursAgo: script === null ? null : script / 3600000,
     sourceTasksQueued: n("SELECT COUNT(*) AS n FROM source_tasks WHERE state = 'queued' AND NOT (reason = 'error' AND company IS NOT NULL) AND NOT (reason = 'manual_url' AND platform <> 'manual')"),
     unmatchedJobs,
+    matchedAwaitingPrepare,
     emailQueued: n(
       `SELECT COUNT(*) AS n FROM outreach_queue q
         WHERE q.status = 'queued' AND q.email_to IS NOT NULL AND (q.email_status IS NULL OR q.email_status = 'queued')

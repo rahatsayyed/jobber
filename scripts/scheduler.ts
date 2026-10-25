@@ -97,7 +97,7 @@ function dryRunPlan(env: NodeJS.ProcessEnv): void {
     pacing: pacingFromConfig(cfg, tuning),
     control: readControl(db, controlDefaults(env, stopFile)),
     ceilings: ceilings(db, cfg, now),
-    due: countDue(db, now, tuning),
+    due: countDue(db, now, tuning, env),
     knobs: loadPlanKnobs(env),
     discoverSearches: discoverNames(),
     codePassEnabled: true,

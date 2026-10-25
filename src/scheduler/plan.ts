@@ -195,8 +195,9 @@ export function planWake(i: {
   const newJobsExpected =
     scriptDue || sourceTasks > 0 || manualPending > 0 || ORDER.some((p) => byPlatform[p].some((t) => t.kind === 'manual_url')) || byPlatform.linkedin.some((t) => t.kind === 'discover') || byPlatform.naukri.some((t) => t.kind === 'discover') || byPlatform.wellfound.some((t) => t.kind === 'discover');
   const unmatched = due.unmatchedJobs ?? 0;
+  const matchedWaiting = due.matchedAwaitingPrepare ?? 0;
   // Email follow-ups need the reply check the pipeline stage starts with (step 0b), so they pull the stage in.
-  const pipelineDue = unmatched > 0 || newJobsExpected || (due.emailFollowupsReady ?? 0) > 0;
+  const pipelineDue = unmatched > 0 || matchedWaiting > 0 || newJobsExpected || (due.emailFollowupsReady ?? 0) > 0;
 
   // The pipeline creates work in this same wake (matches, enqueued outreach rows), so like mail it pulls in LinkedIn
   // new_outreach even when the due count was 0 at plan time. The operator reads its real queue (outreach.next_contacts)
@@ -216,7 +217,7 @@ export function planWake(i: {
     tasks: byPlatform[p],
   }));
 
-  if (pipelineDue) stages.push({ operator: 'pipeline', kind: 'pipeline', quota: Math.max(Math.min(unmatched, JOBS_CEILING), manualPending > 0 ? 1 : 0) });
+  if (pipelineDue) stages.push({ operator: 'pipeline', kind: 'pipeline', quota: Math.max(Math.min(unmatched + matchedWaiting, JOBS_CEILING), manualPending > 0 ? 1 : 0) });
   // No mail stage: the wake only enqueues email. Cold emails and email follow-ups are sent one at a time by the mail drip lane
   // (src/scheduler/mailDrip.ts), never in a burst inside a wake, so queued email alone is not wake work.
   // Apply: its own quota (not the burst) = the smaller of what is left of MAX_APPLIES_PER_DAY and of APPLY_MAX_ATTEMPTS_PER_DAY.

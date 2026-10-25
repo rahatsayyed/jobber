@@ -122,6 +122,46 @@ describe('countDue new fields', () => {
   });
 });
 
+describe('matched backlog makes the pipeline due', () => {
+  const addScored = (db: ReturnType<typeof openDb>, id: string, score: number, o: { offers?: number; excluded?: string } = {}) => {
+    db.prepare("INSERT INTO jobs (id, source, title, company, created_at, score, prep_offers, excluded_reason, company_key, title_key) VALUES (?,?,?,?,?,?,?,?,?,?)")
+      .run(id, 'greenhouse', `T${id}`, `C${id}`, '2026-09-01 00:00:00', score, o.offers ?? 0, o.excluded ?? null, `c${id}`, `t${id}`);
+  };
+  it('countDue counts matched jobs without an outreach row, not exhausted, not excluded, with the threshold from env', () => {
+    const db = openDb(':memory:');
+    addScored(db, 'ok', 80);
+    addScored(db, 'low', 40);
+    addScored(db, 'spent', 80, { offers: PREP_OFFER_LIMIT });
+    addScored(db, 'vetoed', 80, { excluded: 'x' });
+    addScored(db, 'queued', 80);
+    db.prepare("INSERT INTO outreach_queue (job_id, status) VALUES ('queued','queued')").run();
+    const c = countDue(db, NOW, loadTuning({}), {});
+    expect(c.matchedAwaitingPrepare).toBe(1);
+    expect(c.unmatchedJobs).toBe(0);
+    expect(countDue(db, NOW, loadTuning({}), { MATCH_THRESHOLD: '30' }).matchedAwaitingPrepare).toBe(2);
+  });
+  it('a planner with only a matched backlog plans the pipeline; none or exhausted does not', () => {
+    const d = run(plan({ due: due({ matchedAwaitingPrepare: 9, inboxLastCheckedMinAgo: 1 }) }));
+    expect(d.stages?.find((s) => s.kind === 'pipeline')?.quota).toBe(9);
+    expect(plan({ due: due({ matchedAwaitingPrepare: 0, inboxLastCheckedMinAgo: 1 }) })).toMatchObject({ kind: 'skip', reason: 'nothing_due' });
+    const db = openDb(':memory:');
+    addScored(db, 'spent', 80, { offers: PREP_OFFER_LIMIT });
+    const c = countDue(db, NOW, loadTuning({}), {});
+    expect(c.matchedAwaitingPrepare).toBe(0);
+    expect(plan({ due: { ...c, scriptDiscoverLastHoursAgo: 1, inboxLastCheckedMinAgo: 1, naukriSearchLastHoursAgo: 1, linkedinDiscoverLastHoursAgo: 1 } })).toMatchObject({ kind: 'skip' });
+  });
+  it('the quota adds both kinds and stays capped', () => {
+    const d = run(plan({ due: due({ unmatchedJobs: 3, matchedAwaitingPrepare: 4, inboxLastCheckedMinAgo: 1 }) }));
+    expect(d.stages?.find((s) => s.kind === 'pipeline')?.quota).toBe(7);
+    const big = run(plan({ due: due({ unmatchedJobs: 300, matchedAwaitingPrepare: 300, inboxLastCheckedMinAgo: 1 }) }));
+    expect(big.stages?.find((s) => s.kind === 'pipeline')?.quota).toBe(PIPELINE_MAX_JOBS_PER_WAKE_CEILING);
+  });
+  it('the P1 prompt says to run the matched call first even with 0 unscored jobs', () => {
+    const t = pipelineLines({ matchThreshold: 60, sendLimit: 1, targetRegions: 'T', followupsAutonomous: false }).join('\n');
+    expect(t).toMatch(/even when there are 0 unscored/i);
+  });
+});
+
 describe('runCodePass', () => {
   it('saves new jobs, records the run with finishRun (streak advances) and stamps the state', async () => {
     resetSourceStatusForTests();

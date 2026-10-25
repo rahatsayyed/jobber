@@ -116,7 +116,7 @@ describe('pipeline repeated contact', () => {
     expect(ids(db, { kind: 'unscored' })).toEqual([]);
     expect(status(db, 'again')).toBe('repeat_contact');
     const plan = planPipelineWork(openDb(':memory:'), { now: NOW, failLimit: 2 });
-    expect(plan).toEqual({ offer: [], skips: [] });
+    expect(plan).toEqual({ offer: [], matchedOffer: [], skips: [] });
   });
   it('a connection or an application on file counts the same', () => {
     const db = openDb(':memory:');
