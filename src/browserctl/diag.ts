@@ -20,6 +20,9 @@ export interface PageDiag {
   iframes: number;
   closedHostCandidates: number;
   dialogs: { role: string; name: string; buttons: string[] }[];
+  /** Locator view (Patchright getByRole): dialogs it sees and their button names. Absent when the layer is off. */
+  locatorDialogs?: number;
+  locatorDialogButtons?: string[];
 }
 
 export interface DiagDeps {
@@ -56,6 +59,8 @@ export interface DiagFile {
   dialogs: { role: string; name: string; buttons: string[] }[];
   tree_dialogs: { name: string; buttons: string[] }[];
   tree_nodes: number | null;
+  locator_dialogs: number | null;
+  locator_dialog_buttons: string[];
   // Naukri apply: pages the click opened (url path only, never the query) and apply-ish responses (path and status).
   popups?: { path: string; host_kind: 'naukri' | 'external' | 'unknown' }[];
   apply_responses?: { path: string; status: number }[];
@@ -142,6 +147,8 @@ export async function writeCommitDiag(
       })),
       tree_dialogs: treeDialogs(i.after),
       tree_nodes: i.after ? i.after.nodes.length : null,
+      locator_dialogs: pd && typeof pd.locatorDialogs === 'number' ? Math.max(0, Math.floor(pd.locatorDialogs)) : null,
+      locator_dialog_buttons: (pd?.locatorDialogButtons ?? []).slice(0, 12).map(safeName),
       ...(i.extra ? {
         popups: (i.extra.popups ?? []).slice(0, 5).map((p) => ({ path: pathOf(p.url), host_kind: hostKind(p.url) })),
         apply_responses: (i.extra.responses ?? []).slice(0, 10).map((r) => ({ path: String(r.path).split('?')[0].slice(0, 120), status: Math.floor(Number(r.status)) || 0 })),

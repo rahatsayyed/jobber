@@ -206,7 +206,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
     if (!p) return null;
     r.touch();
     let bc = pageCache.get(p);
-    if (!bc) { bc = realBcPage(p as never); pageCache.set(p, bc); }
+    if (!bc) { bc = realBcPage(p as never, { locatorDialogs: true }); pageCache.set(p, bc); }
     return bc;
   };
   const getEngine = (): Engine => {

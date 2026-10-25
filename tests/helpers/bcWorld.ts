@@ -11,6 +11,7 @@ import { loadLinkedinConfig } from '../../src/linkedin/config.js';
 import { profileKeyOf } from '../../src/linkedin/urls.js';
 import { DEFAULT_STYLE_CONFIG } from '../../src/safety/styleGate.js';
 import type { ScreenVerdict } from '../../src/safety/screen.js';
+import type { BcPage } from '../../src/browserctl/driver.js';
 import { fakeBcPage, type FakeBc } from './fakeBc.js';
 
 export const URL_ = 'https://www.linkedin.com/in/jane-example/';
@@ -38,6 +39,8 @@ const okScreen = async (t: string): Promise<ScreenVerdict> => ({ blocked: false,
 export function world(o: {
   html: string; url?: string; env?: Record<string, string>; screen?: (t: string, p: string) => Promise<ScreenVerdict>;
   seed?: boolean; screenshot?: boolean; layoutFeed?: (t: unknown) => void;
+  /** Wrap the fake page (e.g. the locator dialog layer) before the engine uses it; World.page stays the fake. */
+  wrapPage?: (p: FakeBc) => BcPage;
 }): World {
   const dir = mkdtempSync(path.join(tmpdir(), 'bc-'));
   const env = { ...(o.env ?? {}) } as NodeJS.ProcessEnv;
@@ -46,13 +49,14 @@ export function world(o: {
     upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(URL_), name: 'Jane Example', headline: 'Technical Recruiter at Acme', company: 'Acme', category: 'recruiter' });
   }
   const page = fakeBcPage(o.html, o.url ?? URL_);
+  const bcPage: BcPage = o.wrapPage ? o.wrapPage(page) : page;
   const clock = { t: NOW.getTime() };
   const intents = new IntentStore(() => clock.t);
   const stopFile = path.join(dir, 'STOP');
   const cfg = loadLinkedinConfig(env);
   const screen = o.screen ?? okScreen;
   const engine = createEngine({
-    db, now: () => NOW, env, cfg, getPage: async () => page, intents, screen: screen as never, stopFile,
+    db, now: () => NOW, env, cfg, getPage: async () => bcPage, intents, screen: screen as never, stopFile,
     screenshotEnabled: o.screenshot === true, paceMs: () => 0, settleMs: 0, confirmTimeoutMs: 50, diagDir: path.join(dir, 'diag'),
     ...(o.layoutFeed ? { layoutFeed: o.layoutFeed as never } : {}),
   });

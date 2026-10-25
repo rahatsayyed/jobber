@@ -4,6 +4,7 @@
 // tests supply a fake BcPage.
 import type { LiLocator, LiPage } from '../linkedin/types.js';
 import type { PageDiag } from './diag.js';
+import { withLocatorDialogs, type LdPage } from './locatorDialogs.js';
 import { bcScript, MAX_VALUE, type LiveNode, type RawTree } from './snapshot.js';
 
 export type BcKey = 'Enter' | 'Escape' | 'Tab' | 'ArrowDown' | 'ArrowUp' | 'PageDown' | 'PageUp' | 'Backspace' | 'Space';
@@ -70,7 +71,16 @@ function coord(v: number): number {
 
 const CLICK_TIMEOUT_MS = 5000;
 
-export function realBcPage(basePage: RealPage): BcPage {
+/**
+ * opts.locatorDialogs (LinkedIn only): also read dialogs through Patchright locators, for modals in a closed
+ * shadow root that the in-page walker cannot see (see locatorDialogs.ts).
+ */
+export function realBcPage(basePage: RealPage, opts: { locatorDialogs?: boolean } = {}): BcPage {
+  const inner = realBcPageInner(basePage);
+  return opts.locatorDialogs ? withLocatorDialogs(inner, () => basePage as unknown as LdPage) : inner;
+}
+
+function realBcPageInner(basePage: RealPage): BcPage {
   // Mutable: a followed popup replaces the page every call reads.
   let page: RealPage = basePage;
   const run = async <T>(mode: 'snapshot' | 'describe' | 'at' | 'focused' | 'diag', args: { n?: number; x?: number; y?: number } = {}): Promise<T | null> => {
