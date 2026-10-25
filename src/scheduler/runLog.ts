@@ -5,7 +5,9 @@ type Db = BetterSqlite3.Database;
 
 export type RunStatus =
   | 'planned' | 'running' | 'ok' | 'budget_exceeded' | 'killed'
-  | 'failed' | 'crashed' | 'usage_limit' | 'skipped';
+  | 'failed' | 'crashed' | 'usage_limit' | 'skipped'
+  // exit 0, but the session ended with its wake unfinished (no final report line, or subagents still pending): see stream.ts
+  | 'incomplete';
 
 export interface RunRow {
   id: string; planned_at: string; started_at: string | null; ended_at: string | null;
@@ -13,6 +15,10 @@ export interface RunRow {
   status: RunStatus; stop_reason: string | null; exit_code: number | null;
   tool_calls: number; tokens_approx: number; wall_sec: number | null;
   window: string | null; log_path: string | null; summary: string | null;
+  /** The run this one continues (a continuation run); null for an original wake. */
+  parent_run_id: string | null;
+  /** The claude session id from the stream-json init message: the handle `--resume` needs. */
+  session_id: string | null;
 }
 
 const SUMMARY_MAX = 2000;
@@ -80,25 +86,33 @@ export function migrateSchedulerTables(db: Db): void {
       UNIQUE (platform, thread_ref, text_hash)
     );
   `);
+  // Added with the continuation chain: older databases get the columns here.
+  const cols = new Set((db.prepare('PRAGMA table_info(scheduler_runs)').all() as { name: string }[]).map((c) => c.name));
+  if (!cols.has('parent_run_id')) db.exec('ALTER TABLE scheduler_runs ADD COLUMN parent_run_id TEXT');
+  if (!cols.has('session_id')) db.exec('ALTER TABLE scheduler_runs ADD COLUMN session_id TEXT');
 }
 
 export function startRun(
   db: Db,
   r: {
     id: string; at: Date; trigger: string; dryRun: boolean; burst: number | null;
-    tasks: unknown[]; status: RunStatus; stopReason?: string; window?: string; logPath?: string;
+    tasks: unknown[]; status: RunStatus; stopReason?: string; window?: string; logPath?: string; parentRunId?: string;
   },
 ): void {
   const iso = r.at.toISOString();
   const running = r.status === 'running';
   db.prepare(
     `INSERT INTO scheduler_runs
-       (id, planned_at, started_at, trigger, dry_run, burst, tasks, status, stop_reason, window, log_path)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, planned_at, started_at, trigger, dry_run, burst, tasks, status, stop_reason, window, log_path, parent_run_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     r.id, iso, running ? iso : null, r.trigger, r.dryRun ? 1 : 0, r.burst,
-    JSON.stringify(r.tasks), r.status, r.stopReason ?? null, r.window ?? null, r.logPath ?? null,
+    JSON.stringify(r.tasks), r.status, r.stopReason ?? null, r.window ?? null, r.logPath ?? null, r.parentRunId ?? null,
   );
+}
+
+export function setRunSession(db: Db, id: string, sessionId: string): void {
+  db.prepare('UPDATE scheduler_runs SET session_id = ? WHERE id = ?').run(sessionId, id);
 }
 
 export function setRunLogPath(db: Db, id: string, logPath: string): void {

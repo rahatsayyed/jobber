@@ -447,7 +447,8 @@ describe('driver runs the code pass before the model session', () => {
       db: openDb(':memory:'), now: () => new Date(t), rng: () => 0.5, sleep: async (ms) => { t += ms; },
       cfg: loadOutreachConfig({}), tuning: loadTuning({}), env: {}, lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'),
       runDir: join(dir, 'runs'), projectRoot: dir, launcher, notifier: { notify: async (n) => void notices.push(n.title) },
-      newRunId: () => 'runpipe00000001', pollMs: 5000,
+      newRunId: () => 'runpipe00000001', pollMs: 5000, verifyCompletion: false, // these fakes write no stream-json
+
       codePass: codePass ? async () => { log.push('code'); return codePass(); } : undefined,
     };
     return { d, log, launcher, notices, advance };

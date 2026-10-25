@@ -117,6 +117,9 @@ export function formatReport(r: DryRunReport): string {
   const out: string[] = [];
   out.push(`Dry-run report: last ${r.runs} run(s)`);
   out.push(`status: ${kv(r.statusCounts)}`);
+  if (r.statusCounts.incomplete) {
+    out.push(`incomplete: ${r.statusCounts.incomplete} run(s) exited 0 with the wake unfinished (steps unproven; the reason is in stop_reason, a continuation run has a parent_run_id)`);
+  }
   out.push(`skip reasons: ${kv(r.skipReasons)}`);
   out.push(
     `budget used: tool_calls ${r.budget.toolCalls} (peak ${r.budget.peakToolCalls} in one run), ` +

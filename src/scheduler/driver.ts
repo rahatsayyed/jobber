@@ -16,11 +16,12 @@ import { countDue } from './due.js';
 import type { LaunchHandle, Launcher } from './launch.js';
 import { sourcesNotice } from '../status/sources.js';
 import type { Notice, Notifier } from './notify.js';
-import { loadPlanKnobs, planWake, stepOrder, type DiscoverSearches, type WakeDecision } from './plan.js';
+import { loadPlanKnobs, planWake, stepOrder, type Assignment, type DiscoverSearches, type Step, type WakeDecision } from './plan.js';
 import { targetRegionsLine, type CodePassResult } from './pipeline.js';
-import { buildWakePrompt } from './prompt.js';
+import { buildContinuationPrompt, buildWakePrompt } from './prompt.js';
+import { describeStep, MAX_CONTINUATIONS, StreamInspector, unprovenSteps } from './stream.js';
 import { dripLoop } from './mailDrip.js';
-import { finishRun, getState, markOrphans, setRunLogPath, setState, startRun, type RunStatus } from './runLog.js';
+import { finishRun, getState, markOrphans, setRunLogPath, setRunSession, setState, startRun, type RunStatus } from './runLog.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -56,6 +57,10 @@ export interface DriverDeps {
   heartbeat?: () => void; // called on every poll tick (the daemon lock heartbeat)
   /** Seam for 7D hooks. Called AFTER the run lock is released; errors are swallowed and noticed. */
   afterWake?: (r: WakeResult) => Promise<void>;
+  /** Check the stream-json log of a session that exited 0 for proof that the wake finished (default true; false only in tests of other things). */
+  verifyCompletion?: boolean;
+  /** Most `claude --resume` continuations of a wake that ended incomplete; default and ceiling MAX_CONTINUATIONS. */
+  maxContinuations?: number;
 }
 export interface WakeResult {
   runId: string;
@@ -129,6 +134,11 @@ function controlDeps(d: DriverDeps): ControlDeps {
 function stopMap(r: StopReason): { status: RunStatus; reason: string } {
   if (r === 'usage_limit') return { status: 'usage_limit', reason: 'usage_limit' };
   return { status: 'budget_exceeded', reason: r };
+}
+
+/** The steps of a wake planned without stages (legacy prompt): one Agent call per operator, proven by the final report or a completed call. */
+function legacySteps(tasks: Assignment[]): Step[] {
+  return tasks.map((a) => ({ operator: a.operator, platform: a.platform, kind: a.tasks[0]?.kind ?? 'inbox', quota: a.tasks[0]?.quota ?? 0 }));
 }
 
 function handleFor(runId: string, session: string, window?: string | null): LaunchHandle {
@@ -252,14 +262,16 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
   }
   if (!lock) return await skip('locked');
 
-  let status: RunStatus = 'running';
-  let stopReason: string | null = null;
-  let exitCode: number | null = null;
+  // `as` casts: runSession (a closure) assigns these, and TS must not narrow them to their initial values.
+  let status = 'running' as RunStatus;
+  let stopReason = null as string | null;
+  let exitCode = null as number | null;
+  let activeRunId = runId; // the run row being worked on: the wake itself, then each continuation
   let started = false;
   let launchTried = false;
   let inboxPlanned = false;
-  let handle: LaunchHandle | null = null;
-  let tracker: BudgetTracker | null = null;
+  let handle = null as LaunchHandle | null;
+  let tracker = null as BudgetTracker | null;
   let nextWakeAt = '';
   let skippedResult: WakeResult | null = null;
   let wakeStartIso = '';
@@ -318,109 +330,237 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
         await say(d, { level: 'warn', title: 'scheduler code pass failed', detail: codePassNote, runId });
       }
     }
-    // The wall budget starts after the code pass: that time is not the model session's.
-    tracker = new BudgetTracker(budget, d.now());
     const order = decision.stages?.length ? stepOrder(decision) : undefined;
+    const steps: Step[] = order ?? legacySteps(decision.tasks);
+    const pipelineInput = order ? {
+      matchThreshold: boundedEnvInt(d.env.MATCH_THRESHOLD, 0, 100, 60),
+      sendLimit: boundedEnvInt(d.env.SEND_LIMIT_PER_RUN, 0, 100, 1),
+      targetRegions: targetRegionsLine(d.projectRoot),
+      followupsAutonomous: d.env.FOLLOWUPS_AUTONOMOUS === 'true',
+      codePass,
+    } : undefined;
     const prompt = buildWakePrompt({
       runId, dryRun: dry, burst: decision.burst, tasks: decision.tasks, budget, allowed: control.allowed, now: startAt,
       order,
-      pipeline: order ? {
-        matchThreshold: boundedEnvInt(d.env.MATCH_THRESHOLD, 0, 100, 60),
-        sendLimit: boundedEnvInt(d.env.SEND_LIMIT_PER_RUN, 0, 100, 1),
-        targetRegions: targetRegionsLine(d.projectRoot),
-        followupsAutonomous: d.env.FOLLOWUPS_AUTONOMOUS === 'true',
-        codePass,
-      } : undefined,
+      pipeline: pipelineInput,
     });
-    launchTried = true;
-    handle = await d.launcher.start({
-      runId, dryRun: dry, prompt,
-      session: d.session ?? DEFAULT_SESSION,
-      runDir: d.runDir,
-      projectRoot: d.projectRoot,
-      noClassifier: d.env.SCHEDULER_NO_CLASSIFIER === 'true' && dry,
-      env: childEnv(d.env, dry),
-    });
-    const h = handle;
-    if (h.logPath) {
-      try {
-        setRunLogPath(d.db, runId, h.logPath);
-      } catch {
-        // the log path is only a convenience for later measurement
-      }
-    }
     const pollMs = d.pollMs ?? DEFAULT_POLL_MS;
-    let killFailed = false;
-    const kill = async (): Promise<void> => {
-      if (!(await killChecked(d, h, runId))) killFailed = true;
-    };
-    for (;;) {
-      const r = await d.launcher.poll(h);
-      const now = d.now();
-      tracker.feed(r.newOutput, now);
-      lock.heartbeat();
-      try {
-        d.heartbeat?.();
-      } catch {
-        // ignore
-      }
-      const stop = tracker.check(now);
-      if (stop) {
-        if (!r.exited) await kill();
-        const m = stopMap(stop);
-        status = m.status;
-        stopReason = m.reason;
-        exitCode = r.exitCode;
-        if (stop === 'usage_limit') {
-          const until = new Date(now.getTime() + backoffMin(d.env) * 60000).toISOString();
-          try {
-            setState(d.db, 'usage_backoff_until', until, now);
-          } catch {
-            // ignore
-          }
-          await say(d, { level: 'warn', title: 'scheduler usage limit reached, backing off', detail: `until ${until}`, runId });
+
+    // One claude session (the original wake, or a `--resume` continuation of it) from launch to exit, stop or kill.
+    // It sets status, stopReason and exitCode, and returns what the stream-json log showed.
+    const runSession = async (id: string, promptText: string, resume?: string): Promise<StreamInspector> => {
+      status = 'running';
+      stopReason = null;
+      exitCode = null;
+      // The wall budget starts after the code pass: that time is not the model session's.
+      const t = new BudgetTracker(budget, d.now());
+      tracker = t;
+      const insp = new StreamInspector();
+      launchTried = true;
+      handle = await d.launcher.start({
+        runId: id, dryRun: dry, prompt: promptText,
+        session: d.session ?? DEFAULT_SESSION,
+        runDir: d.runDir,
+        projectRoot: d.projectRoot,
+        noClassifier: d.env.SCHEDULER_NO_CLASSIFIER === 'true' && dry,
+        env: childEnv(d.env, dry),
+        ...(resume !== undefined ? { resumeSessionId: resume } : {}),
+      });
+      const h = handle;
+      if (h.logPath) {
+        try {
+          setRunLogPath(d.db, id, h.logPath);
+        } catch {
+          // the log path is only a convenience for later measurement
         }
+      }
+      let killFailed = false;
+      const kill = async (): Promise<void> => {
+        if (!(await killChecked(d, h, id))) killFailed = true;
+      };
+      for (;;) {
+        const r = await d.launcher.poll(h);
+        const now = d.now();
+        t.feed(r.newOutput, now);
+        insp.feed(r.newOutput);
+        lock.heartbeat();
+        try {
+          d.heartbeat?.();
+        } catch {
+          // ignore
+        }
+        const stop = t.check(now);
+        if (stop) {
+          if (!r.exited) await kill();
+          const m = stopMap(stop);
+          status = m.status;
+          stopReason = m.reason;
+          exitCode = r.exitCode;
+          if (stop === 'usage_limit') {
+            const until = new Date(now.getTime() + backoffMin(d.env) * 60000).toISOString();
+            try {
+              setState(d.db, 'usage_backoff_until', until, now);
+            } catch {
+              // ignore
+            }
+            await say(d, { level: 'warn', title: 'scheduler usage limit reached, backing off', detail: `until ${until}`, runId: id });
+          }
+          break;
+        }
+        if (r.exited) {
+          exitCode = r.exitCode;
+          status = r.exitCode === 0 ? 'ok' : 'failed';
+          if (status === 'failed') stopReason = `exit ${r.exitCode}`;
+          break;
+        }
+        if (opts.abort?.()) {
+          await kill();
+          status = 'killed';
+          stopReason = 'shutdown';
+          break;
+        }
+        let ctl: ControlState | null = null;
+        try {
+          ctl = readControl(d.db, controlDeps(d));
+        } catch {
+          ctl = null; // unreadable means kill
+        }
+        if (!ctl || ctl.killed) {
+          await kill();
+          status = 'killed';
+          stopReason = 'kill_switch';
+          break;
+        }
+        if (inQuietHours(now, pacing)) {
+          await kill();
+          status = 'killed';
+          stopReason = 'quiet_hours';
+          break;
+        }
+        await d.sleep(pollMs);
+      }
+      if (killFailed) stopReason = 'kill_failed';
+      insp.finish();
+      if (insp.sessionId) {
+        try {
+          setRunSession(d.db, id, insp.sessionId);
+        } catch {
+          // the session id is a convenience for the chain; the continuation reads it from the inspector
+        }
+      }
+      return insp;
+    };
+
+    // A wake that exits 0 without proof that it finished (no final report line, a subagent still pending, a step with no
+    // completed operator call) is `incomplete`, not `ok`, and is continued (at most maxCont times) with `claude --resume`.
+    const verify = d.verifyCompletion !== false;
+    const maxCont = Math.max(0, Math.min(d.maxContinuations ?? MAX_CONTINUATIONS, MAX_CONTINUATIONS));
+    const settled = new Set<number>(); // proven done, or dropped because the platform is halted now
+    const dropped = new Set<number>();
+    const chainIds = [runId];
+    let chain = 0;
+    let curPrompt = prompt;
+    let resumeId: string | undefined;
+    for (;;) {
+      const insp = await runSession(activeRunId, curPrompt, resumeId);
+      if (status === 'ok' && verify) {
+        const proof = unprovenSteps(steps, insp, chainIds, settled);
+        for (const i of proof.proven) settled.add(i);
+        const hasReport = insp.report(chainIds) !== null;
+        const stuck = insp.pending();
+        if (!insp.resultSeen || !hasReport || stuck.length > 0 || proof.unproven.length > 0) {
+          status = 'incomplete';
+          const why: string[] = [];
+          if (!insp.resultSeen) why.push('no result event in the log');
+          else if (!hasReport) why.push('no final report line');
+          if (stuck.length > 0) why.push(`${stuck.length} subagent(s) did not return (${stuck.slice(0, 4).map((x) => x.subagent || 'agent').join(', ')})`);
+          const list = proof.unproven.map((i) => describeStep(steps[i], i));
+          stopReason = `incomplete: ${why.join('; ') || 'steps unproven'}; unproven steps: ${list.length > 0 ? list.join(', ') : 'none listed'}`.slice(0, 500);
+        }
+      }
+      if (status !== 'incomplete') break;
+      await say(d, { level: 'warn', title: 'scheduler run incomplete', detail: stopReason ?? undefined, runId: activeRunId });
+      const noGo = async (why: string): Promise<void> => {
+        stopReason = `${stopReason ?? 'incomplete'}; not continued: ${why}`.slice(0, 600);
+      };
+      if (chain >= maxCont) {
+        await noGo(maxCont === 0 ? 'continuation off' : 'continuation limit reached');
         break;
       }
-      if (r.exited) {
-        exitCode = r.exitCode;
-        status = r.exitCode === 0 ? 'ok' : 'failed';
-        if (status === 'failed') stopReason = `exit ${r.exitCode}`;
+      const sid = insp.sessionId;
+      if (!sid) {
+        await noGo('no session id in the log');
         break;
       }
-      if (opts.abort?.()) {
-        await kill();
-        status = 'killed';
-        stopReason = 'shutdown';
-        break;
-      }
+      // Same gates as a new wake: shutdown, kill switch, halts, quiet hours, usage backoff. Dry-run handling is the wake's own flag.
       let ctl: ControlState | null = null;
       try {
         ctl = readControl(d.db, controlDeps(d));
       } catch {
-        ctl = null; // unreadable means kill
+        ctl = null;
       }
-      if (!ctl || ctl.killed) {
-        await kill();
-        status = 'killed';
-        stopReason = 'kill_switch';
+      let block: string | null = null;
+      if (opts.abort?.()) block = 'shutdown';
+      else if (!ctl) block = 'control unreadable';
+      else if (ctl.killed) block = 'kill switch';
+      else if (ctl.allowed.length === 0) block = 'all platforms halted';
+      else if (inQuietHours(d.now(), pacing)) block = 'quiet hours';
+      else {
+        try {
+          const until = getState(d.db, 'usage_backoff_until');
+          if (until && Date.parse(until) > d.now().getTime()) block = 'usage backoff';
+        } catch {
+          block = 'state unreadable';
+        }
+      }
+      if (block || !ctl) {
+        await noGo(block ?? 'control unreadable');
         break;
       }
-      if (inQuietHours(now, pacing)) {
-        await kill();
-        status = 'killed';
-        stopReason = 'quiet_hours';
+      // A step of a platform halted since the wake began is not worked on in the continuation.
+      steps.forEach((s, i) => {
+        if (!settled.has(i) && s.platform && !ctl.allowed.includes(s.platform)) {
+          settled.add(i);
+          dropped.add(i);
+        }
+      });
+      const nextId = d.newRunId();
+      const snap = tracker?.snapshot();
+      try {
+        finishRun(d.db, activeRunId, {
+          at: d.now(), status: 'incomplete', stopReason: `${stopReason ?? 'incomplete'}; continued by ${nextId}`.slice(0, 600), exitCode,
+          toolCalls: snap?.toolCalls, tokensApprox: snap?.tokensApprox,
+          summary: snap ? redactPane(snap.lastLines.join('\n')).slice(0, 2000) : null,
+        });
+        startRun(d.db, {
+          id: nextId, at: d.now(), trigger: 'continuation', dryRun: dry, burst: decision.burst, tasks: decision.tasks,
+          status: 'running', parentRunId: activeRunId,
+        });
+      } catch (e) {
+        await say(d, { level: 'warn', title: 'scheduler continuation row not written, not continuing', detail: safeMsg(e), runId: activeRunId });
+        stopReason = `${stopReason ?? 'incomplete'}; not continued: run log unwritable`.slice(0, 600);
         break;
       }
-      await d.sleep(pollMs);
+      chain++;
+      await say(d, { level: 'info', title: `scheduler continuing wake ${runId} (${chain} of ${maxCont})`, detail: `run ${nextId} resumes session ${sid}`, runId: nextId });
+      chainIds.push(nextId);
+      activeRunId = nextId;
+      resumeId = sid;
+      curPrompt = buildContinuationPrompt({
+        rootRunId: runId, runId: nextId, n: chain, max: maxCont, dryRun: dry, budget, allowed: ctl.allowed, now: d.now(),
+        order: steps, proven: settled, dropped,
+        pending: insp.pending().map((p) => ({ subagent: p.subagent, description: p.description })),
+        pipeline: pipelineInput,
+      });
+      status = 'running';
+      stopReason = null;
     }
-    if (killFailed) stopReason = 'kill_failed';
   } catch (e) {
     status = 'failed';
     stopReason = `error: ${safeMsg(e)}`;
     if (launchTried) {
       // the window may exist even when start() threw: kill it by its deterministic name
-      const ok = await killChecked(d, handle ?? handleFor(runId, d.session ?? DEFAULT_SESSION), runId);
+      const ok = await killChecked(d, handle ?? handleFor(activeRunId, d.session ?? DEFAULT_SESSION), activeRunId);
       if (!ok) stopReason = 'kill_failed';
     }
   } finally {
@@ -429,7 +569,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       try {
         const snap = tracker?.snapshot();
         if (status === 'running') status = 'failed';
-        finishRun(d.db, runId, {
+        finishRun(d.db, activeRunId, {
           at: d.now(), status, stopReason, exitCode,
           toolCalls: snap?.toolCalls, tokensApprox: snap?.tokensApprox,
           summary: snap ? redactPane(snap.lastLines.join('\n')).slice(0, 2000) : null,

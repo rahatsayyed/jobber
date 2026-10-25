@@ -84,6 +84,7 @@ function setup(opts: { start?: Date; env?: NodeJS.ProcessEnv; launcher?: Launche
     })(),
     control: opts.stopExists ? { exists: opts.stopExists, read: () => 'stop it' } : undefined,
     pollMs: 5000,
+    verifyCompletion: false, // these fakes write no stream-json; the completion check has its own tests (scheduler-incomplete.test.ts)
   };
   return { d, db, dir, notices, launcher: launcher as FakeLauncher, clock: () => new Date(t), advance: (ms: number) => void (t += ms) };
 }

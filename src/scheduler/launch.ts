@@ -3,6 +3,7 @@
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ensureSession, killWindow, newWindow, windowExists, type Run } from '../platform/tmux.js';
+import { SESSION_ID_RE } from '../platform/runner.js';
 
 export interface LaunchHandle {
   runId: string;
@@ -26,6 +27,8 @@ export interface LaunchPlan {
   profile?: string;
   /** Small explicit env for the runner. Never put secrets here by default. */
   env?: Record<string, string>;
+  /** Continue this claude session (`claude --resume`): the driver's continuation of a wake that ended incomplete. Same profile and restrictions. */
+  resumeSessionId?: string;
 }
 export interface Launcher {
   start(plan: LaunchPlan): Promise<LaunchHandle>;
@@ -94,8 +97,10 @@ export function buildRunnerArgv(p: {
   env?: Record<string, string>;
   noClassifier?: boolean;
   profile?: string;
+  resumeSessionId?: string;
 }): string[] {
   if (!RUN_ID_RE.test(p.runId)) throw new Error('invalid run id');
+  if (p.resumeSessionId !== undefined && !SESSION_ID_RE.test(p.resumeSessionId)) throw new Error('invalid session id');
   if (p.profile !== undefined && !PROFILE_RE.test(p.profile)) throw new Error('invalid profile');
   for (const [k, v] of Object.entries(p.env ?? {})) {
     if (!ENV_KEY_RE.test(k)) throw new Error(`invalid env key: ${JSON.stringify(k)}`);
@@ -123,6 +128,7 @@ export function buildRunnerArgv(p: {
     'tsx',
     'scripts/run-claude.ts',
     p.profile ?? RUNNER_PROFILE,
+    ...(p.resumeSessionId !== undefined ? [`--resume=${p.resumeSessionId}`] : []),
     ...(p.noClassifier ? ['--no-classifier'] : []),
   ];
 }
@@ -145,6 +151,7 @@ export function tmuxLauncher(run: Run, fsOps: FsOps = defaultFsOps): Launcher {
         env: plan.env,
         noClassifier: plan.noClassifier,
         profile: plan.profile,
+        resumeSessionId: plan.resumeSessionId,
       });
       fsOps.mkdir(plan.runDir);
       fsOps.writeFile(promptPath, plan.prompt, 0o600);

@@ -13,6 +13,7 @@ import {
   buildInteractiveArgs,
   buildEnv,
   loadProfiles,
+  SESSION_ID_RE,
   renderPolicy,
   renderSettings,
 } from '../src/platform/runner.js';
@@ -44,6 +45,7 @@ async function main(): Promise<void> {
   if (!profileName) die(2, 'usage: run-claude <profile> [flags] [--] [prompt]');
   // Launcher flags are honoured only before the prompt; "--" ends them.
   const flags = new Set<string>();
+  let resumeSessionId: string | undefined;
   let i = 1;
   for (; i < argv.length; i++) {
     const a = argv[i];
@@ -52,7 +54,11 @@ async function main(): Promise<void> {
       break;
     }
     if (a === '--print-args' || a === '--no-classifier' || a === '--interactive') flags.add(a);
-    else break;
+    else if (a.startsWith('--resume=')) {
+      // The scheduler's continuation of a wake: same profile, same restrictions, only the session is resumed.
+      resumeSessionId = a.slice('--resume='.length);
+      if (!SESSION_ID_RE.test(resumeSessionId)) die(2, 'invalid session id for --resume');
+    } else break;
   }
   const promptParts = argv.slice(i);
 
@@ -91,13 +97,14 @@ async function main(): Promise<void> {
   const tty = printOnly || (Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY));
   const useErr = checkInteractiveUse(profile, flags.has('--interactive'), tty);
   if (useErr) die(2, useErr);
+  if (resumeSessionId !== undefined && interactive) die(2, '--resume is for non-interactive profiles only');
 
   const initialPrompt = promptParts.join(' ').trim();
   let args: string[];
   try {
     args = interactive
       ? buildInteractiveArgs(profileName, profile, { settingsPath }, initialPrompt)
-      : buildClaudeArgs(profileName, profile, { settingsPath });
+      : buildClaudeArgs(profileName, profile, { settingsPath }, { resumeSessionId });
   } catch (e) {
     die(2, (e as Error).message);
   }

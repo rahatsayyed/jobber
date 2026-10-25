@@ -225,6 +225,7 @@ function harness(o: { start: Date; env?: NodeJS.ProcessEnv; stop?: boolean }) {
     runDir: join(dir, 'runs'),
     projectRoot: dir,
     launcher,
+    verifyCompletion: false, // the scripted launcher writes no stream-json
     notifier: { notify: async (n) => void notices.push(n) },
     newRunId: (() => {
       let i = 0;

@@ -46,11 +46,15 @@ async function main(): Promise<number> {
   try {
     db = new Database(path, { readonly: true, fileMustExist: true });
     if (cmd === 'runs') {
-      const row = db.prepare('SELECT id, log_path FROM scheduler_runs ORDER BY planned_at DESC LIMIT 1').get() as
-        | { id: string; log_path: string | null } | undefined;
+      const row = db.prepare('SELECT id, log_path, status, stop_reason, parent_run_id FROM scheduler_runs ORDER BY planned_at DESC, rowid DESC LIMIT 1').get() as
+        | { id: string; log_path: string | null; status: string; stop_reason: string | null; parent_run_id: string | null } | undefined;
       if (!row) console.log('no runs yet');
-      else if (!row.log_path || !existsSync(row.log_path)) console.log(`run ${row.id}: no log file recorded`);
-      else console.log(renderRunToolCounts(row.id, summarizeRunLog(readFileSync(row.log_path, 'utf8'))));
+      else {
+        // An `incomplete` run exited 0 with its wake unfinished; the reason names the unproven steps.
+        console.log(`status: ${row.status}${row.stop_reason ? ` (${row.stop_reason.replace(/\s+/g, ' ').slice(0, 300)})` : ''}${row.parent_run_id ? `, continues ${row.parent_run_id}` : ''}`);
+        if (!row.log_path || !existsSync(row.log_path)) console.log(`run ${row.id}: no log file recorded`);
+        else console.log(renderRunToolCounts(row.id, summarizeRunLog(readFileSync(row.log_path, 'utf8'))));
+      }
       return 0;
     }
     if (cmd === 'sources') {
