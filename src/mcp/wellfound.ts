@@ -11,7 +11,7 @@ import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS, type LiLauncher } from '../
 import { acquireLock, type LockHandle } from '../linkedin/session.js';
 import { isWellfoundUrl, THREAD_REF_RE, threadRefOfUrl, threadUrl, wellfoundKind } from '../wellfound/page.js';
 import { saveNextManualPlatformJob, MANUAL_PAGE_SRC, type ManualJobIo, type PageRead } from '../manual/platformJob.js';
-import { runWellfoundDiscover, type DiscoverIo, type WellfoundDiscoverResult } from '../wellfound/discover.js';
+import { runWellfoundDiscover, type DetailRead, type DiscoverIo, type WellfoundDiscoverResult } from '../wellfound/discover.js';
 import { gateInput } from '../safety/inputGate.js';
 import { isDryRun } from '../safety/dryRun.js';
 import { checkStyle, loadStyleConfigSafe } from '../safety/styleGate.js';
@@ -540,21 +540,36 @@ const MAX_INBOX_THREADS = 15;
 const MAX_THREAD_MESSAGES = 6;
 const MAX_THREAD_TEXT = 600;
 
-/** Fixed in-page extractors (strings on purpose, see SNAPSHOT_SRC). Selectors are confirmed in the phase 2 read-only run. */
+/**
+ * Fixed in-page extractors (strings on purpose, see SNAPSHOT_SRC). ALL SELECTORS ARE UNVERIFIED LIVE and are confirmed in the
+ * phase 2 read-only run. They return RAW INGREDIENTS only; the company decision lives in src/wellfound/company.ts.
+ * Guesses: the card is the largest ancestor of the job link that still holds only that one job link; company anchors are
+ * `a[href*="/company/"]` (text, else the logo image alt) plus the job link itself when it is /company/<slug>/jobs/<id>.
+ */
 export const SEARCH_SRC = `(() => {
   const txt = (e) => ((e && (e.innerText || e.textContent)) || '').replace(/\\s+/g, ' ').trim();
+  const jobId = (h) => ((String(h).match(/\\/jobs\\/(\\d{3,12})/) || [])[1]) || '';
   const out = [];
   const seen = new Set();
   document.querySelectorAll('a[href*="/jobs/"]').forEach((a) => {
     const href = a.href || '';
-    if (!/\\/jobs\\/\\d{3,12}/.test(href) || seen.has(href)) return;
+    if (!jobId(href) || seen.has(href)) return;
     seen.add(href);
-    const card = a.closest('[class*="styles_component"], [data-test], li, article, section') || a.parentElement;
-    const comp = card ? card.querySelector('a[href*="/company/"], h2') : null;
+    let card = a;
+    while (card.parentElement && card.parentElement !== document.body) {
+      const ids = new Set(Array.from(card.parentElement.querySelectorAll('a[href*="/jobs/"]')).map((x) => jobId(x.href)).filter(Boolean));
+      if (ids.size > 1) break;
+      card = card.parentElement;
+    }
+    const links = Array.from(card.querySelectorAll('a[href*="/company/"]')).filter((x) => !jobId(x.href)).slice(0, 5).map((x) => {
+      const img = x.querySelector('img[alt]');
+      return { href: x.href, text: txt(x) || (img ? String(img.getAttribute('alt') || '') : '') };
+    });
+    if (/\\/company\\/[^/]+\\//.test(href)) links.push({ href, text: '' });
     // Promotion channels only (short badge texts, class and aria hints), never the snippet. Selectors are guesses, see src/wellfound/promoted.ts.
     const hints = card ? Array.from(card.querySelectorAll('[class*="romot"], [class*="eatured"], [class*="ponsor"], [class*="remium"], [class*="hot"], [class*="badge"], [class*="tag"], [aria-label]')).slice(0, 12) : [];
     out.push({
-      title: txt(a), href, company: txt(comp), snippet: txt(card).slice(0, 1500),
+      title: txt(a), href, links, snippet: txt(card).slice(0, 1500),
       badges: hints.map(txt).filter((t) => t && t.length <= 40).slice(0, 10),
       attrs: [String((card && card.getAttribute('class')) || '')].concat(hints.map((h) => String(h.getAttribute('class') || '') + ' ' + String(h.getAttribute('aria-label') || ''))),
     });
@@ -562,11 +577,16 @@ export const SEARCH_SRC = `(() => {
   return out.slice(0, 40);
 })()`;
 
-/** Fixed in-page extractor for one job page's description (read-only; selectors unverified live). */
+/** Fixed in-page extractor for one job page (read-only; selectors unverified live): description plus company ingredients. */
 export const DETAIL_SRC = `(() => {
   const txt = (e) => ((e && (e.innerText || e.textContent)) || '').replace(/\\s+/g, ' ').trim();
   const el = document.querySelector('[class*="jobDescription"], [class*="description"], [data-test*="Description"], main');
-  return txt(el).slice(0, 12000);
+  const links = Array.from(document.querySelectorAll('a[href*="/company/"]')).filter((x) => !/\\/jobs\\/\\d/.test(x.href)).slice(0, 5).map((x) => {
+    const img = x.querySelector('img[alt]');
+    return { href: x.href, text: txt(x) || (img ? String(img.getAttribute('alt') || '') : '') };
+  });
+  const jsonld = Array.from(document.querySelectorAll('script[type="application/ld+json"]')).slice(0, 4).map((s) => String(s.textContent || '').slice(0, 50000));
+  return { description: txt(el).slice(0, 12000), links, pageTitle: String(document.title || '').slice(0, 300), jsonld };
 })()`;
 
 export const INBOX_SRC = `(() => {
@@ -708,7 +728,7 @@ export function wellfoundDiscover(
         if (!isWellfoundUrl(url)) return null;
         if (await loadPage(url, deps)) return null;
         const d = await session!.page.evaluate(DETAIL_SRC);
-        return typeof d === 'string' ? d : null;
+        return typeof d === 'string' || (d && typeof d === 'object') ? (d as string | DetailRead) : null;
       },
     };
     let result: WellfoundDiscoverResult;
@@ -1033,8 +1053,8 @@ server.registerTool(
   {
     description:
       'Runs ONE named job search from config/wellfound-discovery.json on the open session and saves new jobs in code (source wellfound). ' +
-      'You supply only the search name; the URL is built in code. Description-less cards get their job page read, at most detail_quota pages ' +
-      '(max 10). Needs wellfound_open first. Returns {status: ok|dry_run|halted|failed, code, fetched, new, skipped, seen, details, job_ids}; never page text.',
+      'You supply only the search name; the URL is built in code. Each new job page is read for the full description and the company (promoted first), at most detail_quota pages ' +
+      '(max 10). Needs wellfound_open first. Returns {status: ok|dry_run|halted|failed, code, fetched, new, skipped, seen, details, company_missing, job_ids}; never page text.',
     inputSchema: { search: z.string().max(49), detail_quota: z.number().int().min(0).max(10).optional() },
   },
   async ({ search, detail_quota }) => text(await wellfoundDiscover({ search, detail_quota }))

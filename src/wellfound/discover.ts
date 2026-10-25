@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import type BetterSqlite3 from 'better-sqlite3';
 import { z } from 'zod';
 import { isSeen, saveJob, type Job } from '../db.js';
+import { companyKey, titleIdentityKey } from '../reposts.js';
+import { pickCompany, type CompanyHints } from './company.js';
 import { loadOutreachConfig } from '../outreach/config.js';
 import { ceilings, haltReason, tryConsume } from '../outreach/limits.js';
 import { isDryRun, recordDryRun } from '../safety/dryRun.js';
@@ -48,7 +50,11 @@ export function loadWellfoundDiscoveryConfig(file: string = WELLFOUND_DISCOVERY_
 export const LAST_RUN_KEY = 'wellfound_discover_last_at';
 export const MAX_DETAIL_PAGES = 10;
 export const DEFAULT_DETAIL_PAGES = 5;
+/** Saved description cap: the same 8000 characters the other sources use (only the detail page can fill it). */
 const DESCRIPTION_MAX = 8000;
+/** A results card only yields a snippet of this size (the old 1500-character descriptions came from here). */
+const CARD_SNIPPET_MAX = 1500;
+const BAD_STATUS = 'bad_extraction';
 
 export type WellfoundDiscoverStatus = 'ok' | 'dry_run' | 'halted' | 'failed';
 export interface WellfoundDiscoverResult {
@@ -65,6 +71,10 @@ export interface WellfoundDiscoverResult {
   /** Detail pages read for description-less cards. */
   details: number;
   job_ids: string[];
+  /** Saved jobs (this call) whose company could not be read: they get the `no company identified` gate flag. */
+  company_missing: number;
+  /** Stored bad_extraction rows repaired by this call (company now read). */
+  repaired?: number;
   injection_suspected?: boolean;
 }
 
@@ -72,7 +82,12 @@ export interface RawDiscoverCard {
   title?: unknown; company?: unknown; href?: unknown; snippet?: unknown;
   /** Short badge texts and class or aria attributes of the card (the promotion channels; never the snippet). */
   badges?: unknown; attrs?: unknown;
+  /** Anchors to /company/<slug> in the card and the other company ingredients (see src/wellfound/company.ts). */
+  links?: unknown; pageTitle?: unknown; jsonld?: unknown;
 }
+
+/** What the detail page script returns: the description plus company ingredients (a plain string is description only). */
+export interface DetailRead extends CompanyHints { description?: unknown }
 
 export interface ParsedCards {
   jobs: Job[];
@@ -113,8 +128,8 @@ export function parseDiscoverCards(raw: unknown, limit: number): ParsedCards {
     const id = `wellfound:${num}`;
     if (ids.has(id)) { skipped++; continue; }
     const title = gateField(String(c.title ?? ''), 160);
-    const company = gateField(String(c.company ?? ''), 100);
-    const snippet = gateField(String(c.snippet ?? ''), 1500);
+    const company = gateField(pickCompany(c).name, 100);
+    const snippet = gateField(String(c.snippet ?? ''), CARD_SNIPPET_MAX);
     if (title.blocked || company.blocked || snippet.blocked) { injection = true; skipped++; continue; }
     if (!title.text) { skipped++; continue; }
     ids.add(id);
@@ -134,7 +149,7 @@ export interface DiscoverIo {
   /** Raw cards of the results page just loaded. */
   cards(): Promise<unknown[]>;
   /** Load one job page and return its raw description text, or null when unreadable. */
-  detail(url: string): Promise<string | null>;
+  detail(url: string): Promise<string | DetailRead | null>;
 }
 
 export interface DiscoverDeps {
@@ -145,7 +160,7 @@ export interface DiscoverDeps {
 }
 
 const empty = (status: WellfoundDiscoverStatus, code: string, extra: Partial<WellfoundDiscoverResult> = {}): WellfoundDiscoverResult =>
-  ({ status, code, fetched: 0, new: 0, skipped: 0, seen: 0, details: 0, job_ids: [], ...extra });
+  ({ status, code, fetched: 0, new: 0, skipped: 0, seen: 0, details: 0, job_ids: [], company_missing: 0, ...extra });
 
 const wellfoundHalted = (db: BetterSqlite3.Database): boolean => !!(haltReason(db, 'wellfound') ?? haltReason(db, 'all'));
 
@@ -194,7 +209,11 @@ export async function runWellfoundDiscover(
   }
 
   // Promoted cards first: they get the detail-page quota before the others (stable, so the order is otherwise unchanged).
-  const fresh = parsed.jobs.filter((j) => !isSeen(db, j.id)).sort((a, b) => Number(!!b.promoted) - Number(!!a.promoted));
+  // A stored `bad_extraction` row (scripts/fix-wellfound-jobs.ts) is worked again like a new job and repaired when a company is read.
+  const badIds = new Set(
+    parsed.jobs.filter((j) => (db.prepare('SELECT status FROM jobs WHERE id = ?').get(j.id) as { status: string | null } | undefined)?.status === BAD_STATUS).map((j) => j.id),
+  );
+  const fresh = parsed.jobs.filter((j) => !isSeen(db, j.id) || badIds.has(j.id)).sort((a, b) => Number(!!b.promoted) - Number(!!a.promoted));
   const seen = parsed.jobs.length - fresh.length;
 
   if (dry) {
@@ -215,19 +234,27 @@ export async function runWellfoundDiscover(
   let stopDetails = false;
   let injection = parsed.injection;
   for (const job of fresh) {
-    if (job.description || details >= quota || stopDetails) { keep.push(job); continue; }
+    // A card only ever carries a SNIPPET (CARD_SNIPPET_MAX), so every fresh job gets its detail page while the quota lasts
+    // (promoted first): that page is the source of the description (up to DESCRIPTION_MAX) and a second chance at the company.
+    if (details >= quota || stopDetails) { keep.push(job); continue; }
     try { if (wellfoundHalted(db)) { stopDetails = true; keep.push(job); continue; } } catch { stopDetails = true; keep.push(job); continue; }
     details++;
-    let text: string | null = null;
-    try { text = await io.detail(job.url); } catch { text = null; }
+    let read: string | DetailRead | null = null;
+    try { read = await io.detail(job.url); } catch { read = null; }
+    const d: DetailRead | null = typeof read === 'string' ? { description: read } : read && typeof read === 'object' ? read : null;
+    if (d && !job.company) {
+      const c = gateField(pickCompany(d).name, 100);
+      if (c.blocked) { injection = true; dropped++; continue; }
+      job.company = c.text;
+    }
+    const text = typeof d?.description === 'string' ? d.description : null;
     if (text) {
       const g = gateField(text, DESCRIPTION_MAX);
       if (g.blocked) { injection = true; dropped++; continue; }
       if (g.text) {
-        let v: ScreenVerdict | null = null;
-        try { v = await deps.screen(g.text, 'read'); } catch { v = null; }
+        const v = await screenChunks(deps.screen, g.text);
         if (!v || v.blocked) { injection = injection || !!v; dropped++; continue; }
-        job.description = g.text;
+        if (g.text.length >= job.description.length) job.description = g.text;
       }
     }
     keep.push(job);
@@ -236,13 +263,43 @@ export async function runWellfoundDiscover(
   // An already stored job seen as promoted now is marked promoted (saveJob on an existing id only sets the flag, never clears it).
   for (const j of parsed.jobs) if (j.promoted && isSeen(db, j.id)) saveJob(db, j);
   const ids: string[] = [];
+  let companyMissing = 0;
+  let repaired = 0;
+  const repair = db.prepare(
+    'UPDATE jobs SET company = ?, company_key = ?, title = ?, title_key = ?, description = ?, status = NULL, excluded_reason = NULL WHERE id = ? AND status = ?',
+  );
   for (const j of keep) {
+    if (badIds.has(j.id)) {
+      // Repair only when a company was read this time; otherwise the row stays bad_extraction.
+      if (!j.company) continue;
+      repair.run(j.company, companyKey(j.company), j.title, titleIdentityKey(j.title), j.description, j.id, BAD_STATUS);
+      repaired++;
+      ids.push(j.id);
+      continue;
+    }
     saveJob(db, j);
     ids.push(j.id);
+    if (!j.company) companyMissing++;
   }
   setState(db, LAST_RUN_KEY, now().toISOString(), now());
   return {
     status: 'ok', code: ids.length ? 'saved' : 'no_new', ...base, skipped: parsed.skipped + dropped,
-    ...(injection ? { injection_suspected: true } : {}), new: ids.length, seen, details, job_ids: ids,
+    ...(injection ? { injection_suspected: true } : {}), new: ids.length - repaired, seen, details, job_ids: ids,
+    company_missing: companyMissing, ...(repaired ? { repaired } : {}),
   };
+}
+
+/** Classifier text window (src/safety/screen.ts maxChars is 6000): a longer description is screened chunk by chunk so no tail goes unscreened. */
+const SCREEN_CHUNK = 5500;
+async function screenChunks(screen: DiscoverDeps['screen'], text: string): Promise<ScreenVerdict | null> {
+  let last: ScreenVerdict | null = null;
+  try {
+    for (let i = 0; i < text.length; i += SCREEN_CHUNK) {
+      last = await screen(text.slice(i, i + SCREEN_CHUNK), 'read');
+      if (last.blocked) return last;
+    }
+  } catch {
+    return null;
+  }
+  return last;
 }

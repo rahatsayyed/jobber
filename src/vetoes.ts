@@ -6,6 +6,7 @@ import { ageDays, deadlinePassed, staleFlag } from './freshness.js';
 import { assessLegitimacy, type Legitimacy } from './legitimacy.js';
 import { mentionedTargetRegion, specificTargets, targetRegionEvidence, type TargetRegions } from './targetRegions.js';
 import { hasRequirementSignal, POST_EMPTY_REASON, POST_SOURCE, POST_THIN_FLAG, POST_TITLE_FALLBACK_PREFIX } from './lib/postSignals.js';
+import { NO_COMPANY_FLAG, NO_COMPANY_REASON, WELLFOUND_SOURCE } from './wellfound/company.js';
 import { findRestriction, isRemotePosting, REGION_WORD } from './remotePolicy.js';
 
 // Why a model location FAIL may be shown as a FLAG, or null (FAIL stays). Never when a restriction marker (src/remotePolicy.ts) is in the
@@ -82,6 +83,12 @@ export function applyVetoes(
     emptyPost = noCompany && noRole;
     if (!emptyPost && (noCompany || !hasRequirementSignal(job.description))) soft.push(POST_THIN_FLAG);
   }
+  // Wellfound jobs: the page script may fail to read the company (selectors unverified live). Flag it, and exclude when the role is missing too.
+  let emptyWellfound = false;
+  if (extras?.facts?.source === WELLFOUND_SOURCE && !String(extras.facts.company ?? '').trim()) {
+    emptyWellfound = !job.title.trim();
+    if (!emptyWellfound) soft.push(NO_COMPANY_FLAG);
+  }
   if (legit?.tier === 'caution') for (const s of legit.signals.filter((x) => !x.startsWith('info:'))) soft.push(`legitimacy caution: ${s}`);
   const out = (r: Omit<VetoResult, 'legitimacy' | 'language_note'>): VetoResult =>
     ({ ...r, ...more, ...(extras && r.excluded ? { gate_flags: soft } : {}) });
@@ -102,6 +109,7 @@ export function applyVetoes(
     return out({ excluded: true, reason: `deadline passed: ${extras.facts.deadline.trim()}`, flags });
   }
   if (emptyPost) return out({ excluded: true, reason: POST_EMPTY_REASON, flags });
+  if (emptyWellfound) return out({ excluded: true, reason: NO_COMPANY_REASON, flags });
   if (legit?.tier === 'suspicious') return out({ excluded: true, reason: `legitimacy: ${legit.signals.filter((s) => !s.startsWith('info:')).join('; ')}`, flags });
 
   return out({ excluded: false, flags: soft });

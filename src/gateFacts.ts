@@ -31,7 +31,7 @@ export function jobFactsFromDb(db: BetterSqlite3.Database, jobId: string): JobFa
       else unreadable = true;
     } catch { unreadable = true; }
   }
-  const f: JobFacts = { ...(r.source === 'linkedin-posts' ? { company: r.company ?? '' } : {}), source: r.source, url: r.url, apply_url: r.apply_url, posted_at: r.posted_at, deadline: r.deadline, acted: jobHasActedWork(db, jobId), overridden: hasExclusionOverride(db, jobId), hard_stops: hard, repost_count: repostCountForJob(db, jobId), snapshot_chars: r.snapshot_chars };
+  const f: JobFacts = { ...(r.source === 'linkedin-posts' || r.source === 'wellfound' ? { company: r.company ?? '' } : {}), source: r.source, url: r.url, apply_url: r.apply_url, posted_at: r.posted_at, deadline: r.deadline, acted: jobHasActedWork(db, jobId), overridden: hasExclusionOverride(db, jobId), hard_stops: hard, repost_count: repostCountForJob(db, jobId), snapshot_chars: r.snapshot_chars };
   if (unreadable) f.hard_stops_unreadable = true;
   return f;
 }

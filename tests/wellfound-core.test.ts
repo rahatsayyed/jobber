@@ -162,7 +162,7 @@ describe('runWellfoundDiscover', () => {
     const f = fakeIo([card(1, { snippet: 'Build React apps' }), card(2, { snippet: 'Node and React' })]);
     const d = deps();
     const r = await run(f.io, d);
-    expect(r).toMatchObject({ status: 'ok', code: 'saved', fetched: 2, new: 2, seen: 0, details: 0 });
+    expect(r).toMatchObject({ status: 'ok', code: 'saved', fetched: 2, new: 2, seen: 0, details: 2 }); // a card snippet is not a description: detail pages are tried (unreadable here, snippet kept)
     expect(f.loads).toEqual(['https://wellfound.com/role/l/full-stack-engineer/india?remote=true']);
     expect(isSeen(d.db, 'wellfound:3187001')).toBe(true);
     expect(d.db.prepare("SELECT source FROM jobs WHERE id = 'wellfound:3187002'").get()).toMatchObject({ source: 'wellfound' });
