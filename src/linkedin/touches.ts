@@ -22,7 +22,40 @@ export function personByProfileKey(db: Db, profileKey: string): PersonRow | null
   return row ?? null;
 }
 
-export type TouchStatus = 'sending' | 'sent' | 'failed' | 'unconfirmed' | 'dry_run' | 'refused';
+export type TouchStatus = 'sending' | 'sent' | 'failed' | 'unconfirmed' | 'dry_run' | 'refused' | 'no_dialog';
+
+/** At most this many no_dialog releases per person inside the window, then arm refuses with retry_limit. */
+export const NO_DIALOG_MAX_ATTEMPTS = 2;
+export const NO_DIALOG_WINDOW_MS = 7 * 24 * 3600 * 1000;
+
+/** no_dialog releases of a person's connect touches inside the 7-day window. */
+export function noDialogAttempts(db: Db, personId: number, now: Date): number {
+  const since = new Date(now.getTime() - NO_DIALOG_WINDOW_MS).toISOString();
+  const r = db
+    .prepare(
+      `SELECT COALESCE(SUM(no_dialog_count), 0) AS n FROM touches
+        WHERE person_id = ? AND kind = 'connect' AND status = 'no_dialog' AND released_at >= ?`,
+    )
+    .get(personId, since) as { n: number };
+  return r.n;
+}
+
+/**
+ * Engine-only release for a connect whose Send click provably never happened (Connect clicked, no invite
+ * dialog). Terminal and retryable, never counted as sent or unconfirmed. Only a 'sending' connect row moves;
+ * nothing else (sent, unconfirmed, dry_run) is touched. Not exposed through any tool.
+ */
+export function releaseNoDialog(db: Db, touchId: number, now: Date): void {
+  const at = now.toISOString();
+  const since = new Date(now.getTime() - NO_DIALOG_WINDOW_MS).toISOString();
+  db.prepare(
+    `UPDATE touches
+        SET status = 'no_dialog', sent_at = NULL,
+            no_dialog_count = CASE WHEN released_at IS NOT NULL AND released_at >= ? THEN no_dialog_count + 1 ELSE 1 END,
+            released_at = ?
+      WHERE id = ? AND status = 'sending' AND kind = 'connect'`,
+  ).run(since, at, touchId);
+}
 
 export function idempotencyKey(kind: string, profileKey: string, text: string): string {
   return `li:${kind}:${profileKey}:${createHash('sha256').update(text).digest('hex').slice(0, 16)}`;
@@ -30,7 +63,7 @@ export function idempotencyKey(kind: string, profileKey: string, text: string): 
 
 export type Reserve =
   | { ok: true; touchId: number }
-  | { ok: false; reason: 'already_sent' | 'in_progress' | 'duplicate_kind'; touchId: number };
+  | { ok: false; reason: 'already_sent' | 'in_progress' | 'duplicate_kind' | 'retry_limit'; touchId: number };
 
 /**
  * Callers must record 'unconfirmed' (not 'failed') via finishTouch for any attempt that may have
@@ -65,6 +98,9 @@ export function reserveTouch(
       }
     }
     if (a.kind === 'connect') {
+      if (noDialogAttempts(db, a.personId, a.now) >= NO_DIALOG_MAX_ATTEMPTS) {
+        return { ok: false, reason: 'retry_limit', touchId: same?.id ?? -1 };
+      }
       const other = db
         .prepare(
           `SELECT id FROM touches WHERE person_id = ? AND kind = 'connect' AND id != ?

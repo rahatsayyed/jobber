@@ -63,4 +63,9 @@ export function migrateOutreachTables(db: Db): void {
   // Finding 20: whether the headline named the searched company at registration (1 yes, 0 no, NULL unknown).
   const peopleCols = new Set((db.prepare('PRAGMA table_info(people)').all() as { name: string }[]).map((c) => c.name));
   if (!peopleCols.has('employer_match')) db.exec('ALTER TABLE people ADD COLUMN employer_match INTEGER');
+  // no_dialog releases (a Connect click that opened no invite dialog, so no Send ever happened): how many
+  // times this row was released and when last, for the 2-per-7-days retry limit.
+  const touchCols = new Set((db.prepare('PRAGMA table_info(touches)').all() as { name: string }[]).map((c) => c.name));
+  if (!touchCols.has('no_dialog_count')) db.exec('ALTER TABLE touches ADD COLUMN no_dialog_count INTEGER NOT NULL DEFAULT 0');
+  if (!touchCols.has('released_at')) db.exec('ALTER TABLE touches ADD COLUMN released_at TEXT');
 }

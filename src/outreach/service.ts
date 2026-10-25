@@ -16,7 +16,7 @@ import {
   type Candidate,
 } from './people.js';
 import type { Tuning } from './tuning.js';
-import { pauseContact } from '../linkedin/touches.js';
+import { NO_DIALOG_MAX_ATTEMPTS, noDialogAttempts, pauseContact } from '../linkedin/touches.js';
 import { gateInput } from '../safety/inputGate.js';
 import type { Platform } from '../scheduler/control.js';
 
@@ -92,10 +92,16 @@ export function nextContactsForCompany(
   cfg: Pick<OutreachConfig, 'companyContactLimit'>,
   platform: Platform,
   companyKey: string,
+  now: Date = new Date(),
 ): ContactCandidate[] {
   const key = normalizeCompany(companyKey);
   if (companyPaused(db, platform, key)) return [];
-  const rows = db
+  // Never hand the operator someone arm will refuse: an unresolved touch (sending, unconfirmed) blocks the
+  // person, and so does a spent no_dialog retry limit. The next eligible people are returned instead.
+  const blockedStmt = db.prepare(
+    "SELECT 1 AS hit FROM touches WHERE person_id = ? AND status IN ('sending','unconfirmed') LIMIT 1",
+  );
+  const allRows = db
     .prepare(
       `SELECT p.id, p.profile_key, p.name, p.category, s.cycle_started_at
          FROM people p JOIN contact_state s ON s.person_id = p.id
@@ -103,6 +109,9 @@ export function nextContactsForCompany(
         ORDER BY p.id`,
     )
     .all(platform, key) as { id: number; profile_key: string; name: string | null; category: Category; cycle_started_at: string | null }[];
+  const rows = allRows.filter(
+    (r) => blockedStmt.get(r.id) === undefined && noDialogAttempts(db, r.id, now) < NO_DIALOG_MAX_ATTEMPTS,
+  );
   const connectedKeys = loadConnectedKeys(db);
   const msgStmt = db.prepare(
     "SELECT 1 AS hit FROM touches WHERE person_id = ? AND status = 'sent' AND kind != 'connect' LIMIT 1",
@@ -151,7 +160,7 @@ export function nextPosterContacts(
   db: Db,
   cfg: Pick<OutreachConfig, 'companyContactLimit'>,
   platform: Platform,
-  opts: { jobId?: string; limit?: number; minScore?: number } = {},
+  opts: { jobId?: string; limit?: number; minScore?: number; now?: Date } = {},
 ): PosterContact[] {
   if (platform !== 'linkedin') return [];
   const minScore = opts.minScore ?? DEFAULT_MIN_SCORE;
@@ -186,6 +195,7 @@ export function nextPosterContacts(
     if (!p || seen.has(p.id)) continue;
     seen.add(p.id);
     if (p.stage !== 'new' || p.paused_reason !== null || touchedStmt.get(p.id) !== undefined) continue;
+    if (noDialogAttempts(db, p.id, opts.now ?? new Date()) >= NO_DIALOG_MAX_ATTEMPTS) continue;
     const company = (j.company ?? '').trim();
     if (company) {
       const ck = normalizeCompany(company);

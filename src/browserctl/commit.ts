@@ -10,7 +10,7 @@ import { saveConnection } from '../db.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
 import { extractDialogRecipientName, extractProfileSlug, namesPlausiblyMatch, verifyProfileUrl } from '../linkedin/verify.js';
 import { classifyUrl, profileKeyOf } from '../linkedin/urls.js';
-import { finishTouch } from '../linkedin/touches.js';
+import { finishTouch, releaseNoDialog } from '../linkedin/touches.js';
 import { loadOutreachConfig } from '../outreach/config.js';
 import { tryConsume } from '../outreach/limits.js';
 import { recordDryRun } from '../safety/dryRun.js';
@@ -272,9 +272,9 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
       }
       if (surface === 'dialog') { keepArmed = true; return { ok: true, code: 'dialog_opened', reason: 'invite dialog is open; type the armed note and click Send' }; }
       if (surface === 'page') { keepArmed = true; return { ok: true, code: 'invite_page_opened', reason: 'LinkedIn opened an invite page; take a snapshot and continue only if it shows the armed person' }; }
-      release('unconfirmed');
+      if (intent?.touchId !== undefined && !intent.dry) releaseNoDialog(db, intent.touchId, now());
       const dg = await writeCommitDiag(deps, page, { platform, code: 'no_dialog_after_connect', live, urlBefore: url, after });
-      return { ok: false, status: 'unconfirmed', code: 'no_dialog_after_connect', reason: `Connect clicked but no invite dialog appeared; verify manually${diagNote(dg)}` };
+      return { ok: false, status: 'failed', code: 'no_dialog_after_connect', reason: `Connect clicked but no invite dialog appeared; nothing was sent. Escalate once and move to the next contact.${diagNote(dg)}` };
     }
     const dialogGone = cls === 'commit_accept_invite' ? acceptCount(after) < acceptBefore
       : cls === 'commit_connect_send' ? !after.nodes.some((x) => x.role === 'dialog' && x.name === live.dialogName)

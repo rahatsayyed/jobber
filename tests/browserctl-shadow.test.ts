@@ -190,7 +190,7 @@ describe('failure diagnostics', () => {
     const w = mk({ html: profileHtml(), env: LIVE_ENV });
     expect((await w.arm({ kind: 'connect_note', profile_url: URL_, text: NOTE })).status).toBe('armed');
     const r = await w.engine.click(refOf(await w.snap(), 'button', 'Connect'));
-    expect(r).toMatchObject({ status: 'unconfirmed', code: 'no_dialog_after_connect' });
+    expect(r).toMatchObject({ status: 'failed', code: 'no_dialog_after_connect' });
     const file = diagPath(r.reason);
     expect(file).toMatch(/linkedin-.*\.json$/);
     expect(statSync(file).mode & 0o777).toBe(0o600);

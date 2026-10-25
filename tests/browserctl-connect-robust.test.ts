@@ -85,10 +85,10 @@ describe('Connect click: invite surface detection', () => {
     expect(waits).toBeGreaterThanOrEqual(4);
   });
 
-  it('still unconfirmed when nothing appears within the wait', async () => {
+  it('no_dialog (nothing sent) when nothing appears within the wait', async () => {
     const { w, connect } = await armedWorld();
     const r = await w.engine.click(connect);
-    expect(r).toMatchObject({ status: 'unconfirmed', code: 'no_dialog_after_connect' });
+    expect(r).toMatchObject({ status: 'failed', code: 'no_dialog_after_connect' });
     expect(w.intents.peek('linkedin')).toBeNull();
   });
 

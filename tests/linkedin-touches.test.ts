@@ -3,7 +3,7 @@ import { openDb } from '../src/db.js';
 import { upsertPerson } from '../src/outreach/people.js';
 import { profileKeyOf } from '../src/linkedin/urls.js';
 import {
-  personByProfileKey, idempotencyKey, reserveTouch, finishTouch, pauseContact,
+  personByProfileKey, idempotencyKey, reserveTouch, finishTouch, pauseContact, releaseNoDialog,
 } from '../src/linkedin/touches.js';
 
 const URL1 = 'https://www.linkedin.com/in/jane-doe';
@@ -18,6 +18,33 @@ const args = (text: string, over: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   db = openDb(':memory:');
   pid = upsertPerson(db, { platform: 'linkedin', profileKey: profileKeyOf(URL1), name: 'Jane Doe', headline: 'Technical Recruiter at Acme', company: 'Acme', category: 'recruiter' });
+});
+
+describe('no_dialog release', () => {
+  const day = 24 * 3600 * 1000;
+  it('releases a sending connect touch, stays retryable, refuses with retry_limit after 2 in 7 days', () => {
+    const r1 = reserveTouch(db, args('hi'));
+    expect(r1.ok).toBe(true);
+    if (r1.ok) releaseNoDialog(db, r1.touchId, now);
+    const row = db.prepare('SELECT status, sent_at FROM touches WHERE person_id = ?').get(pid) as any;
+    expect(row).toMatchObject({ status: 'no_dialog', sent_at: null });
+    const r2 = reserveTouch(db, args('hi'));
+    expect(r2.ok).toBe(true);
+    if (r2.ok) releaseNoDialog(db, r2.touchId, now);
+    expect(reserveTouch(db, args('hi'))).toMatchObject({ ok: false, reason: 'retry_limit' });
+    expect(reserveTouch(db, args('other words'))).toMatchObject({ ok: false, reason: 'retry_limit' });
+    const later = new Date(now.getTime() + 8 * day);
+    expect(reserveTouch(db, args('hi', { now: later })).ok).toBe(true);
+  });
+  it('only a sending row can be released; sent and unconfirmed are untouched', () => {
+    const r1 = reserveTouch(db, args('hi'));
+    if (r1.ok) finishTouch(db, r1.touchId, 'sent', now);
+    if (r1.ok) releaseNoDialog(db, r1.touchId, now);
+    expect((db.prepare('SELECT status FROM touches WHERE id = ?').get((r1 as any).touchId) as any).status).toBe('sent');
+    db.prepare("UPDATE touches SET status = 'unconfirmed' WHERE id = ?").run((r1 as any).touchId);
+    if (r1.ok) releaseNoDialog(db, r1.touchId, now);
+    expect((db.prepare('SELECT status FROM touches WHERE id = ?').get((r1 as any).touchId) as any).status).toBe('unconfirmed');
+  });
 });
 
 describe('touch ledger', () => {

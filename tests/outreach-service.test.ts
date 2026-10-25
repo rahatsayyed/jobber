@@ -120,6 +120,32 @@ describe('listDueTouches', () => {
   });
 });
 
+describe('nextContactsForCompany skips blocked people', () => {
+  const np = (db: D, k: string) =>
+    upsertPerson(db, { platform: 'linkedin', profileKey: `linkedin.com/in/${k}`, company: 'Acme Inc', category: 'recruiter' });
+  const tch = (db: D, id: number, status: string) =>
+    db.prepare("INSERT INTO touches (person_id, kind, idempotency_key, status) VALUES (?, 'connect', ?, ?)").run(id, `k${id}${status}`, status);
+  it('skips unconfirmed and in_progress people and returns the next eligible ones', () => {
+    const db = openDb(':memory:');
+    const a = np(db, 'a');
+    const b = np(db, 'b');
+    const c = np(db, 'c');
+    tch(db, a, 'unconfirmed');
+    tch(db, b, 'sending');
+    const ids = nextContactsForCompany(db, { companyContactLimit: 2 }, 'linkedin', 'Acme Inc').map((x) => x.personId);
+    expect(ids).toEqual([c]);
+  });
+  it('keeps no_dialog people until the retry limit, then drops them', () => {
+    const db = openDb(':memory:');
+    const a = np(db, 'a');
+    tch(db, a, 'no_dialog');
+    db.prepare('UPDATE touches SET no_dialog_count = 1, released_at = ?').run(new Date(NOW.getTime() - day).toISOString());
+    expect(nextContactsForCompany(db, { companyContactLimit: 2 }, 'linkedin', 'Acme Inc', NOW).map((x) => x.personId)).toEqual([a]);
+    db.prepare('UPDATE touches SET no_dialog_count = 2').run();
+    expect(nextContactsForCompany(db, { companyContactLimit: 2 }, 'linkedin', 'Acme Inc', NOW)).toEqual([]);
+  });
+});
+
 describe('nextContactsForCompany', () => {
   it('returns new people with profile_url and prefers connected', () => {
     const db = openDb(':memory:');

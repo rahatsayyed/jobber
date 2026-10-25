@@ -32,7 +32,7 @@ interface PersonRow {
 }
 
 // Touch statuses that are finished; anything else (queued, sending, unconfirmed, unknown) is in flight.
-export const TERMINAL = ['sent', 'failed', 'refused', 'dry_run', 'skipped', 'cancelled'];
+export const TERMINAL = ['sent', 'failed', 'refused', 'dry_run', 'skipped', 'cancelled', 'no_dialog'];
 
 const toDate = (s: string | null): Date | null => {
   if (!s) return null;

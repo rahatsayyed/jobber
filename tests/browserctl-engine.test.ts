@@ -382,8 +382,10 @@ describe('commit: connect open step (profile Connect button)', () => {
     expect(clicks(w)).toEqual([]);
     expect((await w.arm({ kind: 'connect_note', profile_url: URL_, text: NOTE })).status).toBe('armed');
     const r = await w.engine.click(refOf(await w.snap(), 'button', 'Connect'));
-    expect(r).toMatchObject({ status: 'unconfirmed', code: 'no_dialog_after_connect' });
+    expect(r).toMatchObject({ status: 'failed', code: 'no_dialog_after_connect' });
     expect(w.intents.peek('linkedin')).toBeNull();
+    expect(w.db.prepare("SELECT status FROM touches WHERE kind = 'connect'").all()).toEqual([{ status: 'no_dialog' }]);
+    expect(countSince(w.db, 'linkedin_invite', SINCE)).toBe(0);
   });
 });
 

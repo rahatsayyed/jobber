@@ -24,6 +24,32 @@ function post(db: D, n: string, o: Omit<Partial<Job>, 'score'> & { score?: numbe
   return { id: job.id, personId };
 }
 
+describe('poster modes skip blocked people (posters and job_id)', () => {
+  const mark = (db: D, personId: number, status: string, extra = '') =>
+    db.prepare(`INSERT INTO touches (person_id, kind, idempotency_key, status ${extra ? ', no_dialog_count, released_at' : ''}) VALUES (?, 'connect', ?, ? ${extra ? ', 2, ?' : ''})`)
+      .run(...([personId, `k${personId}${status}`, status] as (string | number)[]), ...(extra ? [extra] : []));
+  it('skips unconfirmed, sending and retry_limit posters and returns the next eligible ones', () => {
+    const db = openDb(':memory:');
+    const a = post(db, '111111'); const b = post(db, '222222'); const c = post(db, '333333'); const d = post(db, '444444');
+    mark(db, a.personId, 'unconfirmed');
+    mark(db, b.personId, 'sending');
+    mark(db, c.personId, 'no_dialog', new Date(NOW.getTime() - 3600_000).toISOString());
+    const r = nextPosterContacts(db, cfg, 'linkedin', { minScore: 60, now: NOW });
+    expect(r.map((x) => x.job_id)).toEqual([d.id]);
+    expect(nextPosterContacts(db, cfg, 'linkedin', { minScore: 60, jobId: c.id, now: NOW })).toEqual([]);
+    expect(nextPosterContacts(db, cfg, 'linkedin', { minScore: 60, jobId: a.id, now: NOW })).toEqual([]);
+    expect(nextPosterContacts(db, cfg, 'linkedin', { minScore: 60, jobId: d.id, now: NOW }).map((x) => x.job_id)).toEqual([d.id]);
+    const h = handleNextContacts({ db, now: () => NOW }, { platform: 'linkedin', posters: true, limit: 5 }) as unknown as { job_id: string }[];
+    expect(h.map((x) => x.job_id)).toEqual([d.id]);
+  });
+  it('a no_dialog poster below the retry limit stays eligible', () => {
+    const db = openDb(':memory:');
+    const a = post(db, '111111');
+    db.prepare("INSERT INTO touches (person_id, kind, idempotency_key, status, no_dialog_count, released_at) VALUES (?, 'connect', 'k', 'no_dialog', 1, ?)").run(a.personId, new Date(NOW.getTime() - 3600_000).toISOString());
+    expect(nextPosterContacts(db, cfg, 'linkedin', { minScore: 60, now: NOW }).map((x) => x.job_id)).toEqual([a.id]);
+  });
+});
+
 describe('nextPosterContacts', () => {
   it('returns the poster of a company-less post, with job context and no company', () => {
     const db = openDb(':memory:');

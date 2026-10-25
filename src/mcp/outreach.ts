@@ -56,12 +56,12 @@ export function handleNextContacts(
   const db = getDb(deps);
   const ck = (a.company_key ?? '').trim();
   if (ck && a.job_id === undefined && !a.posters) {
-    return nextContactsForCompany(db, loadOutreachConfig(), a.platform, ck).slice(0, clampLimit(a.limit));
+    return nextContactsForCompany(db, loadOutreachConfig(), a.platform, ck, nowOf(deps)).slice(0, clampLimit(a.limit));
   }
   if (!a.job_id && !a.posters) throw new Error('next_contacts needs company_key, job_id or posters: true');
   // Authors of matched hiring posts (no company needed): priority jobs first, the same per-person and per-company rules.
   const minScore = Number.isFinite(Number(process.env.MATCH_THRESHOLD)) && process.env.MATCH_THRESHOLD ? Number(process.env.MATCH_THRESHOLD) : 60;
-  return nextPosterContacts(db, loadOutreachConfig(), a.platform, { jobId: a.job_id, limit: a.limit, minScore });
+  return nextPosterContacts(db, loadOutreachConfig(), a.platform, { jobId: a.job_id, limit: a.limit, minScore, now: nowOf(deps) });
 }
 export function handleRecordInbound(
   deps: OutreachDeps,
