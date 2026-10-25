@@ -41,6 +41,8 @@ export interface EngineDeps {
   /** Post-navigation stability poll for open() (defaults: OPEN_SETTLE_POLL_MS, OPEN_SETTLE_MAX_MS). */
   openSettle?: { pollMs: number; maxMs: number };
   confirmTimeoutMs?: number;
+  /** After a LinkedIn Connect click: how long to poll for the invite dialog or page (default 4000 ms). */
+  dialogWaitMs?: number;
   /**
    * Output gate for text typed into a non-composer field or a Naukri apply chatbot (no URLs, emails,
    * secrets). Returns a refusal reason or null. The Naukri MCP supplies it; absent means the guard's

@@ -154,8 +154,9 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
   let styleCfg = deps.styleCfg;
   let engine: Engine | null = null;
   const getDb = () => (db ??= openDb(dbPath()));
+  const inflightRef: { fn: () => boolean } = { fn: () => false };
   const getRt = () => (rt ??= createRuntime({
-    db: getDb(), env, idleMs: cfg.idleMs, settleMs: cfg.settleMs,
+    db: getDb(), env, idleMs: cfg.idleMs, settleMs: cfg.settleMs, isBusy: () => inflightRef.fn(),
     layout: createLayoutObserver({ platform: 'linkedin', cfg: layoutCfg, now, runId: resolveRunId(env), db: getDb() }),
   }));
   let styleNoteShown = false;
@@ -328,6 +329,23 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
       return json(await saveNextManualPlatformJob('linkedin', io, { db: td.db, env: td.env, now: td.now, screen: td.screen }));
     }),
   };
+  // One tool call at a time over the ONE session. The model may send arm and click in one parallel
+  // message; without this the arm's post-open checks interleave with the click and the session's idle
+  // timer can fire under them. Read-only status tools stay outside the queue.
+  const UNQUEUED = new Set<ToolName>(['linkedin_limits', 'linkedin_layout']);
+  let tail: Promise<unknown> = Promise.resolve();
+  let inflight = 0;
+  inflightRef.fn = () => inflight > 0;
+  for (const name of TOOL_NAMES) {
+    if (UNQUEUED.has(name)) continue;
+    const inner = handlers[name];
+    handlers[name] = (args) => {
+      inflight += 1;
+      const run = tail.then(() => inner(args), () => inner(args));
+      tail = run.then(() => undefined, () => undefined);
+      return run.finally(() => { inflight -= 1; try { rt?.touch?.(); } catch { /* idle timer only */ } });
+    };
+  }
   lifecycles.set(handlers, {
     close: async () => {
       if (rt) await rt.close();

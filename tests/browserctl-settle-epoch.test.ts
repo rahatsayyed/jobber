@@ -68,11 +68,10 @@ describe('arm: refs from the latest operator snapshot stay valid', () => {
   it('linkedin: a real page change during arm still makes the old ref stale', async () => {
     const w = world({ html: profileHtml(), env: LIVE_ENV }); worlds.push(w);
     const ref = refOf(await w.snap(), 'button', 'More');
-    w.page.onAct = (what) => {
-      if (what.startsWith('goto')) w.page.setHtml(profileHtml({ extra: '<button>Extra</button>' }).replace('<button>More</button>', '<button>Less</button>'));
-    };
     const a = await w.arm({ kind: 'connect_note', profile_url: URL_, text: NOTE });
     expect(a.status).toBe('armed');
+    // arm only re-reads the page it is on; a real change afterwards (the control is gone) still refuses the ref
+    w.page.setHtml(profileHtml({ extra: '<button>Extra</button>' }).replace('<button>More</button>', '<button>Less</button>'));
     const r = await w.engine.click(ref);
     expect(['stale_ref', 'target_changed', 'target_gone']).toContain(r.code);
   });

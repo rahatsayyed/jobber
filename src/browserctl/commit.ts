@@ -50,6 +50,33 @@ export function dialogText(tree: RawTree, dlg: number): string {
   return parts.filter(Boolean).join('\n');
 }
 
+const INVITE_CONTROL_RE = /^(?:add a note|send without a note|send (?:an? )?invit\w*)$/;
+
+/** Does this dialog hold the invite controls ("Add a note", "Send without a note", "Send invitation")? */
+export function looksLikeInvite(tree: RawTree, dlg: number): boolean {
+  const d = tree.nodes.find((x) => x.n === dlg && x.role === 'dialog');
+  if (d && dialogKindOf(d.name) === 'message') return false;
+  const ctl = tree.nodes.filter((x) => x.dialog === dlg && (x.role === 'button' || x.role === 'link')).map((x) => normName(x.name));
+  if (ctl.some((c) => INVITE_CONTROL_RE.test(c))) return true;
+  return ctl.includes('send') && /\binvit/i.test(dialogText(tree, dlg));
+}
+
+/** Kind of a dialog: by its name, or (when the name says nothing) by the invite controls inside it. */
+export function effectiveDialogKind(tree: RawTree, dlg: number, name: string | null | undefined): 'invite' | 'message' | 'other' {
+  const byName = dialogKindOf(name) ?? 'other';
+  if (byName !== 'other') return byName;
+  return looksLikeInvite(tree, dlg) ? 'invite' : 'other';
+}
+
+/** The page after a Connect click: an invite dialog (any name), or a navigated invite page with its controls. */
+function inviteSurface(tree: RawTree, before: string): 'dialog' | 'page' | null {
+  if (tree.nodes.some((x) => x.role === 'dialog' && effectiveDialogKind(tree, x.n, x.name) === 'invite')) return 'dialog';
+  const moved = tree.url !== before;
+  const ctl = tree.nodes.filter((x) => x.dialog === undefined && (x.role === 'button' || x.role === 'link')).map((x) => normName(x.name));
+  const hasCtl = ctl.some((c) => INVITE_CONTROL_RE.test(c));
+  return moved && hasCtl ? 'page' : null;
+}
+
 /** Recipient name shown in an invite dialog ("invitation to X" or an "Invite X to connect" heading), '' when none. */
 export function inviteDialogName(tree: RawTree, dlg: number): string {
   const text = dialogText(tree, dlg);
@@ -154,7 +181,7 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
       if (!head || !namesPlausiblyMatch(expectedName, head)) return abort('recipient_mismatch', 'page does not show the armed person');
       openStep = true;
     } else {
-      if ((dialogKindOf(live.dialogName) ?? 'other') !== wantKind) return abort('wrong_dialog', 'dialog is not the expected kind', { close: true });
+      if (effectiveDialogKind(tree, dlg, live.dialogName) !== wantKind) return abort('wrong_dialog', 'dialog is not the expected kind', { close: true });
       const shown = wantKind === 'invite' ? inviteDialogName(tree, dlg) : messageDialogName(tree, dlg);
       if (!shown) return abort('dialog_name_unverified', 'could not read the recipient name in the dialog', { close: true });
       if (!namesPlausiblyMatch(expectedName, shown)) return abort('dialog_recipient_mismatch', 'dialog addresses a different person', { close: true });
@@ -230,11 +257,20 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
     await i.act();
     const confirmedNet = await net;
     await page.waitMs(deps.settleMs ?? 800).catch(() => undefined);
-    const after = await page.snapshot();
+    let after = await page.snapshot();
     // Block page after the click: the platform is halted by the engine's next read; the send is unresolved.
     if (openStep) {
-      const opened = after.nodes.some((x) => x.role === 'dialog' && dialogKindOf(x.name) === 'invite');
-      if (opened) { keepArmed = true; return { ok: true, code: 'dialog_opened', reason: 'invite dialog is open; type the armed note and click Send' }; }
+      // LinkedIn may open the modal late: poll (bounded) for an invite dialog of any name, or a navigated invite page.
+      const pollMs = 400;
+      const polls = Math.max(0, Math.ceil((deps.dialogWaitMs ?? 4000) / pollMs));
+      let surface = inviteSurface(after, url);
+      for (let i = 0; i < polls && !surface; i++) {
+        await page.waitMs(pollMs).catch(() => undefined);
+        after = await page.snapshot();
+        surface = inviteSurface(after, url);
+      }
+      if (surface === 'dialog') { keepArmed = true; return { ok: true, code: 'dialog_opened', reason: 'invite dialog is open; type the armed note and click Send' }; }
+      if (surface === 'page') { keepArmed = true; return { ok: true, code: 'invite_page_opened', reason: 'LinkedIn opened an invite page; take a snapshot and continue only if it shows the armed person' }; }
       release('unconfirmed');
       return { ok: false, status: 'unconfirmed', code: 'no_dialog_after_connect', reason: 'Connect clicked but no invite dialog appeared; verify manually' };
     }

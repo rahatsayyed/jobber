@@ -18,6 +18,8 @@ export interface RuntimeDeps {
   sessionPath?: string; lockPath?: string; settleMs?: number; idleMs?: number;
   /** Advisory layout observer: sees each fresh snapshot of open() and snapshot(); never fails a tool. */
   layout?: LayoutObserver;
+  /** True while a tool call is in flight: the idle timer then re-arms instead of closing the session. */
+  isBusy?: () => boolean;
 }
 export interface ActionResult { ok: boolean; code: string; reason?: string; state?: string }
 export interface Runtime {
@@ -69,7 +71,11 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
   function touch(): void {
     if (!session) return;
     if (session.idle) clearTimeout(session.idle);
-    session.idle = setTimeout(() => { void serial(() => closeSession()); }, idleMs);
+    session.idle = setTimeout(() => {
+      // Never close the session under a tool call that is still running (an arm plus click pair).
+      if (deps.isBusy?.()) { touch(); return; }
+      void serial(() => closeSession());
+    }, idleMs);
     session.idle.unref?.();
   }
 

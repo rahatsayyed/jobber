@@ -8,7 +8,7 @@ import { profileKeyOf } from '../linkedin/urls.js';
 import { naukriJobIdOfUrl, threadRefOfUrl } from '../naukri/page.js';
 import { threadRefOfUrl as wellfoundThreadRefOfUrl, wellfoundJobIdOfUrl } from '../wellfound/page.js';
 import { recordDryRun } from '../safety/dryRun.js';
-import { commitAction } from './commit.js';
+import { commitAction, effectiveDialogKind } from './commit.js';
 import { applyCounted, commitNaukri, observeApplyConfirmation } from './commitNaukri.js';
 import { commitWellfound, observeWellfoundApplyConfirmation, wellfoundApplyCounted } from './commitWellfound.js';
 import { BC_KEYS, type BcKey, type BcPage } from './driver.js';
@@ -28,6 +28,11 @@ export interface Engine {
    */
   open(url: string, opts?: { keepRefs?: boolean }): Promise<EngineResult>;
   snapshot(): Promise<EngineResult>;
+  /**
+   * Read the page for verification (arm tools) without a new epoch and without touching the refs: the
+   * operator's refs stay valid, and a ref whose element moved is re-resolved by role and name when used.
+   */
+  peek(): Promise<EngineResult>;
   click(ref: string): Promise<EngineResult>;
   type(ref: string, text: string, submit?: boolean): Promise<EngineResult>;
   pressKey(key: string): Promise<EngineResult>;
@@ -53,6 +58,9 @@ function treeSignature(t: RawTree): string {
     .filter((x) => x.role !== 'text')
     .map((x) => `${x.n}|${x.role}|${x.name}|${x.href ?? ''}|${x.dialogName ?? ''}|${x.dialog === undefined ? 0 : 1}|${x.disabled ? 1 : 0}`);
   return `${t.url}\n${rows.join('\n')}`;
+}
+function samePath(a: string, b: string): boolean {
+  try { const x = new URL(a); const y = new URL(b); return x.origin === y.origin && x.pathname === y.pathname; } catch { return false; }
 }
 const FREE_KEYS = new Set<string>(['Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Backspace']);
 
@@ -137,14 +145,30 @@ export function createEngine(deps: EngineDeps): Engine {
     if (!g.ok) return g;
     const r = refs.resolve(ref);
     if (!r.ok) return { ok: false, res: refused(r.code, r.reason) };
-    const live = await g.page.describe(r.n).catch(() => null);
-    if (!live) return { ok: false, res: refused('target_gone', 'element is gone; take a new snapshot') };
+    let n = r.n;
+    let live = await g.page.describe(n).catch(() => null);
     const st = r.node;
-    if (st && (st.role !== live.role || st.name !== live.name || st.dialogName !== live.dialogName || (st.dialog === undefined) !== (live.dialog === undefined))) {
+    const same = (a: LiveNode | null): a is LiveNode =>
+      !!a && (!st || (st.role === a.role && st.name === a.name && st.dialogName === a.dialogName && (st.dialog === undefined) === (a.dialog === undefined)));
+    if (!same(live) && st && tree && samePath(tree.url, g.page.url())) {
+      // The page re-rendered and the ordinals moved: find the ONE element with the stored role, name,
+      // href and dialog name in a fresh read (which restamps the page). Zero or several matches fail closed.
+      const fresh = await g.page.snapshot().catch(() => null);
+      if (fresh && fresh.nodes.length > 0) {
+        const hits = fresh.nodes.filter((x) => x.role === st.role && x.name === st.name && x.dialogName === st.dialogName
+          && (x.dialog === undefined) === (st.dialog === undefined) && (x.href ?? '') === (st.href ?? ''));
+        if (hits.length === 1) {
+          const re = await g.page.describe(hits[0].n).catch(() => null);
+          if (same(re)) { n = hits[0].n; live = re; tree = fresh; }
+        }
+      }
+    }
+    if (!live) return { ok: false, res: refused('target_gone', 'element is gone; take a new snapshot') };
+    if (!same(live)) {
       refs.invalidate();
       return { ok: false, res: refused('target_changed', 'page changed under the ref; take a new snapshot') };
     }
-    return { ok: true, page: g.page, n: r.n, live };
+    return { ok: true, page: g.page, n, live };
   }
 
   const pageKind = (page: BcPage): string => P.pageKind(page.url());
@@ -171,7 +195,8 @@ export function createEngine(deps: EngineDeps): Engine {
         : P.platform === 'wellfound'
           ? await commitWellfound({ deps, page, cls: cls as 'wellfound_send' | 'wellfound_apply', live, act, redescribe })
           : await commitAction({ deps, page, cls: cls as CommitClass, live, act, redescribe });
-      refs.invalidate();
+      // A commit refused before anything was clicked changed nothing on the page: the refs stay valid.
+      if (res.code !== 'no_armed_intent') refs.invalidate();
       return res;
     }
     recordFree(op, cls, live);
@@ -236,8 +261,10 @@ export function createEngine(deps: EngineDeps): Engine {
   async function doClick(ref: string): Promise<EngineResult> {
     const t = await target(ref);
     if (!t.ok) return t.res;
-    const cls = classify(guardInputOf(t.live, P.platform, pageKind(t.page)));
-    return dispatch('click', t.page, cls, t.live, () => t.page.clickNode(t.n), () => t.page.describe(t.n));
+    // A LinkedIn dialog whose name says nothing is still the invite dialog when it holds the invite controls.
+    const dk = P.platform === 'linkedin' && t.live.dialog !== undefined && tree ? effectiveDialogKind(tree, t.live.dialog, t.live.dialogName) : null;
+    const cls = classify(guardInputOf(t.live, P.platform, pageKind(t.page), false, dk));
+    return dispatch('click',t.page, cls, t.live, () => t.page.clickNode(t.n), () => t.page.describe(t.n));
   }
 
   async function doPress(page: BcPage, key: BcKey, node: LiveNode | null, redescribe: () => Promise<LiveNode | null>): Promise<EngineResult> {
@@ -330,6 +357,24 @@ export function createEngine(deps: EngineDeps): Engine {
     snapshot: () => serial(async () => {
       const g = await gate();
       return g.ok ? read(g.page) : g.res;
+    }),
+    peek: () => serial(async () => {
+      const g = await gate();
+      if (!g.ok) return g.res;
+      let t: RawTree;
+      try { t = await g.page.snapshot(); } catch { return refused('no_snapshot', 'could not read the page'); }
+      const block = P.detectBlock(t);
+      if (block) {
+        refs.invalidate();
+        tree = null;
+        if (!block.halt) return { ok: false, code: block.kind, reason: `page needs attention: ${block.kind}` };
+        haltPlatform(deps.db, P.platform, `${block.kind}: ${pathOnly(t.url)}`, now());
+        await deps.afterBlock?.().catch(() => undefined);
+        return { ok: false, code: 'halted', reason: `block page: ${block.kind}` };
+      }
+      tree = t;
+      try { deps.layoutFeed?.(t); } catch { /* advisory */ }
+      return { ok: true, code: 'ok', epoch: refs.epoch };
     }),
     click: (ref) => serial(() => doClick(ref)),
     type: (ref, text, submit) => serial(() => doType(ref, text, submit === true)),

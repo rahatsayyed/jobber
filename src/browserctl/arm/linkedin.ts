@@ -135,7 +135,13 @@ export async function armLinkedinSend(deps: ArmDeps, a: ArmArgs): Promise<ArmRes
   }
 
   // Page verification from the page snapshot.
-  const opened = await deps.engine.open(isAccept ? INVITATIONS_URL : a.profile_url, { keepRefs: true });
+  // Already on the requested profile (the operator opened and snapshotted it): only re-read it. Arming must
+  // never start a new epoch or navigate, so the operator's refs stay usable for the click that follows.
+  const cur = await deps.engine.page();
+  const onProfile = !isAccept && !!cur && profileKeyOf(cur.url()) === profileKeyOf(a.profile_url) && deps.engine.refs.hasSnapshot;
+  const opened = onProfile
+    ? await deps.engine.peek()
+    : await deps.engine.open(isAccept ? INVITATIONS_URL : a.profile_url, { keepRefs: true });
   if (!opened.ok) {
     const halted = opened.code === 'halted' || opened.code === 'killed';
     return fail(halted ? 'halted' : 'failed', opened.code, opened.reason);

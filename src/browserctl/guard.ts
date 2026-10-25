@@ -180,8 +180,9 @@ export function classifyKey(input: GuardInput & { key: string }): ActionClass {
 }
 
 /** Build the classifier input from a node re-read live. */
-export function guardInputOf(node: LiveNode, platform: Platform, pageKind?: string | null, viaPoint = false): GuardInput {
+export function guardInputOf(node: LiveNode, platform: Platform, pageKind?: string | null, viaPoint = false, dialogKind?: DialogKind | null): GuardInput {
   return {
+    ...(dialogKind ? { dialogKind } : {}),
     platform,
     role: node.role,
     name: node.name,
