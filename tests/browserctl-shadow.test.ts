@@ -234,9 +234,9 @@ describe('failure diagnostics', () => {
     w.page.onAct = () => undefined;
     expect((await w.armApply()).status).toBe('armed');
     const r = await w.engine.click(nkRef(await w.snap(), 'button', 'Apply'));
-    expect(r).toMatchObject({ status: 'unconfirmed', code: 'unconfirmed' });
+    expect(r).toMatchObject({ status: 'unconfirmed', code: 'apply_click_ignored' });
     const j = JSON.parse(readFileSync(diagPath(r.reason), 'utf8'));
-    expect(j).toMatchObject({ platform: 'naukri', code: 'unconfirmed', clicked: { role: 'button', name: 'Apply' } });
+    expect(j).toMatchObject({ platform: 'naukri', code: 'apply_click_ignored', clicked: { role: 'button', name: 'Apply' } });
   });
 
   it('safeName strips controls, redacts email and phone, and caps the length', () => {

@@ -56,6 +56,34 @@ export interface DiagFile {
   dialogs: { role: string; name: string; buttons: string[] }[];
   tree_dialogs: { name: string; buttons: string[] }[];
   tree_nodes: number | null;
+  // Naukri apply: pages the click opened (url path only, never the query) and apply-ish responses (path and status).
+  popups?: { path: string; host_kind: 'naukri' | 'external' | 'unknown' }[];
+  apply_responses?: { path: string; status: number }[];
+  // Names of up to 10 buttons near the clicked control after the wait (names only, redacted).
+  near_buttons?: string[];
+}
+
+// Extra structure for a commit click (Naukri apply).
+export interface DiagExtra {
+  popups?: { url: string }[];
+  responses?: { path: string; status: number }[];
+  nearButtons?: string[];
+}
+
+export const hostKind = (url: string): 'naukri' | 'external' | 'unknown' => {
+  try {
+    const h = new URL(url).hostname.toLowerCase();
+    return h === 'naukri.com' || h.endsWith('.naukri.com') ? 'naukri' : 'external';
+  } catch { return 'unknown'; }
+};
+
+// Names of up to 10 buttons near the clicked control (closest in document order). Names only, redacted.
+export function nearButtonNames(tree: RawTree | null, clicked: Pick<LiveNode, 'role' | 'name'>): string[] {
+  if (!tree) return [];
+  const btns = tree.nodes.filter((x) => x.role === 'button' || x.role === 'link');
+  const idx = btns.findIndex((x) => x.role === clicked.role && x.name === clicked.name);
+  const order = btns.map((x, k) => ({ x, d: idx < 0 ? k : Math.abs(k - idx) }));
+  return order.sort((a, b) => a.d - b.d).slice(0, 10).map((o) => safeName(o.x.name));
 }
 
 /** Dialogs and their button names from a snapshot tree (names only). */
@@ -92,7 +120,7 @@ function fit(f: DiagFile): string {
 export async function writeCommitDiag(
   deps: DiagDeps,
   page: BcPage,
-  i: { platform: string; code: string; live: Pick<LiveNode, 'role' | 'name'>; urlBefore: string; after: RawTree | null },
+  i: { platform: string; code: string; live: Pick<LiveNode, 'role' | 'name'>; urlBefore: string; after: RawTree | null; extra?: DiagExtra },
 ): Promise<string | null> {
   try {
     let pd: PageDiag | null = null;
@@ -114,6 +142,11 @@ export async function writeCommitDiag(
       })),
       tree_dialogs: treeDialogs(i.after),
       tree_nodes: i.after ? i.after.nodes.length : null,
+      ...(i.extra ? {
+        popups: (i.extra.popups ?? []).slice(0, 5).map((p) => ({ path: pathOf(p.url), host_kind: hostKind(p.url) })),
+        apply_responses: (i.extra.responses ?? []).slice(0, 10).map((r) => ({ path: String(r.path).split('?')[0].slice(0, 120), status: Math.floor(Number(r.status)) || 0 })),
+        near_buttons: (i.extra.nearButtons ?? []).slice(0, 10).map(safeName),
+      } : {}),
     };
     const dir = deps.diagDir ?? path.join(PROJECT_ROOT, '.jobber', 'diag');
     mkdirSync(dir, { recursive: true, mode: 0o700 });

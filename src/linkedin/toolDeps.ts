@@ -25,7 +25,7 @@ export interface ToolDeps {
 
 export type SendStatus =
   | 'sent' | 'dry_run' | 'already_sent' | 'refused' | 'rate_limited'
-  | 'halted' | 'unconfirmed' | 'failed';
+  | 'halted' | 'unconfirmed' | 'failed' | 'manual_review';
 export interface TypedResult {
   status: SendStatus;
   code: string;

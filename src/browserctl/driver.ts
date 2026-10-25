@@ -9,6 +9,17 @@ import { bcScript, MAX_VALUE, type LiveNode, type RawTree } from './snapshot.js'
 export type BcKey = 'Enter' | 'Escape' | 'Tab' | 'ArrowDown' | 'ArrowUp' | 'PageDown' | 'PageUp' | 'Backspace' | 'Space';
 export const BC_KEYS: readonly BcKey[] = ['Enter', 'Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Backspace', 'Space'];
 
+// What a commit click set off in the browser context: new pages and apply-ish network responses (paths only).
+export interface BcWatch {
+  // Pages the context opened since the watch started (url may still be about:blank while loading).
+  popups(): { url: string }[];
+  // Non-GET responses seen since the watch started whose path contains 'apply': path (no query) and status.
+  responses(): { path: string; status: number }[];
+  // Make the n-th popup the page every later BcPage call reads (a naukri.com chatbot or questionnaire).
+  adopt(index: number): Promise<boolean>;
+  stop(): void;
+}
+
 export interface BcPage {
   url(): string;
   title(): Promise<string>;
@@ -26,6 +37,11 @@ export interface BcPage {
   focused(): Promise<LiveNode | null>;
   // Optional: structure-only page facts for failure diagnostics (counts and short control names). Absent in fakes.
   diag?(): Promise<PageDiag | null>;
+  // Optional: robust click of a stamped element: scroll into view, wait until enabled and stable, then a real
+  // pointer click (move, down, up) at the box centre; one fallback through the locator click. Absent in fakes.
+  robustClick?(n: number): Promise<void>;
+  // Optional: start watching the context for popups and apply responses (call right before the click).
+  watch?(): BcWatch;
   clickNode(n: number): Promise<void>;
   clickPoint(x: number, y: number): Promise<void>;
   /** Replace the value of a stamped text field with exactly this text. */
@@ -37,7 +53,11 @@ export interface BcPage {
   waitMs(ms: number): Promise<void>;
 }
 
-type RealPage = LiPage & { mouse?: { click(x: number, y: number): Promise<void> } };
+type RealPage = LiPage & {
+  mouse?: { click(x: number, y: number): Promise<void>; move?(x: number, y: number): Promise<void>; down?(): Promise<void>; up?(): Promise<void> };
+  context?: () => { on(ev: string, fn: (x: any) => void): void; off?(ev: string, fn: (x: any) => void): void; removeListener?(ev: string, fn: (x: any) => void): void };
+  bringToFront?: () => Promise<void>;
+};
 
 function ordinal(n: number): number {
   if (!Number.isInteger(n) || n < 0 || n > 99999) throw new Error('browserctl: bad node ordinal');
@@ -50,7 +70,9 @@ function coord(v: number): number {
 
 const CLICK_TIMEOUT_MS = 5000;
 
-export function realBcPage(page: RealPage): BcPage {
+export function realBcPage(basePage: RealPage): BcPage {
+  // Mutable: a followed popup replaces the page every call reads.
+  let page: RealPage = basePage;
   const run = async <T>(mode: 'snapshot' | 'describe' | 'at' | 'focused' | 'diag', args: { n?: number; x?: number; y?: number } = {}): Promise<T | null> => {
     try {
       return (await page.evaluate<T | null>(bcScript(mode, args))) ?? null;
@@ -90,6 +112,74 @@ export function realBcPage(page: RealPage): BcPage {
     focused: () => run<LiveNode>('focused'),
     diag: () => run<PageDiag>('diag'),
     async clickNode(n) { await (await locate(n)).click({ timeout: CLICK_TIMEOUT_MS }); },
+    async robustClick(n) {
+      const loc = await locate(n);
+      const ext = loc as unknown as {
+        scrollIntoViewIfNeeded?: (o?: { timeout?: number }) => Promise<void>;
+        boundingBox?: (o?: { timeout?: number }) => Promise<{ x: number; y: number; width: number; height: number } | null>;
+        isEnabled?: (o?: { timeout?: number }) => Promise<boolean>;
+      };
+      try { await ext.scrollIntoViewIfNeeded?.({ timeout: CLICK_TIMEOUT_MS }); } catch { /* the fallback click scrolls too */ }
+      // Wait (bounded) until the control is enabled and its box stopped moving between two reads.
+      let box: { x: number; y: number; width: number; height: number } | null = null;
+      for (let k = 0; k < 15; k++) {
+        try {
+          const b1 = (await ext.boundingBox?.({ timeout: 1000 })) ?? null;
+          await page.waitForTimeout(120);
+          const b2 = (await ext.boundingBox?.({ timeout: 1000 })) ?? null;
+          const enabled = (await ext.isEnabled?.({ timeout: 1000 })) ?? true;
+          if (b1 && b2 && enabled && Math.abs(b1.x - b2.x) < 1 && Math.abs(b1.y - b2.y) < 1 && b2.width > 0 && b2.height > 0) { box = b2; break; }
+        } catch { /* keep polling */ }
+      }
+      const m = page.mouse;
+      if (box && m?.move && m.down && m.up) {
+        const x = coord(Math.round(box.x + box.width / 2));
+        const y = coord(Math.round(box.y + box.height / 2));
+        // An element on top (sticky header, overlay) would swallow the pointer: then let the locator click decide.
+        const top = await run<LiveNode>('at', { x, y });
+        if (top && top.n === n) {
+          try {
+            await m.move(x, y);
+            await page.waitForTimeout(60);
+            await m.down();
+            await page.waitForTimeout(60);
+            await m.up();
+            return;
+          } catch { /* one retry through the locator click, actionability checks on */ }
+        }
+      }
+      await loc.click({ timeout: CLICK_TIMEOUT_MS });
+    },
+    watch() {
+      const popups: { page: RealPage }[] = [];
+      const responses: { path: string; status: number }[] = [];
+      const ctx = page.context?.();
+      const onPage = (p: RealPage): void => { if (p !== page) popups.push({ page: p }); };
+      const onResp = (r: any): void => {
+        try {
+          if (r.request().method() === 'GET') return;
+          const path = new URL(r.url()).pathname.slice(0, 120);
+          if (/apply/i.test(path)) responses.push({ path, status: Number(r.status()) });
+        } catch { /* ignore a malformed response */ }
+      };
+      ctx?.on('page', onPage);
+      ctx?.on('response', onResp);
+      return {
+        popups: () => popups.map((x) => ({ url: (() => { try { return x.page.url(); } catch { return ''; } })() })),
+        responses: () => responses.slice(),
+        async adopt(index) {
+          const x = popups[index];
+          if (!x) return false;
+          try { await x.page.bringToFront?.(); } catch { /* best effort */ }
+          page = x.page;
+          return true;
+        },
+        stop() {
+          const off = ctx?.off ?? ctx?.removeListener;
+          try { off?.call(ctx, 'page', onPage); off?.call(ctx, 'response', onResp); } catch { /* ignore */ }
+        },
+      };
+    },
     async clickPoint(x, y) {
       if (!page.mouse) throw new Error('browserctl: page has no mouse');
       await page.mouse.click(coord(x), coord(y));

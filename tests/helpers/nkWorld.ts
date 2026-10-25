@@ -45,7 +45,7 @@ const okScreen = async (t: string): Promise<ScreenVerdict> => ({ blocked: false,
 
 export function nkWorld(o: {
   html: string; url?: string; env?: Record<string, string>; screen?: (t: string, p: string) => Promise<ScreenVerdict>;
-  seed?: boolean; screenshot?: boolean; layoutFeed?: (t: unknown) => void;
+  seed?: boolean; screenshot?: boolean; confirmMs?: number; layoutFeed?: (t: unknown) => void;
   checkText?: NaukriArmDeps['checkText']; style?: NaukriArmDeps['style'];
 }): NkWorld {
   const dir = mkdtempSync(path.join(tmpdir(), 'nk-'));
@@ -75,7 +75,7 @@ export function nkWorld(o: {
   const engine = createEngine({
     db, now: () => NOW, env, cfg: { dryRun: isDryRun(env), maxAcceptsPerDay: 0 }, policy: NAUKRI_POLICY,
     getPage: async () => page, intents, screen: screen as never, stopFile, textGate,
-    screenshotEnabled: o.screenshot === true, paceMs: () => 0, settleMs: 0, confirmTimeoutMs: 50, diagDir: path.join(dir, 'diag'),
+    screenshotEnabled: o.screenshot === true, paceMs: () => 0, settleMs: 0, confirmTimeoutMs: o.confirmMs ?? 50, diagDir: path.join(dir, 'diag'),
     ...(o.layoutFeed ? { layoutFeed: o.layoutFeed as never } : {}),
   });
   const armDeps: NaukriArmDeps = {

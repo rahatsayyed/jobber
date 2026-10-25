@@ -24,7 +24,7 @@ import { loadOutreachConfig } from '../outreach/config.js';
 import { tryConsume } from '../outreach/limits.js';
 import { loadTuning } from '../outreach/tuning.js';
 import { recordDryRun } from '../safety/dryRun.js';
-import { diagNote, writeCommitDiag } from './diag.js';
+import { diagNote, hostKind, nearButtonNames, writeCommitDiag, type DiagExtra } from './diag.js';
 import type { BcPage } from './driver.js';
 import { killReason, type EngineDeps, type EngineResult } from './engineTypes.js';
 import { isNaukriApplyName, normName } from './guard.js';
@@ -55,11 +55,15 @@ interface ApplyState {
   /** Page texts present before the Apply click, per job key. */
   baseline: Map<string, Set<string>>;
   steps: Map<string, number>;
+  // Job keys whose Apply click was ignored by the page: never clicked again in this process.
+  ignored: Set<string>;
+  // Job keys whose application moved to a followed naukri.com popup (the page URL is no longer the job page).
+  adopted: Set<string>;
 }
 const states = new WeakMap<IntentStore, ApplyState>();
 function applyState(intents: IntentStore): ApplyState {
   let s = states.get(intents);
-  if (!s) { s = { counted: new Set(), baseline: new Map(), steps: new Map() }; states.set(intents, s); }
+  if (!s) { s = { counted: new Set(), baseline: new Map(), steps: new Map(), ignored: new Set(), adopted: new Set() }; states.set(intents, s); }
   return s;
 }
 /** Job keys whose Apply was counted in this process. */
@@ -110,7 +114,7 @@ export function observeApplyConfirmation(deps: EngineDeps, tree: RawTree): void 
   const st = applyState(deps.intents);
   const base = st.baseline.get(armed.pageKey);
   if (!st.counted.has(armed.pageKey) || !base) return;
-  if (naukriJobIdOfUrl(tree.url) !== armed.pageKey) return;
+  if (!st.adopted.has(armed.pageKey) && naukriJobIdOfUrl(tree.url) !== armed.pageKey) return;
   if (!confirmedNew(base, tree)) return;
   recordApplied(deps.db, String(armed.jobId), deps.now());
   deps.intents.disarm('naukri');
@@ -286,6 +290,7 @@ async function commitApply(i: NaukriCommitInput): Promise<EngineResult> {
   if (!key || intent.jobId === undefined) return abort('no_armed_intent', 'the armed intent has no job');
   const jobId = String(intent.jobId);
   const urlBefore = page.url();
+  if (st.ignored.has(key)) return abort('apply_click_ignored', 'Apply was already ignored by the page for this job in this run; not retried');
 
   // Live re-checks of the job: vetoes and an earlier application can appear after arming.
   if (getExcludedReason(db, jobId)) return abort('vetoed', 'the job is excluded');
@@ -293,7 +298,7 @@ async function commitApply(i: NaukriCommitInput): Promise<EngineResult> {
   if (db.prepare("SELECT 1 FROM applications WHERE job_id = ? AND status = 'submitted' LIMIT 1").get(jobId)) {
     return abort('already_applied', 'an application was already submitted for this job');
   }
-  if (naukriJobIdOfUrl(page.url()) !== key) return abort('job_mismatch', 'browser is not on the armed job page');
+  if (!st.adopted.has(key) && naukriJobIdOfUrl(page.url()) !== key) return abort('job_mismatch', 'browser is not on the armed job page');
 
   let before: RawTree;
   try { before = await page.snapshot(); } catch { return abort('no_snapshot', 'could not read the page'); }
@@ -351,33 +356,109 @@ async function commitApply(i: NaukriCommitInput): Promise<EngineResult> {
     st.baseline.set(key, pageTexts(before));
   }
 
+  // A real pointer click for the Apply control when the page offers one (the counters above were consumed once;
+  // a retry click inside robustClick never consumes again). Chatbot steps and click_at keep the plain act.
+  const watch = isApplyClick ? page.watch?.() : undefined;
+  const doClick = isApplyClick && live.n >= 0 && page.robustClick ? () => page.robustClick!(live.n) : i.act;
+  const diagExtra = (tree: RawTree | null): DiagExtra => ({
+    popups: watch?.popups() ?? [], responses: watch?.responses() ?? [], nearButtons: nearButtonNames(tree, live),
+  });
   try {
-    await i.act();
-  } catch {
-    // The click may have gone through: the apply is unresolved, the counters stay spent.
+    try {
+      await doClick();
+    } catch {
+      // The click may have gone through: the apply is unresolved, the counters stay spent.
+      deps.intents.disarm(platform);
+      const dga = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after: null, extra: diagExtra(null) });
+      return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `error after the click; check the application by hand${diagNote(dga)}` };
+    }
+
+    const base = st.baseline.get(key) ?? pageTexts(before);
+    const maxMs = deps.confirmTimeoutMs ?? 8000;
+    const polls = Math.max(1, Math.ceil(maxMs / APPLY_POLL_MS));
+    let after: RawTree | null = null;
+    for (let k = 0; k < polls; k++) {
+      await page.waitMs(k === 0 ? (deps.settleMs ?? 800) : APPLY_POLL_MS).catch(() => undefined);
+      try { after = await page.snapshot(); } catch {
+        deps.intents.disarm(platform);
+        const dgb = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after: null, extra: diagExtra(null) });
+        return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `could not read the page after the click; check the application by hand${diagNote(dgb)}` };
+      }
+      const last = k === polls - 1;      // 1. a popup the click opened: an off-site one is never touched; a naukri.com one is followed
+      const pops = watch?.popups() ?? [];
+      const ext = pops.findIndex((p) => p.url && p.url !== 'about:blank' && hostKind(p.url) !== 'naukri');
+      if (ext >= 0) {
+        deps.intents.disarm(platform);
+        const dgx = await writeCommitDiag(deps, page, { platform, code: 'external_apply', live, urlBefore, after, extra: diagExtra(after) });
+        return { ok: false, status: 'manual_review', code: 'external_apply', reason: `Apply opened an external page; nothing was typed there, finish by hand${diagNote(dgx)}` };
+      }
+      const nk = pops.findIndex((p) => hostKind(p.url) === 'naukri');
+      if (nk >= 0 && await watch!.adopt(nk)) {
+        st.adopted.add(key);
+        let pt: RawTree | null = null;
+        try { pt = await page.snapshot(); } catch { pt = null; }
+        if (pt && confirmedNew(base, pt)) {
+          recordApplied(db, jobId, now());
+          deps.intents.disarm(platform);
+          return { ok: true, status: 'sent', code: 'applied' };
+        }
+        deps.intents.arm({ platform, kind: intent.kind, class: 'naukri_apply', jobId: intent.jobId, pageKey: key, text: null, dry: false });
+        return { ok: true, code: pt && chatbotOpen(pt) ? 'chatbot_opened' : 'popup_opened', reason: 'Apply opened a naukri.com page (now the active page): snapshot it, answer a chatbot with naukri_type and continue with its controls' };
+      }
+      // 2. a confirmation, the Apply control turning Applied or disabled, or an apply response with a 2xx
+      const ctl = applyControlState(after);
+      const net = (watch?.responses() ?? []).some((r) => r.status >= 200 && r.status < 300);
+      if (confirmedNew(base, after) || appliedTextNew(base, after) || (isApplyClick && (ctl === 'applied' || ctl === 'disabled')) || net) {
+        recordApplied(db, jobId, now());
+        deps.intents.disarm(platform);
+        return { ok: true, status: 'sent', code: 'applied' };
+      }
+      // 3. the chatbot drawer
+      if (chatbotOpen(after)) {
+        // The application is in progress: keep the intent (fresh 120 s window) for the next chatbot step.
+        deps.intents.arm({ platform, kind: intent.kind, class: 'naukri_apply', jobId: intent.jobId, pageKey: key, text: null, dry: false });
+        return { ok: true, code: isApplyClick ? 'chatbot_opened' : 'chatbot_step', reason: 'answer the chatbot with naukri_type and continue with its controls' };
+      }
+      if (last) break;
+    }
+
     deps.intents.disarm(platform);
-    const dga = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after: null });
-    return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `error after the click; check the application by hand${diagNote(dga)}` };
+    // The same enabled Apply control is still there: the click did nothing. Never retried for this job in this run.
+    if (isApplyClick && after && applyControlState(after) === 'enabled' && (watch?.popups().length ?? 0) === 0) {
+      st.ignored.add(key);
+      const dgi = await writeCommitDiag(deps, page, { platform, code: 'apply_click_ignored', live, urlBefore, after, extra: diagExtra(after) });
+      return { ok: false, status: 'unconfirmed', code: 'apply_click_ignored', reason: `Apply was clicked but the page did not react and the same Apply button is still there; escalate once and do not retry this job in this run${diagNote(dgi)}` };
+    }
+    const dgc = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after, extra: diagExtra(after) });
+    return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `clicked but no confirmation or chatbot appeared; check the application by hand${diagNote(dgc)}` };
+  } finally {
+    watch?.stop();
   }
-  await page.waitMs(deps.settleMs ?? 800).catch(() => undefined);
-  let after: RawTree;
-  try { after = await page.snapshot(); } catch {
-    deps.intents.disarm(platform);
-    const dgb = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after: null });
-    return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `could not read the page after the click; check the application by hand${diagNote(dgb)}` };
-  }
-  const base = st.baseline.get(key) ?? pageTexts(before);
-  if (confirmedNew(base, after)) {
-    recordApplied(db, jobId, now());
-    deps.intents.disarm(platform);
-    return { ok: true, status: 'sent', code: 'applied' };
-  }
-  if (chatbotOpen(after)) {
-    // The application is in progress: keep the intent (fresh 120 s window) for the next chatbot step.
-    deps.intents.arm({ platform, kind: intent.kind, class: 'naukri_apply', jobId: intent.jobId, pageKey: key, text: null, dry: false });
-    return { ok: true, code: isApplyClick ? 'chatbot_opened' : 'chatbot_step', reason: 'answer the chatbot with naukri_type and continue with its controls' };
-  }
-  deps.intents.disarm(platform);
-  const dgc = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after });
-  return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `clicked but no confirmation or chatbot appeared; check the application by hand${diagNote(dgc)}` };
 }
+
+const APPLY_POLL_MS = 400;
+const APPLIED_BTN_RE = /^(?:applied|already applied)$/;
+
+/** The job page's Apply control: 'applied' (Applied / Already applied), 'disabled', 'enabled' or 'missing'. */
+export function applyControlState(tree: RawTree): 'applied' | 'disabled' | 'enabled' | 'missing' {
+  let apply: boolean | null = null; // null: no Apply control seen, true: one enabled, false: only disabled ones
+  for (const x of tree.nodes) {
+    if (x.role !== 'button' && x.role !== 'link') continue;
+    const nm = normName(x.name);
+    if (APPLIED_BTN_RE.test(nm)) return 'applied';
+    if (isNaukriApplyName(x.name)) apply = x.disabled ? (apply ?? false) : true;
+  }
+  return apply === null ? 'missing' : apply ? 'enabled' : 'disabled';
+}
+
+/** A short toast or heading that mentions "applied" and was not on the page before the click. */
+export function appliedTextNew(before: Set<string>, after: RawTree): boolean {
+  for (const x of after.nodes) {
+    if (x.role !== 'text' && x.role !== 'heading') continue;
+    const t = norm(x.role === 'text' ? x.text : x.name).slice(0, 300);
+    if (!t || t.length > 100 || before.has(t) || /\?\s*$/.test(t)) continue;
+    if (/\bapplied\b/i.test(t) && !/\b(also|people|others|candidates|jobs?|filters?|similar)\b/i.test(t)) return true;
+  }
+  return false;
+}
+
