@@ -41,8 +41,8 @@ describe('locator menu (More dropdown)', () => {
 
   it('flow: More, Connect menuitem (armed), Add a note, type, Send: sent once, ceiling consumed', async () => {
     const { w, sh } = mk();
-    expect((await armNote(w)).status).toBe('armed');
     const state = await openMore(w);
+    expect((await armNote(w)).status).toBe('armed');
     const r = await w.engine.click(refOf(state, 'menuitem', 'Connect'));
     expect(r).toMatchObject({ ok: true, code: 'dialog_opened' });
     expect(sh.clicks).toEqual(['menuitem:Connect']);
@@ -66,8 +66,9 @@ describe('locator menu (More dropdown)', () => {
 
   it.each(['Follow', 'Report or block'])('the %s menuitem is refused even with an armed intent', async (name) => {
     const { w, sh } = mk();
+    const state = await openMore(w);
     expect((await armNote(w)).status).toBe('armed');
-    const r = await w.engine.click(refOf(await openMore(w), 'menuitem', name));
+    const r = await w.engine.click(refOf(state, 'menuitem', name));
     expect(r.ok).toBe(false);
     expect(sh.clicks).toEqual([]);
   });

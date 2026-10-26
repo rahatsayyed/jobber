@@ -22,6 +22,7 @@ import { normName, type CommitClass } from '../guard.js';
 import type { IntentStore } from '../intent.js';
 import { bindTouchRelease } from '../intent.js';
 import { renderTree, type RawTree } from '../snapshot.js';
+import { connectionStateOf, hasRegions } from '../topCard.js';
 
 export type ArmKind = 'connect_note' | 'role_ask' | 'rapport' | 'referral_ask' | 'followup' | 'feedback' | 'accept';
 export const ARM_KINDS: readonly ArmKind[] = ['connect_note', 'role_ask', 'rapport', 'referral_ask', 'followup', 'feedback', 'accept'];
@@ -57,7 +58,9 @@ export const INVITATIONS_URL = 'https://www.linkedin.com/mynetwork/invitation-ma
 
 /** Connection status from a profile tree, through the one shared rule (connectionState). */
 export function statusFromTree(tree: RawTree): { state: 'connected' | 'pending' | 'not_connected'; code: string } {
-  const outside = tree.nodes.filter((x) => x.dialog === undefined);
+  // On a profile page only the top card and its More menu count: a sidebar card's Connect, Pending or degree is another person's.
+  const regional = hasRegions(tree);
+  const outside = tree.nodes.filter((x) => x.dialog === undefined && (!regional || x.region === 'topcard' || x.region === 'menu'));
   const actions: string[] = [];
   let pending = false;
   let hasBell = false;
@@ -170,6 +173,13 @@ export async function armLinkedinSend(deps: ArmDeps, a: ArmArgs): Promise<ArmRes
     if (!namesPlausiblyMatch(person.name ?? '', shown)) return fail('refused', 'recipient_mismatch', 'page shows a different person');
     const st = statusFromTree(tree);
     if (a.kind === 'connect_note' && st.state !== 'not_connected') return fail('refused', st.state === 'pending' ? 'already_pending' : 'already_connected', `status is ${st.state}`);
+    if (a.kind === 'connect_note') {
+      // The owner's rule: Connect in the top card, else Connect or Personalize invite in its More menu, else not connectable.
+      const cs = connectionStateOf(tree);
+      if (cs?.state === 'already_pending') return fail('refused', 'already_pending', cs.reason);
+      if (cs?.state === 'not_connectable') return fail('refused', 'not_connectable', cs.reason);
+      if (cs?.state === 'check_more') return fail('refused', 'more_not_checked', cs.reason);
+    }
     if (a.kind !== 'connect_note' && st.state !== 'connected') return fail('refused', 'not_connected', `status is ${st.state}; messages need a 1st-degree connection`);
   }
 

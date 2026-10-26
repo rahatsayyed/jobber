@@ -7,6 +7,7 @@
 // Password-like inputs: the value is never read (the node carries secret:true and no value).
 import { SNAPSHOT_SRC } from '../linkedin/snapshot.js';
 import { parseHtml, findAll, visibleText, type HtmlNode } from '../linkedin/htmlVisible.js';
+import { connectionStateOf } from './topCard.js';
 
 export type BcRole =
   | 'button' | 'link' | 'textbox' | 'searchbox' | 'checkbox' | 'radio' | 'combobox' | 'menuitem' | 'tab'
@@ -15,6 +16,16 @@ export type BcRole =
 export const ACTIONABLE_ROLES: ReadonlySet<BcRole> = new Set<BcRole>([
   'button', 'link', 'textbox', 'searchbox', 'checkbox', 'radio', 'combobox', 'menuitem', 'tab', 'option', 'file',
 ]);
+
+// Where a node sits on a LinkedIn PROFILE page (url path /in/<slug>): the profile's own top card (its h1 name and
+// action row: Message, Follow, Connect, More), a sidebar or recommendation card (an aside, a card with another
+// person's profile link, anything after the first heading below the name), the rest of the page, an open dialog,
+// or an open menu. A Connect in a sidebar or card sends an invitation directly; only the top card Connect opens the
+// invite dialog. Not set on other pages.
+export type Region = 'topcard' | 'sidebar' | 'main' | 'dialog' | 'menu';
+
+// Names that make a container "the top card": it holds the profile's action row. Shared by both snapshot builders.
+export const TOP_CARD_ACTION_RE = /^(?:message|follow|following|connect|more|pending|withdraw|unfollow|resources)\b|^invite .+ to connect$/;
 
 export interface RawNode {
   /** Ordinal stamped as data-bc on the element (-1: an element found by point that was never stamped). */
@@ -31,6 +42,7 @@ export interface RawNode {
   composer?: true;         // free-text field meant for a message or note (not search, not password), or a button inside a composer form
   dialog?: number;         // ordinal of the enclosing dialog node
   dialogName?: string;     // accessible name of the enclosing dialog
+  region?: Region;         // profile pages only, see Region
 }
 export interface RawTree { url: string; title: string; nodes: RawNode[]; truncated?: true }
 /** A node re-read live at the moment of an action (same shape as a snapshot node). */
@@ -70,6 +82,23 @@ const BODY_SRC = String.raw`
         if (c.nodeType === 3) { parts.push(c.nodeValue || ''); continue; }
         if (c.nodeType !== 1 || ownHidden(c)) continue;
         parts.push(' '); walk(c); parts.push(' ');
+      }
+    })(e);
+    return parts.join('');
+  }
+  // Accessible name from content: like flatText, but a descendant that carries its own aria-label contributes that label
+  // instead of its text (LinkedIn More rows are <a><div aria-label="Personalize invite">...</div></a>: the <a> has none).
+  function labelText(e) {
+    var parts = [];
+    (function walk(x) {
+      for (var i = 0; i < x.childNodes.length; i++) {
+        var c = x.childNodes[i];
+        if (c.nodeType === 3) { parts.push(c.nodeValue || ''); continue; }
+        if (c.nodeType !== 1 || ownHidden(c)) continue;
+        var lb = norm(c.getAttribute ? c.getAttribute('aria-label') : '', 200);
+        parts.push(' ');
+        if (lb) parts.push(lb); else walk(c);
+        parts.push(' ');
       }
     })(e);
     return parts.join('');
@@ -166,7 +195,7 @@ const BODY_SRC = String.raw`
     if (role === 'textbox' || role === 'searchbox' || role === 'combobox') {
       return norm(attr(e, 'placeholder') || attr(e, 'title'), 200);
     }
-    var f = norm(flatText(e), 200);
+    var f = norm(labelText(e), 200);
     if (f) return f;
     var ti = norm(attr(e, 'title'), 200);
     if (ti) return ti;
@@ -218,6 +247,65 @@ const BODY_SRC = String.raw`
     for (var x = par(e); x; x = par(x)) if (/compose|msg-form|msg-overlay|chatbot|chat/i.test(attr(x, 'class'))) return true;
     return false;
   }
+  // ---- regions (profile pages only) ----
+  var PSLUG = (function () { var m = /^\/in\/([^\/]+)/.exec(String(location.pathname || '')); return m ? m[1].toLowerCase() : ''; })();
+  var ACTRE = new RegExp(${JSON.stringify(TOP_CARD_ACTION_RE.source)});
+  var RCTX = null;
+  function lowName(e) { var r = roleOf(e) || 'button'; return norm(nameOf(e, r), 200).toLowerCase(); }
+  function slugOfHref(h) { var m = /\/in\/([^\/?#]+)/.exec(String(h || '')); return m ? m[1].toLowerCase() : ''; }
+  function sideEl(x) {
+    var t = String(x.tagName || '').toUpperCase(), r = attr(x, 'role').trim().toLowerCase();
+    if (t === 'ASIDE' || r === 'complementary') return true;
+    if (t === 'LI' || t === 'ARTICLE' || r === 'listitem' || r === 'article') {
+      var ls = x.querySelectorAll ? x.querySelectorAll('a[href*="/in/"]') : [];
+      for (var i = 0; i < ls.length && i < 20; i++) { var sg = slugOfHref(ls[i].getAttribute('href')); if (sg && sg !== PSLUG) return true; }
+    }
+    return false;
+  }
+  function holdsAction(a) {
+    var q = a.querySelectorAll ? a.querySelectorAll('button,a[href],[role=button],[role=menuitem],[role=link]') : [];
+    for (var i = 0; i < q.length && i < 300; i++) if (visD(q[i]) && ACTRE.test(lowName(q[i]))) return true;
+    return false;
+  }
+  function buildRegionCtx(list) {
+    if (!PSLUG) return null;
+    var h1 = null, hi = -1;
+    for (var i = 0; i < list.length; i++) {
+      var x = list[i];
+      if (String(x.tagName || '').toUpperCase() !== 'H1' || !visD(x) || enclosingDialog(x)) continue;
+      var ok = true;
+      for (var y = par(x); y; y = par(y)) if (sideEl(y)) { ok = false; break; }
+      if (ok) { h1 = x; hi = i; break; }
+    }
+    var ctx = { h1: h1, tcr: null, fb: null };
+    if (!h1) return ctx;
+    for (var a = par(h1); a && a !== document.body && a !== document.documentElement; a = par(a)) {
+      if (holdsAction(a)) { ctx.tcr = a; break; }
+    }
+    for (var j = hi + 1; j < list.length; j++) {
+      var hx = list[j];
+      if (roleOf(hx) === 'heading' && visD(hx) && !enclosingDialog(hx)) { ctx.fb = hx; break; }
+    }
+    return ctx;
+  }
+  function follows(a, e) { return !!(a.compareDocumentPosition(e) & 4); }
+  function regionOf(e, role) {
+    if (!RCTX) return '';
+    if (role === 'dialog' || enclosingDialog(e)) return 'dialog';
+    if (role === 'menuitem' || role === 'option') {
+      for (var m = par(e); m; m = par(m)) if (attr(m, 'role').trim().toLowerCase() === 'menu') return 'menu';
+    }
+    var tcr = RCTX.tcr, h1 = RCTX.h1, inTc = false, x;
+    if (tcr && h1) {
+      for (x = e; x; x = par(x)) if (x === tcr) { inTc = true; break; }
+      if (inTc && e !== h1 && !follows(h1, e)) inTc = false;
+      if (inTc && RCTX.fb && (RCTX.fb === e || follows(RCTX.fb, e))) inTc = false;
+      if (inTc) for (x = par(e); x && x !== tcr; x = par(x)) if (sideEl(x)) { inTc = false; break; }
+    }
+    if (inTc) return 'topcard';
+    for (x = e; x; x = par(x)) if (sideEl(x)) return 'sidebar';
+    return 'main';
+  }
   function stampOf(e) { var s = e.getAttribute('data-bc'); return s === null ? -1 : parseInt(s, 10); }
   function info(e, role, full) {
     var secret = role === 'textbox' && isSecret(e);
@@ -237,6 +325,7 @@ const BODY_SRC = String.raw`
     if (inFooterOf(e, dlg)) o.inFooter = true;
     if (isComposer(e, role, secret)) o.composer = true;
     if (dlg) { o.dialog = stampOf(dlg); o.dialogName = dialogNameOf(dlg); }
+    if (RCTX) o.region = regionOf(e, role);
     return o;
   }
   function ownText(e) {
@@ -255,6 +344,7 @@ const BODY_SRC = String.raw`
   if (MODE === 'snapshot') {
     var all = document.body ? deepList(document.body) : [];
     for (var oi = 0; oi < all.length; oi++) if (all[oi].hasAttribute('data-bc')) all[oi].removeAttribute('data-bc');
+    RCTX = buildRegionCtx(all);
     var nodes = [], n = 0, truncated = false;
     for (var k = 0; k < all.length; k++) {
       var e = all[k];
@@ -276,9 +366,25 @@ const BODY_SRC = String.raw`
   }
   if (MODE === 'diag') {
     var dall = document.body ? deepList(document.body) : [];
-    var sr = 0, ifc = 0, chc = 0, dls = [];
+    var sr = 0, ifc = 0, chc = 0, dls = [], exo = [];
     for (var qi = 0; qi < dall.length; qi++) {
       var de = dall[qi], dtag = String(de.tagName || '').toUpperCase();
+      // Controls that announce an open popup (a More button whose menu is open): tag and role names and counts only.
+      if (attr(de, 'aria-expanded') === 'true' && exo.length < 4 && visD(de)) {
+        var cid = attr(de, 'aria-controls'), cel = cid ? document.getElementById(cid) : null, kids = [];
+        if (cel) { var cd = deepList(cel); for (var ki = 0; ki < cd.length && kids.length < 12; ki++) kids.push(String(cd[ki].tagName || '').toLowerCase() + '/' + (attr(cd[ki], 'role') || '-')); }
+        // Where the label of each link row sits (counts only): on the <a>, on a descendant, in its text, or nowhere.
+        var rows = { own: 0, desc: 0, text: 0, none: 0 }, cand = cel ? deepList(cel) : dall.slice(qi + 1, qi + 400);
+        for (var ri = 0; ri < cand.length; ri++) {
+          var ra = cand[ri];
+          if (String(ra.tagName || '').toUpperCase() !== 'A' || !visD(ra)) continue;
+          if (attr(ra, 'aria-label')) rows.own++;
+          else if (ra.querySelector && ra.querySelector('[aria-label]')) rows.desc++;
+          else if (/\S/.test(flatText(ra))) rows.text++;
+          else rows.none++;
+        }
+        exo.push({ tag: dtag.toLowerCase(), role: attr(de, 'role') || '-', popup: attr(de, 'aria-haspopup') || '-', controls: cid ? 1 : 0, found: cel ? 1 : 0, kids: kids, rows: rows });
+      }
       if (de.shadowRoot) sr++;
       else if (dtag.indexOf('-') > 0) chc++;
       if (dtag === 'IFRAME') ifc++;
@@ -291,16 +397,18 @@ const BODY_SRC = String.raw`
         dls.push({ role: attr(de, 'role') || dtag.toLowerCase(), name: dialogNameOf(de).slice(0, 60), buttons: bs });
       }
     }
-    return { shadowRoots: sr, iframes: ifc, closedHostCandidates: chc, dialogs: dls };
+    return { shadowRoots: sr, iframes: ifc, closedHostCandidates: chc, dialogs: dls, expanded: exo };
   }
   if (MODE === 'describe') {
     var el = null, want = String(A.n | 0), dl = deepList(deepRoot());
+    RCTX = buildRegionCtx(dl);
     for (var di = 0; di < dl.length; di++) if (dl[di].getAttribute('data-bc') === want) { el = dl[di]; break; }
     if (!el || !visD(el)) return null;
     var r0 = roleOf(el) || (/\S/.test(ownText(el)) ? 'text' : null);
     return r0 ? info(el, r0, true) : null;
   }
   if (MODE === 'at') {
+    RCTX = buildRegionCtx(deepList(deepRoot()));
     var pe = document.elementFromPoint(A.x, A.y), px = A.x, py = A.y;
     for (var hop = 0; pe && hop < 6; hop++) {
       if (pe.shadowRoot && pe.shadowRoot.elementFromPoint) {
@@ -323,6 +431,7 @@ const BODY_SRC = String.raw`
     return info(pe, r1, true);
   }
   if (MODE === 'focused') {
+    RCTX = buildRegionCtx(deepList(deepRoot()));
     var fe = document.activeElement;
     for (var fh = 0; fe && fh < 6; fh++) {
       var inner = null;
@@ -386,6 +495,22 @@ export function flattenShadowFixture(html: string, depth = 0): string {
 
 const cap = (s: string, n: number) => (s.length > n ? s.slice(0, n) : s);
 const flatOf = (nd: HtmlNode) => visibleText(nd).replace(/\s+/g, ' ').trim();
+// Fixture side of labelText (in-page): a descendant element with its own aria-label contributes the label, not its text.
+function labelOf(nd: HtmlNode): string {
+  const parts: string[] = [];
+  const walk = (x: HtmlNode): void => {
+    for (const c of x.children) {
+      if (c.tag === '#text') { parts.push(c.hidden ? '' : (c.text ?? '')); continue; }
+      if (c.hidden) continue;
+      const lb = (c.attrs['aria-label'] ?? '').replace(/\s+/g, ' ').trim();
+      parts.push(' ');
+      if (lb) parts.push(lb); else walk(c);
+      parts.push(' ');
+    }
+  };
+  walk(nd);
+  return parts.join('').replace(/\s+/g, ' ').trim();
+}
 const cls = (nd: HtmlNode) => nd.attrs['class'] ?? '';
 
 function hideClosedDialogs(n: HtmlNode, parentHidden = false): void {
@@ -448,12 +573,93 @@ function nameOfNode(nd: HtmlNode, role: BcRole): string {
     return clean(nd.attrs['placeholder'] || nd.attrs['title'] || nd.attrs['alt']);
   }
   if (role === 'textbox' || role === 'searchbox' || role === 'combobox') return clean(nd.attrs['placeholder'] || nd.attrs['title']);
-  const f = clean(flatOf(nd));
+  const f = clean(labelOf(nd));
   if (f) return f;
   const ti = clean(nd.attrs['title']);
   if (ti) return ti;
   const img = findAll(nd, (x) => x.tag === 'img' && 'alt' in x.attrs && !x.hidden)[0];
   return img ? clean(img.attrs['alt']) : '';
+}
+
+// ---- fixture side of the regions (same rules as the in-page script: keep them identical) ----
+const slugOfHref = (h: string | undefined): string => { const m = /\/in\/([^/?#]+)/.exec(h ?? ''); return m ? m[1]!.toLowerCase() : ''; };
+const profileSlugOf = (url: string): string => {
+  try { const m = /^\/in\/([^/]+)/.exec(new URL(url).pathname); return m ? m[1]!.toLowerCase() : ''; } catch { return ''; }
+};
+const lowRole = (nd: HtmlNode): string => (nd.attrs['role'] ?? '').trim().toLowerCase();
+
+interface RegionCtx {
+  slug: string;
+  h1: HtmlNode | null;
+  tcr: HtmlNode | null;
+  fb: HtmlNode | null;
+  index: Map<HtmlNode, number>;
+  parentOf: Map<HtmlNode, HtmlNode | null>;
+}
+
+function ancestorsOf(c: RegionCtx, nd: HtmlNode): HtmlNode[] {
+  const out: HtmlNode[] = [];
+  for (let p = c.parentOf.get(nd) ?? null; p; p = c.parentOf.get(p) ?? null) out.push(p);
+  return out;
+}
+
+function sideNode(nd: HtmlNode, slug: string): boolean {
+  const r = lowRole(nd);
+  if (nd.tag === 'aside' || r === 'complementary') return true;
+  if (nd.tag === 'li' || nd.tag === 'article' || r === 'listitem' || r === 'article') {
+    return findAll(nd, (a) => a.tag === 'a' && (a.attrs['href'] ?? '').includes('/in/')).slice(0, 20)
+      .some((a) => { const sg = slugOfHref(a.attrs['href']); return sg !== '' && sg !== slug; });
+  }
+  return false;
+}
+
+function holdsAction(nd: HtmlNode): boolean {
+  const acts = findAll(nd, (x) => !x.hidden && (x.tag === 'button' || (x.tag === 'a' && 'href' in x.attrs)
+    || ['button', 'menuitem', 'link'].includes(lowRole(x)))).slice(0, 300);
+  return acts.some((x) => TOP_CARD_ACTION_RE.test(nameOfNode(x, roleOfNode(x) ?? 'button').toLowerCase()));
+}
+
+function buildRegionCtx(body: HtmlNode, slug: string): RegionCtx {
+  const index = new Map<HtmlNode, number>();
+  const parentOf = new Map<HtmlNode, HtmlNode | null>();
+  const order: HtmlNode[] = [];
+  const visit = (nd: HtmlNode, parent: HtmlNode | null): void => {
+    if (nd.tag === '#text') return;
+    index.set(nd, order.length);
+    order.push(nd);
+    parentOf.set(nd, parent);
+    for (const c of nd.children) visit(c, nd);
+  };
+  visit(body, null);
+  const c: RegionCtx = { slug, h1: null, tcr: null, fb: null, index, parentOf };
+  const inDialog = (nd: HtmlNode) => ancestorsOf(c, nd).some((a) => roleOfNode(a) === 'dialog');
+  const hi = order.findIndex((nd) => nd.tag === 'h1' && !nd.hidden && !inDialog(nd) && !ancestorsOf(c, nd).some((a) => sideNode(a, slug)));
+  if (hi < 0) return c;
+  c.h1 = order[hi]!;
+  for (const a of ancestorsOf(c, c.h1)) {
+    if (a === body) break;
+    if (holdsAction(a)) { c.tcr = a; break; }
+  }
+  c.fb = order.slice(hi + 1).find((nd) => roleOfNode(nd) === 'heading' && !nd.hidden && !inDialog(nd)) ?? null;
+  return c;
+}
+
+function regionOfNode(c: RegionCtx, nd: HtmlNode, role: BcRole, inDlg: boolean): Region {
+  if (role === 'dialog' || inDlg) return 'dialog';
+  const anc = ancestorsOf(c, nd);
+  if ((role === 'menuitem' || role === 'option') && anc.some((a) => lowRole(a) === 'menu')) return 'menu';
+  let inTc = false;
+  if (c.tcr && c.h1) {
+    inTc = nd === c.tcr || anc.includes(c.tcr);
+    const at = c.index.get(nd) ?? -1;
+    if (inTc && nd !== c.h1 && at <= (c.index.get(c.h1) ?? -1)) inTc = false;
+    if (inTc && c.fb && at >= (c.index.get(c.fb) ?? Infinity)) inTc = false;
+    if (inTc) {
+      for (const a of anc) { if (a === c.tcr) break; if (sideNode(a, c.slug)) { inTc = false; break; } }
+    }
+  }
+  if (inTc) return 'topcard';
+  return [nd, ...anc].some((a) => sideNode(a, c.slug)) ? 'sidebar' : 'main';
 }
 
 /** Fixture side. Sees inline styles and attributes only: stylesheet/class hiding is the in-page script's job. */
@@ -466,6 +672,8 @@ export function buildTreeFromHtml(html: string, url: string): RawTree {
     if (titleNode) out.title = cap(titleNode.children.map((c) => c.text ?? '').join('').replace(/\s+/g, ' ').trim(), 300);
     const body = findAll(root, (n) => n.tag === 'body')[0] ?? root;
     let n = 0;
+    const slug = profileSlugOf(url);
+    const rctx = slug ? buildRegionCtx(body, slug) : null;
     const stamp = new Map<HtmlNode, number>();
     const dialogName = (d: HtmlNode): string => {
       const a = (d.attrs['aria-label'] ?? '').replace(/\s+/g, ' ').trim();
@@ -512,6 +720,7 @@ export function buildTreeFromHtml(html: string, url: string): RawTree {
             : role === 'textbox' && !secret && (nd.tag === 'textarea' || (nd.tag !== 'input' && 'contenteditable' in nd.attrs)
               || !!dlgNode || classComposer);
           if (composer) node.composer = true;
+          if (rctx) node.region = regionOfNode(rctx, nd, role, !!dlgNode);
           out.nodes.push(node);
           n++;
         }
@@ -526,6 +735,8 @@ export function buildTreeFromHtml(html: string, url: string): RawTree {
 }
 
 // ---- render ----
+// Profile pages: controls show where they sit (@topcard, @sidebar, @main), so the operator never picks a sidebar Connect.
+const REGION_TAGGED: ReadonlySet<BcRole> = new Set<BcRole>(['button', 'link', 'menuitem']);
 const MARKER = /<<<PAGE_TEXT|PAGE_TEXT>>>/g;
 const CONTROL = new RegExp('[\\u0000-\\u001f\\u007f\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ufeff]', 'g');
 function clean(s: string): string {
@@ -540,6 +751,8 @@ function clean(s: string): string {
 export function renderTree(tree: RawTree, epoch: number, maxChars = MAX_RENDER_CHARS): string {
   const head: string[] = [`url: ${clean(tree.url.split(/[?#]/)[0]).slice(0, 110)}`];
   if (tree.title) head.push(`title: ${clean(tree.title).slice(0, 120)}`);
+  const cs = connectionStateOf(tree);
+  if (cs) head.push(`connect_state: ${cs.state} (${cs.reason})`);
   const lines: string[] = [];
   for (const nd of tree.nodes) {
     const ref = `[s${epoch}.${nd.n}]`;
@@ -549,6 +762,7 @@ export function renderTree(tree: RawTree, epoch: number, maxChars = MAX_RENDER_C
     else {
       l = `${ind}${ref} ${nd.role}`;
       if (nd.name) l += ` "${clean(nd.name)}"`;
+      if (nd.region && REGION_TAGGED.has(nd.role) && (nd.region === 'topcard' || nd.region === 'sidebar' || nd.region === 'main')) l += ` @${nd.region}`;
       if (nd.role === 'dialog') l += ' (open)';
       if (nd.secret) l += ' secret';
       else if (nd.value) l += ` value="${clean(nd.value).slice(0, 120)}"`;

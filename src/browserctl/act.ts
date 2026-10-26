@@ -8,13 +8,13 @@ import { profileKeyOf } from '../linkedin/urls.js';
 import { naukriJobIdOfUrl, threadRefOfUrl } from '../naukri/page.js';
 import { threadRefOfUrl as wellfoundThreadRefOfUrl, wellfoundJobIdOfUrl } from '../wellfound/page.js';
 import { recordDryRun } from '../safety/dryRun.js';
-import { commitAction, effectiveDialogKind } from './commit.js';
+import { commitAction, effectiveDialogKind, profileHeadingName } from './commit.js';
 import { dialogWithoutControls, writeCommitDiag } from './diag.js';
 import { applyCounted, commitNaukri, observeApplyConfirmation } from './commitNaukri.js';
 import { commitWellfound, observeWellfoundApplyConfirmation, wellfoundApplyCounted } from './commitWellfound.js';
 import { BC_KEYS, type BcKey, type BcPage } from './driver.js';
 import { killReason, refused, type EngineDeps, type EngineResult } from './engineTypes.js';
-import { checkType, classify, classifyKey, classifyPoint, guardInputOf, type ActionClass, type CommitClass } from './guard.js';
+import { checkType, classify, classifyKey, classifyPoint, connectPlacementRefusal, guardInputOf, isConnectControlName, normName, type ActionClass, type CommitClass } from './guard.js';
 import { LINKEDIN_POLICY } from './policy.js';
 import { RefStore } from './refs.js';
 import { renderTree, type LiveNode, type RawTree } from './snapshot.js';
@@ -75,6 +75,32 @@ export function createEngine(deps: EngineDeps): Engine {
   let shotEpoch = -1;
   let lastGoodUrl: string | null = null;
   let emptyDialogDiags = 0;
+  // Set right after a click on the profile's own top-card More: the `role|name` keys of every control that was on the
+  // page BEFORE that click. Controls that are new afterwards are the menu rows (LinkedIn's menu rows are plain links and
+  // buttons in a portal, not role=menuitem), so they read as region 'menu'; only then may a Connect row be clicked.
+  let menuBase: Set<string> | null = null;
+  let moreDiags = 0;
+  const keyOf = (x: { role: string; name: string }): string => `${x.role}|${x.name}`;
+  const isRowRole = (r: string): boolean => r === 'button' || r === 'link' || r === 'menuitem' || r === 'option';
+  const isNewRow = (x: LiveNode): boolean => menuBase !== null && x.dialog === undefined && isRowRole(x.role)
+    && x.region !== undefined && x.region !== 'menu' && x.region !== 'dialog' && !menuBase.has(keyOf(x));
+  const tagLive = (x: LiveNode | null): LiveNode | null => (x && isNewRow(x) ? { ...x, region: 'menu' } : x);
+  const tagMenu = (t: RawTree): RawTree => (menuBase === null ? t : { ...t, nodes: t.nodes.map((x) => tagLive(x) as LiveNode) });
+  const tagged = new WeakMap<BcPage, BcPage>();
+  // The page every engine action uses: snapshots and live re-reads carry the menu region while a menu is open.
+  const tagPage = (p: BcPage): BcPage => {
+    let w = tagged.get(p);
+    if (!w) {
+      // Delegates to the page (not a copy), so a method the page swaps later still reaches the engine.
+      w = Object.assign(Object.create(p) as BcPage, {
+        snapshot: async () => tagMenu(await p.snapshot()),
+        describe: async (n: number) => tagLive(await p.describe(n)),
+        describeAt: async (x: number, y: number) => tagLive(await p.describeAt(x, y)),
+      });
+      tagged.set(p, w);
+    }
+    return w;
+  };
   let chain: Promise<unknown> = Promise.resolve();
   const serial = <T,>(fn: () => Promise<T>): Promise<T> => {
     const run = chain.then(fn, fn);
@@ -145,7 +171,7 @@ export function createEngine(deps: EngineDeps): Engine {
     if (k) return { ok: false, res: { ok: false, code: k.startsWith('kill switch') ? 'killed' : 'halted', reason: k } };
     const page = await deps.getPage();
     if (!page) return { ok: false, res: refused('no_session', `call ${P.tool}_open first`) };
-    return { ok: true, page };
+    return { ok: true, page: P.platform === 'linkedin' ? tagPage(page) : page };
   };
 
   type Target = { page: BcPage; n: number; live: LiveNode };
@@ -182,6 +208,7 @@ export function createEngine(deps: EngineDeps): Engine {
   }
 
   const pageKind = (page: BcPage): string => P.pageKind(page.url());
+  const isTopCardMore = (n: LiveNode): boolean => P.platform === 'linkedin' && n.region === 'topcard' && /^more\b/.test(normName(n.name));
 
   function recordFree(op: string, cls: ActionClass, live: LiveNode): void {
     if (!deps.cfg.dryRun) return;
@@ -199,6 +226,15 @@ export function createEngine(deps: EngineDeps): Engine {
     const owner = cls === 'naukri_send' || cls === 'naukri_apply' ? 'naukri'
       : cls === 'wellfound_send' || cls === 'wellfound_apply' ? 'wellfound' : 'linkedin';
     if (cls !== 'free' && owner !== P.platform) return refused('wrong_platform', `not a ${P.tool} control`);
+    // LinkedIn More menu rows (plain links and buttons): in the connect flow only Connect and Personalize invite are clicked.
+    if (P.platform === 'linkedin' && live.region === 'menu' && (live.role === 'link' || live.role === 'button') && !isConnectControlName(live.name)) {
+      return refused('menu_row_not_allowed', 'only the Connect or Personalize invite row of the More menu may be clicked');
+    }
+    // LinkedIn: a Connect outside the profile's top card sends the invitation directly. Refused before anything else.
+    if (P.platform === 'linkedin' && cls === 'commit_connect_send') {
+      const bad = connectPlacementRefusal(live, menuBase !== null, tree ? profileHeadingName(tree) : '');
+      if (bad) return refused(bad.code, bad.reason);
+    }
     if (cls !== 'free') {
       const res = P.platform === 'naukri'
         ? await commitNaukri({ deps, page, cls: cls as 'naukri_send' | 'naukri_apply', live, act, redescribe })
@@ -243,6 +279,7 @@ export function createEngine(deps: EngineDeps): Engine {
     if (!g.ok) return g.res;
     await pace(g.page);
     recordNav(url);
+    menuBase = null;
     const prior = keepRefs && tree && refs.hasSnapshot ? { saved: refs.save(), seen: seenEpoch, sig: treeSignature(tree) } : null;
     try { await g.page.goto(url); } catch { return refused('failed', 'open failed'); }
     refs.invalidate();
@@ -274,10 +311,28 @@ export function createEngine(deps: EngineDeps): Engine {
     // A LinkedIn dialog whose name says nothing is still the invite dialog when it holds the invite controls.
     const dk = P.platform === 'linkedin' && t.live.dialog !== undefined && tree ? effectiveDialogKind(tree, t.live.dialog, t.live.dialogName) : null;
     const cls = classify(guardInputOf(t.live, P.platform, pageKind(t.page), false, dk));
-    return dispatch('click',t.page, cls, t.live, () => t.page.clickNode(t.n), () => t.page.describe(t.n));
+    const more = isTopCardMore(t.live);
+    if (more) menuBase = new Set((tree?.nodes ?? []).map(keyOf));
+    const res = await dispatch('click', t.page, cls, t.live, () => t.page.clickNode(t.n), () => t.page.describe(t.n));
+    await afterMenuClick(t.page, t.live, more, res);
+    return res;
+  }
+
+  /** The menu stays open across a refused click (the page did not change); any other click closes it. */
+  async function afterMenuClick(page: BcPage, live: LiveNode, more: boolean, res: EngineResult): Promise<void> {
+    if (more && res.ok) await diagMissingMenu(page, live);
+    else if (more || res.ok) menuBase = null;
+  }
+
+  /** More was clicked and no row of a menu showed up: leave a structural diag (tags, roles, counts, fixed labels) once per a few runs. */
+  async function diagMissingMenu(page: BcPage, live: LiveNode): Promise<void> {
+    if (!tree || tree.nodes.some((x) => x.region === 'menu' && x.name) || moreDiags >= MAX_EMPTY_DIALOG_DIAGS) return;
+    moreDiags++;
+    await writeCommitDiag(deps, page, { platform: P.platform, code: 'more_menu_missing', live, urlBefore: tree.url, after: tree });
   }
 
   async function doPress(page: BcPage, key: BcKey, node: LiveNode | null, redescribe: () => Promise<LiveNode | null>): Promise<EngineResult> {
+    menuBase = null;
     if (!FREE_KEYS.has(key)) {
       if (!node) return refused('focus_unknown', 'cannot tell which element has focus; nothing pressed');
       const cls = classifyKey({ ...guardInputOf(node, P.platform, pageKind(page)), key });
@@ -293,6 +348,7 @@ export function createEngine(deps: EngineDeps): Engine {
     const t = await target(ref);
     if (!t.ok) return t.res;
     if (typeof text !== 'string') return refused('bad_text', 'text must be a string');
+    menuBase = null;
     const armed = deps.intents.peek(P.platform);
     const chk = checkType(t.live, text, armed ? { class: armed.class, text: armed.text } : null);
     if (!chk.ok) return refused(chk.code, chk.reason);
@@ -357,7 +413,11 @@ export function createEngine(deps: EngineDeps): Engine {
     const p = await classifyPoint(g.page, P.platform, pageKind(g.page), x, y,
       (n) => (P.platform === 'linkedin' && n.dialog !== undefined && tree ? effectiveDialogKind(tree, n.dialog, n.dialogName) : null));
     if (!p.ok) return refused(p.code, 'nothing usable at that point');
-    return dispatch('click_at', g.page, p.cls, p.node, () => g.page.clickPoint(x, y), () => g.page.describeAt(x, y));
+    const more = isTopCardMore(p.node);
+    if (more) menuBase = new Set((tree?.nodes ?? []).map(keyOf));
+    const res = await dispatch('click_at', g.page, p.cls, p.node, () => g.page.clickPoint(x, y), () => g.page.describeAt(x, y));
+    await afterMenuClick(g.page, p.node, more, res);
+    return res;
   }
 
   return {

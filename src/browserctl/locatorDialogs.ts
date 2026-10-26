@@ -53,7 +53,8 @@ const clean = (s: unknown, max: number): string => String(s ?? '').replace(/\s+/
 // Runs inside the element: its accessible-name approximation and field facts. Only attributes and text.
 const FACTS_FN = (el: any): { name: string; type: string; ro: boolean } => {
   const a = (k: string): string => { const v = el.getAttribute ? el.getAttribute(k) : null; return v === null || v === undefined ? '' : String(v); };
-  const name = a('aria-label') || a('title') || String(el.innerText || el.textContent || '') || a('placeholder') || a('value');
+  const inner = el.querySelector ? el.querySelector('[aria-label]') : null;
+  const name = a('aria-label') || (inner ? String(inner.getAttribute('aria-label') || '') : '') || a('title') || String(el.innerText || el.textContent || '') || a('placeholder') || a('value');
   return { name, type: a('type').toLowerCase(), ro: a('readonly') !== '' };
 };
 
@@ -132,7 +133,7 @@ export class LocatorDialogLayer {
           if (seen.has(`${role}|${name}`)) continue;
           const n = base + used++;
           this.descs.set(n, { dk: ck, di, slot, role, nth: i });
-          nodes.push({ n, role, name, text: '', disabled: false });
+          nodes.push({ n, role, name, text: '', disabled: false, region: 'menu' });
         }
         if (used > 0) m++;
       }
@@ -160,7 +161,7 @@ export class LocatorDialogLayer {
       const dname = await this.dialogName(dk, di);
       const dn = seq++;
       this.descs.set(dn, { dk, di, slot: d, role: 'dialog', nth: 0 });
-      nodes.push({ n: dn, role: 'dialog', name: dname, text: '', disabled: false });
+      nodes.push({ n: dn, role: 'dialog', name: dname, text: '', disabled: false, region: 'dialog' });
       let controls = 0;
       const inDlg = { dialog: dn, dialogName: dname };
       const dlg = this.dialogLoc(dk, di);
@@ -218,11 +219,11 @@ export class LocatorDialogLayer {
         const mel = this.loc(d);
         if ((await mel.count()) === 0) return null;
         const mf = await mel.evaluate(FACTS_FN, undefined, { timeout: OP_TIMEOUT_MS });
-        return { n, role: d.role as BcRole, name: clean(mf.name, MAX_NAME), text: '', disabled: false };
+        return { n, role: d.role as BcRole, name: clean(mf.name, MAX_NAME), text: '', disabled: false, region: 'menu' };
       }
       const dname = await this.dialogName(d.dk as DialogKindRole, d.di);
       const dn = LOCATOR_BASE + d.slot * DIALOG_STRIDE;
-      if (d.role === 'dialog') return { n, role: 'dialog', name: dname, text: '', disabled: false };
+      if (d.role === 'dialog') return { n, role: 'dialog', name: dname, text: '', disabled: false, region: 'dialog' };
       const el = this.loc(d);
       if ((await el.count()) === 0) return null;
       const f = await el.evaluate(FACTS_FN, undefined, { timeout: OP_TIMEOUT_MS });

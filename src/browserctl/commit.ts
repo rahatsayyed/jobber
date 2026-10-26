@@ -10,9 +10,9 @@ import { saveConnection } from '../db.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
 import { extractDialogRecipientName, extractProfileSlug, namesPlausiblyMatch, verifyProfileUrl } from '../linkedin/verify.js';
 import { classifyUrl, profileKeyOf } from '../linkedin/urls.js';
-import { finishTouch, releaseNoDialog } from '../linkedin/touches.js';
+import { finishTouch, finishTouchSentNoNote, releaseNoDialog } from '../linkedin/touches.js';
 import { loadOutreachConfig } from '../outreach/config.js';
-import { tryConsume } from '../outreach/limits.js';
+import { recordEvent, tryConsume } from '../outreach/limits.js';
 import { recordDryRun } from '../safety/dryRun.js';
 import { diagNote, writeCommitDiag } from './diag.js';
 import type { BcPage } from './driver.js';
@@ -21,6 +21,7 @@ import { dialogKindOf, normName, type CommitClass } from './guard.js';
 import type { ArmedIntent } from './intent.js';
 import { bindTouchRelease } from './intent.js';
 import type { LiveNode, RawTree } from './snapshot.js';
+import { connectionStateOf, directSendSeen } from './topCard.js';
 
 export interface CommitInput {
   deps: EngineDeps;
@@ -112,9 +113,10 @@ export function messageDialogName(tree: RawTree, dlg: number): string {
   return '';
 }
 
-/** Name of the person on a profile page: the first heading, '' when none. */
+/** Name of the person on a profile page: the first heading of the top card, else the first heading; '' when none. */
 export function profileHeadingName(tree: RawTree): string {
-  return tree.nodes.find((x) => x.role === 'heading' && x.dialog === undefined && x.name)?.name ?? '';
+  const heads = tree.nodes.filter((x) => x.role === 'heading' && x.dialog === undefined && x.name);
+  return (heads.find((x) => x.region === 'topcard') ?? heads[0])?.name ?? '';
 }
 
 const acceptCount = (tree: RawTree): number =>
@@ -191,6 +193,10 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
       if (m && !namesPlausiblyMatch(expectedName, m[1])) return abort('recipient_mismatch', 'Connect control names a different person');
       const head = profileHeadingName(tree);
       if (!head || !namesPlausiblyMatch(expectedName, head)) return abort('recipient_mismatch', 'page does not show the armed person');
+      // Connection state from the top card and the More menu: a pending or non-connectable profile is never invited.
+      const cs = connectionStateOf(tree);
+      if (cs?.state === 'already_pending') return abort('already_pending', cs.reason);
+      if (cs?.state === 'not_connectable') return abort('not_connectable', cs.reason);
       openStep = true;
     } else {
       if (effectiveDialogKind(tree, dlg, live.dialogName) !== wantKind) return abort('wrong_dialog', 'dialog is not the expected kind', { close: true });
@@ -293,6 +299,19 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
       }
       if (surface === 'dialog') { keepArmed = true; return { ok: true, code: 'dialog_opened', reason: 'invite dialog is open; type the armed note and click Send' }; }
       if (surface === 'page') { keepArmed = true; return { ok: true, code: 'invite_page_opened', reason: 'LinkedIn opened an invite page; take a snapshot and continue only if it shows the armed person' }; }
+      // No dialog, but the page now shows the invitation went out (Pending in the top card, or an "Invitation sent"
+      // toast): LinkedIn sent it directly, without a note. Record it as sent and never retry this person.
+      if (directSendSeen(after) && !directSendSeen(tree)) {
+        if (intent?.touchId !== undefined) finishTouchSentNoNote(db, intent.touchId, now());
+        recordEvent(db, 'linkedin_invite', now());
+        try {
+          saveConnection(db, {
+            job_id: intent?.jobId === undefined ? null : String(intent.jobId), company: intent?.company ?? null, profile_url: profileUrl,
+            headline: null, note: '', status: 'sent', sent_at: now().toISOString(),
+          });
+        } catch { /* legacy table only; the touch row is authoritative */ }
+        return { ok: true, status: 'sent', code: 'sent_without_note', reason: 'LinkedIn sent the invitation directly, without a note; recorded as sent. Never retry this person; move to the next company.', ...(intent?.touchId !== undefined ? { touch_id: intent.touchId } : {}) };
+      }
       if (intent?.touchId !== undefined && !intent.dry) releaseNoDialog(db, intent.touchId, now());
       const dg = await writeCommitDiag(deps, page, { platform, code: 'no_dialog_after_connect', live, urlBefore: url, after });
       return { ok: false, status: 'failed', code: 'no_dialog_after_connect', reason: `Connect clicked but no invite dialog appeared; nothing was sent. Escalate once and move to the next contact.${diagNote(dg)}` };

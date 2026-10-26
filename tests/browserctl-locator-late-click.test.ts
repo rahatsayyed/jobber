@@ -115,11 +115,12 @@ describe('dialog that fills in late', () => {
 describe('More menu that fills in late', () => {
   it('menu items are refs once the menu has them; Connect menuitem (armed) then the note flow sends', async () => {
     const { w, sh } = mk({ menu: true, menuFillAfterMs: 2000 });
-    expect((await armNote(w)).status).toBe('armed');
     const more = await w.engine.click(refOf(await w.snap(), 'button', 'More'));
     expect(more.ok).toBe(true);
     for (const n of ['Connect', 'Follow', 'Message']) expect(more.state).toContain(`menuitem "${n}"`);
     expect(sh.elapsed()).toBeGreaterThanOrEqual(2000);
+    // The arm comes after the More menu was read: with no top-card Connect it needs the menu's Connect.
+    expect((await armNote(w)).status).toBe('armed');
     expect(await w.engine.click(refOf(more.state!, 'menuitem', 'Connect'))).toMatchObject({ ok: true, code: 'dialog_opened' });
     expect((await w.engine.click(refOf(await w.snap(), 'button', 'Add a note'))).code).toBe('clicked');
     expect((await w.engine.type(refOf(await w.snap(), 'textbox', 'Add a note'), NOTE)).code).toBe('typed');
@@ -221,7 +222,8 @@ describe('click_at inside a closed shadow root', () => {
 
   it('menu items: Follow is refused, Message is free, Connect needs the arm and then opens the dialog', async () => {
     const { w, sh } = mk({ menu: true });
-    sh.openMenu();
+    // The menu must be opened by an engine click on the top-card More (a menu opened elsewhere is not trusted).
+    expect((await w.engine.click(refOf(await w.snap(), 'button', 'More'))).ok).toBe(true);
     await ready(w);
     expect((await clickAtCtl(w, sh, 'menuitem', 'Follow')).code).toBe('irreversible_refused');
     expect((await clickAtCtl(w, sh, 'menuitem', 'Connect')).code).toBe('no_armed_intent');

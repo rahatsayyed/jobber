@@ -159,6 +159,15 @@ export function finishTouch(db: Db, touchId: number, status: TouchStatus, now: D
   );
 }
 
+/**
+ * A connect whose Connect click sent the invitation directly (no dialog, the page shows Pending): the touch is 'sent'
+ * with no note, so the stored body is cleared. Only a 'sending' connect row moves; never retried (duplicate_kind).
+ */
+export function finishTouchSentNoNote(db: Db, touchId: number, now: Date): void {
+  db.prepare("UPDATE touches SET status = 'sent', body = NULL, sent_at = ? WHERE id = ? AND status = 'sending' AND kind = 'connect'")
+    .run(now.toISOString(), touchId);
+}
+
 export function pauseContact(db: Db, personId: number, reason: string, now: Date): void {
   db.prepare('INSERT OR IGNORE INTO contact_state (person_id) VALUES (?)').run(personId);
   db.prepare('UPDATE contact_state SET paused_reason = ?, updated_at = ? WHERE person_id = ?').run(

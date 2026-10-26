@@ -14,12 +14,17 @@ import type { LiveNode, RawTree } from './snapshot.js';
 export const DIAG_MAX_BYTES = 8 * 1024;
 const NAME_MAX = 60;
 
+/** Counts of the visible links of a popup by where their label sits: on the link, on a descendant, in its text, or nowhere. */
+export interface LinkRowLabels { own: number; desc: number; text: number; none: number }
+
 /** What the in-page diag script returns (all counts and short names). */
 export interface PageDiag {
   shadowRoots: number;
   iframes: number;
   closedHostCandidates: number;
   dialogs: { role: string; name: string; buttons: string[] }[];
+  /** Controls that announce an open popup (aria-expanded true): tag, role, aria-haspopup, whether aria-controls names an element, tag/role of its first descendants. */
+  expanded?: { tag: string; role: string; popup: string; controls: number; found: number; kids: string[]; rows?: LinkRowLabels }[];
   /** Locator view (Patchright getByRole): dialogs it sees and their button names. Absent when the layer is off. */
   locatorDialogs?: number;
   locatorDialogButtons?: string[];
@@ -61,6 +66,8 @@ export interface DiagFile {
   tree_nodes: number | null;
   locator_dialogs: number | null;
   locator_dialog_buttons: string[];
+  // Open popups (aria-expanded) with the tag/role structure of what they control; structure labels only.
+  expanded_popups?: { tag: string; role: string; popup: string; controls: number; found: number; kids: string[]; rows: LinkRowLabels }[];
   // Naukri apply: pages the click opened (url path only, never the query) and apply-ish responses (path and status).
   popups?: { path: string; host_kind: 'naukri' | 'external' | 'unknown' }[];
   apply_responses?: { path: string; status: number }[];
@@ -156,6 +163,16 @@ export async function writeCommitDiag(
       tree_nodes: i.after ? i.after.nodes.length : null,
       locator_dialogs: pd && typeof pd.locatorDialogs === 'number' ? Math.max(0, Math.floor(pd.locatorDialogs)) : null,
       locator_dialog_buttons: (pd?.locatorDialogButtons ?? []).slice(0, 12).map(safeName),
+      ...(pd?.expanded && pd.expanded.length > 0 ? {
+        expanded_popups: pd.expanded.slice(0, 4).map((e) => ({
+          tag: safeName(e.tag), role: safeName(e.role), popup: safeName(e.popup),
+          controls: Math.floor(e.controls) || 0, found: Math.floor(e.found) || 0, kids: (e.kids ?? []).slice(0, 12).map(safeName),
+          rows: {
+            own: Math.floor(e.rows?.own ?? 0) || 0, desc: Math.floor(e.rows?.desc ?? 0) || 0,
+            text: Math.floor(e.rows?.text ?? 0) || 0, none: Math.floor(e.rows?.none ?? 0) || 0,
+          },
+        })),
+      } : {}),
       ...(i.extra ? {
         popups: (i.extra.popups ?? []).slice(0, 5).map((p) => ({ path: pathOf(p.url), host_kind: hostKind(p.url) })),
         apply_responses: (i.extra.responses ?? []).slice(0, 10).map((r) => ({ path: String(r.path).split('?')[0].slice(0, 120), status: Math.floor(Number(r.status)) || 0 })),
