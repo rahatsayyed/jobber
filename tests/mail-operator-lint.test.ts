@@ -16,6 +16,17 @@ const MAIL_TOOLS = [
 ];
 
 // The committed wake tool list (plan 8G task 13). Changing the wake profile means changing this list on purpose.
+// Appended when the wake became a full session: every remaining tool of each .mcp.json server (db.raw_query stays out).
+const WAKE_ALLOW_FULL_SESSION = [
+  'mcp__db__list_outreach', 'mcp__db__list_threads', 'mcp__db__unexclude', 'mcp__db__record_outcome', 'mcp__db__calibration',
+  'mcp__db__get_patterns', 'mcp__db__resolve_reply_proposals', 'mcp__db__set_followup_approval', 'mcp__db__list_stale',
+  'mcp__db__resolve_stale', 'mcp__job-fetch__search_jobs', 'mcp__job-fetch__list_new_jobs', 'mcp__linkedin__linkedin_close',
+  'mcp__linkedin__linkedin_limits', 'mcp__gmail__batch_delete_emails', 'mcp__gmail__batch_modify_emails', 'mcp__gmail__create_filter',
+  'mcp__gmail__create_filter_from_template', 'mcp__gmail__create_label', 'mcp__gmail__delete_email', 'mcp__gmail__delete_filter',
+  'mcp__gmail__delete_label', 'mcp__gmail__download_attachment', 'mcp__gmail__draft_email', 'mcp__gmail__get_filter',
+  'mcp__gmail__get_or_create_label', 'mcp__gmail__list_email_labels', 'mcp__gmail__list_filters', 'mcp__gmail__modify_email',
+  'mcp__gmail__update_label',
+];
 const WAKE_ALLOW = [
   'mcp__naukri__naukri_open', 'mcp__naukri__naukri_snapshot', 'mcp__naukri__naukri_close', 'mcp__naukri__naukri_screenshot',
   'mcp__db__list_queued_outreach', 'mcp__db__get_funnel', 'mcp__db__get_outreach_stats', 'mcp__db__get_job_stats',
@@ -108,7 +119,7 @@ describe('mail-operator definition', () => {
 describe('wake profile', () => {
   const wake = loadProfiles('config/run-profiles.json', 'config/permission-sets.json').outreach_wake;
   it('allow list equals the committed list', () => {
-    expect(wake.allow).toEqual(WAKE_ALLOW);
+    expect(wake.allow).toEqual([...WAKE_ALLOW, ...WAKE_ALLOW_FULL_SESSION]);
   });
   it('allows Agent dispatch and every tool of the pipeline and mail agents', () => {
     expect(wake.builtin_tools).toEqual(expect.arrayContaining(['Skill', 'Agent']));

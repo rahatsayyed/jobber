@@ -10,7 +10,7 @@ import { wakeOnce, type DriverDeps } from '../src/scheduler/driver.js';
 import type { Notice } from '../src/scheduler/notify.js';
 import { buildRunnerArgv, type LaunchHandle, type LaunchPlan, type Launcher, type PollResult } from '../src/scheduler/launch.js';
 import { StreamInspector, unprovenSteps, MAX_CONTINUATIONS } from '../src/scheduler/stream.js';
-import { AWAIT_RULES, buildContinuationPrompt, buildWakePrompt } from '../src/scheduler/prompt.js';
+import { AWAIT_RULES, DIAGNOSTIC_RULES, buildContinuationPrompt, buildWakePrompt } from '../src/scheduler/prompt.js';
 import { listRuns, migrateSchedulerTables } from '../src/scheduler/runLog.js';
 import { buildReport, formatReport } from '../src/scheduler/report.js';
 import { buildClaudeArgs, loadProfiles } from '../src/platform/runner.js';
@@ -161,6 +161,16 @@ describe('wake prompt hardening', () => {
     runId: 'abcd1234', dryRun: false, burst: 1, tasks: [], budget: { maxWallSec: 900, maxTokensApprox: 150000 },
     allowed: ['linkedin' as const], now: new Date('2026-10-15T10:00:00Z'),
   };
+  it('tells the session what its diagnostic tools are for and where they stop', () => {
+    const p = buildWakePrompt(base);
+    for (const rule of DIAGNOSTIC_RULES) expect(p).toContain(rule);
+    expect(p).toMatch(/retry the typed tool ONCE/);
+    expect(p).toMatch(/Never commit, never push/);
+    expect(p).toMatch(/outreach\.escalate/);
+    expect(p).toMatch(/untrusted data/);
+    expect(p).toMatch(/\.jobber\/STOP/);
+    expect(p).not.toMatch(/[^\x20-\x7e\n]/);
+  });
   it('tells the session to block on every Agent call and never end its turn with one pending', () => {
     const p = buildWakePrompt(base);
     for (const rule of AWAIT_RULES) expect(p).toContain(rule);

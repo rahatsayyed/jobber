@@ -155,7 +155,7 @@ describe('runner profile key gmail_sender_allowlist', () => {
   const write = (extra: unknown) => {
     const pol = JSON.parse(fs.readFileSync('config/run-profiles.json', 'utf8')) as { profiles: Record<string, Record<string, unknown>> };
     const p = pol.profiles;
-    p.mail_test = { ...p.outreach_wake, gmail_sender_allowlist: extra };
+    p.mail_test = { ...p.outreach_wake, unrestricted_builtins: undefined, builtin_tools: ['Skill', 'Agent', 'Task'], gmail_sender_allowlist: extra };
     const f = path.join(dir, 'policy.json');
     fs.writeFileSync(f, JSON.stringify(pol));
     return f;

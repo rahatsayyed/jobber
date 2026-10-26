@@ -1093,9 +1093,10 @@ gates and that the engine re-verifies against the live page. Layers, outermost f
    `config/run-profiles.json`: exact allowlisted tool names (wildcards rejected), allowlisted
    child environment, `--strict-mcp-config`, no bypassPermissions, no skip-permissions. Profile
    `outreach_wake` (scheduler, and `./run-hunt.sh` through it) has the platform (LinkedIn, Naukri,
-   Wellfound), pipeline, mail and applier tools plus the db tools they need, and `Skill`, `Agent` and
-   `Task`; no Bash, Read or web fetch. Its main thread holds the send tools (only subagents are narrowed by
-   the hook). Profile `mail_drip` (the mail drip lane, one run per email, wall and token budget only) holds
+   Wellfound), pipeline, mail and applier tools plus the db tools they need (every tool of every `.mcp.json`
+   server except `db.raw_query`), and the full built-in tool set behind the tamper guard (see
+   `docs/reference/safety-layers.md`, "The wake's full session"). Its main thread holds the send tools (only
+   subagents are narrowed by the hook). Profile `mail_drip` (the mail drip lane, one run per email, wall and token budget only) holds
    only the `mail-operator` tools of `config/worker-tools.json` (the `db` and `gmail` servers, `Agent` and `Task`),
    an allowlisted environment without secrets and `gmail.send_email` as a screened argument surface; it is
    launched by the scheduler daemon, never by a session.

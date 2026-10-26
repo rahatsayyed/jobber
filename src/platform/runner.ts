@@ -28,11 +28,21 @@ export interface RunProfile {
   classifier?: 'required' | 'not_required';
   // Exact command strings the Bash tool may run. Only valid with interactive: true.
   bash_exact?: string[];
+  // true: the profile may list Bash, Edit, Write, NotebookEdit, WebFetch and WebSearch (the scheduled wake runs like a
+  // regular session). Valid ONLY for outreach_wake; every call is then screened by .claude/hooks/tamper-guard.cjs.
+  unrestricted_builtins?: boolean;
 }
 
 export type ResolvedProfile = RunProfile & { allow: string[]; name?: string };
 
 const DANGEROUS_BUILTINS = ['Bash', 'Write', 'Edit', 'NotebookEdit', 'WebFetch', 'WebSearch'];
+const UNRESTRICTED_PROFILE = 'outreach_wake';
+// Further built-ins that only a profile with unrestricted_builtins may list.
+const GUARD_ONLY_BUILTINS = ['Grep', 'Glob', 'BashOutput', 'KillShell', 'TodoWrite'];
+/** Built-ins the launcher denies on the command line: the dangerous ones, minus what an unrestricted profile lists. */
+export function disallowedBuiltins(p: { builtin_tools: string[]; unrestricted_builtins?: boolean }): string[] {
+  return DANGEROUS_BUILTINS.filter((b) => !(p.unrestricted_builtins === true && p.builtin_tools.includes(b)));
+}
 const TOOL_RE = /^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$/;
 const SECRET_KEY_RE = /KEY|SECRET|TOKEN|PASSWORD|PASS|COOKIE/i;
 const SAFE_BASE_KEYS = ['HOME', 'PATH', 'LANG', 'LC_ALL', 'TZ', 'USER', 'TMPDIR'];
@@ -139,8 +149,16 @@ export function loadProfiles(
       for (const e of p.allow_extra) if (!allow.includes(e)) allow.push(e);
     }
     if (!Array.isArray(p.builtin_tools)) throw new Error(`profile ${name}: builtin_tools must be an array`);
+    if (p.unrestricted_builtins !== undefined && typeof p.unrestricted_builtins !== 'boolean') {
+      throw new Error(`profile ${name}: unrestricted_builtins must be a boolean`);
+    }
+    if (p.unrestricted_builtins === true && name !== UNRESTRICTED_PROFILE) {
+      throw new Error(`profile ${name}: unrestricted_builtins is only valid for ${UNRESTRICTED_PROFILE}`);
+    }
     for (const b of p.builtin_tools) {
-      if (DANGEROUS_BUILTINS.includes(b)) throw new Error(`profile ${name}: built-in tool not allowed: ${b}`);
+      if ((DANGEROUS_BUILTINS.includes(b) || GUARD_ONLY_BUILTINS.includes(b)) && p.unrestricted_builtins !== true) {
+        throw new Error(`profile ${name}: built-in tool not allowed: ${b}`);
+      }
     }
     if (!Number.isInteger(p.max_turns) || p.max_turns < 1 || p.max_turns > 1000) {
       throw new Error(`profile ${name}: max_turns must be an integer between 1 and 1000`);
@@ -210,7 +228,7 @@ export function buildClaudeArgs(
     '--setting-sources', 'project',
     '--tools', p.builtin_tools.join(','),
     '--allowedTools', [...p.allow, ...p.builtin_tools].join(','),
-    '--disallowedTools', DANGEROUS_BUILTINS.join(','),
+    ...(disallowedBuiltins(p).length > 0 ? ['--disallowedTools', disallowedBuiltins(p).join(',')] : []),
     '--max-turns', String(p.max_turns),
   ];
   assertSafeArgs(args, {});
@@ -229,7 +247,7 @@ export function buildInteractiveArgs(
   if (p.interactive !== true) throw new Error('buildInteractiveArgs: profile is not interactive');
   if (initialPrompt.startsWith('-')) throw new Error('initial prompt must not start with a dash');
   const bash = p.bash_exact ?? [];
-  const tools = [...p.builtin_tools, ...(bash.length > 0 ? ['Bash'] : [])];
+  const tools = [...new Set([...p.builtin_tools, ...(bash.length > 0 ? ['Bash'] : [])])];
   // The initial prompt is the FIRST argument: --allowedTools/--disallowedTools are variadic and
   // would swallow a trailing positional. UNVERIFIED against a real claude binary (plan U2,
   // owner check L3).
@@ -241,7 +259,7 @@ export function buildInteractiveArgs(
     '--settings', paths.settingsPath,
     '--tools', tools.join(','),
     '--allowedTools', [...p.allow, ...p.builtin_tools, ...bash.map((c) => `Bash(${c})`)].join(','),
-    '--disallowedTools', DANGEROUS_BUILTINS.filter((b) => !(b === 'Bash' && bash.length > 0)).join(','),
+    '--disallowedTools', disallowedBuiltins(p).filter((b) => !(b === 'Bash' && bash.length > 0)).join(','),
   ];
   assertSafeArgs(args, {});
   return args;
@@ -288,7 +306,7 @@ export function renderSettings(
   const settings: Record<string, any> = {
     permissions: {
       allow: [...p.allow, ...p.builtin_tools, ...bash.map((c) => `Bash(${c})`)],
-      deny: DANGEROUS_BUILTINS.filter((b) => !(b === 'Bash' && bash.length > 0)),
+      deny: disallowedBuiltins(p).filter((b) => !(b === 'Bash' && bash.length > 0)),
     },
     hooks: {
       PreToolUse: [
@@ -299,7 +317,7 @@ export function renderSettings(
           ],
         },
         {
-          matcher: 'Read|Write|Edit|NotebookEdit|Bash',
+          matcher: p.unrestricted_builtins === true ? 'Read|Write|Edit|NotebookEdit|Bash|Grep|Glob|WebFetch' : 'Read|Write|Edit|NotebookEdit|Bash',
           hooks: [
             { type: 'command', command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/block-outside-project.cjs"', timeout: 10, onFailure: 'block' },
           ],

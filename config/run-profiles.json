@@ -2,12 +2,24 @@
   "version": 1,
   "profiles": {
     "outreach_wake": {
-      "description": "Scheduled wake: platform, pipeline and mail tools plus the db tools they need; no secrets in env.",
+      "description": "Scheduled wake: runs like a regular session (all built-in tools, every .mcp.json server except db.raw_query); every Bash, file and web call passes the tamper guard (.claude/hooks/tamper-guard.cjs); no secrets in env.",
       "mcp_config": "config/runner/mcp.platform.json",
       "builtin_tools": [
         "Skill",
         "Agent",
-        "Task"
+        "Task",
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash",
+        "BashOutput",
+        "KillShell",
+        "Edit",
+        "Write",
+        "NotebookEdit",
+        "WebFetch",
+        "WebSearch",
+        "TodoWrite"
       ],
       "allow": [
         "mcp__naukri__naukri_open",
@@ -136,7 +148,37 @@
         "mcp__wellfound__wellfound_arm_apply",
         "mcp__wellfound__wellfound_layout",
         "mcp__wellfound__wellfound_click",
-        "mcp__wellfound__wellfound_type"
+        "mcp__wellfound__wellfound_type",
+        "mcp__db__list_outreach",
+        "mcp__db__list_threads",
+        "mcp__db__unexclude",
+        "mcp__db__record_outcome",
+        "mcp__db__calibration",
+        "mcp__db__get_patterns",
+        "mcp__db__resolve_reply_proposals",
+        "mcp__db__set_followup_approval",
+        "mcp__db__list_stale",
+        "mcp__db__resolve_stale",
+        "mcp__job-fetch__search_jobs",
+        "mcp__job-fetch__list_new_jobs",
+        "mcp__linkedin__linkedin_close",
+        "mcp__linkedin__linkedin_limits",
+        "mcp__gmail__batch_delete_emails",
+        "mcp__gmail__batch_modify_emails",
+        "mcp__gmail__create_filter",
+        "mcp__gmail__create_filter_from_template",
+        "mcp__gmail__create_label",
+        "mcp__gmail__delete_email",
+        "mcp__gmail__delete_filter",
+        "mcp__gmail__delete_label",
+        "mcp__gmail__download_attachment",
+        "mcp__gmail__draft_email",
+        "mcp__gmail__get_filter",
+        "mcp__gmail__get_or_create_label",
+        "mcp__gmail__list_email_labels",
+        "mcp__gmail__list_filters",
+        "mcp__gmail__modify_email",
+        "mcp__gmail__update_label"
       ],
       "screen_args": [
         "mcp__outreach__escalate",
@@ -195,7 +237,8 @@
         "SEARCH_"
       ],
       "output_format": "stream-json",
-      "max_turns": 40
+      "max_turns": 40,
+      "unrestricted_builtins": true
     },
     "mail_drip": {
       "description": "Mail drip lane: one tiny run per email. Only the mail-operator tools (config/worker-tools.json), the db and gmail servers, no secrets in env.",

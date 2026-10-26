@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const kill = require('./kill-switch.cjs');
+const tamper = require('./tamper-guard.cjs');
 
 const DEFAULT_ROOT = path.resolve(__dirname, '..', '..');
 const SECRET_ARG_RES = [
@@ -134,7 +135,11 @@ function decide(event, profile, opts) {
       return deny('profile contains wildcard or invalid entries');
     }
     const name = event.tool_name;
-    if (name === 'Bash' && !('agent_id' in event) && !('agent_type' in event)) {
+    // The scheduled wake runs with the full built-in tool set; the tamper guard (tamper-guard.cjs) is its denylist.
+    // Only the shipped outreach_wake profile can carry this flag (loadProfiles refuses it elsewhere), and the hook
+    // checks the profile NAME as well, so a copied policy file cannot switch it on for another profile.
+    const full = profile.unrestricted_builtins === true && !!opts && opts.profileName === 'outreach_wake';
+    if (name === 'Bash' && !full && !('agent_id' in event) && !('agent_type' in event)) {
       if (opts && NO_BASH_PROFILES.has(opts.profileName)) return deny('Bash not allowed for this profile');
       if (profile.interactive !== true || !validBashExact(profile.bash_exact)) return deny('Bash not allowed for this profile');
       const input = event.tool_input;
@@ -145,7 +150,7 @@ function decide(event, profile, opts) {
       return { allow: true, reason: '' };
     }
     let allowed = new Set([...allowList, ...builtins]);
-    if (name === 'Bash') allowed.delete('Bash'); // only the exact rule above can allow Bash
+    if (name === 'Bash' && !full) allowed.delete('Bash'); // only the exact rule above can allow Bash
 
     const hasId = 'agent_id' in event;
     const hasType = 'agent_type' in event;
@@ -158,6 +163,12 @@ function decide(event, profile, opts) {
       allowed = new Set(tools.filter((t) => allowed.has(t)));
     }
     if (!allowed.has(name)) return deny('tool not in allowlist');
+    if (full && tamper.GUARDED.has(name)) {
+      // Subagents were already narrowed to their own agent-file tool list above (an operator has no Bash, Edit or Write),
+      // and whatever they may still use goes through the same denylist.
+      const g = tamper.decide(event, { root });
+      if (!g.allow) return deny(g.reason);
+    }
 
     // Gmail sender rule (plan 8G task 6): a profile with gmail_sender_allowlist may read verification
     // mail only through a search whose query is pinned to allowlisted senders (SITE_MAIL_SENDERS).

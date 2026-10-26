@@ -26,6 +26,16 @@ section is the reference for what exists.
   `settings.local.managed.json` records what was written). `npm run ccgram-hooks --
   install|status|remove` merges ccgram's hooks into the same project-scoped file, never a global
   one. No session ever runs with skip-permissions.
+- **Wake profile (full session)**: the scheduled wake (`outreach_wake`, in `config/run-profiles.json`) runs like a
+  regular session: all built-in tools (`Read`, `Grep`, `Glob`, `Bash`, `Edit`, `Write`, `NotebookEdit`, `WebFetch`,
+  `WebSearch`, `TodoWrite`, `BashOutput`, `KillShell`, `Skill`, `Agent`, `Task`) and every tool of every
+  `.mcp.json` server except `db.raw_query`. `--tools` lists them and `--disallowedTools` is omitted for it (it is
+  still passed for every other profile). Only this profile may set `unrestricted_builtins: true`; `mail_drip` and
+  the rest keep the narrow set. Every call is screened by the tamper-protection denylist in
+  `.claude/hooks/tamper-guard.cjs` after the kill switch; operator subagents keep their own tool lists. What is
+  denied and what stays open: `docs/reference/safety-layers.md`, "The wake's full session and the tamper
+  guard". After changing the profile or the hook, regenerate `tests/fixtures/runner-golden.json` and fully
+  restart the scheduler daemon.
 - **Scripts** (only those in `package.json`): `doctor` (ok/warn/fail/skip checks, never prints
   secret values), `setup` (guided wizard, 13 resumable steps, needs a TTY; `-- --list`,
   `-- --step <id>`, `-- --redo`, `-- --mode agent|terminal`), `status -- limits|working|health|json`, `web` (dashboard on

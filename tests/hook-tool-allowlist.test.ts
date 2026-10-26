@@ -276,8 +276,9 @@ describe('CLI', () => {
     expect(r.status).toBe(0);
     expect(r.stdout.trim()).toBe('');
   });
-  it('denies Bash under the shipped outreach_wake profile', () => {
-    const r = run(['outreach_wake'], { tool_name: 'Bash', tool_input: { command: 'ls' } });
+  it('runs Bash through the tamper guard under the shipped outreach_wake profile', () => {
+    expect(run(['outreach_wake'], { tool_name: 'Bash', tool_input: { command: 'ls src' } }).stdout.trim()).toBe('');
+    const r = run(['outreach_wake'], { tool_name: 'Bash', tool_input: { command: 'cat .env' } });
     expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision).toBe('deny');
   });
 });

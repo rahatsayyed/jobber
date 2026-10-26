@@ -76,7 +76,7 @@ describe('hook spawn proof', () => {
   it('denies every tool while STOP exists and allows after removal', () => {
     mkdirSync(join(tmp, '.claude', 'hooks'), { recursive: true });
     mkdirSync(join(tmp, 'config'));
-    for (const f of ['tool-allowlist.cjs', 'kill-switch.cjs', 'block-outside-project.cjs']) {
+    for (const f of ['tool-allowlist.cjs', 'kill-switch.cjs', 'block-outside-project.cjs', 'tamper-guard.cjs']) {
       copyFileSync(join(ROOT, '.claude/hooks', f), join(tmp, '.claude/hooks', f));
     }
     copyFileSync(join(ROOT, 'config/run-profiles.json'), join(tmp, 'config/run-profiles.json'));

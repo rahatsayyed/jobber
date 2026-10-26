@@ -15,6 +15,8 @@ const ALLOWED_ROOTS = [PROJECT_ROOT, CLAUDE_HOME];
 
 function isAllowed(p) {
   const resolved = path.resolve(PROJECT_ROOT, p.replace(/^~(?=$|\/)/, HOME));
+  // The null device and the standard streams are not files: `2>/dev/null` must not be refused.
+  if (resolved === "/dev/null" || resolved === "/dev/stdout" || resolved === "/dev/stderr") return true;
   return ALLOWED_ROOTS.some(
     (root) => resolved === root || resolved.startsWith(root + path.sep)
   );
@@ -64,6 +66,33 @@ process.stdin.on("end", () => {
       return deny(
         `Blocked: ${toolName} targets "${filePath}", which is outside the project directory (${PROJECT_ROOT}) and outside ~/.claude.`
       );
+    }
+    return allow();
+  }
+
+  if (toolName === "Grep" || toolName === "Glob") {
+    // Grep/Glob search below `path` (default: the project). A path outside the project is refused; so is a glob that
+    // is absolute, starts with ~ or climbs with "..".
+    const base = toolInput.path;
+    if (base && !isAllowed(base)) {
+      return deny(
+        `Blocked: ${toolName} targets "${base}", which is outside the project directory (${PROJECT_ROOT}) and outside ~/.claude.`
+      );
+    }
+    for (const g of [toolInput.pattern, toolInput.glob]) {
+      if (toolName === "Glob" && typeof g === "string" && (/^[/~]/.test(g) || /(^|\/)\.\.(\/|$)/.test(g))) {
+        return deny(`Blocked: Glob pattern "${g}" escapes the project directory.`);
+      }
+      if (toolName === "Grep" && typeof g === "string" && g === toolInput.glob && (/^[/~]/.test(g) || /(^|\/)\.\.(\/|$)/.test(g))) {
+        return deny(`Blocked: Grep glob "${g}" escapes the project directory.`);
+      }
+    }
+    return allow();
+  }
+
+  if (toolName === "WebFetch") {
+    if (/^\s*file:/i.test(String(toolInput.url || ""))) {
+      return deny("Blocked: WebFetch of a file: URL is not allowed.");
     }
     return allow();
   }

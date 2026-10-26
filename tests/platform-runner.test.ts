@@ -22,8 +22,10 @@ const retired = (t: string): boolean => RETIRED_SERVERS.includes(/^mcp__([a-z0-9
 
 describe('shipped profiles', () => {
   it('never contain raw_query, wildcards or dangerous built-ins', () => {
-    for (const p of Object.values(profiles)) {
+    for (const [n, p] of Object.entries(profiles)) {
       expect(p.allow).not.toContain('mcp__db__raw_query');
+      // only the scheduled wake runs with the full built-in set (behind the tamper guard)
+      if (n === 'outreach_wake') continue;
       expect(p.allow.every((e) => /^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$/.test(e))).toBe(true);
       for (const b of ['Bash', 'Write', 'Edit', 'NotebookEdit', 'WebFetch', 'WebSearch']) {
         expect(p.builtin_tools).not.toContain(b);
@@ -80,7 +82,10 @@ describe('buildClaudeArgs', () => {
   });
   it('restricts built-ins and denies the dangerous ones explicitly', () => {
     expect(next('--tools')).toBe(wake.builtin_tools.join(','));
-    expect(next('--disallowedTools')).toBe('Bash,Write,Edit,NotebookEdit,WebFetch,WebSearch');
+    // the wake lists every dangerous built-in itself, so nothing is left to deny on the command line
+    expect(args).not.toContain('--disallowedTools');
+    const huntArgs = buildClaudeArgs('hunt', hunt, { settingsPath: 'debug/runner/hunt.settings.json' });
+    expect(huntArgs[huntArgs.indexOf('--disallowedTools') + 1]).toBe('Bash,Write,Edit,NotebookEdit,WebFetch,WebSearch');
   });
   it('puts the prompt nowhere in argv', () => {
     expect(args).not.toContain('run the hunt');
@@ -164,7 +169,24 @@ describe('renderSettings and renderPolicy', () => {
     expect(cmds).toContain('outreach_wake');
     expect(cmds).toContain('block-outside-project.cjs');
     expect(cmds).toContain('"onFailure":"block"');
-    expect(s.permissions.deny).toEqual(expect.arrayContaining(['Bash', 'Write', 'Edit']));
+    expect(s.permissions.deny).toEqual([]);
+    expect(JSON.stringify(s.hooks.PreToolUse)).toContain('Read|Write|Edit|NotebookEdit|Bash|Grep|Glob|WebFetch');
+    const h = renderSettings('hunt', hunt, { hookPath: '$CLAUDE_PROJECT_DIR/.claude/hooks/tool-allowlist.cjs', policyPath: 'debug/runner/hunt.policy.json' }) as any;
+    expect(h.permissions.deny).toEqual(expect.arrayContaining(['Bash', 'Write', 'Edit']));
+  });
+  it('renders the full built-in tools and the flag only for outreach_wake', () => {
+    const pol = renderPolicy('outreach_wake', wake) as any;
+    expect(pol.profiles.outreach_wake.unrestricted_builtins).toBe(true);
+    for (const t of ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch', 'TodoWrite']) expect(pol.profiles.outreach_wake.builtin_tools).toContain(t);
+    expect((renderPolicy('hunt', hunt) as any).profiles.hunt.unrestricted_builtins).toBeUndefined();
+    expect(profiles.mail_drip.builtin_tools).not.toContain('Bash');
+    expect(profiles.mail_drip.unrestricted_builtins).toBeUndefined();
+  });
+  it('lists every .mcp.json server and no db.raw_query in the wake', () => {
+    const mcp = JSON.parse(readFileSync('.mcp.json', 'utf8')) as { mcpServers: Record<string, unknown> };
+    const used = new Set(wake.allow.map((e) => e.split('__')[1]));
+    for (const srv of Object.keys(mcp.mcpServers)) expect(used.has(srv), srv).toBe(true);
+    expect(wake.allow).not.toContain('mcp__db__raw_query');
   });
   it('expands the permission set into allow in the rendered policy', () => {
     const pol = renderPolicy('hunt', hunt) as any;
@@ -193,6 +215,12 @@ describe('loadProfiles validation', () => {
   it('drops Bash entries from a resolved set', () => {
     const f = write('ro', { ...base, allow_from_permission_set: 'outreach_send' });
     expect(loadProfiles(f, 'config/permission-sets.json').hunt.allow.some((e) => e.startsWith('Bash'))).toBe(false);
+  });
+  it('refuses unrestricted_builtins on any profile but outreach_wake, and guarded built-ins without it', () => {
+    const base = { mcp_config: 'config/runner/mcp.none.json', allow: ['mcp__db__get_funnel'], env_mode: 'allowlist', env_keys: ['TERM'], max_turns: 5 };
+    expect(() => loadProfiles(write('u1', { ...base, builtin_tools: ['Bash'], unrestricted_builtins: true }), 'config/permission-sets.json')).toThrow(/only valid for outreach_wake/);
+    expect(() => loadProfiles(write('u2', { ...base, builtin_tools: ['Grep'] }), 'config/permission-sets.json')).toThrow(/not allowed/);
+    expect(() => loadProfiles(write('u3', { ...base, builtin_tools: ['Write'] }), 'config/permission-sets.json')).toThrow(/not allowed/);
   });
   it('rejects wildcard, Bash and bare-server explicit allow entries and bad max_turns', () => {
     for (const bad of ['mcp__db__*', 'Bash(ls)', 'mcp__db', 'mcp__db__raw_query']) {

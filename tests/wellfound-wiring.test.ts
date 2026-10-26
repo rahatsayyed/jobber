@@ -168,7 +168,7 @@ describe('permission sets, run profile, MCP registration and the kill-switch mat
     for (const n of ['arm_send', 'arm_apply', 'type']) expect(wake.screen_args, n).toContain(WF(n));
     expect(wake.env_keys).toContain('WELLFOUND_SCREENSHOT');
     expect(wake.env_prefixes).toContain('WELLFOUND_MAX_');
-    expect(wake.builtin_tools).not.toContain('Bash');
+    expect(wake.unrestricted_builtins).toBe(true); // the full session: Bash sits behind the tamper guard (tests/hook-tamper-guard.test.ts)
   });
 
   it('.mcp.json and the wake MCP config both start src/mcp/wellfound.ts', () => {

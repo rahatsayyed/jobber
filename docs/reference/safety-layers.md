@@ -11,9 +11,11 @@ gates and that the engine re-verifies against the live page. Layers, outermost f
    `config/run-profiles.json`: exact allowlisted tool names (wildcards rejected), allowlisted
    child environment, `--strict-mcp-config`, no bypassPermissions, no skip-permissions. Profile
    `outreach_wake` (scheduler, and `./run-hunt.sh` through it) has the platform (LinkedIn, Naukri,
-   Wellfound), pipeline, mail and applier tools plus the db tools they need, and `Skill`, `Agent` and
-   `Task`; no Bash, Read or web fetch. Its main thread holds the send tools (only subagents are narrowed by
-   the hook). Profile `mail_drip` (the mail drip lane, one run per email, wall and token budget only) holds
+   Wellfound), pipeline, mail and applier tools plus the db tools they need (since the owner decision of
+   2026-10-26 every tool of every `.mcp.json` server except `db.raw_query`), and the FULL built-in tool set
+   (`Skill`, `Agent`, `Task`, `Read`, `Grep`, `Glob`, `Bash`, `BashOutput`, `KillShell`, `Edit`, `Write`,
+   `NotebookEdit`, `WebFetch`, `WebSearch`, `TodoWrite`) behind the tamper guard described below. Its main
+   thread holds the send tools (only subagents are narrowed by the hook). Profile `mail_drip` (the mail drip lane, one run per email, wall and token budget only) holds
    only the `mail-operator` tools of `config/worker-tools.json` (the `db` and `gmail` servers, `Agent` and `Task`),
    an allowlisted environment without secrets and `gmail.send_email` as a screened argument surface; it is
    launched by the scheduler daemon, never by a session.
@@ -105,3 +107,71 @@ browserctl actions do check halts and the kill switch themselves, but the semant
 list over accessible names (English plus a short extension list), so a control it mis-reads is a
 residual risk; it fails closed for unknown dialog-footer and submit buttons. See layer 6 for the full
 kill-switch scope.
+
+## The wake's full session and the tamper guard
+
+Owner decision (2026-10-26, explicit): the scheduled wake (profile `outreach_wake`) runs like a regular
+Claude session so that it can diagnose and fix problems itself. It lists the full built-in tool set and every
+exact tool of every `.mcp.json` server (no wildcards; `db.raw_query` stays out because the loader refuses it;
+`apply_screenshot` stays out because that tool is off by default). The profile carries
+`unrestricted_builtins: true`, which `loadProfiles` accepts ONLY for the profile named `outreach_wake`, and the
+hook honours only when it is run with that profile name. `mail_drip` and every other profile are unchanged and
+still list no Bash, Edit, Write or web tool. The prompt block that tells the session what this is for is
+`DIAGNOSTIC_RULES` in `src/scheduler/prompt.ts` (guidance only; the hook is the enforcement).
+
+**What enforces it.** Every tool call still goes through `.claude/hooks/tool-allowlist.cjs`: kill switch first
+(`.jobber/STOP` and `JOBBER_KILL` deny every tool, Bash, Read, Write and the web tools included), then the
+profile allowlist, then, for Read, Grep, Glob, Bash, Edit, Write, NotebookEdit, WebFetch and WebSearch, the
+tamper guard `.claude/hooks/tamper-guard.cjs` (pure, fails closed, unit-tested in
+`tests/hook-tamper-guard.test.ts`). `block-outside-project.cjs` also runs on these tools (for this profile also
+on Grep, Glob and WebFetch `file:` urls) and now lets `/dev/null` through. Subagents stay narrowed by the
+`tools:` line of their own agent file: an operator, matcher, preparer and so on has no Bash, Read, Edit, Write or
+web tool, and a subagent type without a definition file (`general-purpose`, `Explore`) is denied everything.
+
+**Denied by the guard (everything else is allowed):**
+
+- Read or write of `.env` and `.env.*` (not `.env.example`), `secrets/`, `user-data/`, `.ccgram/`, `models/`,
+  `~/.ssh`, `~/.aws`, `~/.gnupg`; any path outside the project directory; symlinks are resolved, matching is case
+  insensitive, shell globs that can expand to these names are refused.
+- Write, edit, delete, move or redirect into `.jobber/STOP`, `.claude/hooks/`, `.claude/settings*.json`,
+  `.claude/agents/` (an agent file's `tools:` line is what narrows an operator), `.mcp.json`,
+  `config/permission-sets.json`, `config/run-profiles.json`, `config/runner/`, `config/worker-tools.json`, `.git/`,
+  `data.sqlite*`, and, as extra tamper protection added beyond the owner's list, `src/platform/runner.ts`,
+  `scripts/run-claude.ts|sh`, `src/safety/`, `src/outreach/limits.ts` and `src/setup/limitsCatalog.ts`
+  (drop any of these from `PROTECTED` in the guard if you want the session to be able to fix them).
+- Setting or editing `JOBBER_DRY_RUN`, `SEND_LIMIT_PER_RUN` or any `*MAX_*` cap: an assignment in a Write or Edit
+  of any file outside `tests/` and `docs/`, and any such name in a non-read-only Bash command.
+- Bash: `git push`, `git config`, `git -c`, `git reset --hard`, `git checkout --` and `git checkout .`,
+  `git restore`, `git clean`, remote edits; `rm -r` of anything outside a temp directory (the project is never a
+  temp directory); `npm run` of `jobber:control`, `permissions`, `linkedin:clear-halt`, `restore`, `backup`,
+  `auto-update`, `layout ... clear-halt`, and the same scripts run directly; `sqlite3` without `-readonly` (and
+  its dot-commands and ATTACH); `curl`, `wget`, `nc`, `ssh`, `scp`, `sftp`, `telnet`, `ftp` and `socat` to any
+  host but localhost; `tmux` other than list and capture commands; `eval`, heredocs and here-strings, command
+  substitution, variable expansion outside single quotes (it hides paths), unterminated quotes, anything it
+  cannot parse. `bash -c`, `env`, `sudo`, `xargs`, `timeout` and `find -exec` payloads are analysed too.
+- WebFetch: only http and https; not localhost, `.local`, `.internal`, private, loopback, link-local or metadata
+  ranges, IPv6 literals or numeric host tricks; no `file:`, no credentials in the url, no `.env`, `secrets/`,
+  `user-data/` or `data.sqlite` text in it. WebSearch is allowed unchanged.
+
+**Residual risk (honest).** An unattended session with Bash and Write that reads untrusted LinkedIn, Naukri,
+email, posting and web text is a prompt-injection exposure, and a denylist cannot close it:
+
+- Code that is written and then run (`Write` a script, then `npx tsx x.ts`, `node`, `python3`) can read
+  `.env`, open any socket or compute any path at run time; the guard only sees the command text and the file
+  content it is given. Inline interpreters (`node -e`, `python3 -c`) are only screened for protected literals.
+- Edits to `src/` or `scripts/` outside the protected list change what the next MCP server, hook helper or
+  scheduler run executes, so a hostile edit can weaken a gate (the owner reviews the diff; the session is told
+  to list every changed file and escalate; it is not allowed to commit or push, and `git push` is denied, but a
+  local commit is not).
+- Obfuscated paths (string concatenation inside a script, `base64 -d | sh`), secrets reachable through allowed
+  tools (the DB through the typed MCP tools, Gmail through every `mcp__gmail__*` tool including the delete tools,
+  which the owner asked to include), `tmux` list and capture output, and data exfiltration through a WebFetch
+  or WebSearch url or query that carries a few words of non-secret-shaped text all remain open.
+- DNS names that resolve to private addresses are not detected; a case-insensitive filesystem is handled by
+  lower-casing, a hard link is not.
+- The `*_MAX_*` and dry-run checks match the text, so `JOBBER_DRY_RUN` can still be changed by code that builds
+  the name at run time, and a limit in `src/setup/limitsCatalog.ts` is protected only because that file is on the
+  protected list.
+
+Treat the wake's output (its diff, its escalations) as something to review, keep `git status` clean-checked
+before the next run, and keep the kill switch within reach.
