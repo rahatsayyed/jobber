@@ -7,7 +7,7 @@
 //      (menu rows are the controls of region `menu`, set by the snapshot inside a role=menu list or an open popover)
 //   d) Pending or Withdraw in the top card           -> already_pending
 //   (More exists but no menu row was read: not open yet, or its rows were not found) -> check_more: click More, snapshot again
-import { isConnectControlName, isMenuConnectName, normName } from './guard.js';
+import { isConnectControlName, normName } from './guard.js';
 import type { RawNode, RawTree } from './snapshot.js';
 
 export type TopCardState = 'connectable' | 'via_more' | 'not_connectable' | 'already_pending' | 'check_more';
@@ -28,7 +28,7 @@ export function connectionStateOf(tree: RawTree): { state: TopCardState; reason:
   const menu = controls.filter((x) => x.region === 'menu');
   if (top.some((x) => PENDING_RE.test(normName(x.name)))) return { state: 'already_pending', reason: 'Pending or Withdraw in the top card' };
   if (top.some((x) => isConnectControlName(x.name))) return { state: 'connectable', reason: 'Connect in the top card' };
-  if (menu.some((x) => isMenuConnectName(x.name))) return { state: 'via_more', reason: 'Connect or Personalize invite in the More menu' };
+  if (menu.some((x) => isConnectControlName(x.name))) return { state: 'via_more', reason: 'Connect, Personalize invite or Invite <name> to connect in the More menu' };
   if (!top.some((x) => MORE_RE.test(normName(x.name)))) return { state: 'not_connectable', reason: 'no Connect and no More button in the top card' };
   if (menu.length > 0) return { state: 'not_connectable', reason: 'More menu has no Connect: 1st degree or follow only' };
   return { state: 'check_more', reason: 'no Connect in the top card: click the top-card More and snapshot again' };

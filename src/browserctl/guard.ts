@@ -75,9 +75,6 @@ const CONNECT_RE = new RegExp(`^(?:connect|personali[sz]e invite|${EXTRA_LABELS.
 /** Is this the name of a control that sends or opens a connection invitation (Connect, Invite X to connect, Personalize invite)? */
 export const isConnectControlName = (name: string | null | undefined): boolean => CONNECT_RE.test(normName(name));
 
-/** Is this the name of a More-menu Connect row: Connect or Personalize invite, never a named "Invite X to connect" (that is a card's button)? */
-export const isMenuConnectName = (name: string | null | undefined): boolean =>
-  isConnectControlName(name) && !/^invite .+ to connect$/.test(normName(name));
 
 /**
  * A Connect control on a LinkedIn page is legal only in the profile's own top card, or in the More menu opened from it
@@ -96,8 +93,8 @@ export function connectPlacementRefusal(
   const where = (): string => node.region ?? 'not a profile page';
   const fail = (why: string) => ({ code: 'connect_not_top_card' as const, reason: `${why}; only the top-card Connect (or Connect or Personalize invite in the More menu opened from it) may be clicked` });
   if (invited !== undefined && !sameFullName(pageName, invited)) return fail(`this Connect names another person than the profile (${where()})`);
-  // A menu row is a plain "Connect" or "Personalize invite", never a named invite: that shape is a card's button.
-  if (node.region === 'menu' && moreFromTopCard && invited === undefined) return null;
+  // A More-menu row (opened from the top card) reads "Connect", "Personalize invite" or, live, "Invite <profile name> to connect"; the name check above already ran.
+  if (node.region === 'menu' && moreFromTopCard) return null;
   if (node.region === 'topcard') return null;
   return fail(`this Connect is not in the profile's own top card (${where()})`);
 }

@@ -116,8 +116,10 @@ describe('connectPlacementRefusal (pure)', () => {
     expect(connectPlacementRefusal(n({ region: 'topcard', name: 'Invite Other Person to connect' }), false, P)?.code).toBe('connect_not_top_card');
     expect(connectPlacementRefusal(n({ region: 'topcard', name: 'Invite Jane Example to connect' }), false, '')?.code).toBe('connect_not_top_card');
     expect(connectPlacementRefusal(n({ region: 'topcard', name: 'Invite Jane Example, PhD to connect' }), false, P)).toBeNull();
-    // a named invite is never a menu row
-    expect(connectPlacementRefusal(n({ region: 'menu', name: 'Invite Jane Example to connect' }), true, P)?.code).toBe('connect_not_top_card');
+    // a menu row opened from the top card may read "Invite <own name> to connect" (live shape), another name never
+    expect(connectPlacementRefusal(n({ region: 'menu', name: 'Invite Jane Example to connect' }), true, P)).toBeNull();
+    expect(connectPlacementRefusal(n({ region: 'menu', name: 'Invite Other Person to connect' }), true, P)?.code).toBe('connect_not_top_card');
+    expect(connectPlacementRefusal(n({ region: 'menu', name: 'Invite Jane Example to connect' }), false, P)?.code).toBe('connect_not_top_card');
   });
   it('ignores controls that are not connect controls', () => {
     expect(connectPlacementRefusal(n({ name: 'Message', region: 'sidebar' }), false, P)).toBeNull();

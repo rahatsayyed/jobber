@@ -129,11 +129,24 @@ describe('engine: More click then the popover menu', () => {
     });
   }
 
-  it('a Connect row reads as via_more; a named "Invite X to connect" row does not', async () => {
+  it('a Connect row and the live "Invite <own name> to connect" row both read as via_more', async () => {
     const a = await openMore(popoverHtml([dRow('Connect'), dRow('Save to PDF')]));
     expect(a.opened.state).toMatch(/connect_state: via_more/);
-    const b = await openMore(popoverHtml([dRow('Invite Other Person to connect'), dRow('Save to PDF')]));
-    expect(b.opened.state).toMatch(/connect_state: not_connectable/);
+    const b = await openMore(popoverHtml([dRow(`Invite ${NAME} to connect`), dRow('Save to PDF')]));
+    expect(b.opened.state).toMatch(/connect_state: via_more/);
+  });
+
+  it('a menu row that invites another person than the profile is refused', async () => {
+    const { w, opened } = await openMore(popoverHtml([dRow('Invite Other Person to connect'), dRow('Save to PDF')]));
+    await w.arm({ kind: 'connect_note', profile_url: URL_, text: NOTE });
+    expect((await w.engine.click(refOf(opened.state!, 'menuitem', 'Invite Other Person to connect'))).code).toBe('connect_not_top_card');
+  });
+
+  it('the live "Invite <own name> to connect" menu row opens the dialog when armed', async () => {
+    const { w, opened } = await openMore(popoverHtml([dRow(`Invite ${NAME} to connect`), dRow('Save to PDF')]));
+    expect((await w.arm({ kind: 'connect_note', profile_url: URL_, text: NOTE })).code).toBe('armed');
+    w.page.onAct = (what) => { if (what.startsWith('click')) w.page.setHtml(page({ dialog: inviteDialog() })); };
+    expect(await w.engine.click(refOf(opened.state!, 'menuitem', `Invite ${NAME} to connect`))).toMatchObject({ ok: true, code: 'dialog_opened' });
   });
 
   it('More clicked and the popover never shows: check_more with a more_menu_missing diag, never not_connectable', async () => {
