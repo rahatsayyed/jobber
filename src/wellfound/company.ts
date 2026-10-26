@@ -33,6 +33,21 @@ const NAME_MAX = 100;
 
 const str = (v: unknown): string => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '');
 
+/** Image alt text leaks into anchors ("Distill company logo", "KOKO Networks logo", "Logo of Acme"): strip it. */
+export function cleanCompanyName(v: unknown): string {
+  let s = str(v);
+  for (let i = 0; i < 3; i++) {
+    const t = s
+      .replace(/(?:['’]s)?\s+(?:company\s+|brand\s+)?(?:logo|icon|avatar|image|photo)\s*$/i, '')
+      .replace(/^(?:logo|icon|image)\s+of\s+/i, '')
+      .replace(/^(?:company\s+)?(?:logo|icon)\s*[:-]\s*/i, '')
+      .trim();
+    if (t === s) break;
+    s = t;
+  }
+  return s;
+}
+
 function validName(s: string): boolean {
   if (!s || s.length < 2 || s.length > 80) return false;
   if (GENERIC_TEXT.test(s)) return false;
@@ -90,7 +105,7 @@ export function companyFromJsonLd(blobs: unknown): string {
   };
   for (const b of list) {
     if (typeof b !== 'string' || b.length > 200000) continue;
-    try { const r = visit(JSON.parse(b), 0); if (r) return r; } catch { /* not JSON */ }
+    try { const r = cleanCompanyName(visit(JSON.parse(b), 0)); if (validName(r)) return r; } catch { /* not JSON */ }
   }
   return '';
 }
@@ -100,16 +115,16 @@ export function pickCompany(h: CompanyHints | null | undefined): PickedCompany {
   if (!h || typeof h !== 'object') return { name: '', from: 'none' };
   const links = (Array.isArray(h.links) ? h.links : []).slice(0, 8).map((l) => {
     const o = (l && typeof l === 'object' ? l : {}) as { href?: unknown; text?: unknown };
-    return { link: companyLinkOf(o.href), text: str(o.text) };
+    return { link: companyLinkOf(o.href), text: cleanCompanyName(o.text) };
   }).filter((l) => l.link);
   const link = links[0]?.link?.url;
   const withLink = (name: string, from: CompanyFrom): PickedCompany => ({ name, from, ...(link ? { link } : {}) });
-  const direct = str(h.company);
+  const direct = cleanCompanyName(h.company);
   if (validName(direct)) return withLink(direct.slice(0, NAME_MAX), 'selector');
   for (const l of links) if (validName(l.text)) return withLink(l.text.slice(0, NAME_MAX), 'link_text');
   for (const l of links) { const n = companyFromSlug(l.link!.slug); if (n) return withLink(n, 'link_slug'); }
-  const t = companyFromTitle(h.pageTitle);
-  if (t) return withLink(t, 'title');
+  const t = cleanCompanyName(companyFromTitle(h.pageTitle));
+  if (validName(t)) return withLink(t, 'title');
   const j = companyFromJsonLd(h.jsonld);
   if (j) return withLink(j, 'jsonld');
   return { name: '', from: 'none' };

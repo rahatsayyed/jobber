@@ -102,7 +102,7 @@ export function channelsFor(job: ChannelJob, ctx: ChannelContext = {}): ChannelV
     out.push(no('apply', isDiscoverOnlySource(source) ? 'discover_only_source' : 'apply_tier:none'));
   } else {
     const tier = applyTierFor(job.apply_url);
-    const ok = tier === 'ats_form' || tier === 'wellfound_agent' || (tier === 'linkedin_easy' && ctx.linkedinEasy === true) || (tier === 'unknown_host' && ctx.allowUnknownHosts === true);
+    const ok = tier === 'ats_form' || tier === 'naukri_agent' || tier === 'wellfound_agent' || (tier === 'linkedin_easy' && ctx.linkedinEasy === true) || (tier === 'unknown_host' && ctx.allowUnknownHosts === true);
     out.push(ok ? { channel: 'apply', eligible: true } : no('apply', `apply_tier:${tier}`));
   }
   return out;

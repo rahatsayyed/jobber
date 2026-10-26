@@ -57,6 +57,19 @@ export function releaseNoDialog(db: Db, touchId: number, now: Date): void {
   ).run(since, at, touchId);
 }
 
+/** A touch still 'sending' after this long never got a confirmation: it is treated as unconfirmed. */
+export const STALE_SENDING_MS = 30 * 60 * 1000;
+
+/**
+ * Moves touches left 'sending' for more than STALE_SENDING_MS to 'unconfirmed' (the click may or may not have gone
+ * out: never re-sent, the owner checks). Only that person stays blocked; nobody else at the company is affected.
+ * Returns rows moved.
+ */
+export function markStaleSending(db: Db, now: Date): number {
+  const cutoff = new Date(now.getTime() - STALE_SENDING_MS).toISOString();
+  return db.prepare("UPDATE touches SET status = 'unconfirmed' WHERE status = 'sending' AND created_at < ?").run(cutoff).changes;
+}
+
 export function idempotencyKey(kind: string, profileKey: string, text: string): string {
   return `li:${kind}:${profileKey}:${createHash('sha256').update(text).digest('hex').slice(0, 16)}`;
 }

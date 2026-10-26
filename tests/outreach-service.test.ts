@@ -122,7 +122,7 @@ describe('listDueTouches', () => {
 
 describe('nextContactsForCompany skips blocked people', () => {
   const np = (db: D, k: string) =>
-    upsertPerson(db, { platform: 'linkedin', profileKey: `linkedin.com/in/${k}`, company: 'Acme Inc', category: 'recruiter' });
+    upsertPerson(db, { platform: 'linkedin', profileKey: `linkedin.com/in/${k}`, company: 'Acme Inc', category: 'recruiter', employerMatch: 1 });
   const tch = (db: D, id: number, status: string) =>
     db.prepare("INSERT INTO touches (person_id, kind, idempotency_key, status) VALUES (?, 'connect', ?, ?)").run(id, `k${id}${status}`, status);
   it('skips unconfirmed and in_progress people and returns the next eligible ones', () => {
@@ -149,8 +149,8 @@ describe('nextContactsForCompany skips blocked people', () => {
 describe('nextContactsForCompany', () => {
   it('returns new people with profile_url and prefers connected', () => {
     const db = openDb(':memory:');
-    const a = upsertPerson(db, { platform: 'linkedin', profileKey: 'linkedin.com/in/a', company: 'Acme Inc', category: 'recruiter' });
-    const b = upsertPerson(db, { platform: 'linkedin', profileKey: 'linkedin.com/in/b', company: 'Acme Inc', category: 'recruiter' });
+    const a = upsertPerson(db, { platform: 'linkedin', profileKey: 'linkedin.com/in/a', company: 'Acme Inc', category: 'recruiter', employerMatch: 1 });
+    const b = upsertPerson(db, { platform: 'linkedin', profileKey: 'linkedin.com/in/b', company: 'Acme Inc', category: 'recruiter', employerMatch: 1 });
     accept(db, 'b');
     const r = nextContactsForCompany(db, { companyContactLimit: 1 }, 'linkedin', 'Acme Inc');
     expect(r).toHaveLength(1);

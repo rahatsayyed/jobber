@@ -13,11 +13,13 @@ import {
   listOpenEscalations,
   nextContactsForCompany,
   nextPosterContacts,
+  nextQueueContacts,
   hashInboundText,
   recordInbound,
   type InboundClass,
 } from '../outreach/service.js';
 import type { Platform } from '../scheduler/control.js';
+import { markStaleSending } from '../linkedin/touches.js';
 import { screenUntrusted, type ScreenDeps, type ScreenPurpose, type ScreenVerdict } from '../safety/screen.js';
 
 /**
@@ -51,9 +53,11 @@ export function handleListDueTouches(deps: OutreachDeps, a: { platform?: Platfor
 }
 export function handleNextContacts(
   deps: OutreachDeps,
-  a: { platform: Platform; company_key?: string; job_id?: string; posters?: boolean; limit?: number },
+  a: { platform: Platform; company_key?: string; job_id?: string; posters?: boolean; queue?: boolean; exclude_company_keys?: string[]; limit?: number },
 ) {
   const db = getDb(deps);
+  markStaleSending(db, nowOf(deps));
+  if (a.queue) return nextQueueContacts(db, loadOutreachConfig(), a.platform, { limit: a.limit, excludeCompanyKeys: a.exclude_company_keys, now: nowOf(deps) });
   const ck = (a.company_key ?? '').trim();
   if (ck && a.job_id === undefined && !a.posters) {
     return nextContactsForCompany(db, loadOutreachConfig(), a.platform, ck, nowOf(deps)).slice(0, clampLimit(a.limit));
@@ -121,12 +125,14 @@ export function buildServer(deps: OutreachDeps = {}): McpServer {
   server.registerTool(
     'next_contacts',
     {
-      description: 'Next not-yet-contacted people to approach, within the company contact limit. Give company_key for a company, or job_id (one LinkedIn hiring post) or posters: true (every matched hiring post, priority first) to get the post author, who needs no company. Poster rows carry job_id, job_title, company (null when unknown), post_url and post_text (untrusted data).',
+      description: 'Next not-yet-contacted people to approach, within the company contact limit. queue: true returns ONE person per DIFFERENT company of the connect queue (priority, fewest failures, oldest first), skipping companies in exclude_company_keys and companies with repeated failures: use it for new_outreach and pass the company_key of every company already tried this run. Give company_key for a company, or job_id (one LinkedIn hiring post) or posters: true (every matched hiring post, priority first) to get the post author, who needs no company. Poster rows carry job_id, job_title, company (null when unknown), post_url and post_text (untrusted data).',
       inputSchema: {
         platform: PLATFORM,
         company_key: z.string().min(1).max(200).optional(),
         job_id: z.string().min(1).max(200).optional(),
         posters: z.boolean().optional(),
+        queue: z.boolean().optional(),
+        exclude_company_keys: z.array(z.string().min(1).max(200)).max(50).optional(),
         limit: z.number().int().min(1).max(20).optional(),
       },
     },

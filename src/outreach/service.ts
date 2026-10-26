@@ -16,7 +16,8 @@ import {
   type Candidate,
 } from './people.js';
 import type { Tuning } from './tuning.js';
-import { NO_DIALOG_MAX_ATTEMPTS, noDialogAttempts, pauseContact } from '../linkedin/touches.js';
+import { NO_DIALOG_MAX_ATTEMPTS, markStaleSending, noDialogAttempts, pauseContact } from '../linkedin/touches.js';
+import { employerGate } from '../linkedin/employer.js';
 import { gateInput } from '../safety/inputGate.js';
 import type { Platform } from '../scheduler/control.js';
 
@@ -99,18 +100,22 @@ export function nextContactsForCompany(
   // Never hand the operator someone arm will refuse: an unresolved touch (sending, unconfirmed) blocks the
   // person, and so does a spent no_dialog retry limit. The next eligible people are returned instead.
   const blockedStmt = db.prepare(
-    "SELECT 1 AS hit FROM touches WHERE person_id = ? AND status IN ('sending','unconfirmed') LIMIT 1",
+    "SELECT 1 AS hit FROM touches WHERE person_id = ? AND (status IN ('sending','unconfirmed') OR (status = 'sent' AND kind = 'connect')) LIMIT 1",
   );
   const allRows = db
     .prepare(
-      `SELECT p.id, p.profile_key, p.name, p.category, s.cycle_started_at
+      `SELECT p.id, p.profile_key, p.name, p.category, s.cycle_started_at, p.headline, p.company, p.employer_match
          FROM people p JOIN contact_state s ON s.person_id = p.id
         WHERE p.platform = ? AND p.company_key = ? AND s.stage = 'new' AND s.paused_reason IS NULL
         ORDER BY p.id`,
     )
-    .all(platform, key) as { id: number; profile_key: string; name: string | null; category: Category; cycle_started_at: string | null }[];
+    .all(platform, key) as { id: number; profile_key: string; name: string | null; category: Category; cycle_started_at: string | null; headline: string | null; company: string | null; employer_match: number | null }[];
+  // A LinkedIn person whose employer does not show as the company is refused by arm every time: never offer them.
   const rows = allRows.filter(
-    (r) => blockedStmt.get(r.id) === undefined && noDialogAttempts(db, r.id, now) < NO_DIALOG_MAX_ATTEMPTS,
+    (r) =>
+      blockedStmt.get(r.id) === undefined &&
+      noDialogAttempts(db, r.id, now) < NO_DIALOG_MAX_ATTEMPTS &&
+      (platform !== 'linkedin' || employerGate(r).ok),
   );
   const connectedKeys = loadConnectedKeys(db);
   const msgStmt = db.prepare(
@@ -132,6 +137,106 @@ export function nextContactsForCompany(
     activeContactCount(db, platform, key, false),
   );
   return picked.map((c) => ({ ...c, ...meta.get(c.personId)! }));
+}
+
+/** A company with this many failed people (no_dialog, failed, refused, unconfirmed, sending, employer mismatch) in the window is skipped. */
+export const MAX_COMPANY_FAILURES = 3;
+export const COMPANY_FAILURE_WINDOW_MS = 14 * 24 * 3600 * 1000;
+const PERSON_FAIL_PAUSES = ['employer_mismatch', 'follow_only', 'profile_mismatch'];
+
+/** Distinct people of the company whose connect failed or was left unresolved, or who were paused as a mismatch, in the window. */
+export function companyFailureCount(db: Db, platform: string, companyKey: string, now: Date): number {
+  const since = new Date(now.getTime() - COMPANY_FAILURE_WINDOW_MS).toISOString();
+  const a = db
+    .prepare(
+      `SELECT COUNT(DISTINCT t.person_id) AS n FROM touches t JOIN people p ON p.id = t.person_id
+        WHERE p.platform = ? AND p.company_key = ? AND t.kind = 'connect'
+          AND t.status IN ('no_dialog','failed','refused','unconfirmed','sending') AND t.created_at >= ?`,
+    )
+    .get(platform, companyKey, since) as { n: number };
+  const b = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM people p JOIN contact_state s ON s.person_id = p.id
+        WHERE p.platform = ? AND p.company_key = ? AND s.paused_reason IN (${PERSON_FAIL_PAUSES.map(() => '?').join(',')})
+          AND s.updated_at >= ?`,
+    )
+    .get(platform, companyKey, ...PERSON_FAIL_PAUSES, since) as { n: number };
+  return a.n + b.n;
+}
+
+export interface QueueContact extends ContactCandidate {
+  queue_id: number;
+  job_id: string;
+  job_title: string | null;
+  company: string;
+  company_key: string;
+  priority: boolean;
+  failures: number;
+}
+
+/**
+ * The LinkedIn new-outreach walk: ONE person per DIFFERENT company of the connect queue, so a quota of k reaches up to k
+ * companies instead of retrying the same one. Queue rows of live jobs (not excluded, not skipped) with a connect profile,
+ * priority jobs first, then companies with the fewest recent failures, then the oldest queue row (score breaks ties).
+ * A company with MAX_COMPANY_FAILURES failed people, a paused company, `excludeCompanyKeys` (tried this wake) or no
+ * eligible person is skipped. The person is the row's own profile when eligible, else the company's first eligible
+ * person (nextContactsForCompany: per-company limit, no blocked, employer-checked people).
+ */
+export function nextQueueContacts(
+  db: Db,
+  cfg: Pick<OutreachConfig, 'companyContactLimit'>,
+  platform: Platform,
+  opts: { limit?: number; excludeCompanyKeys?: string[]; now?: Date } = {},
+): QueueContact[] {
+  if (platform !== 'linkedin') return [];
+  const now = opts.now ?? new Date();
+  markStaleSending(db, now);
+  const exclude = new Set((opts.excludeCompanyKeys ?? []).map((k) => normalizeCompany(k)));
+  const rows = db
+    .prepare(
+      `SELECT q.id AS queue_id, q.job_id, q.connect_profile_url, q.connect_company, q.created_at AS q_created,
+              j.title AS job_title, j.company AS job_company, COALESCE(j.priority, 0) AS priority, COALESCE(j.score, 0) AS score
+         FROM outreach_queue q JOIN jobs j ON j.id = q.job_id
+        WHERE q.connect_profile_url IS NOT NULL AND q.connect_profile_url != ''
+          AND COALESCE(q.status, 'queued') = 'queued' AND (q.connect_status IS NULL OR q.connect_status = '')
+          AND j.excluded_reason IS NULL`,
+    )
+    .all() as { queue_id: number; job_id: string; connect_profile_url: string; connect_company: string | null; q_created: string | null; job_title: string | null; job_company: string | null; priority: number; score: number }[];
+  type Entry = { row: (typeof rows)[number]; key: string; company: string; failures: number };
+  const byCompany = new Map<string, Entry>();
+  for (const r of rows) {
+    const company = (r.job_company ?? '').trim() || (r.connect_company ?? '').trim();
+    const key = normalizeCompany(company);
+    if (!key || exclude.has(key)) continue;
+    const cur = byCompany.get(key);
+    const better = !cur || r.priority > cur.row.priority || (r.priority === cur.row.priority && String(r.q_created) < String(cur.row.q_created));
+    if (better) byCompany.set(key, { row: r, key, company, failures: 0 });
+  }
+  const entries = [...byCompany.values()];
+  for (const e of entries) e.failures = companyFailureCount(db, platform, e.key, now);
+  entries.sort(
+    (a, b) =>
+      b.row.priority - a.row.priority ||
+      a.failures - b.failures ||
+      String(a.row.q_created).localeCompare(String(b.row.q_created)) ||
+      b.row.score - a.row.score ||
+      a.row.queue_id - b.row.queue_id,
+  );
+  const limit = clampLimit(opts.limit);
+  const out: QueueContact[] = [];
+  for (const e of entries) {
+    if (out.length >= limit) break;
+    if (e.failures >= MAX_COMPANY_FAILURES) continue;
+    const eligible = nextContactsForCompany(db, cfg, platform, e.key, now);
+    if (eligible.length === 0) continue;
+    const want = normalizeProfileKey(e.row.connect_profile_url);
+    const pick = eligible.find((c) => c.profile_url && normalizeProfileKey(c.profile_url) === want) ?? eligible[0];
+    out.push({
+      ...pick, queue_id: e.row.queue_id, job_id: e.row.job_id, job_title: e.row.job_title, company: e.company,
+      company_key: e.key, priority: e.row.priority > 0, failures: e.failures,
+    });
+  }
+  return out;
 }
 
 export interface PosterContact extends ContactCandidate {
@@ -278,6 +383,13 @@ export function addEscalation(
   if (!ESC_PLATFORMS.includes(e.platform)) throw new Error('invalid platform');
   if (e.threadRef !== undefined && !THREAD_RE.test(e.threadRef)) throw new Error('invalid thread_ref');
   requirePerson(db, e.personId);
+  // The operator found the person is not who or where the record says (live page employer, wrong profile, follow-only):
+  // pause them so next_contacts never offers them again.
+  if (e.personId !== undefined) {
+    const r = String(e.reason ?? '').toLowerCase();
+    const pause = /follow[_ ]only/.test(r) ? 'follow_only' : /employer|mismatch/.test(r) ? 'employer_mismatch' : null;
+    if (pause) pauseContact(db, e.personId, pause, now);
+  }
   let reason = gateText(e.reason ?? '', 200).text;
   let detail: string | null = null;
   if (e.detail !== undefined && e.detail !== null) {

@@ -68,4 +68,10 @@ describe('channelsFor', () => {
     expect(v('remotive', 'https://acme.example/jobs/1', { allowUnknownHosts: true }).eligible).toBe(true);
     expect(v('remotive', 'https://x.myworkdayjobs.com/a').reason).toBe('apply_tier:account_gated');
   });
+  it('a Naukri job page is apply-capable (naukri_arm_apply), like Wellfound', () => {
+    const v = (src: string, url: string) => by(channelsFor({ source: src, company: 'A', apply_url: url })).apply;
+    expect(applyTierFor('https://www.naukri.com/job-listings-react-dev-acme-123')).toBe('naukri_agent');
+    expect(v('naukri', 'https://www.naukri.com/job-listings-react-dev-acme-123')).toEqual({ channel: 'apply', eligible: true });
+    expect(v('wellfound', 'https://wellfound.com/jobs/123-react').eligible).toBe(true);
+  });
 });
