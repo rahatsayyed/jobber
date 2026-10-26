@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { ATS_REGISTRY } from '../apply/registry.js';
-import { atsCoverageSchema, enqueueOutreachClassifiedResult,getCalibrationRows, listJobs, listUnscoredJobs, listSentEmails, listQueuedOutreach, listExcludedQueuedOutreach, markExcluded, openDb, recordEmailSent, recordOutcomeChecked, releaseEmailSend, setEmailThread, sweepDeadlines, unexcludeJob, updateOutreachStatus } from '../db.js';
+import { atsCoverageSchema, enqueueOutreachClassifiedResult,getCalibrationRows, listJobs, listUnscoredJobs, listSentEmails, listQueuedOutreach, listQueuedOutreachCompact, QUEUE_COMPACT_MAX_LIMIT, listExcludedQueuedOutreach, markExcluded, openDb, recordEmailSent, recordOutcomeChecked, releaseEmailSend, setEmailThread, sweepDeadlines, unexcludeJob, updateOutreachStatus } from '../db.js';
 import { dbPath } from '../dbPath.js';
 import { handleSaveMatchResults, matchResultsInputShape } from '../matchTool.js';
 import { REPLY_WINDOW_DAYS } from '../replies.js';
@@ -325,12 +325,19 @@ server.registerTool('get_patterns', {
 server.registerTool(
   'list_queued_outreach',
   {
-    description: 'List every outreach_queue row still pending (status=queued), oldest first. Used by the sender stage to get its full backlog, including anything left over from a previous run that hit a rate cap.',
-    inputSchema: {},
+    description: 'List outreach_queue rows still pending (status=queued), priority jobs first, then oldest first. Without arguments: the FULL rows (email bodies, notes), used only by the mail-operator for its backlog. With fields "apply": a compact page {total, offset, limit, rows:[{id, job_id, title, company, apply_platform, apply_tier, apply_url, apply_status, status}]} (limit default 10, max 50; page on with offset until offset+limit >= total); only_pending_apply keeps rows that still have an apply to do. The apply, LinkedIn and Naukri operators always use this compact form.',
+    inputSchema: {
+      fields: z.literal('apply').optional(),
+      limit: z.number().int().min(1).max(QUEUE_COMPACT_MAX_LIMIT).optional(),
+      offset: z.number().int().min(0).optional(),
+      only_pending_apply: z.boolean().optional(),
+    },
   },
-  async () => {
-    const rows = listQueuedOutreach(db);
-    return { content: [{ type: 'text', text: JSON.stringify(rows) }] };
+  async ({ fields, limit, offset, only_pending_apply }) => {
+    const out = fields === 'apply'
+      ? listQueuedOutreachCompact(db, { limit, offset, onlyPendingApply: only_pending_apply })
+      : listQueuedOutreach(db);
+    return { content: [{ type: 'text', text: JSON.stringify(out) }] };
   }
 );
 

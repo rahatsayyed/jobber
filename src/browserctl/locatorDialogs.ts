@@ -5,13 +5,12 @@
 // ordinals >= LOCATOR_BASE. Everything above it (refs and epochs, the guard, re-describe at click, the commit
 // path, the armed intent checks) sees the same node shape as before and is unchanged. Nodes are mapped to
 // locator descriptors (dialog scope, role, nth), never to data-bc ordinals. The model never passes a selector.
-// Applies only when the walker saw fewer dialogs than the locators did (the walker wins when it sees them).
+// Applies only when the walker saw fewer dialogs with controls than the locators saw dialogs (the walker wins when it sees them).
 import type { BcPage } from './driver.js';
 import type { PageDiag } from './diag.js';
-import { MAX_NAME, MAX_TEXT, MAX_VALUE, type BcRole, type LiveNode, type RawNode, type RawTree } from './snapshot.js';
+import { LOCATOR_BASE, MAX_NAME, MAX_TEXT, MAX_VALUE, type BcRole, type LiveNode, type RawNode, type RawTree } from './snapshot.js';
 
-/** Ordinals of locator nodes start here (walker ordinals stay below MAX_NODES). */
-export const LOCATOR_BASE = 60000;
+export { LOCATOR_BASE };
 const DIALOG_STRIDE = 1000;
 const MAX_DIALOGS = 3;
 const MAX_MENUS = 3;
@@ -133,7 +132,10 @@ export class LocatorDialogLayer {
     let found: { dk: DialogKindRole; di: number }[];
     try { found = await this.count(); } catch { return empty; }
     if (found.length === 0) return empty;
-    const walkerDialogs = walker.nodes.filter((x) => x.role === 'dialog').length;
+    // A walker dialog counts only when it holds controls: a dialog shell whose content sits in a closed shadow root is
+    // still read through locators.
+    const walkerDialogs = walker.nodes.filter((d) => d.role === 'dialog'
+      && walker.nodes.some((x) => x.dialog === d.n && (x.role === 'button' || x.role === 'link' || x.role === 'textbox'))).length;
     if (walkerDialogs >= found.length) return { ...empty, locatorDialogs: found.length };
     const nodes: RawNode[] = [];
     const buttons: string[] = [];

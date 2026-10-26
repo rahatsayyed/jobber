@@ -43,6 +43,8 @@ export const MAX_NAME = 200;
 export const MAX_TEXT = 300;
 export const MAX_VALUE = 5000;
 export const MAX_RENDER_CHARS = 6000;
+/** Ordinals of nodes read through Patchright locators (dialogs and menus in a closed shadow root, see locatorDialogs.ts) start here. */
+export const LOCATOR_BASE = 60000;
 
 // ---- shared visibility rules cut out of the LinkedIn snapshot script ----
 function cutVis(): string {
@@ -557,16 +559,19 @@ export function renderTree(tree: RawTree, epoch: number, maxChars = MAX_RENDER_C
   const total = (ls: string[]) => head.join('\n').length + ls.reduce((a, l) => a + l.length + 1, 0);
   const keep = lines.map(() => true);
   if (total(lines) > maxChars) {
-    // Over budget: controls and dialog content rank first. Plain text next to a control (a card's company,
-    // location) ranks second, other text last. Drop the lowest rank from the end of the page backwards until it fits.
+    // Over budget: dialog content and locator-read menus rank first (they sit at the END of the tree, and an open
+    // dialog is what the operator must act on). Plain text next to a control (a card's company, location) ranks
+    // second, other text last, and page controls only after all text is gone. Drop the lowest rank from the end of
+    // the page backwards until it fits, so the top of the page and every dialog control stay.
     const nodes = tree.nodes;
     const rank = nodes.map((nd, i) => {
-      if (nd.role !== 'text' || nd.dialog !== undefined) return 0;
+      if (nd.dialog !== undefined || nd.role === 'dialog' || nd.n >= LOCATOR_BASE) return 0;
+      if (nd.role !== 'text') return 3;
       const near = [i - 2, i - 1, i + 1, i + 2].some((j) => nodes[j] !== undefined && nodes[j]!.role !== 'text');
       return near ? 1 : 2;
     });
     let size = total(lines);
-    for (const r of [2, 1]) {
+    for (const r of [2, 1, 3]) {
       for (let i = lines.length - 1; i >= 0 && size > maxChars; i--) {
         if (rank[i] === r && keep[i]) { keep[i] = false; size -= lines[i]!.length + 1; }
       }
@@ -574,7 +579,7 @@ export function renderTree(tree: RawTree, epoch: number, maxChars = MAX_RENDER_C
   }
   const dropped = keep.filter((k) => !k).length;
   const out = [...head, ...lines.filter((_, i) => keep[i])];
-  if (dropped) out.push(`(${dropped} text lines omitted)`);
+  if (dropped) out.push(`(${dropped} lines omitted)`);
   if (tree.truncated) out.push('(page truncated)');
   let text = out.join('\n');
   if (text.length > maxChars + 60) text = text.slice(0, maxChars) + '\n(truncated)';

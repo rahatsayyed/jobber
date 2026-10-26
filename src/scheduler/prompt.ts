@@ -58,7 +58,7 @@ function orderLines(order: Step[], pipeline?: PipelinePromptInput, only?: Set<nu
     else if (s.operator === 'source-operator') L.push(`${at} Dispatch \`source-operator\` with task discover_agent quota ${s.quota} (queued source tasks only; work every \`manual_url\` task first, those are owner-submitted pages).`);
     else if (s.operator === 'pipeline') L.push(`${at} Pipeline stage (${s.quota} unscored jobs waiting): see the pipeline instructions below.`);
     else if (s.operator === 'mail-operator') L.push(`${at} Dispatch \`mail-operator\` with task mail quota ${s.quota} (queued emails and email follow-ups).`);
-    else if (s.operator === 'apply-operator') L.push(`${at} Dispatch \`apply-operator\` with task apply ${quotaText(s)} (first read your own queue with db.list_queued_outreach: the pipeline may have just added rows; report done 0 if nothing is ready).${chunkRule(s)}`);
+    else if (s.operator === 'apply-operator') L.push(`${at} Dispatch \`apply-operator\` with task apply ${quotaText(s)} (first read your own queue with db.list_queued_outreach {fields: "apply", only_pending_apply: true}: the pipeline may have just added rows; report done 0 if nothing is ready).${chunkRule(s)}`);
     else L.push(`${at} Dispatch \`${s.operator}\` for platform ${s.platform} with task: ${s.kind} ${quotaText(s)}${searchNames(s.platform, s.kind, s.searches)}${s.kind === 'new_outreach' ? ' (first read your own queue with outreach.next_contacts({platform, queue: true, limit}): it returns one person per DIFFERENT company, so spend the quota across different companies and never retry a company that failed or mismatched in this run; the pipeline may have just added people; report done 0 if nothing is ready)' : ''}${s.kind === 'followups' ? ' (first read your own queue with outreach.list_due_touches({platform, limit}); report done 0 if nothing is due)' : ''}${s.kind === 'manual_url' ? ` (owner-submitted job page(s), priority: call the typed tool \`${s.platform}_manual_job\` once per page, up to the quota; it picks the next queued page in code, so no URL is passed to you; stop when it reports remaining 0 or any status other than ok)` : ''}.${chunkRule(s)}`);
   });
   if (order.some((s, n) => (!only || only.has(n)) && (s.operator === 'pipeline' || s.operator === 'mail-operator')) && pipeline) L.push(...pipelineLines(pipeline));
@@ -113,7 +113,7 @@ export function buildContinuationPrompt(i: {
   lines.push(...DIAGNOSTIC_RULES);
   lines.push(...AWAIT_RULES);
   lines.push(
-    'Before you repeat any work, check the state first (the queue with `db.list_queued_outreach`, waiting jobs with `db.list_unscored_jobs`, people with `outreach.next_contacts`, as the step says) and do only what is still pending; when you are unsure whether a step ran, treat it as remaining but look at that state first.',
+    'Before you repeat any work, check the state first (the queue with `db.list_queued_outreach` (compact form `fields: "apply"`), waiting jobs with `db.list_unscored_jobs`, people with `outreach.next_contacts`, as the step says) and do only what is still pending; when you are unsure whether a step ran, treat it as remaining but look at that state first.',
   );
   lines.push(
     'Never repeat a send, a connect, a message or an apply: the counters, the touch reservation and the typed tools refuse a duplicate, and a refusal is final for that item.',

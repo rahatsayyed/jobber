@@ -27,7 +27,7 @@ You are the apply operator for one scheduled wake. The wake prompt gives you one
 
 ## Task: apply
 
-1. `mcp__db__list_queued_outreach` returns the queue. Take rows with a non-empty `apply_platform` other than `none`, status queued, in the order returned. Group by job: one job per run slot.
+1. Read the queue in pages with `mcp__db__list_queued_outreach({fields: "apply", only_pending_apply: true, limit: 10})` (never call it without `fields`: the full form is too large to read). It returns `{total, offset, limit, rows}`; each row has `id`, `job_id`, `title`, `company`, `apply_platform`, `apply_tier`, `apply_url`, `apply_status`, `status`. Take the rows in the order returned; because a finished row gets its `apply_status` in step 6 and leaves the filter, re-read the first page after each job instead of moving `offset` (use `offset` only to step past rows you left queued on purpose). Group by job: one job per run slot.
 2. Call `mcp__applier__apply_limits` once at the start. If either daily budget is spent, stop with `rate_limited` and report.
 3. Route each row by `apply_platform`:
    - Registry ids (for example `greenhouse`, `lever`, `ashby`, `workday`) and `browser`: `mcp__applier__apply_open({job_id})`. A refusal such as `host_cooldown`, `escalated_this_run`, an unknown host or a per-host cap is final for that job; leave it queued and go on.
@@ -41,7 +41,7 @@ You are the apply operator for one scheduled wake. The wake prompt gives you one
    - Before submit, check the marketing rule (rule 5). Then `mcp__applier__apply_submit`. A confirmed `submitted` ends the job. `unconfirmed` is counted as `manual_review`.
    - Always end a job with `mcp__applier__apply_close` unless it was escalated (escalation closes it).
 5. Unknown question: when a tool returns `needs_owner` with a `question`, you do not guess and you do not type anything. Call `mcp__applier__apply_escalate({job_id, reason, note?})` (reason from the tool's closed list; the exact question text stays in the result), then add `{job_id, reason, question}` to `needs_owner` in your result with the exact question as returned. The wake session asks the owner on Telegram, writes the answer to `custom` in `user-data/easy-apply-answers.json` (CLAUDE.md "Applying" step 2a) and re-dispatches this operator; you never write that file.
-6. After each job, record the outcome on the queue row with `mcp__db__update_outreach_status({id, field: "apply_status", value})` (`id` is the numeric queue row id from `list_queued_outreach`, `value` a plain string) for that row only, using the status the tool reported (`submitted`, `manual_review`, `needs_owner`, `failed`, `held`), and count it.
+6. After each job, record the outcome on the queue row with `mcp__db__update_outreach_status({id, field: "apply_status", value})` (`id` is the numeric queue row `id` from the compact list, `value` a plain string) for that row only, using the status the tool reported (`submitted`, `manual_review`, `needs_owner`, `failed`, `held`), and count it.
 7. Mail verification: No Gmail tools are in this definition. Email verification is owner assist: if a site needs an emailed link or code, escalate the job (reason from the closed list). Only a wake profile that sets `SITE_MAIL_VERIFY=gmail` with a non-empty `SITE_MAIL_SENDERS` adds the Gmail read tools to a separate definition.
 
 ## Result

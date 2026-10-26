@@ -870,6 +870,41 @@ export function listQueuedOutreach(db: BetterSqlite3.Database): OutreachQueueIte
     });
 }
 
+export interface ApplyQueueRow {
+  id: number;
+  job_id: string;
+  title: string | null;
+  company: string | null;
+  apply_platform: string | null;
+  apply_tier: string | null;
+  apply_url: string | null;
+  apply_status: string | null;
+  status: string;
+}
+
+export const QUEUE_COMPACT_DEFAULT_LIMIT = 10;
+export const QUEUE_COMPACT_MAX_LIMIT = 50;
+
+// The compact, paged queue read of the platform and apply operators: same eligibility and order as listQueuedOutreach, but only what an
+// apply or a company walk needs (no resume JSON, email bodies or notes), so a page is a few KB and never spills into a file the operator cannot read.
+// onlyPendingApply keeps rows that still have an apply to do: an apply platform other than 'none' and no apply_status yet.
+export function listQueuedOutreachCompact(
+  db: BetterSqlite3.Database,
+  opts: { limit?: number; offset?: number; onlyPendingApply?: boolean } = {},
+): { total: number; offset: number; limit: number; rows: ApplyQueueRow[] } {
+  const limit = Math.min(Math.max(Math.trunc(opts.limit ?? QUEUE_COMPACT_DEFAULT_LIMIT), 1), QUEUE_COMPACT_MAX_LIMIT);
+  const offset = Math.max(Math.trunc(opts.offset ?? 0), 0);
+  const where = `q.status = 'queued' AND j.excluded_reason IS NULL${opts.onlyPendingApply
+    ? " AND COALESCE(q.apply_platform, '') NOT IN ('', 'none') AND COALESCE(q.apply_status, '') = ''"
+    : ''}`;
+  const from = 'FROM outreach_queue q JOIN jobs j ON j.id = q.job_id';
+  const total = (db.prepare(`SELECT COUNT(*) AS n ${from} WHERE ${where}`).get() as { n: number }).n;
+  const rows = db.prepare(`SELECT q.id, q.job_id, j.title, j.company, q.apply_platform, q.apply_tier, q.apply_url, q.apply_status, q.status
+    ${from} WHERE ${where}
+    ORDER BY COALESCE(j.priority, 0) DESC, q.created_at ASC, q.id ASC LIMIT ? OFFSET ?`).all(limit, offset) as ApplyQueueRow[];
+  return { total, offset, limit, rows };
+}
+
 // Queued rows that listQueuedOutreach skips because their job was excluded after the row was queued
 // (the sender reports these instead of sending).
 export function listExcludedQueuedOutreach(

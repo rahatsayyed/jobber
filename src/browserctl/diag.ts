@@ -104,6 +104,13 @@ export function treeDialogs(tree: RawTree | null): { name: string; buttons: stri
   return out;
 }
 
+/** The first open dialog of a snapshot tree that lists no button, link or text field (its controls are not visible to the layers), or null. */
+export function dialogWithoutControls(tree: RawTree | null): { role: 'dialog'; name: string } | null {
+  if (!tree) return null;
+  const d = tree.nodes.find((x) => x.role === 'dialog' && !tree.nodes.some((c) => c.dialog === x.n && (c.role === 'button' || c.role === 'link' || c.role === 'textbox')));
+  return d ? { role: 'dialog', name: d.name } : null;
+}
+
 function fit(f: DiagFile): string {
   let s = JSON.stringify(f, null, 1);
   // Shrink the lists until the file fits (a pathological page must not grow the file).

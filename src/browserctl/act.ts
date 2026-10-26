@@ -9,6 +9,7 @@ import { naukriJobIdOfUrl, threadRefOfUrl } from '../naukri/page.js';
 import { threadRefOfUrl as wellfoundThreadRefOfUrl, wellfoundJobIdOfUrl } from '../wellfound/page.js';
 import { recordDryRun } from '../safety/dryRun.js';
 import { commitAction, effectiveDialogKind } from './commit.js';
+import { dialogWithoutControls, writeCommitDiag } from './diag.js';
 import { applyCounted, commitNaukri, observeApplyConfirmation } from './commitNaukri.js';
 import { commitWellfound, observeWellfoundApplyConfirmation, wellfoundApplyCounted } from './commitWellfound.js';
 import { BC_KEYS, type BcKey, type BcPage } from './driver.js';
@@ -62,7 +63,9 @@ function treeSignature(t: RawTree): string {
 function samePath(a: string, b: string): boolean {
   try { const x = new URL(a); const y = new URL(b); return x.origin === y.origin && x.pathname === y.pathname; } catch { return false; }
 }
-const FREE_KEYS = new Set<string>(['Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Backspace']);
+/** At most this many "dialog without controls" diag files per engine (one process), so a stuck page cannot fill the disk. */
+const MAX_EMPTY_DIALOG_DIAGS = 3;
+const FREE_KEYS =new Set<string>(['Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Backspace']);
 
 export function createEngine(deps: EngineDeps): Engine {
   const P = deps.policy ?? LINKEDIN_POLICY;
@@ -71,6 +74,7 @@ export function createEngine(deps: EngineDeps): Engine {
   let seenEpoch = -1;
   let shotEpoch = -1;
   let lastGoodUrl: string | null = null;
+  let emptyDialogDiags = 0;
   let chain: Promise<unknown> = Promise.resolve();
   const serial = <T,>(fn: () => Promise<T>): Promise<T> => {
     const run = chain.then(fn, fn);
@@ -104,6 +108,12 @@ export function createEngine(deps: EngineDeps): Engine {
     const v = await deps.screen(renderTree(t, epoch), 'read');
     if (v.blocked) { seenEpoch = -1; return { ok: false, code: v.code, reason: 'page text blocked by the input screen', epoch }; }
     seenEpoch = epoch;
+    // An open dialog with no visible control (the walker and the locator layer both missed its content): leave a structural diag.
+    const empty = dialogWithoutControls(t);
+    if (empty && emptyDialogDiags < MAX_EMPTY_DIALOG_DIAGS) {
+      emptyDialogDiags++;
+      await writeCommitDiag(deps, page, { platform: P.platform, code: 'dialog_controls_missing', live: empty, urlBefore: t.url, after: t });
+    }
     if (P.platform === 'naukri') {
       // A confirmation that shows up after a chatbot answer (no commit-class click) is still recorded once.
       try { observeApplyConfirmation(deps, t); } catch { /* bookkeeping only */ }
