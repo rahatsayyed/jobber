@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import { existsSync, readFileSync } from 'node:fs';
 import { dbPath } from '../src/dbPath.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
+import { parseEnv } from '../src/platform/envFile.js';
 import { loadLayoutConfig, loadLayoutEnv } from '../src/layout/config.js';
 import { renderSummary, summarize } from '../src/layout/summary.js';
 import { buildSnapshot } from '../src/status/snapshot.js';
@@ -62,7 +63,9 @@ async function main(): Promise<number> {
       console.log(renderSources(buildSourceRows(db, since), `ran in last ${DEFAULT_WINDOW_HOURS}h (since ${since})`));
       return 0;
     }
-    const snap = buildSnapshot(db, loadOutreachConfig(), new Date());
+    // The limits shown are the ones a run uses: .env fills what the process env lacks (the launcher does the same).
+    const dotenv = existsSync('.env') ? parseEnv(readFileSync('.env', 'utf8')) : {};
+    const snap = buildSnapshot(db, loadOutreachConfig({ ...dotenv, ...process.env }), new Date());
     if (cmd === 'limits') console.log(renderLimits(snap));
     else if (cmd === 'working') console.log(renderWorking(snap));
     else if (cmd === 'json') console.log(JSON.stringify(snap, null, 2));

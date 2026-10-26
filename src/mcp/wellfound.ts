@@ -309,7 +309,7 @@ function getEngine(deps: WellfoundDeps): Engine {
       if (!s) return null;
       touch(deps);
       let bc = bcCache.get(s.page);
-      if (!bc) { bc = realBcPage(s.page as never); bcCache.set(s.page, bc); }
+      if (!bc) { bc = realBcPage(s.page as never, { locatorDialogs: true }); bcCache.set(s.page, bc); }
       return bc;
     },
     intents: deps.intents ?? processIntents,

@@ -79,12 +79,12 @@ async function main(): Promise<void> {
   const hookPath = '$CLAUDE_PROJECT_DIR/.claude/hooks/tool-allowlist.cjs';
   const policyRef = `$CLAUDE_PROJECT_DIR/debug/runner/${profileName}.policy.json`;
 
+  // An allowlist profile also reads .env, but only to fill keys the process env lacks; buildEnv still passes
+  // nothing that is not on the profile's allowlist (so the owner's limits reach the MCP servers of a wake).
   const dotenv: Record<string, string> = {};
-  if (profile.env_mode === 'dotenv_all') {
-    for (const f of profile.env_files ?? ['.env']) {
-      const p = join(root, f);
-      if (existsSync(p)) Object.assign(dotenv, parseEnv(readFileSync(p, 'utf8')));
-    }
+  for (const f of profile.env_files ?? ['.env']) {
+    const p = join(root, f);
+    if (existsSync(p)) Object.assign(dotenv, parseEnv(readFileSync(p, 'utf8')));
   }
 
   const interactive = profile.interactive === true;
@@ -108,7 +108,7 @@ async function main(): Promise<void> {
   } catch (e) {
     die(2, (e as Error).message);
   }
-  const env = buildEnv(profile, process.env, dotenv);
+  const env = buildEnv(profile, profile.env_mode === 'allowlist' ? { ...dotenv, ...process.env } : process.env, dotenv);
   try {
     assertSafeArgs(args, env);
   } catch (e) {

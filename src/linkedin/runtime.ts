@@ -119,7 +119,15 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
   }
 
 
+  // One retry for a transient launch or navigation failure (a wake saw two `open failed` in a row that a later open did not).
   async function open(url: string): ReturnType<Runtime['open']> {
+    const first = await openOnce(url);
+    if (first.ok || first.code !== 'failed' || first.reason !== 'open failed') return first;
+    await new Promise((r) => setTimeout(r, 1500));
+    return openOnce(url);
+  }
+
+  async function openOnce(url: string): ReturnType<Runtime['open']> {
     if (!isLinkedInUrl(url)) return { ok: false, code: 'not_linkedin', reason: 'only https linkedin.com URLs may be opened' };
     const b = isBlockedPath(url);
     if (b.blocked) return { ok: false, code: 'blocked_path', reason: b.why ?? 'path is blocked' };
