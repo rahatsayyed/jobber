@@ -50,6 +50,9 @@ export class FEl extends Container {
     return c && c.host ? { host: c.host } : {};
   }
   getBoundingClientRect() { return { width: 100, height: 20, right: 100, bottom: 20, left: 0, top: 0 }; }
+  // A browser top-layer element (a popover, a position:fixed box) has offsetParent null, so the double says so for every
+  // element: the in-page script must never read visibility from it.
+  get offsetParent(): null { return null; }
   querySelector(): null { return null; }
   get innerText(): string { return ''; }
   get textContent(): string { return ''; }

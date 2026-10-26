@@ -126,12 +126,12 @@ describe('connectPlacementRefusal (pure)', () => {
 
 // Structures replayed from a live read-only probe: the top-card Connect is a LINK "Invite <Name> to connect", the
 // "More profiles for you" cards are BUTTONS "Invite <Other> to connect" later in the tree, and the More menu rows are
-// plain links and buttons (no menu or menuitem role) that appear in a portal after the More click.
+// role=menuitem rows in a role=menu list in a portal after the More click (see browserctl-menu-popover.test.ts).
 describe('live structures', () => {
   const LINK_CONNECT = '<a href="/preload/custom-invite/?vanityName=jane-example">Invite Jane Example to connect</a><a href="/messaging/compose/">Message</a><button>More</button>';
   const CARDS = `<h2>Activity</h2><a href="/feed/follow/">Follow</a><h2>More profiles for you</h2>
 <button>Invite Other Person to connect</button><button>Invite Third Person to connect</button>`;
-  const ROWS_NO_CONNECT = '<div class="portal"><a href="/x/">Send profile in a message</a><button>Save to PDF</button><a href="/f/">Follow</a><button>Report Jane Example</button><button>Block Jane Example</button><a href="/a/">About this member</a></div>';
+  const ROWS_NO_CONNECT = '<div class="portal"><div role="menu"><a role="menuitem" href="/x/">Send profile in a message</a><button role="menuitem">Save to PDF</button><a role="menuitem" href="/f/">Follow</a><button role="menuitem">Report Jane Example</button><button role="menuitem">Block Jane Example</button><a role="menuitem" href="/a/">About this member</a></div></div>';
   const MORE_ACTIONS = '<a href="/messaging/compose/">Message</a><button>More</button>';
 
   it('the top-card link is the only clickable Connect; the card buttons are refused', async () => {
@@ -155,7 +155,7 @@ describe('live structures', () => {
     expect(clicks(w)).toEqual([]);
   });
 
-  it('More rows that are plain links and buttons in a portal are read as the menu (diff after the More click)', async () => {
+  it('More rows in a role=menu portal are read as the menu (structurally, not by a diff)', async () => {
     const w = mk({ html: page({ actions: MORE_ACTIONS, after: CARDS }), env: LIVE_ENV });
     const more = refOf(await w.snap(), 'button', 'More');
     w.page.onAct = (what) => { if (what.startsWith('click')) w.page.setHtml(page({ actions: MORE_ACTIONS, after: CARDS + ROWS_NO_CONNECT })); };
@@ -167,13 +167,13 @@ describe('live structures', () => {
   it('a portal row Connect after More is clickable', async () => {
     const w = mk({ html: page({ actions: MORE_ACTIONS, after: CARDS }), env: LIVE_ENV });
     const more = refOf(await w.snap(), 'button', 'More');
-    const rows = '<div class="portal"><button>Connect</button><button>Save to PDF</button></div>';
+    const rows = '<div class="portal"><div role="menu"><button role="menuitem">Connect</button><button role="menuitem">Save to PDF</button></div></div>';
     w.page.onAct = (what) => { if (what.startsWith('click')) w.page.setHtml(page({ actions: MORE_ACTIONS, after: CARDS + rows })); };
     const opened = await w.engine.click(more);
     expect(opened.state).toMatch(/connect_state: via_more/);
     expect((await w.arm({ kind: 'connect_note', profile_url: URL_, text: NOTE })).status).toBe('armed');
     w.page.onAct = (what) => { if (what.startsWith('click')) w.page.setHtml(page({ actions: MORE_ACTIONS, dialog: inviteDialog() })); };
-    expect(await w.engine.click(refOf(opened.state!, 'button', 'Connect'))).toMatchObject({ ok: true, code: 'dialog_opened' });
+    expect(await w.engine.click(refOf(opened.state!, 'menuitem', 'Connect'))).toMatchObject({ ok: true, code: 'dialog_opened' });
   });
 
   it('a named card button that appears after More is not a menu row and stays refused', async () => {
@@ -185,25 +185,25 @@ describe('live structures', () => {
   });
 
   // Owner's DOM: every More row is an <a>; its label is on the <a> or on a <div aria-label> inside it.
-  const rowA = (label: string) => `<a href="/r/" aria-label="${label}"><span>${label}</span></a>`;
-  const rowDiv = (label: string) => `<a href="/r/"><div aria-label="${label}"><svg></svg></div></a>`;
+  const rowA = (label: string) => `<a role="menuitem" href="/r/" aria-label="${label}"><span>${label}</span></a>`;
+  const rowDiv = (label: string) => `<a role="menuitem" href="/r/"><div aria-label="${label}"><svg></svg></div></a>`;
   for (const [shape, row] of [['label on the <a>', rowA], ['label on a div inside the <a>', rowDiv]] as const) {
     it(`More rows with the ${shape}: Personalize invite is read and clicked, other rows are refused`, async () => {
       const w = mk({ html: page({ actions: MORE_ACTIONS, after: CARDS }), env: LIVE_ENV });
       const more = refOf(await w.snap(), 'button', 'More');
-      const portal = `<div class="portal">${['Personalize invite', 'Follow', 'Save to PDF', 'Send profile in a message', 'Report Jane Example', 'Block Jane Example', 'About this member'].map(row).join('')}</div>`;
+      const portal = `<div class="portal"><div role="menu">${['Personalize invite', 'Follow', 'Save to PDF', 'Send profile in a message', 'Report Jane Example', 'Block Jane Example', 'About this member'].map(row).join('')}</div></div>`;
       w.page.onAct = (what) => { if (what.startsWith('click')) w.page.setHtml(page({ actions: MORE_ACTIONS, after: CARDS + portal })); };
       const opened = await w.engine.click(more);
       expect(opened.state).toMatch(/connect_state: via_more/);
       expect((await w.arm({ kind: 'connect_note', profile_url: URL_, text: NOTE })).status).toBe('armed');
       for (const name of ['Follow', 'Save to PDF', 'Send profile in a message', 'Report Jane Example', 'Block Jane Example', 'About this member']) {
-        const r = await w.engine.click(refOf(opened.state!, 'link', name));
+        const r = await w.engine.click(refOf(opened.state!, 'menuitem', name));
         expect(r.ok).toBe(false);
         expect(['menu_row_not_allowed', 'irreversible_refused']).toContain(r.code);
       }
       expect(clicks(w)).toHaveLength(1);
       w.page.onAct = (what) => { if (what.startsWith('click')) w.page.setHtml(page({ actions: MORE_ACTIONS, dialog: inviteDialog() })); };
-      expect(await w.engine.click(refOf(opened.state!, 'link', 'Personalize invite'))).toMatchObject({ ok: true, code: 'dialog_opened' });
+      expect(await w.engine.click(refOf(opened.state!, 'menuitem', 'Personalize invite'))).toMatchObject({ ok: true, code: 'dialog_opened' });
     });
   }
 

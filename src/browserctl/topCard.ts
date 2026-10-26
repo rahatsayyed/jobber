@@ -3,10 +3,11 @@
 // `connect_state:`, the arm tool refuses on it, and the commit step re-checks it right before a Connect click.
 //   a) a top-card Connect                           -> connectable
 //   b) no top-card Connect, More menu open and it holds Connect or Personalize invite -> via_more
-//   c) neither, with the More menu read (or no More button) -> not_connectable (1st degree, or follow only)
+//   c) neither, with at least one More menu row read (or no More button) -> not_connectable (1st degree, or follow only)
+//      (menu rows are the controls of region `menu`, set by the snapshot inside a role=menu list or an open popover)
 //   d) Pending or Withdraw in the top card           -> already_pending
-//   (More exists but its menu is not open yet)       -> check_more: click the top-card More, then snapshot again
-import { isConnectControlName, normName } from './guard.js';
+//   (More exists but no menu row was read: not open yet, or its rows were not found) -> check_more: click More, snapshot again
+import { isConnectControlName, isMenuConnectName, normName } from './guard.js';
 import type { RawNode, RawTree } from './snapshot.js';
 
 export type TopCardState = 'connectable' | 'via_more' | 'not_connectable' | 'already_pending' | 'check_more';
@@ -27,7 +28,7 @@ export function connectionStateOf(tree: RawTree): { state: TopCardState; reason:
   const menu = controls.filter((x) => x.region === 'menu');
   if (top.some((x) => PENDING_RE.test(normName(x.name)))) return { state: 'already_pending', reason: 'Pending or Withdraw in the top card' };
   if (top.some((x) => isConnectControlName(x.name))) return { state: 'connectable', reason: 'Connect in the top card' };
-  if (menu.some((x) => isConnectControlName(x.name))) return { state: 'via_more', reason: 'Connect or Personalize invite in the More menu' };
+  if (menu.some((x) => isMenuConnectName(x.name))) return { state: 'via_more', reason: 'Connect or Personalize invite in the More menu' };
   if (!top.some((x) => MORE_RE.test(normName(x.name)))) return { state: 'not_connectable', reason: 'no Connect and no More button in the top card' };
   if (menu.length > 0) return { state: 'not_connectable', reason: 'More menu has no Connect: 1st degree or follow only' };
   return { state: 'check_more', reason: 'no Connect in the top card: click the top-card More and snapshot again' };

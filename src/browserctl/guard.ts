@@ -75,6 +75,10 @@ const CONNECT_RE = new RegExp(`^(?:connect|personali[sz]e invite|${EXTRA_LABELS.
 /** Is this the name of a control that sends or opens a connection invitation (Connect, Invite X to connect, Personalize invite)? */
 export const isConnectControlName = (name: string | null | undefined): boolean => CONNECT_RE.test(normName(name));
 
+/** Is this the name of a More-menu Connect row: Connect or Personalize invite, never a named "Invite X to connect" (that is a card's button)? */
+export const isMenuConnectName = (name: string | null | undefined): boolean =>
+  isConnectControlName(name) && !/^invite .+ to connect$/.test(normName(name));
+
 /**
  * A Connect control on a LinkedIn page is legal only in the profile's own top card, or in the More menu opened from it
  * (moreFromTopCard). A Connect in a sidebar or recommendation card sends the invitation directly, without a dialog.

@@ -73,11 +73,11 @@ describe('locator menu (More dropdown)', () => {
     expect(sh.clicks).toEqual([]);
   });
 
-  it.each(['Message', 'Save to PDF'])('the %s menuitem is free', async (name) => {
+  it.each(['Message', 'Save to PDF'])('the %s menuitem is refused: only Connect and Personalize invite rows are clicked', async (name) => {
     const { w, sh } = mk();
     const r = await w.engine.click(refOf(await openMore(w), 'menuitem', name));
-    expect(r).toMatchObject({ ok: true, code: 'clicked' });
-    expect(sh.clicks).toEqual([`menuitem:${name}`]);
+    expect(r).toMatchObject({ ok: false, code: 'menu_row_not_allowed' });
+    expect(sh.clicks).toEqual([]);
   });
 
   it('a menuitem ref from an old snapshot is stale', async () => {

@@ -50,6 +50,8 @@ export type LiveNode = RawNode;
 // Pages with a big filter sidebar (Naukri search) put hundreds of text nodes before the result cards, so the
 // collection cap is generous; the render budget drops low-value text lines first, never controls.
 export const MAX_NODES = 1500;
+/** Menu rows still read past MAX_NODES: an open menu sits in a portal at the END of the body, behind the whole page. */
+export const MENU_EXTRA = 60;
 export const MAX_NAME = 200;
 export const MAX_TEXT = 300;
 export const MAX_VALUE = 5000;
@@ -118,6 +120,33 @@ const BODY_SRC = String.raw`
     }
     return allMemo.get(e);
   }
+  // Menu rows. An open popover (browser top layer: position fixed, offsetParent null) or a role=menu list is judged by its
+  // own boxes and styles only, never by the page-wide hiding heuristics, so its rows stay readable while it is open.
+  function inMenu(e, role) {
+    for (var x = par(e); x; x = par(x)) {
+      if (attr(x, 'role').trim().toLowerCase() === 'menu') return true;
+      if (role === 'menuitem' && x.hasAttribute('popover')) return true;
+    }
+    return false;
+  }
+  function menuHiddenOwn(x) {
+    if (x.hasAttribute('hidden')) return true;
+    var ah = x.getAttribute('aria-hidden');
+    if (ah && ah.trim().toLowerCase() === 'true') return true;
+    var cs = getComputedStyle(x);
+    if (!cs || cs.display === 'none' || cs.visibility === 'hidden' || cs.visibility === 'collapse') return true;
+    var o = parseFloat(cs.opacity);
+    return isNaN(o) || o < 0.05;
+  }
+  function menuShown(e) {
+    try {
+      if (!inMenu(e, roleOf(e))) return false;
+      for (var x = e; x; x = par(x)) if (menuHiddenOwn(x)) return false;
+      var r = e.getBoundingClientRect();
+      return !!r && r.width > 0 && r.height > 0;
+    } catch (err) { return false; }
+  }
+  function shown(e) { return visD(e) || menuShown(e); }
   // An iframe is entered only when it is itself visible and same-origin (a cross-origin contentDocument throws).
   function ifrOk(f) {
     try {
@@ -290,9 +319,7 @@ const BODY_SRC = String.raw`
   function regionOf(e, role) {
     if (!RCTX) return '';
     if (role === 'dialog' || enclosingDialog(e)) return 'dialog';
-    if (role === 'menuitem' || role === 'option') {
-      for (var m = par(e); m; m = par(m)) if (attr(m, 'role').trim().toLowerCase() === 'menu') return 'menu';
-    }
+    if (inMenu(e, role)) return 'menu';
     var side = inSide(e), at = RCTX.pos.get(e);
     // Order of the walked list (shadow-safe, unlike compareDocumentPosition): from the name heading up to the next heading.
     if (RCTX.h && at !== undefined && at >= RCTX.pos.get(RCTX.h) && !(RCTX.fb && at >= RCTX.pos.get(RCTX.fb)) && !side) return 'topcard';
@@ -341,13 +368,17 @@ const BODY_SRC = String.raw`
     for (var k = 0; k < all.length; k++) {
       var e = all[k];
       if (HIDDEN_TAGS[String(e.tagName || '').toUpperCase()]) continue;
-      if (!visD(e)) continue;
       var role = roleOf(e);
+      // Past the cap only the rows of an open menu are still read (a few), so the portal at the end of the body is never lost.
+      if (nodes.length >= MAXN) {
+        truncated = true;
+        if (!role || nodes.length >= MAXN + MENUX || !inMenu(e, role)) continue;
+      }
+      if (!shown(e)) continue;
       if (!role) {
         if (!/\S/.test(ownText(e)) || underAction(e)) continue;
         role = 'text';
       } else if (role === 'text') { continue; }
-      if (nodes.length >= MAXN) { truncated = true; break; }
       e.setAttribute('data-bc', String(n));
       nodes.push(info(e, role, false));
       n++;
@@ -395,7 +426,7 @@ const BODY_SRC = String.raw`
     var el = null, want = String(A.n | 0), dl = deepList(deepRoot());
     RCTX = buildRegionCtx(dl);
     for (var di = 0; di < dl.length; di++) if (dl[di].getAttribute('data-bc') === want) { el = dl[di]; break; }
-    if (!el || !visD(el)) return null;
+    if (!el || !shown(el)) return null;
     var r0 = roleOf(el) || (/\S/.test(ownText(el)) ? 'text' : null);
     return r0 ? info(el, r0, true) : null;
   }
@@ -416,7 +447,7 @@ const BODY_SRC = String.raw`
       }
       break;
     }
-    if (!pe || !visD(pe)) return null;
+    if (!pe || !shown(pe)) return null;
     var na = nearestActionable(pe);
     if (na) return info(na[0], na[1], true);
     var r1 = roleOf(pe) || 'text';
@@ -432,7 +463,7 @@ const BODY_SRC = String.raw`
       if (!inner || inner === fe) break;
       fe = inner;
     }
-    if (!fe || fe === document.body || !visD(fe)) return null;
+    if (!fe || fe === document.body || !shown(fe)) return null;
     var r2 = roleOf(fe);
     return r2 ? info(fe, r2, true) : null;
   }
@@ -449,7 +480,7 @@ export function bcScript(mode: 'snapshot' | 'describe' | 'at' | 'focused' | 'dia
       safe[k] = v;
     }
   }
-  return `(function (MODE, A) { try { var MAXN = ${MAX_NODES};\n${VIS_SRC}\n${BODY_SRC}\n } catch (err) { return null; } })(${JSON.stringify(mode)}, ${JSON.stringify(safe)})`;
+  return `(function (MODE, A) { try { var MAXN = ${MAX_NODES}, MENUX = ${MENU_EXTRA};\n${VIS_SRC}\n${BODY_SRC}\n } catch (err) { return null; } })(${JSON.stringify(mode)}, ${JSON.stringify(safe)})`;
 }
 
 // ---- fixture side ----
@@ -636,9 +667,13 @@ function buildRegionCtx(body: HtmlNode, slug: string, title: string): RegionCtx 
   return c;
 }
 
+/** A node under a role=menu list, or a menuitem under a popover: a row of an open menu (same rule as the in-page script). */
+const underMenu = (ancestors: HtmlNode[], role: BcRole | null): boolean =>
+  ancestors.some((a) => lowRole(a) === 'menu' || (role === 'menuitem' && 'popover' in a.attrs));
+
 function regionOfNode(c: RegionCtx, nd: HtmlNode, role: BcRole, inDlg: boolean): Region {
   if (role === 'dialog' || inDlg) return 'dialog';
-  if ((role === 'menuitem' || role === 'option') && ancestorsOf(c, nd).some((a) => lowRole(a) === 'menu')) return 'menu';
+  if (underMenu(ancestorsOf(c, nd), role)) return 'menu';
   const side = inSideOf(c, nd);
   const at = c.index.get(nd) ?? -1;
   const after = (x: HtmlNode | null) => x !== null && at >= (c.index.get(x) ?? Infinity);
@@ -667,13 +702,15 @@ export function buildTreeFromHtml(html: string, url: string): RawTree {
       return h ?? '';
     };
     const walk = (nd: HtmlNode, parents: HtmlNode[]) => {
-      if (out.truncated) return;
       if (nd.tag !== '#text' && nd !== body && nd.tag !== 'html' && !nd.hidden) {
-        let role = roleOfNode(nd);
+        const own = roleOfNode(nd);
+        let role = own;
         const underAction = parents.some((p) => { const r = roleOfNode(p); return r !== null && ACTIONABLE_ROLES.has(r); });
         if (!role && /\S/.test(ownTextOf(nd)) && !underAction) role = 'text';
-        if (role) {
-          if (out.nodes.length >= MAX_NODES) { out.truncated = true; return; }
+        // Past the cap only the rows of an open menu are still read (a few), like the in-page script.
+        const pastCap = out.nodes.length >= MAX_NODES;
+        if (pastCap) out.truncated = true;
+        if (role && !(pastCap && (!own || out.nodes.length >= MAX_NODES + MENU_EXTRA || !underMenu(parents, own)))) {
           stamp.set(nd, n);
           const dlgNode = [...parents].reverse().find((p) => roleOfNode(p) === 'dialog');
           const secret = role === 'textbox' && secretNode(nd);
@@ -757,13 +794,13 @@ export function renderTree(tree: RawTree, epoch: number, maxChars = MAX_RENDER_C
   const total = (ls: string[]) => head.join('\n').length + ls.reduce((a, l) => a + l.length + 1, 0);
   const keep = lines.map(() => true);
   if (total(lines) > maxChars) {
-    // Over budget: dialog content and locator-read menus rank first (they sit at the END of the tree, and an open
-    // dialog is what the operator must act on). Plain text next to a control (a card's company, location) ranks
+    // Over budget: dialog content and open menus rank first (they sit at the END of the tree, and an open
+    // dialog or menu is what the operator must act on). Plain text next to a control (a card's company, location) ranks
     // second, other text last, and page controls only after all text is gone. Drop the lowest rank from the end of
     // the page backwards until it fits, so the top of the page and every dialog control stay.
     const nodes = tree.nodes;
     const rank = nodes.map((nd, i) => {
-      if (nd.dialog !== undefined || nd.role === 'dialog' || nd.n >= LOCATOR_BASE) return 0;
+      if (nd.dialog !== undefined || nd.role === 'dialog' || nd.n >= LOCATOR_BASE || nd.region === 'menu') return 0;
       if (nd.role !== 'text') return 3;
       const near = [i - 2, i - 1, i + 1, i + 2].some((j) => nodes[j] !== undefined && nodes[j]!.role !== 'text');
       return near ? 1 : 2;
