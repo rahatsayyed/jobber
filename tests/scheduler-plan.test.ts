@@ -4,7 +4,7 @@ import { upsertPerson } from '../src/outreach/people.js';
 import { TUNING_DEFAULTS } from '../src/outreach/tuning.js';
 import { setState } from '../src/scheduler/runLog.js';
 import { countDue, type DueCounts } from '../src/scheduler/due.js';
-import { planWake, stepOrder, loadPlanKnobs, type PlanKnobs } from '../src/scheduler/plan.js';
+import { planWake, stepOrder, loadPlanKnobs, chunkQuota, CHUNK_SIZE, type PlanKnobs } from '../src/scheduler/plan.js';
 import type { QuietConfig } from '../src/outreach/quiet.js';
 import type { ControlState } from '../src/scheduler/control.js';
 import type { CeilingStatus, LimitKey } from '../src/outreach/limits.js';
@@ -479,6 +479,25 @@ describe('planWake: the pipeline pulls linkedin new_outreach and apply into the 
     if (d.kind !== 'run') throw new Error('expected run');
     const spent = d.tasks.flatMap((a) => a.tasks).filter((t) => t.kind === 'followups').reduce((n, t) => n + t.quota, 0);
     expect(spent).toBe(10); // 5 on linkedin and 5 on naukri, each within its room of 5
+  });
+  it('splits a quota into calls of at most CHUNK_SIZE', () => {
+    expect(CHUNK_SIZE).toBe(5);
+    expect(chunkQuota(12)).toEqual([5, 5, 2]);
+    expect(chunkQuota(5)).toEqual([5]);
+    expect(chunkQuota(1)).toEqual([1]);
+    expect(chunkQuota(100)).toHaveLength(20);
+  });
+  it('plans chunks for the sending steps only: followups, new_outreach and apply', () => {
+    const c = ceil();
+    c.linkedin_invite = { used: 0, limit: 12, ok: true };
+    const { d } = run({ ceilings: c, due: fresh({ followupsDue: 3 }) });
+    if (d.kind !== 'run') throw new Error('expected run');
+    const steps = stepOrder(d);
+    const by = (k: string) => steps.filter((s) => s.kind === k);
+    expect(by('new_outreach').find((s) => s.platform === 'linkedin')).toMatchObject({ quota: 12, chunks: [5, 5, 2] });
+    expect(by('followups').map((s) => s.chunks)).toEqual([[3], [3]]);
+    expect(by('apply')[0].chunks).toEqual([5]);
+    for (const k of ['inbox', 'discover', 'pipeline']) for (const s of by(k)) expect(s.chunks).toBeUndefined();
   });
   it('invents no work when the pipeline is not due and nothing is queued', () => {
     const { d } = plan({ due: due({ unmatchedJobs: 0, appliesLeftToday: 5 }), discoverSearches: undefined });

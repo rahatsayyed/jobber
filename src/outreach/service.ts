@@ -258,7 +258,7 @@ const DEFAULT_MIN_SCORE = 60;
  * company path never returns its author; this path is keyed by the person and the job instead. Every rule of the
  * company path still applies: only people in `people` in stage `new` and not paused, once per person (any sent,
  * sending or unconfirmed touch removes them, and the reserveTouch ledger refuses a repeat anyway), the per-company
- * limit and pause only when the job names a company. Weekly ceilings, quiet hours, halts and dry run are enforced by
+ * limit and pause only when the job names a company. Daily ceilings, quiet hours, halts and dry run are enforced by
  * the arm tool, as for every other send. Priority jobs first, then oldest first.
  */
 export function nextPosterContacts(

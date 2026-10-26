@@ -58,8 +58,8 @@ describe('renderLimits', () => {
   it('lists ceilings, counters and no halts', () => {
     expect(renderLimits(base)).toBe(
       [
-        'linkedin_invite 12/100 per week',
-        'linkedin_message 3/50 per week',
+        'linkedin_invite 12/100 per day',
+        'linkedin_message 3/50 per day',
         'naukri_apply 20/20 per day FULL',
         'naukri_message 0/10 per day',
         'wellfound_apply 0/20 per day',

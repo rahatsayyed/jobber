@@ -134,7 +134,7 @@ describe('Bash: denied', () => {
     ['JOBBER_DRY_RUN=false npm run doctor', /DRY_RUN/],
     ['export JOBBER_DRY_RUN=false'],
     ['env JOBBER_DRY_RUN=0 ls'],
-    ['LINKEDIN_MAX_INVITES_PER_WEEK=999 npm run status'],
+    ['LINKEDIN_MAX_INVITES_PER_DAY=999 npm run status'],
     ['echo EMAIL_MAX_PER_DAY=0 >> notes.txt'],
     ['tmux send-keys -t manager hi Enter', /tmux/],
     ['tmux kill-session -t x'],
@@ -206,7 +206,7 @@ describe('file tools', () => {
     ['Write via symlink-free traversal', 'Write', { file_path: 'src/../.claude/hooks/x.cjs', content: 'x' }, false],
     ['Write outside project', 'Write', { file_path: '/tmp/x.txt', content: 'x' }, false],
     ['Write dry-run flag in source', 'Write', { file_path: 'scripts/x.ts', content: 'process.env.JOBBER_DRY_RUN = "false"' }, false],
-    ['Edit cap in a script', 'Edit', { file_path: 'scripts/x.ts', old_string: 'a', new_string: 'LINKEDIN_MAX_INVITES_PER_WEEK=500' }, false],
+    ['Edit cap in a script', 'Edit', { file_path: 'scripts/x.ts', old_string: 'a', new_string: 'LINKEDIN_MAX_INVITES_PER_DAY=500' }, false],
     ['Edit cap in a json config', 'Edit', { file_path: 'config/x.json', old_string: 'a', new_string: '"EMAIL_MAX_PER_DAY": 0' }, false],
     ['Edit safety gate', 'Edit', { file_path: 'src/safety/screen.ts', old_string: 'a', new_string: 'b' }, false],
   ];

@@ -28,13 +28,13 @@ function childEnv(dryRun: boolean, extra: Record<string, string>): Record<string
 describe('wake env survives the runner allowlist', () => {
   for (const dry of [true, false]) {
     it(`keeps the four run keys (dry=${dry}) and drops unlisted secrets`, () => {
-      const base = childEnv(dry, { SOME_API_KEY: 'secret', LINKEDIN_MAX_INVITES_PER_WEEK: '5' });
+      const base = childEnv(dry, { SOME_API_KEY: 'secret', LINKEDIN_MAX_INVITES_PER_DAY: '5' });
       const out = buildEnv(profiles.outreach_wake, base, {});
       expect(out.JOBBER_RUN_ID).toBe('abcd1234');
       expect(out.JOBBER_DRY_RUN).toBe(dry ? 'true' : 'false');
       expect(Object.keys(out).filter((k) => /^(SCHEDULER|LINKEDIN|WEB|APPLY|SCOUT)_DRY_RUN$/.test(k))).toEqual([]);
       expect(out.SOME_API_KEY).toBeUndefined();
-      expect(out.LINKEDIN_MAX_INVITES_PER_WEEK).toBe('5');
+      expect(out.LINKEDIN_MAX_INVITES_PER_DAY).toBe('5');
     });
   }
   it('the hunt profile is unaffected (dotenv_all, json output)', () => {

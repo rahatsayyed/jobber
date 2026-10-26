@@ -6,7 +6,6 @@ import type { EnvSpec, RestartScope, SectionId, Weakens } from './types.js';
 
 const GROUP_FEATURE: Record<LimitGroup, string> = {
   'daily-caps': 'daily caps',
-  'weekly-caps': 'weekly caps',
   'per-company': 'per-company limits',
   'quiet-hours': 'quiet hours',
   spacing: 'spacing',

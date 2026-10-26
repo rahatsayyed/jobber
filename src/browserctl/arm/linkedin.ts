@@ -131,7 +131,7 @@ export async function armLinkedinSend(deps: ArmDeps, a: ArmArgs): Promise<ArmRes
   if (!isAccept) {
     const key = a.kind === 'connect_note' ? 'linkedin_invite' : 'linkedin_message';
     const c = ceilings(db, loadOutreachConfig(deps.env), now())[key];
-    if (!c.ok) return fail('rate_limited', 'rate_limited', `${c.used} of ${c.limit} this week`);
+    if (!c.ok) return fail('rate_limited', 'rate_limited', `${c.used} of ${c.limit} today`);
   }
 
   // Page verification from the page snapshot.

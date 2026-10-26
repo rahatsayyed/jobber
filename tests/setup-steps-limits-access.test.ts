@@ -122,7 +122,7 @@ describe('limitsStep', () => {
     const t = setup(
       [
         { choose: 'review' },
-        no, no, no, no, no, // matching, daily, weekly, per-company, quiet-hours
+        no, no, no, no, // matching, daily, per-company, quiet-hours
         { confirm: true }, // spacing
         ...spacing.flatMap((k): ScriptItem[] =>
           k === 'EMAIL_DRIP_MIN_BATCH' ? [{ ask: '9' }, { confirm: true }] : [{ ask: '' }],
@@ -154,7 +154,7 @@ describe('limitsStep', () => {
           // decline 5, then the same key is asked again and keeps the current value
           k === 'SEND_LIMIT_PER_RUN' ? [{ ask: '5' }, { confirm: false }, { ask: '' }] : [{ ask: '' }],
         ),
-        no, no, no, no, no,
+        no, no, no, no,
       ],
       { '.env': '' },
     );

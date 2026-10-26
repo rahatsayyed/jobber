@@ -13,7 +13,7 @@ describe('buildSnapshot', () => {
     const db = openDb(':memory:');
     const s = buildSnapshot(db, cfg, NOW);
     expect(s.generatedAt).toBe(NOW.toISOString());
-    expect(s.ceilings.linkedin_invite).toEqual({ used: 0, limit: 100, ok: true });
+    expect(s.ceilings.linkedin_invite).toEqual({ used: 0, limit: 40, ok: true });
     expect(s.dailyCounters).toEqual([]);
     expect(s.halts).toEqual([]);
     expect(s.queue).toEqual([]);

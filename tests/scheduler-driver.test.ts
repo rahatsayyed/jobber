@@ -183,7 +183,7 @@ describe('wakeOnce', () => {
     const s = setup({
       env: {
         OPENAI_API_KEY: 'x', GMAIL_PASSWORD: 'y', TZ: 'Asia/Kolkata', COOLDOWN_FOO: '1',
-        LINKEDIN_MAX_INVITES_PER_WEEK: '50', NAUKRI_MAX_APPLIES_PER_DAY: '5', CLASSIFIER_MODEL: 'm',
+        LINKEDIN_MAX_INVITES_PER_DAY: '50', NAUKRI_MAX_APPLIES_PER_DAY: '5', CLASSIFIER_MODEL: 'm',
         COOLDOWN_X: '2', CADENCE_Y: '3', COMPANY_CONTACT_LIMIT: '4', JOBBER_KILL: '0',
         SCHEDULER_NO_CLASSIFIER: 'true',
       },

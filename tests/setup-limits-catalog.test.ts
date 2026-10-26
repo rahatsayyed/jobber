@@ -14,8 +14,8 @@ function spec(key: string) {
 describe('limits catalog drift against code defaults', () => {
   it('outreach config keys match loadOutreachConfig({})', () => {
     const map: Record<string, keyof OutreachConfig> = {
-      LINKEDIN_MAX_INVITES_PER_WEEK: 'linkedinMaxInvitesPerWeek',
-      LINKEDIN_MAX_MESSAGES_PER_WEEK: 'linkedinMaxMessagesPerWeek',
+      LINKEDIN_MAX_INVITES_PER_DAY: 'linkedinMaxInvitesPerDay',
+      LINKEDIN_MAX_MESSAGES_PER_DAY: 'linkedinMaxMessagesPerDay',
       NAUKRI_MAX_APPLIES_PER_DAY: 'naukriMaxAppliesPerDay',
       NAUKRI_MAX_MESSAGES_PER_DAY: 'naukriMaxMessagesPerDay',
       COMPANY_CONTACT_LIMIT: 'companyContactLimit',

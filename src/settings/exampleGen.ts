@@ -19,7 +19,7 @@ export const SECTION_BANNERS: Record<SectionId, SectionBanner> = {
   safety: { title: 'Safety and dry-run flags', lines: ['JOBBER_DRY_RUN is the only dry-run flag. true = dry run, false or removed = LIVE. Only the owner flips it.'] },
   classifier: { title: 'Classifier (prompt-injection screen for LinkedIn and Naukri text)' },
   limits: {
-    title: 'Limits (daily, weekly, per company, spacing, cooldowns)',
+    title: 'Limits (daily, per company, spacing, cooldowns)',
     lines: [
       'The full catalog with ranges is src/setup/limitsCatalog.ts; `npm run setup -- --step limits`',
       'edits it. Invalid values fall back to the default. Commented lines show the code default.',

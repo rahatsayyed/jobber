@@ -200,7 +200,7 @@ Groups in `.env.example` (one line each):
 - Browser apply and web: `APPLY_SUBMIT_MODE`, the per-host caps and the account flags; see [apply.md](apply.md).
 - Email: Gmail OAuth paths and the legacy SMTP fallback.
 - Telegram: bot token and allowed user ids for the ccgram bridge.
-- Platform ceilings: the daily and weekly caps per platform (LinkedIn, Naukri and the Wellfound `WELLFOUND_MAX_APPLIES_PER_DAY`, `WELLFOUND_MAX_MESSAGES_PER_DAY`, `WELLFOUND_MAX_DISCOVER_PER_DAY`); `npm run status -- limits` prints them.
+- Platform ceilings: the daily caps per platform (LinkedIn, Naukri and the Wellfound `WELLFOUND_MAX_APPLIES_PER_DAY`, `WELLFOUND_MAX_MESSAGES_PER_DAY`, `WELLFOUND_MAX_DISCOVER_PER_DAY`); `npm run status -- limits` prints them.
 - Email drip lane (all optional, commented in `.env.example`; read by the scheduler daemon at start, so restart it after a change): `EMAIL_SEND_WINDOW_START` / `EMAIL_SEND_WINDOW_END` (HH:MM, IST), `EMAIL_DRIP_MIN_BATCH` / `EMAIL_DRIP_MAX_BATCH`, `EMAIL_DRIP_MIN_GAP_MIN` / `EMAIL_DRIP_MAX_GAP_MIN`, `EMAIL_DRIP_INTRA_PAUSE_MIN_SEC` / `EMAIL_DRIP_INTRA_PAUSE_MAX_SEC` and `EMAIL_MAX_PER_DAY` (`0` or unset means no daily cap). The defaults are in `src/setup/limitsCatalog.ts` and `.env.example`. An invalid value stops the lane and the doctor check `mail-drip-config` says why.
 - Agent tuning: `MATCH_THRESHOLD`, `SEND_LIMIT_PER_RUN` (the daily email limit for `/followups` sessions; the drip lane uses `EMAIL_MAX_PER_DAY` instead), `MAX_APPLIES_PER_DAY`, `MAX_LINKEDIN_SEARCHES_PER_DAY`, and the follow-up switches (`FOLLOWUPS_AUTONOMOUS`, `EMAIL_FOLLOWUP_GAPS_DAYS`).
 - Dashboard: `WEB_PORT`, `WEB_AUTH_MODE` and the other `WEB_*` keys; see `docs/dashboard-exposure.md`.

@@ -15,8 +15,8 @@ URL and the recipient name shown in the dialog are verified against the expected
 (`src/linkedin/verify.ts`: `verifyProfileUrl`, `verifyRecipientName`, `namesPlausiblyMatch`), outbound text passes the style and output gates and the classifier screen (see "Outreach
 safety layers"), and the ceiling is consumed right before the Send click.
 
-The only connect caps are the weekly rolling ceilings in `src/outreach/limits.ts`: `linkedin_invite`
-(`LINKEDIN_MAX_INVITES_PER_WEEK`) and `linkedin_message` (`LINKEDIN_MAX_MESSAGES_PER_WEEK`), plus the
+The only connect caps are the daily rolling ceilings (24 hours, like the other daily caps) in `src/outreach/limits.ts`: `linkedin_invite`
+(`LINKEDIN_MAX_INVITES_PER_DAY`) and `linkedin_message` (`LINKEDIN_MAX_MESSAGES_PER_DAY`), plus the
 per-company limits and halts there. `MAX_LINKEDIN_SEARCHES_PER_DAY` (daily counter for
 `linkedin_find_profiles`, 0 to 100000) and `LINKEDIN_MAX_DISCOVER_PER_DAY` (named job and post
 searches) also exist. On a `rate_limited` result the operator stops the task and reports it; there is
@@ -56,7 +56,7 @@ excluded and scored at or above `MATCH_THRESHOLD`, priority jobs first, then old
 profile_url, job_id, job_title, company (null when unknown), post_url, post_text, priority}` (`post_text` is untrusted data,
 at most 1500 characters). A person is returned once (stage `new`, not paused, no sent, sending or unconfirmed touch; the
 `reserveTouch` ledger refuses a repeat anyway), the per-company limit and pause apply only when the job names a company,
-and the weekly ceilings, quiet hours, halts and dry run are still enforced by the arm tool. The `contact-finder` works a
+and the daily ceilings, quiet hours, halts and dry run are still enforced by the arm tool. The `contact-finder` works a
 hiring post in this order: (1) `contacts.find_company_emails({company, job_id})`: code returns the post's `apply_email`
 first as a contact with `source: "post"` (verified only when the normal verification passes; a free-mail host such as
 gmail.com is never probed and never verified) and a `company_check` of `ok` or `company_unresolved`; (2) when the company
@@ -85,7 +85,7 @@ button whose name is not on the known-safe list is `irreversible_other`; an unre
 point is refused). A commit-class click, an Enter in a composer, or typing into a composer needs an
 ARMED INTENT: the arm tool (`linkedin_arm_send`, `naukri_arm_send`, `naukri_arm_apply`) runs the
 existing code gates first (recipient must be a known `people` row, employer, style, fact and output
-gates, `reserveTouch` idempotency, quiet hours, halts, dry run, a spent weekly ceiling refuses at
+gates, `reserveTouch` idempotency, quiet hours, halts, dry run, a spent daily ceiling refuses at
 arm) and holds one in-memory intent per platform for 120 seconds, single use. At commit time the
 engine re-verifies on the live page (profile key equals the armed key, the dialog recipient name
 plausibly matches, the composer text read from the live field equals the armed text exactly), then
@@ -119,6 +119,6 @@ job/profile," not "requires a review step." Steps:
 5. Report the status (`sent`, `dry_run`, `unconfirmed`, `refused`, `rate_limited`) to Telegram. An
    unclear page: report it, do not guess which path to take.
 
-`linkedin_arm_send` is gated by the weekly rolling `linkedin_invite` ceiling for connects and the
+`linkedin_arm_send` is gated by the daily rolling `linkedin_invite` ceiling for connects and the
 separate `linkedin_message` ceiling for messages (limit values live in the catalog, not here), and a
 confirmed send is recorded in `connections` (`status: "messaged"` for a DM).

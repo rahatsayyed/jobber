@@ -186,7 +186,7 @@ npm run status -- limits
 
 Output lines, in order:
 
-- One line per rolling ceiling: `linkedin_invite`, `linkedin_message` (per week), `naukri_apply`, `naukri_message`, `wellfound_apply`, `wellfound_message`, `wellfound_discover` (per day), as `used/limit per <period>`, with `FULL` appended when it is exhausted.
+- One line per rolling ceiling: `linkedin_invite`, `linkedin_message`, `naukri_apply`, `naukri_message`, `wellfound_apply`, `wellfound_message`, `wellfound_discover` (all per day), as `used/limit per <period>`, with `FULL` appended when it is exhausted.
 - One line per daily counter, as `<key> <count> today` (for example the email send counter).
 - Halt lines: `HALT <platform>: <reason> (since <time> IST)`, or `no halts`.
 - `degraded: ...` when part of the snapshot could not be read.

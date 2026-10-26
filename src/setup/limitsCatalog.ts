@@ -9,7 +9,6 @@ import {
 
 export type LimitGroup =
   | 'daily-caps'
-  | 'weekly-caps'
   | 'per-company'
   | 'quiet-hours'
   | 'spacing'
@@ -22,7 +21,7 @@ export interface LimitSpec {
   default: number | string; // string only for the comma-list settings (CADENCE_GAPS_DAYS, EMAIL_FOLLOWUP_GAPS_DAYS)
   min: number;
   max: number;
-  unit: string; // 'per day', 'per week', 'hour 0-23', 'seconds', 'minutes', 'days', 'percent', 'score'
+  unit: string; // 'per day', 'hour 0-23', 'seconds', 'minutes', 'days', 'percent', 'score'
   what: string;
   raiseNote?: string;
 }
@@ -76,11 +75,11 @@ export const LIMITS: LimitSpec[] = [
     raiseNote: 'Heavy automated searching gets the search engine to block the browser.' },
 
   // outreach config
-  { key: 'LINKEDIN_MAX_INVITES_PER_WEEK', group: 'weekly-caps', default: 100, min: 0, max: 100000, unit: 'per week',
-    what: 'LinkedIn connection invitations sent per week.',
-    raiseNote: 'LinkedIn itself limits weekly invitations; going above its limit risks a restriction.' },
-  { key: 'LINKEDIN_MAX_MESSAGES_PER_WEEK', group: 'weekly-caps', default: 100, min: 0, max: 100000, unit: 'per week',
-    what: 'LinkedIn direct messages sent per week.',
+  { key: 'LINKEDIN_MAX_INVITES_PER_DAY', group: 'daily-caps', default: 40, min: 0, max: 100000, unit: 'per day',
+    what: 'LinkedIn connection invitations sent per day.',
+    raiseNote: 'LinkedIn itself limits invitations; going above its limit risks a restriction.' },
+  { key: 'LINKEDIN_MAX_MESSAGES_PER_DAY', group: 'daily-caps', default: 100, min: 0, max: 100000, unit: 'per day',
+    what: 'LinkedIn direct messages sent per day.',
     raiseNote: 'Many messages to people you just met look like spam.' },
   { key: 'NAUKRI_MAX_APPLIES_PER_DAY', group: 'daily-caps', default: 30, min: 0, max: 100000, unit: 'per day',
     what: 'Naukri applications per day.' },

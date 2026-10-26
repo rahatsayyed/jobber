@@ -92,7 +92,7 @@ None of it is committed because `.gitignore` excludes these names (there is no p
 Sessions run with an allow-list of tool names taken from one set in `config/permission-sets.json`. The set is the ceiling for what a session may do.
 
 - `read_only`: the default. Look at stats, drafts and status; nothing is sent, applied or changed.
-- `outreach_send`: `read_only` plus the tools that fetch jobs, queue outreach, and send email, LinkedIn connection requests and messages, Naukri messages and applications (still bound by the daily and weekly caps).
+- `outreach_send`: `read_only` plus the tools that fetch jobs, queue outreach, and send email, LinkedIn connection requests and messages, Naukri messages and applications (still bound by the daily caps).
 - `full`: `outreach_send` plus whole MCP servers, every tool they expose. Only for someone who has read the tool list.
 
 Change it with `npm run setup -- --step access`. No session ever runs with skip-permissions.
@@ -170,7 +170,7 @@ SEND_LIMIT_PER_RUN=1      # daily email limit for the followups command; the mai
 ## Safety model
 
 - Email goes only to addresses marked verified; an unverified guess is never sent to.
-- Caps (daily emails and applies, weekly LinkedIn invites and messages) are enforced in code, not by prompts; items over a cap stay queued. The email cap is `EMAIL_MAX_PER_DAY`, which is unset (no cap) by default: the slow drip spacing is the protection until you set it.
+- Caps (daily emails and applies, LinkedIn invites and messages) are enforced in code, not by prompts; items over a cap stay queued. The email cap is `EMAIL_MAX_PER_DAY`, which is unset (no cap) by default: the slow drip spacing is the protection until you set it.
 - A fact gate blocks resumes and emails that contain claims not supported by your own resume.
 - The scout and the applier use typed tools only: they never type free text into a page, never solve a CAPTCHA, MFA or phone check, never tick a marketing box, and create accounts only when you allow it. Generated job-source providers stay held until you approve them.
 - Reply outcomes need your explicit approval; auto-recording of outcomes ships off. Email follow-ups need your approval by default; with `FOLLOWUPS_AUTONOMOUS=true` (ships `false`) they send without approval under four code guards (fresh clean reply check, claim step, block list, fact gate) and the same daily send cap.

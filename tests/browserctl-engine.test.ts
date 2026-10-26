@@ -260,12 +260,12 @@ describe('commit: connect send', () => {
   });
 
   it('ceiling spent at arm: rate_limited; spent between arm and click: no click', async () => {
-    const w = mk({ html: profileHtml({ dialog: inviteDialog() }), env: { ...LIVE_ENV, LINKEDIN_MAX_INVITES_PER_WEEK: '1' } });
+    const w = mk({ html: profileHtml({ dialog: inviteDialog() }), env: { ...LIVE_ENV, LINKEDIN_MAX_INVITES_PER_DAY: '1' } });
     recordEvent(w.db, 'linkedin_invite', new Date(NOW.getTime() - 3600_000));
     const a = await w.arm({ kind: 'connect_note', profile_url: URL_, text: NOTE });
     expect(a).toMatchObject({ status: 'rate_limited', code: 'rate_limited' });
 
-    const w2 = mk({ html: profileHtml({ dialog: inviteDialog() }), env: { ...LIVE_ENV, LINKEDIN_MAX_INVITES_PER_WEEK: '1' } });
+    const w2 = mk({ html: profileHtml({ dialog: inviteDialog() }), env: { ...LIVE_ENV, LINKEDIN_MAX_INVITES_PER_DAY: '1' } });
     expect((await w2.arm({ kind: 'connect_note', profile_url: URL_, text: NOTE })).status).toBe('armed');
     const send = refOf(await w2.snap(), 'button', 'Send');
     recordEvent(w2.db, 'linkedin_invite', new Date(NOW.getTime() - 1000));

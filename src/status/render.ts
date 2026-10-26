@@ -9,8 +9,8 @@ export interface WindowInfo {
 }
 
 const PERIOD: Record<LimitKey, string> = {
-  linkedin_invite: 'week',
-  linkedin_message: 'week',
+  linkedin_invite: 'day',
+  linkedin_message: 'day',
   naukri_apply: 'day',
   naukri_message: 'day',
   wellfound_apply: 'day',

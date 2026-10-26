@@ -10,11 +10,10 @@ export type LimitKey =
   | 'apply_attempt' | 'site_account' | 'linkedin_discover';
 
 const DAY_MS = 24 * 3600 * 1000;
-const WEEK_MS = 7 * DAY_MS;
 
 const WINDOW_MS: Record<LimitKey, number> = {
-  linkedin_invite: WEEK_MS,
-  linkedin_message: WEEK_MS,
+  linkedin_invite: DAY_MS,
+  linkedin_message: DAY_MS,
   naukri_apply: DAY_MS,
   naukri_message: DAY_MS,
   wellfound_apply: DAY_MS,
@@ -28,9 +27,9 @@ const WINDOW_MS: Record<LimitKey, number> = {
 function limitFor(key: LimitKey, cfg: OutreachConfig): number {
   switch (key) {
     case 'linkedin_invite':
-      return cfg.linkedinMaxInvitesPerWeek;
+      return cfg.linkedinMaxInvitesPerDay;
     case 'linkedin_message':
-      return cfg.linkedinMaxMessagesPerWeek;
+      return cfg.linkedinMaxMessagesPerDay;
     case 'naukri_apply':
       return cfg.naukriMaxAppliesPerDay;
     case 'naukri_message':

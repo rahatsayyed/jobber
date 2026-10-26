@@ -210,7 +210,7 @@ Real sends under temporary low ceilings, supervised.
 - `[owner]` Permission set moved to `outreach_send` on purpose:
   `npm run permissions -- outreach_send`. Check with `--status`.
 - `[owner]` Low ceilings set in `.env` for this phase: `EMAIL_MAX_PER_DAY` (the mail drip lane's
-  daily cap; `SEND_LIMIT_PER_RUN` does not limit the drip lane), `MAX_APPLIES_PER_DAY`, `LINKEDIN_MAX_INVITES_PER_WEEK`, `LINKEDIN_MAX_MESSAGES_PER_WEEK`,
+  daily cap; `SEND_LIMIT_PER_RUN` does not limit the drip lane), `MAX_APPLIES_PER_DAY`, `LINKEDIN_MAX_INVITES_PER_DAY`, `LINKEDIN_MAX_MESSAGES_PER_DAY`,
   `NAUKRI_MAX_MESSAGES_PER_DAY`. Defaults and ranges: `src/setup/limitsCatalog.ts`; current
   usage: `npm run status -- limits`.
 - Gmail OAuth done (`docs/gmail-mcp-setup.md`). Sending rules: see `CLAUDE.md` "Safety".
@@ -260,7 +260,7 @@ you expected to catch it, or a checkpoint or CAPTCHA appeared. Run
 
 **Flags (names only)**
 - Raise ceilings one at a time, never two in the same day: `EMAIL_MAX_PER_DAY`,
-  `MAX_APPLIES_PER_DAY`, `LINKEDIN_MAX_INVITES_PER_WEEK`, `LINKEDIN_MAX_MESSAGES_PER_WEEK`.
+  `MAX_APPLIES_PER_DAY`, `LINKEDIN_MAX_INVITES_PER_DAY`, `LINKEDIN_MAX_MESSAGES_PER_DAY`.
 - Optional, each its own decision: `FOLLOWUPS_AUTONOMOUS` (autonomous follow-ups never ran
   against real Gmail: `unverified`; they raise deliverability risk), `AUTO_UPDATE`,
   `BACKUP_ENABLED`, `LAYOUT_ENFORCE=enforce`.

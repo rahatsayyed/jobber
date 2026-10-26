@@ -18,7 +18,6 @@ import type { SetupContext, SetupStep } from '../runner.js';
 const GROUPS: { id: LimitGroup; title: string }[] = [
   { id: 'matching', title: 'Matching' },
   { id: 'daily-caps', title: 'Daily caps' },
-  { id: 'weekly-caps', title: 'Weekly caps' },
   { id: 'per-company', title: 'Per-company limits' },
   { id: 'quiet-hours', title: 'Quiet hours' },
   { id: 'spacing', title: 'Spacing' },

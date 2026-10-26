@@ -12,7 +12,7 @@ model (`src/scheduler/`). Each wake: read the kill switch and halts, skip quiet 
 approximate-token budgets only (`RUN_MAX_WALL_SEC` 3600 s and `RUN_MAX_TOKENS_APPROX` 1000000 by default; tool calls are counted and
 reported, never a stop condition, and there is no `RUN_MAX_TOOL_CALLS`; the model run's own turn limit is `max_turns` in the run profile; the stream-json log path is stored in `scheduler_runs.log_path` under `.jobber/runs/`, and `npm run status -- runs` prints tool-call counts per subagent and tool for the latest run), then finish the run in the `scheduler_runs` log. Wakes start a fixed
 10 minutes apart (`WAKE_INTERVAL_MIN`, moved past quiet hours); there is no random burst size: each task's quota is what is due bounded by the room left under its real
-ceiling (weekly and daily caps). A usage-limit hit (the run ends `usage_limit`,
+ceiling (daily caps). A usage-limit hit (the run ends `usage_limit`,
 in a wake or a drip run) records `usage_backoff_until` and pauses wakes AND the mail drip lane for
 `USAGE_LIMIT_BACKOFF_MIN` (default 300) rather than retrying. In `--daemon` mode the scheduler also runs the mail drip lane
 beside the wakes and checks for pending manual requests every 30 seconds (see "Running a wake"). Escalations go to SQLite and
@@ -20,7 +20,11 @@ beside the wakes and checks for pending manual requests every 30 seconds (see "R
 wake session executes the planned steps in order (see "Running a wake"): `source-operator`, the
 platform operators `linkedin-operator`, `naukri-operator` and `wellfound-operator`, the pipeline stage and
 `apply-operator`, one Agent call each and only for stages with work (a wake has no `mail-operator` step; email
-goes out through the drip lane). Operator agents and their exact tools:
+goes out through the drip lane). The sending steps (LinkedIn and Naukri `followups` and `new_outreach`, and `apply`) are the
+exception: code splits their quota into chunks of at most `CHUNK_SIZE` (5, a constant in `src/scheduler/plan.ts`, no env key)
+and the prompt lists them (`new_outreach quota 12 -> calls of 5, 5, 2`), so the session makes separate sequential Agent calls,
+each a fresh subagent context, until the quota is spent or a call reports done 0, stopped, halted or limit reached. A chunked
+step counts as proven (continuations) only when every one of its calls returned, or the final report lists it. Operator agents and their exact tools:
 `config/worker-tools.json` and `.claude/agents/`. `npm run scheduler:units` writes launchd and
 systemd unit files under `.jobber/units` and prints the install commands; it installs nothing.
 After a non-killed wake outside quiet hours the scheduler may run the update and backup ticks

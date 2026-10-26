@@ -133,7 +133,7 @@ export function describeStep(s: Step, index: number): string {
 /**
  * Which steps of the wake the stream PROVES were done (conservative: unsure means unproven).
  * Code steps ran before the session. An operator step is proven by a completed Agent call to that operator or by the
- * final report listing it with that task kind. The pipeline step has no operator of its own (it is many Agent calls), so
+ * final report listing it with that task kind; a chunked sending step (`chunks`) needs one completed call per chunk. The pipeline step has no operator of its own (it is many Agent calls), so
  * it is proven only by a final report with no subagent left pending.
  */
 export function unprovenSteps(
@@ -163,9 +163,11 @@ export function unprovenSteps(
       proven.add(i);
       return;
     }
+    // A chunked step is several Agent calls; it counts only when every one of them returned.
     const spent = used.get(s.operator) ?? 0;
-    if (spent < insp.completedCount(s.operator)) {
-      used.set(s.operator, spent + 1);
+    const calls = s.chunks?.length ?? 1;
+    if (spent + calls <= insp.completedCount(s.operator)) {
+      used.set(s.operator, spent + calls);
       proven.add(i);
     }
   });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildWakePrompt } from '../src/scheduler/prompt.js';
-import type { Assignment } from '../src/scheduler/plan.js';
+import type { Assignment, Step } from '../src/scheduler/plan.js';
 
 describe('buildWakePrompt', () => {
   const tasks: Assignment[] = [
@@ -39,6 +39,21 @@ describe('buildWakePrompt', () => {
     }
     expect(p).toMatch(/sequentially/);
     expect(p).toMatch(/one Agent call each/);
+  });
+  it('lists the separate sequential calls of a chunked sending step and keeps one call for a small quota', () => {
+    const order: Step[] = [
+      { operator: 'linkedin-operator', platform: 'linkedin', kind: 'new_outreach', quota: 12, chunks: [5, 5, 2] },
+      { operator: 'linkedin-operator', platform: 'linkedin', kind: 'followups', quota: 3, chunks: [3] },
+      { operator: 'apply-operator', kind: 'apply', quota: 7, chunks: [5, 2] },
+    ];
+    const p = buildWakePrompt({ ...i, order });
+    expect(p).toContain('new_outreach quota 12 -> calls of 5, 5, 2');
+    expect(p).toContain('SEPARATE sequential Agent calls');
+    expect(p).toMatch(/done 0, stopped, halted or limit reached/);
+    expect(p).toContain('apply quota 7 -> calls of 5, 2');
+    expect(p).toContain('task: followups quota 3 (first');
+    expect(p).not.toContain('followups quota 3 ->');
+    expect(p.match(/first read your own queue/g)?.length).toBeGreaterThanOrEqual(2);
   });
   it('ends with the operator JSON instruction, no dry-run sentence when live', () => {
     const p = buildWakePrompt(i);

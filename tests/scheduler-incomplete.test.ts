@@ -148,6 +148,28 @@ describe('unprovenSteps', () => {
     i.finish();
     expect(unprovenSteps(order, i, ['r1'], new Set()).unproven).toEqual([]);
   });
+  it('a chunked step is proven only when every one of its calls returned', () => {
+    const chunked: Step[] = [
+      { operator: 'linkedin-operator', platform: 'linkedin', kind: 'new_outreach', quota: 12, chunks: [5, 5, 2] },
+      { operator: 'apply-operator', kind: 'apply', quota: 2, chunks: [2] },
+    ];
+    const two = new StreamInspector();
+    two.feed(init(S1) + doneAgent('a', 'linkedin-operator') + doneAgent('b', 'linkedin-operator') + started('c', 'linkedin-operator') + doneAgent('z', 'apply-operator') + result('stopped'));
+    two.finish();
+    expect(unprovenSteps(chunked, two, ['r1'], new Set()).unproven).toEqual([0]);
+    const three = new StreamInspector();
+    three.feed(init(S1) + doneAgent('a', 'linkedin-operator') + doneAgent('b', 'linkedin-operator') + doneAgent('c', 'linkedin-operator') + doneAgent('z', 'apply-operator') + result('stopped'));
+    three.finish();
+    expect(unprovenSteps(chunked, three, ['r1'], new Set()).unproven).toEqual([]);
+  });
+  it('a final report proves a chunked step that stopped early', () => {
+    const chunked: Step[] = [{ operator: 'linkedin-operator', platform: 'linkedin', kind: 'inbox', quota: 5 },
+      { operator: 'linkedin-operator', platform: 'linkedin', kind: 'new_outreach', quota: 12, chunks: [5, 5, 2] }];
+    const i = new StreamInspector();
+    i.feed(init(S1) + doneAgent('a', 'linkedin-operator') + result(JSON.stringify({ run_id: 'r1', operators: [{ operator: 'linkedin-operator', platform: 'linkedin', tasks: [{ kind: 'inbox' }, { kind: 'new_outreach' }] }] })));
+    i.finish();
+    expect(unprovenSteps(chunked, i, ['r1'], new Set()).unproven).toEqual([]);
+  });
   it('steps proven by an earlier session stay proven', () => {
     const i = new StreamInspector();
     i.feed(init(S1) + doneAgent('z', 'apply-operator') + result(reportLine('r1', ['apply-operator'])));

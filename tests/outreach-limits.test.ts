@@ -13,12 +13,13 @@ import {
 } from '../src/outreach/limits.js';
 
 const NOW = new Date('2026-10-14T10:00:00.000Z');
-const WEEK = 7 * 24 * 3600 * 1000;
+const DAY = 24 * 3600 * 1000;
 
 describe('loadOutreachConfig', () => {
   it('uses the documented defaults', () => {
     const c = loadOutreachConfig({});
-    expect(c.linkedinMaxInvitesPerWeek).toBe(100);
+    expect(c.linkedinMaxInvitesPerDay).toBe(40);
+    expect(c.linkedinMaxMessagesPerDay).toBe(100);
     expect(c.naukriMaxAppliesPerDay).toBe(30);
     expect(c.naukriMaxMessagesPerDay).toBe(40);
     expect(c.companyContactLimit).toBe(5);
@@ -29,27 +30,36 @@ describe('loadOutreachConfig', () => {
 
   it('reads env overrides and ignores invalid values', () => {
     const c = loadOutreachConfig({
-      LINKEDIN_MAX_INVITES_PER_WEEK: '80',
+      LINKEDIN_MAX_INVITES_PER_DAY: '80',
       NAUKRI_MAX_APPLIES_PER_DAY: 'abc',
       QUIET_HOURS_START: '30',
     });
-    expect(c.linkedinMaxInvitesPerWeek).toBe(80);
+    expect(c.linkedinMaxInvitesPerDay).toBe(80);
     expect(c.naukriMaxAppliesPerDay).toBe(30);
     expect(c.quietStartHour).toBe(1);
   });
 });
 
 describe('rolling ceilings', () => {
-  it('does not count an event exactly 7 days old, but counts one a second newer', () => {
+  it('does not count an event exactly 24 hours old, but counts one a second newer', () => {
     const db = openDb(':memory:');
-    recordEvent(db, 'linkedin_invite', new Date(NOW.getTime() - WEEK));
-    recordEvent(db, 'linkedin_invite', new Date(NOW.getTime() - WEEK + 1000));
-    expect(countSince(db, 'linkedin_invite', new Date(NOW.getTime() - WEEK))).toBe(1);
+    recordEvent(db, 'linkedin_invite', new Date(NOW.getTime() - DAY));
+    recordEvent(db, 'linkedin_invite', new Date(NOW.getTime() - DAY + 1000));
+    expect(countSince(db, 'linkedin_invite', new Date(NOW.getTime() - DAY))).toBe(1);
+  });
+
+  it('linkedin invite and message ceilings use a rolling 24 hours', () => {
+    const db = openDb(':memory:');
+    const cfg = { ...loadOutreachConfig({}), linkedinMaxInvitesPerDay: 1, linkedinMaxMessagesPerDay: 1 };
+    recordEvent(db, 'linkedin_invite', new Date(NOW.getTime() - 25 * 3600 * 1000));
+    recordEvent(db, 'linkedin_message', new Date(NOW.getTime() - 2 * 3600 * 1000));
+    expect(ceilings(db, cfg, NOW).linkedin_invite).toEqual({ used: 0, limit: 1, ok: true });
+    expect(ceilings(db, cfg, NOW).linkedin_message).toEqual({ used: 1, limit: 1, ok: false });
   });
 
   it('tryConsume stops at the ceiling', () => {
     const db = openDb(':memory:');
-    const cfg = { ...loadOutreachConfig({}), linkedinMaxInvitesPerWeek: 2 };
+    const cfg = { ...loadOutreachConfig({}), linkedinMaxInvitesPerDay: 2 };
     expect(tryConsume(db, 'linkedin_invite', cfg, NOW)).toBe(true);
     expect(tryConsume(db, 'linkedin_invite', cfg, NOW)).toBe(true);
     expect(tryConsume(db, 'linkedin_invite', cfg, NOW)).toBe(false);
@@ -95,9 +105,9 @@ describe('tryConsume concurrency safety', () => {
   it('db has a busy timeout and tryConsume still enforces the ceiling under an immediate transaction', () => {
     const db = openDb(':memory:');
     expect(db.pragma('busy_timeout', { simple: true })).toBe(5000);
-    const cfg = { ...loadOutreachConfig({}), linkedinMaxInvitesPerWeek: 3 };
+    const cfg = { ...loadOutreachConfig({}), linkedinMaxInvitesPerDay: 3 };
     const results = Array.from({ length: 6 }, () => tryConsume(db, 'linkedin_invite', cfg, NOW));
     expect(results.filter(Boolean)).toHaveLength(3);
-    expect(countSince(db, 'linkedin_invite', new Date(NOW.getTime() - WEEK))).toBe(3);
+    expect(countSince(db, 'linkedin_invite', new Date(NOW.getTime() - DAY))).toBe(3);
   });
 });

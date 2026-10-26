@@ -21,7 +21,11 @@ export type TaskKind =
 export type StageOperator = 'code' | 'source-operator' | 'pipeline' | 'mail-operator' | 'apply-operator';
 export interface Stage { operator: StageOperator; kind: TaskKind; quota: number }
 /** One step of the wake, in execution order (see `stepOrder`). */
-export interface Step { operator: Operator | StageOperator; kind: TaskKind; quota: number; platform?: Platform; searches?: DiscoverSearches }
+export interface Step {
+  operator: Operator | StageOperator; kind: TaskKind; quota: number; platform?: Platform; searches?: DiscoverSearches;
+  /** Sending steps only: the quota split into the quotas of separate sequential Agent calls (see `CHUNK_SIZE`); the calls sum to `quota`. */
+  chunks?: number[];
+}
 /** Names of the searches the discover tasks may run: LinkedIn from config/linkedin-discovery.json, Naukri (`naukri`) from config/naukri-discovery.json. */
 export interface DiscoverSearches { jobs: string[]; posts: string[]; naukri?: string[]; wellfound?: string[] }
 /** `quota` of a LinkedIn discover task is the number of searches it may run this wake; of a Naukri one, the job pages it may open for descriptions. `searches` names them. */
@@ -40,6 +44,8 @@ export interface PlanKnobs {
   wellfoundDiscoverEveryHours?: number;
 }
 
+/** Most items one Agent call of a sending step may handle (a constant, no env key): a longer quota is split into separate sequential calls, each a fresh subagent context. */
+export const CHUNK_SIZE = 5;
 export const INBOX_QUOTA = 5;
 export const NAUKRI_DETAIL_QUOTA = 5;
 export const WELLFOUND_DETAIL_QUOTA = 5;
@@ -105,7 +111,7 @@ export function planWake(i: {
 
   const ORDER: Platform[] = ['linkedin', 'naukri', 'wellfound']; // stable order: linkedin first
   const byPlatform: Record<Platform, OperatorTask[]> = { linkedin: [], naukri: [], wellfound: [] };
-  // Quota per task = what is due, bounded by the room left under the real ceiling (weekly/daily counter) of the action's key.
+  // Quota per task = what is due, bounded by the room left under the real ceiling (daily counter) of the action's key.
   // naukri_message is shared by Naukri follow-ups and Naukri new outreach, so room is tracked per key and spent in order.
   const room: Partial<Record<LimitKey, number>> = {};
   const roomLeft = (k: LimitKey): number => room[k] ?? Math.max(0, ceilings[k].limit - ceilings[k].used);
@@ -239,6 +245,13 @@ export function planWake(i: {
   return { kind: 'skip', reason: workExists ? 'ceilings_exhausted' : 'nothing_due' };
 }
 
+/** The call sizes of a sending step: `quota` split into pieces of at most CHUNK_SIZE (12 gives 5, 5, 2). */
+export function chunkQuota(quota: number): number[] {
+  const out: number[] = [];
+  for (let left = quota; left > 0; left -= CHUNK_SIZE) out.push(Math.min(left, CHUNK_SIZE));
+  return out;
+}
+
 /**
  * The wake in execution order: 0 manual requests (code, only when some are pending), 1 code pass over the script providers, 2 source-operator, 3 LinkedIn then Naukri discover,
  * 4 pipeline (sweep, reply check, match, vetoes, contacts, prepare), 5 mail-operator, 6 linkedin-operator then naukri-operator
@@ -257,7 +270,13 @@ export function stepOrder(d: Extract<WakeDecision, { kind: 'run' }>): Step[] {
   for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'discover') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota, searches: t.searches });
   stage('pipeline');
   stage('mail');
-  for (const a of d.tasks) for (const t of a.tasks) if (t.kind !== 'discover' && t.kind !== 'manual_url') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });
+  for (const a of d.tasks) for (const t of a.tasks) {
+    if (t.kind === 'discover' || t.kind === 'manual_url') continue;
+    const sending = t.kind === 'followups' || t.kind === 'new_outreach';
+    out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota, ...(sending ? { chunks: chunkQuota(t.quota) } : {}) });
+  }
   stage('apply');
+  const apply = out[out.length - 1];
+  if (apply?.kind === 'apply') apply.chunks = chunkQuota(apply.quota);
   return out;
 }
