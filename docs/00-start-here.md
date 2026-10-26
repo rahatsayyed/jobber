@@ -60,7 +60,7 @@ before you flip anything live. Nothing on this path flips a dry-run flag for you
   operator is planned. Its pages, selectors and login cookie name are live-unverified (see [sources-and-platforms.md](sources-and-platforms.md)).
 - Step 16: `npm stop` (same as `npm run down`) stops the stack. `up` refuses while the kill switch is set. The stack
   includes the scheduler daemon, and the daemon also runs the mail drip lane (email goes out slowly through the day, never
-  in a burst from a wake; see [operations.md](operations.md)) and wakes early for a priority request made with
+  from a wake; see [operations.md](operations.md)) and wakes early for a priority request made with
   `/apply <url>` or `npm run apply:request`.
 
 ## If something is red

@@ -13,7 +13,7 @@ import { addrOf, isVerifiedAddress } from '../lib/verifiedAddress.js';
 import {
   approveDraftedFollowups, followupCheckMaxAgeMin, followupMode, hasFreshCleanReplyCheck, listApprovedFollowups,
 } from '../followups.js';
-import { drawUniformMinMs, inQuietHours, pacingFromConfig } from '../outreach/pacing.js';
+import { drawUniformMinMs, inQuietHours, quietFromConfig } from '../outreach/quiet.js';
 import { BudgetTracker, loadBudget, type Budget } from './budget.js';
 import { readControl, statExists, type ControlDeps } from './control.js';
 import type { DriverDeps } from './driver.js';
@@ -332,7 +332,7 @@ function gate(d: DriverDeps, cfg: DripConfig, now: Date, spacing: boolean): stri
     return 'killed'; // unreadable control state means stop
   }
   if (emailBrakeOn(d.env)) return 'send_limit_zero'; // SEND_LIMIT_PER_RUN=0: the emergency brake stops all email, EMAIL_MAX_PER_DAY or not
-  if (inQuietHours(now, pacingFromConfig(d.cfg, d.tuning))) return 'quiet_hours';
+  if (inQuietHours(now, quietFromConfig(d.cfg))) return 'quiet_hours';
   if (!inSendWindow(now, cfg)) return 'outside_window';
   try {
     if (getState(d.db, 'unkilled_window')) return 'unkilled_window';
@@ -370,7 +370,7 @@ async function runOne(
     const now = d.now();
     const budget = loadBudget(d.env);
     startRun(d.db, {
-      id: runId, at: now, trigger: DRIP_TRIGGER, dryRun: dry, burst: 1,
+      id: runId, at: now, trigger: DRIP_TRIGGER, dryRun: dry,
       tasks: [{ operator: 'mail-operator', kind: 'mail', quota: 1, item: itemKey(item) }], status: 'running',
     });
     started = true;

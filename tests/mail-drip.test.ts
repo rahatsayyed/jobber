@@ -14,7 +14,7 @@ import { buildDripPrompt, dripTick, listDripQuarantine, releaseDripQuarantine, p
 import { getState, listRuns } from '../src/scheduler/runLog.js';
 import { planWake, stepOrder, type PlanKnobs } from '../src/scheduler/plan.js';
 import { pipelineLines } from '../src/scheduler/pipeline.js';
-import { pacingFromConfig } from '../src/outreach/pacing.js';
+import { quietFromConfig } from '../src/outreach/quiet.js';
 import { readControl } from '../src/scheduler/control.js';
 import { ceilings } from '../src/outreach/limits.js';
 import type { DueCounts } from '../src/scheduler/due.js';
@@ -406,7 +406,7 @@ describe('wakes no longer burst-send', () => {
     const s = setup();
     const cfg = loadOutreachConfig({});
     return planWake({
-      now: NOON_IST, rng: () => 0.5, pacing: pacingFromConfig(cfg, loadTuning({})),
+      now: NOON_IST, quiet: quietFromConfig(cfg),
       control: readControl(s.db, { stopFile: s.d.stopFile, env: {}, exists: () => false, read: () => '' }),
       ceilings: ceilings(s.db, cfg, NOON_IST), due: due(o), knobs,
     });

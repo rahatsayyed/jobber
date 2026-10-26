@@ -12,7 +12,7 @@ export type LimitGroup =
   | 'weekly-caps'
   | 'per-company'
   | 'quiet-hours'
-  | 'pacing'
+  | 'spacing'
   | 'cooldowns'
   | 'matching';
 
@@ -38,24 +38,24 @@ export const LIMITS: LimitSpec[] = [
   { key: 'EMAIL_MAX_PER_DAY', group: 'daily-caps', default: 0, min: 0, max: 100000, unit: 'per day',
     what: 'Optional daily cap on emails sent by the mail drip lane (0 or unset means no cap; the slow spacing is the protection). This is the drip cap; SEND_LIMIT_PER_RUN does not limit the drip, but setting it to 0 still stops all email. Counted in the shared send_email daily counter.',
     raiseNote: 'More email from one address raises spam-folder and bounce risk.' },
-  { key: 'EMAIL_DRIP_MIN_BATCH', group: 'pacing', default: 2, min: 1, max: 20, unit: 'emails',
+  { key: 'EMAIL_DRIP_MIN_BATCH', group: 'spacing', default: 2, min: 1, max: 20, unit: 'emails',
     what: 'Fewest emails the mail drip lane sends in one tick (the batch size is drawn between the min and the max).',
-    raiseNote: 'Bigger batches look more like a burst to the mail provider.' },
-  { key: 'EMAIL_DRIP_MAX_BATCH', group: 'pacing', default: 3, min: 1, max: 20, unit: 'emails',
+    raiseNote: 'Bigger batches look more like a flood to the mail provider.' },
+  { key: 'EMAIL_DRIP_MAX_BATCH', group: 'spacing', default: 3, min: 1, max: 20, unit: 'emails',
     what: 'Most emails the mail drip lane sends in one tick.',
-    raiseNote: 'Bigger batches look more like a burst to the mail provider.' },
-  { key: 'EMAIL_DRIP_MIN_GAP_MIN', group: 'pacing', default: 5, min: 1, max: 1440, unit: 'minutes',
+    raiseNote: 'Bigger batches look more like a flood to the mail provider.' },
+  { key: 'EMAIL_DRIP_MIN_GAP_MIN', group: 'spacing', default: 5, min: 1, max: 1440, unit: 'minutes',
     what: 'Shortest random wait between two mail drip ticks (a tick sends one small batch).',
     raiseNote: 'A shorter gap sends email faster and raises spam-folder risk.' },
-  { key: 'EMAIL_DRIP_MAX_GAP_MIN', group: 'pacing', default: 8, min: 1, max: 1440, unit: 'minutes',
+  { key: 'EMAIL_DRIP_MAX_GAP_MIN', group: 'spacing', default: 8, min: 1, max: 1440, unit: 'minutes',
     what: 'Longest random wait between two mail drip ticks. Must not be below the minimum.',
     raiseNote: 'A shorter gap sends email faster and raises spam-folder risk.' },
-  { key: 'EMAIL_DRIP_INTRA_PAUSE_MIN_SEC', group: 'pacing', default: 10, min: 0, max: 3600, unit: 'seconds',
+  { key: 'EMAIL_DRIP_INTRA_PAUSE_MIN_SEC', group: 'spacing', default: 10, min: 0, max: 3600, unit: 'seconds',
     what: 'Shortest random pause between two emails inside one drip tick.',
-    raiseNote: 'Back-to-back sends look like a burst to the mail provider.' },
-  { key: 'EMAIL_DRIP_INTRA_PAUSE_MAX_SEC', group: 'pacing', default: 40, min: 0, max: 3600, unit: 'seconds',
+    raiseNote: 'Back-to-back sends look like a flood to the mail provider.' },
+  { key: 'EMAIL_DRIP_INTRA_PAUSE_MAX_SEC', group: 'spacing', default: 40, min: 0, max: 3600, unit: 'seconds',
     what: 'Longest random pause between two emails inside one drip tick. Must not be below the minimum.',
-    raiseNote: 'Back-to-back sends look like a burst to the mail provider.' },
+    raiseNote: 'Back-to-back sends look like a flood to the mail provider.' },
   { key: 'MAX_APPLIES_PER_DAY', group: 'daily-caps', default: 5, min: 0, max: 100000, unit: 'per day',
     what: 'Applications submitted per day across LinkedIn Easy Apply, external ATS, Naukri and Wellfound.',
     raiseNote: 'High volume on the burner account can trigger LinkedIn restrictions.' },
@@ -118,29 +118,13 @@ export const LIMITS: LimitSpec[] = [
   { key: 'QUIET_HOURS_END', group: 'quiet-hours', default: 7, min: 0, max: 23, unit: 'hour 0-23',
     what: 'Hour (local time) when quiet hours end and outreach may resume.' },
 
-  // pacing
-  { key: 'APPLY_MAX_STEPS', group: 'pacing', default: 12, min: 1, max: 50, unit: 'steps',
+  // spacing
+  { key: 'APPLY_MAX_STEPS', group: 'spacing', default: 12, min: 1, max: 50, unit: 'steps',
     what: 'Next, back and save clicks one browser application may make before the applier stops.',
     raiseNote: 'A form that needs more steps than this is usually a loop or the wrong page.' },
-  { key: 'APPLY_HOST_COOLDOWN_DAYS', group: 'pacing', default: 7, min: 1, max: 90, unit: 'days',
+  { key: 'APPLY_HOST_COOLDOWN_DAYS', group: 'spacing', default: 7, min: 1, max: 90, unit: 'days',
     what: 'Days the browser applier leaves a host alone after two blocks (captcha, MFA, phone check, bot wall) within 7 days.',
     raiseNote: 'Shorter cooldowns retry a site that already stopped us.' },
-  { key: 'PACING_MIN_BURST', group: 'pacing', default: 1, min: 1, max: 50, unit: 'actions',
-    what: 'Fewest actions in one burst before a longer wait.' },
-  { key: 'PACING_MAX_BURST', group: 'pacing', default: 4, min: 1, max: 50, unit: 'actions',
-    what: 'Most actions in one burst before a longer wait.',
-    raiseNote: 'Long bursts look automated.' },
-  { key: 'PACING_MIN_ACTION_GAP_SEC', group: 'pacing', default: 120, min: 1, max: 86400, unit: 'seconds',
-    what: 'Shortest pause between two actions in a burst.',
-    raiseNote: 'Lowering it makes activity look robotic.' },
-  { key: 'PACING_MAX_ACTION_GAP_SEC', group: 'pacing', default: 360, min: 1, max: 86400, unit: 'seconds',
-    what: 'Longest pause between two actions in a burst.' },
-  { key: 'PACING_MIN_WAIT_MIN', group: 'pacing', default: 8, min: 1, max: 1440, unit: 'minutes',
-    what: 'Shortest wait between bursts.' },
-  { key: 'PACING_MAX_WAIT_MIN', group: 'pacing', default: 40, min: 1, max: 1440, unit: 'minutes',
-    what: 'Longest wait between bursts.' },
-  { key: 'PACING_JITTER_PCT', group: 'pacing', default: 25, min: 0, max: 90, unit: 'percent',
-    what: 'Random variation added to every pause so timing is not regular.' },
 
   // cooldowns and cadence
   { key: 'COOLDOWN_IGNORED_DAYS', group: 'cooldowns', default: 75, min: 1, max: 3650, unit: 'days',
@@ -191,12 +175,12 @@ export function validateLimit(spec: LimitSpec, raw: string): string | null {
 }
 
 const PAIRS: ReadonlyArray<readonly [string, string]> = [
-  ['PACING_MIN_BURST', 'PACING_MAX_BURST'],
-  ['PACING_MIN_ACTION_GAP_SEC', 'PACING_MAX_ACTION_GAP_SEC'],
-  ['PACING_MIN_WAIT_MIN', 'PACING_MAX_WAIT_MIN'],
+  ['EMAIL_DRIP_MIN_BATCH', 'EMAIL_DRIP_MAX_BATCH'],
+  ['EMAIL_DRIP_MIN_GAP_MIN', 'EMAIL_DRIP_MAX_GAP_MIN'],
+  ['EMAIL_DRIP_INTRA_PAUSE_MIN_SEC', 'EMAIL_DRIP_INTRA_PAUSE_MAX_SEC'],
 ];
 
-// The loaders silently reset a pair to defaults when min > max, so say it out loud.
+// The mail drip lane stops (bad_config) when a min is above its max, so say it out loud.
 export function validatePairs(values: Record<string, string>): string[] {
   const out: string[] = [];
   for (const [lo, hi] of PAIRS) {
@@ -206,7 +190,7 @@ export function validatePairs(values: Record<string, string>): string[] {
     const x = Number(a);
     const y = Number(b);
     if (Number.isFinite(x) && Number.isFinite(y) && x > y) {
-      out.push(`${lo} (${x}) is above ${hi} (${y}); the loader would ignore both and use defaults`);
+      out.push(`${lo} (${x}) is above ${hi} (${y}); the mail drip lane would stop (bad_config) until fixed`);
     }
   }
   return out;

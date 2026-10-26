@@ -134,7 +134,7 @@ describe('fromLimit', () => {
     expect(s).toMatchObject({ type: 'intList', itemCount: 3, default: '3,4,5', auditValue: false });
   });
   it('picks the weakening direction from a small override map', () => {
-    for (const k of ['MATCH_THRESHOLD', 'PACING_MIN_ACTION_GAP_SEC', 'PACING_JITTER_PCT','COOLDOWN_NOT_NOW_DAYS', 'EMAIL_FOLLOWUP_GAPS_DAYS', 'CADENCE_GAPS_DAYS']) {
+    for (const k of ['MATCH_THRESHOLD', 'COOLDOWN_NOT_NOW_DAYS', 'EMAIL_FOLLOWUP_GAPS_DAYS', 'CADENCE_GAPS_DAYS']) {
       expect(limitWeakens(k), k).toBe('decrease');
     }
     for (const k of ['QUIET_HOURS_START', 'QUIET_HOURS_END']) expect(limitWeakens(k), k).toBe('any');
@@ -169,8 +169,7 @@ describe('rules (D22) over the whole catalog', () => {
       expect(RANK[spec(l.key).tier]!, l.key).toBeGreaterThanOrEqual(RANK.guarded!);
       expect(spec(l.key).weakens, l.key).not.toBeNull();
     }
-    expect(spec('PACING_MAX_WAIT_MIN').weakens).toBe('increase');
-    expect(spec('PACING_MAX_BURST').weakens).toBe('increase');
+    expect(spec('EMAIL_DRIP_MAX_BATCH').weakens).toBe('increase');
   });
   it('no never key has a weakening direction', () => {
     for (const s of ENV_CATALOG.filter((x) => x.tier === 'never')) expect(s.weakens, s.key).toBeNull();
@@ -327,8 +326,7 @@ describe('blankMeansDefault (real loaders)', () => {
     'SPECULATIVE_COMPANY_LIMIT', 'QUIET_HOURS_START', 'QUIET_HOURS_END',
   ];
   const TUNING_KEYS = [
-    'PACING_MIN_BURST', 'PACING_MAX_BURST', 'PACING_MIN_ACTION_GAP_SEC', 'PACING_MAX_ACTION_GAP_SEC', 'PACING_MIN_WAIT_MIN',
-    'PACING_MAX_WAIT_MIN', 'PACING_JITTER_PCT', 'COOLDOWN_IGNORED_DAYS', 'COOLDOWN_NOT_NOW_DAYS', 'COOLDOWN_EXPLICIT_STOP_DAYS',
+    'COOLDOWN_IGNORED_DAYS', 'COOLDOWN_NOT_NOW_DAYS', 'COOLDOWN_EXPLICIT_STOP_DAYS',
     'CADENCE_GAPS_DAYS',
   ];
   const DRIP_KEYS = ['EMAIL_MAX_PER_DAY', 'EMAIL_DRIP_MIN_BATCH', 'EMAIL_DRIP_MAX_BATCH', 'EMAIL_DRIP_MIN_GAP_MIN', 'EMAIL_DRIP_MAX_GAP_MIN', 'EMAIL_DRIP_INTRA_PAUSE_MIN_SEC', 'EMAIL_DRIP_INTRA_PAUSE_MAX_SEC'];

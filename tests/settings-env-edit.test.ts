@@ -165,11 +165,11 @@ describe('diffs', () => {
 
 describe('cross-key validation', () => {
   it('a pair that would invert is an error', () => {
-    const base = 'PACING_MIN_BURST=1\nPACING_MAX_BURST=4\n';
-    const p = plan([set('PACING_MIN_BURST', '9')], base);
+    const base = 'EMAIL_DRIP_MIN_BATCH=1\nEMAIL_DRIP_MAX_BATCH=4\n';
+    const p = plan([set('EMAIL_DRIP_MIN_BATCH', '9')], base);
     expect(p.errors.some((e) => e.startsWith('pair_invalid:'))).toBe(true);
     expect(p.newText).toBe(base);
-    expect(plan([set('PACING_MIN_BURST', '3')], base).errors).toEqual([]);
+    expect(plan([set('EMAIL_DRIP_MIN_BATCH', '3')], base).errors).toEqual([]);
   });
   it('a conditional requirement is a warning, not an error', () => {
     const p = plan([{ key: 'FX_NAME', op: 'clear' }]);

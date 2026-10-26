@@ -22,15 +22,14 @@ import { buildHandlers } from '../src/mcp/scout.js';
 import { createWebRuntime, type WebRuntime } from '../src/webcore/runtime.js';
 import { createScoutBrowser } from './helpers/fakeScoutBrowser.js';
 import type { BoardJob } from '../src/sources/boards/greenhouse.js';
-import type { PacingConfig } from '../src/outreach/pacing.js';
+import type { QuietConfig } from '../src/outreach/quiet.js';
 import type { ControlState } from '../src/scheduler/control.js';
 import type { CeilingStatus, LimitKey } from '../src/outreach/limits.js';
 
 const NOW = new Date('2026-10-15T08:00:00.000Z'); // 13:30 IST
 const QUIET = new Date('2026-10-14T21:00:00.000Z'); // 02:30 IST
-const pacing: PacingConfig = {
+const quiet: QuietConfig = {
   quietStartHour: 23, quietEndHour: 7, tzOffsetMinutes: 330,
-  minBurst: 1, maxBurst: 4, minActionGapSec: 120, maxActionGapSec: 360, minWaitMin: 8, maxWaitMin: 40, jitter: 0.25,
 };
 const knobs: PlanKnobs = { inboxEveryMin: 60, naukriDiscoverEveryHours: 6 };
 const ctl = (o: Partial<ControlState> = {}): ControlState => ({ killed: false, killReason: null, halted: { linkedin: null, naukri: null, wellfound: null }, allowed: ['linkedin', 'naukri', 'wellfound'], readError: null, ...o });
@@ -42,7 +41,7 @@ const idleDue = (o: Partial<DueCounts> = {}): DueCounts => ({
   inboxLastCheckedMinAgo: 5, naukriSearchLastHoursAgo: 1, ...o,
 });
 const plan = (due: DueCounts, over: { now?: Date; control?: ControlState; ceilings?: Record<LimitKey, CeilingStatus> } = {}) =>
-  planWake({ now: over.now ?? NOW, rng: () => 0.5, pacing, control: over.control ?? ctl(), ceilings: over.ceilings ?? ceil(), due, knobs });
+  planWake({ now: over.now ?? NOW, quiet, control: over.control ?? ctl(), ceilings: over.ceilings ?? ceil(), due, knobs });
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
   id, source: 'greenhouse', title: `Engineer ${id}`, company: 'Acme', url: `https://boards.greenhouse.io/acme/jobs/${id}`,
@@ -166,7 +165,7 @@ describe('planWake with a manual request', () => {
     if (d.kind !== 'run') throw new Error('expected run');
     const order = stepOrder(d);
     const p = buildWakePrompt({
-      runId: 'r1', dryRun: true, burst: d.burst, tasks: d.tasks, budget: loadBudget({}), allowed: ['linkedin'], now: NOW, order,
+      runId: 'r1', dryRun: true, tasks: d.tasks, budget: loadBudget({}), allowed: ['linkedin'], now: NOW, order,
       pipeline: { matchThreshold: 60, sendLimit: 1, targetRegions: 'Target regions: x', followupsAutonomous: false },
     });
     expect(p.indexOf('1. manual:')).toBeGreaterThan(-1);
@@ -530,7 +529,7 @@ describe('platform job pages (LinkedIn, Naukri, Wellfound)', () => {
     expect(d.tasks.find((a) => a.platform === 'linkedin')?.tasks.filter((t) => t.kind === 'manual_url')).toEqual([{ kind: 'manual_url', quota: 1 }]);
     const order = stepOrder(d);
     expect(order.findIndex((s) => s.kind === 'manual_url')).toBeLessThan(order.findIndex((s) => s.kind === 'pipeline'));
-    const line = buildWakePrompt({ runId: 'r', dryRun: false, burst: 1, tasks: d.tasks, budget: loadBudget({}), allowed: ['linkedin'], now: NOW, order, pipeline: { matchThreshold: 60, sendLimit: 1, targetRegions: 'x', followupsAutonomous: false } });
+    const line = buildWakePrompt({ runId: 'r', dryRun: false, tasks: d.tasks, budget: loadBudget({}), allowed: ['linkedin'], now: NOW, order, pipeline: { matchThreshold: 60, sendLimit: 1, targetRegions: 'x', followupsAutonomous: false } });
     expect(line).toContain('linkedin_manual_job');
     expect(line).toContain('no URL is passed to you');
     // ingest creates ONE task with the canonical URL and no scout task

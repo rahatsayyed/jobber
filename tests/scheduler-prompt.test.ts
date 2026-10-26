@@ -16,7 +16,7 @@ describe('buildWakePrompt', () => {
   const i = {
     runId: 'abcd1234',
     dryRun: false,
-    burst: 3,
+   
     tasks,
     budget: { maxWallSec: 900, maxTokensApprox: 150000 },
     allowed: ['linkedin' as const, 'naukri' as const],
@@ -59,7 +59,7 @@ describe('buildWakePrompt', () => {
 describe('buildWakePrompt discover task', () => {
   it('names the searches the operator may run', () => {
     const p = buildWakePrompt({
-      runId: 'r1', dryRun: false, burst: 2, budget: { maxWallSec: 60, maxTokensApprox: 1000 } as any,
+      runId: 'r1', dryRun: false, budget: { maxWallSec: 60, maxTokensApprox: 1000 } as any,
       allowed: ['linkedin'], now: new Date('2026-10-16T10:00:00Z'),
       tasks: [{ operator: 'linkedin-operator', platform: 'linkedin', tasks: [{ kind: 'discover', quota: 2, searches: { jobs: ['react-india'], posts: ['default'] } }] }],
     });

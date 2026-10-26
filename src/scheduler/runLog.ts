@@ -11,7 +11,7 @@ export type RunStatus =
 
 export interface RunRow {
   id: string; planned_at: string; started_at: string | null; ended_at: string | null;
-  trigger: string; dry_run: number; burst: number | null; tasks: string;
+  trigger: string; dry_run: number; tasks: string;
   status: RunStatus; stop_reason: string | null; exit_code: number | null;
   tool_calls: number; tokens_approx: number; wall_sec: number | null;
   window: string | null; log_path: string | null; summary: string | null;
@@ -32,7 +32,6 @@ export function migrateSchedulerTables(db: Db): void {
       ended_at TEXT,
       trigger TEXT NOT NULL,
       dry_run INTEGER NOT NULL DEFAULT 0,
-      burst INTEGER,
       tasks TEXT NOT NULL DEFAULT '[]',
       status TEXT NOT NULL,
       stop_reason TEXT,
@@ -95,7 +94,7 @@ export function migrateSchedulerTables(db: Db): void {
 export function startRun(
   db: Db,
   r: {
-    id: string; at: Date; trigger: string; dryRun: boolean; burst: number | null;
+    id: string; at: Date; trigger: string; dryRun: boolean;
     tasks: unknown[]; status: RunStatus; stopReason?: string; window?: string; logPath?: string; parentRunId?: string;
   },
 ): void {
@@ -103,10 +102,10 @@ export function startRun(
   const running = r.status === 'running';
   db.prepare(
     `INSERT INTO scheduler_runs
-       (id, planned_at, started_at, trigger, dry_run, burst, tasks, status, stop_reason, window, log_path, parent_run_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, planned_at, started_at, trigger, dry_run, tasks, status, stop_reason, window, log_path, parent_run_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
-    r.id, iso, running ? iso : null, r.trigger, r.dryRun ? 1 : 0, r.burst,
+    r.id, iso, running ? iso : null, r.trigger, r.dryRun ? 1 : 0,
     JSON.stringify(r.tasks), r.status, r.stopReason ?? null, r.window ?? null, r.logPath ?? null, r.parentRunId ?? null,
   );
 }

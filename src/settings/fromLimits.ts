@@ -9,19 +9,15 @@ const GROUP_FEATURE: Record<LimitGroup, string> = {
   'weekly-caps': 'weekly caps',
   'per-company': 'per-company limits',
   'quiet-hours': 'quiet hours',
-  pacing: 'pacing',
+  spacing: 'spacing',
   cooldowns: 'cooldowns and cadence',
   matching: 'matching',
 };
 
-// Which way a change loosens a limit. Default is 'increase' (a bigger cap or burst is more aggressive).
+// Which way a change loosens a limit. Default is 'increase' (a bigger cap is more aggressive).
 const DECREASE = new Set([
   'MATCH_THRESHOLD',
   'APPLY_HOST_COOLDOWN_DAYS',
-  'PACING_MIN_BURST',
-  'PACING_MIN_ACTION_GAP_SEC',
-  'PACING_MIN_WAIT_MIN',
-  'PACING_JITTER_PCT',
   'COOLDOWN_IGNORED_DAYS',
   'COOLDOWN_NOT_NOW_DAYS',
   'COOLDOWN_EXPLICIT_STOP_DAYS',

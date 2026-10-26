@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { openDb, listUnscoredJobs, saveMatchResultsChecked, MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT, UNSCORED_DESCRIPTION_CHARS, unscoredDescriptionCap, type Job } from '../src/db.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
-import type { PacingConfig } from '../src/outreach/pacing.js';
+import type { QuietConfig } from '../src/outreach/quiet.js';
 import type { CeilingStatus, LimitKey } from '../src/outreach/limits.js';
 import type { ControlState } from '../src/scheduler/control.js';
 import { countDue, SCRIPT_DISCOVER_KEY, type DueCounts } from '../src/scheduler/due.js';
@@ -18,10 +18,8 @@ import { getState } from '../src/scheduler/runLog.js';
 import { resetSourceStatusForTests } from '../src/sources/status.js';
 
 const NOW = new Date('2026-10-15T08:00:00.000Z'); // 13:30 IST
-const pacing: PacingConfig = {
+const quiet: QuietConfig = {
   quietStartHour: 23, quietEndHour: 7, tzOffsetMinutes: 330,
-  minBurst: 1, maxBurst: 4, minActionGapSec: 120, maxActionGapSec: 360,
-  minWaitMin: 8, maxWaitMin: 40, jitter: 0.25,
 };
 const knobs: PlanKnobs = { inboxEveryMin: 60, naukriDiscoverEveryHours: 6 };
 const ctl = (): ControlState => ({
@@ -38,7 +36,7 @@ const due = (o: Partial<DueCounts> = {}): DueCounts => ({
 });
 const NAMES = { jobs: ['react'], posts: [], naukri: ['react-india'] };
 const plan = (o: Partial<Parameters<typeof planWake>[0]> = {}): WakeDecision =>
-  planWake({ now: NOW, rng: () => 0.99, pacing, control: ctl(), ceilings: ceil(), due: due(), knobs, discoverSearches: NAMES, codePassEnabled: true, ...o });
+  planWake({ now: NOW, quiet, control: ctl(), ceilings: ceil(), due: due(), knobs, discoverSearches: NAMES, codePassEnabled: true, ...o });
 const run = (d: WakeDecision): Extract<WakeDecision, { kind: 'run' }> => {
   if (d.kind !== 'run') throw new Error(`expected run, got ${JSON.stringify(d)}`);
   return d;
@@ -212,7 +210,7 @@ describe('prompt', () => {
   it('lists the wake order and the pipeline instructions; the wake only enqueues email', () => {
     const d = run(plan({ due: due({ scriptDiscoverLastHoursAgo: null, sourceTasksQueued: 1, inboxLastCheckedMinAgo: null }) }));
     const p = buildWakePrompt({
-      runId: 'r1', dryRun: true, burst: d.burst, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 },
+      runId: 'r1', dryRun: true, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 },
       allowed: ['linkedin', 'naukri'], now: NOW, order: stepOrder(d), pipeline: pipe,
     });
     expect(p).toContain('Wake order');
@@ -228,7 +226,7 @@ describe('prompt', () => {
   it('names the discover searches in the ordered wake prompt', () => {
     const d = run(plan({ due: due({ linkedinDiscoverLastHoursAgo: null, naukriSearchLastHoursAgo: null }) }));
     const p = buildWakePrompt({
-      runId: 'r1', dryRun: true, burst: d.burst, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 },
+      runId: 'r1', dryRun: true, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 },
       allowed: ['linkedin', 'naukri'], now: NOW, order: stepOrder(d), pipeline: pipe,
     });
     expect(p).toContain('job searches: react; post searches: none');

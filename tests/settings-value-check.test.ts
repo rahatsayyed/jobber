@@ -96,13 +96,13 @@ describe('validateEnvValue', () => {
 });
 
 describe('validateCross', () => {
-  it('flags PACING pairs with min above max', () => {
-    const msgs = validateCross({ PACING_MIN_BURST: '5', PACING_MAX_BURST: '2' }, FIXTURE_CATALOG);
+  it('flags a min/max pair with min above max', () => {
+    const msgs = validateCross({ EMAIL_DRIP_MIN_BATCH: '5', EMAIL_DRIP_MAX_BATCH: '2' }, FIXTURE_CATALOG);
     expect(msgs).toHaveLength(1);
-    expect(msgs[0]).toContain('PACING_MIN_BURST');
+    expect(msgs[0]).toContain('EMAIL_DRIP_MIN_BATCH');
   });
   it('is clean for a good pair and ignores keys outside the catalog', () => {
-    expect(validateCross({ PACING_MIN_BURST: '1', PACING_MAX_BURST: '2' }, FIXTURE_CATALOG)).toEqual([]);
-    expect(validateCross({ PACING_MIN_WAIT_MIN: '9', PACING_MAX_WAIT_MIN: '1' }, FIXTURE_CATALOG)).toEqual([]);
+    expect(validateCross({ EMAIL_DRIP_MIN_BATCH: '1', EMAIL_DRIP_MAX_BATCH: '2' }, FIXTURE_CATALOG)).toEqual([]);
+    expect(validateCross({ EMAIL_DRIP_MIN_GAP_MIN: '9', EMAIL_DRIP_MAX_GAP_MIN: '1' }, FIXTURE_CATALOG)).toEqual([]);
   });
 });

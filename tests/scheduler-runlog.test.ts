@@ -8,7 +8,7 @@ const T0 = new Date('2026-10-15T10:00:00.000Z');
 
 function mk() { return openDb(':memory:'); }
 function base(id: string, at = T0, status: 'planned' | 'running' = 'running') {
-  return { id, at, trigger: 'timer', dryRun: false, burst: null, tasks: [{ worker: 'a', quota: 1 }], status };
+  return { id, at, trigger: 'timer', dryRun: false, tasks: [{ worker: 'a', quota: 1 }], status };
 }
 
 describe('scheduler run log', () => {

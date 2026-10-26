@@ -103,7 +103,7 @@ export interface NaukriDeps {
   intents?: IntentStore;
   /** Test seam: the engine acts on this page instead of the session page. */
   bcPage?: () => BcPage | null;
-  /** Test seams for pacing, confirmation wait and the kill-switch file in the engine. */
+  /** Test seams for the settle delay, confirmation wait and the kill-switch file in the engine. */
   paceMs?: () => number;
   confirmTimeoutMs?: number;
   stopFile?: string;
@@ -205,7 +205,7 @@ interface Session {
 }
 
 let session: Session | null = null;
-/** The session a discover search last ran on; a new session (or none) means the next search needs no pacing pause. */
+/** The session a discover search last ran on; a new session (or none) means the next search needs no inter-search delay (the 2 to 5 s wait is a bot-detection safeguard and stays). */
 let discoveredOn: Session | null = null;
 let lazyDb: BetterSqlite3.Database | null = null;
 let chain: Promise<unknown> = Promise.resolve();

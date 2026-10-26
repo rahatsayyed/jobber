@@ -103,7 +103,7 @@ export interface HandlerDeps {
   intents?: IntentStore;
   /** Test seam: replaces the real page adapter over the runtime's session page. */
   bcPage?: (rt: Runtime) => BcPage | null;
-  /** Test seams for pacing and settle in the engine. */
+  /** Test seams for the settle delay in the engine. */
   paceMs?: () => number;
   settleMs?: number;
 }

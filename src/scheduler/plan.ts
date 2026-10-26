@@ -1,6 +1,6 @@
 // src/scheduler/plan.ts
 import type { CeilingStatus, LimitKey } from '../outreach/limits.js';
-import { drawBurstSize, inQuietHours, type PacingConfig, type Rng } from '../outreach/pacing.js';
+import { inQuietHours, type QuietConfig } from '../outreach/quiet.js';
 import type { ControlState, Platform } from './control.js';
 import type { DueCounts, DuePlatform } from './due.js';
 
@@ -30,7 +30,7 @@ export interface Assignment { operator: Operator; platform: Platform; tasks: Ope
 export type SkipReason = 'killed' | 'halted' | 'quiet_hours' | 'ceilings_exhausted' | 'nothing_due';
 export type WakeDecision =
   | { kind: 'skip'; reason: SkipReason; detail?: string }
-  | { kind: 'run'; burst: number; tasks: Assignment[]; stages?: Stage[] };
+  | { kind: 'run'; tasks: Assignment[]; stages?: Stage[] };
 export interface PlanKnobs {
   inboxEveryMin: number;
   naukriDiscoverEveryHours: number;
@@ -77,8 +77,7 @@ export function loadPlanKnobs(env: NodeJS.ProcessEnv = process.env): PlanKnobs {
 
 export function planWake(i: {
   now: Date;
-  rng: Rng;
-  pacing: PacingConfig;
+  quiet: QuietConfig;
   control: ControlState;
   ceilings: Record<LimitKey, CeilingStatus>;
   due: DueCounts;
@@ -97,9 +96,8 @@ export function planWake(i: {
       .join('; ');
     return { kind: 'skip', reason: 'halted', detail: detail || undefined };
   }
-  if (inQuietHours(i.now, i.pacing)) return { kind: 'skip', reason: 'quiet_hours' };
+  if (inQuietHours(i.now, i.quiet)) return { kind: 'skip', reason: 'quiet_hours' };
 
-  const burst = drawBurstSize(i.rng, i.pacing); // the only RNG draw
   const allowed = new Set<Platform>(control.allowed);
   const ok = (k: LimitKey): boolean => ceilings[k].ok;
   const plats = (pairs: [DuePlatform, LimitKey[]][]): DuePlatform[] =>
@@ -107,7 +105,11 @@ export function planWake(i: {
 
   const ORDER: Platform[] = ['linkedin', 'naukri', 'wellfound']; // stable order: linkedin first
   const byPlatform: Record<Platform, OperatorTask[]> = { linkedin: [], naukri: [], wellfound: [] };
-  let remaining = burst;
+  // Quota per task = what is due, bounded by the room left under the real ceiling (weekly/daily counter) of the action's key.
+  // naukri_message is shared by Naukri follow-ups and Naukri new outreach, so room is tracked per key and spent in order.
+  const room: Partial<Record<LimitKey, number>> = {};
+  const roomLeft = (k: LimitKey): number => room[k] ?? Math.max(0, ceilings[k].limit - ceilings[k].used);
+  const spend = (k: LimitKey, n: number): void => { room[k] = roomLeft(k) - n; };
 
   // Wellfound is planned only when its discovery config names a search (the scheduler passes the names only when
   // its session file exists): no session, no dispatch, so no operator call is wasted before the owner logs in.
@@ -115,7 +117,7 @@ export function planWake(i: {
   const wellfoundOn = wellfoundNames.length > 0 && allowed.has('wellfound');
 
   // Owner-submitted job pages for a platform operator. Planned even when nothing else is due, for every platform that is allowed
-  // (not halted) and, for Wellfound, switched on (its session exists). Reading and saving a page sends nothing, so it spends no burst.
+  // (not halted) and, for Wellfound, switched on (its session exists). Reading and saving a page sends nothing, so it spends no ceiling.
   const mp = due.manualPlatformTasks;
   if (mp) for (const p of ORDER) if ((mp[p] ?? 0) > 0 && allowed.has(p) && (p !== 'wellfound' || wellfoundOn)) byPlatform[p].push({ kind: 'manual_url', quota: mp[p] });
 
@@ -140,20 +142,21 @@ export function planWake(i: {
   const naukriNames = i.discoverSearches?.naukri ?? [];
   const discoverPlats = naukriNames.length > 0 ? plats([['naukri', ['naukri_apply']]]) : [];
 
-  // Each platform takes min(its due, what is left of the burst), in stable order, so the total
-  // spent equals the old single quota.
+  // Each platform takes min(its due, the room left under its ceiling), in stable order.
   for (const p of followPlats) {
-    const q = Math.min(due.followupsDueByPlatform[p], remaining);
+    const key: LimitKey = p === 'linkedin' ? 'linkedin_message' : 'naukri_message';
+    const q = Math.min(due.followupsDueByPlatform[p], roomLeft(key));
     if (q > 0) {
       byPlatform[p].push({ kind: 'followups', quota: q });
-      remaining -= q;
+      spend(key, q);
     }
   }
   for (const p of outreachPlats) {
-    const q = Math.min(due.newOutreachReadyByPlatform[p], remaining);
+    const key: LimitKey = p === 'linkedin' ? 'linkedin_invite' : 'naukri_message';
+    const q = Math.min(due.newOutreachReadyByPlatform[p], roomLeft(key));
     if (q > 0) {
       byPlatform[p].push({ kind: 'new_outreach', quota: q });
-      remaining -= q;
+      spend(key, q);
     }
   }
   const naukriDiscoverDue =
@@ -169,7 +172,7 @@ export function planWake(i: {
     byPlatform.wellfound.push({ kind: 'discover', quota: WELLFOUND_DETAIL_QUOTA, searches: { jobs: wellfoundNames, posts: [] } });
   }
 
-  // Discovery reads and saves jobs, it sends nothing, so it does not spend the burst. It needs the
+  // Discovery reads and saves jobs, it sends nothing, so it spends no ceiling. It needs the
   // linkedin_discover ceiling, a named search and a last-run age (undefined: not tracked, never due).
   const names = i.discoverSearches ?? { jobs: [], posts: [] };
   const nameCount = names.jobs.length + names.posts.length;
@@ -202,13 +205,9 @@ export function planWake(i: {
   // The pipeline creates work in this same wake (matches, enqueued outreach rows), so like mail it pulls in LinkedIn
   // new_outreach even when the due count was 0 at plan time. The operator reads its real queue (outreach.next_contacts)
   // and reports done 0 when nothing is ready. Never for Naukri: cold Naukri outreach is not possible by design.
-  if (pipelineDue && remaining > 0 && allowed.has('linkedin') && ceilings.linkedin_invite?.ok && !byPlatform.linkedin.some((t) => t.kind === 'new_outreach')) {
-    const room = Math.max(0, ceilings.linkedin_invite.limit - ceilings.linkedin_invite.used);
-    const q = Math.min(remaining, room);
-    if (q > 0) {
-      byPlatform.linkedin.push({ kind: 'new_outreach', quota: q });
-      remaining -= q;
-    }
+  if (pipelineDue && allowed.has('linkedin') && ceilings.linkedin_invite?.ok && !byPlatform.linkedin.some((t) => t.kind === 'new_outreach')) {
+    const q = roomLeft('linkedin_invite');
+    if (q > 0) byPlatform.linkedin.push({ kind: 'new_outreach', quota: q });
   }
 
   const tasks: Assignment[] = ORDER.filter((p) => byPlatform[p].length > 0).map((p) => ({
@@ -219,8 +218,8 @@ export function planWake(i: {
 
   if (pipelineDue) stages.push({ operator: 'pipeline', kind: 'pipeline', quota: Math.max(Math.min(unmatched + matchedWaiting, JOBS_CEILING), manualPending > 0 ? 1 : 0) });
   // No mail stage: the wake only enqueues email. Cold emails and email follow-ups are sent one at a time by the mail drip lane
-  // (src/scheduler/mailDrip.ts), never in a burst inside a wake, so queued email alone is not wake work.
-  // Apply: its own quota (not the burst) = the smaller of what is left of MAX_APPLIES_PER_DAY and of APPLY_MAX_ATTEMPTS_PER_DAY.
+  // (src/scheduler/mailDrip.ts), never inside a wake, so queued email alone is not wake work.
+  // Apply: its own quota = the smaller of what is left of MAX_APPLIES_PER_DAY and of APPLY_MAX_ATTEMPTS_PER_DAY.
   // Emitted last, only when queued apply rows exist and quota remains (plan 8G-2 task 21).
   const applyQueued = due.applyQueued ?? 0;
   const attempt = ceilings.apply_attempt;
@@ -228,7 +227,7 @@ export function planWake(i: {
   // The pipeline pulls apply in too (it may enqueue apply rows this wake); the operator reads db.list_queued_outreach.
   if ((applyQueued > 0 || pipelineDue) && applyQuota > 0) stages.push({ operator: 'apply-operator', kind: 'apply', quota: applyQuota });
 
-  if (tasks.length > 0 || stages.length > 0) return { kind: 'run', burst, tasks, ...(stages.length > 0 ? { stages } : {}) };
+  if (tasks.length > 0 || stages.length > 0) return { kind: 'run', tasks, ...(stages.length > 0 ? { stages } : {}) };
 
   const allowedTotal = (by: Record<DuePlatform, number>): number => control.allowed.reduce((n, p) => n + (p === 'wellfound' ? 0 : by[p]), 0);
   const workExists =

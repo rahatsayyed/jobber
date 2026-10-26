@@ -175,9 +175,9 @@ describe('env-limits', () => {
     expect((await one('env-limits', env('MATCH_THRESHOLD="60"\n'))).status).toBe('pass');
   });
   it('pair violation fails', async () => {
-    const r = await one('env-limits', env('PACING_MIN_BURST=9\nPACING_MAX_BURST=2\n'));
+    const r = await one('env-limits', env('EMAIL_DRIP_MIN_BATCH=9\nEMAIL_DRIP_MAX_BATCH=2\n'));
     expect(r.status).toBe('fail');
-    expect(r.detail).toContain('PACING_MIN_BURST');
+    expect(r.detail).toContain('EMAIL_DRIP_MIN_BATCH');
   });
 });
 

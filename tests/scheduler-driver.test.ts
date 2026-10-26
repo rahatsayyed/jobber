@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { openDb } from '../src/db.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
-import { inQuietHours, pacingFromConfig } from '../src/outreach/pacing.js';
+import { inQuietHours, quietFromConfig } from '../src/outreach/quiet.js';
 import { acquireLock, peekLock } from '../src/platform/lock.js';
 import { daemonLoop, wakeOnce, wakeIsDry, type DriverDeps, type WakeResult } from '../src/scheduler/driver.js';
 import { fileNotifier, type Notice } from '../src/scheduler/notify.js';
@@ -182,7 +182,7 @@ describe('wakeOnce', () => {
   it('child env holds only allowed keys and no reserved keys', async () => {
     const s = setup({
       env: {
-        OPENAI_API_KEY: 'x', GMAIL_PASSWORD: 'y', TZ: 'Asia/Kolkata', PACING_FOO: '1',
+        OPENAI_API_KEY: 'x', GMAIL_PASSWORD: 'y', TZ: 'Asia/Kolkata', COOLDOWN_FOO: '1',
         LINKEDIN_MAX_INVITES_PER_WEEK: '50', NAUKRI_MAX_APPLIES_PER_DAY: '5', CLASSIFIER_MODEL: 'm',
         COOLDOWN_X: '2', CADENCE_Y: '3', COMPANY_CONTACT_LIMIT: '4', JOBBER_KILL: '0',
         SCHEDULER_NO_CLASSIFIER: 'true',
@@ -190,10 +190,10 @@ describe('wakeOnce', () => {
     });
     await wakeOnce(s.d);
     const env = s.launcher.starts[0].env ?? {};
-    const ok = /^(TZ|QUIET_HOURS_START|QUIET_HOURS_END|COMPANY_CONTACT_LIMIT|SPECULATIVE_COMPANY_LIMIT|(PACING_|COOLDOWN_|CADENCE_|LINKEDIN_MAX_|NAUKRI_MAX_|CLASSIFIER_).*)$/;
+    const ok = /^(TZ|QUIET_HOURS_START|QUIET_HOURS_END|COMPANY_CONTACT_LIMIT|SPECULATIVE_COMPANY_LIMIT|(COOLDOWN_|CADENCE_|LINKEDIN_MAX_|NAUKRI_MAX_|CLASSIFIER_).*)$/;
     for (const k of Object.keys(env)) expect(k).toMatch(ok);
     expect(env.OPENAI_API_KEY).toBeUndefined();
-    expect(env.PACING_FOO).toBe('1');
+    expect(env.COOLDOWN_FOO).toBe('1');
     expect(Object.keys(env).some((k) => k.startsWith('JOBBER_') || k.startsWith('SCHEDULER_'))).toBe(false);
   });
 
@@ -292,7 +292,7 @@ describe('wakeOnce', () => {
     expect(r.status).toBe('skipped');
     expect(r.reason).toBe('quiet_hours');
     expect(s.launcher.starts).toHaveLength(0);
-    expect(inQuietHours(new Date(r.nextWakeAt), pacingFromConfig(s.d.cfg, s.d.tuning))).toBe(false);
+    expect(inQuietHours(new Date(r.nextWakeAt), quietFromConfig(s.d.cfg))).toBe(false);
   });
 
   it('quiet hours beginning mid-run kill the window', async () => {
@@ -458,14 +458,14 @@ describe('daemonLoop', () => {
 
   it('marks orphan rows crashed at start', async () => {
     const s = setup();
-    startRun(s.db, { id: 'orphan0001', at: NOON_IST, trigger: 'scheduled', dryRun: true, burst: 1, tasks: [], status: 'running' });
+    startRun(s.db, { id: 'orphan0001', at: NOON_IST, trigger: 'scheduled', dryRun: true, tasks: [], status: 'running' });
     await daemonLoop(s.d, { stopped: true });
     expect(listRuns(s.db).find((r) => r.id === 'orphan0001')?.status).toBe('crashed');
   });
 
   it('kills orphan windows before marking rows crashed', async () => {
     const s = setup();
-    startRun(s.db, { id: 'orphan0002', at: NOON_IST, trigger: 'scheduled', dryRun: true, burst: 1, tasks: [], status: 'running' });
+    startRun(s.db, { id: 'orphan0002', at: NOON_IST, trigger: 'scheduled', dryRun: true, tasks: [], status: 'running' });
     await daemonLoop(s.d, { stopped: true });
     expect(s.launcher.killed).toContain('wake-orphan0002');
     expect(listRuns(s.db).find((r) => r.id === 'orphan0002')?.status).toBe('crashed');
@@ -473,7 +473,7 @@ describe('daemonLoop', () => {
 
   it('leaves running rows untouched while another process holds the run lock', async () => {
     const s = setup();
-    startRun(s.db, { id: 'live00001', at: NOON_IST, trigger: 'scheduled', dryRun: true, burst: 1, tasks: [], status: 'running' });
+    startRun(s.db, { id: 'live00001', at: NOON_IST, trigger: 'scheduled', dryRun: true, tasks: [], status: 'running' });
     const held = acquireLock(s.d.lockRoot, 'run', 'other');
     await daemonLoop(s.d, { stopped: true });
     expect(s.launcher.killed).toHaveLength(0);

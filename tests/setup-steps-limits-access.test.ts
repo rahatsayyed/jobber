@@ -118,28 +118,27 @@ describe('limitsStep', () => {
 
   it('a min above max re-prompts until the pair is consistent', async () => {
     const no = { confirm: false } as ScriptItem;
-    const pacing = group('pacing').map((l) => l.key);
+    const spacing = group('spacing').map((l) => l.key);
     const t = setup(
       [
         { choose: 'review' },
         no, no, no, no, no, // matching, daily, weekly, per-company, quiet-hours
-        { confirm: true }, // pacing
-        ...pacing.flatMap((k): ScriptItem[] =>
-          k === 'PACING_MIN_BURST' ? [{ ask: '9' }, { confirm: true }] : [{ ask: '' }],
+        { confirm: true }, // spacing
+        ...spacing.flatMap((k): ScriptItem[] =>
+          k === 'EMAIL_DRIP_MIN_BATCH' ? [{ ask: '9' }, { confirm: true }] : [{ ask: '' }],
         ),
         no, // cooldowns
         // conflict found after all groups: re-asked MIN then MAX
-        { ask: '2' },
-        { confirm: true }, // 2 is above default 1
+        { ask: '2' }, // 2 is the default, no raise confirm
         { ask: '' },
       ],
       { '.env': '' },
     );
     await limitsStep.run(t.ctx);
     const env = envOf(t.root);
-    expect(env.get('PACING_MIN_BURST')).toBe('2');
-    expect(env.get('PACING_MAX_BURST')).toBe('4');
-    expect(t.sio.transcript.some((l) => l.includes('is above PACING_MAX_BURST'))).toBe(true);
+    expect(env.get('EMAIL_DRIP_MIN_BATCH')).toBe('2');
+    expect(env.get('EMAIL_DRIP_MAX_BATCH')).toBe('3');
+    expect(t.sio.transcript.some((l) => l.includes('is above EMAIL_DRIP_MAX_BATCH'))).toBe(true);
     t.sio.assertDone();
   });
 
@@ -289,16 +288,16 @@ describe('limitsStep pre-existing pair conflict', () => {
       [
         { choose: 'safe' },
         { ask: '' }, // MIN keeps 9 (unchanged, no raise confirm)
-        { ask: '' }, // MAX default 4 is below 9: refused, re-asked
-        { ask: '12' }, // MAX 12 is above the default 4: raise confirm next
+        { ask: '' }, // MAX default 3 is below 9: refused, re-asked
+        { ask: '12' }, // MAX 12 is above the default 3: raise confirm next
         { confirm: true },
       ],
-      { '.env': 'PACING_MIN_BURST=9\n' },
+      { '.env': 'EMAIL_DRIP_MIN_BATCH=9\n' },
     );
     await limitsStep.run(t.ctx);
     const env = envOf(t.root);
-    expect(env.get('PACING_MIN_BURST')).toBe('9');
-    expect(env.get('PACING_MAX_BURST')).toBe('12');
+    expect(env.get('EMAIL_DRIP_MIN_BATCH')).toBe('9');
+    expect(env.get('EMAIL_DRIP_MAX_BATCH')).toBe('12');
     t.sio.assertDone();
   });
 });

@@ -10,9 +10,9 @@ describe('dry-run report', () => {
   it('summarises runs, would-be actions and open escalations', () => {
     const db = openDb(':memory:');
     const t = (m: number) => new Date(Date.UTC(2026, 9, 15, 5, m));
-    startRun(db, { id: 'r1', at: t(0), trigger: 'scheduled', dryRun: true, burst: 2, tasks: [], status: 'running' });
+    startRun(db, { id: 'r1', at: t(0), trigger: 'scheduled', dryRun: true, tasks: [], status: 'running' });
     finishRun(db, 'r1', { at: t(5), status: 'ok', toolCalls: 12, tokensApprox: 3400 });
-    startRun(db, { id: 'r2', at: t(10), trigger: 'scheduled', dryRun: true, burst: null, tasks: [], status: 'skipped', stopReason: 'quiet_hours' });
+    startRun(db, { id: 'r2', at: t(10), trigger: 'scheduled', dryRun: true, tasks: [], status: 'skipped', stopReason: 'quiet_hours' });
     finishRun(db, 'r2', { at: t(10), status: 'skipped', stopReason: 'quiet_hours' });
     const pid = upsertPerson(db, { platform: 'naukri', profileKey: 'naukri:pat', name: 'Pat', company: 'Acme', category: 'recruiter' });
     recordDryRun(db, { runId: 'r1', action: 'message', platform: 'naukri', personId: pid, payload: { text: 'Hi Pat, following up.' } }, t(2), {});

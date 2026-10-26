@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { pickRunTime, isDue } from '../src/update/schedule.js';
-import { inQuietHours } from '../src/outreach/pacing.js';
+import { inQuietHours } from '../src/outreach/quiet.js';
 
 const quiet = { startHour: 1, endHour: 7, tzOffsetMinutes: 330 };
 const istHour = (d: Date) => new Date(d.getTime() + 330 * 60000).getUTCHours();
@@ -47,7 +47,7 @@ describe('isDue', () => {
   });
 });
 
-describe('quiet semantics match outreach pacing', () => {
+describe('quiet semantics match outreach quiet hours', () => {
   it('isDue agrees with inQuietHours for every hour, incl. wrap and zero-length windows', () => {
     const windows = [
       { startHour: 1, endHour: 7 },
@@ -58,8 +58,8 @@ describe('quiet semantics match outreach pacing', () => {
       for (let h = 0; h < 24; h++) {
         const at = new Date(Date.UTC(2026, 9, 14, h, 0, 0) - 330 * 60000);
         const q = { ...w, tzOffsetMinutes: 330 };
-        const pacing = { quietStartHour: w.startHour, quietEndHour: w.endHour, tzOffsetMinutes: 330 } as Parameters<typeof inQuietHours>[1];
-        expect(isDue(at, null, q)).toBe(!inQuietHours(at, pacing));
+        const quietCfg = { quietStartHour: w.startHour, quietEndHour: w.endHour, tzOffsetMinutes: 330 } as Parameters<typeof inQuietHours>[1];
+        expect(isDue(at, null, q)).toBe(!inQuietHours(at, quietCfg));
       }
     }
   });

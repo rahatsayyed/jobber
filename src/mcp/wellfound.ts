@@ -92,7 +92,7 @@ export interface WellfoundDeps {
   intents?: IntentStore;
   /** Test seam: the engine acts on this page instead of the session page. */
   bcPage?: () => BcPage | null;
-  /** Test seams for pacing, confirmation wait and the kill-switch file in the engine. */
+  /** Test seams for the settle delay, confirmation wait and the kill-switch file in the engine. */
   paceMs?: () => number;
   confirmTimeoutMs?: number;
   stopFile?: string;

@@ -12,7 +12,7 @@ import { redactPane } from '../src/platform/redact.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
 import { ceilings } from '../src/outreach/limits.js';
-import { pacingFromConfig } from '../src/outreach/pacing.js';
+import { quietFromConfig } from '../src/outreach/quiet.js';
 import { daemonLoop, wakeOnce, type DriverDeps } from '../src/scheduler/driver.js';
 import { runCodePass } from '../src/scheduler/pipeline.js';
 import { defaultDeps as controlDefaults, readControl } from '../src/scheduler/control.js';
@@ -94,7 +94,7 @@ function dryRunPlan(env: NodeJS.ProcessEnv): void {
   const decision = planWake({
     now,
     rng: Math.random,
-    pacing: pacingFromConfig(cfg, tuning),
+    quiet: quietFromConfig(cfg),
     control: readControl(db, controlDefaults(env, stopFile)),
     ceilings: ceilings(db, cfg, now),
     due: countDue(db, now, tuning, env),
@@ -157,7 +157,7 @@ async function main(): Promise<void> {
       if (r.reported.length) await notifier.notify({ level: 'info', title: `manual request report sent: ${r.reported.map((i) => `#${i}`).join(' ')}` });
     },
     afterWake: makeAfterWakeHooks({
-      db, env, projectRoot, now, pacing: pacingFromConfig(cfg, tuning), notifier,
+      db, env, projectRoot, now, quiet: quietFromConfig(cfg), notifier,
     }),
   };
   const stop = { stopped: false };

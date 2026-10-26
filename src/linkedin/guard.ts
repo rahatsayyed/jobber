@@ -2,7 +2,7 @@
 // Ceilings are NOT consumed here (the tool consumes them right before the click).
 import type BetterSqlite3 from 'better-sqlite3';
 import { haltReason } from '../outreach/limits.js';
-import { inQuietHours, pacingFromConfig } from '../outreach/pacing.js';
+import { inQuietHours, quietFromConfig } from '../outreach/quiet.js';
 import { loadOutreachConfig } from '../outreach/config.js';
 import { loadTuning } from '../outreach/tuning.js';
 import { companyPaused } from '../outreach/people.js';
@@ -60,7 +60,7 @@ export function preSendGuard(i: GuardInput): GuardResult {
   if (halt !== null) return { ok: false, status: 'halted', code: 'halted', reason: `linkedin halted: ${halt}` };
 
   const ocfg = loadOutreachConfig(i.env);
-  if (inQuietHours(i.now, pacingFromConfig(ocfg, loadTuning(i.env)))) {
+  if (inQuietHours(i.now, quietFromConfig(ocfg))) {
     return refuse('quiet_hours', 'quiet hours are active');
   }
 

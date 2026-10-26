@@ -158,7 +158,7 @@ describe('unprovenSteps', () => {
 
 describe('wake prompt hardening', () => {
   const base = {
-    runId: 'abcd1234', dryRun: false, burst: 1, tasks: [], budget: { maxWallSec: 900, maxTokensApprox: 150000 },
+    runId: 'abcd1234', dryRun: false, tasks: [], budget: { maxWallSec: 900, maxTokensApprox: 150000 },
     allowed: ['linkedin' as const], now: new Date('2026-10-15T10:00:00Z'),
   };
   it('tells the session what its diagnostic tools are for and where they stop', () => {

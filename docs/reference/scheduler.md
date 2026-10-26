@@ -10,8 +10,9 @@ model (`src/scheduler/`). Each wake: read the kill switch and halts, skip quiet 
 `nothing_due`), launch one bounded `claude` run in a tmux window through
 `scripts/run-claude.ts outreach_wake`, poll its stream-json output against the wall-clock and
 approximate-token budgets only (`RUN_MAX_WALL_SEC` 3600 s and `RUN_MAX_TOKENS_APPROX` 1000000 by default; tool calls are counted and
-reported, never a stop condition, and there is no `RUN_MAX_TOOL_CALLS`; the model run's own turn limit is `max_turns` in the run profile; the stream-json log path is stored in `scheduler_runs.log_path` under `.jobber/runs/`, and `npm run status -- runs` prints tool-call counts per subagent and tool for the latest run), then finish the run in the `scheduler_runs` log. Wake times,
-burst sizes and waits are drawn at random in code (`PACING_*`); a usage-limit hit (the run ends `usage_limit`,
+reported, never a stop condition, and there is no `RUN_MAX_TOOL_CALLS`; the model run's own turn limit is `max_turns` in the run profile; the stream-json log path is stored in `scheduler_runs.log_path` under `.jobber/runs/`, and `npm run status -- runs` prints tool-call counts per subagent and tool for the latest run), then finish the run in the `scheduler_runs` log. Wakes start a fixed
+10 minutes apart (`WAKE_INTERVAL_MIN`, moved past quiet hours); there is no random burst size: each task's quota is what is due bounded by the room left under its real
+ceiling (weekly and daily caps). A usage-limit hit (the run ends `usage_limit`,
 in a wake or a drip run) records `usage_backoff_until` and pauses wakes AND the mail drip lane for
 `USAGE_LIMIT_BACKOFF_MIN` (default 300) rather than retrying. In `--daemon` mode the scheduler also runs the mail drip lane
 beside the wakes and checks for pending manual requests every 30 seconds (see "Running a wake"). Escalations go to SQLite and

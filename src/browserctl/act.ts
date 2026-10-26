@@ -1,7 +1,7 @@
 // browserctl engine (LinkedIn): open, snapshot and the actions the model can ask for. The model never
 // passes code or a selector, only refs from the latest snapshot (s<epoch>.<n>) and plain values.
 // Every action: kill switch and halt, stale-ref refusal, live re-describe of the element, guard
-// classification, dry-run recording, pacing, then execute. Free actions go through; commit classes go to
+// classification, dry-run recording, then execute. Free actions go through; commit classes go to
 // commit.ts; irreversible_other is always refused.
 import { haltPlatform } from '../outreach/limits.js';
 import { profileKeyOf } from '../linkedin/urls.js';

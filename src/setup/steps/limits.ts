@@ -1,5 +1,5 @@
 // src/setup/steps/limits.ts
-// Step 8: limits and pacing. Writes catalog values into .env through the comment-preserving
+// Step 8: limits and spacing. Writes catalog values into .env through the comment-preserving
 // writer. Safe defaults only fill MISSING keys; a raised value needs a confirm; min/max pairs
 // are checked before anything is written. Values here are limits, not secrets.
 import path from 'node:path';
@@ -21,7 +21,7 @@ const GROUPS: { id: LimitGroup; title: string }[] = [
   { id: 'weekly-caps', title: 'Weekly caps' },
   { id: 'per-company', title: 'Per-company limits' },
   { id: 'quiet-hours', title: 'Quiet hours' },
-  { id: 'pacing', title: 'Pacing' },
+  { id: 'spacing', title: 'Spacing' },
   { id: 'cooldowns', title: 'Cooldowns and cadence' },
 ];
 
@@ -35,7 +35,7 @@ const PAIR_MSG = /^(\w+) \(\d+\) is above (\w+) \(/;
 
 export const limitsStep: SetupStep = {
   id: 'limits',
-  title: 'Limits and pacing',
+  title: 'Limits and spacing',
   checkIds: ['env-limits', 'env-inline-comments'],
   async run(ctx) {
     const { io } = ctx;
@@ -49,7 +49,7 @@ export const limitsStep: SetupStep = {
 
     say(ctx, 'limits.intro');
     io.say('Daily caps are hard stops enforced in code. Quiet hours (local time) pause all actions.');
-    io.say('Pacing adds human-like gaps and bursts. Per-company limits cap how many people you contact at one company.');
+    io.say('Spacing sets the batches and gaps of the mail drip lane. Per-company limits cap how many people you contact at one company.');
     for (const g of GROUPS) {
       io.say(`${g.title}:`);
       for (const spec of LIMITS.filter((l) => l.group === g.id)) {

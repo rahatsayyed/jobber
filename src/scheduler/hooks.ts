@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type BetterSqlite3 from 'better-sqlite3';
-import { inQuietHours, type PacingConfig } from '../outreach/pacing.js';
+import { inQuietHours, type QuietConfig } from '../outreach/quiet.js';
 import type { WakeResult } from './driver.js';
 import type { Notifier } from './notify.js';
 import { getState, setState } from './runLog.js';
@@ -22,7 +22,7 @@ export interface HookDeps {
   env: NodeJS.ProcessEnv;
   projectRoot: string;
   now: () => Date;
-  pacing: PacingConfig;
+  quiet: QuietConfig;
   notifier: Notifier;
   exists?: (path: string) => boolean;
   run?: HookRun;
@@ -83,7 +83,7 @@ export function makeAfterWakeHooks(deps: HookDeps): (r: WakeResult) => Promise<v
   return async (r: WakeResult): Promise<void> => {
     if (r.status === 'killed' || (r.status === 'skipped' && r.reason === 'killed')) return;
     const now = deps.now();
-    if (inQuietHours(now, deps.pacing)) return;
+    if (inQuietHours(now, deps.quiet)) return;
     const timeoutMs = boundedInt(deps.env.SCHEDULER_HOOK_TIMEOUT_SEC, 30, 3600, DEFAULT_TIMEOUT_SEC) * 1000;
     const minMs = boundedInt(deps.env.HOOK_MIN_INTERVAL_MIN, 1, 1440, DEFAULT_MIN_INTERVAL_MIN) * 60_000;
     for (const h of HOOKS) {

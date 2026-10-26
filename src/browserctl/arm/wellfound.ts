@@ -18,7 +18,7 @@ import { planNextTouch } from '../../outreach/cadence.js';
 import type { OutreachConfig } from '../../outreach/config.js';
 import { ceilings } from '../../outreach/limits.js';
 import { companyPaused } from '../../outreach/people.js';
-import { inQuietHours, pacingFromConfig } from '../../outreach/pacing.js';
+import { inQuietHours, quietFromConfig } from '../../outreach/quiet.js';
 import { loadTuning, type Tuning } from '../../outreach/tuning.js';
 import { isDryRun, recordDryRun } from '../../safety/dryRun.js';
 import { gateOutbound, secretValuesFromEnv } from '../../safety/outputGate.js';
@@ -99,7 +99,7 @@ export async function armWellfoundMessage(d: WellfoundArmDeps, a: WellfoundSendA
     if (k) return fail('halted', killCode(k), k);
     // quiet hours (mirrors the LinkedIn guard)
     const tuning = d.tuning ?? loadTuning(d.env);
-    if (inQuietHours(now, pacingFromConfig(d.cfg, tuning))) return fail('refused', 'quiet_hours', 'quiet hours');
+    if (inQuietHours(now, quietFromConfig(d.cfg))) return fail('refused', 'quiet_hours', 'quiet hours');
 
     // (2) person and contact state
     const p = loadWellfoundPerson(db, a.person_id);

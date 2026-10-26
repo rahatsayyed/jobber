@@ -90,7 +90,7 @@ export function validateEnvValue(spec: EnvSpec, raw: string): string | null {
   }
 }
 
-// Cross-key checks (PACING min/max pairs). Only keys present in the catalog are considered.
+// Cross-key checks (min/max pairs). Only keys present in the catalog are considered.
 export function validateCross(values: Record<string, string>, catalog: readonly EnvSpec[]): string[] {
   const known = new Set(catalog.map((s) => s.key));
   const scoped: Record<string, string> = {};

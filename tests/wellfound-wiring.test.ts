@@ -21,7 +21,7 @@ import { countDue, type DueCounts } from '../src/scheduler/due.js';
 import { loadPlanKnobs, planWake, stepOrder, type PlanKnobs } from '../src/scheduler/plan.js';
 import { buildWakePrompt } from '../src/scheduler/prompt.js';
 import { TUNING_DEFAULTS } from '../src/outreach/tuning.js';
-import type { PacingConfig } from '../src/outreach/pacing.js';
+import type { QuietConfig } from '../src/outreach/quiet.js';
 import type { ControlState } from '../src/scheduler/control.js';
 import { ceilings, type CeilingStatus, type LimitKey } from '../src/outreach/limits.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
@@ -339,9 +339,8 @@ describe('ceilings and env catalog', () => {
 
 // ---------------------------------------------------------------------------------------------
 const NOW = new Date('2026-10-15T08:00:00.000Z'); // 13:30 IST
-const pacing: PacingConfig = {
+const quiet: QuietConfig = {
   quietStartHour: 23, quietEndHour: 7, tzOffsetMinutes: 330,
-  minBurst: 1, maxBurst: 4, minActionGapSec: 120, maxActionGapSec: 360, minWaitMin: 8, maxWaitMin: 40, jitter: 0.25,
 };
 const knobs: PlanKnobs = { inboxEveryMin: 60, naukriDiscoverEveryHours: 6 };
 const ctl = (o: Partial<ControlState> = {}): ControlState => ({
@@ -359,7 +358,7 @@ const due = (o: Partial<DueCounts> = {}): DueCounts => ({
 });
 const NAMES = { jobs: [], posts: [], wellfound: ['full-stack-react-india-remote'] };
 const plan = (o: Partial<Parameters<typeof planWake>[0]> = {}) =>
-  planWake({ now: NOW, rng: () => 0.99, pacing, control: ctl(), ceilings: ceil(), due: due({ wellfoundDiscoverLastHoursAgo: null }), knobs, discoverSearches: NAMES, ...o });
+  planWake({ now: NOW, quiet, control: ctl(), ceilings: ceil(), due: due({ wellfoundDiscoverLastHoursAgo: null }), knobs, discoverSearches: NAMES, ...o });
 const wfTasks = (d: ReturnType<typeof plan>) => (d.kind === 'run' ? d.tasks.filter((a) => a.platform === 'wellfound').flatMap((a) => a.tasks) : []);
 
 describe('planner: wellfound discover and inbox tasks', () => {
@@ -419,10 +418,10 @@ describe('planner: wellfound discover and inbox tasks', () => {
   it('the wake prompt names the wellfound searches and quota meaning, after linkedin and naukri', () => {
     const d = plan({ due: due({ wellfoundDiscoverLastHoursAgo: null, inboxLastCheckedMinAgo: null }) });
     if (d.kind !== 'run') throw new Error('expected a run');
-    const p = buildWakePrompt({ runId: 'r1', dryRun: false, burst: d.burst, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 }, allowed: ['linkedin', 'naukri', 'wellfound'], now: NOW, order: stepOrder(d) });
+    const p = buildWakePrompt({ runId: 'r1', dryRun: false, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 }, allowed: ['linkedin', 'naukri', 'wellfound'], now: NOW, order: stepOrder(d) });
     expect(p).toContain('Dispatch `wellfound-operator` for platform wellfound with task: discover quota 5 (searches: full-stack-react-india-remote; quota is the job pages you may open for descriptions).');
     expect(p).toContain('Dispatch `wellfound-operator` for platform wellfound with task: inbox quota 5.');
-    const legacy = buildWakePrompt({ runId: 'r1', dryRun: false, burst: d.burst, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 }, allowed: ['wellfound'], now: NOW });
+    const legacy = buildWakePrompt({ runId: 'r1', dryRun: false, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 }, allowed: ['wellfound'], now: NOW });
     expect(legacy).toContain('Dispatch operator `wellfound-operator` for platform wellfound with tasks: ');
     expect(legacy).toContain('discover quota 5 (searches: full-stack-react-india-remote; quota is the job pages you may open for descriptions)');
   });

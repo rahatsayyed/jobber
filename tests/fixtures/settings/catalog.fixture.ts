@@ -31,8 +31,8 @@ export const FIXTURE_CATALOG: EnvSpec[] = [
   // int
   spec({ key: 'FX_MAX_PER_DAY', type: 'int', section: 'limits', default: '20', min: 1, max: 500, tier: 'guarded', tierReason: 'send cap', weakens: 'increase', auditValue: true }),
   spec({ key: 'FX_MIN_GAP', type: 'int', section: 'limits', default: '30', min: 0, max: 1440, tier: 'guarded', tierReason: 'spacing floor', weakens: 'decrease' }),
-  spec({ key: 'PACING_MIN_BURST', type: 'int', section: 'scheduler', default: '1', min: 1, max: 50, restart: 'scheduler' }),
-  spec({ key: 'PACING_MAX_BURST', type: 'int', section: 'scheduler', default: '4', min: 1, max: 50, restart: 'scheduler' }),
+  spec({ key: 'EMAIL_DRIP_MIN_BATCH', type: 'int', section: 'scheduler', default: '1', min: 1, max: 50, restart: 'scheduler' }),
+  spec({ key: 'EMAIL_DRIP_MAX_BATCH', type: 'int', section: 'scheduler', default: '4', min: 1, max: 50, restart: 'scheduler' }),
   spec({ key: 'FX_PORT', type: 'int', section: 'dashboard', default: '8787', min: 1024, max: 65535, restart: 'dashboard', exampleActive: true }),
   // enum
   spec({ key: 'FX_MODE', type: 'enum', section: 'web-core', default: 'token', allowed: ['token', 'oidc', 'google_desktop'], restart: 'dashboard' }),

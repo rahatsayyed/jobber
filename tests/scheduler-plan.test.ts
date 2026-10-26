@@ -5,18 +5,14 @@ import { TUNING_DEFAULTS } from '../src/outreach/tuning.js';
 import { setState } from '../src/scheduler/runLog.js';
 import { countDue, type DueCounts } from '../src/scheduler/due.js';
 import { planWake, stepOrder, loadPlanKnobs, type PlanKnobs } from '../src/scheduler/plan.js';
-import type { PacingConfig } from '../src/outreach/pacing.js';
+import type { QuietConfig } from '../src/outreach/quiet.js';
 import type { ControlState } from '../src/scheduler/control.js';
 import type { CeilingStatus, LimitKey } from '../src/outreach/limits.js';
 
 const NOW = new Date('2026-10-15T08:00:00.000Z'); // 13:30 IST
 const QUIET = new Date('2026-10-14T21:00:00.000Z'); // 02:30 IST
 
-const pacing: PacingConfig = {
-  quietStartHour: 23, quietEndHour: 7, tzOffsetMinutes: 330,
-  minBurst: 1, maxBurst: 4, minActionGapSec: 120, maxActionGapSec: 360,
-  minWaitMin: 8, maxWaitMin: 40, jitter: 0.25,
-};
+const quiet: QuietConfig = { quietStartHour: 23, quietEndHour: 7, tzOffsetMinutes: 330 };
 const knobs: PlanKnobs = { inboxEveryMin: 60, naukriDiscoverEveryHours: 6 };
 const NAUKRI_NAMES = { jobs: [], posts: [], naukri: ['react-india'] };
 const ctl = (o: Partial<ControlState> = {}): ControlState => ({
@@ -40,48 +36,52 @@ const due = (o: Partial<DueCounts> = {}): DueCounts => {
     ...o,
   };
 };
-function counted(value: number) {
-  let n = 0;
-  const rng = () => { n++; return value; };
-  return { rng, calls: () => n };
-}
-const plan = (o: Partial<Parameters<typeof planWake>[0]> = {}, rngValue = 0.99) => {
-  const r = counted(rngValue);
-  const d = planWake({ now: NOW, rng: r.rng, pacing, control: ctl(), ceilings: ceil(), due: due(), knobs, discoverSearches: NAUKRI_NAMES, ...o });
-  return { d, calls: r.calls() };
+const plan = (o: Partial<Parameters<typeof planWake>[0]> = {}) => {
+  const d = planWake({ now: NOW, quiet, control: ctl(), ceilings: ceil(), due: due(), knobs, discoverSearches: NAUKRI_NAMES, ...o });
+  return { d };
 };
 
 describe('planWake', () => {
-  it('skips killed with zero rng draws', () => {
-    const { d, calls } = plan({ control: ctl({ killed: true, killReason: 'STOP' }) });
+  it('skips killed', () => {
+    const { d } = plan({ control: ctl({ killed: true, killReason: 'STOP' }) });
     expect(d).toMatchObject({ kind: 'skip', reason: 'killed' });
-    expect(calls).toBe(0);
   });
   it('skips halted when both platforms halted', () => {
-    const { d, calls } = plan({
+    const { d } = plan({
       control: ctl({ allowed: [], halted: { linkedin: 'a', naukri: 'b', wellfound: null } }),
     });
     expect(d).toMatchObject({ kind: 'skip', reason: 'halted' });
-    expect(calls).toBe(0);
   });
   it('skips quiet hours (02:30 IST)', () => {
-    const { d, calls } = plan({ now: QUIET });
+    const { d } = plan({ now: QUIET });
     expect(d).toMatchObject({ kind: 'skip', reason: 'quiet_hours' });
-    expect(calls).toBe(0);
   });
-  it('never assigns more than the burst in total and draws rng once', () => {
-    // rng 0.0 -> burst 1; 0.99 -> burst 4
-    for (const v of [0, 0.5, 0.99]) {
-      const { d, calls } = plan({ due: due({ followupsDue: 10, newOutreachReady: 10 }) }, v);
-      expect(calls).toBe(1);
-      if (d.kind !== 'run') throw new Error('expected run');
-      const spent = d.tasks
-        .flatMap((a) => a.tasks)
-        .filter((t) => t.kind === 'followups' || t.kind === 'new_outreach')
-        .reduce((s, t) => s + t.quota, 0);
-      expect(spent).toBeLessThanOrEqual(d.burst);
-      expect(spent).toBe(d.burst);
-    }
+  it('plans every due task with no random total: the run decision has no burst', () => {
+    const { d } = plan({ due: due({ followupsDue: 3, newOutreachReady: 2 }) });
+    if (d.kind !== 'run') throw new Error('expected run');
+    expect('burst' in d).toBe(false);
+    const q = (p: string, k: string) => d.tasks.find((a) => a.platform === p)?.tasks.find((t) => t.kind === k)?.quota;
+    expect(q('linkedin', 'followups')).toBe(3);
+    expect(q('naukri', 'followups')).toBe(3);
+    expect(q('linkedin', 'new_outreach')).toBe(2);
+    expect(q('naukri', 'new_outreach')).toBe(2);
+  });
+  it('bounds each quota by the room left under its ceiling, not by a draw', () => {
+    const c = ceil();
+    c.linkedin_message = { used: 3, limit: 5, ok: true };
+    c.linkedin_invite = { used: 4, limit: 5, ok: true };
+    const { d } = plan({ ceilings: c, due: due({ followupsDue: 10, newOutreachReady: 10 }) });
+    if (d.kind !== 'run') throw new Error('expected run');
+    const q = (p: string, k: string) => d.tasks.find((a) => a.platform === p)?.tasks.find((t) => t.kind === k)?.quota;
+    expect(q('linkedin', 'followups')).toBe(2);
+    expect(q('linkedin', 'new_outreach')).toBe(1);
+  });
+  it('naukri follow-ups and new outreach share the naukri_message room, spent in order', () => {
+    const { d } = plan({ due: due({ followupsDue: 4, newOutreachReady: 4 }) }); // naukri_message room is 5
+    if (d.kind !== 'run') throw new Error('expected run');
+    const q = (p: string, k: string) => d.tasks.find((a) => a.platform === p)?.tasks.find((t) => t.kind === k)?.quota;
+    expect(q('naukri', 'followups')).toBe(4);
+    expect(q('naukri', 'new_outreach')).toBe(1);
   });
   it('emits linkedin before naukri, one assignment per platform, tasks ordered inbox, followups, new_outreach, discover', () => {
     const { d } = plan({
@@ -94,15 +94,13 @@ describe('planWake', () => {
     expect(d.tasks[0].tasks.map((t) => t.kind)).toEqual(['inbox', 'followups', 'new_outreach']);
     expect(d.tasks[1].tasks.map((t) => t.kind)).toEqual(['inbox', 'followups', 'new_outreach', 'discover']);
   });
-  it('splits quotas per platform in stable order from the remaining burst', () => {
-    // rng 0.99 -> burst 4: linkedin takes 3 of its 3 followups, naukri gets the 1 left
-    const { d } = plan({ due: due({ followupsDueByPlatform: { linkedin: 3, naukri: 3 }, followupsDue: 6 }) }, 0.99);
+  it('splits quotas per platform in stable order, each at its own due count', () => {
+    const { d } = plan({ due: due({ followupsDueByPlatform: { linkedin: 3, naukri: 3 }, followupsDue: 6 }) });
     if (d.kind !== 'run') throw new Error('expected run');
     const q = (p: string, k: string) =>
       d.tasks.find((a) => a.platform === p)?.tasks.find((t) => t.kind === k)?.quota;
-    expect(d.burst).toBe(4);
     expect(q('linkedin', 'followups')).toBe(3);
-    expect(q('naukri', 'followups')).toBe(1);
+    expect(q('naukri', 'followups')).toBe(3);
     expect(q('linkedin', 'new_outreach')).toBeUndefined();
   });
   it('the naukri discover task carries the named searches and the detail-page quota', () => {
@@ -155,7 +153,6 @@ describe('planWake', () => {
     const kinds = (p: string) => d.tasks.find((a) => a.platform === p)!.tasks.map((t) => t.kind);
     expect(kinds('linkedin')).not.toContain('followups');
     expect(kinds('naukri')).toContain('followups');
-    // burst 4: naukri followups take 2, linkedin new_outreach the other 2, naukri new_outreach gets none
     expect(kinds('linkedin')).toContain('new_outreach');
   });
   it('does not emit an assignment with zero tasks', () => {
@@ -198,7 +195,6 @@ describe('planWake', () => {
         control: ctl({ allowed: ['linkedin'], halted: { linkedin: null, naukri: 'x', wellfound: null } }),
         due: due({ followupsDueByPlatform: { linkedin: 1, naukri: 9 }, followupsDue: 10 }),
       },
-      0.99,
     );
     if (d.kind !== 'run') throw new Error('expected run');
     expect(d.tasks).toHaveLength(1);
@@ -448,7 +444,7 @@ describe('planWake: the pipeline pulls linkedin new_outreach and apply into the 
     if (r.d.kind === 'run') {
       const q = r.d.tasks.flatMap((a) => a.tasks).find((t) => t.kind === 'new_outreach')!.quota;
       expect(q).toBeGreaterThan(0);
-      expect(q).toBeLessThanOrEqual(r.d.burst);
+      expect(q).toBeLessThanOrEqual(5); // the linkedin_invite room in this fixture
     }
   });
   it('keeps the wake order: pipeline, linkedin tasks, apply (no mail step)', () => {
@@ -470,11 +466,19 @@ describe('planWake: the pipeline pulls linkedin new_outreach and apply into the 
     const c = ctl({ allowed: ['naukri'], halted: { linkedin: 'x', naukri: null, wellfound: null } });
     expect(run({ control: c }).li).toEqual([]);
   });
-  it('does not exceed the burst together with other tasks', () => {
-    const { d } = run({ due: fresh({ followupsDue: 10 }) });
+  it('pulled-in linkedin new_outreach gets the whole linkedin_invite room left', () => {
+    const c = ceil();
+    c.linkedin_invite = { used: 2, limit: 5, ok: true };
+    const { d } = run({ ceilings: c });
     if (d.kind !== 'run') throw new Error('expected run');
-    const spent = d.tasks.flatMap((a) => a.tasks).filter((t) => t.kind === 'followups' || t.kind === 'new_outreach').reduce((n, t) => n + t.quota, 0);
-    expect(spent).toBeLessThanOrEqual(d.burst);
+    const q = d.tasks.flatMap((a) => a.tasks).find((t) => t.kind === 'new_outreach')!.quota;
+    expect(q).toBe(3);
+  });
+  it('plans all due follow-ups together with the pipeline, bounded by ceilings only', () => {
+    const { d } = run({ due: fresh({ followupsDue: 5 }) });
+    if (d.kind !== 'run') throw new Error('expected run');
+    const spent = d.tasks.flatMap((a) => a.tasks).filter((t) => t.kind === 'followups').reduce((n, t) => n + t.quota, 0);
+    expect(spent).toBe(10); // 5 on linkedin and 5 on naukri, each within its room of 5
   });
   it('invents no work when the pipeline is not due and nothing is queued', () => {
     const { d } = plan({ due: due({ unmatchedJobs: 0, appliesLeftToday: 5 }), discoverSearches: undefined });

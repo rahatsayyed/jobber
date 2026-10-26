@@ -127,7 +127,7 @@ for you in any step. Writes to `.env` go through the comment-preserving writer.
 | 6 | `sessions` | LinkedIn main and Naukri login sessions (real Chrome) | files under `secrets/` | every login (password, 2FA, QR) | per account, can be deferred |
 | 7 | `resume` | Converts your resume file to `user-data/resume.json` | `user-data/resume.json` | supplying your resume | can stop with the step skipped |
 | 8 | `profile` | Job questions and the answers file | `user-data/profile.json`, the Easy Apply answers file | answering about yourself | no |
-| 9 | `limits` | Limits and pacing, from the single catalog `src/setup/limitsCatalog.ts` | `.env` | choosing values | no |
+| 9 | `limits` | Limits and spacing, from the single catalog `src/setup/limitsCatalog.ts` | `.env` | choosing values | no |
 | 10 | `access` | Permission set and project hooks; never skip-permissions | `.claude/settings.local.json` (permission set and ccgram hooks, in the same file); appends missing rules to `.gitignore` after confirmation | choosing the set, confirming the `.gitignore` additions | hooks part can be declined |
 | 11 | `classifier` | Prompt-injection classifier: choose a profile, download, pin, fit | `.env` (the classifier model key), `models/` | choosing the profile, large download | step can end skipped; live reads and sends stay refused until it is ready |
 | 12 | `dashboard` | Local web settings, then the access token (or Google sign-in) | `.env` (`WEB_AUTH_MODE`, `WEB_PORT`, `WEB_TMUX_SESSION`, `WEB_TMUX_WINDOW`, and `DASHBOARD_ALLOWED_EMAIL` for the Google option); the token is created by `scripts/dashboard.ts` | opening the sign-in link once | yes, id `dashboard` |

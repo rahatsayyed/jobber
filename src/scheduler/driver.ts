@@ -8,7 +8,7 @@ import { isDryRun } from '../safety/dryRun.js';
 import type { OutreachConfig } from '../outreach/config.js';
 import type { Tuning } from '../outreach/tuning.js';
 import { ceilings } from '../outreach/limits.js';
-import { drawWaitMs, inQuietHours, nextWake, pacingFromConfig, type Rng } from '../outreach/pacing.js';
+import { inQuietHours, nextWake, quietFromConfig, type Rng } from '../outreach/quiet.js';
 import { manualRequestsPending } from '../manual/requests.js';
 import { BudgetTracker, loadBudget, type StopReason } from './budget.js';
 import { readControl, statExists, type ControlDeps, type ControlState } from './control.js';
@@ -75,7 +75,7 @@ const DEFAULT_SESSION = 'jobber-wake';
 const PASS_KEYS = new Set([
   'TZ', 'QUIET_HOURS_START', 'QUIET_HOURS_END', 'COMPANY_CONTACT_LIMIT', 'SPECULATIVE_COMPANY_LIMIT',
 ]);
-const PASS_PREFIXES = ['PACING_', 'COOLDOWN_', 'CADENCE_', 'LINKEDIN_MAX_', 'NAUKRI_MAX_', 'WELLFOUND_MAX_', 'CLASSIFIER_'];
+const PASS_PREFIXES = ['COOLDOWN_', 'CADENCE_', 'LINKEDIN_MAX_', 'NAUKRI_MAX_', 'WELLFOUND_MAX_', 'CLASSIFIER_'];
 
 /**
  * A wake is dry only when JOBBER_DRY_RUN is `1` or `true`; unset or anything else is live.
@@ -162,12 +162,12 @@ async function killChecked(d: DriverDeps, h: LaunchHandle, runId: string): Promi
 }
 
 async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boolean }): Promise<WakeResult> {
-  const pacing = pacingFromConfig(d.cfg, d.tuning);
+  const quiet = quietFromConfig(d.cfg);
   const runId = d.newRunId();
   const dry = wakeIsDry(d.env);
   const trigger = opts.force ? 'forced' : 'scheduled';
   const drawNext = (): string => {
-    const t = nextWake(d.now(), d.rng, pacing).toISOString();
+    const t = nextWake(d.now(), quiet).toISOString();
     try {
       setState(d.db, 'next_wake_at', t, d.now());
     } catch {
@@ -179,7 +179,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
     const at = d.now();
     const sr = detail ? `${reason}: ${detail}`.slice(0, 200) : reason;
     startRun(d.db, {
-      id: runId, at, trigger, dryRun: dry, burst: null, tasks: [], status: 'skipped', stopReason: sr,
+      id: runId, at, trigger, dryRun: dry, tasks: [], status: 'skipped', stopReason: sr,
     });
     finishRun(d.db, runId, { at, status: 'skipped', stopReason: sr });
   };
@@ -197,7 +197,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       } catch {
         // fall through to an in-memory draw
       }
-      return { runId, status: 'skipped', reason, nextWakeAt: nextWake(d.now(), d.rng, pacing).toISOString() };
+      return { runId, status: 'skipped', reason, nextWakeAt: nextWake(d.now(), quiet).toISOString() };
     }
     return { runId, status: 'skipped', reason, nextWakeAt: drawNext() };
   };
@@ -283,7 +283,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
     try {
       const now = d.now();
       decision = planWake({
-        now, rng: d.rng, pacing, control,
+        now, quiet, control,
         ceilings: ceilings(d.db, d.cfg, now),
         due: countDue(d.db, now, d.tuning, d.env),
         knobs: loadPlanKnobs(d.env),
@@ -305,7 +305,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
     const budget = loadBudget(d.env);
     inboxPlanned = decision.tasks.some((a) => a.tasks.some((k) => k.kind === 'inbox'));
     startRun(d.db, {
-      id: runId, at: startAt, trigger, dryRun: dry, burst: decision.burst, tasks: decision.tasks, status: 'running',
+      id: runId, at: startAt, trigger, dryRun: dry, tasks: decision.tasks, status: 'running',
     });
     started = true;
     wakeStartIso = startAt.toISOString();
@@ -340,7 +340,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       codePass,
     } : undefined;
     const prompt = buildWakePrompt({
-      runId, dryRun: dry, burst: decision.burst, tasks: decision.tasks, budget, allowed: control.allowed, now: startAt,
+      runId, dryRun: dry, tasks: decision.tasks, budget, allowed: control.allowed, now: startAt,
       order,
       pipeline: pipelineInput,
     });
@@ -431,7 +431,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
           stopReason = 'kill_switch';
           break;
         }
-        if (inQuietHours(now, pacing)) {
+        if (inQuietHours(now, quiet)) {
           await kill();
           status = 'killed';
           stopReason = 'quiet_hours';
@@ -504,7 +504,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       else if (!ctl) block = 'control unreadable';
       else if (ctl.killed) block = 'kill switch';
       else if (ctl.allowed.length === 0) block = 'all platforms halted';
-      else if (inQuietHours(d.now(), pacing)) block = 'quiet hours';
+      else if (inQuietHours(d.now(), quiet)) block = 'quiet hours';
       else {
         try {
           const until = getState(d.db, 'usage_backoff_until');
@@ -533,7 +533,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
           summary: snap ? redactPane(snap.lastLines.join('\n')).slice(0, 2000) : null,
         });
         startRun(d.db, {
-          id: nextId, at: d.now(), trigger: 'continuation', dryRun: dry, burst: decision.burst, tasks: decision.tasks,
+          id: nextId, at: d.now(), trigger: 'continuation', dryRun: dry, tasks: decision.tasks,
           status: 'running', parentRunId: activeRunId,
         });
       } catch (e) {
@@ -642,7 +642,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     await say(d, { level: 'warn', title: 'another scheduler daemon is running, exiting' });
     return;
   }
-  const pacing = pacingFromConfig(d.cfg, d.tuning);
+  const quiet = quietFromConfig(d.cfg);
   const exists = d.control?.exists ?? statExists;
   const hb = (): void => dl.heartbeat();
   const deps: DriverDeps = {
@@ -688,7 +688,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
       next = null;
     }
     if (!next) {
-      next = new Date(d.now().getTime() + drawWaitMs(d.rng, pacing));
+      next = nextWake(d.now(), quiet);
       try {
         setState(d.db, 'next_wake_at', next.toISOString(), d.now());
       } catch {
@@ -699,11 +699,11 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     // The mail drip lane runs beside the wakes (its own `mail` lock), so a long wake never pauses the slow email trickle.
     drip = deps.mailDrip ? dripLoop(deps, stop) : null;
     // A manual request must not wait for the next random wake: every slice (30 s) the daemon checks for a pending one and wakes early,
-    // outside quiet hours, at most once per backoff. The regular pacing (`next`) is left alone.
+    // outside quiet hours, at most once per backoff. The regular wake schedule (`next`) is left alone.
     let manualBackoffUntil = 0;
     const manualWakeDue = (): boolean => {
       const t = d.now();
-      if (t.getTime() < manualBackoffUntil || inQuietHours(t, pacing)) return false;
+      if (t.getTime() < manualBackoffUntil || inQuietHours(t, quiet)) return false;
       try {
         return manualRequestsPending(d.db) > 0;
       } catch {

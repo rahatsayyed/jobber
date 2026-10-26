@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { openDb } from '../src/db.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
-import { loadTuning } from '../src/outreach/tuning.js';
-import { pacingFromConfig } from '../src/outreach/pacing.js';
+import { quietFromConfig } from '../src/outreach/quiet.js';
 import { makeAfterWakeHooks, type HookRun, type HookRunOpts } from '../src/scheduler/hooks.js';
 import type { WakeResult } from '../src/scheduler/driver.js';
 import type { Notice } from '../src/scheduler/notify.js';
@@ -24,7 +23,7 @@ function setup(
   const run: HookRun = o.run ?? (async () => ({ code: 0 }));
   const hook = makeAfterWakeHooks({
     db, env, projectRoot: '/proj', now: () => new Date(t),
-    pacing: pacingFromConfig(loadOutreachConfig(env), loadTuning(env)),
+    quiet: quietFromConfig(loadOutreachConfig(env)),
     notifier: { notify: async (n) => void notices.push(n) },
     exists: (p) => files.has(p),
     readScripts: () => (o.scripts === undefined ? { 'auto-update': 'x', backup: 'y' } : o.scripts),

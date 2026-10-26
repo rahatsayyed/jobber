@@ -10,7 +10,7 @@ export type Rng = () => number;
 const MIN_MS = 60000;
 const DAY_MS = 24 * 60 * MIN_MS;
 
-/** Same semantics as inQuietHours in src/outreach/pacing.ts: [start, end) local hours, wraps midnight, start === end is empty. */
+/** Same semantics as inQuietHours in src/outreach/quiet.ts: [start, end) local hours, wraps midnight, start === end is empty. */
 function hourIsQuiet(hour: number, q: QuietWindow): boolean {
   const { startHour: s, endHour: e } = q;
   if (s === e) return false;

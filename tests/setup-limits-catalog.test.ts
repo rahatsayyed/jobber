@@ -31,13 +31,6 @@ describe('limits catalog drift against code defaults', () => {
 
   it('tuning keys match loadTuning({}) and cadence constants', () => {
     const t = loadTuning({});
-    expect(spec('PACING_MIN_BURST').default).toBe(t.minBurst);
-    expect(spec('PACING_MAX_BURST').default).toBe(t.maxBurst);
-    expect(spec('PACING_MIN_ACTION_GAP_SEC').default).toBe(t.minActionGapSec);
-    expect(spec('PACING_MAX_ACTION_GAP_SEC').default).toBe(t.maxActionGapSec);
-    expect(spec('PACING_MIN_WAIT_MIN').default).toBe(t.minWaitMin);
-    expect(spec('PACING_MAX_WAIT_MIN').default).toBe(t.maxWaitMin);
-    expect(spec('PACING_JITTER_PCT').default).toBe(Math.round(t.jitter * 100));
     expect(spec('COOLDOWN_IGNORED_DAYS').default).toBe(COOLDOWN_DAYS.ignored);
     expect(spec('COOLDOWN_NOT_NOW_DAYS').default).toBe(COOLDOWN_DAYS.not_now);
     expect(spec('COOLDOWN_EXPLICIT_STOP_DAYS').default).toBe(COOLDOWN_DAYS.explicit_stop);
@@ -54,11 +47,6 @@ describe('limits catalog drift against code defaults', () => {
     expect(at('COMPANY_CONTACT_LIMIT', 100001).companyContactLimit).toBe(5);
     expect(spec('QUIET_HOURS_START').max).toBe(23);
     expect(spec('COMPANY_CONTACT_LIMIT').max).toBe(100000);
-    expect(loadTuning({ PACING_MAX_BURST: '50' }).maxBurst).toBe(50);
-    expect(spec('PACING_MAX_BURST').max).toBe(50);
-    expect(spec('PACING_MAX_ACTION_GAP_SEC').max).toBe(86400);
-    expect(spec('PACING_MAX_WAIT_MIN').max).toBe(1440);
-    expect(spec('PACING_JITTER_PCT').max).toBe(90);
     expect(spec('COOLDOWN_IGNORED_DAYS').max).toBe(3650);
   });
 
@@ -76,15 +64,15 @@ describe('validateLimit', () => {
   it('accepts boundary values', () => {
     expect(validateLimit(quiet(), '0')).toBeNull();
     expect(validateLimit(quiet(), '23')).toBeNull();
-    expect(validateLimit(spec('PACING_MIN_BURST'), '1')).toBeNull();
-    expect(validateLimit(spec('PACING_MAX_BURST'), '50')).toBeNull();
+    expect(validateLimit(spec('EMAIL_DRIP_MIN_BATCH'), '1')).toBeNull();
+    expect(validateLimit(spec('EMAIL_DRIP_MAX_BATCH'), '20')).toBeNull();
   });
   it('rejects empty, non-numeric, fractional, negative and over max', () => {
     for (const raw of ['', 'abc', '1.5', '-1', '24']) {
       expect(validateLimit(quiet(), raw), raw).not.toBeNull();
     }
-    expect(validateLimit(spec('PACING_MIN_BURST'), '0')).not.toBeNull();
-    expect(validateLimit(spec('PACING_MAX_BURST'), '51')).not.toBeNull();
+    expect(validateLimit(spec('EMAIL_DRIP_MIN_BATCH'), '0')).not.toBeNull();
+    expect(validateLimit(spec('EMAIL_DRIP_MAX_BATCH'), '21')).not.toBeNull();
   });
   it('validates the cadence list: same length, each 1..365', () => {
     const s = spec('CADENCE_GAPS_DAYS');
@@ -100,21 +88,21 @@ describe('validateLimit', () => {
 });
 
 describe('validatePairs', () => {
-  it('flags a min above its max for burst, gap and wait', () => {
+  it('flags a min above its max for drip batch, gap and pause', () => {
     const msgs = validatePairs({
-      PACING_MIN_BURST: '5',
-      PACING_MAX_BURST: '2',
-      PACING_MIN_ACTION_GAP_SEC: '500',
-      PACING_MAX_ACTION_GAP_SEC: '100',
-      PACING_MIN_WAIT_MIN: '50',
-      PACING_MAX_WAIT_MIN: '10',
+      EMAIL_DRIP_MIN_BATCH: '5',
+      EMAIL_DRIP_MAX_BATCH: '2',
+      EMAIL_DRIP_MIN_GAP_MIN: '500',
+      EMAIL_DRIP_MAX_GAP_MIN: '100',
+      EMAIL_DRIP_INTRA_PAUSE_MIN_SEC: '50',
+      EMAIL_DRIP_INTRA_PAUSE_MAX_SEC: '10',
     });
     expect(msgs).toHaveLength(3);
-    expect(msgs.join(' ')).toContain('PACING_MIN_BURST');
+    expect(msgs.join(' ')).toContain('EMAIL_DRIP_MIN_BATCH');
   });
   it('is quiet when ordered, equal, or a side is missing', () => {
-    expect(validatePairs({ PACING_MIN_BURST: '2', PACING_MAX_BURST: '2' })).toEqual([]);
-    expect(validatePairs({ PACING_MIN_BURST: '9' })).toEqual([]);
+    expect(validatePairs({ EMAIL_DRIP_MIN_BATCH: '2', EMAIL_DRIP_MAX_BATCH: '2' })).toEqual([]);
+    expect(validatePairs({ EMAIL_DRIP_MIN_BATCH: '9' })).toEqual([]);
     expect(validatePairs({})).toEqual([]);
   });
 });
