@@ -18,6 +18,12 @@ const MAX_MENU_ITEMS = 30;
 const MAX_PER_ROLE = 20;
 const MAX_TEXT_LINES = 40;
 const OP_TIMEOUT_MS = 1500;
+// A dialog or menu that is open but lists no control yet is still filling in (LinkedIn renders the invite modal over
+// several seconds). A snapshot polls for its controls this long at most (poll interval, then total).
+export const FILL_POLL_MS = 400;
+export const FILL_MAX_MS = 8000;
+// Roles a click_at point may resolve to inside a locator container.
+const POINT_ROLES = new Set<string>(['button', 'link', 'textbox', 'menuitem', 'option']);
 
 /** Structural subset of a Patchright locator used here. */
 export interface LdLocator {
@@ -30,7 +36,10 @@ export interface LdLocator {
   evaluate<T>(fn: (el: any) => T, arg?: unknown, opts?: { timeout?: number }): Promise<T>;
   click(opts?: { timeout?: number }): Promise<void>;
   fill(text: string, opts?: { timeout?: number }): Promise<void>;
+  // Viewport box of the element (works inside a closed shadow root); null when it is not shown.
+  boundingBox(opts?: { timeout?: number }): Promise<LdBox | null>;
 }
+export interface LdBox { x: number; y: number; width: number; height: number }
 export interface LdPage { getByRole(role: string, opts?: { name?: string; exact?: boolean }): LdLocator }
 
 type DialogKindRole = 'dialog' | 'alertdialog';
@@ -48,7 +57,9 @@ const FACTS_FN = (el: any): { name: string; type: string; ro: boolean } => {
   return { name, type: a('type').toLowerCase(), ro: a('readonly') !== '' };
 };
 
-interface ReadOut { nodes: RawNode[]; locatorDialogs: number; buttons: string[] }
+// empty: containers (`<kind>:<index>`) that are open but showed no control in this read.
+interface ReadOut { nodes: RawNode[]; locatorDialogs: number; buttons: string[]; empty: string[] }
+const inBox = (b: LdBox, x: number, y: number): boolean => x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height;
 
 export class LocatorDialogLayer {
   private descs = new Map<number, Desc>();
@@ -91,16 +102,17 @@ export class LocatorDialogLayer {
   async read(walker: RawTree): Promise<ReadOut> {
     this.descs = new Map();
     const out = await this.readDialogs(walker);
-    let menus: RawNode[] = [];
-    try { menus = await this.readMenus(walker); } catch { menus = []; }
-    return menus.length === 0 ? out : { ...out, nodes: [...out.nodes, ...menus] };
+    let menus: { nodes: RawNode[]; empty: string[] } = { nodes: [], empty: [] };
+    try { menus = await this.readMenus(walker); } catch { menus = { nodes: [], empty: [] }; }
+    return { ...out, nodes: [...out.nodes, ...menus.nodes], empty: [...out.empty, ...menus.empty] };
   }
 
   // Open menus (role menu) and listboxes as ordinary menuitem / option nodes without a dialog. An item the
   // walker already lists (same role and name) is skipped. Refs live until the next snapshot.
-  private async readMenus(walker: RawTree): Promise<RawNode[]> {
+  private async readMenus(walker: RawTree): Promise<{ nodes: RawNode[]; empty: string[] }> {
     const seen = new Set(walker.nodes.filter((x) => x.role === 'menuitem' || x.role === 'option').map((x) => `${x.role}|${x.name}`));
     const nodes: RawNode[] = [];
+    const empty: string[] = [];
     let m = 0;
     for (const [ck, role] of [['menu', 'menuitem'], ['listbox', 'option']] as const) {
       let c = 0;
@@ -111,6 +123,7 @@ export class LocatorDialogLayer {
         const cont = this.dialogLoc(ck, di);
         let ic = 0;
         try { ic = await cont.getByRole(role).count(); } catch { ic = 0; }
+        if (ic === 0) empty.push(`${ck}:${di}`);
         let used = 0;
         for (let i = 0; i < Math.min(ic, MAX_MENU_ITEMS); i++) {
           let f: { name: string; type: string; ro: boolean };
@@ -124,11 +137,11 @@ export class LocatorDialogLayer {
         if (used > 0) m++;
       }
     }
-    return nodes;
+    return { nodes, empty };
   }
 
   private async readDialogs(walker: RawTree): Promise<ReadOut> {
-    const empty: ReadOut = { nodes: [], locatorDialogs: 0, buttons: [] };
+    const empty: ReadOut = { nodes: [], locatorDialogs: 0, buttons: [], empty: [] };
     let found: { dk: DialogKindRole; di: number }[];
     try { found = await this.count(); } catch { return empty; }
     if (found.length === 0) return empty;
@@ -139,6 +152,7 @@ export class LocatorDialogLayer {
     if (walkerDialogs >= found.length) return { ...empty, locatorDialogs: found.length };
     const nodes: RawNode[] = [];
     const buttons: string[] = [];
+    const emptyDialogs: string[] = [];
     for (let d = 0; d < found.length; d++) {
       const { dk, di } = found[d];
       const base = LOCATOR_BASE + d * DIALOG_STRIDE;
@@ -147,6 +161,7 @@ export class LocatorDialogLayer {
       const dn = seq++;
       this.descs.set(dn, { dk, di, slot: d, role: 'dialog', nth: 0 });
       nodes.push({ n: dn, role: 'dialog', name: dname, text: '', disabled: false });
+      let controls = 0;
       const inDlg = { dialog: dn, dialogName: dname };
       const dlg = this.dialogLoc(dk, di);
       // Visible text lines (the recipient name is read from here by the commit path).
@@ -170,6 +185,7 @@ export class LocatorDialogLayer {
           try { f = await el.evaluate(FACTS_FN, undefined, { timeout: OP_TIMEOUT_MS }); } catch { continue; }
           const n = seq++;
           this.descs.set(n, { dk, di, slot: d, role, nth: i });
+          if (role !== 'heading') controls++;
           const node: RawNode = { n, role, name: clean(f.name, MAX_NAME), text: '', disabled: false, ...inDlg };
           if (role === 'button' || role === 'link') {
             // Every dialog button counts as a footer control: an unknown name stays irreversible_other.
@@ -186,8 +202,9 @@ export class LocatorDialogLayer {
           nodes.push(node);
         }
       }
+      if (controls === 0) emptyDialogs.push(`${dk}:${di}`);
     }
-    return { nodes, locatorDialogs: found.length, buttons };
+    return { nodes, locatorDialogs: found.length, buttons, empty: emptyDialogs };
   }
 
   /** Re-read one locator node live (name, value, dialog name); null when gone. */
@@ -222,6 +239,34 @@ export class LocatorDialogLayer {
     } catch { return null; }
   }
 
+  /**
+   * The control of the last read under a viewport point, by locator boxes (the walker cannot see inside a closed shadow
+   * root, so elementFromPoint finds nothing there). inside: the point lies on a locator dialog or menu: then ONLY this
+   * answer counts (null when no control is under the point), never the walker's. Smallest box wins. Never throws.
+   */
+  async describeAt(x: number, y: number): Promise<{ inside: boolean; node: LiveNode | null }> {
+    const none = { inside: false, node: null };
+    try {
+      const conts = new Map<string, Desc>();
+      for (const d of this.descs.values()) conts.set(`${d.dk}:${d.di}`, d);
+      let inside = false;
+      for (const d of conts.values()) {
+        const b = await this.dialogLoc(d.dk, d.di).boundingBox({ timeout: OP_TIMEOUT_MS }).catch(() => null);
+        if (b && inBox(b, x, y)) { inside = true; break; }
+      }
+      if (!inside) return none;
+      let best: { n: number; area: number } | null = null;
+      for (const [n, d] of this.descs) {
+        if (!POINT_ROLES.has(d.role)) continue;
+        const b = await this.loc(d).boundingBox({ timeout: OP_TIMEOUT_MS }).catch(() => null);
+        if (!b || b.width <= 0 || b.height <= 0 || !inBox(b, x, y)) continue;
+        const area = b.width * b.height;
+        if (!best || area < best.area) best = { n, area };
+      }
+      return { inside: true, node: best ? await this.describe(best.n) : null };
+    } catch { return none; }
+  }
+
   /** Number of locator-visible dialogs right now (diag). */
   async countAll(): Promise<number> { return (await this.count()).length; }
 
@@ -240,16 +285,36 @@ export class LocatorDialogLayer {
 }
 
 /** Wrap a BcPage so dialogs visible only to locators show up in snapshots and can be described, clicked and filled. */
-export function withLocatorDialogs(base: BcPage, lp: () => LdPage): BcPage {
+export function withLocatorDialogs(base: BcPage, lp: () => LdPage, opts: { fillPollMs?: number; fillMaxMs?: number } = {}): BcPage {
   const layer = new LocatorDialogLayer(lp);
+  const pollMs = Math.max(1, opts.fillPollMs ?? FILL_POLL_MS);
+  const maxPolls = Math.ceil((opts.fillMaxMs ?? FILL_MAX_MS) / pollMs);
+  const maxMs = opts.fillMaxMs ?? FILL_MAX_MS;
   let last: { dialogs: number; buttons: string[] } = { dialogs: 0, buttons: [] };
+  // Containers that were still empty when the wait for their controls ended: not waited for again until they change.
+  let spent = new Set<string>();
   const wrapped: BcPage = {
     ...base,
     async snapshot() {
-      const t = await base.snapshot();
-      const r = await layer.read(t);
+      let t = await base.snapshot();
+      let r = await layer.read(t);
+      const pending = (): boolean => r.empty.some((k) => !spent.has(k));
+      if (pending()) {
+        // An open dialog or menu with no control yet is still filling in: re-read (bounded) until it lists some.
+        const deadline = Date.now() + maxMs;
+        for (let i = 0; i < maxPolls && pending() && Date.now() < deadline; i++) {
+          await base.waitMs(pollMs).catch(() => undefined);
+          t = await base.snapshot();
+          r = await layer.read(t);
+        }
+      }
+      spent = new Set(r.empty);
       last = { dialogs: r.locatorDialogs, buttons: r.buttons };
       return r.nodes.length === 0 ? t : { ...t, nodes: [...t.nodes, ...r.nodes] };
+    },
+    async describeAt(x, y) {
+      const r = await layer.describeAt(x, y);
+      return r.inside ? r.node : base.describeAt(x, y);
     },
     async describe(n) { return layer.has(n) ? layer.describe(n) : base.describe(n); },
     async clickNode(n) { return layer.has(n) ? layer.click(n) : base.clickNode(n); },

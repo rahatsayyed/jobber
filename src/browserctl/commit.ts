@@ -69,6 +69,17 @@ export function effectiveDialogKind(tree: RawTree, dlg: number, name: string | n
   return looksLikeInvite(tree, dlg) ? 'invite' : 'other';
 }
 
+const hasControls = (tree: RawTree, dlg: number): boolean =>
+  tree.nodes.some((x) => x.dialog === dlg && (x.role === 'button' || x.role === 'link' || x.role === 'textbox'));
+
+/** Kind of a dialog that lists no control: by its name, else by its text ("invitation"), else unknown. */
+function emptyDialogKind(tree: RawTree, d: { n: number; name: string }): 'invite' | 'message' | 'other' | 'unknown' {
+  const byName = dialogKindOf(d.name);
+  if (byName && byName !== 'other') return byName;
+  if (/\binvit/i.test(dialogText(tree, d.n))) return 'invite';
+  return byName ?? 'unknown';
+}
+
 /** The page after a Connect click: an invite dialog (any name), or a navigated invite page with its controls. */
 function inviteSurface(tree: RawTree, before: string): 'dialog' | 'page' | null {
   if (tree.nodes.some((x) => x.role === 'dialog' && effectiveDialogKind(tree, x.n, x.name) === 'invite')) return 'dialog';
@@ -269,6 +280,16 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
         await page.waitMs(pollMs).catch(() => undefined);
         after = await page.snapshot();
         surface = inviteSurface(after, url);
+      }
+      // A dialog is open but none of its controls could be read (after the layers waited for them): nothing can be
+      // clicked or typed, so this is not dialog_opened. The dialog is left open for a screenshot.
+      const bare = surface === 'page' ? null : after.nodes.find((x) => x.role === 'dialog' && !hasControls(after, x.n)
+        && (surface === 'dialog' ? effectiveDialogKind(after, x.n, x.name) === 'invite' : after.url === url));
+      if (bare) {
+        if (intent?.touchId !== undefined && !intent.dry) releaseNoDialog(db, intent.touchId, now());
+        const kind = emptyDialogKind(after, bare);
+        const dg = await writeCommitDiag(deps, page, { platform, code: 'dialog_controls_missing', live, urlBefore: url, after });
+        return { ok: false, status: 'failed', code: 'dialog_controls_missing', reason: `Connect clicked and a dialog is open (dialog kind: ${kind}), but its buttons and text field could not be read; nothing was sent. Take one linkedin_screenshot to see it, escalate once and move to the next contact.${diagNote(dg)}` };
       }
       if (surface === 'dialog') { keepArmed = true; return { ok: true, code: 'dialog_opened', reason: 'invite dialog is open; type the armed note and click Send' }; }
       if (surface === 'page') { keepArmed = true; return { ok: true, code: 'invite_page_opened', reason: 'LinkedIn opened an invite page; take a snapshot and continue only if it shows the armed person' }; }

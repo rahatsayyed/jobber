@@ -213,11 +213,13 @@ export async function classifyPoint(
   pageKind: string | null,
   x: number,
   y: number,
+  /** Kind of the node's enclosing dialog when its name says nothing (LinkedIn: by its invite controls), as doClick does. */
+  kindOf?: (node: LiveNode) => DialogKind | null,
 ): Promise<PointClass> {
   if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0) return { ok: false, code: 'unresolvable_point' };
   const node = await page.describeAt(x, y);
   if (!node) return { ok: false, code: 'unresolvable_point' };
-  return { ok: true, cls: classify(guardInputOf(node, platform, pageKind, true)), node };
+  return { ok: true, cls: classify(guardInputOf(node, platform, pageKind, true, kindOf?.(node))), node };
 }
 
 // ---- type guard ----

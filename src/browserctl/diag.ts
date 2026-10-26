@@ -33,7 +33,7 @@ export interface DiagDeps {
 
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const CONTROL = new RegExp('[\\u0000-\\u001f\\u007f\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ufeff]', 'g');
-const PHONE_RE =/\+?\d[\d\s().-]{6,}\d/g;
+const PHONE_RE = /\+?\d[\d\s().-]{6,}\d/g;
 
 /** Short, control-free, redacted name. */
 export function safeName(s: unknown): string {

@@ -65,7 +65,7 @@ function samePath(a: string, b: string): boolean {
 }
 /** At most this many "dialog without controls" diag files per engine (one process), so a stuck page cannot fill the disk. */
 const MAX_EMPTY_DIALOG_DIAGS = 3;
-const FREE_KEYS =new Set<string>(['Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Backspace']);
+const FREE_KEYS = new Set<string>(['Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Backspace']);
 
 export function createEngine(deps: EngineDeps): Engine {
   const P = deps.policy ?? LINKEDIN_POLICY;
@@ -354,7 +354,8 @@ export function createEngine(deps: EngineDeps): Engine {
     if (!g.ok) return g.res;
     if (!(seenEpoch === refs.epoch && refs.hasSnapshot)) return refused('snapshot_required', 'take a snapshot at the current epoch first');
     if (shotEpoch !== refs.epoch) return refused('screenshot_required', 'take a screenshot at the current epoch first');
-    const p = await classifyPoint(g.page, P.platform, pageKind(g.page), x, y);
+    const p = await classifyPoint(g.page, P.platform, pageKind(g.page), x, y,
+      (n) => (P.platform === 'linkedin' && n.dialog !== undefined && tree ? effectiveDialogKind(tree, n.dialog, n.dialogName) : null));
     if (!p.ok) return refused(p.code, 'nothing usable at that point');
     return dispatch('click_at', g.page, p.cls, p.node, () => g.page.clickPoint(x, y), () => g.page.describeAt(x, y));
   }
