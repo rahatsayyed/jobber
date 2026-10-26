@@ -14,6 +14,8 @@ import { MAX_NAME, MAX_TEXT, MAX_VALUE, type BcRole, type LiveNode, type RawNode
 export const LOCATOR_BASE = 60000;
 const DIALOG_STRIDE = 1000;
 const MAX_DIALOGS = 3;
+const MAX_MENUS = 3;
+const MAX_MENU_ITEMS = 30;
 const MAX_PER_ROLE = 20;
 const MAX_TEXT_LINES = 40;
 const OP_TIMEOUT_MS = 1500;
@@ -33,7 +35,10 @@ export interface LdLocator {
 export interface LdPage { getByRole(role: string, opts?: { name?: string; exact?: boolean }): LdLocator }
 
 type DialogKindRole = 'dialog' | 'alertdialog';
-interface Desc { dk: DialogKindRole; di: number; slot: number; role: BcRole | 'dialog'; nth: number }
+// Container surfaces read through locators: dialogs, and open menus and listboxes (popovers, dropdowns).
+type ContKind = DialogKindRole | 'menu' | 'listbox';
+const isMenuKind = (k: ContKind): boolean => k === 'menu' || k === 'listbox';
+interface Desc { dk: ContKind; di: number; slot: number; role: BcRole | 'dialog'; nth: number }
 
 const clean = (s: unknown, max: number): string => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
@@ -52,7 +57,7 @@ export class LocatorDialogLayer {
 
   has(n: number): boolean { return n >= LOCATOR_BASE && this.descs.has(n); }
 
-  private dialogLoc(dk: DialogKindRole, di: number): LdLocator { return this.lp().getByRole(dk).nth(di); }
+  private dialogLoc(dk: ContKind, di: number): LdLocator { return this.lp().getByRole(dk).nth(di); }
   private loc(d: Desc): LdLocator {
     const dlg = this.dialogLoc(d.dk, d.di);
     return d.role === 'dialog' ? dlg : dlg.getByRole(d.role).nth(d.nth);
@@ -83,12 +88,50 @@ export class LocatorDialogLayer {
     return '';
   }
 
-  /** Locator dialogs the walker did not see, as nodes. Never throws. */
+  /** Locator dialogs and open menus the walker did not see, as nodes. Never throws. */
   async read(walker: RawTree): Promise<ReadOut> {
+    this.descs = new Map();
+    const out = await this.readDialogs(walker);
+    let menus: RawNode[] = [];
+    try { menus = await this.readMenus(walker); } catch { menus = []; }
+    return menus.length === 0 ? out : { ...out, nodes: [...out.nodes, ...menus] };
+  }
+
+  // Open menus (role menu) and listboxes as ordinary menuitem / option nodes without a dialog. An item the
+  // walker already lists (same role and name) is skipped. Refs live until the next snapshot.
+  private async readMenus(walker: RawTree): Promise<RawNode[]> {
+    const seen = new Set(walker.nodes.filter((x) => x.role === 'menuitem' || x.role === 'option').map((x) => `${x.role}|${x.name}`));
+    const nodes: RawNode[] = [];
+    let m = 0;
+    for (const [ck, role] of [['menu', 'menuitem'], ['listbox', 'option']] as const) {
+      let c = 0;
+      try { c = await this.lp().getByRole(ck).count(); } catch { c = 0; }
+      for (let di = 0; di < c && m < MAX_MENUS; di++) {
+        const slot = MAX_DIALOGS + m;
+        const base = LOCATOR_BASE + slot * DIALOG_STRIDE;
+        const cont = this.dialogLoc(ck, di);
+        let ic = 0;
+        try { ic = await cont.getByRole(role).count(); } catch { ic = 0; }
+        let used = 0;
+        for (let i = 0; i < Math.min(ic, MAX_MENU_ITEMS); i++) {
+          let f: { name: string; type: string; ro: boolean };
+          try { f = await cont.getByRole(role).nth(i).evaluate(FACTS_FN, undefined, { timeout: OP_TIMEOUT_MS }); } catch { continue; }
+          const name = clean(f.name, MAX_NAME);
+          if (seen.has(`${role}|${name}`)) continue;
+          const n = base + used++;
+          this.descs.set(n, { dk: ck, di, slot, role, nth: i });
+          nodes.push({ n, role, name, text: '', disabled: false });
+        }
+        if (used > 0) m++;
+      }
+    }
+    return nodes;
+  }
+
+  private async readDialogs(walker: RawTree): Promise<ReadOut> {
     const empty: ReadOut = { nodes: [], locatorDialogs: 0, buttons: [] };
     let found: { dk: DialogKindRole; di: number }[];
     try { found = await this.count(); } catch { return empty; }
-    this.descs = new Map();
     if (found.length === 0) return empty;
     const walkerDialogs = walker.nodes.filter((x) => x.role === 'dialog').length;
     if (walkerDialogs >= found.length) return { ...empty, locatorDialogs: found.length };
@@ -152,7 +195,13 @@ export class LocatorDialogLayer {
     try {
       const dlgCount = await this.lp().getByRole(d.dk).count();
       if (d.di >= dlgCount) return null;
-      const dname = await this.dialogName(d.dk, d.di);
+      if (isMenuKind(d.dk)) {
+        const mel = this.loc(d);
+        if ((await mel.count()) === 0) return null;
+        const mf = await mel.evaluate(FACTS_FN, undefined, { timeout: OP_TIMEOUT_MS });
+        return { n, role: d.role as BcRole, name: clean(mf.name, MAX_NAME), text: '', disabled: false };
+      }
+      const dname = await this.dialogName(d.dk as DialogKindRole, d.di);
       const dn = LOCATOR_BASE + d.slot * DIALOG_STRIDE;
       if (d.role === 'dialog') return { n, role: 'dialog', name: dname, text: '', disabled: false };
       const el = this.loc(d);

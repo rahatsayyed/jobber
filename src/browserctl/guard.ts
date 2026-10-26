@@ -80,8 +80,10 @@ const NAUKRI_CHATBOT_RE = /^(?:save|submit|continue|done)$/;
 const IRREVERSIBLE_RE = new RegExp(
   '^(?:submit|apply|easy apply|sign in|sign up|log in|login|register|create account|follow|unfollow|like|react|repost|'
   + 'share|post|delete|remove|withdraw|ignore|decline|block|report|endorse|recommend|subscribe|buy|pay|purchase|'
-  + 'invite|disconnect|unsend|join|send|accept|connect|verbinden|senden|annehmen)\\b',
+  + 'invite|disconnect|unsend|join|send|accept|connect|mute|verbinden|senden|annehmen)\\b',
 );
+// Menu items (the profile More dropdown) that only open a view or file and change no state.
+const MENU_FREE_RE = /^(?:message|save to pdf|share|share profile(?: in a message)?|copy link to profile|about this profile)$/;
 const DANGEROUS_HREF_RE = /(?:log-?out|sign-?out|signout|delete|withdraw|\/accept\b|action=(?:accept|send|connect|delete)|\/unfollow)/i;
 
 /** The Naukri Apply button itself (as opposed to a chatbot step control). */
@@ -109,7 +111,10 @@ export function classify(input: GuardInput): ActionClass {
   const submit = !!input.isSubmit;
   const platform = input.platform;
 
-  if (!ACTION_ROLES.has(input.role)) {
+  // A listbox option on LinkedIn that carries a connect, accept or state-changing name is treated like a button of that name.
+  const optionAction = input.role === 'option' && platform === 'linkedin'
+    && (CONNECT_RE.test(name) || SEND_CONNECT_RE.test(name) || ACCEPT_RE.test(name) || IRREVERSIBLE_RE.test(name));
+  if (!ACTION_ROLES.has(input.role) && !optionAction) {
     // Fields, checkboxes, headings and plain text do not act by being clicked. A point that lands on
     // something non-actionable inside a dialog footer may still hit a scripted button: fail closed.
     if (input.viaPoint && input.inFooter && inDialog) return 'irreversible_other';
@@ -153,6 +158,7 @@ export function classify(input: GuardInput): ActionClass {
     if (WELLFOUND_STEP_RE.test(name)) return inDialog || composerCtx ? 'wellfound_apply' : 'irreversible_other';
   }
 
+  if (input.role === 'menuitem' && platform === 'linkedin' && MENU_FREE_RE.test(name)) return 'free';
   if (IRREVERSIBLE_RE.test(name)) return 'irreversible_other';
   if (SAFE_NAMES.has(name)) return 'free';
   if (submit) return 'irreversible_other';
