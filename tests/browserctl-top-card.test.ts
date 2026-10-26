@@ -4,7 +4,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { buildTreeFromHtml } from '../src/browserctl/snapshot.js';
+import { buildTreeFromHtml, type RawTree } from '../src/browserctl/snapshot.js';
+import { el, runBc } from './helpers/miniDom.js';
 import { connectionStateOf } from '../src/browserctl/topCard.js';
 import { connectPlacementRefusal } from '../src/browserctl/guard.js';
 import { LIVE_ENV, NOTE, URL_, inviteDialog, refOf, world, type World } from './helpers/bcWorld.js';
@@ -370,5 +371,110 @@ describe('a Connect click that sends directly', () => {
     w.page.onAct = (what) => { if (what.startsWith('click')) w.page.setHtml(page({ after: '<ul><li><a href="/in/other-person/">Other</a><button>Pending</button></li></ul>' })); };
     expect((await w.engine.click(connect)).code).toBe('no_dialog_after_connect');
     expect(touch(w, touchId).status).toBe('no_dialog');
+  });
+});
+
+// The live profile has no h1 and the name heading is not in a small container with the action row. The top card is
+// order-based: the name heading plus everything after it up to the next heading. Fakes only (invented person).
+describe('top card by document order (live structure, no h1)', () => {
+  const NAME = 'Reeman Example';
+  const LIVE_URL = 'https://www.linkedin.com/in/reeman-example/';
+  const TITLE = `(3) ${NAME} | LinkedIn`;
+  const ABOUT = '<section><h2>About</h2><p>Builds things.</p></section>';
+  const ACTIVITY = `<section><h2>Activity</h2><p>1,000 followers</p><button aria-label="Follow ${NAME}">Follow</button></section>`;
+  const SIDE = `<aside><h2>More profiles for you</h2><ul>
+<li><a href="/in/other-one/">Other One</a><button aria-label="Invite Other One to connect">Connect</button></li>
+<li><a href="/in/other-two/">Other Two</a><button aria-label="Invite Other Two to connect">Connect</button></li></ul></aside>
+<section><h2>People you may know</h2><div><button aria-label="Invite Other Three to connect">Connect</button></div></section>
+<section><h2>Explore Premium profiles</h2></section><section><h2>You might like</h2></section>`;
+  const MUTUAL = '<a href="/search/results/people/?facetNetwork=F">Open http://www.linkedin.com/search... mutual</a>';
+  const INVITE = `<a href="/preload/custom-invite/?vanityName=reeman-example" aria-label="Invite ${NAME} to connect">Connect</a>`;
+  const ROW = `${INVITE}<a href="/messaging/compose/">Message</a><button>More</button>`;
+  const doc = (head: string, row: string, tail = ABOUT + ACTIVITY + SIDE, title = TITLE) =>
+    `<html><head><title>${title}</title></head><body><header><button>Home</button></header><main>
+<div class="a"><div class="b">${head}</div></div>
+<div class="c"><p>Full stack developer</p><a href="/overlay/contact-info/">Contact info</a><button>ZestBrains Pvt. Ltd.</button>${MUTUAL}</div>
+<div class="d">${row}</div>${tail}</main></body></html>`;
+  const regs = (html: string) => regionsOf(html, LIVE_URL);
+  const st = (html: string) => connectionStateOf(buildTreeFromHtml(html, LIVE_URL))?.state;
+
+  it('replays the live tree: name heading h2, split containers, Connect and More in topcard, Follow in Activity main, cards sidebar', () => {
+    const t = buildTreeFromHtml(doc(`<h2>${NAME}</h2>`, ROW), LIVE_URL);
+    const r = t.nodes.filter((x) => x.role !== 'text').map((x) => `${x.role}:${x.name}:${x.region}`);
+    expect(r).toContain(`heading:${NAME}:topcard`);
+    expect(r).toContain(`link:Invite ${NAME} to connect:topcard`);
+    expect(r).toContain('link:Message:topcard');
+    expect(r).toContain('button:More:topcard');
+    expect(r).toContain('heading:About:main');
+    expect(r).toContain(`button:Follow ${NAME}:main`);
+    expect(r).toContain('button:Invite Other One to connect:sidebar');
+    expect(r).toContain('button:Invite Other Three to connect:main');
+    expect(r).toContain('heading:More profiles for you:sidebar');
+    expect(st(doc(`<h2>${NAME}</h2>`, ROW))).toBe('connectable');
+  });
+
+  it('a name heading without a level (role=heading on a div) works the same', () => {
+    expect(regs(doc(`<div role="heading">${NAME}</div>`, ROW))).toContain(`Invite ${NAME} to connect:topcard`);
+  });
+
+  it('works when the name is an h3, and when the page has an earlier nav heading', () => {
+    const html = doc(`<h3>${NAME}</h3>`, ROW).replace('<header>', '<header><h2>Notifications</h2>');
+    expect(regs(html)).toContain(`Invite ${NAME} to connect:topcard`);
+    expect(regs(html)).toContain('More:topcard');
+  });
+
+  it('with no title name the first h1 or else the first heading in main is the name heading', () => {
+    expect(st(doc(`<h1>${NAME}</h1>`, ROW, undefined, 'LinkedIn'))).toBe('connectable');
+    expect(st(doc(`<h2>${NAME}</h2>`, ROW, undefined, 'LinkedIn'))).toBe('connectable');
+  });
+
+  it('the action row split across two containers is still the top card', () => {
+    const row = `<div class="x">${INVITE}</div><div class="y"><a href="/messaging/compose/">Message</a></div><div class="z"><button>More</button></div>`;
+    const r = regs(doc(`<h2>${NAME}</h2>`, row));
+    expect(r).toContain(`Invite ${NAME} to connect:topcard`);
+    expect(r).toContain('More:topcard');
+  });
+
+  it('Connect hidden in More (Message plus Follow primary): check_more, then via_more with the menu open', () => {
+    const row = `<a href="/messaging/compose/">Message</a><button aria-label="Follow ${NAME}">Follow</button><button>More</button>`;
+    expect(st(doc(`<h2>${NAME}</h2>`, row))).toBe('check_more');
+    const menu = '<div role="menu"><button role="menuitem">Connect</button><button role="menuitem">Save to PDF</button></div>';
+    expect(st(doc(`<h2>${NAME}</h2>`, row + menu))).toBe('via_more');
+  });
+
+  it('a connected profile (Message and More only, no Connect in More) is not_connectable', () => {
+    const row = '<a href="/messaging/compose/">Message</a><button>More</button><div role="menu"><button role="menuitem">Save to PDF</button></div>';
+    expect(st(doc(`<h2>${NAME}</h2>`, row))).toBe('not_connectable');
+  });
+
+  it('a Pending profile is already_pending', () => {
+    const row = '<button aria-label="Pending, click to withdraw invitation sent to Reeman Example">Pending</button><a href="/messaging/compose/">Message</a><button>More</button>';
+    expect(st(doc(`<h2>${NAME}</h2>`, row))).toBe('already_pending');
+  });
+
+  it('a card of another person right after the top card (no heading between) is sidebar, not top card', () => {
+    const tail = `<aside><ul><li><a href="/in/other-one/">Other One</a><button aria-label="Invite Other One to connect">Connect</button></li></ul></aside>${ABOUT}`;
+    const row = '<a href="/messaging/compose/">Message</a><button>More</button>';
+    expect(regs(doc(`<h2>${NAME}</h2>`, row, tail))).toContain('Invite Other One to connect:sidebar');
+    expect(st(doc(`<h2>${NAME}</h2>`, row, tail))).toBe('check_more');
+  });
+
+  it('the in-page script agrees: h2 name heading, split containers, About ends the top card', () => {
+    const body = el('body', {}, el('main', {},
+      el('div', {}, el('div', {}, el('h2', {}, NAME))),
+      el('div', {}, el('a', { href: '/preload/custom-invite/', 'aria-label': `Invite ${NAME} to connect` }), el('button', {}, 'More')),
+      el('section', {}, el('h2', {}, 'About')),
+      el('section', {}, el('button', { 'aria-label': `Follow ${NAME}` })),
+      el('aside', {}, el('button', { 'aria-label': 'Invite Other One to connect' }))));
+    const t = runBc<RawTree>(body, 'snapshot', {}, LIVE_URL)!;
+    const r = t.nodes.filter((x) => x.role === 'link' || x.role === 'button').map((x) => `${x.name}:${x.region}`);
+    expect(r).toEqual([`Invite ${NAME} to connect:topcard`, 'More:topcard', `Follow ${NAME}:main`, 'Invite Other One to connect:sidebar']);
+  });
+
+  it('the placement guard still refuses a named invite for another person even inside the top card', () => {
+    expect(connectPlacementRefusal({ role: 'button', name: 'Invite Other One to connect', region: 'topcard' }, false, NAME)?.code).toBe('connect_not_top_card');
+    expect(connectPlacementRefusal({ role: 'link', name: `Invite ${NAME} to connect`, region: 'topcard' }, false, NAME)).toBeNull();
+    expect(connectPlacementRefusal({ role: 'link', name: `Invite Dr. ${NAME} PhD to connect`, region: 'topcard' }, false, NAME)).toBeNull();
+    expect(connectPlacementRefusal({ role: 'button', name: 'Connect', region: 'main' }, false, NAME)?.code).toBe('connect_not_top_card');
   });
 });

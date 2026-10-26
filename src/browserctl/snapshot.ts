@@ -17,15 +17,14 @@ export const ACTIONABLE_ROLES: ReadonlySet<BcRole> = new Set<BcRole>([
   'button', 'link', 'textbox', 'searchbox', 'checkbox', 'radio', 'combobox', 'menuitem', 'tab', 'option', 'file',
 ]);
 
-// Where a node sits on a LinkedIn PROFILE page (url path /in/<slug>): the profile's own top card (its h1 name and
-// action row: Message, Follow, Connect, More), a sidebar or recommendation card (an aside, a card with another
-// person's profile link, anything after the first heading below the name), the rest of the page, an open dialog,
-// or an open menu. A Connect in a sidebar or card sends an invitation directly; only the top card Connect opens the
-// invite dialog. Not set on other pages.
+// Where a node sits on a LinkedIn PROFILE page (url path /in/<slug>): the profile's own top card, a sidebar or
+// recommendation card, the rest of the page, an open dialog, or an open menu. The top card is order-based, not
+// container-based (LinkedIn's markup keeps changing): the page's own name heading (a heading whose text holds the
+// name in the page title, else the first h1, else the first heading in main, else the first heading) plus every node
+// after it in document order up to the next heading (About, Activity, ...), minus anything inside an aside or a card
+// that links to another person's /in/ profile. A Connect in a sidebar or card sends an invitation directly; only the
+// top card Connect opens the invite dialog. Not set on other pages.
 export type Region = 'topcard' | 'sidebar' | 'main' | 'dialog' | 'menu';
-
-// Names that make a container "the top card": it holds the profile's action row. Shared by both snapshot builders.
-export const TOP_CARD_ACTION_RE = /^(?:message|follow|following|connect|more|pending|withdraw|unfollow|resources)\b|^invite .+ to connect$/;
 
 export interface RawNode {
   /** Ordinal stamped as data-bc on the element (-1: an element found by point that was never stamped). */
@@ -249,9 +248,7 @@ const BODY_SRC = String.raw`
   }
   // ---- regions (profile pages only) ----
   var PSLUG = (function () { var m = /^\/in\/([^\/]+)/.exec(String(location.pathname || '')); return m ? m[1].toLowerCase() : ''; })();
-  var ACTRE = new RegExp(${JSON.stringify(TOP_CARD_ACTION_RE.source)});
   var RCTX = null;
-  function lowName(e) { var r = roleOf(e) || 'button'; return norm(nameOf(e, r), 200).toLowerCase(); }
   function slugOfHref(h) { var m = /\/in\/([^\/?#]+)/.exec(String(h || '')); return m ? m[1].toLowerCase() : ''; }
   function sideEl(x) {
     var t = String(x.tagName || '').toUpperCase(), r = attr(x, 'role').trim().toLowerCase();
@@ -262,49 +259,44 @@ const BODY_SRC = String.raw`
     }
     return false;
   }
-  function holdsAction(a) {
-    var q = a.querySelectorAll ? a.querySelectorAll('button,a[href],[role=button],[role=menuitem],[role=link]') : [];
-    for (var i = 0; i < q.length && i < 300; i++) if (visD(q[i]) && ACTRE.test(lowName(q[i]))) return true;
+  function inSide(e) { for (var x = e; x; x = par(x)) if (sideEl(x)) return true; return false; }
+  function inMain(e) {
+    for (var x = e; x; x = par(x)) if (String(x.tagName || '').toUpperCase() === 'MAIN' || attr(x, 'role').trim().toLowerCase() === 'main') return true;
     return false;
+  }
+  // The person's name in the page title: "(3) Jane Example | LinkedIn" -> "jane example"; '' when the title has no name.
+  function titleName() {
+    var t = norm(String(document.title || ''), 300).replace(/^\(\d+\)\s*/, '');
+    var m = /^(.+?)\s+[|–—-]\s+/.exec(t);
+    var n = m ? m[1].toLowerCase() : '';
+    return n === 'linkedin' ? '' : n;
   }
   function buildRegionCtx(list) {
     if (!PSLUG) return null;
-    var h1 = null, hi = -1;
+    var heads = [];
     for (var i = 0; i < list.length; i++) {
       var x = list[i];
-      if (String(x.tagName || '').toUpperCase() !== 'H1' || !visD(x) || enclosingDialog(x)) continue;
-      var ok = true;
-      for (var y = par(x); y; y = par(y)) if (sideEl(y)) { ok = false; break; }
-      if (ok) { h1 = x; hi = i; break; }
+      if (roleOf(x) === 'heading' && visD(x) && !enclosingDialog(x) && !inSide(x)) heads.push(x);
     }
-    var ctx = { h1: h1, tcr: null, fb: null };
-    if (!h1) return ctx;
-    for (var a = par(h1); a && a !== document.body && a !== document.documentElement; a = par(a)) {
-      if (holdsAction(a)) { ctx.tcr = a; break; }
-    }
-    for (var j = hi + 1; j < list.length; j++) {
-      var hx = list[j];
-      if (roleOf(hx) === 'heading' && visD(hx) && !enclosingDialog(hx)) { ctx.fb = hx; break; }
-    }
-    return ctx;
+    var tn = titleName(), h = null, k;
+    if (tn) for (k = 0; k < heads.length && !h; k++) { var tx = norm(flatText(heads[k]), 200).toLowerCase(); if (tx && tx.indexOf(tn) >= 0) h = heads[k]; }
+    for (k = 0; k < heads.length && !h; k++) if (String(heads[k].tagName || '').toUpperCase() === 'H1') h = heads[k];
+    for (k = 0; k < heads.length && !h; k++) if (inMain(heads[k])) h = heads[k];
+    if (!h) h = heads[0] || null;
+    var pos = new Map();
+    for (k = 0; k < list.length; k++) pos.set(list[k], k);
+    return { h: h, fb: h ? (heads[heads.indexOf(h) + 1] || null) : null, pos: pos };
   }
-  function follows(a, e) { return !!(a.compareDocumentPosition(e) & 4); }
   function regionOf(e, role) {
     if (!RCTX) return '';
     if (role === 'dialog' || enclosingDialog(e)) return 'dialog';
     if (role === 'menuitem' || role === 'option') {
       for (var m = par(e); m; m = par(m)) if (attr(m, 'role').trim().toLowerCase() === 'menu') return 'menu';
     }
-    var tcr = RCTX.tcr, h1 = RCTX.h1, inTc = false, x;
-    if (tcr && h1) {
-      for (x = e; x; x = par(x)) if (x === tcr) { inTc = true; break; }
-      if (inTc && e !== h1 && !follows(h1, e)) inTc = false;
-      if (inTc && RCTX.fb && (RCTX.fb === e || follows(RCTX.fb, e))) inTc = false;
-      if (inTc) for (x = par(e); x && x !== tcr; x = par(x)) if (sideEl(x)) { inTc = false; break; }
-    }
-    if (inTc) return 'topcard';
-    for (x = e; x; x = par(x)) if (sideEl(x)) return 'sidebar';
-    return 'main';
+    var side = inSide(e), at = RCTX.pos.get(e);
+    // Order of the walked list (shadow-safe, unlike compareDocumentPosition): from the name heading up to the next heading.
+    if (RCTX.h && at !== undefined && at >= RCTX.pos.get(RCTX.h) && !(RCTX.fb && at >= RCTX.pos.get(RCTX.fb)) && !side) return 'topcard';
+    return side ? 'sidebar' : 'main';
   }
   function stampOf(e) { var s = e.getAttribute('data-bc'); return s === null ? -1 : parseInt(s, 10); }
   function info(e, role, full) {
@@ -590,8 +582,7 @@ const lowRole = (nd: HtmlNode): string => (nd.attrs['role'] ?? '').trim().toLowe
 
 interface RegionCtx {
   slug: string;
-  h1: HtmlNode | null;
-  tcr: HtmlNode | null;
+  h: HtmlNode | null;
   fb: HtmlNode | null;
   index: Map<HtmlNode, number>;
   parentOf: Map<HtmlNode, HtmlNode | null>;
@@ -613,13 +604,16 @@ function sideNode(nd: HtmlNode, slug: string): boolean {
   return false;
 }
 
-function holdsAction(nd: HtmlNode): boolean {
-  const acts = findAll(nd, (x) => !x.hidden && (x.tag === 'button' || (x.tag === 'a' && 'href' in x.attrs)
-    || ['button', 'menuitem', 'link'].includes(lowRole(x)))).slice(0, 300);
-  return acts.some((x) => TOP_CARD_ACTION_RE.test(nameOfNode(x, roleOfNode(x) ?? 'button').toLowerCase()));
+const inSideOf = (c: RegionCtx, nd: HtmlNode): boolean => [nd, ...ancestorsOf(c, nd)].some((a) => sideNode(a, c.slug));
+
+/** The person's name in the page title: "(3) Jane Example | LinkedIn" gives "jane example"; '' when the title has no name. */
+function titleNameOf(title: string): string {
+  const m = /^(.+?)\s+[|–—-]\s+/.exec(title.replace(/^\(\d+\)\s*/, ''));
+  const n = m ? m[1]!.toLowerCase() : '';
+  return n === 'linkedin' ? '' : n;
 }
 
-function buildRegionCtx(body: HtmlNode, slug: string): RegionCtx {
+function buildRegionCtx(body: HtmlNode, slug: string, title: string): RegionCtx {
   const index = new Map<HtmlNode, number>();
   const parentOf = new Map<HtmlNode, HtmlNode | null>();
   const order: HtmlNode[] = [];
@@ -631,35 +625,25 @@ function buildRegionCtx(body: HtmlNode, slug: string): RegionCtx {
     for (const c of nd.children) visit(c, nd);
   };
   visit(body, null);
-  const c: RegionCtx = { slug, h1: null, tcr: null, fb: null, index, parentOf };
-  const inDialog = (nd: HtmlNode) => ancestorsOf(c, nd).some((a) => roleOfNode(a) === 'dialog');
-  const hi = order.findIndex((nd) => nd.tag === 'h1' && !nd.hidden && !inDialog(nd) && !ancestorsOf(c, nd).some((a) => sideNode(a, slug)));
-  if (hi < 0) return c;
-  c.h1 = order[hi]!;
-  for (const a of ancestorsOf(c, c.h1)) {
-    if (a === body) break;
-    if (holdsAction(a)) { c.tcr = a; break; }
-  }
-  c.fb = order.slice(hi + 1).find((nd) => roleOfNode(nd) === 'heading' && !nd.hidden && !inDialog(nd)) ?? null;
+  const c: RegionCtx = { slug, h: null, fb: null, index, parentOf };
+  const heads = order.filter((nd) => roleOfNode(nd) === 'heading' && !nd.hidden
+    && !ancestorsOf(c, nd).some((a) => roleOfNode(a) === 'dialog') && !inSideOf(c, nd));
+  const tn = titleNameOf(title);
+  const inMain = (nd: HtmlNode) => [nd, ...ancestorsOf(c, nd)].some((a) => a.tag === 'main' || lowRole(a) === 'main');
+  c.h = (tn ? heads.find((nd) => flatOf(nd).toLowerCase().includes(tn)) : undefined)
+    ?? heads.find((nd) => nd.tag === 'h1') ?? heads.find(inMain) ?? heads[0] ?? null;
+  c.fb = c.h ? heads[heads.indexOf(c.h) + 1] ?? null : null;
   return c;
 }
 
 function regionOfNode(c: RegionCtx, nd: HtmlNode, role: BcRole, inDlg: boolean): Region {
   if (role === 'dialog' || inDlg) return 'dialog';
-  const anc = ancestorsOf(c, nd);
-  if ((role === 'menuitem' || role === 'option') && anc.some((a) => lowRole(a) === 'menu')) return 'menu';
-  let inTc = false;
-  if (c.tcr && c.h1) {
-    inTc = nd === c.tcr || anc.includes(c.tcr);
-    const at = c.index.get(nd) ?? -1;
-    if (inTc && nd !== c.h1 && at <= (c.index.get(c.h1) ?? -1)) inTc = false;
-    if (inTc && c.fb && at >= (c.index.get(c.fb) ?? Infinity)) inTc = false;
-    if (inTc) {
-      for (const a of anc) { if (a === c.tcr) break; if (sideNode(a, c.slug)) { inTc = false; break; } }
-    }
-  }
-  if (inTc) return 'topcard';
-  return [nd, ...anc].some((a) => sideNode(a, c.slug)) ? 'sidebar' : 'main';
+  if ((role === 'menuitem' || role === 'option') && ancestorsOf(c, nd).some((a) => lowRole(a) === 'menu')) return 'menu';
+  const side = inSideOf(c, nd);
+  const at = c.index.get(nd) ?? -1;
+  const after = (x: HtmlNode | null) => x !== null && at >= (c.index.get(x) ?? Infinity);
+  if (c.h && after(c.h) && !after(c.fb) && !side) return 'topcard';
+  return side ? 'sidebar' : 'main';
 }
 
 /** Fixture side. Sees inline styles and attributes only: stylesheet/class hiding is the in-page script's job. */
@@ -673,7 +657,7 @@ export function buildTreeFromHtml(html: string, url: string): RawTree {
     const body = findAll(root, (n) => n.tag === 'body')[0] ?? root;
     let n = 0;
     const slug = profileSlugOf(url);
-    const rctx = slug ? buildRegionCtx(body, slug) : null;
+    const rctx = slug ? buildRegionCtx(body, slug, out.title) : null;
     const stamp = new Map<HtmlNode, number>();
     const dialogName = (d: HtmlNode): string => {
       const a = (d.attrs['aria-label'] ?? '').replace(/\s+/g, ' ').trim();

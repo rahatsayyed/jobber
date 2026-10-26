@@ -98,13 +98,14 @@ export function connectPlacementRefusal(
   return fail(`this Connect is not in the profile's own top card (${where()})`);
 }
 
-/** Same person by full name: same first word, and the last word of one name appears in the other (a title after the name is tolerated). */
+/** Same person by full name: the first and the last word of one name both appear in the other (a title before or after the name is tolerated). */
 function sameFullName(a: string, b: string): boolean {
   const words = (s: string) => normName(s).replace(/[^\p{L}\p{N} ]/gu, '').split(' ').filter(Boolean);
   const x = words(a);
   const y = words(b);
-  if (x.length === 0 || y.length === 0 || x[0] !== y[0]) return false;
-  return x.length < 2 || y.length < 2 || x.includes(y[y.length - 1]!) || y.includes(x[x.length - 1]!);
+  if (x.length === 0 || y.length === 0) return false;
+  const holds = (p: string[], q: string[]) => q.includes(p[0]!) && q.includes(p[p.length - 1]!);
+  return holds(x, y) || holds(y, x);
 }
 const SEND_CONNECT_RE = /^send (?:an? )?(?:invitation|invite|without a note)\b/;
 const SEND_RE = new RegExp(`^(?:send|${EXTRA_LABELS.send.join('|')})\\b`);
