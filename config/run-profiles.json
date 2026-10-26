@@ -221,7 +221,6 @@
         "FOLLOWUP_CHECK_MAX_AGE_MIN"
       ],
       "env_prefixes": [
-        "PACING_",
         "COOLDOWN_",
         "CADENCE_",
         "LINKEDIN_MAX_",

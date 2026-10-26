@@ -115,7 +115,7 @@ describe('buildEnv', () => {
     HOME: '/home/u',
     PATH: '/usr/bin',
     TZ: 'UTC',
-    PACING_MAX_BURST: '3',
+    COOLDOWN_IGNORED_DAYS: '3',
     QUIET_HOURS_START: '1',
     GMAIL_APP_PASSWORD: 'synthetic-gmail-pw',
     SERPER_API_KEY: 'synthetic-key-123456',
@@ -123,7 +123,7 @@ describe('buildEnv', () => {
   };
   it('allowlist mode passes only listed keys and prefixes and never a secret-shaped key', () => {
     const env = buildEnv(wake, base, {});
-    expect(env.PACING_MAX_BURST).toBe('3');
+    expect(env.COOLDOWN_IGNORED_DAYS).toBe('3');
     expect(env.QUIET_HOURS_START).toBe('1');
     expect(env.HOME).toBe('/home/u');
     expect(env.JOBBER_RUN_PROFILE).toBe('outreach_wake');
@@ -145,8 +145,8 @@ describe('buildEnv', () => {
     }
   });
   it('does not let a prefix pull in a secret-shaped key', () => {
-    const p: ResolvedProfile = { ...wake, env_prefixes: ['PACING_'] };
-    expect(buildEnv(p, { ...base, PACING_API_KEY: 'x-secret-value' }, {}).PACING_API_KEY).toBeUndefined();
+    const p: ResolvedProfile = { ...wake, env_prefixes: ['COOLDOWN_'] };
+    expect(buildEnv(p, { ...base, COOLDOWN_API_KEY: 'x-secret-value' }, {}).COOLDOWN_API_KEY).toBeUndefined();
   });
   it('dotenv_all mode includes parsed .env keys but still drops ANTHROPIC_API_KEY', () => {
     const env = buildEnv(hunt, base, { GMAIL_APP_PASSWORD: 'p', ANTHROPIC_API_KEY: 'k', IS_SANDBOX: '1', CLAUDE_CODE_SKIP_PERMISSIONS: '1' });
