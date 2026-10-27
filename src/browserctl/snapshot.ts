@@ -52,6 +52,8 @@ export type LiveNode = RawNode;
 export const MAX_NODES = 1500;
 /** Menu rows still read past MAX_NODES: an open menu sits in a portal at the END of the body, behind the whole page. */
 export const MENU_EXTRA = 60;
+/** Nodes of an open dialog still read past MAX_NODES: the modal host sits at the END of the body, behind the whole page. */
+export const DIALOG_EXTRA = 200;
 export const MAX_NAME = 200;
 export const MAX_TEXT = 300;
 export const MAX_VALUE = 5000;
@@ -146,7 +148,26 @@ const BODY_SRC = String.raw`
       return !!r && r.width > 0 && r.height > 0;
     } catch (err) { return false; }
   }
-  function shown(e) { return visD(e) || menuShown(e); }
+  // A node inside an open dialog (or the dialog itself).
+  function inDlg(e) { return roleOf(e) === 'dialog' || !!enclosingDialog(e); }
+  // Dialog content is judged by boxes and plain hiding only (hidden attribute, aria-hidden true, display, visibility,
+  // opacity, a box, a tiny font), never by the page-wide colour and clipping heuristics, so a modal in a shadow root is not
+  // dropped by a false positive. aria-hidden other than "true" (false, empty, absent) never hides.
+  function dlgShown(e) {
+    try {
+      if (!inDlg(e)) return false;
+      for (var x = e; x; x = par(x)) {
+        if (menuHiddenOwn(x)) return false;
+        var cs = getComputedStyle(x), f = parseFloat(cs.fontSize);
+        if (!isNaN(f) && f < 6) return false;
+        var ti = parseFloat(cs.textIndent);
+        if (!isNaN(ti) && ti <= -200) return false;
+      }
+      var r = e.getBoundingClientRect();
+      return !!r && r.width > 0 && r.height > 0;
+    } catch (err) { return false; }
+  }
+  function shown(e) { return visD(e) || menuShown(e) || dlgShown(e); }
   // An iframe is entered only when it is itself visible and same-origin (a cross-origin contentDocument throws).
   function ifrOk(f) {
     try {
@@ -369,10 +390,12 @@ const BODY_SRC = String.raw`
       var e = all[k];
       if (HIDDEN_TAGS[String(e.tagName || '').toUpperCase()]) continue;
       var role = roleOf(e);
-      // Past the cap only the rows of an open menu are still read (a few), so the portal at the end of the body is never lost.
+      // Past the cap only the rows of an open menu and the content of an open dialog are still read (a few), so a portal or
+      // modal host at the end of the body is never lost.
       if (nodes.length >= MAXN) {
         truncated = true;
-        if (!role || nodes.length >= MAXN + MENUX || !inMenu(e, role)) continue;
+        var over = nodes.length - MAXN;
+        if (!((role && over < MENUX && inMenu(e, role)) || (over < MENUX + DLGX && inDlg(e)))) continue;
       }
       if (!shown(e)) continue;
       if (!role) {
@@ -389,7 +412,7 @@ const BODY_SRC = String.raw`
   }
   if (MODE === 'diag') {
     var dall = document.body ? deepList(document.body) : [];
-    var sr = 0, ifc = 0, chc = 0, dls = [], exo = [];
+    var sr = 0, ifc = 0, chc = 0, dls = [], exo = [], ahc = null;
     for (var qi = 0; qi < dall.length; qi++) {
       var de = dall[qi], dtag = String(de.tagName || '').toUpperCase();
       // Controls that announce an open popup (a More button whose menu is open): tag and role names and counts only.
@@ -411,6 +434,14 @@ const BODY_SRC = String.raw`
       if (de.shadowRoot) sr++;
       else if (dtag.indexOf('-') > 0) chc++;
       if (dtag === 'IFRAME') ifc++;
+      // aria-hidden values up the first dialog's chain (hidden or not): counts only.
+      if (!ahc && roleOf(de) === 'dialog') {
+        ahc = { true: 0, false: 0, absent: 0 };
+        for (var ax = de, ai = 0; ax && ai < 60; ai++, ax = par(ax)) {
+          var av = ax.getAttribute ? ax.getAttribute('aria-hidden') : null;
+          if (av === null) ahc.absent++; else if (String(av).trim().toLowerCase() === 'true') ahc.true++; else ahc.false++;
+        }
+      }
       if (roleOf(de) === 'dialog' && visD(de) && dls.length < 6) {
         var bs = [], dd = deepList(de);
         for (var bi = 0; bi < dd.length && bs.length < 12; bi++) {
@@ -420,7 +451,7 @@ const BODY_SRC = String.raw`
         dls.push({ role: attr(de, 'role') || dtag.toLowerCase(), name: dialogNameOf(de).slice(0, 60), buttons: bs });
       }
     }
-    return { shadowRoots: sr, iframes: ifc, closedHostCandidates: chc, dialogs: dls, expanded: exo };
+    return { shadowRoots: sr, iframes: ifc, closedHostCandidates: chc, dialogs: dls, expanded: exo, ariaHiddenChain: ahc || undefined };
   }
   if (MODE === 'describe') {
     var el = null, want = String(A.n | 0), dl = deepList(deepRoot());
@@ -480,7 +511,7 @@ export function bcScript(mode: 'snapshot' | 'describe' | 'at' | 'focused' | 'dia
       safe[k] = v;
     }
   }
-  return `(function (MODE, A) { try { var MAXN = ${MAX_NODES}, MENUX = ${MENU_EXTRA};\n${VIS_SRC}\n${BODY_SRC}\n } catch (err) { return null; } })(${JSON.stringify(mode)}, ${JSON.stringify(safe)})`;
+  return `(function (MODE, A) { try { var MAXN = ${MAX_NODES}, MENUX = ${MENU_EXTRA}, DLGX = ${DIALOG_EXTRA};\n${VIS_SRC}\n${BODY_SRC}\n } catch (err) { return null; } })(${JSON.stringify(mode)}, ${JSON.stringify(safe)})`;
 }
 
 // ---- fixture side ----
@@ -710,7 +741,10 @@ export function buildTreeFromHtml(html: string, url: string): RawTree {
         // Past the cap only the rows of an open menu are still read (a few), like the in-page script.
         const pastCap = out.nodes.length >= MAX_NODES;
         if (pastCap) out.truncated = true;
-        if (role && !(pastCap && (!own || out.nodes.length >= MAX_NODES + MENU_EXTRA || !underMenu(parents, own)))) {
+        const over = out.nodes.length - MAX_NODES;
+        const keepPast = (own !== null && over < MENU_EXTRA && underMenu(parents, own))
+          || (over < MENU_EXTRA + DIALOG_EXTRA && (own === 'dialog' || parents.some((p) => roleOfNode(p) === 'dialog')));
+        if (role && !(pastCap && !keepPast)) {
           stamp.set(nd, n);
           const dlgNode = [...parents].reverse().find((p) => roleOfNode(p) === 'dialog');
           const secret = role === 'textbox' && secretNode(nd);

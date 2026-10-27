@@ -21,7 +21,12 @@ const OP_TIMEOUT_MS = 1500;
 // A dialog or menu that is open but lists no control yet is still filling in (LinkedIn renders the invite modal over
 // several seconds). A snapshot polls for its controls this long at most (poll interval, then total).
 export const FILL_POLL_MS = 400;
-export const FILL_MAX_MS = 8000;
+// One ceiling for the whole opening, counted from the click: the dialog may appear 4 to 6 s late and then fill in.
+export const OPEN_CEILING_MS = 15000;
+export const FILL_MAX_MS = OPEN_CEILING_MS;
+// Every control under a container, whatever the accessibility tree says (CSS pierces open shadow roots; an aria-hidden
+// ancestor or a missing role in the tree does not matter). Roles are decided in the page by FACTS_FN.
+const CONTROL_CSS = 'button, a[href], input, textarea, [role="button"], [role="link"], [role="textbox"], [contenteditable]';
 // Roles a click_at point may resolve to inside a locator container.
 const POINT_ROLES = new Set<string>(['button', 'link', 'textbox', 'menuitem', 'option']);
 
@@ -31,6 +36,7 @@ export interface LdLocator {
   nth(i: number): LdLocator;
   first(): LdLocator;
   getByRole(role: string, opts?: { name?: string; exact?: boolean }): LdLocator;
+  locator(selector: string): LdLocator;
   innerText(opts?: { timeout?: number }): Promise<string>;
   inputValue(opts?: { timeout?: number }): Promise<string>;
   evaluate<T>(fn: (el: any) => T, arg?: unknown, opts?: { timeout?: number }): Promise<T>;
@@ -46,16 +52,42 @@ type DialogKindRole = 'dialog' | 'alertdialog';
 // Container surfaces read through locators: dialogs, and open menus and listboxes (popovers, dropdowns).
 type ContKind = DialogKindRole | 'menu' | 'listbox';
 const isMenuKind = (k: ContKind): boolean => k === 'menu' || k === 'listbox';
-interface Desc { dk: ContKind; di: number; slot: number; role: BcRole | 'dialog'; nth: number }
+// css: the control was found by CONTROL_CSS under the container (nth counts that list), not by the role tree.
+interface Desc { dk: ContKind; di: number; slot: number; role: BcRole | 'dialog'; nth: number; css?: true }
+interface Facts { name: string; type: string; ro: boolean; role: string; shown: boolean }
 
 const clean = (s: unknown, max: number): string => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
 // Runs inside the element: its accessible-name approximation and field facts. Only attributes and text.
-const FACTS_FN = (el: any): { name: string; type: string; ro: boolean } => {
+const FACTS_FN = (el: any): Facts => {
   const a = (k: string): string => { const v = el.getAttribute ? el.getAttribute(k) : null; return v === null || v === undefined ? '' : String(v); };
+  const tag = String(el.tagName || '').toLowerCase();
+  const ar = a('role').trim().toLowerCase();
+  const ty = a('type').trim().toLowerCase();
+  const ce = a('contenteditable').trim().toLowerCase();
+  const role = ar === 'button' || ar === 'link' || ar === 'textbox' ? ar
+    : tag === 'button' ? 'button' : tag === 'a' ? 'link' : tag === 'textarea' ? 'textbox'
+      : tag === 'input' ? (['button', 'submit', 'reset', 'image'].includes(ty) ? 'button' : ['hidden', 'checkbox', 'radio', 'file', 'range', 'color'].includes(ty) ? '' : 'textbox')
+        : (el.hasAttribute ? el.hasAttribute('contenteditable') : false) && ce !== 'false' ? 'textbox' : '';
+  const box = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
   const inner = el.querySelector ? el.querySelector('[aria-label]') : null;
   const name = a('aria-label') || (inner ? String(inner.getAttribute('aria-label') || '') : '') || a('title') || String(el.innerText || el.textContent || '') || a('placeholder') || a('value');
-  return { name, type: a('type').toLowerCase(), ro: a('readonly') !== '' };
+  return { name, type: ty, ro: a('readonly') !== '', role, shown: !box || (box.width > 0 && box.height > 0) };
+};
+
+// Runs inside the first dialog: how many ancestors (the dialog included, shadow hosts followed) carry aria-hidden true,
+// false or no attribute. Counts only.
+const CHAIN_FN = (el: any): { true: number; false: number; absent: number } => {
+  const out = { true: 0, false: 0, absent: 0 };
+  for (let x = el, i = 0; x && i < 60; i++) {
+    const v = x.getAttribute ? x.getAttribute('aria-hidden') : null;
+    if (v === null || v === undefined) out.absent++;
+    else if (String(v).trim().toLowerCase() === 'true') out.true++;
+    else out.false++;
+    const root = x.getRootNode ? x.getRootNode() : null;
+    x = x.parentElement || (root && root.host) || null;
+  }
+  return out;
 };
 
 // empty: containers (`<kind>:<index>`) that are open but showed no control in this read.
@@ -71,7 +103,8 @@ export class LocatorDialogLayer {
   private dialogLoc(dk: ContKind, di: number): LdLocator { return this.lp().getByRole(dk).nth(di); }
   private loc(d: Desc): LdLocator {
     const dlg = this.dialogLoc(d.dk, d.di);
-    return d.role === 'dialog' ? dlg : dlg.getByRole(d.role).nth(d.nth);
+    if (d.role === 'dialog') return dlg;
+    return d.css ? dlg.locator(CONTROL_CSS).nth(d.nth) : dlg.getByRole(d.role).nth(d.nth);
   }
 
   /** Visible dialogs (locator view) as [kind, index] pairs. */
@@ -99,9 +132,31 @@ export class LocatorDialogLayer {
     return '';
   }
 
+  // How the controls of the last read were found: by the role tree, by the CSS fallback, or not at all (diag).
+  path: 'role' | 'css' | 'none' = 'none';
+
+  // One control as a node: footer flag for buttons, composer flag and current value for text fields.
+  private async controlNode(n: number, role: BcRole, el: LdLocator, f: Facts, inDlg: { dialog: number; dialogName: string }, buttons: string[]): Promise<RawNode> {
+    const node: RawNode = { n, role, name: clean(f.name, MAX_NAME), text: '', disabled: false, ...inDlg };
+    if (role === 'button' || role === 'link') {
+      // Every dialog button counts as a footer control: an unknown name stays irreversible_other.
+      node.inFooter = true;
+      buttons.push(node.name);
+    }
+    if (role === 'textbox') {
+      if (f.type === 'password') node.secret = true;
+      else {
+        node.composer = true;
+        try { node.value = String(await el.inputValue({ timeout: OP_TIMEOUT_MS })).slice(0, MAX_VALUE); } catch { node.value = ''; }
+      }
+    }
+    return node;
+  }
+
   /** Locator dialogs and open menus the walker did not see, as nodes. Never throws. */
   async read(walker: RawTree): Promise<ReadOut> {
     this.descs = new Map();
+    this.path = 'none';
     const out = await this.readDialogs(walker);
     let menus: { nodes: RawNode[]; empty: string[] } = { nodes: [], empty: [] };
     try { menus = await this.readMenus(walker); } catch { menus = { nodes: [], empty: [] }; }
@@ -182,27 +237,33 @@ export class LocatorDialogLayer {
         for (let i = 0; i < Math.min(c, MAX_PER_ROLE); i++) {
           if (seq - base >= DIALOG_STRIDE - 1) break;
           const el = dlg.getByRole(role).nth(i);
-          let f: { name: string; type: string; ro: boolean };
+          let f: Facts;
           try { f = await el.evaluate(FACTS_FN, undefined, { timeout: OP_TIMEOUT_MS }); } catch { continue; }
           const n = seq++;
           this.descs.set(n, { dk, di, slot: d, role, nth: i });
           if (role !== 'heading') controls++;
-          const node: RawNode = { n, role, name: clean(f.name, MAX_NAME), text: '', disabled: false, ...inDlg };
-          if (role === 'button' || role === 'link') {
-            // Every dialog button counts as a footer control: an unknown name stays irreversible_other.
-            node.inFooter = true;
-            buttons.push(node.name);
-          }
-          if (role === 'textbox') {
-            if (f.type === 'password') node.secret = true;
-            else {
-              node.composer = true;
-              try { node.value = String(await el.inputValue({ timeout: OP_TIMEOUT_MS })).slice(0, MAX_VALUE); } catch { node.value = ''; }
-            }
-          }
-          nodes.push(node);
+          nodes.push(await this.controlNode(n, role, el, f, inDlg, buttons));
         }
       }
+      // The role tree listed no control (an aria-hidden ancestor, a shadow boundary it does not cross): read the controls
+      // structurally with a CSS locator instead. Same node shape, refs and rules.
+      if (controls === 0) {
+        const all = dlg.locator(CONTROL_CSS);
+        let c = 0;
+        try { c = await all.count(); } catch { c = 0; }
+        for (let i = 0; i < Math.min(c, MAX_PER_ROLE * 3); i++) {
+          if (seq - base >= DIALOG_STRIDE - 1) break;
+          const el = all.nth(i);
+          let f: Facts;
+          try { f = await el.evaluate(FACTS_FN, undefined, { timeout: OP_TIMEOUT_MS }); } catch { continue; }
+          if (!f.shown || (f.role !== 'button' && f.role !== 'link' && f.role !== 'textbox')) continue;
+          const n = seq++;
+          this.descs.set(n, { dk, di, slot: d, role: f.role, nth: i, css: true });
+          controls++;
+          nodes.push(await this.controlNode(n, f.role, el, f, inDlg, buttons));
+        }
+        if (controls > 0) this.path = 'css';
+      } else if (this.path !== 'css') this.path = 'role';
       if (controls === 0) emptyDialogs.push(`${dk}:${di}`);
     }
     return { nodes, locatorDialogs: found.length, buttons, empty: emptyDialogs };
@@ -268,6 +329,14 @@ export class LocatorDialogLayer {
     } catch { return none; }
   }
 
+  /** Counts of aria-hidden on the first locator dialog's ancestor chain (diag); null when there is no locator dialog. */
+  async ariaHiddenChain(): Promise<{ true: number; false: number; absent: number } | null> {
+    try {
+      const f = (await this.count())[0];
+      return f ? await this.dialogLoc(f.dk, f.di).evaluate(CHAIN_FN, undefined, { timeout: OP_TIMEOUT_MS }) : null;
+    } catch { return null; }
+  }
+
   /** Number of locator-visible dialogs right now (diag). */
   async countAll(): Promise<number> { return (await this.count()).length; }
 
@@ -287,9 +356,11 @@ export class LocatorDialogLayer {
 
 /** Wrap a BcPage so dialogs visible only to locators show up in snapshots and can be described, clicked and filled. */
 export function withLocatorDialogs(base: BcPage, lp: () => LdPage, opts: { fillPollMs?: number; fillMaxMs?: number } = {}): BcPage {
+  // While the commit path watches an opening it polls for the dialog and its controls itself (one ceiling from the click),
+  // so the snapshot reads once and never waits on its own.
+  let watching = false;
   const layer = new LocatorDialogLayer(lp);
   const pollMs = Math.max(1, opts.fillPollMs ?? FILL_POLL_MS);
-  const maxPolls = Math.ceil((opts.fillMaxMs ?? FILL_MAX_MS) / pollMs);
   const maxMs = opts.fillMaxMs ?? FILL_MAX_MS;
   let last: { dialogs: number; buttons: string[] } = { dialogs: 0, buttons: [] };
   // Containers that were still empty when the wait for their controls ended: not waited for again until they change.
@@ -300,11 +371,14 @@ export function withLocatorDialogs(base: BcPage, lp: () => LdPage, opts: { fillP
       let t = await base.snapshot();
       let r = await layer.read(t);
       const pending = (): boolean => r.empty.some((k) => !spent.has(k));
-      if (pending()) {
+      if (pending() && !watching) {
         // An open dialog or menu with no control yet is still filling in: re-read (bounded) until it lists some.
-        const deadline = Date.now() + maxMs;
-        for (let i = 0; i < maxPolls && pending() && Date.now() < deadline; i++) {
-          await base.waitMs(pollMs).catch(() => undefined);
+        const t0 = Date.now();
+        let waited = 0;
+        while (pending() && waited < maxMs && Date.now() - t0 < maxMs) {
+          const step = Math.min(pollMs, maxMs - waited);
+          await base.waitMs(step).catch(() => undefined);
+          waited += step;
           t = await base.snapshot();
           r = await layer.read(t);
         }
@@ -313,6 +387,8 @@ export function withLocatorDialogs(base: BcPage, lp: () => LdPage, opts: { fillP
       last = { dialogs: r.locatorDialogs, buttons: r.buttons };
       return r.nodes.length === 0 ? t : { ...t, nodes: [...t.nodes, ...r.nodes] };
     },
+    setOpenWatch(on) { watching = on; },
+    waitMs: (ms) => base.waitMs(ms),
     async describeAt(x, y) {
       const r = await layer.describeAt(x, y);
       return r.inside ? r.node : base.describeAt(x, y);
@@ -324,7 +400,8 @@ export function withLocatorDialogs(base: BcPage, lp: () => LdPage, opts: { fillP
       const pd = (await base.diag?.().catch(() => null)) ?? null;
       let count = last.dialogs;
       try { count = (await layer.countAll()); } catch { /* keep last */ }
-      const extra = { locatorDialogs: count, locatorDialogButtons: last.buttons.slice(0, 12) };
+      const chain = await layer.ariaHiddenChain();
+      const extra = { locatorDialogs: count, locatorDialogButtons: last.buttons.slice(0, 12), locatorPath: layer.path, ...(chain ? { ariaHiddenChain: chain } : {}) };
       return pd ? { ...pd, ...extra } : { shadowRoots: 0, iframes: 0, closedHostCandidates: 0, dialogs: [], ...extra };
     },
   };

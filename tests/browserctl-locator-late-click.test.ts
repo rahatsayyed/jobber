@@ -17,10 +17,10 @@ const worlds: World[] = [];
 afterEach(() => { for (const w of worlds.splice(0)) w.cleanup(); });
 
 const NEVER = 1_000_000_000;
-// Total time the layer may wait for controls (8 s) plus the commit's own dialog poll (4 s default).
-const WAIT_BUDGET_MS = 8000 + 4000;
+// One ceiling from the click for the dialog to appear AND fill (OPEN_CEILING_MS, 15 s) plus the settle and one poll of slack.
+const WAIT_BUDGET_MS = 15000 + 1500;
 
-function mk(o: { menu?: boolean; fillAfterMs?: number; menuFillAfterMs?: number } = {}): { w: World; sh: ShadowWorld } {
+function mk(o: { menu?: boolean; fillAfterMs?: number; menuFillAfterMs?: number; appearAfterMs?: number; roleBlind?: boolean; labelOnly?: boolean } = {}): { w: World; sh: ShadowWorld } {
   const sh = shadowWorld();
   const html = o.menu ? profileHtml().replace('<button>Connect</button>', '') : profileHtml();
   const w = world({ html, env: LIVE_ENV, screenshot: true, wrapPage: (p) => withLocatorDialogs(p, () => sh.page) });
@@ -33,7 +33,7 @@ function mk(o: { menu?: boolean; fillAfterMs?: number; menuFillAfterMs?: number 
       sh.mouseClick(x, y);
     } else if (what.startsWith('click ')) {
       if (o.menu) sh.openMenu(undefined, { fillAfterMs: o.menuFillAfterMs ?? 0 });
-      else sh.open({ fillAfterMs: o.fillAfterMs ?? 0 });
+      else sh.open({ fillAfterMs: o.fillAfterMs ?? 0, appearAfterMs: o.appearAfterMs ?? 0, roleBlind: o.roleBlind === true, labelOnly: o.labelOnly === true });
     }
     if (what === 'press Escape') { sh.close(); sh.closeMenu(); }
   };
@@ -80,7 +80,7 @@ describe('dialog that fills in late', () => {
     const state = await w.snap();
     expect(state).toContain('button "Add a note"');
     expect(state).toContain('button "Send without a note"');
-    expect(sh.elapsed()).toBeLessThanOrEqual(8000);
+    expect(sh.elapsed()).toBeLessThanOrEqual(15000);
   });
 
   it('a dialog that never fills: dialog_controls_missing with the kind, touch released, diag written, nothing sent', async () => {
@@ -105,10 +105,71 @@ describe('dialog that fills in late', () => {
     sh.open({ fillAfterMs: NEVER });
     await w.snap();
     const t = sh.elapsed();
-    expect(t).toBeLessThanOrEqual(8000);
+    expect(t).toBeLessThanOrEqual(15000);
     await w.snap();
     await w.snap();
     expect(sh.elapsed()).toBe(t);
+  });
+});
+
+describe('dialog that appears seconds after the click (live: 4 to 6 s) and whose role tree lists no control', () => {
+  it('appears after 5 s and fills 3 s later: dialog_opened, controls are refs, the note flow sends once', async () => {
+    const { w, sh } = mk({ appearAfterMs: 5000, fillAfterMs: 3000 });
+    expect((await armNote(w)).status).toBe('armed');
+    expect(await w.engine.click(refOf(await w.snap(), 'button', 'Connect'))).toMatchObject({ ok: true, code: 'dialog_opened' });
+    expect(sh.elapsed()).toBeGreaterThanOrEqual(8000);
+    expect(sh.elapsed()).toBeLessThanOrEqual(WAIT_BUDGET_MS);
+    const after = await w.snap();
+    for (const n of ['Add a note', 'Send without a note']) expect(after).toContain(`button "${n}"`);
+    expect((await w.engine.click(refOf(after, 'button', 'Add a note'))).code).toBe('clicked');
+    expect((await w.engine.type(refOf(await w.snap(), 'textbox', 'Add a note'), NOTE)).code).toBe('typed');
+    expect(await w.engine.click(refOf(await w.snap(), 'button', 'Send'))).toMatchObject({ ok: true, status: 'sent' });
+    expect(sh.sendCount()).toBe(1);
+  });
+
+  it('a dialog that never appears: no_dialog_after_connect only after the full ceiling, nothing sent', async () => {
+    const { w, sh } = mk({ appearAfterMs: NEVER });
+    expect((await armNote(w)).status).toBe('armed');
+    const r = await w.engine.click(refOf(await w.snap(), 'button', 'Connect'));
+    expect(r).toMatchObject({ ok: false, code: 'no_dialog_after_connect' });
+    expect(sh.elapsed()).toBeGreaterThanOrEqual(14000);
+    expect(sh.elapsed()).toBeLessThanOrEqual(WAIT_BUDGET_MS);
+    expect(sh.sendCount()).toBe(0);
+  });
+
+  it('role tree blind (only text, no button): the controls are still read by a CSS locator and the flow sends', async () => {
+    const { w, sh } = mk({ roleBlind: true });
+    expect((await armNote(w)).status).toBe('armed');
+    expect(await w.engine.click(refOf(await w.snap(), 'button', 'Connect'))).toMatchObject({ ok: true, code: 'dialog_opened' });
+    const after = await w.snap();
+    for (const n of ['Add a note', 'Send without a note', 'Dismiss']) expect(after).toContain(`button "${n}"`);
+    expect((await w.engine.click(refOf(after, 'button', 'Add a note'))).code).toBe('clicked');
+    const note = refOf(await w.snap(), 'textbox', 'Add a note');
+    expect((await w.engine.type(note, NOTE)).code).toBe('typed');
+    expect(sh.fills).toEqual([NOTE]);
+    expect(await w.engine.click(refOf(await w.snap(), 'button', 'Send'))).toMatchObject({ ok: true, status: 'sent' });
+    expect(sh.sendCount()).toBe(1);
+  });
+
+  it('a button whose label is only in aria-label (with a span child) is read by name', async () => {
+    const { w, sh } = mk();
+    sh.open({ labelOnly: true, roleBlind: true });
+    expect(await w.snap()).toContain('button "Send without a note"');
+  });
+
+  it('never fills: the diag counts the locator path, the poll time and the node cap (counts only)', async () => {
+    const { w, sh } = mk({ fillAfterMs: NEVER, appearAfterMs: 2000 });
+    expect((await armNote(w)).status).toBe('armed');
+    const r = await w.engine.click(refOf(await w.snap(), 'button', 'Connect'));
+    expect(r.code).toBe('dialog_controls_missing');
+    expect(sh.elapsed()).toBeLessThanOrEqual(WAIT_BUDGET_MS);
+    const file = /\(diag: (.+)\)/.exec(r.reason ?? '')?.[1];
+    const diag = JSON.parse(readFileSync(file!, 'utf8')) as Record<string, unknown>;
+    expect(diag).toMatchObject({ found_by: 'locator', node_cap_hit: false });
+    expect(diag['waited_ms']).toBeGreaterThanOrEqual(14000);
+    expect(diag['aria_hidden_chain']).toEqual({ true: 0, false: 0, absent: expect.any(Number) });
+    expect(diag).toHaveProperty('shadow_roots');
+    expect(diag).toHaveProperty('closed_host_candidates');
   });
 });
 
@@ -134,7 +195,7 @@ describe('More menu that fills in late', () => {
     expect(more.ok).toBe(true);
     expect(more.state).not.toContain('menuitem');
     const t = sh.elapsed();
-    expect(t).toBeLessThanOrEqual(8000);
+    expect(t).toBeLessThanOrEqual(15000);
     await w.snap();
     expect(sh.elapsed()).toBe(t);
   });

@@ -9,7 +9,7 @@ import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { PROJECT_ROOT } from '../layout/config.js';
 import type { BcPage } from './driver.js';
-import type { LiveNode, RawTree } from './snapshot.js';
+import { LOCATOR_BASE, type LiveNode, type RawTree } from './snapshot.js';
 
 export const DIAG_MAX_BYTES = 8 * 1024;
 const NAME_MAX = 60;
@@ -28,7 +28,14 @@ export interface PageDiag {
   /** Locator view (Patchright getByRole): dialogs it sees and their button names. Absent when the layer is off. */
   locatorDialogs?: number;
   locatorDialogButtons?: string[];
+  /** How the locator layer found the dialog controls: role tree, CSS fallback, or none. */
+  locatorPath?: 'role' | 'css' | 'none';
+  /** Counts of aria-hidden true / false / absent on the first dialog's ancestor chain (shadow hosts followed). */
+  ariaHiddenChain?: { true: number; false: number; absent: number };
 }
+
+/** What the commit path adds to a missing-controls diag: how long it polled, and the node-cap state of the last read. */
+export interface OpenWaitFacts { waitedMs: number }
 
 export interface DiagDeps {
   now: () => Date;
@@ -66,6 +73,14 @@ export interface DiagFile {
   tree_nodes: number | null;
   locator_dialogs: number | null;
   locator_dialog_buttons: string[];
+  // Missing-controls structure (counts and enums only), next to shadow_roots (open roots the walker entered) and
+  // closed_host_candidates: who found the dialog (walker, locator, both, none), how the locator read its controls, whether
+  // the node cap was hit, aria-hidden values on the dialog's ancestor chain, and how long the commit path polled from the click.
+  found_by: 'walker' | 'locator' | 'both' | 'none';
+  locator_path: 'role' | 'css' | 'none' | null;
+  node_cap_hit: boolean;
+  aria_hidden_chain: { true: number; false: number; absent: number } | null;
+  waited_ms: number | null;
   // Open popups (aria-expanded) with the tag/role structure of what they control; structure labels only.
   expanded_popups?: { tag: string; role: string; popup: string; controls: number; found: number; kids: string[]; rows: LinkRowLabels }[];
   // Naukri apply: pages the click opened (url path only, never the query) and apply-ish responses (path and status).
@@ -111,6 +126,14 @@ export function treeDialogs(tree: RawTree | null): { name: string; buttons: stri
   return out;
 }
 
+/** Who found the dialogs of a tree: walker nodes (ordinal below LOCATOR_BASE), locator nodes, both, or none. */
+export function dialogFoundBy(tree: RawTree | null): 'walker' | 'locator' | 'both' | 'none' {
+  const ds = (tree?.nodes ?? []).filter((x) => x.role === 'dialog');
+  const w = ds.some((x) => x.n < LOCATOR_BASE);
+  const l = ds.some((x) => x.n >= LOCATOR_BASE);
+  return w && l ? 'both' : w ? 'walker' : l ? 'locator' : 'none';
+}
+
 /** The first open dialog of a snapshot tree that lists no button, link or text field (its controls are not visible to the layers), or null. */
 export function dialogWithoutControls(tree: RawTree | null): { role: 'dialog'; name: string } | null {
   if (!tree) return null;
@@ -139,7 +162,7 @@ function fit(f: DiagFile): string {
 export async function writeCommitDiag(
   deps: DiagDeps,
   page: BcPage,
-  i: { platform: string; code: string; live: Pick<LiveNode, 'role' | 'name'>; urlBefore: string; after: RawTree | null; extra?: DiagExtra },
+  i: { platform: string; code: string; live: Pick<LiveNode, 'role' | 'name'>; urlBefore: string; after: RawTree | null; extra?: DiagExtra; wait?: OpenWaitFacts },
 ): Promise<string | null> {
   try {
     let pd: PageDiag | null = null;
@@ -163,6 +186,13 @@ export async function writeCommitDiag(
       tree_nodes: i.after ? i.after.nodes.length : null,
       locator_dialogs: pd && typeof pd.locatorDialogs === 'number' ? Math.max(0, Math.floor(pd.locatorDialogs)) : null,
       locator_dialog_buttons: (pd?.locatorDialogButtons ?? []).slice(0, 12).map(safeName),
+      found_by: dialogFoundBy(i.after),
+      locator_path: pd?.locatorPath ?? null,
+      node_cap_hit: i.after?.truncated === true,
+      aria_hidden_chain: pd?.ariaHiddenChain
+        ? { true: Math.floor(pd.ariaHiddenChain.true) || 0, false: Math.floor(pd.ariaHiddenChain.false) || 0, absent: Math.floor(pd.ariaHiddenChain.absent) || 0 }
+        : null,
+      waited_ms: i.wait ? Math.max(0, Math.floor(i.wait.waitedMs)) : null,
       ...(pd?.expanded && pd.expanded.length > 0 ? {
         expanded_popups: pd.expanded.slice(0, 4).map((e) => ({
           tag: safeName(e.tag), role: safeName(e.role), popup: safeName(e.popup),

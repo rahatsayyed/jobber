@@ -38,6 +38,8 @@ export interface BcPage {
   focused(): Promise<LiveNode | null>;
   // Optional: structure-only page facts for failure diagnostics (counts and short control names). Absent in fakes.
   diag?(): Promise<PageDiag | null>;
+  // Optional: while on, a snapshot reads once and never waits for a filling dialog on its own (the caller polls). Absent in fakes.
+  setOpenWatch?(on: boolean): void;
   // Optional: robust click of a stamped element: scroll into view, wait until enabled and stable, then a real
   // pointer click (move, down, up) at the box centre; one fallback through the locator click. Absent in fakes.
   robustClick?(n: number): Promise<void>;

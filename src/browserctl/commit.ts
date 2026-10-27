@@ -19,6 +19,7 @@ import type { BcPage } from './driver.js';
 import { killReason, type EngineDeps, type EngineResult } from './engineTypes.js';
 import { dialogKindOf, normName, type CommitClass } from './guard.js';
 import type { ArmedIntent } from './intent.js';
+import { OPEN_CEILING_MS } from './locatorDialogs.js';
 import { bindTouchRelease } from './intent.js';
 import type { LiveNode, RawTree } from './snapshot.js';
 import { connectionStateOf, directSendSeen } from './topCard.js';
@@ -274,27 +275,40 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
     clickIssued = true;
     await i.act();
     const confirmedNet = await net;
-    await page.waitMs(deps.settleMs ?? 800).catch(() => undefined);
+    const settle = deps.settleMs ?? 800;
+    await page.waitMs(settle).catch(() => undefined);
+    // From the click on the opening is polled here, by this one loop (the page does not wait on its own meanwhile).
+    if (openStep) page.setOpenWatch?.(true);
     let after = await page.snapshot();
     // Block page after the click: the platform is halted by the engine's next read; the send is unresolved.
     if (openStep) {
-      // LinkedIn may open the modal late: poll (bounded) for an invite dialog of any name, or a navigated invite page.
+      // LinkedIn may open the modal seconds late and fill it in later still: one ceiling from the click, polled until the
+      // invite dialog (any name) lists its controls, or a navigated invite page shows, or the page sent the invite directly.
       const pollMs = 400;
-      const polls = Math.max(0, Math.ceil((deps.dialogWaitMs ?? 4000) / pollMs));
+      const ceiling = deps.dialogWaitMs ?? OPEN_CEILING_MS;
+      const t0 = Date.now();
+      let waited = settle;
+      const elapsed = (): number => Math.max(waited, Date.now() - t0);
       let surface = inviteSurface(after, url);
-      for (let i = 0; i < polls && !surface; i++) {
+      // A dialog that is open but lists none of its controls.
+      const bareOf = (t: RawTree, sf: 'dialog' | 'page' | null) => (sf === 'page' ? undefined : t.nodes.find((x) => x.role === 'dialog' && !hasControls(t, x.n)
+        && (sf === 'dialog' ? effectiveDialogKind(t, x.n, x.name) === 'invite' : t.url === url)));
+      let bare = bareOf(after, surface);
+      while (!(surface === 'page' || (surface === 'dialog' && !bare)) && elapsed() < ceiling) {
+        if (!surface && directSendSeen(after) && !directSendSeen(tree)) break;
         await page.waitMs(pollMs).catch(() => undefined);
+        waited += pollMs;
         after = await page.snapshot();
         surface = inviteSurface(after, url);
+        bare = bareOf(after, surface);
       }
-      // A dialog is open but none of its controls could be read (after the layers waited for them): nothing can be
-      // clicked or typed, so this is not dialog_opened. The dialog is left open for a screenshot.
-      const bare = surface === 'page' ? null : after.nodes.find((x) => x.role === 'dialog' && !hasControls(after, x.n)
-        && (surface === 'dialog' ? effectiveDialogKind(after, x.n, x.name) === 'invite' : after.url === url));
+      const waitFacts = { waitedMs: elapsed() };
+      // A dialog is open but none of its controls could be read within the ceiling: nothing can be clicked or typed, so
+      // this is not dialog_opened. The dialog is left open for a screenshot.
       if (bare) {
         if (intent?.touchId !== undefined && !intent.dry) releaseNoDialog(db, intent.touchId, now());
         const kind = emptyDialogKind(after, bare);
-        const dg = await writeCommitDiag(deps, page, { platform, code: 'dialog_controls_missing', live, urlBefore: url, after });
+        const dg = await writeCommitDiag(deps, page, { platform, code: 'dialog_controls_missing', live, urlBefore: url, after, wait: waitFacts });
         return { ok: false, status: 'failed', code: 'dialog_controls_missing', reason: `Connect clicked and a dialog is open (dialog kind: ${kind}), but its buttons and text field could not be read; nothing was sent. Take one linkedin_screenshot to see it, escalate once and move to the next contact.${diagNote(dg)}` };
       }
       if (surface === 'dialog') { keepArmed = true; return { ok: true, code: 'dialog_opened', reason: 'invite dialog is open; type the armed note and click Send' }; }
@@ -313,7 +327,7 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
         return { ok: true, status: 'sent', code: 'sent_without_note', reason: 'LinkedIn sent the invitation directly, without a note; recorded as sent. Never retry this person; move to the next company.', ...(intent?.touchId !== undefined ? { touch_id: intent.touchId } : {}) };
       }
       if (intent?.touchId !== undefined && !intent.dry) releaseNoDialog(db, intent.touchId, now());
-      const dg = await writeCommitDiag(deps, page, { platform, code: 'no_dialog_after_connect', live, urlBefore: url, after });
+      const dg = await writeCommitDiag(deps, page, { platform, code: 'no_dialog_after_connect', live, urlBefore: url, after, wait: waitFacts });
       return { ok: false, status: 'failed', code: 'no_dialog_after_connect', reason: `Connect clicked but no invite dialog appeared; nothing was sent. Escalate once and move to the next contact.${diagNote(dg)}` };
     }
     const dialogGone = cls === 'commit_accept_invite' ? acceptCount(after) < acceptBefore
@@ -348,6 +362,7 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
     release('failed');
     return { ok: false, status: 'failed', code: 'error', reason: 'unexpected error before sending' };
   } finally {
+    page.setOpenWatch?.(false);
     if (!keepArmed) deps.intents.disarm(platform);
   }
 }

@@ -41,7 +41,7 @@ export interface EngineDeps {
   /** Post-navigation stability poll for open() (defaults: OPEN_SETTLE_POLL_MS, OPEN_SETTLE_MAX_MS). */
   openSettle?: { pollMs: number; maxMs: number };
   confirmTimeoutMs?: number;
-  /** After a LinkedIn Connect click: how long to poll for the invite dialog or page (default 4000 ms). */
+  /** After a LinkedIn Connect click: the one ceiling, counted from the click, for the invite dialog to appear AND list its controls (default OPEN_CEILING_MS, 15000 ms). */
   dialogWaitMs?: number;
   // Directory for structural failure diagnostics (default: <project>/.jobber/diag, see diag.ts).
   diagDir?: string;

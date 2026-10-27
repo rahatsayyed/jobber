@@ -15,7 +15,10 @@ export interface ShadowWorld {
   isOpen(): boolean;
   /** Show the first step of the invite modal ("Dismiss", "Add a note", "Send without a note"). */
   // noHeading: the dialog has no heading and no aria-label, so it has no name (only its text and buttons tell what it is).
-  open(o?: { name?: string; fillAfterMs?: number; noHeading?: boolean }): void;
+  // appearAfterMs: the dialog is not visible to any locator until that much time advanced (LinkedIn opens it seconds after the click).
+  // roleBlind: the role tree lists no control under the dialog (only text); the controls are still reachable by a CSS locator.
+  // labelOnly: a button carries its label in aria-label and a span child (no own text).
+  open(o?: { name?: string; fillAfterMs?: number; noHeading?: boolean; appearAfterMs?: number; roleBlind?: boolean; labelOnly?: boolean }): void;
   close(): void;
   /** Change what the textbox holds without any fill call (a page that rewrote the field). */
   setBox(v: string): void;
@@ -47,6 +50,9 @@ export function shadowWorld(): ShadowWorld {
   let fillAt = 0;
   let menuFillAt = 0;
   let noHeading = false;
+  let appearAt = 0;
+  let roleBlind = false;
+  let labelOnly = false;
   const clicks: string[] = [];
   const fills: string[] = [];
 
@@ -55,14 +61,14 @@ export function shadowWorld(): ShadowWorld {
       { role: 'button', name: 'Add a note' }, { role: 'button', name: 'Send without a note' }]
     : [{ role: 'heading', name: 'Add a note to your invitation?' }, { role: 'button', name: 'Dismiss' },
       { role: 'textbox', name: 'Add a note', type: 'text', value: box }, { role: 'button', name: 'Send' }];
-  const ctls = (): Ctl[] => (time < fillAt ? [] : allCtls().filter((c) => !(noHeading && c.role === 'heading')));
+  const ctls = (): Ctl[] => (time < appearAt + fillAt ? [] : allCtls().filter((c) => !(noHeading && c.role === 'heading')));
   const shownItems = (): string[] => (time < menuFillAt ? [] : menuItems);
   const DLG_BOX: Box = { x: 300, y: 100, width: 400, height: 300 };
   const MENU_BOX: Box = { x: 600, y: 200, width: 200, height: 200 };
   const ctlBox = (i: number): Box => ({ x: 320, y: 150 + i * 50, width: 360, height: 40 });
   const itemBox = (i: number): Box => ({ x: 610, y: 210 + i * 30, width: 180, height: 25 });
   const textOf = (): string => [`Personalize your invitation to ${recipient} by adding a note`, ...ctls().filter((c) => c.role !== 'textbox').map((c) => c.name)].join('\n');
-  const toEl = (c: Ctl): El => ({ role: c.role, label: (c.role === 'button' && c.name === 'Dismiss') || c.role === 'textbox' ? c.name : '', text: c.role === 'textbox' ? '' : c.name,
+  const toEl = (c: Ctl): El => ({ role: c.role, label: (c.role === 'button' && (c.name === 'Dismiss' || labelOnly)) || c.role === 'textbox' ? c.name : '', text: c.role === 'textbox' ? '' : c.name,
     value: c.role === 'textbox' ? box : '', type: c.type ?? '', ctl: c, box: ctlBox(ctls().findIndex((x) => x.role === c.role && x.name === c.name)) });
   const dialogEl = (): El => ({ role: 'dialog', label: '', text: textOf(), value: '', type: '', dlg: true, box: DLG_BOX });
 
@@ -86,7 +92,8 @@ export function shadowWorld(): ShadowWorld {
       count: async () => list().length,
       nth: (i) => loc(() => list().slice(i, i + 1)),
       first: () => loc(() => list().slice(0, 1)),
-      getByRole: (role) => loc(() => list().flatMap((e) => (e.dlg ? ctls().filter((c) => c.role === role).map(toEl)
+      locator: () => loc(() => list().flatMap((e) => (e.dlg ? ctls().filter((c) => c.role !== 'heading').map(toEl) : []))),
+      getByRole: (role) => loc(() => list().flatMap((e) => (e.dlg ? (roleBlind && role !== 'heading' ? [] : ctls().filter((c) => c.role === role).map(toEl))
         : e.menu && role === 'menuitem' ? shownItems().map((m, i) => ({ ...toEl({ role: 'menuitem', name: m }), box: itemBox(i) })) : []))),
       boundingBox: async () => one().box ?? null,
       innerText: async () => one().text,
@@ -94,6 +101,7 @@ export function shadowWorld(): ShadowWorld {
       evaluate: async <T,>(fn: (el: any) => T) => {
         const e = one();
         return fn({
+          tagName: e.role === 'button' ? 'BUTTON' : e.role === 'textbox' ? 'TEXTAREA' : 'DIV',
           getAttribute: (k: string) => (k === 'aria-label' ? (e.label || null) : k === 'type' ? (e.type || null) : null),
           innerText: e.text, textContent: e.text,
         });
@@ -104,12 +112,13 @@ export function shadowWorld(): ShadowWorld {
   };
 
   const page: LdPage = {
-    getByRole: (role) => loc(() => (role === 'dialog' && open ? [dialogEl()] : role === 'menu' && menuOpen ? [menuEl()] : [])),
+    getByRole: (role) => loc(() => (role === 'dialog' && open && time >= appearAt ? [dialogEl()] : role === 'menu' && menuOpen ? [menuEl()] : [])),
   };
   return {
     page, clicks, fills,
     isOpen: () => open,
-    open: (o) => { open = true; step = 'first'; box = ''; recipient = o?.name ?? 'Jane Example'; time = 0; fillAt = o?.fillAfterMs ?? 0; noHeading = o?.noHeading === true; },
+    open: (o) => { open = true; step = 'first'; box = ''; recipient = o?.name ?? 'Jane Example'; time = 0; fillAt = o?.fillAfterMs ?? 0; noHeading = o?.noHeading === true;
+      appearAt = o?.appearAfterMs ?? 0; roleBlind = o?.roleBlind === true; labelOnly = o?.labelOnly === true; },
     close: () => { open = false; },
     setBox: (v) => { box = v; },
     sendCount: () => sent,
