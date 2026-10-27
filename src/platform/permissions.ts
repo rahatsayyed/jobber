@@ -13,9 +13,9 @@ export interface LocalSettings {
 
 const MCP_ENTRY = /^mcp__[A-Za-z0-9_-]+(__[A-Za-z0-9_-]+)?$/;
 
-/* The only non-MCP entries allowed: three read-only status script calls, matched literally. */
+/* The only non-MCP entries allowed: four read-only status script calls, matched literally. */
 const STATUS_BASH_ENTRIES = new Set(
-  ['limits', 'working', 'health'].map((sub) => `Bash(npx tsx scripts/status.ts ${sub})`),
+  ['limits', 'working', 'health', 'escalations'].map((sub) => `Bash(npx tsx scripts/status.ts ${sub})`),
 );
 
 export function validateSets(sets: RawSets): void {

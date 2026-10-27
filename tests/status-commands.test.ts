@@ -22,9 +22,10 @@ describe('status commands', () => {
       expect(text).toMatch(/^description:/m);
     });
   }
-  it('read_only holds exactly the three status entries, no wildcard', () => {
+  it('read_only holds exactly the four status entries, no wildcard', () => {
     const bash = resolveSet(sets, 'read_only').filter((e) => e.startsWith('Bash('));
     expect(bash.sort()).toEqual([
+      'Bash(npx tsx scripts/status.ts escalations)',
       'Bash(npx tsx scripts/status.ts health)',
       'Bash(npx tsx scripts/status.ts limits)',
       'Bash(npx tsx scripts/status.ts working)',
