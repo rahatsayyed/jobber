@@ -28,6 +28,7 @@ Jobber uses explicit slash commands (`/runhunt`, `/status`, etc.) for reliable, 
    working - Queue, halts and funnel snapshot
    health - Platform and pipeline health
    sources - Per-source status table
+   escalations - Open escalations that need you
    ```
 
 5. **Save.** The commands are now registered for your bot.

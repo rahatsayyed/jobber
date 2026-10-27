@@ -43,7 +43,7 @@ the next queued page and takes its URL from SQLite).
   (refs `s<epoch>.<n>`, a new epoch per snapshot, a stale ref is refused), `linkedin_click`,
   `linkedin_type`, `linkedin_press_key`, `linkedin_scroll`, `linkedin_wait_for`, plus
   `linkedin_screenshot` and `linkedin_click_at` (both on by default, off only when the owner sets `LINKEDIN_SCREENSHOT=false`). The one
-  send tool is `linkedin_arm_send` (kinds `connect_note`, `role_ask`, `rapport`, `referral_ask`,
+  send tool is `linkedin_arm_send` (kinds `connect_note`, `connect_plain` (no note, used while the monthly note quota is used up), `role_ask`, `rapport`, `referral_ask`,
   `followup`, `feedback`, `accept`): it runs the code gates and arms one intent, and the following
   type and click calls commit it (see "Connecting"). Data tools: `linkedin_find_profiles` (people
   search for a company and role hint, used by `contact-finder`; it registers every returned profile in
@@ -526,7 +526,7 @@ Browser apply through the `applier` MCP and the `apply-operator`: what can be ap
 
 ## Connecting
 
-LinkedIn connects and messages by the `linkedin-operator`: the arm-then-commit flow, caps, hiring posts and poster outreach, the failure ladder and the manual `/connect` steps. Details: `docs/reference/connecting.md` (read it before working in this area).
+LinkedIn connects and messages by the `linkedin-operator`: the arm-then-commit flow, caps (daily, rolling 24 hours), the profile page rules (a Connect is legal only in the profile's own top card or its More menu; `connect_state`; invite dialog; send confirmation; plain invites and the monthly note quota), what is and is not live-verified, hiring posts and poster outreach, the failure ladder and the manual `/connect` steps. Details: `docs/reference/connecting.md` (read it before working in this area).
 
 ## Owner docs
 

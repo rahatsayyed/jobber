@@ -1,7 +1,7 @@
 # Architecture
 
 Audience: owner
-Last verified against: 50917c8
+Last verified against: 21e67ef
 Source files: .mcp.json, src/mcp/, .claude/agents/, .claude/hooks/, .claude/settings.json, config/run-profiles.json, config/worker-tools.json, src/db.ts, src/scheduler/, src/outreach/limits.ts, src/safety/, src/layout/, src/web/, src/dash/, scripts/, run-hunt.sh, config/platforms.json, src/sources/, src/applier/, src/scout/, src/search/, src/webcore/
 
 This page is the map. It shows what runs where, which store holds what, and where to
@@ -209,6 +209,6 @@ Start with `npm run doctor` and `npm run status -- health`, then use the row tha
 
 ## Known limits
 
-Most platform paths here are unit-tested with fakes and not live-verified. See
+Most platform paths here are unit-tested with fakes and not live-verified; the LinkedIn connect path (profile top card, More menu, invite dialog, one real note invite) is the exception, and docs/reference/known-limits.md lists exactly what was checked live. See
 CLAUDE.md, "Known limits and not yet live-verified", before trusting any row above
 for a real LinkedIn, Naukri, Gmail, job-site or ATS failure.

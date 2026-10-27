@@ -6,11 +6,20 @@
   against a real ATS, job site, search engine, Serper or mail verification; it is covered by unit tests
   with fakes and invented fixture pages. The terms of use of the search engine the browser dork uses
   are unreviewed.
-- Nothing in the platform and outreach work (plans 6A to 7D and the browserctl rebuild) has run against real LinkedIn,
+- Nothing in the platform and outreach work (plans 6A to 7D and the browserctl rebuild) has run against real
   Naukri, Wellfound, Google OIDC sign-in, a downloaded classifier model, real tmux/ccgram wiring, a real
-  backup (`age`, `rclone`) or a real update; it is covered by unit tests with fakes. The
-  `linkedin` tools have a canary seed script (`npm run linkedin:seed`) for the first supervised
-  send; check that it still matches the arm-then-commit flow before using it. No unattended mileage.
+  backup (`age`, `rclone`) or a real update; it is covered by unit tests with fakes. The one exception is the LinkedIn
+  connect path, which is partly live-verified (next bullet). The `linkedin` tools have a canary seed script
+  (`npm run linkedin:seed`) for the first supervised send; check that it still matches the arm-then-commit flow before
+  using it. No unattended mileage.
+- LinkedIn connect, what is and is not live-verified (see "Connecting"). Verified live: top-card detection on several
+  profiles, the More menu rows, the invite dialog opening with refs, note typing, the name read of a plain-invite dialog,
+  and one real note invite through Send with the Pending confirmation (touch `sent`, `connections` row, ceiling counted,
+  visible on the Sent invitations page). NOT verified: the Premium upsell modal structure (`custom_note_limit_reached`),
+  a "Send without a note" click through to a confirmed send (`connect_plain`), the wording that gives
+  `invite_limit_reached`, Naukri and Wellfound dialog work, and LinkedIn messages after an accept. A LinkedIn thread page
+  opened headless can show "this conversation failed to load" (an unpadded thread id does that; the Inbox link now restores
+  the padding, but the headless thread read is not verified).
 - The classifier is wired through `screenUntrusted` on every surface in `SCREENED_SURFACES` and
   fails closed in live mode (see "Outreach safety layers", layer 4), but no downloaded model has
   run against real LinkedIn, Naukri or Wellfound text, its first-call latency inside a tool timeout is
@@ -20,9 +29,9 @@
   the screen and that the profile is pinned and fitted (a warn while `JOBBER_DRY_RUN` is dry, i.e. not
   `false`, a fail when it is) and runs a smoke screen.
 - The browserctl engine (`src/browserctl`: snapshot walker, semantic guard, arm and commit path, the
-  screenshot and click_at tools) is covered by hermetic tests with fake pages only; no live LinkedIn,
-  Naukri, Wellfound or scout page has been snapshotted, and no live commit has ever run: the arm, type and
-  Send path of LinkedIn, Naukri and Wellfound was never exercised against a real page. The screenshot tools are on by default. The data tools' extraction selectors, Naukri limits and the scheduler's real-claude behaviour
+  screenshot and click_at tools) is covered by hermetic tests with fake pages, plus the LinkedIn profile and invite
+  checks listed above; no live Naukri, Wellfound or scout page has been snapshotted, and no live Naukri or Wellfound
+  commit has ever run: their arm, type and Send paths were never exercised against a real page. The screenshot tools are on by default. The data tools' extraction selectors, Naukri limits and the scheduler's real-claude behaviour
   (hook propagation into subagents, `--setting-sources project`, `--permission-prompts`,
   hook `onFailure: block`) are unverified until rollout phase 2 and the plan 6B owner checks.
 - Autonomous email follow-ups (rule 10 in "Safety") are built behind `FOLLOWUPS_AUTONOMOUS`,
@@ -40,6 +49,15 @@
   a drip run ends when `gmail.send_email` succeeds but the record call does not: that row is quarantined, never retried);
   the dashboard Apply box in a browser; and `/apply <url>` under the `read_only` permission set (whether the command's
   `allowed-tools` rule is honoured there).
+- Apply: at the last owner check 19 apply rows sat in `manual_review` (the Apply click was armed but never confirmed; a figure from the owner's database, not from code). They are not retried
+  automatically; see "Operations". The Wellfound apply confirmation is unverified. The generic ATS applier runs with
+  `APPLY_SUBMIT_MODE=hold` (the shipped value), so it stops at the review step and reports `held` until the owner sets
+  `submit`.
+- Job supply: only 4 company boards are enabled in `config/portals.json` (GitLab, Razorpay, Meesho, Linear); add more under
+  `tracked_companies` and check each slug with `npx tsx scripts/check-portal.ts`. The imported feeds in
+  `config/platforms.json` ship disabled until the owner has read each feed's terms of use.
+- Email follow-ups run in legacy mode by default (`FOLLOWUPS_AUTONOMOUS=false`, the shipped value), so each follow-up needs Telegram approval in
+  `/followups` before the drip lane sends it.
 - LinkedIn inbound replies are read and recorded or escalated only; there are no typed LinkedIn
   inbox tools yet. Email replies and Naukri threads are handled as described above.
 - Model-bound third-party text that is NOT classifier-screened: board, Hacker News and other

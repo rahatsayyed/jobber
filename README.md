@@ -138,6 +138,7 @@ Commands you can send from Telegram (or type in a CLI session):
 
 Start it with `npm run web`; on first run use `npm run dashboard -- token` (setup does this for you) and open the printed URL. The token is shown once, and `npm run dashboard -- rotate` replaces it. The sign-in mode is `WEB_AUTH_MODE`: `token` (default), `google_desktop` (loopback only, reuses the Gmail Desktop client, unverified) or `oidc` (Web client, `WEB_OIDC_*`); see `.env.example`, and `npm run doctor` shows the dashboard checks. `npm run web` prints `http://127.0.0.1:<port>`.
 
+- The Inbox tab (`#/inbox`) lists what needs you: replies, recruiter messages and apply rows the agent would not handle alone, one card per conversation. The same list is `/escalations` in Telegram and `npm run status -- escalations`; see [docs/operations.md](docs/operations.md).
 - The send box is off unless `WEB_CHAT_ENABLED=true`; when on, it types your text into a live Claude session after a two-step confirmation; the only slash commands it accepts are bare `/limits`, `/working` and `/health`. Keep the permission set at `read_only` unless you need more.
 - Text typed in the chat box also answers any pending permission or confirmation prompt in the Claude window, so only enable it for an account you trust and keep the permission set `read_only`.
 - The settings page is read-only unless `WEB_SETTINGS_EDIT=true` is set in `.env` and the dashboard is restarted; the editor UI is still in progress. `npm run settings` is the read-only CLI for the same values.

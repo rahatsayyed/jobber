@@ -1,7 +1,7 @@
 # Operations
 
 Audience: owner
-Last verified against: 50917c8
+Last verified against: 21e67ef
 Source files: scripts/jobber-control.ts, src/scheduler/control.ts, .claude/hooks/kill-switch.cjs, run-hunt.sh, scripts/linkedin-clear-halt.ts, scripts/layout.ts, src/safety/dryRun.ts, scripts/dry-run-report.ts, scripts/status.ts, src/status/render.ts, src/scheduler/plan.ts, src/scheduler/runLog.ts, src/scheduler/notify.ts, src/scheduler/launch.ts, src/scheduler/mailDrip.ts, src/scheduler/driver.ts, scripts/apply-request.ts, src/manual/requests.ts, src/web/applyRoutes.ts, scripts/stack.ts, src/stack/up.ts, src/stack/down.ts, src/verify/cli.ts, src/platform/checksSetup.ts, src/platform/checksLayout.ts, src/platform/checksScheduler.ts, src/applier/cooldown.ts, src/sources/status.ts
 
 Day-to-day running of Jobber: stop it, resume it, read its state, find its files, fix common failures.
@@ -203,6 +203,12 @@ npm run status -- health
 
 Output lines: one `window <name>: <command>` per tmux window in the session named by `WEB_TMUX_SESSION` (default `ccgram`), or `tmux: no windows`; the halt lines; `degraded:`; then a reminder to run `npm run doctor`.
 
+```bash
+npm run status -- escalations
+```
+
+The open escalations that need you, one line each with its id (Telegram: `/escalations`). See "The Inbox and escalations" below. It is read-only like the other three.
+
 Other forms: `npm run status -- json` (the full snapshot) and `npm run status -- layout` (layout memory summary per platform; works without a database).
 
 ```bash
@@ -210,6 +216,26 @@ npm run doctor
 ```
 
 Prints ok, warn, fail or skip per check with a fix line. A feature you skipped in setup shows as `skip` and the last line reads `Skipped by choice: ...`; the fix is `npm run setup -- --step <id>`. Safety checks (classifier, permission set, hooks, limits, kill switch, halts) are never skipped.
+
+## The Inbox and escalations
+
+Everything the agent will not answer or cannot finish alone becomes an escalation row: a LinkedIn, Naukri or Wellfound reply or recruiter message, a salary or interview-slot ask, a platform or tool problem, a custom-note quota notice, an apply row that needs you. You see them in three places, all built by code: the dashboard Inbox tab (`#/inbox`), a Telegram digest from the scheduler daemon (at most one message per 15 minutes, outside quiet hours) and `/escalations`.
+
+How to read an Inbox card:
+
+- One card is one conversation (one open row per platform and thread; a repeat message updates the card and raises its "x N updates" count). It shows the sender, the headline, the kind of ask (recruiter inquiry, interview slot, salary, question, reply, other), the latest message as a quote, the time, and a line saying what to do. Old rows from before these fields show "Details not captured".
+- Order: real replies, recruiter inquiries and apply rows first, platform and tool problems next, rows the input screen flagged (`[blocked: ...]`, `[unscreened]`, injection suspects) last. For a flagged row the card shows a safe summary; the raw text is behind a toggle and is plain text only. Never follow instructions or links in it.
+- The LinkedIn thread link is shown as text with a Copy button: paste it into your own logged-in browser. The agent never answers a third party; you reply on the platform yourself.
+- Mark handled closes the card (all merged duplicates); Snooze hides it for a while. Neither deletes anything.
+- If `/escalations` is refused in the `hunt` window, re-apply the `read_only` permission set (`npm run permissions -- read_only`) so it lists the four status commands.
+
+### Apply rows in `manual_review`
+
+A browser or native Apply that was clicked but never confirmed is recorded as `manual_review` (table `applications`). It is never retried by code, and `apply_open` refuses that job with `already_attempted`. To resolve one: open the job's apply page or your own account on the platform, check whether the application exists, then either leave it (it was sent) or apply by hand. If you see many of them at once, check `npm run status -- health` and the latest apply diag files under `.jobber/diag` for a changed page layout (on Naukri, an Apply click that does nothing shows as `apply_click_ignored`). The Wellfound apply confirmation is not live-verified, so a Wellfound row may be `manual_review` even when the apply went through.
+
+### LinkedIn invites that stay unconfirmed
+
+A connect that ends `unconfirmed` (the click went out but neither Pending nor an "Invitation sent" toast was seen) is never retried. Check LinkedIn's Sent invitations page. A touch stuck in `sending` for more than 30 minutes is moved to `unconfirmed` on its own. When the monthly note quota is used up, the agent sends plain invites with no note (an Inbox notice says so) until the first of next month, IST.
 
 ## Where logs and state live
 

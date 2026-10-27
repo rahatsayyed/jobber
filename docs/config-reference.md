@@ -1,7 +1,7 @@
 # Config reference
 
 Audience: owner
-Last verified against: 50917c8
+Last verified against: 21e67ef
 Source files: src/sources/boards/filters.ts, src/targetRegions.ts, src/vetoes.ts, src/replies.ts, src/linkedin/discoveryConfig.ts, src/safety/styleGate.ts, src/lib/userData.ts, src/languageGate.ts, src/resumeFacts.ts, src/platform/permissions.ts, scripts/permissions.ts, scripts/models.ts, scripts/check-portal.ts, scripts/user-data.ts, .env.example, src/setup/limitsCatalog.ts, src/sources/registry.ts, src/sources/runner.ts
 
 This page lists every file you may edit in `config/` and `user-data/`, what reads it, whether a restart is needed, and how to check an edit. It does not repeat safety rules or caps: those live in `CLAUDE.md` (sections "Safety" and "Outreach safety layers"). All example values below are synthetic.
@@ -200,7 +200,7 @@ Groups in `.env.example` (one line each):
 - Browser apply and web: `APPLY_SUBMIT_MODE`, the per-host caps and the account flags; see [apply.md](apply.md).
 - Email: Gmail OAuth paths and the legacy SMTP fallback.
 - Telegram: bot token and allowed user ids for the ccgram bridge.
-- Platform ceilings: the daily caps per platform (LinkedIn, Naukri and the Wellfound `WELLFOUND_MAX_APPLIES_PER_DAY`, `WELLFOUND_MAX_MESSAGES_PER_DAY`, `WELLFOUND_MAX_DISCOVER_PER_DAY`); `npm run status -- limits` prints them.
+- Platform ceilings: the daily caps per platform, all rolling 24 hours (LinkedIn `LINKEDIN_MAX_INVITES_PER_DAY` default 40, `LINKEDIN_MAX_MESSAGES_PER_DAY` default 100 and `LINKEDIN_MAX_DISCOVER_PER_DAY`; the old weekly LinkedIn keys are gone, and the wake pacing keys (random burst size) were removed too; Naukri and the Wellfound `WELLFOUND_MAX_APPLIES_PER_DAY`, `WELLFOUND_MAX_MESSAGES_PER_DAY`, `WELLFOUND_MAX_DISCOVER_PER_DAY`); `npm run status -- limits` prints them.
 - Email drip lane (all optional, commented in `.env.example`; read by the scheduler daemon at start, so restart it after a change): `EMAIL_SEND_WINDOW_START` / `EMAIL_SEND_WINDOW_END` (HH:MM, IST), `EMAIL_DRIP_MIN_BATCH` / `EMAIL_DRIP_MAX_BATCH`, `EMAIL_DRIP_MIN_GAP_MIN` / `EMAIL_DRIP_MAX_GAP_MIN`, `EMAIL_DRIP_INTRA_PAUSE_MIN_SEC` / `EMAIL_DRIP_INTRA_PAUSE_MAX_SEC` and `EMAIL_MAX_PER_DAY` (`0` or unset means no daily cap). The defaults are in `src/setup/limitsCatalog.ts` and `.env.example`. An invalid value stops the lane and the doctor check `mail-drip-config` says why.
 - Agent tuning: `MATCH_THRESHOLD`, `SEND_LIMIT_PER_RUN` (the daily email limit for `/followups` sessions; the drip lane uses `EMAIL_MAX_PER_DAY` instead), `MAX_APPLIES_PER_DAY`, `MAX_LINKEDIN_SEARCHES_PER_DAY`, and the follow-up switches (`FOLLOWUPS_AUTONOMOUS`, `EMAIL_FOLLOWUP_GAPS_DAYS`).
 - Dashboard: `WEB_PORT`, `WEB_AUTH_MODE` and the other `WEB_*` keys; see `docs/dashboard-exposure.md`.

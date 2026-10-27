@@ -25,14 +25,60 @@ its hybrid Claude fallback are gone; the browser applier's own LinkedIn Easy App
 under "Applying".
 
 The `linkedin-operator` flow for a new contact (`new_outreach`): `outreach.next_contacts` returns the
-only people it may contact (it enforces the per-company limit), `linkedin_open` plus `linkedin_snapshot`
-confirm the page shows the expected person, and the connection state is read from that snapshot BEFORE
-anything is drafted (a Connect control means not connected, a 1st degree mark without Connect means
-connected, Pending or unclear means skip). Not connected: the `draft-connect-note` skill drafts a note
-(at most 300 characters), the operator calls `linkedin_arm_send({kind: "connect_note", ...})` with the
-exact text, then clicks Connect by ref, types the exact note and clicks Send. Connected: the
-`draft-linkedin-message` skill drafts a DM, `linkedin_arm_send` with `kind` `role_ask` or `rapport`,
-then open the message dialog, type the exact armed text and click Send.
+only people it may contact (it enforces the per-company limit). With `queue: true` (arguments `platform`,
+`limit`, `exclude_company_keys`) it returns ONE person per different company of the connect queue (priority jobs
+first, then the company with the fewest recent failures, then oldest); a company drops out after 3 failed people in
+14 days (`MAX_COMPANY_FAILURES`, `src/outreach/service.ts`), a paused company or a company in `exclude_company_keys` is
+skipped, and an employer-gate refusal pauses that person. `linkedin_open` plus `linkedin_snapshot` confirm the page shows
+the expected person, and the connection state is read from the snapshot header BEFORE anything is drafted (see
+"Profile page rules" below: `connect_state`; a 1st degree mark without a Connect path means connected, Pending means
+skip, `check_more` means open More and snapshot again). Not connected: the `draft-connect-note` skill drafts a note
+(at most 300 characters), the operator calls `linkedin_arm_send({kind: "connect_note", ...})` with the exact text,
+then clicks Connect by ref, types the exact note and clicks Send. While the monthly note quota is used up it arms
+`connect_plain` instead (no text, "Send without a note" only). Connected: the `draft-linkedin-message` skill drafts a
+DM, `linkedin_arm_send` with `kind` `role_ask` or `rapport`, then open the message dialog, type the exact armed text and
+click Send.
+
+**Profile page rules** (`src/browserctl/topCard.ts`, `snapshot.ts`, `guard.ts`). On a `/in/<slug>` page every
+snapshot node carries a region (`topcard`, `sidebar`, `main`, `dialog` or `menu`, shown as `@topcard` and so on in the
+rendered lines), and the header has `connect_state: connectable|via_more|not_connectable|already_pending|check_more`.
+The top card is the profile's own name heading plus every node after it in document order up to the next section
+heading, in the main column only (not the aside, not cards of other people). A Connect click outside it is refused with
+`connect_not_top_card` (a Connect in a sidebar or recommendation card sends the invitation directly, without a dialog;
+one accidental invite went out that way during a probe), and an "Invite <Name> to connect" control must name the
+profile's own person. State rule: a Connect in the top card is `connectable`; otherwise the engine opens More and reads
+its rows (`role=menuitem`; live the popover is `body > div[data-floating-ui-portal] > div[popover] > div[role=menu]`
+with each label as text in a nested `<p>`, no aria-label); a row named Connect, Personalize invite or "Invite <Name> to
+connect" gives `via_more`; menu rows read with no such row give `not_connectable` (probably 1st degree or follow only);
+Pending or Withdraw in the top card gives `already_pending`; More clicked but no menu rows found gives `check_more` plus
+a `more_menu_missing` diag file, never `not_connectable`. Any other More-menu row is refused (`menu_row_not_allowed`).
+The snapshot walker caps the page at `MAX_NODES` (1500) nodes but still reads open menu rows (`MENU_EXTRA`) and dialog
+content (`DIALOG_EXTRA`) past the cap, because the portal and the modal sit at the end of the body; a link or button
+name falls back to a descendant aria-label.
+
+**Invite dialog.** Live, it is `div[role=dialog][data-test-modal]` inside nested open shadow roots, appears about 4 to 6
+seconds after the Connect click and fills in later; its buttons carry an aria-label. The engine waits up to 15 seconds
+from the click (`OPEN_CEILING_MS`), reads the dialog controls through the walker and the locator layer (with a CSS
+fallback), and `linkedin_click_at` and `linkedin_type` resolve inside shadow roots through locators. Missing controls give
+the code `dialog_controls_missing` and a structural diag file (how the controls were found, the locator path, whether the
+node cap was hit, the aria-hidden chain, how long it waited). The live dialog text reads "Personalize your invitation
+to <name> by adding a note..." with the name in a SEPARATE text node (`inviteDialogName` reads it). When the dialog names
+nobody, recipient verification uses the top-card name captured before the click plus the URL slug match.
+
+**Plain invites and the note quota.** A LinkedIn free account has a monthly quota of personalized notes. Arm kind
+`connect_plain` sends an invite with no text: the only dialog button it may click is "Send without a note" (the
+"Add a note" button is refused for it). When the Premium upsell appears after "Add a note", the engine presses Escape,
+stores `linkedin_note_quota_until` in `scheduler_state` (the first instant of the next month, IST) and returns
+`custom_note_limit_reached`, which is never a failure of that person. While the key is set, a `connect_note` arm is
+refused with `note_quota_exhausted` and the operator arms `connect_plain` for everyone; a plain invite still uses the
+daily invite ceiling.
+
+**Live verification status (LinkedIn connect).** Verified live by the owner: top-card detection on several profiles,
+the More menu rows, the dialog opening with refs, note typing, the name read of a plain-invite dialog, and one real note
+invite through Send with the Pending confirmation (touch `sent`, a `connections` row, the ceiling counted, the invite
+visible on the Sent invitations page). NOT live-verified: the Premium upsell modal structure, a "Send without a note"
+click through to a confirmed send, the wording of `invite_limit_reached`, any Naukri or Wellfound dialog work, and LinkedIn
+messages after an accept.
 
 **LinkedIn hiring posts** (source `linkedin-posts`, `src/linkedin/searchPosts.ts` and `postExtract.ts`, all card
 shapes and the permalink forms unverified on live LinkedIn). One hiring post is one job: its id is
@@ -76,7 +122,7 @@ the snapshot's connection state) and drafts from the post when no company is kno
 says; `linkedin_arm_send` gets `job_id` (and `company` only when known). The page shapes behind the poster's headline and
 Experience parsing (`src/linkedin/profileCompany.ts`) are unverified.
 
-**Arm, then commit** (`src/browserctl`; unit-tested with fakes, NOT live-verified). Every browser
+**Arm, then commit** (`src/browserctl`; unit-tested with fakes, and the LinkedIn connect path is live-verified in part, see above). Every browser
 action goes through one engine: it refuses a ref from an old snapshot epoch, re-reads the element, its
 role, accessible name and enclosing dialog live at the moment of the action, and classifies it with a
 pure semantic guard (`src/browserctl/guard.ts`: `free`, `commit_connect_send`, `commit_message_send`,
@@ -95,7 +141,7 @@ message (modal, alert or toast) is `failed` with `send_error_modal` or `invite_l
 task on the latter); the diag file records which confirmation held. Statuses: `sent`, `dry_run`, `unconfirmed` (clicked but not confirmed: never retried,
 the owner checks it), `refused`, `rate_limited`, `halted`; `no_armed_intent` refuses an unarmed
 commit. An armed intent that expires or is disarmed without a commit releases its reserved touch.
-Typing text other than the armed text into a composer is refused; search and other fields are capped
+If a Connect click sends the invite with no dialog at all and Pending or the toast shows, the engine records the touch as `sent` without a note and never retries it (`sent_without_note`). A touch left in `sending` for more than 30 minutes becomes `unconfirmed` (`markStaleSending`, `src/linkedin/touches.ts`). Typing text other than the armed text into a composer is refused; search and other fields are capped
 and output-gated; password and hidden field values never appear in a snapshot.
 
 **Failure ladder** (written into the operator prompts): snapshot, act by ref; if a ref is missing or
@@ -117,7 +163,8 @@ job/profile," not "requires a review step." Steps:
    job_id, company})` (kind `role_ask`, `rapport`, `referral_ask`, `followup` or `feedback`), open the
    message dialog, type the exact text, click Send.
 4. Not connected: invoke `draft-connect-note` (<=300 chars, references the role by name),
-   `linkedin_arm_send({kind: "connect_note", ...})`, click Connect, type the exact note, click Send.
+   `linkedin_arm_send({kind: "connect_note", ...})` (`connect_plain` while the note quota is used up), click Connect (the
+   top-card or More-menu one), type the exact note, click Send.
 5. Report the status (`sent`, `dry_run`, `unconfirmed`, `refused`, `rate_limited`) to Telegram. An
    unclear page: report it, do not guess which path to take.
 

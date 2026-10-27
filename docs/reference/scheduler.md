@@ -30,6 +30,16 @@ systemd unit files under `.jobber/units` and prints the install commands; it ins
 After a non-killed wake outside quiet hours the scheduler may run the update and backup ticks
 (feature-detected, flags above).
 
+Pipeline and limit details that changed with the pacing removal: the LinkedIn ceilings are DAILY, a rolling 24 hours
+(`LINKEDIN_MAX_INVITES_PER_DAY` default 40, `LINKEDIN_MAX_MESSAGES_PER_DAY` default 100); the old weekly names are gone. The
+pipeline takes every unscored job saved in the last 168 hours (7 days, `PIPELINE_WINDOW_HOURS` in `src/pipelineWork.ts`, a
+constant), not 24 hours. A matched job that never got an outreach row is handed back to prepare at most
+`PREP_OFFER_LIMIT_APPLY` (12) times when it is apply-capable and `PREP_OFFER_LIMIT` (4) times otherwise; a Naukri job
+(tier `naukri_agent`) or Wellfound job (`wellfound_agent`) counts as apply-capable (`src/lib/channels.ts`). The title filter in `config/portals.json` keeps
+Software Developer and Web, Product and Founding Engineer titles. `db.list_queued_outreach` has a compact paged form
+(`fields: "apply"`, `limit`, `offset`, `only_pending_apply`) that the apply, LinkedIn and Naukri operators use: the full rows
+(about 56 KB) were saved to a file the operators could not read, and the full form is for the `mail-operator` only.
+
 All limits are env-configurable: the single catalog is `src/setup/limitsCatalog.ts` (defaults,
 ranges, explanations; a test fails on drift), shown by the setup `limits` step. Do not copy the
 values into docs.

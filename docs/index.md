@@ -1,7 +1,7 @@
 # Owner docs index
 
 Audience: owner
-Last verified against: 50917c8
+Last verified against: 21e67ef
 Source files: docs/, README.md, CLAUDE.md, tests/docs-owner.test.ts, docs/sources-and-platforms.md, docs/apply.md
 
 This page lists every owner doc in `docs/`. Start with the ordered list, then use the topic list as a reference.
@@ -16,7 +16,7 @@ This page lists every owner doc in `docs/`. Start with the ordered list, then us
 6. [Sources and platforms](sources-and-platforms.md): the source registry, the source table, generated providers and imported feeds.
 7. [Browser apply](apply.md): how applying works, its caps, accounts, escalations and the live checks.
 8. [Rollout](rollout.md): the five phases from dry run to autonomous.
-9. [Operations](operations.md): stop, halts, dry run, status, logs and the failure table.
+9. [Operations](operations.md): stop, halts, dry run, status, the Inbox and escalations, logs and the failure table.
 10. [Scheduler install](scheduler-install.md): launchd and systemd units for the scheduler.
 11. [Layout memory](layout-memory.md): how page layouts are remembered and what drift does.
 12. [Dashboard login](dashboard-login.md): the login options for the dashboard.
