@@ -117,8 +117,19 @@ function inviteSurface(tree: RawTree, before: string): 'dialog' | 'page' | null 
 export function inviteDialogName(tree: RawTree, dlg: number): string {
   const text = dialogText(tree, dlg);
   const a = extractDialogRecipientName(text);
-  if (a) return a;
-  for (const line of text.split('\n')) {
+  // Live dialog: "Personalize your invitation to <name> by adding a note." where the name is its own element, so the text
+  // reads "invitation to by adding a note" and the name is the next short text node. Never take "by adding a note" as a name.
+  if (a && !/^by adding a note\b/i.test(a)) return a;
+  const lines = text.split('\n');
+  const gap = lines.findIndex((l) => /invitation to\s+by adding a note\b/i.test(l));
+  if (gap >= 0) {
+    const next = lines.slice(gap + 1).find((l) => {
+      const t = l.trim();
+      return t !== '' && t.length <= 50 && t.split(/\s+/).length <= 5 && !/[.?!:]/.test(t);
+    });
+    if (next) return next.trim();
+  }
+  for (const line of lines) {
     const m = /^\s*invite\s+(.+?)\s+to connect\s*$/i.exec(line);
     if (m) return m[1].trim();
   }
