@@ -6,7 +6,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { textMatches, type CommitClass } from './guard.js';
 import { finishTouch } from '../linkedin/touches.js';
 
-export const INTENT_TTL_MS = 120_000;
+export const INTENT_TTL_MS = 300_000;
 export type IntentPlatform = 'linkedin' | 'naukri' | 'wellfound';
 
 export interface ArmedIntent {

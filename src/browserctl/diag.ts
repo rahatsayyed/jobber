@@ -9,6 +9,7 @@ import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { PROJECT_ROOT } from '../layout/config.js';
 import type { BcPage } from './driver.js';
+import type { SendFacts } from './sendSignals.js';
 import { LOCATOR_BASE, type LiveNode, type RawTree } from './snapshot.js';
 
 export const DIAG_MAX_BYTES = 8 * 1024;
@@ -88,6 +89,8 @@ export interface DiagFile {
   apply_responses?: { path: string; status: number }[];
   // Names of up to 10 buttons near the clicked control after the wait (names only, redacted).
   near_buttons?: string[];
+  // After a Send click: which confirmations held (booleans and an enum, the re-read time in ms).
+  send_check?: { strong: boolean; network: boolean; dialog_gone: boolean; error_signal: 'none' | 'limit' | 'error'; polled_ms: number };
 }
 
 // Extra structure for a commit click (Naukri apply).
@@ -162,7 +165,7 @@ function fit(f: DiagFile): string {
 export async function writeCommitDiag(
   deps: DiagDeps,
   page: BcPage,
-  i: { platform: string; code: string; live: Pick<LiveNode, 'role' | 'name'>; urlBefore: string; after: RawTree | null; extra?: DiagExtra; wait?: OpenWaitFacts },
+  i: { platform: string; code: string; live: Pick<LiveNode, 'role' | 'name'>; urlBefore: string; after: RawTree | null; extra?: DiagExtra; wait?: OpenWaitFacts; send?: SendFacts },
 ): Promise<string | null> {
   try {
     let pd: PageDiag | null = null;
@@ -203,6 +206,7 @@ export async function writeCommitDiag(
           },
         })),
       } : {}),
+      ...(i.send ? { send_check: { strong: i.send.strong, network: i.send.network, dialog_gone: i.send.dialogGone, error_signal: i.send.signal, polled_ms: Math.max(0, Math.floor(i.send.polledMs)) } } : {}),
       ...(i.extra ? {
         popups: (i.extra.popups ?? []).slice(0, 5).map((p) => ({ path: pathOf(p.url), host_kind: hostKind(p.url) })),
         apply_responses: (i.extra.responses ?? []).slice(0, 10).map((r) => ({ path: String(r.path).split('?')[0].slice(0, 120), status: Math.floor(Number(r.status)) || 0 })),

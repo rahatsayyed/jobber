@@ -4,7 +4,8 @@
 // Order: kill switch and halt -> armed intent -> fresh page read (profile key from the URL, recipient
 // name in the dialog or row, live composer text) -> element unchanged -> halt again -> dry run (record,
 // close dialog, disarm) or live (consume the intent, tryConsume the ceiling, arm the response watcher,
-// click, confirm by response AND dialog gone) -> finishTouch, saveConnection, disarm.
+// click, re-read up to CONFIRM_POLL_MS: sent = dialog gone AND (Pending or sent toast, or a 2xx POST with no error text);
+// an error or limit message on the page = failed) -> finishTouch, saveConnection, disarm.
 // Anything after the click that cannot be confirmed is 'unconfirmed', never guessed.
 import { saveConnection } from '../db.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
@@ -22,6 +23,7 @@ import type { ArmedIntent } from './intent.js';
 import { OPEN_CEILING_MS } from './locatorDialogs.js';
 import { bindTouchRelease } from './intent.js';
 import type { LiveNode, RawTree } from './snapshot.js';
+import { CONFIRM_POLL_MS, CONFIRM_POLL_STEP_MS, errorSignalOf, type ErrorSignal } from './sendSignals.js';
 import { connectionStateOf, directSendSeen } from './topCard.js';
 
 export interface CommitInput {
@@ -341,15 +343,41 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
       const dg = await writeCommitDiag(deps, page, { platform, code: 'no_dialog_after_connect', live, urlBefore: url, after, wait: waitFacts });
       return { ok: false, status: 'failed', code: 'no_dialog_after_connect', reason: `Connect clicked but no invite dialog appeared; nothing was sent. Escalate once and move to the next contact.${diagNote(dg)}` };
     }
-    const dialogGone = cls === 'commit_accept_invite' ? acceptCount(after) < acceptBefore
-      : cls === 'commit_connect_send' ? !after.nodes.some((x) => x.role === 'dialog' && x.name === live.dialogName)
+    const dialogGoneOf = (t: RawTree): boolean => cls === 'commit_accept_invite' ? acceptCount(t) < acceptBefore
+      : cls === 'commit_connect_send' ? !t.nodes.some((x) => x.role === 'dialog' && x.name === live.dialogName)
         : (() => {
-          const d = after.nodes.find((x) => x.role === 'dialog' && x.name === live.dialogName);
+          const d = t.nodes.find((x) => x.role === 'dialog' && x.name === live.dialogName);
           if (!d) return true;
-          const box = after.nodes.find((x) => x.dialog === d.n && x.role === 'textbox' && x.composer);
+          const box = t.nodes.find((x) => x.dialog === d.n && x.role === 'textbox' && x.composer);
           return !!box && !box.value;
         })();
-    if (confirmedNet && dialogGone) {
+    // The dialog going away is not proof: an error modal can replace it, and any LinkedIn POST satisfies the network half.
+    // Re-read for a while: stop at once on an error signal, or when the dialog is gone and the page shows the invite as
+    // sent (Pending or a sent toast, connect only).
+    const read = (t: RawTree): { dialogGone: boolean; strong: boolean; signal: ErrorSignal } => ({
+      dialogGone: dialogGoneOf(t),
+      strong: cls === 'commit_connect_send' && directSendSeen(t),
+      signal: errorSignalOf(tree, t),
+    });
+    let seen = read(after);
+    let polledMs = 0;
+    while (seen.signal === 'none' && !(seen.dialogGone && seen.strong) && polledMs < CONFIRM_POLL_MS) {
+      await page.waitMs(CONFIRM_POLL_STEP_MS).catch(() => undefined);
+      polledMs += CONFIRM_POLL_STEP_MS;
+      after = await page.snapshot();
+      seen = read(after);
+    }
+    const { dialogGone, strong, signal } = seen;
+    const facts = { strong, network: confirmedNet, dialogGone, signal, polledMs };
+    if (signal !== 'none') {
+      // A refusal on the page: never sent, the modal is closed. A limit message is a platform signal (the operator stops the task).
+      await page.press('Escape').catch(() => undefined);
+      release('failed');
+      const code = signal === 'limit' ? 'invite_limit_reached' : 'send_error_modal';
+      const dgE = await writeCommitDiag(deps, page, { platform, code, live, urlBefore: url, after, send: facts });
+      return { ok: false, status: 'failed', code, reason: `clicked, but the page shows ${signal === 'limit' ? 'a limit message; nothing was sent, stop this task' : 'an error message; nothing was sent'}${diagNote(dgE)}`, ...(intent.touchId !== undefined ? { touch_id: intent.touchId } : {}) };
+    }
+    if (dialogGone && (strong || confirmedNet)) {
       if (cls !== 'commit_accept_invite' && intent.touchId !== undefined) finishTouch(db, intent.touchId, 'sent', now());
       try {
         saveConnection(db, {
@@ -358,10 +386,11 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
           sent_at: now().toISOString(),
         });
       } catch { /* legacy table only; the touch row is authoritative */ }
-      return { ok: true, status: 'sent', code: 'sent', ...(intent.touchId !== undefined ? { touch_id: intent.touchId } : {}) };
+      const dgOk = await writeCommitDiag(deps, page, { platform, code: 'sent', live, urlBefore: url, after, send: facts });
+      return { ok: true, status: 'sent', code: 'sent', ...(dgOk ? { reason: `confirmed by ${strong ? 'the page' : 'the network response only'}${diagNote(dgOk)}` } : {}), ...(intent.touchId !== undefined ? { touch_id: intent.touchId } : {}) };
     }
     release('unconfirmed');
-    const dg2 = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore: url, after });
+    const dg2 = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore: url, after, send: facts });
     return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `clicked but not confirmed (${confirmedNet ? 'response seen' : 'no response'}, ${dialogGone ? 'dialog gone' : 'dialog still open'}); verify manually${diagNote(dg2)}`, ...(intent.touchId !== undefined ? { touch_id: intent.touchId } : {}) };
   } catch {
     // A throw before the click is a failure; after it the send may have gone out.

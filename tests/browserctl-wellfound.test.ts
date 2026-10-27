@@ -716,7 +716,7 @@ describe('wellfound_apply commit path', () => {
     const w = mk({ html: jobHtml(), url: JOB_URL, env: LIVE_ENV });
     await w.armApply();
     const apply = refOf(await w.snap(), 'button', 'Apply');
-    w.clock.t += 121_000;
+    w.clock.t += 301_000;
     expect(await w.engine.click(apply)).toMatchObject({ ok: false, code: 'no_armed_intent' });
     expect(clicks(w)).toEqual([]);
   });

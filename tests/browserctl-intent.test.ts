@@ -23,7 +23,7 @@ describe('IntentStore', () => {
     const { s } = store();
     const it = s.arm(base);
     expect(it.expiresAt - 1_000_000).toBe(INTENT_TTL_MS);
-    expect(INTENT_TTL_MS).toBe(120_000);
+    expect(INTENT_TTL_MS).toBe(300_000);
     const r = s.check('linkedin', 'commit_connect_send', 'Hi Jane, I saw the role.');
     expect(r.ok && r.intent.id).toBe(it.id);
   });
@@ -49,10 +49,10 @@ describe('IntentStore', () => {
     expect(s.check('naukri', 'naukri_apply').ok).toBe(true);
   });
 
-  it('expires after 120 s', () => {
+  it('expires after 300 s', () => {
     const { s, advance } = store();
     s.arm(base);
-    advance(119_999);
+    advance(299_999);
     expect(s.check('linkedin', 'commit_connect_send', base.text).ok).toBe(true);
     advance(1);
     expect(s.check('linkedin', 'commit_connect_send', base.text)).toEqual({ ok: false, code: 'intent_expired' });

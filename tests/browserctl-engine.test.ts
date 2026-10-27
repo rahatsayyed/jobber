@@ -253,7 +253,7 @@ describe('commit: connect send', () => {
 
   it('expired intent: refused', async () => {
     const { w, send } = await armed();
-    w.clock.t += 121_000;
+    w.clock.t += 301_000;
     const r = await w.engine.click(send);
     expect(r.code).toBe('no_armed_intent');
     expect(clicks(w)).toEqual([]);

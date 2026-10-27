@@ -384,7 +384,7 @@ describe('naukri_send commit path', () => {
     const w = mk({ html: threadHtml({ text: '' }), env: LIVE_ENV });
     react(w);
     const send = await armAndType(w);
-    w.clock.t += 121_000;
+    w.clock.t += 301_000;
     const r = await w.engine.click(send);
     expect(r.ok).toBe(false);
     expect(['intent_expired', 'no_armed_intent']).toContain(r.code);

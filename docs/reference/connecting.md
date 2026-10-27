@@ -86,11 +86,13 @@ point is refused). A commit-class click, an Enter in a composer, or typing into 
 ARMED INTENT: the arm tool (`linkedin_arm_send`, `naukri_arm_send`, `naukri_arm_apply`) runs the
 existing code gates first (recipient must be a known `people` row, employer, style, fact and output
 gates, `reserveTouch` idempotency, quiet hours, halts, dry run, a spent daily ceiling refuses at
-arm) and holds one in-memory intent per platform for 120 seconds, single use. At commit time the
+arm) and holds one in-memory intent per platform for 300 seconds (5 minutes), single use. At commit time the
 engine re-verifies on the live page (profile key equals the armed key, the dialog recipient name
 plausibly matches; the live invite dialog names nobody, so then the top card name, or the one captured when the engine's own Connect click opened the dialog, must match, any navigation drops the capture, and no name anywhere is `dialog_name_unverified`; the composer text read from the live field equals the armed text exactly), then
-consumes the ceiling right before the click, watches the platform POST and confirms by response plus
-dialog state. Statuses: `sent`, `dry_run`, `unconfirmed` (clicked but not confirmed: never retried,
+consumes the ceiling right before the click, watches the platform POST and, after the click, re-reads the page for up to 6 seconds: `sent` needs the dialog gone and
+either Pending or an "Invitation sent" toast, or a successful LinkedIn POST with no error text; a new error or limit
+message (modal, alert or toast) is `failed` with `send_error_modal` or `invite_limit_reached` (the operator stops the
+task on the latter); the diag file records which confirmation held. Statuses: `sent`, `dry_run`, `unconfirmed` (clicked but not confirmed: never retried,
 the owner checks it), `refused`, `rate_limited`, `halted`; `no_armed_intent` refuses an unarmed
 commit. An armed intent that expires or is disarmed without a commit releases its reserved touch.
 Typing text other than the armed text into a composer is refused; search and other fields are capped
