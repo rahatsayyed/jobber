@@ -259,6 +259,7 @@ export function createEngine(deps: EngineDeps): Engine {
     await pace(g.page);
     recordNav(url);
     moreOpened = false;
+    deps.intents.clearInviteOpened(P.platform);
     const prior = keepRefs && tree && refs.hasSnapshot ? { saved: refs.save(), seen: seenEpoch, sig: treeSignature(tree) } : null;
     try { await g.page.goto(url); } catch { return refused('failed', 'open failed'); }
     refs.invalidate();

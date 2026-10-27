@@ -88,7 +88,7 @@ existing code gates first (recipient must be a known `people` row, employer, sty
 gates, `reserveTouch` idempotency, quiet hours, halts, dry run, a spent daily ceiling refuses at
 arm) and holds one in-memory intent per platform for 120 seconds, single use. At commit time the
 engine re-verifies on the live page (profile key equals the armed key, the dialog recipient name
-plausibly matches, the composer text read from the live field equals the armed text exactly), then
+plausibly matches; the live invite dialog names nobody, so then the top card name, or the one captured when the engine's own Connect click opened the dialog, must match, any navigation drops the capture, and no name anywhere is `dialog_name_unverified`; the composer text read from the live field equals the armed text exactly), then
 consumes the ceiling right before the click, watches the platform POST and confirms by response plus
 dialog state. Statuses: `sent`, `dry_run`, `unconfirmed` (clicked but not confirmed: never retried,
 the owner checks it), `refused`, `rate_limited`, `halted`; `no_armed_intent` refuses an unarmed

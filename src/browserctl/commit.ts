@@ -182,6 +182,7 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
 
   let liveText: string | undefined;
   let openStep = false;
+  let topCardName = '';
   let acceptBefore = 0;
   const dlg = live.dialog;
 
@@ -198,10 +199,16 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
       const cs = connectionStateOf(tree);
       if (cs?.state === 'already_pending') return abort('already_pending', cs.reason);
       if (cs?.state === 'not_connectable') return abort('not_connectable', cs.reason);
+      topCardName = head;
       openStep = true;
     } else {
       if (effectiveDialogKind(tree, dlg, live.dialogName) !== wantKind) return abort('wrong_dialog', 'dialog is not the expected kind', { close: true });
-      const shown = wantKind === 'invite' ? inviteDialogName(tree, dlg) : messageDialogName(tree, dlg);
+      let shown = wantKind === 'invite' ? inviteDialogName(tree, dlg) : messageDialogName(tree, dlg);
+      // The live invite dialog names nobody. The recipient is then the person of the profile the engine's own Connect click
+      // opened it on: same page (checked above), top card name read now or, when the modal hides it, captured before the click.
+      if (!shown && wantKind === 'invite' && intent.inviteOpened?.profileKey === intent.profileKey) {
+        shown = profileHeadingName(tree) || intent.inviteOpened.name;
+      }
       if (!shown) return abort('dialog_name_unverified', 'could not read the recipient name in the dialog', { close: true });
       if (!namesPlausiblyMatch(expectedName, shown)) return abort('dialog_recipient_mismatch', 'dialog addresses a different person', { close: true });
       const boxes = tree.nodes.filter((x) => x.dialog === dlg && x.role === 'textbox' && x.composer && !x.secret);
@@ -311,7 +318,11 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
         const dg = await writeCommitDiag(deps, page, { platform, code: 'dialog_controls_missing', live, urlBefore: url, after, wait: waitFacts });
         return { ok: false, status: 'failed', code: 'dialog_controls_missing', reason: `Connect clicked and a dialog is open (dialog kind: ${kind}), but its buttons and text field could not be read; nothing was sent. Take one linkedin_screenshot to see it, escalate once and move to the next contact.${diagNote(dg)}` };
       }
-      if (surface === 'dialog') { keepArmed = true; return { ok: true, code: 'dialog_opened', reason: 'invite dialog is open; type the armed note and click Send' }; }
+      if (surface === 'dialog') {
+        keepArmed = true;
+        deps.intents.markInviteOpened(platform, { profileKey: intent.profileKey!, name: topCardName });
+        return { ok: true, code: 'dialog_opened', reason: 'invite dialog is open; type the armed note and click Send' };
+      }
       if (surface === 'page') { keepArmed = true; return { ok: true, code: 'invite_page_opened', reason: 'LinkedIn opened an invite page; take a snapshot and continue only if it shows the armed person' }; }
       // No dialog, but the page now shows the invitation went out (Pending in the top card, or an "Invitation sent"
       // toast): LinkedIn sent it directly, without a note. Record it as sent and never retry this person.

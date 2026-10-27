@@ -27,6 +27,12 @@ export interface ArmedIntent {
   company?: string;
   /** Armed in a dry run: the commit path records instead of clicking. */
   dry?: boolean;
+  /**
+   * LinkedIn: set by the engine's own Connect click that opened the invite dialog (never by the model): the profile key
+   * of the page it was clicked on and the person name its top card showed just before the click. It stands in for the
+   * recipient name that the live invite dialog does not show. Cleared by any navigation of the engine.
+   */
+  inviteOpened?: { profileKey: string; name: string };
   expiresAt: number;
 }
 export type IntentInput = Omit<ArmedIntent, 'id' | 'expiresAt'>;
@@ -102,6 +108,18 @@ export class IntentStore {
     this.used.add(id);
     this.armed.delete(platform);
     return { ok: true, intent: it };
+  }
+
+  /** Record what the engine saw when its own Connect click opened the invite dialog (see ArmedIntent.inviteOpened). */
+  markInviteOpened(platform: IntentPlatform, facts: { profileKey: string; name: string }): void {
+    const it = this.armed.get(platform);
+    if (it) it.inviteOpened = facts;
+  }
+
+  /** Forget the opened-dialog facts (the engine navigated, so the dialog is no longer the one it opened). */
+  clearInviteOpened(platform: IntentPlatform): void {
+    const it = this.armed.get(platform);
+    if (it) delete it.inviteOpened;
   }
 
   /** Drop the armed intent without using it (dry run, dialog closed, refusal). */
