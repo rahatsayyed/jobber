@@ -65,7 +65,9 @@ describe('listEscalations', () => {
     expect(human.id).toBe(a);
     expect(human.personName).toBe('Sam Recruiter');
     expect(human.personCompany).toBe('Globex');
-    expect(human.threadUrl).toBe('https://www.linkedin.com/messaging/thread/2-abc_100/');
+    expect(human.threadUrl).toBe('https://www.linkedin.com/messaging/thread/2-abc_100=/');
+    // base64 padding is restored: an unpadded LinkedIn thread id shows "conversation failed to load"
+    expect(linkedinThreadUrl('linkedin', '2-ZjRlMzhmXzEwMA')).toBe('https://www.linkedin.com/messaging/thread/2-ZjRlMzhmXzEwMA==/');
     expect(r.items[1].count).toBe(2);
     expect(r.items[2].flag).toBe('blocked: injection_suspected');
     // dedup is display only: every row is still there

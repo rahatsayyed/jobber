@@ -54,7 +54,7 @@ describe('addEscalation details', () => {
     expect(r).toMatchObject({
       sender_name: 'Sam Recruiter', sender_headline: 'Talent at Globex', message_excerpt: 'Hi, open to a role?',
       message_at: '2026-10-27T09:00:00.000Z', ask_kind: 'recruiter_inquiry', seen_count: 1,
-      thread_url: 'https://www.linkedin.com/messaging/thread/2-t_1/',
+      thread_url: 'https://www.linkedin.com/messaging/thread/2-t_1=/',
     });
     const item = listEscalations(db, { now: at(2) }).items[0];
     expect(item).toMatchObject({ senderName: 'Sam Recruiter', excerpt: 'Hi, open to a role?', askKind: 'recruiter_inquiry', label: 'Recruiter inquiry' });
@@ -172,7 +172,7 @@ describe('handleEscalate screening of the new fields', () => {
     const row = db.prepare('SELECT reason, detail, message_excerpt, raw_text, sender_name FROM escalations WHERE id = ?').get(r.id) as Record<string, string | null>;
     expect(row.reason).toBe('[blocked: injection_suspected] linkedin_reply_needed');
     expect(row.detail).toContain('Pat Poster');
-    expect(row.detail).toContain('https://www.linkedin.com/messaging/thread/2-b_1/');
+    expect(row.detail).toContain('https://www.linkedin.com/messaging/thread/2-b_1=/');
     expect(row.message_excerpt).toBeNull();
     expect(row.raw_text).toContain(evil);
     expect(row.sender_name).toBe('Pat Poster');

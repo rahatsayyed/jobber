@@ -64,7 +64,7 @@ describe('dashboard Inbox API', () => {
     const r = JSON.parse((await s.get('/api/escalations')).body) as { items: { group: string; threadUrl: string | null; platform: string }[]; counts: { open: number } };
     expect(r.counts.open).toBe(3);
     expect(r.items.map((i) => i.group)).toEqual(['human', 'human', 'platform']);
-    expect(r.items.find((i) => i.platform === 'linkedin' && i.group === 'human')!.threadUrl).toBe('https://www.linkedin.com/messaging/thread/2-abc_100/');
+    expect(r.items.find((i) => i.platform === 'linkedin' && i.group === 'human')!.threadUrl).toBe('https://www.linkedin.com/messaging/thread/2-abc_100=/');
     expect(r.items.find((i) => i.platform === 'naukri')!.threadUrl).toBeNull();
     expect(JSON.parse((await s.get('/api/escalations/count')).body)).toMatchObject({ open: 3 });
     const f = JSON.parse((await s.get('/api/escalations?platform=naukri&group=human')).body) as { items: unknown[] };

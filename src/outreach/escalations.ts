@@ -53,7 +53,12 @@ export function classifyEscalation(platform: string | null, reason: string, deta
 /** The LinkedIn messaging thread for a stored thread_ref. Other platforms: no URL is known, so none is invented. */
 export function linkedinThreadUrl(platform: string | null, threadRef: string | null): string | null {
   if (platform !== 'linkedin' || !threadRef || !THREAD_URL_RE.test(threadRef)) return null;
-  return `https://www.linkedin.com/messaging/thread/${threadRef}/`;
+  // LinkedIn thread ids are "2-" plus url-safe base64 WITH '=' padding; the stored ref has no '=' (the ref charset excludes it),
+  // and an unpadded id shows "this conversation failed to load".
+  const dash = threadRef.indexOf('-');
+  const tail = dash >= 0 ? threadRef.slice(dash + 1) : '';
+  const padded = tail !== '' && tail.length % 4 !== 0 ? `${threadRef}${'='.repeat(4 - (tail.length % 4))}` : threadRef;
+  return `https://www.linkedin.com/messaging/thread/${padded}/`;
 }
 
 export const ASK_KINDS = ['recruiter_inquiry', 'interview_slot', 'salary', 'question', 'reply', 'other'] as const;
