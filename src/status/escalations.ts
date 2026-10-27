@@ -16,10 +16,14 @@ export function ageText(iso: string, now: Date): string {
 
 /** One escalation as a single line: `#id xN platform reason | person (company) | job | age`. */
 export function itemLine(i: EscItem, now: Date): string {
-  const who = i.personName ? `${cleanUntrusted(i.personName, 60)}${i.personCompany ? ` (${cleanUntrusted(i.personCompany, 50)})` : ''}` : null;
+  const who = i.senderName
+    ? `${cleanUntrusted(i.senderName, 60)}${i.senderHeadline ? ` (${cleanUntrusted(i.senderHeadline, 60)})` : ''}`
+    : null;
+  // Platform problems and flagged rows also show the reason code; real replies show the plain label only.
+  const label = i.group === 'human' ? i.label : `${i.label}: ${cleanUntrusted(i.reason, 70)}`;
   const parts = [
-    `#${i.id}${i.count > 1 ? ` x${i.count}` : ''} ${i.platform ?? '-'} ${cleanUntrusted(i.reason, 70)}`,
-    who, i.jobTitle ? cleanUntrusted(i.jobTitle, 70) : null, ageText(i.created_at, now),
+    `#${i.id}${i.updates > 1 ? ` x${i.updates}` : ''} ${i.platform ?? '-'} ${label}`,
+    who, i.jobTitle ? cleanUntrusted(i.jobTitle, 70) : null, ageText(i.last_at, now),
   ];
   return parts.filter(Boolean).join(' | ');
 }
@@ -27,7 +31,9 @@ export function itemLine(i: EscItem, now: Date): string {
 /** Item line plus an indented detail line and, for a merged item, the ids the owner can mark handled together. */
 export function itemBlock(i: EscItem, now: Date, detailMax = 140): string[] {
   const out = [itemLine(i, now)];
-  if (i.detail) out.push(`    ${cleanUntrusted(i.detail, detailMax)}`);
+  // The raw flagged text (rawText) is never shown here.
+  if (i.excerpt) out.push(`    "${cleanUntrusted(i.excerpt, detailMax)}"`);
+  else if (i.detail) out.push(`    ${cleanUntrusted(i.detail, detailMax)}`);
   if (i.count > 1) out.push(`    ids ${[...i.ids].sort((a, b) => a - b).join(',')}`);
   return out;
 }

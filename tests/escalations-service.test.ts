@@ -53,21 +53,23 @@ describe('listEscalations', () => {
     addEscalation(db, { runId: null, platform: 'linkedin', reason: 'layout_drift' }, at(0));
     addEscalation(db, { runId: null, platform: 'linkedin', reason: '[blocked: injection_suspected]', detail: 'x' }, at(1));
     const a = addEscalation(db, { runId: null, platform: 'linkedin', personId: p, threadRef: '2-abc_100', reason: 'linkedin_reply_needed', detail: 'asks salary' }, at(2));
+    // A repeat for the same open thread updates the row instead of adding one.
     const b = addEscalation(db, { runId: null, platform: 'linkedin', personId: p, threadRef: '2-abc_100', reason: 'linkedin_reply_needed', detail: 'asks salary' }, at(3));
+    expect(b).toBe(a);
     addEscalation(db, { runId: null, platform: 'linkedin', reason: 'layout_drift' }, at(4));
     const r = listEscalations(db, { now: at(10) });
     expect(r.items.map((i) => i.group)).toEqual(['human', 'platform', 'noise']);
     const human = r.items[0];
-    expect(human.count).toBe(2);
-    expect(human.ids.sort()).toEqual([a, b]);
-    expect(human.id).toBe(b);
+    expect(human.updates).toBe(2);
+    expect(human.ids).toEqual([a]);
+    expect(human.id).toBe(a);
     expect(human.personName).toBe('Sam Recruiter');
     expect(human.personCompany).toBe('Globex');
     expect(human.threadUrl).toBe('https://www.linkedin.com/messaging/thread/2-abc_100/');
     expect(r.items[1].count).toBe(2);
     expect(r.items[2].flag).toBe('blocked: injection_suspected');
     // dedup is display only: every row is still there
-    expect((db.prepare('SELECT COUNT(*) c FROM escalations').get() as { c: number }).c).toBe(5);
+    expect((db.prepare('SELECT COUNT(*) c FROM escalations').get() as { c: number }).c).toBe(4);
   });
 
   it('finds the person through inbound_messages when the row has no person_id', () => {

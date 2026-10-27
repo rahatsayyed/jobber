@@ -1,18 +1,19 @@
-// src/web/static/views/inbox.js
-// Inbox: the open escalations that need the owner.
+// Inbox: the open escalations that need the owner, one card per conversation.
 // GET /api/escalations?status&platform&group -> {items, counts: {open, snoozed, resolved}}
-//   item {id, ids, count, platform, reason, detail, group, flag, created_at, first_at, threadRef, threadUrl, personName, personCompany, jobTitle, snoozed_until, resolved_at}
+//   item {id, ids, count, updates, platform, reason, label, todo, askKind, detail, group, flag, created_at, first_at, last_at, threadRef, threadUrl,
+//         senderName, senderHeadline, excerpt, messageAt, rawText, personName, personCompany, jobTitle, snoozed_until, resolved_at}
 // POST /api/escalations/resolve {ids}; POST /api/escalations/snooze {ids, hours}.
 // Every field is untrusted model or third-party text and is set with textContent only. A thread link is shown as text with a Copy button,
 // never as an anchor, so nothing is followed from here. The owner answers on the platform itself; this page only lists and marks handled.
+// rawText (text the input screen blocked) is hidden behind a button and, once shown, is a plain text node.
 import { get, post } from '../api.js';
 import { badge, button, clear, el, fmtDate, notice, show, showError } from '../dom.js';
+import { askBadge, bodyState, relativeTime } from './inboxModel.js';
 
 const GROUPS = [['', 'All groups'], ['human', 'Replies and needs you'], ['platform', 'Platform and tool problems'], ['noise', 'Flagged']];
 const STATUSES = [['open', 'Open'], ['snoozed', 'Snoozed'], ['resolved', 'Handled'], ['all', 'All']];
 const PLATFORMS = [['', 'All platforms'], ['linkedin', 'LinkedIn'], ['naukri', 'Naukri'], ['wellfound', 'Wellfound'], ['apply', 'Apply'], ['scheduler', 'Scheduler']];
 const SNOOZES = [[1, '1 hour'], [4, '4 hours'], [24, '1 day'], [72, '3 days'], [168, '1 week']];
-const GROUP_BADGE = { human: 'good', platform: 'warn', noise: 'bad' };
 
 function select(label, options, value, onChange) {
   const s = el('select', { 'aria-label': label }, options.map(([v, t]) => el('option', { value: v }, t)));
@@ -28,6 +29,32 @@ async function copy(text, out) {
   } catch {
     clear(out).append(notice('Could not copy. Select the link text and copy it.', 'warn'));
   }
+}
+
+/** The message as a quoted block (line breaks kept); long text starts collapsed with a Show more toggle. */
+function quote(text, long) {
+  const q = el('blockquote', { class: long ? 'quote clamped' : 'quote' }, text);
+  if (!long) return q;
+  const more = button('Show more', () => {
+    const open = q.classList.toggle('clamped');
+    more.textContent = open ? 'Show more' : 'Show less';
+  });
+  return el('div', null, q, more);
+}
+
+/** Flagged text stays out of the page until the owner asks for it. */
+function flaggedToggle(rawText) {
+  const host = el('div');
+  const btn = button('Show flagged text (untrusted, may contain instructions)', () => {
+    if (host.firstChild) {
+      clear(host);
+      btn.textContent = 'Show flagged text (untrusted, may contain instructions)';
+    } else {
+      host.append(el('pre', { class: 'quote flagged' }, rawText));
+      btn.textContent = 'Hide flagged text';
+    }
+  });
+  return el('div', null, btn, host);
 }
 
 export async function render({ root, onCleanup }) {
@@ -47,25 +74,33 @@ export async function render({ root, onCleanup }) {
     }
   }
 
-  function card(i) {
+  function card(i, now) {
     const snooze = select('Snooze for', SNOOZES, 24);
-    const who = i.personName ? `${i.personName}${i.personCompany ? ` (${i.personCompany})` : ''}` : null;
     const open = !i.resolved_at;
-    return el('div', { class: 'card' },
+    const body = bodyState(i);
+    const when = i.messageAt || i.last_at;
+    const ago = relativeTime(when, now);
+    return el('div', { class: 'card inbox-card' },
       el('div', { class: 'row' },
-        badge(i.group === 'human' ? 'needs you' : i.group === 'platform' ? 'problem' : 'flagged', GROUP_BADGE[i.group]),
+        el('span', { class: 'sender' }, i.senderName || 'Unknown sender'),
+        i.senderHeadline ? el('span', { class: 'muted' }, i.senderHeadline) : null),
+      el('div', { class: 'row' },
+        badge(i.label, askBadge(i)),
         badge(show(i.platform)),
-        el('strong', null, i.reason),
-        i.count > 1 ? badge(`x${i.count}`) : null,
-        i.flag ? badge(i.flag, 'bad') : null,
+        i.updates > 1 ? badge(`x${i.updates} updates`) : null,
+        i.flag ? badge(i.group === 'noise' ? 'Flagged by the injection screen' : i.flag, 'bad') : null,
         i.resolved_at ? badge('handled', 'good') : null,
         i.snoozed_until && open ? badge(`snoozed until ${fmtDate(i.snoozed_until)}`) : null),
-      who ? el('p', null, who) : null,
       i.jobTitle ? el('p', { class: 'muted' }, `Job: ${i.jobTitle}`) : null,
-      i.detail ? el('p', null, i.detail) : null,
-      el('p', { class: 'muted' }, `#${i.id} ${fmtDate(i.created_at)}${i.count > 1 ? ` (first ${fmtDate(i.first_at)})` : ''}`),
-      i.threadRef ? el('p', { class: 'muted' }, `Thread: ${i.threadRef}`) : null,
-      i.threadUrl ? el('p', null, el('code', null, i.threadUrl)) : null,
+      body.kind === 'excerpt' ? quote(body.text, body.long) : null,
+      body.kind === 'missing' ? el('p', { class: 'muted' }, body.text) : null,
+      body.kind === 'problem' && body.text ? el('p', null, body.text) : null,
+      i.group === 'noise' && i.detail ? el('p', { class: 'muted' }, i.detail) : null,
+      i.rawText ? flaggedToggle(i.rawText) : null,
+      el('p', null, el('span', { class: 'todo' }, 'What to do: '), i.todo),
+      el('p', { class: 'muted' }, `${ago ? `${ago}, ` : ''}${fmtDate(when)} | #${i.id}${i.count > 1 ? ` (first seen ${fmtDate(i.first_at)})` : ''}`),
+      i.threadUrl ? el('p', { class: 'muted' }, 'Open thread: ', el('code', null, i.threadUrl)) : null,
+      i.threadRef && !i.threadUrl ? el('p', { class: 'muted' }, `Thread: ${i.threadRef} (open it on ${show(i.platform)})`) : null,
       el('div', { class: 'row' },
         i.threadUrl ? button('Copy thread link', () => copy(i.threadUrl, out)) : null,
         open ? button('Mark handled', () => act('/api/escalations/resolve', { ids: i.ids }, 'Marked handled')) : null,
@@ -82,13 +117,14 @@ export async function render({ root, onCleanup }) {
       clear(summary).append(`${c.open} open, ${c.snoozed} snoozed, ${c.resolved} handled. Answer on the platform itself, then mark it handled here.`);
       clear(list);
       if (!r.items.length) list.append(notice('Nothing here.'));
+      const now = new Date();
       let group = null;
       for (const i of r.items) {
         if (i.group !== group) {
           group = i.group;
           list.append(el('h3', null, GROUPS.find(([v]) => v === group)[1]));
         }
-        list.append(card(i));
+        list.append(card(i, now));
       }
     } catch (e) {
       showError(list)(e);

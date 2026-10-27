@@ -662,7 +662,8 @@ Everything built and tested only with fakes or not yet checked against a real si
     unfitted model, a load error or a truncated verdict blocks the read or send (it never passes
     the text through); in a dry run the text continues marked unscreened and never triggers an
     automatic reply; escalations are stored with a `[blocked: <code>]` or `[unscreened]` prefix,
-    never dropped. There is one active classifier and no fallback chain.
+    never dropped (a blocked one keeps a code-built safe summary, and its raw text goes only to the owner-only
+    `escalations.raw_text` column, which no MCP tool returns). There is one active classifier and no fallback chain.
 14. The kill switch always wins: `.jobber/STOP`, `JOBBER_KILL=1` or a `halt_flags` row for `all`,
     `linkedin` or `naukri` stops the LinkedIn and Naukri tools and the scheduler for that
     scope; `.jobber/STOP` and `JOBBER_KILL=1` are additionally enforced by the PreToolUse hook

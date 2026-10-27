@@ -35,8 +35,8 @@ describe('renderEscalations', () => {
     expect(text.indexOf('Replies and needs you')).toBeLessThan(text.indexOf('Platform and tool problems'));
     expect(text.indexOf('Platform and tool problems')).toBeLessThan(text.indexOf('Flagged'));
     expect(text).toContain('4 open');
-    expect(text).toMatch(/#4 .*linkedin_reply_needed/);
-    expect(text).toMatch(/#2 x2 .*layout_drift/);
+    expect(text).toMatch(/#4 linkedin (Recruiter inquiry|Wants a reply)/);
+    expect(text).toMatch(/#2 x2 .*Platform problem: layout_drift/);
     expect(text).toContain('ids 1,2');
     expect(text).toContain('[blocked: injection_suspected]');
     expect(text).toContain('2h ago');
@@ -148,7 +148,7 @@ describe('runEscalationDigest', () => {
     expect(t).toMatch(/1 reply\/needs you/);
     expect(t).toMatch(/61 platform/);
     expect(t).toMatch(/1 flagged/);
-    expect(t.split('\n')[3]).toContain('linkedin_reply_needed');
+    expect(t.split('\n')[3]).toContain('Recruiter inquiry');
     expect(t).toMatch(/and \d+ more/);
     expect(t).not.toMatch(/[<>]/);
     expect(t.length).toBeLessThanOrEqual(3500);

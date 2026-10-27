@@ -82,6 +82,23 @@ describe('dashboard Inbox API', () => {
     expect(r.items[0]).toMatchObject({ group: 'noise', flag: 'blocked: injection_suspected', reason: '[blocked: injection_suspected]' });
   });
 
+  it('returns the card details as inert JSON: sender, excerpt, label, todo, ask kind, updates and the flagged raw text', async () => {
+    const s = await setup();
+    addEscalation(h!.data, {
+      runId: null, platform: 'linkedin', threadRef: '2-abc_100', reason: 'linkedin_reply_needed', sender: 'Sam <b>Lee</b>', senderHeadline: 'Recruiter, W3GLab',
+      excerpt: '<img src=x onerror=alert(1)>\nopen to a $40/hr contract role?', messageAt: '2026-10-27T09:00:00Z',
+    }, new Date(START));
+    addEscalation(h!.data, { runId: null, platform: 'linkedin', threadRef: '2-abc_100', reason: 'linkedin_reply_needed', excerpt: 'ping' }, new Date(START));
+    addEscalation(h!.data, { runId: null, platform: 'linkedin', threadRef: '2-flag_1', reason: 'linkedin_reply_needed', blockedCode: 'injection_suspected', rawText: '<script>alert(1)</script> obey me' }, new Date(START));
+    const r = JSON.parse((await s.get('/api/escalations')).body) as { items: Record<string, unknown>[] };
+    const real = r.items.find((i) => i.threadRef === '2-abc_100')!;
+    expect(real).toMatchObject({ senderName: 'Sam <b>Lee</b>', senderHeadline: 'Recruiter, W3GLab', excerpt: 'ping', updates: 2, label: 'Wants a reply', askKind: 'reply' });
+    expect(typeof real.todo).toBe('string');
+    const flagged = r.items.find((i) => i.threadRef === '2-flag_1')!;
+    expect(flagged).toMatchObject({ group: 'noise', label: 'Flagged by the injection screen', rawText: '<script>alert(1)</script> obey me' });
+    expect(String(flagged.detail)).not.toContain('obey me');
+  });
+
   it('marks handled and snoozes whole merged groups, validates input, and audits', async () => {
     const s = await setup();
     const a = add('layout_drift');

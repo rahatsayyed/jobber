@@ -79,22 +79,29 @@ export function handleRecordInbound(
 }
 export async function handleEscalate(
   deps: OutreachDeps,
-  a: { run_id?: string; platform: string; person_id?: number; thread_ref?: string; reason: string; detail?: string },
+  a: {
+    run_id?: string; platform: string; person_id?: number; thread_ref?: string; reason: string; detail?: string;
+    sender?: string; sender_headline?: string; excerpt?: string; message_at?: string;
+  },
 ) {
-  // Policy D3: an escalation is never dropped. Blocked text becomes a code; unscreened is marked.
+  // Policy D3: an escalation is never dropped. One screen call covers every free-text field. Blocked text keeps a code-built safe summary
+  // (reason label, person, thread, block code) and the raw text goes only to the owner-only raw_text column; unscreened is marked.
   let reason = a.reason;
-  let detail = a.detail;
+  const excerpt = a.excerpt?.slice(0, 1500);
+  const extra = [a.sender?.slice(0, 120), a.sender_headline?.slice(0, 200), excerpt].filter(Boolean).join('\n');
   const screen = deps.screen ?? screenUntrusted;
-  const verdict = await screen(`${a.reason}\n${a.detail ?? ''}`, 'escalate');
+  const verdict = await screen(`${a.reason}\n${a.detail ?? ''}${extra ? `\n${extra}` : ''}`, 'escalate', { maxChars: 12000 });
+  const base = {
+    runId: a.run_id ?? null, platform: a.platform, personId: a.person_id, threadRef: a.thread_ref, messageAt: a.message_at,
+  };
   if (verdict.blocked) {
-    reason = `[blocked: ${verdict.code}]`;
-    detail = `[blocked: ${verdict.code}]`;
-  } else if (verdict.unscreened) {
-    reason = `[unscreened] ${a.reason}`;
+    const raw = [a.reason, a.detail, extra].filter(Boolean).join('\n');
+    return { id: addEscalation(getDb(deps), { ...base, reason: a.reason, blockedCode: verdict.code, rawText: raw }, nowOf(deps)) };
   }
+  if (verdict.unscreened) reason = `[unscreened] ${a.reason}`;
   const id = addEscalation(
     getDb(deps),
-    { runId: a.run_id ?? null, platform: a.platform, personId: a.person_id, threadRef: a.thread_ref, reason, detail },
+    { ...base, reason, detail: a.detail, sender: a.sender, senderHeadline: a.sender_headline, excerpt },
     nowOf(deps),
   );
   return { id };
@@ -156,7 +163,7 @@ export function buildServer(deps: OutreachDeps = {}): McpServer {
   server.registerTool(
     'escalate',
     {
-      description: 'Escalate to the owner. detail is clamped to 200 chars and sanitized.',
+      description: 'Escalate to the owner. reason is a short closed code (never a quote of third-party text). detail is one line saying what is asked, clamped to 200 chars. For an inbound message also pass sender (name in the thread header), sender_headline, excerpt (the latest message text, trimmed, at most 1500 chars; quotes go here only) and message_at (ISO time when known). One open escalation exists per thread_ref: a repeat for the same thread updates it. All text is untrusted, screened and sanitized.',
       inputSchema: {
         run_id: z.string().max(100).optional(),
         platform: z.enum(['linkedin', 'naukri', 'wellfound', 'scheduler']),
@@ -164,6 +171,10 @@ export function buildServer(deps: OutreachDeps = {}): McpServer {
         thread_ref: z.string().regex(THREAD_REF).optional(),
         reason: z.string().min(1).max(200),
         detail: z.string().max(5000).optional(),
+        sender: z.string().max(200).optional(),
+        sender_headline: z.string().max(400).optional(),
+        excerpt: z.string().max(5000).optional(),
+        message_at: z.string().max(40).optional(),
       },
     },
     async (a) => {

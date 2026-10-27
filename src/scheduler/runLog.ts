@@ -92,6 +92,13 @@ export function migrateSchedulerTables(db: Db): void {
   // Owner snooze from the dashboard Inbox: an open escalation with a future snoozed_until is hidden from the open list.
   const escCols = new Set((db.prepare('PRAGMA table_info(escalations)').all() as { name: string }[]).map((c) => c.name));
   if (!escCols.has('snoozed_until')) db.exec('ALTER TABLE escalations ADD COLUMN snoozed_until TEXT');
+  // Inbox details (additive; old rows keep NULLs and still render): who wrote, what they said, what they want, and how often it was seen.
+  // raw_text holds third-party text the input screen blocked or flagged; it is never returned by any MCP tool.
+  const added: Array<[string, string]> = [
+    ['sender_name', 'TEXT'], ['sender_headline', 'TEXT'], ['message_excerpt', 'TEXT'], ['message_at', 'TEXT'], ['ask_kind', 'TEXT'],
+    ['thread_url', 'TEXT'], ['seen_count', 'INTEGER NOT NULL DEFAULT 1'], ['updated_at', 'TEXT'], ['raw_text', 'TEXT'],
+  ];
+  for (const [name, type] of added) if (!escCols.has(name)) db.exec(`ALTER TABLE escalations ADD COLUMN ${name} ${type}`);
 }
 
 export function startRun(

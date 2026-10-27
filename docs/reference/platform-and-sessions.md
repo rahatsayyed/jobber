@@ -134,7 +134,12 @@ platform and tool problems second, `[blocked: ...]`, `[unscreened]` and injectio
 flags. Identical rows are merged for display only (`xN`, nothing is deleted); Mark handled sets `resolved_at` on
 every merged row and Snooze sets `escalations.snoozed_until`. The LinkedIn thread link is
 `https://www.linkedin.com/messaging/thread/<thread_ref>/`, shown as text with a Copy button, never as an anchor;
-no URL is built for other platforms. Escalation text is untrusted: cleaned in `src/outreach/escalations.ts`, shown
+no URL is built for other platforms. Each Inbox card is one conversation: `outreach.escalate` takes `sender`, `sender_headline`,
+`excerpt` (latest message, up to 1500 chars) and `message_at`, keeps ONE open row per `(platform, thread_ref)` (a repeat updates it and
+bumps `seen_count`, shown as "x N updates"), and code derives `ask_kind` (recruiter_inquiry, interview_slot, salary, question, reply, other).
+The card shows sender, headline, the ask label, the quoted excerpt, relative and absolute time, a code-built what-to-do line and the
+actions; rows from before these columns show "Details not captured". Telegram and `/escalations` show sender, headline and the first
+140 chars of the excerpt, never the raw flagged text. Escalation text is untrusted: cleaned in `src/outreach/escalations.ts`, shown
 with `textContent`, one plain line in Telegram. Nothing here can answer a third party: the owner replies on the
 platform itself. Owner step: the `read_only` permission set must list `Bash(npx tsx scripts/status.ts escalations)`
 for `/escalations` to run in the hunt window (the set is owner-managed; the agent does not edit it).

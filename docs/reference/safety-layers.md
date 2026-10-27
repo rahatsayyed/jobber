@@ -48,7 +48,9 @@ gates and that the engine re-verifies against the live page. Layers, outermost f
    continues with the result marked `classifier=unscreened`, while `injection_suspected` and
    `classifier_truncated` verdicts still block (`src/safety/screen.ts`), and an automatic reply
    (`mayAutoReply`) is never allowed on an unscreened result; an escalation
-   is never dropped: it is stored with a `[blocked: <code>]` or `[unscreened]` prefix. The
+   is never dropped: it is stored with a `[blocked: <code>]` or `[unscreened]` prefix; a blocked one keeps a code-built safe summary
+   (reason label, person, thread, block code) and its raw text goes only to `escalations.raw_text`, which no MCP tool returns and
+   which the dashboard shows only behind a "Show flagged text" button. The
    launcher refuses to start any profile whose classifier is not ready (`src/platform/launchCheck.ts`,
    exit 3 `classifier not ready`); the legacy `config/classifier.pin.json` is removed. Each MCP
    process (`linkedin`, `naukri`, `wellfound`, `outreach`) loads its own copy of the model on first use (about

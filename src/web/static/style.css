@@ -52,6 +52,13 @@ table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
 th { color: var(--muted); font-weight: 600; }
 
+.inbox-card { margin: 8px 0; }
+.inbox-card .sender { font-weight: 700; font-size: 1.05rem; }
+.inbox-card .todo { font-weight: 600; }
+.quote { margin: 6px 0; padding: 8px 12px; border-left: 3px solid var(--line); background: var(--card); white-space: pre-wrap; overflow-wrap: anywhere; }
+.quote.clamped { max-height: 7.5em; overflow: hidden; }
+.quote.flagged { border-left-color: var(--bad); }
+
 .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 0.8rem; }
 .badge.good { color: var(--good); border-color: var(--good); }
 .badge.bad { color: var(--bad); border-color: var(--bad); }

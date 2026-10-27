@@ -19,6 +19,8 @@ import type { Tuning } from './tuning.js';
 import { NO_DIALOG_MAX_ATTEMPTS, markStaleSending, noDialogAttempts, pauseContact } from '../linkedin/touches.js';
 import { employerGate } from '../linkedin/employer.js';
 import { gateInput } from '../safety/inputGate.js';
+import { cleanText } from '../dash/clean.js';
+import { deriveAskKind, linkedinThreadUrl } from './escalations.js';
 import type { Platform } from '../scheduler/control.js';
 
 type Db = BetterSqlite3.Database;
@@ -377,7 +379,13 @@ export function recordInbound(
 
 export function addEscalation(
   db: Db,
-  e: { runId: string | null; platform: string; personId?: number; threadRef?: string; reason: string; detail?: string },
+  e: {
+    runId: string | null; platform: string; personId?: number; threadRef?: string; reason: string; detail?: string;
+    /** Sender as shown in the thread header, their headline, the latest inbound message text and its time (all untrusted). */
+    sender?: string; senderHeadline?: string; excerpt?: string; messageAt?: string;
+    /** Set by the caller when the input screen blocked the text: the row then carries a code-built safe summary and the raw text goes only to raw_text. */
+    blockedCode?: string; rawText?: string;
+  },
   now: Date,
 ): number {
   if (!ESC_PLATFORMS.includes(e.platform)) throw new Error('invalid platform');
@@ -390,32 +398,83 @@ export function addEscalation(
     const pause = /follow[_ ]only/.test(r) ? 'follow_only' : /employer|mismatch/.test(r) ? 'employer_mismatch' : null;
     if (pause) pauseContact(db, e.personId, pause, now);
   }
-  let reason = gateText(e.reason ?? '', 200).text;
+  const person = e.personId === undefined
+    ? undefined
+    : (db.prepare('SELECT name, headline, company FROM people WHERE id = ?').get(e.personId) as { name: string | null; headline: string | null; company: string | null } | undefined);
+  const klass = e.threadRef === undefined
+    ? null
+    : ((db.prepare('SELECT klass FROM inbound_messages WHERE platform = ? AND thread_ref = ? ORDER BY id DESC LIMIT 1').get(e.platform, e.threadRef) as { klass: string } | undefined)?.klass ?? null);
+  const threadUrl = linkedinThreadUrl(e.platform, e.threadRef ?? null);
+  let reason: string;
   let detail: string | null = null;
-  if (e.detail !== undefined && e.detail !== null) {
-    const d = gateText(e.detail, MAX_DETAIL_CHARS);
-    detail = d.text;
-    if (d.flags.length) reason = `${reason} [input flags: ${d.flags.join(',')}]`.slice(0, 300);
+  let excerpt: string | null = null;
+  let rawText: string | null = null;
+  let sender: string | null = null;
+  let headline: string | null = null;
+  let askKind = deriveAskKind({ klass, reason: e.reason ?? '', detail: e.detail, excerpt: e.excerpt ?? e.rawText });
+  if (e.blockedCode !== undefined) {
+    // The screen blocked third-party text. Everything shown is built here from closed values and the people table; the blocked text is kept
+    // only in raw_text (owner dashboard, collapsed). The `[blocked: <code>]` prefix stays, so the row is still flagged and never dropped.
+    const closed = /^[a-z][a-z0-9_:.-]{2,59}$/i.test(String(e.reason ?? '')) ? String(e.reason).toLowerCase() : askKind === 'other' ? 'flagged_text' : askKind;
+    reason = `[blocked: ${e.blockedCode}] ${closed}`.slice(0, 200);
+    const who = person?.name ? ` from ${cleanText(person.name, 80)}${person.company ? ` (${cleanText(person.company, 60)})` : ''}` : '';
+    detail = `Text on ${e.platform}${who} was held by the input screen (${e.blockedCode}); ask: ${askKind}.${threadUrl ? ` Thread: ${threadUrl}` : ''}`.slice(0, 500);
+    rawText = cleanText(String(e.rawText ?? ''), 1500) || null;
+  } else {
+    reason = gateText(e.reason ?? '', 200).text;
+    if (e.detail !== undefined && e.detail !== null) {
+      const d = gateText(e.detail, MAX_DETAIL_CHARS);
+      detail = d.text;
+      if (d.flags.length) reason = `${reason} [input flags: ${d.flags.join(',')}]`.slice(0, 300);
+    }
+    if (e.excerpt) excerpt = gateText(cleanText(e.excerpt, 1500), 1500).text;
+  }
+  if (e.blockedCode === undefined) {
+    sender = e.sender ? cleanText(e.sender, 120) : null;
+    headline = e.senderHeadline ? cleanText(e.senderHeadline, 200) : null;
+  }
+  sender ||= person?.name ? cleanText(person.name, 120) : null;
+  headline ||= person?.headline ? cleanText(person.headline, 200) : person?.company ? cleanText(person.company, 120) : null;
+  if (e.blockedCode === undefined) askKind = deriveAskKind({ klass, reason, detail, excerpt });
+  const parsedAt = e.messageAt ? Date.parse(e.messageAt) : NaN;
+  const messageAt = Number.isFinite(parsedAt) ? new Date(parsedAt).toISOString() : null;
+  const at = now.toISOString();
+
+  // One OPEN escalation per conversation: a repeat for the same thread updates that row instead of adding a duplicate.
+  const open = e.threadRef === undefined
+    ? undefined
+    : (db.prepare('SELECT id, message_excerpt FROM escalations WHERE platform = ? AND thread_ref = ? AND resolved_at IS NULL ORDER BY id DESC LIMIT 1').get(e.platform, e.threadRef) as { id: number; message_excerpt: string | null } | undefined);
+  if (open) {
+    // A genuinely new message brings a snoozed conversation back; the same message reported again does not.
+    const fresh = excerpt !== null && excerpt !== open.message_excerpt;
+    db.prepare(
+      `UPDATE escalations SET reason = ?, detail = COALESCE(?, detail), message_excerpt = COALESCE(?, message_excerpt), message_at = COALESCE(?, message_at),
+         sender_name = COALESCE(?, sender_name), sender_headline = COALESCE(?, sender_headline), ask_kind = ?, thread_url = COALESCE(?, thread_url),
+         raw_text = COALESCE(?, raw_text), seen_count = COALESCE(seen_count, 1) + 1, updated_at = ?,
+         snoozed_until = CASE WHEN ? THEN NULL ELSE snoozed_until END WHERE id = ?`,
+    ).run(reason, detail, excerpt, messageAt, sender, headline, askKind, threadUrl, rawText, at, fresh ? 1 : 0, open.id);
+    return open.id;
   }
   const res = db
     .prepare(
-      `INSERT INTO escalations (run_id, platform, person_id, thread_ref, reason, detail, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO escalations (run_id, platform, person_id, thread_ref, reason, detail, created_at, sender_name, sender_headline, message_excerpt, message_at, ask_kind, thread_url, seen_count, updated_at, raw_text)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
     )
-    .run(e.runId, e.platform, e.personId ?? null, e.threadRef ?? null, reason, detail, now.toISOString());
+    .run(e.runId, e.platform, e.personId ?? null, e.threadRef ?? null, reason, detail, at, sender, headline, excerpt, messageAt, askKind, threadUrl, at, rawText);
   return Number(res.lastInsertRowid);
 }
 
 export function listOpenEscalations(
   db: Db,
   limit: number,
-): Array<{ id: number; platform: string; reason: string; detail: string | null; created_at: string }> {
+): Array<{ id: number; platform: string; thread_ref: string | null; reason: string; detail: string | null; created_at: string; seen_count: number }> {
+  // The columns are listed one by one on purpose: raw_text (blocked third-party text) and the message excerpt are never returned to an agent.
   return db
     .prepare(
-      `SELECT id, platform, reason, detail, created_at FROM escalations
+      `SELECT id, platform, thread_ref, reason, detail, created_at, COALESCE(seen_count, 1) AS seen_count FROM escalations
         WHERE resolved_at IS NULL ORDER BY id ASC LIMIT ?`,
     )
-    .all(clampLimit(limit)) as Array<{ id: number; platform: string; reason: string; detail: string | null; created_at: string }>;
+    .all(clampLimit(limit)) as Array<{ id: number; platform: string; thread_ref: string | null; reason: string; detail: string | null; created_at: string; seen_count: number }>;
 }
 
 /** Sets paused_reason 'replied' so no cadence continues. Company pause stays the stage-based rule. */
