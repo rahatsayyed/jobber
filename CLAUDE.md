@@ -223,6 +223,7 @@ When a message arrives (Telegram or CLI), match it against this table first. **T
 | `/working` | Run exactly `npx tsx scripts/status.ts working` and print its output unchanged. Nothing else. |
 | `/health` | Run exactly `npx tsx scripts/status.ts health` and print its output unchanged. Nothing else. |
 | `/sources` | Run exactly `npx tsx scripts/status.ts sources` and print its output unchanged (the per-source status table). Nothing else. |
+| `/escalations` | Run exactly `npx tsx scripts/status.ts escalations` and print its output unchanged (open escalations that need the owner: replies and recruiter inquiries first, platform problems next, flagged last; also the dashboard Inbox tab and a batched Telegram digest from code, see "Platform and sessions"). Lists only: the owner answers on the platform and marks items handled in the dashboard. Nothing else. |
 
 Reply-handling known limits: reply matching uses thread id, exact sender address, non-shared
 domain, then company mention. The classifier is a proposal generator, not an oracle: measured on
@@ -252,6 +253,7 @@ Message-ID is exposed, so recipient-side threading is not guaranteed).
    working - Queue, halts and funnel snapshot
    health - Platform and pipeline health
    sources - Per-source status table
+   escalations - Open escalations that need you
    ```
 
 As Phase 2/3 get implemented, update BotFather's command list and this table — do not leave

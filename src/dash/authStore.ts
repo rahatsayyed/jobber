@@ -17,7 +17,8 @@ export type AuditKind =
   | 'logout' | 'session_expired' | 'reauth_ok' | 'chat_prepare' | 'chat_send' | 'chat_reject'
   | 'token_created' | 'token_rotated' | 'token_login_ok' | 'token_login_denied' | 'mode_changed'
   | 'settings_env_apply' | 'settings_file_apply' | 'settings_rollback' | 'settings_reject'
-  | 'apply_prepare' | 'apply_request' | 'apply_reject';
+  | 'apply_prepare' | 'apply_request' | 'apply_reject'
+  | 'escalation_resolve' | 'escalation_snooze';
 
 const NOTE_MAX = 200;
 const ID_HINT_MAX = 12;

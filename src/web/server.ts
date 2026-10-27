@@ -37,6 +37,7 @@ import { buildConfigView } from '../dash/configView.js';
 import { loadStatic } from './page.js';
 import { createSettingsRoutes, type SettingsDeps } from './settingsRoutes.js';
 import { createApplyRoutes, type ApplyDeps } from './applyRoutes.js';
+import { createEscalationRoutes, type EscalationDeps } from './escalationRoutes.js';
 import { applySecurityHeaders, HttpError, json, readJson, securityHeaders, type Ctx } from './router.js';
 
 export interface WebDeps {
@@ -64,6 +65,7 @@ export interface WebDeps {
   staticDir?: string; // default: ./static next to this file
   settings?: SettingsDeps; // dashboard settings editor (plan 8H); routes exist only when set. Never given to chat.
   apply?: ApplyDeps; // /apply request box write; absent: confirm answers a refusal and nothing is written
+  escalations?: EscalationDeps; // Inbox actions (mark handled, snooze); absent: both answer a write failure and nothing is written
 }
 
 export { STATUS_COMMANDS };
@@ -508,6 +510,13 @@ export function createWebServer(deps: WebDeps): http.Server {
     reauthUrl: authMode === 'token' ? '/#/login?reauth=1' : '/auth/login?reauth=1',
     root: deps.root ?? process.cwd(), processEnv: deps.env ?? process.env,
   })) add(r.method, r.pattern, false, r.fn);
+
+  const noWriter = (): never => {
+    throw new Error('no escalation writer configured');
+  };
+  for (const r of createEscalationRoutes(deps.escalations ?? { resolve: noWriter, snooze: noWriter }, { auth: deps.auth, data: deps.data, now })) {
+    add(r.method, r.pattern, false, r.fn);
+  }
 
   if (deps.settings) {
     for (const r of createSettingsRoutes(deps.settings, { auth: deps.auth, now, authMode, reauthMaxAgeSec })) {

@@ -1,7 +1,7 @@
 // src/web/static/app.js
 // Hash router, top nav and view lifecycle. Views export render(ctx); ctx.onCleanup(fn) registers a teardown
 // (polling timers) that runs before the next view renders.
-import { getSettingsMeta, post, session } from './api.js';
+import { get, getSettingsMeta, post, session } from './api.js';
 import { button, clear, el, showError } from './dom.js';
 import * as login from './views/login.js';
 import * as overview from './views/overview.js';
@@ -15,10 +15,11 @@ import * as config from './views/config.js';
 import * as audit from './views/audit.js';
 import * as chat from './views/chat.js';
 import * as apply from './views/apply.js';
+import * as inbox from './views/inbox.js';
 import * as settings from './views/settings.js';
 
 const VIEWS = [
-  ['overview', 'Overview', overview], ['jobs', 'Jobs', jobs], ['people', 'People', people], ['mail', 'Mail', mail],
+  ['overview', 'Overview', overview], ['inbox', 'Inbox', inbox], ['jobs', 'Jobs', jobs], ['people', 'People', people], ['mail', 'Mail', mail],
   ['outcomes', 'Outcomes', outcomes], ['sessions', 'Sessions', sessions], ['runs', 'Runs', runs],
   ['config', 'Config', config], ['settings', 'Settings', settings], ['audit', 'Audit', audit], ['chat', 'Chat', chat],
   ['apply', 'Apply', apply],
@@ -103,10 +104,20 @@ async function signOut() {
   location.hash = '#/login';
 }
 
+let inboxOpen = 0; // open escalations, shown as a count on the Inbox tab
+
+async function refreshInboxCount() {
+  try {
+    inboxOpen = (await get('/api/escalations/count')).open || 0;
+  } catch {
+    inboxOpen = 0; // the tab still works without the badge
+  }
+}
+
 function nav(active) {
   const items = VIEWS.filter(([n]) => (n !== 'chat' || (current && current.chatEnabled)));
   return el('nav', { 'aria-label': 'Sections' },
-    items.map(([n, label]) => button(label, () => { location.hash = `#/${n}`; }, {
+    items.map(([n, label]) => button(n === 'inbox' && inboxOpen > 0 ? `${label} (${inboxOpen})` : label, () => { location.hash = `#/${n}`; }, {
       class: n === active ? 'tab active' : 'tab', 'aria-current': n === active ? 'page' : null,
     })),
     button('Sign out', signOut, { class: 'tab' }));
@@ -142,6 +153,8 @@ async function route() {
   rememberTab(name);
   refreshBanner(false);
   if (bannerTimer === null) bannerTimer = setInterval(() => { if (!document.hidden) refreshBanner(true); }, 60000);
+  await refreshInboxCount();
+  if (token !== renderToken) return;
   const main = el('main', { id: 'main', 'aria-live': 'polite' });
   root.append(el('header', null, el('h1', null, 'Jobber'), nav(name)), main);
   try {

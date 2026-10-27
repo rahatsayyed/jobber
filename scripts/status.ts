@@ -9,10 +9,12 @@ import { renderSummary, summarize } from '../src/layout/summary.js';
 import { buildSnapshot } from '../src/status/snapshot.js';
 import { renderHealth, renderLimits, renderWorking } from '../src/status/render.js';
 import { buildSourceRows, DEFAULT_WINDOW_HOURS, renderSources } from '../src/status/sources.js';
+import { listEscalations } from '../src/outreach/escalations.js';
+import { renderEscalations } from '../src/status/escalations.js';
 import { renderRunToolCounts, summarizeRunLog } from '../src/status/runs.js';
 import { defaultRun, listWindows } from '../src/platform/tmux.js';
 
-const USAGE = 'usage: npm run status -- <limits|working|health|json|layout|sources|runs>';
+const USAGE = 'usage: npm run status -- <limits|working|health|json|layout|sources|runs|escalations>';
 const cmd = process.argv[2];
 
 // Read-only layout memory summary (plan 8B). Works without a database; halts are read when one exists.
@@ -33,7 +35,7 @@ function layoutStatus(): number {
 }
 
 async function main(): Promise<number> {
-  if (!cmd || !['limits', 'working', 'health', 'json', 'layout', 'sources', 'runs'].includes(cmd)) {
+  if (!cmd || !['limits', 'working', 'health', 'json', 'layout', 'sources', 'runs', 'escalations'].includes(cmd)) {
     console.error(USAGE);
     return 2;
   }
@@ -56,6 +58,12 @@ async function main(): Promise<number> {
         if (!row.log_path || !existsSync(row.log_path)) console.log(`run ${row.id}: no log file recorded`);
         else console.log(renderRunToolCounts(row.id, summarizeRunLog(readFileSync(row.log_path, 'utf8'))));
       }
+      return 0;
+    }
+    if (cmd === 'escalations') {
+      const now = new Date();
+      const r = listEscalations(db, { now });
+      console.log(renderEscalations(r.items, r.counts, now));
       return 0;
     }
     if (cmd === 'sources') {

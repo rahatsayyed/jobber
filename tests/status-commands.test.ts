@@ -4,6 +4,15 @@ import { resolveSet, type RawSets } from '../src/platform/permissions.js';
 
 const sets = JSON.parse(readFileSync('config/permission-sets.json', 'utf8')) as RawSets;
 
+describe('escalations command', () => {
+  it('/escalations command file names only its own script call, and the script accepts it', () => {
+    const text = readFileSync('.claude/commands/escalations.md', 'utf8');
+    expect(text.match(/^allowed-tools:\s*(.+)$/m)?.[1].trim()).toBe('Bash(npx tsx scripts/status.ts escalations:*)');
+    expect(text).toMatch(/^description:/m);
+    expect(readFileSync('scripts/status.ts', 'utf8')).toContain("'escalations'");
+  });
+});
+
 describe('status commands', () => {
   for (const sub of ['limits', 'working', 'health']) {
     it(`/${sub} command file names only its own script call`, () => {

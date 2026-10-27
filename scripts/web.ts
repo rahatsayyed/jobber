@@ -22,6 +22,7 @@ import { loadDesktopKeys, keysFailureMessage, oidcConfigForDesktop, type Desktop
 import { openReadOnlyDb } from '../src/dash/readDb.js';
 import { dbPath } from '../src/dbPath.js';
 import { enqueueManualRequest } from '../src/manual/webRequest.js';
+import { resolveEscalations, snoozeEscalations, withEscalationWriter } from '../src/outreach/escalations.js';
 
 let maskLiterals: string[] = [];
 process.on('unhandledRejection', (reason) => {
@@ -178,6 +179,10 @@ async function main(): Promise<number> {
       sessionsToShow: [cfg.session],
       secrets: allSecrets,
       apply: { enqueue: (url, force, now) => enqueueManualRequest(dbPath(), url, force, now) },
+      escalations: {
+        resolve: (ids, now) => withEscalationWriter(dbPath(), (w) => resolveEscalations(w, ids, now)),
+        snooze: (ids, until, now) => withEscalationWriter(dbPath(), (w) => snoozeEscalations(w, ids, until, now)),
+      },
       chat: {
         enabled: cfg.chatEnabled,
         session: cfg.session,

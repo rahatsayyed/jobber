@@ -120,3 +120,21 @@ to the exact strings in `bash_exact`, no wildcard; the guide never reads secrets
 and `npm start` / `npm stop` (aliases of `npm run up` / `npm run down`; doctor gate, kill-switch refusal with exit 4, ordered start of
 bridge, windows, scheduler and dashboard; exit 1 when a start failed, after printing the full table; `up -- --status` is read-only; the final lines show the dashboard auth mode and, in token mode with no token stored, `npm run dashboard -- token`). `up` never changes the
 mode: it prints `MODE: DRY RUN` or `MODE: LIVE` from `.env`, and the owner alone flips the flags.
+
+**Escalation inbox.** Every `outreach.escalate` row (inbound LinkedIn, Naukri and Wellfound replies and recruiter
+inquiries, salary or slot asks, platform and tool problems, custom-note quota, apply rows that need the owner)
+shows in three places, all from code with zero LLM calls. (1) The dashboard Inbox tab (route `#/inbox`, open count
+on the tab; filters platform, group and open, snoozed or handled; actions Mark handled and Snooze, written through
+one short-lived connection like the Apply box, under the normal session, CSRF and Origin checks). (2) `/escalations`
+(`npm run status -- escalations`), a read-only list with ids. (3) A Telegram digest from the scheduler daemon: at
+most one message per 15 minutes, outside quiet hours, counts per group, the top lines and the Inbox link
+(`scheduler_state` keys `esc_digest_last_at` and `esc_digest_last_id`; the link is the origin of
+`WEB_OIDC_REDIRECT_URI`, else the local `WEB_PORT`). Order: real replies, recruiter inquiries and apply rows first,
+platform and tool problems second, `[blocked: ...]`, `[unscreened]` and injection-suspect rows last, shown as
+flags. Identical rows are merged for display only (`xN`, nothing is deleted); Mark handled sets `resolved_at` on
+every merged row and Snooze sets `escalations.snoozed_until`. The LinkedIn thread link is
+`https://www.linkedin.com/messaging/thread/<thread_ref>/`, shown as text with a Copy button, never as an anchor;
+no URL is built for other platforms. Escalation text is untrusted: cleaned in `src/outreach/escalations.ts`, shown
+with `textContent`, one plain line in Telegram. Nothing here can answer a third party: the owner replies on the
+platform itself. Owner step: the `read_only` permission set must list `Bash(npx tsx scripts/status.ts escalations)`
+for `/escalations` to run in the hunt window (the set is owner-managed; the agent does not edit it).

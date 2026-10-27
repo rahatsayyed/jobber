@@ -50,6 +50,8 @@ export interface DriverDeps {
   codePass?: () => Promise<CodePassResult>;
   /** Run the mail drip lane (src/scheduler/mailDrip.ts) beside the wakes in the daemon loop. Absent or false: no drip. */
   mailDrip?: boolean;
+  /** One tick of the owner's escalation digest (src/scheduler/escalationDigest.ts), run every 30 seconds beside the wakes in the daemon loop. Never throws. Absent: no digest. */
+  escalationDigest?: () => Promise<void>;
   /** Stage `manual`, run in code before the model session when a manual request is pending: ingests the requests (src/manual/ingest.ts). Never throws into the wake. */
   manualIngest?: (runId: string) => Promise<unknown>;
   /** After every wake that launched a session: reports finished manual requests to the owner (src/manual/report.ts finalizeManualRequests). */
@@ -632,6 +634,18 @@ export async function wakeOnce(
   return r;
 }
 
+async function digestLoop(d: DriverDeps, stop: { stopped: boolean }): Promise<void> {
+  while (!stop.stopped) {
+    try {
+      await d.escalationDigest?.();
+    } catch {
+      // the digest never stops the scheduler
+    }
+    if (stop.stopped) break;
+    await d.sleep(SLICE_MS);
+  }
+}
+
 export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Promise<void> {
   if (d.env.SCHEDULER_ENABLED === 'false') {
     await say(d, { level: 'info', title: 'scheduler disabled (SCHEDULER_ENABLED=false), exiting' });
@@ -660,6 +674,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     }
   };
   let drip: Promise<void> | null = null;
+  let digest: Promise<void> | null = null;
   try {
     // Orphans from a previous daemon: kill their windows BEFORE marking them crashed, unless a live
     // run lock shows another process owns a run right now (then leave its rows untouched).
@@ -698,6 +713,8 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     let stopSeen = stopPresent();
     // The mail drip lane runs beside the wakes (its own `mail` lock), so a long wake never pauses the slow email trickle.
     drip = deps.mailDrip ? dripLoop(deps, stop) : null;
+    // New escalations reach the owner on Telegram even while a long wake runs, so the digest has its own loop too.
+    digest = deps.escalationDigest ? digestLoop(deps, stop) : null;
     // A manual request must not wait for the next random wake: every slice (30 s) the daemon checks for a pending one and wakes early,
     // outside quiet hours, at most once per backoff. The regular wake schedule (`next`) is left alone.
     let manualBackoffUntil = 0;
@@ -749,6 +766,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
   } finally {
     stop.stopped = true; // the drip loop (if any) exits on the same flag
     if (drip) await drip;
+    if (digest) await digest;
     try {
       dl.release();
     } catch {

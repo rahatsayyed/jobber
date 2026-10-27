@@ -29,6 +29,7 @@ import { parseSchedulerArgs } from '../src/scheduler/args.js';
 import { ingestManualRequests } from '../src/manual/ingest.js';
 import { finalizeManualRequests } from '../src/manual/report.js';
 import { telegramNotifier } from '../src/platform/notify.js';
+import { escalationDigestTick } from '../src/scheduler/escalationDigest.js';
 
 const projectRoot = resolve(process.cwd());
 const root = join(projectRoot, '.jobber');
@@ -142,6 +143,8 @@ async function main(): Promise<void> {
     codePass: () => runCodePass({ db, now, projectRoot }),
     // The slow email lane beside the wakes (src/scheduler/mailDrip.ts); only the daemon runs it, never --once or --now.
     mailDrip: args.mode === 'daemon',
+    // New escalations go to the owner's Telegram as a batched digest (at most one per 15 minutes); the daemon only.
+    escalationDigest: args.mode === 'daemon' ? escalationDigestTick(db, env, quietFromConfig(cfg), now) : undefined,
     manualIngest: (runId) => ingestManualRequests(db, { runId, now }),
     manualReport: async (runStatus) => {
       const tg = telegramNotifier(env);

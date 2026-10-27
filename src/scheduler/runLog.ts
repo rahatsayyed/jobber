@@ -89,6 +89,9 @@ export function migrateSchedulerTables(db: Db): void {
   const cols = new Set((db.prepare('PRAGMA table_info(scheduler_runs)').all() as { name: string }[]).map((c) => c.name));
   if (!cols.has('parent_run_id')) db.exec('ALTER TABLE scheduler_runs ADD COLUMN parent_run_id TEXT');
   if (!cols.has('session_id')) db.exec('ALTER TABLE scheduler_runs ADD COLUMN session_id TEXT');
+  // Owner snooze from the dashboard Inbox: an open escalation with a future snoozed_until is hidden from the open list.
+  const escCols = new Set((db.prepare('PRAGMA table_info(escalations)').all() as { name: string }[]).map((c) => c.name));
+  if (!escCols.has('snoozed_until')) db.exec('ALTER TABLE escalations ADD COLUMN snoozed_until TEXT');
 }
 
 export function startRun(
