@@ -397,10 +397,10 @@ never skipped.
   `src/promoted.ts`, not env keys): two kinds of `db.list_unscored_jobs` call, both returning full Job
   rows plus `apply_class` and `channels`. (a) `kind: "matched"`, `limit: 15`, `match_threshold`: jobs
   scored at or above the threshold that never got an outreach row, marked `already_matched` with their
-  stored score, not windowed (a job may be older than 24 hours), at most `PREP_OFFER_LIMIT` (4) hand-backs
-  each, counted in `jobs.prep_offers`; they skip the matcher but still pass `gates.apply_vetoes`, then go
-  to the prepare pool. (b) `kind: "unscored"`: EVERY unscored job saved in the last 24 hours
-  (`PIPELINE_WINDOW_HOURS`, on `jobs.created_at`), not a fixed count, read in pages of 20
+  stored score, not windowed (a job may be older than the window), at most `PREP_OFFER_LIMIT` (4) hand-backs
+  each (`PREP_OFFER_LIMIT_APPLY`, 12, for an apply-capable job, Naukri and Wellfound included), counted in `jobs.prep_offers`; they skip the matcher but still pass `gates.apply_vetoes`, then go
+  to the prepare pool. (b) `kind: "unscored"`: EVERY unscored job saved in the last 7 days
+  (`PIPELINE_WINDOW_HOURS`, 168, on `jobs.created_at`), not a fixed count, read in pages of 20
   (`PIPELINE_LIST_PAGE`) at an `offset` equal to the number of jobs read so far that still have no stored
   score (normally 0 once a wave was saved, because a job leaves the list when its match is saved), and
   never more than 400 in all (`PIPELINE_MAX_JOBS_PER_WAKE_CEILING`, a safety ceiling; if the wake runs
@@ -412,7 +412,7 @@ never skipped.
   `repeat_contact` (the same company and title already has an outreach, connection or application on
   file within 90 days, `REPEAT_CONTACT_DAYS`); neither status is offered again. Priority (manual)
   jobs come first: a row with `priority: 1` (an owner request) is returned ahead of the rest, in the
-  matched call and on the first unscored page, outside the 24-hour window, the duplicate rule and
+  matched call and on the first unscored page, outside the window, the duplicate rule and
   `prep_offers`, at most 10 per wake (`MANUAL_PRIORITY_PER_WAKE`, the rest wait); the 90-day
   repeat-contact guard still applies to them in code (such a job is marked `repeat_contact`, and the
   owner report says so) unless the request was forced, and a forced row carries `force_prepare: true`.
@@ -687,7 +687,7 @@ Everything built and tested only with fakes or not yet checked against a real si
     provider's outreach stays held until the owner approves it (`npm run providers -- approve <id>`).
     The agent never sets these flags or approves a provider itself.
 18. A manual request (`/apply <url>`, `npm run apply:request`, the dashboard Apply tab) only changes ORDER and
-    scope: its jobs are taken first, outside the 24-hour window and the same-posting dedupe. It never skips a
+    scope: its jobs are taken first, outside the 7-day window and the same-posting dedupe. It never skips a
     gate: `gates.apply_vetoes`, hard stops, the fact gate, the output gates, the classifier screen, every
     daily ceiling, quiet hours, the send window, halts, the kill switch and the dry run apply to
     its jobs exactly as to any other. The 90-day repeat-contact guard also applies unless the owner passed

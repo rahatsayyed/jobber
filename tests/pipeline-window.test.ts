@@ -23,11 +23,11 @@ const ids = (db: Db, o: Parameters<typeof listUnscoredJobs>[1] = {}): string[] =
 const status = (db: Db, id: string): string | null => (db.prepare('SELECT status FROM jobs WHERE id = ?').get(id) as { status: string | null }).status;
 
 describe('pipeline window', () => {
-  it('offers a job saved 23 hours ago and not one saved 25 hours ago', () => {
+  it('offers a job saved an hour inside the window and not one an hour outside it (seven days)', () => {
     const db = openDb(':memory:');
-    add(db, 'in', { company: 'A', at: ago(23) });
-    add(db, 'out', { company: 'B', at: ago(25) });
-    expect(PIPELINE_WINDOW_HOURS).toBe(24);
+    add(db, 'in', { company: 'A', at: ago(PIPELINE_WINDOW_HOURS - 1) });
+    add(db, 'out', { company: 'B', at: ago(PIPELINE_WINDOW_HOURS + 1) });
+    expect(PIPELINE_WINDOW_HOURS).toBe(168);
     expect(ids(db, { kind: 'unscored' })).toEqual(['in']);
     expect(countDue(db, NOW, loadTuning({}), {}).unmatchedJobs).toBe(1);
   });
@@ -142,7 +142,7 @@ describe('pipeline repeated contact', () => {
   });
   it('a skipped queue row is not a contact', () => {
     const db = openDb(':memory:');
-    add(db, 's', { at: agoDays(3) }); // unscored and outside the window, so neither a duplicate source nor offered itself
+    add(db, 's', { at: agoDays(10) }); // unscored and outside the window, so neither a duplicate source nor offered itself
     db.prepare("INSERT INTO outreach_queue (job_id, status) VALUES ('s', 'skipped')").run();
     add(db, 'n', { source: 'lever', apply_url: 'https://jobs.lever.co/acme/5', at: ago(1) });
     expect(ids(db, { kind: 'unscored' })).toEqual(['n']);
@@ -164,7 +164,7 @@ describe('pipeline repeated contact', () => {
     db.prepare("INSERT INTO outreach_queue (job_id, status, email_status) VALUES ('done', 'queued', 'sent')").run();
     add(db, 'dup1', { source: 'lever', apply_url: 'https://jobs.lever.co/acme/7', at: ago(1) });
     add(db, 'real', { company: 'Other', at: ago(1) });
-    add(db, 'stale', { company: 'Third', at: ago(30) });
+    add(db, 'stale', { company: 'Third', at: ago(PIPELINE_WINDOW_HOURS + 6) });
     expect(countDue(db, NOW, loadTuning({}), {}).unmatchedJobs).toBe(1);
     expect(status(db, 'dup1')).toBeNull();
   });

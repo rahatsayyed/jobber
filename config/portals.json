@@ -16,7 +16,7 @@
     "weworkremotely": { "enabled": false }
   },
   "title_filter": {
-    "positive": ["frontend", "front-end", "front end", "full stack", "full-stack", "fullstack", "react", "javascript", "typescript", "node", "web developer", "software engineer", "software development engineer", "sde", "word:mern", "word:ui engineer", "word:ui developer"],
+    "positive": ["frontend", "front-end", "front end", "full stack", "full-stack", "fullstack", "react", "javascript", "typescript", "node", "web developer", "software engineer", "software developer", "software development engineer", "sde", "word:web engineer", "product engineer", "founding engineer", "word:mern", "word:ui engineer", "word:ui developer"],
     "negative": ["word:staff", "principal", "director", "manager", "head of", "vp", "word:intern", "word:interns", "word:internship", "word:sales", "account executive", "lead:marketing", "recruiter", "lead:designer", "data scientist", "lead:android", "lead:ios", "lead:qa"]
   },
   "location_filter": {

@@ -1,6 +1,6 @@
 // src/scheduler/due.ts
 import type BetterSqlite3 from 'better-sqlite3';
-import { MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT } from '../db.js';
+import { MATCH_FAIL_LIMIT } from '../db.js';
 import { planPipelineWork } from '../pipelineWork.js';
 import { followupMode, listApprovedFollowups, listFollowupCandidates } from '../followups.js';
 import { manualPlatformTasks, manualRequestsPending } from '../manual/requests.js';
@@ -145,7 +145,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
   try {
     const raw = env.MATCH_THRESHOLD?.trim();
     const matchThreshold = raw && /^\d+$/.test(raw) && Number(raw) <= 100 ? Number(raw) : 60;
-    const work = planPipelineWork(db, { now, failLimit: MATCH_FAIL_LIMIT, matchThreshold, prepOfferLimit: PREP_OFFER_LIMIT });
+    const work = planPipelineWork(db, { now, failLimit: MATCH_FAIL_LIMIT, matchThreshold });
     unmatchedJobs = work.offer.length;
     matchedAwaitingPrepare = work.matchedOffer.length;
   } catch {

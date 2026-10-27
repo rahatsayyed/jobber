@@ -271,7 +271,8 @@ describe('list_unscored_jobs', () => {
   it('offers matched jobs without an outreach row first, marked already_matched, at most PREP_OFFER_LIMIT times', () => {
     const db = openDb(':memory:');
     add(db, 'fresh', { at: '2026-10-14 10:00:00' });
-    add(db, 'pending', { at: '2026-10-15 01:00:00' }); db.prepare("UPDATE jobs SET score = 74 WHERE id = 'pending'").run();
+    // no apply path (unknown host): the plain PREP_OFFER_LIMIT applies; apply-capable jobs get PREP_OFFER_LIMIT_APPLY (tests/prep-offers.test.ts)
+    add(db, 'pending', { at: '2026-10-15 01:00:00', source: 'remotive', apply_url: 'https://acme.example/j' }); db.prepare("UPDATE jobs SET score = 74 WHERE id = 'pending'").run();
     add(db, 'low'); db.prepare("UPDATE jobs SET score = 59 WHERE id = 'low'").run();
     add(db, 'queued'); db.prepare("UPDATE jobs SET score = 80 WHERE id = 'queued'").run();
     db.prepare("INSERT INTO outreach_queue (job_id, status) VALUES ('queued', 'queued')").run();
@@ -394,7 +395,7 @@ describe('list_unscored_jobs', () => {
     const big = run(plan({ due: due({ unmatchedJobs: 5000, inboxLastCheckedMinAgo: 1 }) }));
     expect(big.stages?.find((s) => s.kind === 'pipeline')?.quota).toBe(PIPELINE_MAX_JOBS_PER_WAKE_CEILING);
     expect(PIPELINE_MAX_JOBS_PER_WAKE_CEILING).toBe(400);
-    expect(PIPELINE_WINDOW_HOURS).toBe(24);
+    expect(PIPELINE_WINDOW_HOURS).toBe(168);
   });
   it('P1 names the tool, the cap and apply_class; the direct-call list names every tool used', () => {
     const t = pipelineLines({ matchThreshold: 60, sendLimit: 1, targetRegions: 'T', followupsAutonomous: false }).join('\n');
@@ -402,7 +403,7 @@ describe('list_unscored_jobs', () => {
     expect(t).toContain('`db.list_unscored_jobs({kind: "unscored", limit: 20, offset: 0})`');
     expect(t).toContain('already_matched');
     expect(t).toContain('apply_class');
-    expect(t).toContain('EVERY unscored job saved in the last 24 hours');
+    expect(t).toContain('EVERY unscored job saved in the last 168 hours');
     expect(t).toContain('KEEP PAGING');
     expect(t).toContain('fewer than 20 rows');
     expect(t).toContain('never reading more than 400 jobs');

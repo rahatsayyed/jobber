@@ -1,8 +1,28 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { classifyApplyUrl } from './apply/registry.js';
+import { channelsFor } from './lib/channels.js';
 
-/** The pipeline stage considers every job saved in the last PIPELINE_WINDOW_HOURS hours (jobs.created_at, UTC), not a fixed count. */
-export const PIPELINE_WINDOW_HOURS = 24;
+/**
+ * The pipeline stage considers every unscored job saved in the last PIPELINE_WINDOW_HOURS hours (jobs.created_at, UTC), not a fixed count.
+ * Seven days, not one: wakes are skipped or stopped by usage limits, quiet hours and halts for a day or more, and a job that ages out of
+ * the window unscored is lost for good (57 Naukri jobs were, in one week). A stale posting is still caught by the posting-date veto.
+ */
+export const PIPELINE_WINDOW_HOURS = 168;
+
+/** Times a matched job without an outreach row is handed back before it is dropped (a job with no contact and no profile never gets a row). */
+export const PREP_OFFER_LIMIT = 4;
+/**
+ * The same, for a job with an apply path (apply-capable per channelsFor, Naukri and Wellfound included). Its apply channel needs no
+ * contact lookup, so using up the plain limit (the prepare cap deferred it, or a tool was down) must not drop it. Still bounded, so a
+ * job whose prepare keeps failing cannot hold a slot forever.
+ */
+export const PREP_OFFER_LIMIT_APPLY = 12;
+
+/** The hand-back limit of one matched job: PREP_OFFER_LIMIT_APPLY when it is apply-capable, else PREP_OFFER_LIMIT. */
+export function prepOfferLimitFor(job: { source: string | null; apply_url: string | null }): number {
+  const apply = channelsFor({ source: job.source ?? '', apply_url: job.apply_url }).find((c) => c.channel === 'apply');
+  return apply?.eligible ? PREP_OFFER_LIMIT_APPLY : PREP_OFFER_LIMIT;
+}
 /** Hard safety ceiling on unscored jobs one wake reads, so a runaway source cannot blow the token or wall budget. */
 export const PIPELINE_MAX_JOBS_PER_WAKE_CEILING = 400;
 /** A job whose company and title already has an outreach, connection or application on file this recent is not offered again. */
@@ -31,6 +51,7 @@ interface Cand {
   company_key: string | null;
   title_key: string | null;
   rid: number;
+  prep_offers: number;
 }
 
 /** SQLite `datetime('now')` format (UTC, no zone), comparable as text with jobs.created_at. */
@@ -45,7 +66,6 @@ export interface PipelineWorkOpts {
   failLimit: number;
   /** With a threshold, matched jobs without an outreach row are also checked for the repeated-contact rule. */
   matchThreshold?: number;
-  prepOfferLimit?: number;
 }
 
 export interface PipelineWork {
@@ -68,17 +88,17 @@ export function planPipelineWork(db: BetterSqlite3.Database, o: PipelineWorkOpts
   const cutoff = sqlTime(new Date(now.getTime() - (o.windowHours ?? PIPELINE_WINDOW_HOURS) * 3600_000));
   const cutoffRepeat = sqlTime(new Date(now.getTime() - REPEAT_CONTACT_DAYS * 86400_000));
   const cutoffDup = sqlTime(new Date(now.getTime() - DUPLICATE_LOOKBACK_DAYS * 86400_000));
-  const cols = 'id, source, apply_url, created_at, company_key, title_key, rowid AS rid';
+  const cols = 'id, source, apply_url, created_at, company_key, title_key, prep_offers, rowid AS rid';
   const fresh = db.prepare(
     `SELECT ${cols} FROM jobs
       WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ? AND created_at >= ? AND priority = 0 AND ${PIPELINE_SKIP_SQL}`,
   ).all(o.failLimit, cutoff) as Cand[];
   const matched = typeof o.matchThreshold === 'number'
-    ? db.prepare(
+    ? (db.prepare(
       `SELECT ${cols} FROM jobs
         WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ? AND priority = 0 AND ${PIPELINE_SKIP_SQL}
           AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id)`,
-    ).all(o.matchThreshold, o.prepOfferLimit ?? 4) as Cand[]
+    ).all(o.matchThreshold, PREP_OFFER_LIMIT_APPLY) as Cand[]).filter((r) => r.prep_offers < prepOfferLimitFor(r))
     : [];
   const repeatStmt = db.prepare(
     `SELECT j2.id AS id FROM jobs j2

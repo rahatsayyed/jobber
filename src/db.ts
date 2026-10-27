@@ -8,7 +8,7 @@ import { companyKey, repostCount, titleIdentityKey } from './reposts.js';
 import { isApplyBlockedSource, isHeldSource } from './lib/discoverOnly.js';
 import { classifyApplyUrl } from './apply/registry.js';
 import { channelsFor, type ChannelVerdict } from './lib/channels.js';
-import { applyPipelineSkips, applyPriorityRepeats, JOB_STATUS_REPEAT_CONTACT, planPipelineWork, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_SKIP_SQL, PIPELINE_WINDOW_HOURS, sqlTime } from './pipelineWork.js';
+import { applyPipelineSkips, applyPriorityRepeats, JOB_STATUS_REPEAT_CONTACT, planPipelineWork, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_SKIP_SQL, PIPELINE_WINDOW_HOURS, PREP_OFFER_LIMIT, PREP_OFFER_LIMIT_APPLY, prepOfferLimitFor, sqlTime } from './pipelineWork.js';
 import { laneOrder } from './promoted.js';
 import { UNVERIFIED_ADDRESS, isVerifiedAddress } from './lib/verifiedAddress.js';
 import { migrateOutreachTables } from './outreach/schema.js';
@@ -1076,8 +1076,7 @@ export interface UnscoredJob extends Job {
 /** Most owner-submitted (priority) jobs one wake's pipeline takes; the rest stay pending for the next wake. */
 export const MANUAL_PRIORITY_PER_WAKE = 10;
 
-/** Times a matched job without an outreach row is handed back before it is dropped (a job with no contact and no profile never gets a row). */
-export const PREP_OFFER_LIMIT = 4; // was 2: with a prepare cap per wake a matched job can wait a few wakes for a slot
+export { PREP_OFFER_LIMIT, PREP_OFFER_LIMIT_APPLY } from './pipelineWork.js';
 
 /**
  * The wake pipeline's input. First the jobs scored at or above `matchThreshold`, not excluded, with no outreach row yet (at most
@@ -1100,11 +1099,11 @@ export function listUnscoredJobs(
   // as a scored job, or an earlier or ATS-hosted job of the batch) or a repeated contact (outreach, connection or application on
   // file within 90 days) is marked in jobs.status ('duplicate', 'repeat_contact') and not offered. Rows are never deleted.
   const now = opts.now ?? new Date();
-  applyPipelineSkips(db, planPipelineWork(db, { now, failLimit: MATCH_FAIL_LIMIT, matchThreshold: opts.matchThreshold, prepOfferLimit: PREP_OFFER_LIMIT }).skips);
+  applyPipelineSkips(db, planPipelineWork(db, { now, failLimit: MATCH_FAIL_LIMIT, matchThreshold: opts.matchThreshold }).skips);
   const windowStart = sqlTime(new Date(now.getTime() - PIPELINE_WINDOW_HOURS * 3600_000));
   const pendingLimit = kind === 'matched' ? limit : Math.max(1, Math.floor(limit / 2));
   type Row = Record<string, string | number | null>;
-  const cols = 'id, source, title, company, url, apply_url, description, posted_at, score, COALESCE(promoted, 0) AS promoted, poster_url, apply_email, company_confidence';
+  const cols = 'id, source, title, company, url, apply_url, description, posted_at, score, prep_offers, COALESCE(promoted, 0) AS promoted, poster_url, apply_email, company_confidence';
   // Owner-submitted jobs (priority > 0) come first, outside the normal cap (at most MANUAL_PRIORITY_PER_WAKE per call, the rest wait).
   // They bypass the window, the same-posting dedupe and prep_offers; the 90-day repeat-contact guard still applies (see applyPriorityRepeats).
   // A scored one is offered only while it has no outreach row and (it met the threshold or its request is forced).
@@ -1124,12 +1123,13 @@ export function listUnscoredJobs(
   const rest = Math.max(0, limit - prio.length);
   const pendingLimitRest = rest === 0 ? 0 : kind === 'matched' ? rest : Math.max(1, Math.floor(rest / 2));
   const pending: Row[] = typeof opts.matchThreshold === 'number' && kind !== 'unscored' && pendingLimitRest > 0
-    ? db.prepare(
+    ? (db.prepare(
       `SELECT ${cols} FROM jobs
         WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ? AND priority = 0 AND ${PIPELINE_SKIP_SQL}
           AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id)
         ORDER BY score DESC, created_at ASC, rowid ASC`,
-    ).all(opts.matchThreshold, PREP_OFFER_LIMIT) as Row[]
+    ).all(opts.matchThreshold, PREP_OFFER_LIMIT_APPLY) as Row[])
+      .filter((r) => (r.prep_offers as number) < prepOfferLimitFor({ source: r.source as string | null, apply_url: r.apply_url as string | null }))
     : [];
   // Promoted jobs take at most 40 percent of the carry-over batch, first; the rest follow in the normal order (score desc).
   const pendingTaken = laneOrder(pending.map((r) => ({ r, promoted: r.promoted === 1 })), pendingLimitRest).slice(0, pendingLimitRest).map((x) => x.r);
