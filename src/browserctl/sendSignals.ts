@@ -47,3 +47,23 @@ export function errorSignalOf(before: RawTree, after: RawTree): ErrorSignal {
   }
   return found;
 }
+
+// The Premium upsell shown when the monthly quota of personalized invite notes is used up (never seen live: word lists, not selectors).
+/** A control of the upsell (lower case): "Try Premium", "Retry Premium", "Reactivate Premium". */
+export const NOTE_QUOTA_CONTROL_WORDS: readonly string[] = ['premium'];
+/** The upsell text names personalized notes together with one of NOTE_QUOTA_TEXT_WORDS. */
+export const NOTE_QUOTA_PERSONAL_WORDS: readonly string[] = ['personalized', 'personalised'];
+export const NOTE_QUOTA_TEXT_WORDS: readonly string[] = ['limit', 'quota', 'premium'];
+
+/** Is a dialog of this tree the note-quota upsell? A dialog with a Premium control, or dialog text on personalized notes with a limit, quota or Premium word. */
+export function noteQuotaModal(tree: RawTree): boolean {
+  for (const d of tree.nodes) {
+    if (d.role !== 'dialog') continue;
+    const inside = tree.nodes.filter((x) => x.dialog === d.n);
+    const controls = inside.filter((x) => x.role === 'button' || x.role === 'link').map((x) => x.name.toLowerCase());
+    if (controls.some((c) => NOTE_QUOTA_CONTROL_WORDS.some((w) => c.includes(w)))) return true;
+    const text = [d.name, ...inside.map((x) => (x.role === 'text' ? x.text : x.role === 'heading' ? x.name : ''))].join('\n').toLowerCase();
+    if (NOTE_QUOTA_PERSONAL_WORDS.some((p) => text.includes(p)) && NOTE_QUOTA_TEXT_WORDS.some((w) => text.includes(w))) return true;
+  }
+  return false;
+}

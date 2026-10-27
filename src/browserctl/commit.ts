@@ -10,6 +10,7 @@
 import { saveConnection } from '../db.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
 import { extractDialogRecipientName, extractProfileSlug, namesPlausiblyMatch, verifyProfileUrl } from '../linkedin/verify.js';
+import { markNoteQuotaExhausted } from '../linkedin/noteQuota.js';
 import { classifyUrl, profileKeyOf } from '../linkedin/urls.js';
 import { finishTouch, finishTouchSentNoNote, releaseNoDialog } from '../linkedin/touches.js';
 import { loadOutreachConfig } from '../outreach/config.js';
@@ -23,7 +24,7 @@ import type { ArmedIntent } from './intent.js';
 import { OPEN_CEILING_MS } from './locatorDialogs.js';
 import { bindTouchRelease } from './intent.js';
 import type { LiveNode, RawTree } from './snapshot.js';
-import { CONFIRM_POLL_MS, CONFIRM_POLL_STEP_MS, errorSignalOf, type ErrorSignal } from './sendSignals.js';
+import { CONFIRM_POLL_MS, CONFIRM_POLL_STEP_MS, errorSignalOf, noteQuotaModal, type ErrorSignal } from './sendSignals.js';
 import { connectionStateOf, directSendSeen } from './topCard.js';
 
 export interface CommitInput {
@@ -38,7 +39,26 @@ export interface CommitInput {
   redescribe: () => Promise<LiveNode | null>;
 }
 
-const GENERIC_HEADS = /^(messaging|messages|new message|conversation|chat|compose|compose message|write a message)$/i;
+/** The code of a platform-level stop: the monthly quota of personalized invite notes is used up (not a failure of that person). */
+export const NOTE_QUOTA_CODE = 'custom_note_limit_reached';
+/** The only button a note-less invite (arm kind connect_plain) may click inside the invite dialog. */
+const PLAIN_SEND_BUTTON = 'send without a note';
+
+/**
+ * The note-quota upsell is on screen: close it, remember the quota is used up (until the 1st of next month, IST), release any
+ * still-armed touch as failed (disarm) and tell the operator to switch to connect_plain. Never a failure of that person.
+ */
+export async function stopOnNoteQuota(deps: Pick<EngineDeps, 'db' | 'now' | 'intents'>, page: BcPage): Promise<EngineResult> {
+  await page.press('Escape').catch(() => undefined);
+  markNoteQuotaExhausted(deps.db, deps.now());
+  deps.intents.disarm('linkedin');
+  return {
+    ok: false, status: 'failed', code: NOTE_QUOTA_CODE,
+    reason: 'LinkedIn showed its Premium upsell for personalized notes: the monthly note quota is used up, nothing was sent. Re-arm this same person ONCE with kind connect_plain (no note); use connect_plain for every later invite until the quota resets.',
+  };
+}
+
+const GENERIC_HEADS =/^(messaging|messages|new message|conversation|chat|compose|compose message|write a message)$/i;
 
 const sameTarget = (a: LiveNode, b: LiveNode): boolean =>
   a.role === b.role && a.name === b.name && a.dialogName === b.dialogName && (a.dialog === undefined) === (b.dialog === undefined);
@@ -205,6 +225,10 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
       openStep = true;
     } else {
       if (effectiveDialogKind(tree, dlg, live.dialogName) !== wantKind) return abort('wrong_dialog', 'dialog is not the expected kind', { close: true });
+      // A note-less invite clicks only "Send without a note": never Send, Send invitation, Add a note or a typed field.
+      if (intent.kind === 'connect_plain' && normName(live.name) !== PLAIN_SEND_BUTTON) {
+        return abort('plain_invite_send_only', 'a note-less invite may only click "Send without a note"', { close: true });
+      }
       let shown = wantKind === 'invite' ? inviteDialogName(tree, dlg) : messageDialogName(tree, dlg);
       // The live invite dialog names nobody. The recipient is then the person of the profile the engine's own Connect click
       // opened it on: same page (checked above), top card name read now or, when the modal hides it, captured before the click.
@@ -323,7 +347,7 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
       if (surface === 'dialog') {
         keepArmed = true;
         deps.intents.markInviteOpened(platform, { profileKey: intent.profileKey!, name: topCardName });
-        return { ok: true, code: 'dialog_opened', reason: 'invite dialog is open; type the armed note and click Send' };
+        return { ok: true, code: 'dialog_opened', reason: intent.kind === 'connect_plain' ? 'invite dialog is open; click "Send without a note" (nothing is typed)' : 'invite dialog is open; type the armed note and click Send' };
       }
       if (surface === 'page') { keepArmed = true; return { ok: true, code: 'invite_page_opened', reason: 'LinkedIn opened an invite page; take a snapshot and continue only if it shows the armed person' }; }
       // No dialog, but the page now shows the invitation went out (Pending in the top card, or an "Invitation sent"
@@ -369,6 +393,11 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
     }
     const { dialogGone, strong, signal } = seen;
     const facts = { strong, network: confirmedNet, dialogGone, signal, polledMs };
+    // The note-quota upsell is a platform fact, not a refusal of this person (and its text would read as a generic limit).
+    if (cls === 'commit_connect_send' && noteQuotaModal(after)) {
+      release('failed');
+      return stopOnNoteQuota(deps, page);
+    }
     if (signal !== 'none') {
       // A refusal on the page: never sent, the modal is closed. A limit message is a platform signal (the operator stops the task).
       await page.press('Escape').catch(() => undefined);
@@ -378,7 +407,10 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
       return { ok: false, status: 'failed', code, reason: `clicked, but the page shows ${signal === 'limit' ? 'a limit message; nothing was sent, stop this task' : 'an error message; nothing was sent'}${diagNote(dgE)}`, ...(intent.touchId !== undefined ? { touch_id: intent.touchId } : {}) };
     }
     if (dialogGone && (strong || confirmedNet)) {
-      if (cls !== 'commit_accept_invite' && intent.touchId !== undefined) finishTouch(db, intent.touchId, 'sent', now());
+      if (cls !== 'commit_accept_invite' && intent.touchId !== undefined) {
+        if (intent.kind === 'connect_plain') finishTouchSentNoNote(db, intent.touchId, now());
+        else finishTouch(db, intent.touchId, 'sent', now());
+      }
       try {
         saveConnection(db, {
           job_id: intent.jobId === undefined ? null : String(intent.jobId), company: intent.company ?? null, profile_url: profileUrl,

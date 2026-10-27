@@ -8,7 +8,8 @@ import { profileKeyOf } from '../linkedin/urls.js';
 import { naukriJobIdOfUrl, threadRefOfUrl } from '../naukri/page.js';
 import { threadRefOfUrl as wellfoundThreadRefOfUrl, wellfoundJobIdOfUrl } from '../wellfound/page.js';
 import { recordDryRun } from '../safety/dryRun.js';
-import { commitAction, effectiveDialogKind, profileHeadingName } from './commit.js';
+import { commitAction, effectiveDialogKind, profileHeadingName, stopOnNoteQuota } from './commit.js';
+import { noteQuotaModal } from './sendSignals.js';
 import { dialogWithoutControls, writeCommitDiag } from './diag.js';
 import { applyCounted, commitNaukri, observeApplyConfirmation } from './commitNaukri.js';
 import { commitWellfound, observeWellfoundApplyConfirmation, wellfoundApplyCounted } from './commitWellfound.js';
@@ -224,13 +225,21 @@ export function createEngine(deps: EngineDeps): Engine {
       if (res.code !== 'no_armed_intent') refs.invalidate();
       return res;
     }
+    // "Add a note" is the one control a note-less invite (connect_plain) must never use: it opens the note flow.
+    const addNote = P.platform === 'linkedin' && live.dialog !== undefined && normName(live.name) === 'add a note';
+    if (addNote && deps.intents.peek('linkedin')?.kind === 'connect_plain') {
+      return refused('plain_invite_no_note', 'the armed invite is note-less: click "Send without a note", never "Add a note"');
+    }
     recordFree(op, cls, live);
     await pace(page);
     const k = killReason(deps);
     if (k) return { ok: false, code: k.startsWith('kill switch') ? 'killed' : 'halted', reason: k };
     try { await act(); } catch { return refused('action_failed', `${op} failed`); }
     refs.invalidate();
-    return finish(page, op === 'click' || op === 'click_at' ? 'clicked' : op === 'press_key' ? 'pressed' : 'typed');
+    const done = await finish(page, op === 'click' || op === 'click_at' ? 'clicked' : op === 'press_key' ? 'pressed' : 'typed');
+    // The Premium upsell after "Add a note": the monthly note quota is used up.
+    if (addNote && done.ok && tree && noteQuotaModal(tree)) return stopOnNoteQuota(deps, page);
+    return done;
   }
 
   /** Wait for load, then re-walk the tree until the node count is stable across two reads. Bounded, never throws. */

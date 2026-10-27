@@ -9,6 +9,7 @@ import { outputGateContext, preSendGuard, type FactCheck, type Kind } from '../.
 import { finishTouch, pauseContact, personByProfileKey, type PersonRow } from '../../linkedin/touches.js';
 import { isProfileUrl, profileKeyOf } from '../../linkedin/urls.js';
 import { extractExpectedNameFromTitle, extractProfileSlug, namesPlausiblyMatch, verifyProfileUrl } from '../../linkedin/verify.js';
+import { noteQuotaUntil } from '../../linkedin/noteQuota.js';
 import { loadOutreachConfig } from '../../outreach/config.js';
 import { ceilings, haltReason } from '../../outreach/limits.js';
 import { companyPaused } from '../../outreach/people.js';
@@ -24,8 +25,9 @@ import { bindTouchRelease } from '../intent.js';
 import { renderTree, type RawTree } from '../snapshot.js';
 import { connectionStateOf, hasRegions } from '../topCard.js';
 
-export type ArmKind = 'connect_note' | 'role_ask' | 'rapport' | 'referral_ask' | 'followup' | 'feedback' | 'accept';
-export const ARM_KINDS: readonly ArmKind[] = ['connect_note', 'role_ask', 'rapport', 'referral_ask', 'followup', 'feedback', 'accept'];
+/** connect_plain is a note-less invite ("Send without a note"): no text, used while the monthly note quota is used up. */
+export type ArmKind = 'connect_note' | 'connect_plain' | 'role_ask' | 'rapport' | 'referral_ask' | 'followup' | 'feedback' | 'accept';
+export const ARM_KINDS: readonly ArmKind[] = ['connect_note', 'connect_plain', 'role_ask', 'rapport', 'referral_ask', 'followup', 'feedback', 'accept'];
 
 export interface ArmDeps {
   engine: Engine;
@@ -80,7 +82,7 @@ export function statusFromTree(tree: RawTree): { state: 'connected' | 'pending' 
 }
 
 const KIND_TO_GUARD: Record<ArmKind, Kind | null> = {
-  connect_note: 'connect', role_ask: 'role_ask', rapport: 'rapport', referral_ask: 'referral_ask',
+  connect_note: 'connect', connect_plain: 'connect', role_ask: 'role_ask', rapport: 'rapport', referral_ask: 'referral_ask',
   followup: 'followup', feedback: 'feedback', accept: null,
 };
 
@@ -102,7 +104,8 @@ export async function armLinkedinSend(deps: ArmDeps, a: ArmArgs): Promise<ArmRes
   if (typeof a.profile_url !== 'string' || !isProfileUrl(a.profile_url)) return fail('refused', 'bad_url', 'not a LinkedIn profile URL');
 
   const isAccept = a.kind === 'accept';
-  const cls: CommitClass = isAccept ? 'commit_accept_invite' : a.kind === 'connect_note' ? 'commit_connect_send' : 'commit_message_send';
+  const isConnect = a.kind === 'connect_note' || a.kind === 'connect_plain';
+  const cls: CommitClass = isAccept ? 'commit_accept_invite' : isConnect ? 'commit_connect_send' : 'commit_message_send';
   let person: PersonRow;
   let text: string | null = null;
   let dry = deps.cfg.dryRun;
@@ -119,20 +122,25 @@ export async function armLinkedinSend(deps: ArmDeps, a: ArmArgs): Promise<ArmRes
     }
     person = p;
   } else {
-    if (typeof a.text !== 'string') return fail('refused', 'empty_text', 'text is required');
+    const plain = a.kind === 'connect_plain';
+    if (plain && a.text !== undefined) return fail('refused', 'text_not_allowed', 'a note-less invite carries no text');
+    if (!plain && typeof a.text !== 'string') return fail('refused', 'empty_text', 'text is required');
+    if (a.kind === 'connect_note' && noteQuotaUntil(db, now()) !== null) {
+      return fail('refused', 'note_quota_exhausted', 'the monthly quota of invite notes is used up; arm connect_plain (no note) for this person');
+    }
     const g = preSendGuard({
-      db, now: now(), env: deps.env, action: a.kind === 'connect_note' ? 'invite' : 'message', kind: KIND_TO_GUARD[a.kind] as Kind,
-      profileUrl: a.profile_url, text: a.text, jobId: a.job_id ?? null, company: a.company,
+      db, now: now(), env: deps.env, action: isConnect ? 'invite' : 'message', kind: KIND_TO_GUARD[a.kind] as Kind,
+      profileUrl: a.profile_url, text: a.text ?? '', plain, jobId: a.job_id ?? null, company: a.company,
       factCheck: deps.factCheck, styleCfg: deps.styleCfg, cfg: deps.cfg,
     });
     if (!g.ok) return fail(g.status, g.code, g.reason);
-    person = g.person; text = g.text; dry = g.dryRun; touchId = g.touchId; factVerdict = g.factVerdict;
+    person = g.person; text = plain ? null : g.text; dry = g.dryRun; touchId = g.touchId; factVerdict = g.factVerdict;
     liveTouch = !g.dryRun;
   }
 
   // Ceiling read: a spent ceiling refuses at arm (the commit path consumes it right before the click).
   if (!isAccept) {
-    const key = a.kind === 'connect_note' ? 'linkedin_invite' : 'linkedin_message';
+    const key = isConnect ? 'linkedin_invite' : 'linkedin_message';
     const c = ceilings(db, loadOutreachConfig(deps.env), now())[key];
     if (!c.ok) return fail('rate_limited', 'rate_limited', `${c.used} of ${c.limit} today`);
   }
@@ -172,15 +180,15 @@ export async function armLinkedinSend(deps: ArmDeps, a: ArmArgs): Promise<ArmRes
     if (!shown) return fail('refused', 'recipient_name_unverified', 'could not read the profile name');
     if (!namesPlausiblyMatch(person.name ?? '', shown)) return fail('refused', 'recipient_mismatch', 'page shows a different person');
     const st = statusFromTree(tree);
-    if (a.kind === 'connect_note' && st.state !== 'not_connected') return fail('refused', st.state === 'pending' ? 'already_pending' : 'already_connected', `status is ${st.state}`);
-    if (a.kind === 'connect_note') {
+    if (isConnect && st.state !== 'not_connected') return fail('refused', st.state === 'pending' ? 'already_pending' : 'already_connected', `status is ${st.state}`);
+    if (isConnect) {
       // The owner's rule: Connect in the top card, else Connect or Personalize invite in its More menu, else not connectable.
       const cs = connectionStateOf(tree);
       if (cs?.state === 'already_pending') return fail('refused', 'already_pending', cs.reason);
       if (cs?.state === 'not_connectable') return fail('refused', 'not_connectable', cs.reason);
       if (cs?.state === 'check_more') return fail('refused', 'more_not_checked', cs.reason);
     }
-    if (a.kind !== 'connect_note' && st.state !== 'connected') return fail('refused', 'not_connected', `status is ${st.state}; messages need a 1st-degree connection`);
+    if (!isConnect && st.state !== 'connected') return fail('refused', 'not_connected', `status is ${st.state}; messages need a 1st-degree connection`);
   }
 
   // Third-party page text: screen for sending, fail closed.

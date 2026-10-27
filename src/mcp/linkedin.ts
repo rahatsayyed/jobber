@@ -26,6 +26,7 @@ import { loadLayoutConfig, type LayoutConfig } from '../layout/config.js';
 import { createLayoutObserver, resolveRunId } from '../layout/runtime.js';
 import { createEngine, type Engine, type EngineResult } from '../browserctl/act.js';
 import { armLinkedinSend, ARM_KINDS } from '../browserctl/arm/linkedin.js';
+import { noteQuotaUntil } from '../linkedin/noteQuota.js';
 import { BC_KEYS, realBcPage, type BcPage } from '../browserctl/driver.js';
 import { IntentStore } from '../browserctl/intent.js';
 import { treeToRawSnapshot } from '../browserctl/layoutAdapter.js';
@@ -292,6 +293,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
         linkedin_invite: c.linkedin_invite,
         linkedin_message: c.linkedin_message,
         accept: { used: row?.count ?? 0, limit: cfg.maxAcceptsPerDay },
+        notes: { quota_exhausted_until: noteQuotaUntil(d, now())?.toISOString() ?? null },
         session: { ok: s.ok, ...(s.reason ? { reason: s.reason } : {}) },
       });
     }),
@@ -364,7 +366,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   linkedin_wait_for: 'Waits up to 10 s (ms) or until some text appears, then returns a fresh tree. ' + UNTRUSTED,
   linkedin_screenshot: 'EMERGENCY fallback, on unless LINKEDIN_SCREENSHOT=false: PNG of the viewport at most 900px wide, after a snapshot. The pixels are NOT checked by the injection classifier. ' + UNTRUSTED,
   linkedin_click_at: 'Clicks a viewport point (needs LINKEDIN_SCREENSHOT not false, a snapshot and a screenshot at the current epoch). The element under the point is classified exactly like linkedin_click. ' + UNTRUSTED,
-  linkedin_arm_send: 'Arms ONE send intent after every code gate passed (known recipient, employer, style, fact and output gates, ceiling, page and name verification). kind is connect_note, role_ask, rapport, referral_ask, followup, feedback or accept. The send itself is then a linkedin_click (or Enter) on the matching control within 120 s. Dry run when JOBBER_DRY_RUN is true. ' + UNTRUSTED,
+  linkedin_arm_send: 'Arms ONE send intent after every code gate passed (known recipient, employer, style, fact and output gates, ceiling, page and name verification). kind is connect_note, connect_plain (a note-less invite, no text; the only click is "Send without a note"; used once the monthly note quota is used up, connect_note is then refused with note_quota_exhausted), role_ask, rapport, referral_ask, followup, feedback or accept. The send itself is then a linkedin_click (or Enter) on the matching control within 120 s. Dry run when JOBBER_DRY_RUN is true. ' + UNTRUSTED,
   linkedin_close: 'Closes the LinkedIn session, saves session state and releases the lock.',
   linkedin_limits: 'Read-only: halt reason, daily invite and message ceilings, daily accept counter, dry_run flag and session validity (booleans and reasons only).',
   linkedin_layout: 'Read-only: layout memory enforcement mode, the verdict class of the last observed page, and a compact vocabulary-only summary of learned page layouts (no page text).',

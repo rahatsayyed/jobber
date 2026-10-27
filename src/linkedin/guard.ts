@@ -37,6 +37,8 @@ export interface GuardInput {
   styleCfg: StyleConfig;
   cfg: LinkedinConfig;
   callDryRun?: boolean;
+  /** A note-less invite (arm kind connect_plain): no text, so the text, style, fact and output gates do not apply; every other gate does. */
+  plain?: boolean;
 }
 
 export type GuardResult =
@@ -85,6 +87,14 @@ export function preSendGuard(i: GuardInput): GuardResult {
   // too, and before any touch is reserved or ceiling consumed.
   const employer = employerGate(person);
   if (!employer.ok) return refuse(employer.code, employer.reason);
+
+  if (i.plain) {
+    const dry = effectiveDryRun(i.cfg, i.callDryRun);
+    const k = idempotencyKey(i.kind, person.profile_key, '');
+    const r = reserveTouch(i.db, { personId: person.id, kind: i.kind, jobId: i.jobId ?? null, body: '', key: k, now: i.now, dryRun: dry });
+    if (!r.ok) return refuse(r.reason, `touch not reserved: ${r.reason}`);
+    return { ok: true, text: '', person, key: k, dryRun: dry, touchId: r.touchId, factVerdict: 'pass' };
+  }
 
   const text = i.text ?? '';
   if (text.trim().length === 0) return refuse('empty_text', 'text is empty');
