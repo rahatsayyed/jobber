@@ -39,4 +39,15 @@ describe('Next.js dashboard frontend', () => {
     const route = read('app/api/[...path]/route.ts');
     expect(route).toContain('["api", ...(await context.params).path]');
   });
+
+  it('uses light mode by default and ships a persistent, accessible theme toggle', () => {
+    const layout = read('app/layout.tsx');
+    const toggle = read('components/dashboard/theme-toggle.tsx');
+    const styles = read('app/globals.css');
+    expect(layout).toContain('data-theme="light"');
+    expect(layout).toContain('jobber-dashboard-theme');
+    expect(toggle).toContain('aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}');
+    expect(toggle).toContain('window.localStorage.setItem(THEME_KEY, nextTheme)');
+    expect(styles).toContain(':root[data-theme="dark"]');
+  });
 });
