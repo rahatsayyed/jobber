@@ -1,96 +1,36 @@
 import { describe, expect, it } from 'vitest';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
-const ROOT = resolve(process.cwd(), 'src', 'web', 'static');
-function walk(dir: string): string[] {
-  return readdirSync(dir).flatMap((n) => {
-    const p = join(dir, n);
-    return statSync(p).isDirectory() ? walk(p) : [p];
+const ROOT = resolve(process.cwd(), 'apps', 'dashboard', 'src');
+const read = (path: string): string => readFileSync(join(ROOT, path), 'utf8');
+
+describe('Next.js dashboard frontend', () => {
+  it('ships the App Router surface and API proxy', () => {
+    for (const path of [
+      'app/page.tsx', 'app/[section]/page.tsx', 'app/login/page.tsx',
+      'app/api/[...path]/route.ts', 'app/auth/[...path]/route.ts',
+      'lib/dashboard-proxy.ts', 'components/dashboard/dashboard-shell.tsx',
+    ]) expect(existsSync(join(ROOT, path)), path).toBe(true);
   });
-}
-const files = walk(ROOT);
-const read = (p: string) => readFileSync(p, 'utf8');
-const js = files.filter((f) => f.endsWith('.js'));
 
-describe('static frontend lint', () => {
-  it('has the expected files', () => {
-    for (const n of ['index.html', 'style.css', 'app.js', 'api.js', 'dom.js']) expect(existsSync(join(ROOT, n)), n).toBe(true);
-    for (const v of ['login', 'overview', 'jobs', 'people', 'mail', 'outcomes', 'sessions', 'runs', 'config', 'chat', 'audit', 'settings']) {
-      expect(existsSync(join(ROOT, 'views', `${v}.js`)), v).toBe(true);
+  it('does not reintroduce executable markup sinks', () => {
+    const sources = [
+      'components/dashboard/dashboard-shell.tsx', 'components/dashboard/login-panel.tsx',
+      'lib/dashboard-api.ts', 'lib/dashboard-proxy.ts',
+    ].map(read);
+    for (const source of sources) {
+      expect(source).not.toMatch(/dangerouslySetInnerHTML|document\.write|\beval\(|new Function/);
     }
   });
 
-  it('contains no dangerous sinks', () => {
-    const banned = ['innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write', 'eval(', 'new Function',
-      'setTimeout("', "setTimeout('", 'javascript:', '.href =', "setAttribute('href'", 'setAttribute("href"'];
-    for (const f of files) {
-      const t = read(f);
-      for (const b of banned) expect(t.includes(b), `${f} contains ${b}`).toBe(false);
-    }
-  });
-
-  it('index.html is CSP clean and has the shell', () => {
-    const h = read(join(ROOT, 'index.html'));
-    expect(h).toContain('name="viewport"');
-    expect(h).toContain('<div id="app">');
-    expect(h).toContain('<script type="module" src="/app.js"></script>');
-    expect(h).toContain('<link rel="stylesheet" href="/style.css">');
-    for (const m of h.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) expect(m[1].trim()).toBe('');
-    expect(/\sstyle\s*=/i.test(h)).toBe(false);
-    expect(/\son[a-z]+\s*=/i.test(h)).toBe(false);
-  });
-
-  it('every relative import in js resolves to a file', () => {
-    for (const f of js) {
-      for (const m of read(f).matchAll(/(?:import|export)[^'"`;]*?from\s*['"]([^'"]+)['"]|import\s*['"]([^'"]+)['"]/g)) {
-        const spec = m[1] ?? m[2];
-        const target = spec.startsWith('/') ? join(ROOT, spec) : resolve(dirname(f), spec);
-        expect(existsSync(target), `${f} imports ${spec}`).toBe(true);
-      }
-    }
-  });
-
-  it('style.css has dark mode and a max-width query, 16px base', () => {
-    const c = read(join(ROOT, 'style.css'));
-    expect(c).toContain('prefers-color-scheme: dark');
-    expect(c).toMatch(/@media[^{]*max-width/);
-    expect(c).toContain('16px');
-    expect(c).toContain(':focus-visible');
-  });
-
-  it('localStorage only holds a theme or last tab, never tokens', () => {
-    for (const f of js) {
-      for (const line of read(f).split('\n')) {
-        if (!/localStorage/.test(line)) continue;
-        expect(/theme|lastTab/.test(line), `${f}: ${line}`).toBe(true);
-        expect(/csrf|token|cookie|session/i.test(line), `${f}: ${line}`).toBe(false);
-      }
-    }
-  });
-
-  it('login view strips the fragment before any network call and never persists the token', () => {
-    const t = read(join(ROOT, 'views', 'login.js'));
-    const r = t.indexOf('replaceState');
-    expect(r, 'replaceState present').toBeGreaterThan(-1);
-    for (const call of ['postToken(', 'fetch(']) {
-      const i = t.indexOf(call, t.indexOf('export function render'));
-      if (i !== -1) expect(r, `replaceState before ${call}`).toBeLessThan(i);
-    }
-    expect(t.indexOf('postToken(')).toBeGreaterThan(-1);
-    expect(/localStorage|sessionStorage|document\.cookie/.test(t)).toBe(false);
-    expect(/type:\s*['"]password['"]/.test(t)).toBe(true);
-    expect(read(join(ROOT, 'api.js'))).toMatch(/export (async )?function (getAuthMode|postToken)/);
-  });
-
-  it('dom helper has no href in its attribute allowlist and views never pass href', () => {
-    expect(read(join(ROOT, 'dom.js'))).not.toMatch(/['"]href['"]/);
-    for (const f of js) expect(/\bhref\s*:/.test(read(f)), f).toBe(false);
-  });
-
-  it('chat reauth uses the server url and does not hardcode the oidc login path', () => {
-    const t = read(join(ROOT, 'views', 'chat.js'));
-    expect(t.includes('/auth/' + 'login')).toBe(false);
-    expect(t.includes('data.url')).toBe(true);
+  it('keeps the access token transient and uses the authenticated proxy', () => {
+    const login = read('components/dashboard/login-panel.tsx');
+    expect(login).toContain('fetch("/auth/token"');
+    expect(login).not.toMatch(/localStorage|sessionStorage|document\.cookie/);
+    const proxy = read('lib/dashboard-proxy.ts');
+    expect(proxy).toContain('JOBBER_API_ORIGIN');
+    expect(proxy).toContain('getSetCookie');
+    expect(read('../next.config.ts')).toContain('Content-Security-Policy');
   });
 });

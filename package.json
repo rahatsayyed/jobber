@@ -29,6 +29,7 @@
     "status": "tsx scripts/status.ts",
     "layout": "tsx scripts/layout.ts",
     "web": "tsx scripts/web.ts",
+    "web:api": "tsx scripts/web-api.ts",
     "web:next": "npm --prefix apps/dashboard run dev",
     "web:next:build": "npm --prefix apps/dashboard run build",
     "permissions": "tsx scripts/permissions.ts",

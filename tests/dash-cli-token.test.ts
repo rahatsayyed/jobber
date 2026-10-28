@@ -48,7 +48,7 @@ describe('dashboard token / rotate / status', () => {
   it('token creates a hash and prints one URL line with a 43-char token', async () => {
     const h = harness();
     expect(await h.run(['token'])).toBe(0);
-    expect(h.out[0]).toBe('Dashboard access token (shown once, not stored anywhere readable):');
+    expect(h.out[0]).toBe('Next.js dashboard access token (shown once, not stored anywhere readable):');
     expect(h.out[1]).toMatch(/^http:\/\/127\.0\.0\.1:8787\/#token=[A-Za-z0-9_-]{43}$/);
     const db = openAuthStore(h.dbPath);
     expect(tokenStatus(db).set).toBe(true);
@@ -58,16 +58,16 @@ describe('dashboard token / rotate / status', () => {
   it('token and rotate say the server is not started and, when nothing listens, not running right now', async () => {
     const h = harness({ WEB_PORT: '9100' });
     await h.run(['token']);
-    expect(h.out).toContain('This command does not start the dashboard. Start the dashboard: npm run web (or npm run up)');
+    expect(h.out).toContain('This command does not start the Next.js dashboard. Start it with: npm run web (or npm run up)');
     expect(h.out.join('\n')).toContain('the dashboard is not running right now');
     expect(h.probed).toEqual([9100]);
     h.out.length = 0;
     await h.run(['rotate']);
-    expect(h.out.join('\n')).toContain('Start the dashboard: npm run web (or npm run up)');
+    expect(h.out.join('\n')).toContain('Start it with: npm run web (or npm run up)');
     expect(h.out.join('\n')).toContain('not running right now');
     const up = harness({}, true);
     await up.run(['token']);
-    expect(up.out.join('\n')).toContain('Start the dashboard: npm run web (or npm run up)');
+    expect(up.out.join('\n')).toContain('Start it with: npm run web (or npm run up)');
     expect(up.out.join('\n')).not.toContain('not running right now');
   });
   it('uses --port, then WEB_PORT, and never WEB_BIND', async () => {

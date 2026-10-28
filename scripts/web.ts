@@ -1,206 +1,106 @@
-// scripts/web.ts
-// Dashboard runner: thin wiring. All validation lives in src/web/env.ts (pure, unit-tested).
+// Public dashboard launcher. The legacy node server is an internal, loopback-only
+// API; the Next.js application is the only browser-facing dashboard process.
 import { existsSync, readFileSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
-import { randomBytes } from 'node:crypto';
-import { loadOutreachConfig } from '../src/outreach/config.js';
-import { defaultRun, assertClaudePane, sendText } from '../src/platform/tmux.js';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { join } from 'node:path';
 import { parseEnv } from '../src/platform/envFile.js';
-import { secretValuesFromEnv } from '../src/safety/outputGate.js';
-import { validateRunnerConfig, isLoopbackBind } from '../src/web/env.js';
-import { nodeAtomicFs } from '../src/settings/atomic.js';
-import { createPendingSeam } from '../src/settings/pendingRestart.js';
-import { currentMode, fileFlags } from '../src/stack/mode.js';
-import type { EnvSpec } from '../src/settings/types.js';
-import type { SettingsDeps } from '../src/web/settingsRoutes.js';
-import { redactSecrets, startWebServer } from '../src/web/server.js';
-import { openAuthStore, getAllowedAccount, recordAuthMode } from '../src/dash/authStore.js';
-import { allowAccount } from '../src/dash/account.js';
-import { createOidc } from '../src/dash/oidc.js';
-import { tokenStatus } from '../src/dash/accessToken.js';
-import { loadDesktopKeys, keysFailureMessage, oidcConfigForDesktop, type DesktopClient } from '../src/dash/desktopClient.js';
-import { openReadOnlyDb } from '../src/dash/readDb.js';
-import { dbPath } from '../src/dbPath.js';
-import { enqueueManualRequest } from '../src/manual/webRequest.js';
-import { resolveEscalations, snoozeEscalations, withEscalationWriter } from '../src/outreach/escalations.js';
+import { validateRunnerConfig } from '../src/web/env.js';
 
-let maskLiterals: string[] = [];
-process.on('unhandledRejection', (reason) => {
-  try {
-    const msg = String((reason as { message?: unknown })?.message ?? reason).split('\n')[0];
-    console.error(`web: unhandled rejection: ${redactSecrets(msg, maskLiterals).slice(0, 200)}`);
-  } catch {
-    console.error('web: unhandled rejection');
-  }
-});
+const APP_DIR = 'apps/dashboard';
+const STARTUP_TIMEOUT_MS = 20_000;
+const CLEAN_ENV_KEYS = ['HOME', 'PATH', 'TERM', 'LANG', 'TZ'] as const;
 
-async function main(): Promise<number> {
-  const envFile = join(process.cwd(), '.env');
-  const fileEnv = existsSync(envFile) ? parseEnv(readFileSync(envFile, 'utf8')) : {};
-  const env: Record<string, string | undefined> = { ...fileEnv, ...process.env };
-  const secrets = secretValuesFromEnv(env as NodeJS.ProcessEnv);
-  maskLiterals = secrets;
-
-  // Pass 1 without the account requirement: configuration problems are reported before any file is created.
-  const early = validateRunnerConfig(env, { accountStored: true });
-  if (!early.ok) {
-    for (const e of early.errors) console.error(`web: ${e.message}`);
-    return 1;
-  }
-  const cfg = early.config;
-  const tokenMode = cfg.authMode === 'token';
-  let desktop: DesktopClient | null = null;
-  if (cfg.authMode === 'google_desktop') {
-    const keysPath = isAbsolute(cfg.googleKeysPath) ? cfg.googleKeysPath : join(process.cwd(), cfg.googleKeysPath);
-    const k = loadDesktopKeys(keysPath, (p) => readFileSync(p, 'utf8'));
-    if (!k.ok) {
-      console.error(`web: ${keysFailureMessage(k.reason)}`);
-      return 1;
-    }
-    desktop = k.client;
-    maskLiterals = [...maskLiterals, k.client.clientSecret];
-  }
-
-  const authPath = isAbsolute(cfg.authDb) ? cfg.authDb : join(process.cwd(), cfg.authDb);
-  let auth;
-  try {
-    auth = openAuthStore(authPath);
-  } catch (e) {
-    console.error(`web: could not open the auth store: ${e instanceof Error ? e.message.split('\n')[0] : 'error'}`);
-    return 1;
-  }
-  try {
-    const m = recordAuthMode(auth, cfg.authMode, new Date());
-    if (m.changed) console.error(`web: auth mode changed (${m.previous} to ${cfg.authMode}); all sessions were revoked`);
-  } catch {
-    console.error('web: could not record the auth mode');
-    return 1;
-  }
-  let stored = getAllowedAccount(auth) !== null;
-  const full = validateRunnerConfig(env, { accountStored: stored });
-  if (!full.ok) {
-    for (const e of full.errors) console.error(`web: ${e.message}`);
-    return 1;
-  }
-  if (!tokenMode && !stored && cfg.allowedEmail) {
-    const r = allowAccount(auth, cfg.allowedEmail, new Date());
-    if (!r.ok) {
-      console.error('web: DASHBOARD_ALLOWED_EMAIL is not a valid email address');
-      return 1;
-    }
-    stored = true;
-    console.error('web: allowed account created from DASHBOARD_ALLOWED_EMAIL (the first sign-in pins it)');
-  }
-
-  let data;
-  try {
-    data = openReadOnlyDb();
-  } catch {
-    console.error('web: the data database is missing or cannot be opened read-only; run the hunt once or check JOBAPPLIER_DB');
-    return 1;
-  }
-
-  let oidc: ReturnType<typeof createOidc> | undefined;
-  if (!tokenMode) {
-    oidc = createOidc(
-      desktop
-        ? oidcConfigForDesktop(desktop, { port: cfg.port, shape: cfg.googleRedirectShape, reauthMaxAgeSec: cfg.reauthMaxAgeSec })
-        : {
-            issuer: cfg.issuer,
-            clientId: cfg.clientId,
-            clientSecret: cfg.clientSecret,
-            redirectUri: cfg.redirectUri,
-            reauthPrompt: cfg.reauthPrompt,
-            maxAgeSec: cfg.reauthMaxAgeSec,
-          },
-      { fetch, now: () => new Date(), random: (n) => randomBytes(n) },
-    );
-    try {
-      await oidc.discover();
-    } catch {
-      console.error('web: warning: OIDC discovery failed at start; it will be retried on the first login');
-    }
-  }
-  if (tokenMode && !tokenStatus(auth).set) {
-    console.error('web: no access token yet: run npm run dashboard -- token');
-  }
-
-  // Settings editor wiring. The catalog file may not exist yet (then the list is empty).
-  let catalog: readonly EnvSpec[] = [];
-  try {
-    const catalogPath = '../src/settings/envCatalog.js';
-    const mod = (await import(catalogPath)) as { ENV_CATALOG?: readonly EnvSpec[] };
-    if (Array.isArray(mod.ENV_CATALOG)) catalog = mod.ENV_CATALOG;
-  } catch {
-    /* no catalog yet */
-  }
-  const root = process.cwd();
-  const modeNow = (): { mode: 'DRY RUN' | 'LIVE'; flags: Record<string, string> } => {
-    const m = currentMode(fileFlags(existsSync(envFile) ? parseEnv(readFileSync(envFile, 'utf8')) : {}));
-    return { mode: m.mode, flags: m.flags };
-  };
-  const allSecrets: string[] = [...secrets, cfg.clientSecret, ...(desktop ? [desktop.clientSecret] : [])].filter(Boolean);
-  const settings: SettingsDeps = {
-    root,
-    envPath: envFile,
-    backupDir: join(root, '.jobber', 'settings-backups'),
-    userDataDir: join(root, 'user-data'),
-    catalog,
-    fs: nodeAtomicFs,
-    editEnabled: cfg.settingsEdit,
-    remoteExposure: !isLoopbackBind(cfg.bind) || cfg.trustProxy,
-    remoteSafetyAllowed: cfg.settingsRemoteSafety,
-    backupKeep: cfg.settingsBackupKeep,
-    startMode: modeNow(),
-    secrets: allSecrets,
-    shellEnv: process.env,
-    currentMode: modeNow,
-    pendingRestart: createPendingSeam({ root, fs: nodeAtomicFs }),
-  };
-
-  try {
-    await startWebServer({
-      settings,
-      port: cfg.port,
-      bind: cfg.bind,
-      allowRemoteBind: cfg.allowRemoteBind,
-      allowedHosts: cfg.allowedHosts,
-      trustProxy: cfg.trustProxy,
-      auth,
-      authMode: cfg.authMode,
-      ...(tokenMode ? {} : {
-        oidc,
-        oidcCfg: { redirectUri: cfg.redirectUri, reauthMaxAgeSec: cfg.reauthMaxAgeSec },
-        ...(desktop ? { googleRedirectShape: cfg.googleRedirectShape } : {}),
-      }),
-      data,
-      cfg: loadOutreachConfig(),
-      run: defaultRun,
-      sessionsToShow: [cfg.session],
-      secrets: allSecrets,
-      apply: { enqueue: (url, force, now) => enqueueManualRequest(dbPath(), url, force, now) },
-      escalations: {
-        resolve: (ids, now) => withEscalationWriter(dbPath(), (w) => resolveEscalations(w, ids, now)),
-        snooze: (ids, until, now) => withEscalationWriter(dbPath(), (w) => snoozeEscalations(w, ids, until, now)),
-      },
-      chat: {
-        enabled: cfg.chatEnabled,
-        session: cfg.session,
-        window: cfg.window,
-        send: async (text) => {
-          await assertClaudePane(defaultRun, cfg.session, cfg.window);
-          await sendText(defaultRun, cfg.session, cfg.window, text);
-        },
-      },
-    });
-  } catch (e) {
-    console.error(`web: could not start: ${e instanceof Error ? e.message.split('\n')[0] : 'error'}`);
-    return 1;
-  }
-  console.log(`http://${cfg.bind}:${cfg.port}`);
-  return -1; // keep running
+function internalPort(env: Record<string, string | undefined>, publicPort: number): number | null {
+  const raw = (env.WEB_INTERNAL_PORT ?? '').trim();
+  if (raw === '') return publicPort === 65535 ? null : publicPort + 1;
+  if (!/^\d+$/.test(raw)) return null;
+  const value = Number(raw);
+  return value >= 1024 && value <= 65535 && value !== publicPort ? value : null;
 }
 
-main().then((c) => {
-  if (c >= 0) process.exit(c);
-});
+function readEnv(): Record<string, string | undefined> {
+  const file = join(process.cwd(), '.env');
+  const fromFile = existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : {};
+  return { ...fromFile, ...process.env };
+}
+
+function dashboardReady(): boolean {
+  return existsSync(join(APP_DIR, 'node_modules', 'next')) && existsSync(join(APP_DIR, '.next', 'BUILD_ID'));
+}
+
+function childEnv(additions: Record<string, string> = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of CLEAN_ENV_KEYS) if (process.env[key]) env[key] = process.env[key];
+  return { ...env, ...additions };
+}
+
+function runnerEnv(env: Record<string, string | undefined>, apiPort: number): NodeJS.ProcessEnv {
+  const values: Record<string, string> = { WEB_INTERNAL_PORT: String(apiPort) };
+  for (const [key, value] of Object.entries(env)) if (typeof value === 'string') values[key] = value;
+  return childEnv(values);
+}
+
+function run(command: string, args: string[], env: NodeJS.ProcessEnv): ChildProcess {
+  return spawn(command, args, { cwd: process.cwd(), env, stdio: 'inherit' });
+}
+
+function waitForExit(child: ChildProcess): Promise<number> {
+  return new Promise((resolve) => child.once('exit', (code) => resolve(code ?? 1)));
+}
+
+async function waitForApi(port: number, child: ChildProcess): Promise<boolean> {
+  const deadline = Date.now() + STARTUP_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) return false;
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(500) });
+      if (response.ok) return true;
+    } catch {
+      // The child is still starting.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return false;
+}
+
+async function runDashboard(): Promise<number> {
+  const env = readEnv();
+  const validated = validateRunnerConfig(env, { accountStored: true });
+  if (!validated.ok) {
+    for (const error of validated.errors) console.error(`web: ${error.message}`);
+    return 1;
+  }
+  const config = validated.config;
+  const apiPort = internalPort(env, config.port);
+  if (apiPort === null) {
+    console.error('web: WEB_INTERNAL_PORT must be an integer from 1024 to 65535 different from WEB_PORT');
+    return 1;
+  }
+  if (!dashboardReady()) {
+    console.error('web: the Next.js dashboard is not built; run npm run bootstrap -- --only npm-deps (or npm run web:next:build)');
+    return 1;
+  }
+
+  const api = run('npx', ['tsx', 'scripts/web-api.ts'], runnerEnv(env, apiPort));
+  const stopApi = (): void => { if (api.exitCode === null) api.kill('SIGTERM'); };
+  const stop = (): void => stopApi();
+  process.once('SIGINT', stop);
+  process.once('SIGTERM', stop);
+
+  try {
+    if (!(await waitForApi(apiPort, api))) {
+      console.error('web: protected API did not start');
+      return await waitForExit(api);
+    }
+    const appEnv = { ...runnerEnv(env, apiPort), JOBBER_API_ORIGIN: `http://127.0.0.1:${apiPort}` };
+    console.log(`http://${config.bind}:${config.port}`);
+    const next = run('npm', ['--prefix', APP_DIR, 'run', 'start', '--', '--hostname', config.bind, '--port', String(config.port)], appEnv);
+    return await waitForExit(next);
+  } finally {
+    stopApi();
+    process.off('SIGINT', stop);
+    process.off('SIGTERM', stop);
+  }
+}
+
+runDashboard().then((code) => { process.exitCode = code; });

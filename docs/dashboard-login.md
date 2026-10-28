@@ -2,7 +2,7 @@
 
 Audience: owner
 Last verified against: cc51247
-Source files: scripts/web.ts, scripts/dashboard.ts, src/web/server.ts, src/web/env.ts, src/dash/accessToken.ts, src/dash/account.ts, src/dash/authStore.ts, src/dash/desktopClient.ts, src/dash/oidc.ts, src/dash/sessions.ts, .env.example, docs/dashboard-exposure.md
+Source files: scripts/web.ts, scripts/web-api.ts, scripts/dashboard.ts, apps/dashboard/, src/web/server.ts, src/web/env.ts, src/dash/accessToken.ts, src/dash/account.ts, src/dash/authStore.ts, src/dash/desktopClient.ts, src/dash/oidc.ts, src/dash/sessions.ts, .env.example, docs/dashboard-exposure.md
 
 This page is how you sign in to the dashboard (`npm run web`) and what to do when you cannot.
 It does not cover how to reach the dashboard from a phone or another machine: that is
@@ -44,15 +44,18 @@ It exits with code 3 if a token already exists; use `rotate` then.
 npm run web
 ```
 
-Starts the dashboard. Open the printed token URL in your browser. The part after `#` never
+Starts the Next.js dashboard. Its protected API is only bound to loopback. Open the printed token URL in your browser. The part after `#` never
 leaves the browser and the page removes it from the address bar after use. Or open the plain
 address and paste the token into the login form.
+
+The internal API port defaults to `WEB_PORT + 1`. Set `WEB_INTERNAL_PORT` only if that port is
+already occupied; it must be a different port between 1024 and 65535.
 
 What the token protects: the whole dashboard, behind a signed session cookie. What it does not
 protect: a `?token=` query string never signs you in (on purpose, so it cannot leak through
 logs). Anyone who holds the token can sign in, so do not paste it into chat or screenshots.
-Idle and absolute session limits and the failed-login throttle are in `src/dash/sessions.ts`
-and `src/dash/throttle.ts`; they are the same in all three modes.
+The signed session and its cookie both last up to seven days. Sensitive actions still require
+the configured fresh-login check. The failed-login throttle is in `src/dash/throttle.ts`.
 
 Check the state without printing a secret:
 

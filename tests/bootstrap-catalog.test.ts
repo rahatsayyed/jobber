@@ -73,10 +73,12 @@ describe('detect', () => {
     expect((await item('node').detect(deps())).present).toBe(false);
   });
 
-  it('npm-deps needs the lock marker and three packages', async () => {
+  it('npm-deps needs root packages, Next.js, and the dashboard build', async () => {
     const nm = `${ROOT}/node_modules`;
     const all: Record<string, true> = {};
     for (const n of ['.package-lock.json', 'tsx', 'better-sqlite3', 'patchright']) all[`${nm}/${n}`] = true;
+    all[`${ROOT}/apps/dashboard/node_modules/next`] = true;
+    all[`${ROOT}/apps/dashboard/.next/BUILD_ID`] = true;
     expect((await item('npm-deps').detect(deps({ files: all }))).present).toBe(true);
     const partial = { ...all };
     delete partial[`${nm}/tsx`];
@@ -129,8 +131,12 @@ describe('plan, macOS', () => {
   it('node: brew node', async () => {
     expect(actions(await planFor('node', deps()))[0].argv).toEqual(['brew', 'install', 'node']);
   });
-  it('npm-deps and renderer-deps', async () => {
-    expect(actions(await planFor('npm-deps', deps()))[0]).toMatchObject({ argv: ['npm', 'ci'], network: true, needsSudo: false });
+  it('npm-deps installs and builds Next.js, then renderer-deps', async () => {
+    expect(actions(await planFor('npm-deps', deps()))).toMatchObject([
+      { argv: ['npm', 'ci'], network: true, needsSudo: false },
+      { argv: ['npm', 'ci', '--prefix', 'apps/dashboard'], network: true, needsSudo: false },
+      { argv: ['npm', 'run', 'web:next:build'], network: false, needsSudo: false },
+    ]);
     expect(actions(await planFor('renderer-deps', deps()))[0].argv).toEqual(['npm', 'ci', '--prefix', 'renderer']);
   });
   it('chrome: brew cask', async () => {

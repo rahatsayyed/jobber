@@ -1,4 +1,4 @@
-const ALLOWED_HEADERS = ["content-type", "cache-control", "set-cookie"];
+const ALLOWED_HEADERS = ["content-type", "cache-control", "x-csrf-token"];
 
 function dashboardOrigin(): URL | null {
   const value = process.env.JOBBER_API_ORIGIN;
@@ -16,6 +16,10 @@ export async function proxyDashboardRequest(request: Request, path: string[]): P
     return Response.json({ error: "dashboard_api_not_configured" }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 
+  if (path.some((segment) => !segment || segment === "." || segment === ".." || segment.length > 256)) {
+    return Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
+
   const target = new URL(`/${path.map(encodeURIComponent).join("/")}`, origin);
   target.search = new URL(request.url).search;
   const headers = new Headers();
@@ -24,6 +28,9 @@ export async function proxyDashboardRequest(request: Request, path: string[]): P
     if (value) headers.set(name, value);
   }
   headers.set("origin", origin.origin);
+  // The public Next listener is the TLS boundary. Forward only the protocol;
+  // never pass a caller-controlled host or client IP into the trusted API.
+  headers.set("x-forwarded-proto", request.headers.get("x-forwarded-proto") === "https" ? "https" : "http");
 
   const body = request.method === "GET" ? undefined : await request.arrayBuffer();
   const upstream = await fetch(target, {
@@ -39,6 +46,7 @@ export async function proxyDashboardRequest(request: Request, path: string[]): P
     const value = upstream.headers.get(name);
     if (value) responseHeaders.set(name, value);
   }
+  for (const cookie of upstream.headers.getSetCookie?.() ?? []) responseHeaders.append("Set-Cookie", cookie);
   responseHeaders.set("Cache-Control", "no-store");
   return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
 }

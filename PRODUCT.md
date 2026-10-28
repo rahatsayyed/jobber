@@ -38,7 +38,7 @@ Jobber is direct, calm, and operational. The visual direction is intentionally p
 
 - Product and safety behavior: `README.md`, `CLAUDE.md`, and `docs/reference/platform-and-sessions.md`.
 - Existing API and auth implementation: `src/web/server.ts` and `src/web/`.
-- Existing static dashboard UI: `src/web/static/`.
+- Current operator UI: the Next.js App Router application in `apps/dashboard/`.
 - No approved logo, customer proof, or photographic asset was found. Do not fabricate any.
 
 ## Product Principles

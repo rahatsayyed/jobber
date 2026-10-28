@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
 import { addEscalation } from '../src/outreach/service.js';
 import { resolveEscalations, snoozeEscalations } from '../src/outreach/escalations.js';
 import { makeHarness, START, type Harness } from './helpers/webHarness.js';
@@ -9,7 +8,6 @@ afterEach(async () => {
   if (h) await h.close();
   h = null;
 });
-
 async function setup() {
   h = await makeHarness({
     escalations: {
@@ -130,16 +128,5 @@ describe('dashboard Inbox API', () => {
       body: JSON.stringify({ ids: [1] }),
     });
     expect(res.status).toBe(502);
-  });
-});
-
-describe('Inbox frontend wiring', () => {
-  it('has the view file, the tab, and never an anchor or markup sink for escalation text', () => {
-    expect(existsSync('src/web/static/views/inbox.js')).toBe(true);
-    const app = readFileSync('src/web/static/app.js', 'utf8');
-    expect(app).toContain("['inbox', 'Inbox', inbox]");
-    expect(app).toContain('/api/escalations/count');
-    const view = readFileSync('src/web/static/views/inbox.js', 'utf8');
-    expect(view).not.toMatch(/innerHTML|href|<a\b|window\.open|location\.assign/);
   });
 });

@@ -151,9 +151,9 @@ export async function main(argv: string[], io: CliIo = {}): Promise<number> {
       const token = generateToken(io.random);
       setToken(db, token, now);
       audit(db, p.cmd === 'token' ? 'token_created' : 'token_rotated', { note: 'owner cli' }, now);
-      out('Dashboard access token (shown once, not stored anywhere readable):');
+      out('Next.js dashboard access token (shown once, not stored anywhere readable):');
       out(`http://127.0.0.1:${port}/#token=${token}`);
-      out('This command does not start the dashboard. Start the dashboard: npm run web (or npm run up)');
+      out('This command does not start the Next.js dashboard. Start it with: npm run web (or npm run up)');
       let listening = false;
       try { listening = await (io.probe ?? probeLoopback)(port); } catch { listening = false; }
       if (!listening) out(`Nothing is listening on 127.0.0.1:${port}: the dashboard is not running right now.`);

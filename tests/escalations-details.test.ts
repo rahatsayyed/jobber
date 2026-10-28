@@ -7,8 +7,7 @@ import { deriveAskKind, listEscalations, snoozeEscalations } from '../src/outrea
 import { handleEscalate, handleListOpenEscalations } from '../src/mcp/outreach.js';
 import { migrateSchedulerTables } from '../src/scheduler/runLog.js';
 import { renderEscalations } from '../src/status/escalations.js';
-// @ts-expect-error the static browser module is plain JavaScript without types
-import { bodyState, relativeTime, CLAMP_CHARS } from '../src/web/static/views/inboxModel.js';
+import { bodyState, relativeTime, CLAMP_CHARS } from '../src/web/inboxModel.js';
 import type { ScreenVerdict } from '../src/safety/screen.js';
 
 const T0 = new Date('2026-10-27T10:00:00.000Z');

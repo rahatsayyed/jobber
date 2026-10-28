@@ -179,20 +179,26 @@ export function buildCatalog(input: {
 
   const npmDeps: Item = {
     id: 'npm-deps',
-    title: 'npm dependencies',
+    title: 'npm dependencies and Next.js dashboard build',
     required: true,
     async detect(d) {
       const nm = join(d.root, 'node_modules');
       const need = ['.package-lock.json', 'tsx', 'better-sqlite3', 'patchright'];
       const missing = need.filter((n) => !d.fs.exists(join(nm, n)));
+      if (!d.fs.exists(join(d.root, 'apps', 'dashboard', 'node_modules', 'next'))) missing.push('apps/dashboard/node_modules/next');
+      if (!d.fs.exists(join(d.root, 'apps', 'dashboard', '.next', 'BUILD_ID'))) missing.push('apps/dashboard/.next/BUILD_ID');
       return missing.length
         ? { present: false, detail: `missing in node_modules: ${missing.join(', ')}` }
-        : { present: true, detail: 'node_modules complete' };
+        : { present: true, detail: 'node_modules and Next.js dashboard build complete' };
     },
     plan(d, det) {
       if (det.present) return done(det);
       if (d.platform === 'unsupported') return unsupported('npm dependencies');
-      return act({ id: 'npm-deps:ci', summary: 'npm ci', argv: ['npm', 'ci'], cwd: d.root, needsSudo: false, network: true });
+      return { kind: 'actions', actions: [
+        { id: 'npm-deps:ci', summary: 'npm ci', argv: ['npm', 'ci'], cwd: d.root, needsSudo: false, network: true },
+        { id: 'npm-deps:dashboard-ci', summary: 'npm ci --prefix apps/dashboard', argv: ['npm', 'ci', '--prefix', 'apps/dashboard'], cwd: d.root, needsSudo: false, network: true },
+        { id: 'npm-deps:dashboard-build', summary: 'npm run web:next:build', argv: ['npm', 'run', 'web:next:build'], cwd: d.root, needsSudo: false, network: false },
+      ] };
     },
   };
 

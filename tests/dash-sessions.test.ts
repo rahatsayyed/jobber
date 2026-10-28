@@ -64,16 +64,15 @@ describe('throttle', () => {
 });
 
 describe('sessions', () => {
-  it('valid, then rejected after idle, absolute, revoke', () => {
+  it('stays valid for one week, then rejects on expiry or revoke', () => {
     const { cookieValue, session } = createSession(db, '1.1.1.1', T0, T0);
     expect(cookieValue).toMatch(/^[0-9a-f]{64}$/);
-    expect(validateSession(db, cookieValue, at(5 * MIN))?.idHash).toBe(session.idHash);
-    expect(validateSession(db, cookieValue, at(40 * MIN))).toBeNull();
+    expect(validateSession(db, cookieValue, at(6 * 24 * 60 * MIN))?.idHash).toBe(session.idHash);
+    expect(validateSession(db, cookieValue, at(7 * 24 * 60 * MIN))).toBeNull();
 
     const b = createSession(db, '1.1.1.1', T0, T0);
-    // keep alive with sliding window
-    for (let m = 20; m <= 700; m += 20) expect(validateSession(db, b.cookieValue, at(m * MIN))).not.toBeNull();
-    expect(validateSession(db, b.cookieValue, at(721 * MIN))).toBeNull();
+    expect(validateSession(db, b.cookieValue, at(6 * 24 * 60 * MIN))).not.toBeNull();
+    expect(validateSession(db, b.cookieValue, at(7 * 24 * 60 * MIN))).toBeNull();
 
     const c = createSession(db, '1.1.1.1', T0, T0);
     revokeSession(db, c.cookieValue);

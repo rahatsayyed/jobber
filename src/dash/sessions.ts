@@ -5,8 +5,14 @@ import type { AuthDb } from './authStore.js';
 
 export interface SessionInfo { idHash: string; createdAt: string; authAt: string; expiresAt: string; csrf: string }
 
-const IDLE_MS = 30 * 60_000;
-const ABSOLUTE_MS = 12 * 60 * 60_000;
+/**
+ * The dashboard is a single-owner console. Keep its persistent session usable
+ * for a normal work week, while retaining the existing per-action reauth
+ * checks for sensitive operations.
+ */
+export const DASHBOARD_SESSION_MAX_AGE_SEC = 7 * 24 * 60 * 60;
+const IDLE_MS = DASHBOARD_SESSION_MAX_AGE_SEC * 1000;
+const ABSOLUTE_MS = DASHBOARD_SESSION_MAX_AGE_SEC * 1000;
 const TOUCH_MS = 60_000;
 const MAX_SESSIONS = 3;
 

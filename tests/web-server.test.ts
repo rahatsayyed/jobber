@@ -2,12 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import net from 'node:net';
 import { Readable } from 'node:stream';
 import type { AddressInfo } from 'node:net';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { IncomingMessage } from 'node:http';
 import { createWebServer, redactSecrets, startWebServer, STATUS_COMMANDS } from '../src/web/server.js';
-import { loadStatic } from '../src/web/page.js';
 import { readJson } from '../src/web/router.js';
 import { makeHarness, type Harness } from './helpers/webHarness.js';
 
@@ -78,7 +74,7 @@ describe('headers and methods', () => {
       await h.call('POST', '/'),
       await h.call('GET', '/api/health', { headers: { host: 'evil.example' } }),
     ];
-    expect(rs.map((r) => r.status)).toEqual([200, 401, 404, 405, 421]);
+    expect(rs.map((r) => r.status)).toEqual([404, 401, 404, 405, 421]);
     for (const r of rs) {
       for (const [k, v] of Object.entries(HEADERS)) expect(r.headers[k], k).toBe(v);
       expect(Object.keys(r.headers).filter((k) => k.startsWith('access-control-'))).toEqual([]);
@@ -101,16 +97,11 @@ describe('headers and methods', () => {
     expect((await h.call('DELETE', '/api/jobs')).status).toBe(405);
   });
 
-  it('health leaks nothing and the shell is served without a session', async () => {
+  it('health leaks nothing and the API no longer serves a browser shell', async () => {
     h = await makeHarness();
     const health = await h.call('GET', '/api/health');
     expect(JSON.parse(health.body)).toEqual({ ok: true });
-    const shell = await h.call('GET', '/');
-    expect(shell.status).toBe(200);
-    expect(shell.headers['content-type']).toContain('text/html');
-    expect(shell.body).toContain('<div id="app">');
-    expect(shell.body).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/);
-    expect(shell.body).not.toMatch(/\sstyle=|<style/i);
+    expect((await h.call('GET', '/')).status).toBe(404);
   });
 
   it('path traversal and unlisted files are 404', async () => {
@@ -142,36 +133,6 @@ describe('headers and methods', () => {
     expect(raw.toLowerCase()).toContain('content-security-policy');
     expect(raw.toLowerCase()).toContain('x-frame-options: deny');
     expect(raw.toLowerCase()).toContain('x-content-type-options: nosniff');
-  });
-});
-
-describe('static files', () => {
-  it('loadStatic reads only allowlisted extensions once and maps index to /', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'web-static-'));
-    mkdirSync(join(dir, 'views'));
-    writeFileSync(join(dir, 'index.html'), '<html></html>');
-    writeFileSync(join(dir, 'app.js'), 'x');
-    writeFileSync(join(dir, 'style.css'), 'x');
-    writeFileSync(join(dir, 'views', 'jobs.js'), 'x');
-    writeFileSync(join(dir, 'secret.env'), 'TOKEN=1');
-    writeFileSync(join(dir, 'notes.json'), '{}');
-    const m = loadStatic(dir);
-    expect([...m.keys()].sort()).toEqual(['/', '/app.js', '/style.css', '/views/jobs.js']);
-    expect(m.get('/')!.type).toContain('text/html');
-    expect(m.get('/app.js')!.type).toContain('javascript');
-    expect(m.get('/style.css')!.type).toContain('text/css');
-    expect(loadStatic(join(dir, 'missing')).size).toBe(0);
-  });
-
-  it('the shipped static files contain no innerHTML or inline handlers', () => {
-    const root = join(__dirname, '..', 'src', 'web', 'static');
-    const walk = (d: string): string[] =>
-      readdirSync(d).flatMap((n) => (statSync(join(d, n)).isDirectory() ? walk(join(d, n)) : [join(d, n)]));
-    for (const f of walk(root)) {
-      const text = readFileSync(f, 'utf8');
-      expect(text, f).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\(/);
-      expect(text, f).not.toMatch(/\son[a-z]+\s*=/i);
-    }
   });
 });
 

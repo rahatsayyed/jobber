@@ -6,7 +6,6 @@ import type { AddressInfo } from 'node:net';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { confirmSend, prepareSend, sha256Hex as textHash, STATUS_COMMANDS, validateChatText } from './chat.js';
-import { fileURLToPath } from 'node:url';
 import type BetterSqlite3 from 'better-sqlite3';
 import type { OutreachConfig } from '../outreach/config.js';
 import type { Run } from '../platform/tmux.js';
@@ -20,7 +19,7 @@ import type { AuthMode } from './env.js';
 import { evaluateLogin, normaliseEmail } from '../dash/account.js';
 import { checkLogin, recordLogin } from '../dash/throttle.js';
 import {
-  createSession, csrfOk, isFresh, refreshAuth, revokeSession, validateSession,
+  createSession, csrfOk, DASHBOARD_SESSION_MAX_AGE_SEC, isFresh, refreshAuth, revokeSession, validateSession,
 } from '../dash/sessions.js';
 import {
   clearCookie, oidcCookieName, parseCookies, serializeOidc, serializeSession, sessionCookieName,
@@ -34,7 +33,6 @@ import { funnelView, listOutcomes } from '../dash/queries/outcomes.js';
 import { readRunLog } from '../dash/runlog.js';
 import { sessionsPanel } from '../dash/sessionsPanel.js';
 import { buildConfigView } from '../dash/configView.js';
-import { loadStatic } from './page.js';
 import { createSettingsRoutes, type SettingsDeps } from './settingsRoutes.js';
 import { createApplyRoutes, type ApplyDeps } from './applyRoutes.js';
 import { createEscalationRoutes, type EscalationDeps } from './escalationRoutes.js';
@@ -62,7 +60,6 @@ export interface WebDeps {
   threshold?: number; // MATCH_THRESHOLD, default 60
   env?: NodeJS.ProcessEnv; // for the masked config view, default process.env
   root?: string; // project root for the config view, default cwd
-  staticDir?: string; // default: ./static next to this file
   settings?: SettingsDeps; // dashboard settings editor (plan 8H); routes exist only when set. Never given to chat.
   apply?: ApplyDeps; // /apply request box write; absent: confirm answers a refusal and nothing is written
   escalations?: EscalationDeps; // Inbox actions (mark handled, snooze); absent: both answer a write failure and nothing is written
@@ -72,7 +69,6 @@ export { STATUS_COMMANDS };
 
 export { redactSecrets };
 
-const SESSION_MAX_AGE_SEC = 12 * 60 * 60;
 const PENDING_TTL_MS = 10 * 60_000;
 const RATE_PER_MIN = 120;
 const PANE_LINES = 40;
@@ -104,7 +100,6 @@ export function createWebServer(deps: WebDeps): http.Server {
   }
   const reauthMaxAgeSec = deps.oidcCfg?.reauthMaxAgeSec ?? 300;
   const now = deps.now ?? ((): Date => new Date());
-  const statics = loadStatic(deps.staticDir ?? fileURLToPath(new URL('./static', import.meta.url)));
   const threshold = deps.threshold ?? 60;
   const secrets = deps.secrets ?? [];
   const allowedHosts = new Set(deps.allowedHosts.map((h) => h.toLowerCase()));
@@ -247,7 +242,7 @@ export function createWebServer(deps: WebDeps): http.Server {
     c.res.writeHead(302, {
       Location: '/',
       'Cache-Control': 'no-store',
-      'Set-Cookie': [serializeSession(cookieValue, c.secure, SESSION_MAX_AGE_SEC), clearOidc],
+      'Set-Cookie': [serializeSession(cookieValue, c.secure, DASHBOARD_SESSION_MAX_AGE_SEC), clearOidc],
     });
     c.res.end();
   }
@@ -300,7 +295,7 @@ export function createWebServer(deps: WebDeps): http.Server {
     if (old) revokeSession(deps.auth, old, t);
     const { cookieValue } = createSession(deps.auth, c.ip, t, t);
     audit(deps.auth, 'token_login_ok', { ip: c.ip }, t);
-    json(c.res, 200, { ok: true }, { 'Set-Cookie': serializeSession(cookieValue, c.secure, SESSION_MAX_AGE_SEC) });
+    json(c.res, 200, { ok: true }, { 'Set-Cookie': serializeSession(cookieValue, c.secure, DASHBOARD_SESSION_MAX_AGE_SEC) });
   }
 
   const routes: Route[] = [];
@@ -600,16 +595,8 @@ export function createWebServer(deps: WebDeps): http.Server {
       return;
     }
 
-    const file = method === 'GET' ? statics.get(path) : undefined;
-    if (file) {
-      res.writeHead(200, { 'Content-Type': file.type, 'Cache-Control': 'no-store' });
-      res.end(file.body);
-      return;
-    }
-
     const matching = routes.filter((r) => r.re.test(path));
     if (matching.length === 0) {
-      if (statics.has(path)) return json(res, 405, { error: 'method not allowed' }, { Allow: 'GET' });
       if (path.startsWith('/api/')) {
         const s0 = validateSession(deps.auth, parseCookies(req.headers.cookie)[sessionCookieName(secure)], now());
         if (!s0) return json(res, 401, { error: 'unauthenticated' });
