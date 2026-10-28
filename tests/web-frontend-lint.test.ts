@@ -34,4 +34,9 @@ describe('Next.js dashboard frontend', () => {
     expect(proxy).toContain('if (request.headers.get("x-forwarded-proto") === "https")');
     expect(read('../next.config.ts')).toContain('Content-Security-Policy');
   });
+
+  it('preserves the API prefix when forwarding dashboard API requests', () => {
+    const route = read('app/api/[...path]/route.ts');
+    expect(route).toContain('["api", ...(await context.params).path]');
+  });
 });
