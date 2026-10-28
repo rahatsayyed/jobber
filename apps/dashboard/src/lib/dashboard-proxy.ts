@@ -28,9 +28,10 @@ export async function proxyDashboardRequest(request: Request, path: string[]): P
     if (value) headers.set(name, value);
   }
   headers.set("origin", origin.origin);
-  // The public Next listener is the TLS boundary. Forward only the protocol;
-  // never pass a caller-controlled host or client IP into the trusted API.
-  headers.set("x-forwarded-proto", request.headers.get("x-forwarded-proto") === "https" ? "https" : "http");
+  // Only an HTTPS request needs the trusted-proxy signal. On direct loopback
+  // HTTP, sending any forwarded header makes the API correctly reject token
+  // login as a spoofable transport.
+  if (request.headers.get("x-forwarded-proto") === "https") headers.set("x-forwarded-proto", "https");
 
   const body = request.method === "GET" ? undefined : await request.arrayBuffer();
   const upstream = await fetch(target, {

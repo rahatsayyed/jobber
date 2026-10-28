@@ -31,6 +31,7 @@ describe('Next.js dashboard frontend', () => {
     const proxy = read('lib/dashboard-proxy.ts');
     expect(proxy).toContain('JOBBER_API_ORIGIN');
     expect(proxy).toContain('getSetCookie');
+    expect(proxy).toContain('if (request.headers.get("x-forwarded-proto") === "https")');
     expect(read('../next.config.ts')).toContain('Content-Security-Policy');
   });
 });
