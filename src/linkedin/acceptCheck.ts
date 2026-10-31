@@ -8,6 +8,7 @@ import { haltReason } from '../outreach/limits.js';
 import { normalizeProfileKey } from '../outreach/people.js';
 import { isDryRun, recordDryRun } from '../safety/dryRun.js';
 import { connectionState } from './connectionState.js';
+import { activateContact } from './touches.js';
 import { isProfileUrl } from './urls.js';
 import { verifyProfileUrl } from './verify.js';
 import type { RawSnapshot } from './types.js';
@@ -74,7 +75,11 @@ function rowsOfKey(db: Db, key: string): { id: number }[] {
 export function markConnectionAccepted(db: Db, profileUrl: string, now: Date): number {
   const upd = db.prepare("UPDATE connections SET status = 'connected', accept_checked_at = ? WHERE id = ? AND status = 'sent'");
   let n = 0;
-  for (const r of rowsOfKey(db, normalizeProfileKey(profileUrl))) n += upd.run(now.toISOString(), r.id).changes;
+  const key = normalizeProfileKey(profileUrl);
+  for (const r of rowsOfKey(db, key)) n += upd.run(now.toISOString(), r.id).changes;
+  // The person must be 'active' to be due for the first DM (a sent invite already does this; this covers older rows).
+  const person = db.prepare("SELECT id FROM people WHERE platform = 'linkedin' AND profile_key = ?").get(key) as { id: number } | undefined;
+  if (person) activateContact(db, person.id, now);
   return n;
 }
 

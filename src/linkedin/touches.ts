@@ -152,11 +152,28 @@ export function reserveTouch(
 /** Only transitions a row currently 'sending'; any other row is left untouched (silent no-op, so
  * 'sent' is never downgraded and dry_run rows stay dry_run). */
 export function finishTouch(db: Db, touchId: number, status: TouchStatus, now: Date): void {
-  db.prepare("UPDATE touches SET status = ?, sent_at = ? WHERE id = ? AND status = 'sending'").run(
+  const r = db.prepare("UPDATE touches SET status = ?, sent_at = ? WHERE id = ? AND status = 'sending'").run(
     status,
     status === 'sent' ? now.toISOString() : null,
     touchId,
   );
+  if (status === 'sent' && r.changes > 0) activateContactForTouch(db, touchId, now);
+}
+
+// A sent touch starts the person's cadence cycle: stage 'new' becomes 'active' (as Naukri and Wellfound already do),
+// otherwise dueTouchesFor (stage 'active' only) never sees a LinkedIn person. Other stages are left alone.
+export function activateContact(db: Db, personId: number, now: Date): void {
+  const at = now.toISOString();
+  db.prepare('INSERT OR IGNORE INTO contact_state (person_id) VALUES (?)').run(personId);
+  db.prepare(
+    `UPDATE contact_state SET stage = CASE WHEN stage = 'new' THEN 'active' ELSE stage END,
+       last_touch_at = ?, cycle_started_at = COALESCE(cycle_started_at, ?), updated_at = ? WHERE person_id = ?`,
+  ).run(at, at, at, personId);
+}
+
+function activateContactForTouch(db: Db, touchId: number, now: Date): void {
+  const row = db.prepare('SELECT person_id FROM touches WHERE id = ?').get(touchId) as { person_id: number } | undefined;
+  if (row) activateContact(db, row.person_id, now);
 }
 
 /**
@@ -164,8 +181,9 @@ export function finishTouch(db: Db, touchId: number, status: TouchStatus, now: D
  * with no note, so the stored body is cleared. Only a 'sending' connect row moves; never retried (duplicate_kind).
  */
 export function finishTouchSentNoNote(db: Db, touchId: number, now: Date): void {
-  db.prepare("UPDATE touches SET status = 'sent', body = NULL, sent_at = ? WHERE id = ? AND status = 'sending' AND kind = 'connect'")
+  const r = db.prepare("UPDATE touches SET status = 'sent', body = NULL, sent_at = ? WHERE id = ? AND status = 'sending' AND kind = 'connect'")
     .run(now.toISOString(), touchId);
+  if (r.changes > 0) activateContactForTouch(db, touchId, now);
 }
 
 export function pauseContact(db: Db, personId: number, reason: string, now: Date): void {
