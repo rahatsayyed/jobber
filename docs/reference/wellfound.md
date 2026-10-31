@@ -41,3 +41,5 @@ it is covered by unit tests with fakes only (a supervised phase 2 run is where t
   LinkedIn outreach when a contact exists, its `apply_platform` is `wellfound` and `classifyApplyUrl` treats any
   wellfound.com URL as apply-capable (tier `wellfound_agent`); `promoted` listings are ordered first (see P1 and P4).
   The promotion words (`promoted`, `featured`, `sponsored`, `premium`, `hot job`) and the badge selectors are guesses.
+
+- **Apply externally**: `wellfound_resolve_external({job_id})` reads the control's href, else clicks once and reads the popup URL, then routes the job to the generic applier (see "External apply" in `applying.md`). Untested live: the probed pages only had a native Apply.

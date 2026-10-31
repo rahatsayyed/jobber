@@ -12,9 +12,11 @@ const EXPECTED = [
   'mcp__applier__site_login',
   'mcp__applier__site_signup',
   'mcp__applier__site_open_link',
-  ...['open', 'snapshot', 'click', 'type', 'press_key', 'scroll', 'wait_for', 'screenshot', 'click_at', 'arm_apply', 'layout'].map((t) => `mcp__naukri__naukri_${t}`),
+  ...['open', 'snapshot', 'click', 'type', 'press_key', 'scroll', 'wait_for', 'screenshot', 'click_at', 'arm_apply', 'resolve_external', 'layout'].map((t) => `mcp__naukri__naukri_${t}`),
   // Wellfound exactly as Naukri: the apply operator holds wellfound_arm_apply and never wellfound_arm_send
-  ...['open', 'snapshot', 'click', 'type', 'press_key', 'scroll', 'wait_for', 'screenshot', 'click_at', 'arm_apply', 'layout'].map((t) => `mcp__wellfound__wellfound_${t}`),
+  ...['open', 'snapshot', 'click', 'type', 'press_key', 'scroll', 'wait_for', 'screenshot', 'click_at', 'arm_apply', 'resolve_external', 'layout'].map((t) => `mcp__wellfound__wellfound_${t}`),
+  // External apply: the LinkedIn main account, only to open the job page, read it and resolve its company-site Apply (never arm_send, click or Easy Apply)
+  ...['open', 'snapshot', 'resolve_external'].map((t) => `mcp__linkedin__linkedin_${t}`),
 ];
 
 const text = readFileSync('.claude/agents/apply-operator.md', 'utf8');
@@ -50,10 +52,10 @@ describe('apply-operator', () => {
     expect(fm + body).not.toMatch(/mcp__gmail__/);
     expect(body).toContain('SITE_MAIL_VERIFY');
   });
-  it('no old apply MCP, linkedin MCP or screenshot tool', () => {
+  it('no old apply MCP, no LinkedIn tool beyond the three external-apply ones, no screenshot tool', () => {
     for (const t of tools) {
       expect(t.startsWith('mcp__apply__')).toBe(false);
-      expect(t.startsWith('mcp__linkedin__')).toBe(false);
+      if (t.startsWith('mcp__linkedin__')) expect(['linkedin_open', 'linkedin_snapshot', 'linkedin_resolve_external']).toContain(t.replace('mcp__linkedin__', ''));
       expect(t).not.toBe('mcp__applier__apply_screenshot');
     }
   });

@@ -312,6 +312,10 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   // Hand-backs of a matched job without an outreach row to the wake pipeline (PREP_OFFER_LIMIT).
   if (!jobCols.has('prep_offers')) db.exec('ALTER TABLE jobs ADD COLUMN prep_offers INTEGER NOT NULL DEFAULT 0');
   if (!outreachQueueColumnNames.has('resume_json')) db.exec('ALTER TABLE outreach_queue ADD COLUMN resume_json TEXT');
+  // External apply (Naukri "Apply on company site", Wellfound "Apply externally", LinkedIn non-Easy Apply): the company-site URL
+  // resolved in code, and the closed reason a row stays manual_review (apply_note, e.g. `external:host_unknown`).
+  if (!jobCols.has('external_apply_url')) db.exec('ALTER TABLE jobs ADD COLUMN external_apply_url TEXT');
+  if (!outreachQueueColumnNames.has('apply_note')) db.exec('ALTER TABLE outreach_queue ADD COLUMN apply_note TEXT');
   for (const [col, type] of [['ats_coverage', 'INTEGER'], ['ats_gaps', 'TEXT'], ['fact_warnings', 'TEXT'], ['review_applied', 'INTEGER'], ['review_rejected', 'INTEGER']] as const) {
     if (!outreachQueueColumnNames.has(col)) db.exec(`ALTER TABLE outreach_queue ADD COLUMN ${col} ${type}`);
   }
@@ -748,6 +752,51 @@ export function classifyQueueApply(
   const source = (db.prepare('SELECT source FROM jobs WHERE id = ?').get(jobId) as { source: string | null } | undefined)?.source ?? null;
   const c = classifyApplyUrl(applyUrl ?? null, source, env);
   return { apply_platform: c.platform, apply_tier: c.tier };
+}
+
+/**
+ * Store the company-site URL a platform job resolved to and route the job's pending queue rows through it, in ONE transaction.
+ * Class none (an unknown host while APPLY_ALLOW_UNKNOWN_HOSTS is off, a look-alike host ...): the rows stay on their platform,
+ * become manual_review and carry `external:<reason>` in apply_note, so the owner can see why. Any other class: the rows become an
+ * ordinary generic apply row (platform, tier and URL of the external page, apply_status NULL) that the apply stage picks up.
+ * Only rows that are still pending (no apply_status) or manual_review are touched; submitted, held and failed rows are left alone.
+ */
+export function setExternalApply(
+  db: BetterSqlite3.Database,
+  jobId: string,
+  url: string,
+  cls: { platform: string; tier: string; reason?: string },
+): number {
+  return db.transaction((): number => {
+    db.prepare('UPDATE jobs SET external_apply_url = ? WHERE id = ?').run(url, jobId);
+    const pending = "job_id = ? AND COALESCE(apply_status, '') IN ('', 'manual_review')";
+    if (cls.platform === 'none') {
+      return db.prepare(`UPDATE outreach_queue SET apply_status = 'manual_review', apply_note = ?, updated_at = datetime('now') WHERE ${pending}`)
+        .run(`external:${cls.reason ?? 'none'}`, jobId).changes;
+    }
+    return db.prepare(`UPDATE outreach_queue SET apply_platform = ?, apply_tier = ?, apply_url = ?, apply_status = NULL, apply_note = NULL, updated_at = datetime('now') WHERE ${pending}`)
+      .run(cls.platform, cls.tier, url, jobId).changes;
+  })();
+}
+
+/** The resolved company-site URL of a job (null when none was resolved). */
+export function getExternalApplyUrl(db: BetterSqlite3.Database, jobId: string): string | null {
+  const r = db.prepare('SELECT external_apply_url AS u FROM jobs WHERE id = ?').get(jobId) as { u: string | null } | undefined;
+  return r?.u && r.u.trim() ? r.u : null;
+}
+
+/** Days within which a submitted application for the same company and title counts as already applied. */
+export const EXTERNAL_DEDUPE_DAYS = 90;
+
+/** Why resolving an external apply would be a duplicate: a submitted application for this job, or for the same company_key and title_key within 90 days. */
+export function externalApplyDuplicate(db: BetterSqlite3.Database, jobId: string): 'already_applied' | 'duplicate_application' | null {
+  if (db.prepare("SELECT 1 FROM applications WHERE job_id = ? AND status = 'submitted' LIMIT 1").get(jobId)) return 'already_applied';
+  const j = db.prepare('SELECT company_key, title_key FROM jobs WHERE id = ?').get(jobId) as { company_key: string | null; title_key: string | null } | undefined;
+  if (!j?.company_key || !j.title_key) return null;
+  const twin = db.prepare(`SELECT 1 FROM applications a JOIN jobs j ON j.id = a.job_id
+    WHERE a.status = 'submitted' AND a.job_id != ? AND j.company_key = ? AND j.title_key = ?
+      AND COALESCE(a.applied_at, a.created_at) >= datetime('now', ?) LIMIT 1`).get(jobId, j.company_key, j.title_key, `-${EXTERNAL_DEDUPE_DAYS} days`);
+  return twin ? 'duplicate_application' : null;
 }
 
 // What the enqueue_outreach MCP tool does: the model's apply_platform is replaced by the code classification.

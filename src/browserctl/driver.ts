@@ -18,6 +18,8 @@ export interface BcWatch {
   responses(): { path: string; status: number }[];
   // Make the n-th popup the page every later BcPage call reads (a naukri.com chatbot or questionnaire).
   adopt(index: number): Promise<boolean>;
+  /** Optional (absent in older fakes): close every popup the click opened without reading or touching its page. Never throws. */
+  closePopups?(): Promise<void>;
   stop(): void;
 }
 
@@ -166,7 +168,14 @@ function realBcPageInner(basePage: RealPage): BcPage {
       const popups: { page: RealPage }[] = [];
       const responses: { path: string; status: number }[] = [];
       const ctx = page.context?.();
-      const onPage = (p: RealPage): void => { if (p !== page) popups.push({ page: p }); };
+      const onPage = (p: RealPage): void => {
+        if (p === page) return;
+        popups.push({ page: p });
+        // A popup never saves a file: any download it starts is cancelled at once.
+        try {
+          (p as unknown as { on?: (e: string, f: (d: { cancel?: () => Promise<void> }) => void) => void }).on?.('download', (d) => { void d.cancel?.().catch(() => undefined); });
+        } catch { /* best effort */ }
+      };
       const onResp = (r: any): void => {
         try {
           if (r.request().method() === 'GET') return;
@@ -185,6 +194,11 @@ function realBcPageInner(basePage: RealPage): BcPage {
           try { await x.page.bringToFront?.(); } catch { /* best effort */ }
           page = x.page;
           return true;
+        },
+        async closePopups() {
+          for (const x of popups) {
+            try { await (x.page as unknown as { close?: () => Promise<void> }).close?.(); } catch { /* already gone */ }
+          }
         },
         stop() {
           const off = ctx?.off ?? ctx?.removeListener;

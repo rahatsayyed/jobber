@@ -29,6 +29,9 @@ export const ATS_REGISTRY: AtsDef[] = [
 
 export interface ApplyClass { platform: string; tier: ApplyTier; reason?: string }
 
+/** Sources whose jobs are LinkedIn job pages (own discovery or an owner-submitted LinkedIn URL). */
+const isLinkedInJobSource = (source: string | null): boolean => source === 'linkedin-jobs' || source === 'manual:linkedin';
+
 const none = (reason: string): ApplyClass => ({ platform: 'none', tier: 'never', reason });
 
 export function classifyApplyUrl(url: string | null, source: string | null, env: NodeJS.ProcessEnv = process.env): ApplyClass {
@@ -42,7 +45,11 @@ export function classifyApplyUrl(url: string | null, source: string | null, env:
   if (u.username || u.password) return none('credentials_in_url');
 
   if (hostMatches(url, 'linkedin.com')) {
-    return env.APPLY_LINKEDIN_EASY === 'true' ? { platform: 'linkedin_easy', tier: 'agent' } : none('easy_apply_off');
+    if (env.APPLY_LINKEDIN_EASY === 'true') return { platform: 'linkedin_easy', tier: 'agent' };
+    // A job from our own LinkedIn discovery may send its Apply to the company site: `linkedin_resolve_external` finds that site in code and
+    // setExternalApply re-routes the row to the generic applier. apply_open never drives this class itself (not in APPLY_HOST_PLATFORM_IDS).
+    if (isLinkedInJobSource(source) && /^\/jobs\/view\//i.test(u.pathname)) return { platform: 'linkedin', tier: 'agent', reason: 'external_resolve' };
+    return none('easy_apply_off');
   }
   if (hostMatches(url, 'naukri.com')) return { platform: 'naukri', tier: 'agent' };
   if (hostMatches(url, 'wellfound.com')) return { platform: 'wellfound', tier: 'agent' };

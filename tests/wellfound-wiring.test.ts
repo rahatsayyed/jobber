@@ -46,7 +46,7 @@ const ENGINE = ['open', 'snapshot', 'click', 'type', 'press_key', 'scroll', 'wai
 describe('tool list and TOOL_NAMES', () => {
   it('TOOL_NAMES is the 16 tools the brief names, with no search or cold-send tool', () => {
     expect([...TOOL_NAMES].sort()).toEqual([
-      ...ENGINE.map((n) => `wellfound_${n}`), 'wellfound_arm_send', 'wellfound_arm_apply',
+      ...ENGINE.map((n) => `wellfound_${n}`), 'wellfound_arm_send', 'wellfound_arm_apply', 'wellfound_resolve_external',
       'wellfound_discover', 'wellfound_manual_job', 'wellfound_inbox', 'wellfound_read_thread', 'wellfound_layout', 'wellfound_close',
     ].sort());
   });

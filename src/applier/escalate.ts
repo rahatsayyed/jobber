@@ -62,7 +62,7 @@ async function escalate(input: EscalateInputT, deps: ApplierDeps, x: EscalateExt
   const env = envOf(deps);
   const now = nowOf(deps);
   const db = deps.db;
-  const job = db.prepare('SELECT id, apply_url FROM jobs WHERE id = ?').get(input.job_id) as { id: string; apply_url: string | null } | undefined;
+  const job = db.prepare('SELECT id, COALESCE(NULLIF(external_apply_url, \'\'), apply_url) AS apply_url FROM jobs WHERE id = ?').get(input.job_id) as { id: string; apply_url: string | null } | undefined;
   if (!job) return refuse('unknown_job', 'no such job');
   const key = `${input.job_id}:${input.reason}`;
   const seen = (deps.state.escalated ??= new Set<string>());
