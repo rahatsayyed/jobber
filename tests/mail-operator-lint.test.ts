@@ -155,6 +155,9 @@ describe('contact-finder and outreach-preparer', () => {
     expect(b).toContain('domain_source');
     expect(b).toContain('Never guess a domain');
   });
+  it('mail-operator drip mode reads only its own row (the full queue overflows one tool result)', () => {
+    expect(def('mail-operator').body).toContain('db.list_queued_outreach({id: N})');
+  });
   it('outreach-preparer states the dispatch rule', () => {
     expect(def('outreach-preparer').body).toContain('a verified email contact, OR at least one LinkedIn profile, OR an apply-capable `apply_url`');
   });

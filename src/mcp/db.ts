@@ -325,18 +325,21 @@ server.registerTool('get_patterns', {
 server.registerTool(
   'list_queued_outreach',
   {
-    description: 'List outreach_queue rows still pending (status=queued), priority jobs first, then oldest first. Without arguments: the FULL rows (email bodies, notes), used only by the mail-operator for its backlog. With fields "apply": a compact page {total, offset, limit, rows:[{id, job_id, title, company, apply_platform, apply_tier, apply_url, apply_status, status}]} (limit default 10, max 50; page on with offset until offset+limit >= total); only_pending_apply keeps rows that still have an apply to do. The apply, LinkedIn and Naukri operators always use this compact form.',
+    description: 'List outreach_queue rows still pending (status=queued), priority jobs first, then oldest first. Without arguments: the FULL rows (email bodies, notes), used only by the mail-operator for its backlog. With id N: only that one full row (an array of 0 or 1), used by the mail drip so the answer stays small. With fields "apply": a compact page {total, offset, limit, rows:[{id, job_id, title, company, apply_platform, apply_tier, apply_url, apply_status, status}]} (limit default 10, max 50; page on with offset until offset+limit >= total); only_pending_apply keeps rows that still have an apply to do. The apply, LinkedIn and Naukri operators always use this compact form.',
     inputSchema: {
       fields: z.literal('apply').optional(),
       limit: z.number().int().min(1).max(QUEUE_COMPACT_MAX_LIMIT).optional(),
       offset: z.number().int().min(0).optional(),
       only_pending_apply: z.boolean().optional(),
+      id: z.number().int().positive().optional(),
     },
   },
-  async ({ fields, limit, offset, only_pending_apply }) => {
+  async ({ fields, limit, offset, only_pending_apply, id }) => {
     const out = fields === 'apply'
       ? listQueuedOutreachCompact(db, { limit, offset, onlyPendingApply: only_pending_apply })
-      : listQueuedOutreach(db);
+      : id !== undefined
+        ? listQueuedOutreach(db).filter((r) => r.id === id)
+        : listQueuedOutreach(db);
     return { content: [{ type: 'text', text: JSON.stringify(out) }] };
   }
 );
