@@ -527,6 +527,7 @@ Browser apply through the `applier` MCP and the `apply-operator`: what can be ap
 ## Connecting
 
 LinkedIn connects and messages by the `linkedin-operator`: the arm-then-commit flow, caps (daily, rolling 24 hours), the profile page rules (a Connect is legal only in the profile's own top card or its More menu; `connect_state`; invite dialog; send confirmation; plain invites and the monthly note quota), what is and is not live-verified, hiring posts and poster outreach, the failure ladder and the manual `/connect` steps. Details: `docs/reference/connecting.md` (read it before working in this area).
+Acceptance of a sent invite is detected in code: the `accept_check` task calls the typed `linkedin_check_accepted` tool (no argument, read-only, at most 8 profiles per wake) and sets `connections.status='connected'`, which makes the person due for `followups` (see the same document).
 
 ## Owner docs
 
