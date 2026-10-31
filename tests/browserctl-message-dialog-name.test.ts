@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { messageDialogName } from '../src/browserctl/commit.js';
+import { messageDialogName, ownMessageShown } from '../src/browserctl/commit.js';
 import { namesPlausiblyMatch } from '../src/linkedin/verify.js';
 import type { RawNode, RawTree } from '../src/browserctl/snapshot.js';
 
@@ -7,6 +7,27 @@ const node = (n: number, role: RawNode['role'], name: string, dialog?: number): 
   n, role, name, text: '', disabled: false, ...(dialog === undefined ? {} : { dialog }),
 });
 const tree = (nodes: RawNode[]): RawTree => ({ url: 'https://www.linkedin.com/in/x/', title: 't', nodes });
+
+describe('ownMessageShown', () => {
+  const sent = 'Hi Rinki, I am a full stack React developer, thanks for connecting. I came across the full stack role at Xoriant.';
+  const textNode = (n: number, text: string, dialog: number): RawNode => ({ ...node(n, 'text', '', dialog), text });
+
+  it('is true when the sent text stands as a bubble in the conversation view', () => {
+    const t = tree([node(1, 'dialog', 'Messaging'), textNode(2, 'Rahat Sayyed sent the following messages at 8:36 PM', 1), textNode(3, sent, 1)]);
+    expect(ownMessageShown(t, 1, sent)).toBe(true);
+  });
+
+  it('is false while the text is only in the textbox (before the send)', () => {
+    const box: RawNode = { ...node(2, 'textbox', 'Write a message…', 1), value: sent, composer: true };
+    expect(ownMessageShown(tree([node(1, 'dialog', 'Messaging'), box]), 1, sent)).toBe(false);
+  });
+
+  it('is false for a bubble outside the dialog, other text, or a too-short text', () => {
+    expect(ownMessageShown(tree([node(1, 'dialog', 'Messaging'), textNode(3, sent, 99)]), 1, sent)).toBe(false);
+    expect(ownMessageShown(tree([node(1, 'dialog', 'Messaging'), textNode(3, 'Thanks for your note', 1)]), 1, sent)).toBe(false);
+    expect(ownMessageShown(tree([node(1, 'dialog', 'Messaging'), textNode(3, 'Hi', 1)]), 1, 'Hi')).toBe(false);
+  });
+});
 
 describe('messageDialogName', () => {
   it('reads the recipient from the live "Messaging" overlay chip (heading is generic)', () => {

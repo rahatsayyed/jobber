@@ -161,6 +161,21 @@ export function messageDialogName(tree: RawTree, dlg: number): string {
   return '';
 }
 
+const squash = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+/** The sent text now stands as a message bubble inside the dialog (a text node holding its first 50 characters). The
+ *  typed text lives in the textbox value, never in a text node, so this cannot be true before the send. */
+export function ownMessageShown(tree: RawTree, dlg: number, text: string): boolean {
+  const head = squash(text).slice(0, 50);
+  if (head.length < 20) return false;
+  return tree.nodes.some((x) => x.dialog === dlg && x.role === 'text' && squash(x.text).includes(head));
+}
+
+function ownMessageSeen(tree: RawTree, dialogName: string | undefined, text: string): boolean {
+  const d = tree.nodes.find((x) => x.role === 'dialog' && x.name === dialogName);
+  return !!d && ownMessageShown(tree, d.n, text);
+}
+
 /** Name of the person on a profile page: the first heading of the top card, else the first heading; '' when none. */
 export function profileHeadingName(tree: RawTree): string {
   const heads = tree.nodes.filter((x) => x.role === 'heading' && x.dialog === undefined && x.name);
@@ -398,14 +413,18 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
           const d = t.nodes.find((x) => x.role === 'dialog' && x.name === live.dialogName);
           if (!d) return true;
           const box = t.nodes.find((x) => x.dialog === d.n && x.role === 'textbox' && x.composer);
-          return !!box && !box.value;
+          if (box) return !box.value;
+          // The overlay turned into the conversation view: no composer left to read. That alone proves nothing, it only
+          // counts together with the sent text showing as a message bubble (ownMessageShown, the strong signal).
+          return ownMessageShown(t, d.n, intent.text ?? '');
         })();
     // The dialog going away is not proof: an error modal can replace it, and any LinkedIn POST satisfies the network half.
     // Re-read for a while: stop at once on an error signal, or when the dialog is gone and the page shows the invite as
     // sent (Pending or a sent toast, connect only).
     const read = (t: RawTree): { dialogGone: boolean; strong: boolean; signal: ErrorSignal } => ({
       dialogGone: dialogGoneOf(t),
-      strong: cls === 'commit_connect_send' && directSendSeen(t),
+      strong: cls === 'commit_connect_send' ? directSendSeen(t)
+        : cls === 'commit_message_send' ? ownMessageSeen(t, live.dialogName, intent.text ?? '') : false,
       signal: errorSignalOf(tree, t),
     });
     let seen = read(after);
