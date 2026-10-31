@@ -114,3 +114,26 @@ job (title and company) as submitted / held / manual_review / needs an answer (w
 rate-limited. Not live-verified: nothing in the browser apply path has run against a real ATS posting
 (unit tests and fixtures only); the confirmation layers are heuristics, and the shipped recipes were
 written from fixtures. Owner live checks are in `docs/apply.md`.
+
+## External apply (company-site Apply on Naukri, Wellfound, LinkedIn)
+
+A Naukri "Apply on company site", a Wellfound "Apply externally" or a LinkedIn Apply that is not Easy Apply is no longer a dead end.
+One shared path, `src/browserctl/externalApply.ts`, serves all three platforms; only the "find the external control" step differs.
+The `apply-operator` calls `naukri_resolve_external`, `wellfound_resolve_external` or `linkedin_resolve_external` (argument `{job_id}`)
+on the job page it has open. Code finds the control (role and name, never a class), takes the company URL from its href (a LinkedIn
+`externalApply` link carries it in a query parameter) or, for a button, makes ONE code-owned click and reads the popup URL (waits up to
+10 s for a stable non-blank URL, closes the popup at once, cancels downloads, never snapshots, evaluates or types there). The URL is
+cut to 500 characters if needed, checked by `validateManualUrl`, refused if still a platform host, classified by `classifyApplyUrl`
+and stored by `setExternalApply` (`jobs.external_apply_url`; the queue row gets the new `apply_platform`, `apply_tier`, `apply_url`
+and `apply_status` NULL, in one transaction). The result is `{status, code, platform?, tier?}` and never contains the URL.
+`apply_open` then reads `COALESCE(external_apply_url, apply_url)` from SQLite and applies every existing refusal, cap, recipe and gate.
+
+Guards: kill switch, halts and dry run (the control is not clicked in a dry run); dedupe before any click (already submitted, or the
+same company and title key submitted within 90 days); a page that shows Applied or expired is refused; daily ceiling
+`APPLY_MAX_EXTERNAL_RESOLVES_PER_DAY` (rate event `external_resolve`, default 30; popup clicks only); at most 5 resolves per
+apply-operator session with a random 3 to 8 s pause. An unknown company host stays `manual_review` and the row note
+(`outreach_queue.apply_note`, `external:host_unknown`) says why, unless `APPLY_ALLOW_UNKNOWN_HOSTS=true`. If the company site needs an
+account, the existing `site_signup` rules apply (`APPLY_ALLOW_ACCOUNT_CREATION`, `SITE_MAX_ACCOUNTS_PER_DAY`; ships off, so the job is
+escalated as `account_needed`); CAPTCHA, MFA and phone verification are never solved. LinkedIn: main account only, never the burner or
+Easy Apply. Hold mode is unchanged: with `APPLY_SUBMIT_MODE` not `submit` these jobs end `held`; after setting `submit`, run
+`npm run apply:release-held [-- --dry]` to put held generic rows back in the queue (idempotent).

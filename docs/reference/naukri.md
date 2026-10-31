@@ -57,3 +57,5 @@ home IP; Akamai may treat a datacenter/VPS IP harder, so re-run the check from t
   written from fixtures, not live pages; Naukri's real message limits are unmeasured; the
   compose-box locator and thread_ref charset are guesses. Phase 2 of the rollout (see
   "Scheduler") is where they get checked. A full Claude Code restart loads server changes.
+
+- **Company-site Apply**: a job whose page offers "Apply on company site" (a plain button, no href, handler added in script) is no longer `manual_review`. The `apply-operator` calls `naukri_resolve_external({job_id})`: code does one click, reads the popup URL, closes it, and routes the job to the generic applier (see "External apply" in `applying.md`). On Naukri a bare text `Applied` means already applied and a bare `expired` means closed; both are refused. Never run live yet.

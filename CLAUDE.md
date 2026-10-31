@@ -522,7 +522,7 @@ The platform registry (`config/platforms.json`), script-first and agent-fallback
 
 ## Applying
 
-Browser apply through the `applier` MCP and the `apply-operator`: what can be applied to, how the operator applies, caps, accounts, boxes and escalation, recipes and drift, and the answering rules for questions a form asks. Details: `docs/reference/applying.md` (read it before working in this area).
+Browser apply through the `applier` MCP and the `apply-operator`: what can be applied to, how the operator applies, caps, accounts, boxes and escalation, recipes and drift, and the answering rules for questions a form asks. Naukri, Wellfound and LinkedIn jobs whose Apply goes to the company site are resolved in code by `<platform>_resolve_external` and then applied through `apply_open` (never a model URL; ceiling `APPLY_MAX_EXTERNAL_RESOLVES_PER_DAY`; `npm run apply:release-held`). Details: `docs/reference/applying.md` (read it before working in this area).
 
 ## Connecting
 

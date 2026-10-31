@@ -79,7 +79,7 @@ describe('tool surface', () => {
     const tools = Object.keys(reg()).sort();
     expect(tools).toEqual([
       'wellfound_arm_apply', 'wellfound_arm_send', 'wellfound_click', 'wellfound_click_at', 'wellfound_close', 'wellfound_discover',
-      'wellfound_inbox', 'wellfound_layout', 'wellfound_manual_job', 'wellfound_open', 'wellfound_press_key', 'wellfound_read_thread', 'wellfound_screenshot',
+      'wellfound_inbox', 'wellfound_layout', 'wellfound_manual_job', 'wellfound_open', 'wellfound_press_key', 'wellfound_read_thread', 'wellfound_resolve_external', 'wellfound_screenshot',
       'wellfound_scroll', 'wellfound_snapshot', 'wellfound_type', 'wellfound_wait_for',
     ]);
     expect([...TOOL_NAMES].sort()).toEqual(tools);

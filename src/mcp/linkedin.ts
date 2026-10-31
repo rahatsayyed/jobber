@@ -26,6 +26,8 @@ import { loadLayoutConfig, type LayoutConfig } from '../layout/config.js';
 import { createLayoutObserver, resolveRunId } from '../layout/runtime.js';
 import { createEngine, type Engine, type EngineResult } from '../browserctl/act.js';
 import { armLinkedinSend, ARM_KINDS } from '../browserctl/arm/linkedin.js';
+import { createExternalState, resolveExternalApply, type ExternalDeps, type ExternalState } from '../browserctl/externalApply.js';
+import { LINKEDIN_POLICY } from '../browserctl/policy.js';
 import { noteQuotaUntil } from '../linkedin/noteQuota.js';
 import { BC_KEYS, realBcPage, type BcPage } from '../browserctl/driver.js';
 import { IntentStore } from '../browserctl/intent.js';
@@ -47,7 +49,7 @@ export const TOOL_NAMES = [
   'linkedin_open', 'linkedin_snapshot', 'linkedin_click', 'linkedin_type', 'linkedin_press_key',
   'linkedin_scroll', 'linkedin_wait_for', 'linkedin_screenshot', 'linkedin_click_at', 'linkedin_arm_send',
   'linkedin_close', 'linkedin_limits', 'linkedin_layout',
-  'linkedin_find_profiles', 'linkedin_search_jobs', 'linkedin_search_posts', 'linkedin_manual_job',
+  'linkedin_find_profiles', 'linkedin_search_jobs', 'linkedin_search_posts', 'linkedin_manual_job', 'linkedin_resolve_external',
 ] as const;
 type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -83,6 +85,8 @@ export const schemas = {
   linkedin_search_posts: { search: z.string().regex(SEARCH_NAME_RE) },
   // Takes nothing: code picks the next owner-submitted job page.
   linkedin_manual_job: {},
+  // A job id only: the page must already be open; code finds the company site behind a non-Easy Apply.
+  linkedin_resolve_external: { job_id: z.string().regex(/^[\w.:@-]{1,200}$/) },
 } as const;
 
 export interface HandlerDeps {
@@ -107,6 +111,9 @@ export interface HandlerDeps {
   /** Test seams for the settle delay in the engine. */
   paceMs?: () => number;
   settleMs?: number;
+  /** External apply resolve: per-session counters and test seams (sleep, random, popup wait). */
+  externalState?: ExternalState;
+  resolveTuning?: Pick<ExternalDeps, 'sleep' | 'random' | 'popupWaitMs' | 'popupPollMs' | 'diagDir'>;
 }
 
 export type Handler = (args: any) => Promise<unknown>;
@@ -330,6 +337,12 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
       };
       return json(await saveNextManualPlatformJob('linkedin', io, { db: td.db, env: td.env, now: td.now, screen: td.screen }));
     }),
+    // Finds the company site behind a non-Easy Apply in code (main account session only, never the burner); the URL is never returned.
+    linkedin_resolve_external: safe(async ({ job_id }) => json(await resolveExternalApply({
+      engine: getEngine(), db: getDb(), now, env, cfg: loadOutreachConfig(env), policy: LINKEDIN_POLICY, screen,
+      state: (deps.externalState ??= createExternalState()),
+      ...(deps.resolveTuning ?? {}),
+    }, 'linkedin', { job_id }))),
   };
   // One tool call at a time over the ONE session. The model may send arm and click in one parallel
   // message; without this the arm's post-open checks interleave with the click and the session's idle
@@ -372,6 +385,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   linkedin_layout: 'Read-only: layout memory enforcement mode, the verdict class of the last observed page, and a compact vocabulary-only summary of learned page layouts (no page text).',
   linkedin_find_profiles: 'TYPED, read-only toward LinkedIn: searches people by company (and optional role_hint) and returns at most 3 verified profile candidates (canonical profile_url, name, headline), registering them as people rows for the given category. Shares the daily search ceiling. Never clicks or sends. ' + UNTRUSTED,
   linkedin_search_jobs: 'TYPED, read-only toward LinkedIn: runs ONE named jobs search from config/linkedin-discovery.json (pass only its name), saves new jobs in code and returns counts and new job ids, never page text. Shares the daily search ceiling plus the discover ceiling. Dry run saves nothing. ' + UNTRUSTED,
+  linkedin_resolve_external: 'For a LinkedIn job whose Apply is NOT Easy Apply: after linkedin_open of that job page, code reads the Apply link (or clicks it once and reads the company page address from the popup, closing it at once, nothing typed or read there), validates and classifies it and routes the job to the generic applier (then call apply_open with the same job_id). You supply only the job_id; the address is never returned. Honours dry run, halts and the kill switch; one daily ceiling and at most 5 per run. Returns {status: resolved|manual_review|refused|rate_limited|dry_run|halted|failed, code, platform?, tier?}. Main account session only. ' + UNTRUSTED,
   linkedin_manual_job: 'TYPED, read-only toward LinkedIn: takes no arguments. Code picks the next queued owner-submitted LinkedIn job page (the URL comes from SQLite), loads it in this session, reads and screens the posting and saves it as a priority job in code. Returns {status: ok|dry_run|halted|failed, code, task_id, job_ids, remaining}; never page text. Never sends or applies. ' + UNTRUSTED,
   linkedin_search_posts: 'TYPED, read-only toward LinkedIn: runs ONE named hiring-post search from config/linkedin-discovery.json (pass only its name), saves hiring posts as jobs in code and returns counts and new job ids, never page text. Shares the daily search ceiling plus the discover ceiling. Dry run saves nothing. ' + UNTRUSTED,
 };

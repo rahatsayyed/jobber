@@ -171,3 +171,7 @@ job/profile," not "requires a review step." Steps:
 `linkedin_arm_send` is gated by the daily rolling `linkedin_invite` ceiling for connects and the
 separate `linkedin_message` ceiling for messages (limit values live in the catalog, not here), and a
 confirmed send is recorded in `connections` (`status: "messaged"` for a DM).
+
+## External apply from LinkedIn jobs
+
+A `linkedin-jobs` job whose Apply is not Easy Apply is classed `linkedin` (reason `external_resolve`). The `apply-operator` opens the stored job page with `linkedin_open`, then `linkedin_resolve_external({job_id})` decodes the `externalApply` link (or does one code-owned click and reads the popup) and routes the job to the generic applier. Main account only; never the burner or Easy Apply; no connect or message tool is involved. Untested live. See "External apply" in `applying.md`.

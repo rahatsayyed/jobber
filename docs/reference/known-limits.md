@@ -98,3 +98,5 @@ render tests use a full-page synthetic fixture (`tests/fixtures/render/`) becaus
 resume is far shorter than a page. The list of known failures, mirrored in
 `config/update-known-failures.json` (`{}`), is used by the auto-update test gate; update both
 together if one ever appears.
+
+- External resolve: Naukri path proven by probe structure (a plain button with `company-site` in its class, no href) but never run live; Wellfound and LinkedIn untested live (no external-apply example page was found); the popup wait, pacing and unknown-host outcomes are unmeasured.

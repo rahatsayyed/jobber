@@ -111,7 +111,7 @@ function sameFullName(a: string, b: string): boolean {
 const SEND_CONNECT_RE = /^send (?:an? )?(?:invitation|invite|without a note)\b/;
 const SEND_RE = new RegExp(`^(?:send|${EXTRA_LABELS.send.join('|')})\\b`);
 const NAUKRI_APPLY_RE = /^(?:apply|apply now|easy apply)$/;
-const NAUKRI_OFFSITE_RE = /^apply on (?:the )?company(?:'s)? (?:site|website)\b/;
+export const NAUKRI_OFFSITE_RE =/^apply on (?:the )?company(?:'s)? (?:site|website)\b/;
 const NAUKRI_SEND_RE = /^(?:send|send message)$/;
 const NAUKRI_CHATBOT_RE = /^(?:save|submit|continue|done)$/;
 const IRREVERSIBLE_RE = new RegExp(
@@ -131,7 +131,7 @@ export const isNaukriApplyName = (name: string): boolean => NAUKRI_APPLY_RE.test
 // off-site apply links are never clicked. English labels only: a page in another language fails closed
 // (an unknown dialog-footer or submit button is irreversible_other).
 const WELLFOUND_APPLY_RE = /^(?:apply|apply now)$/;
-const WELLFOUND_OFFSITE_RE = /^apply (?:on|at|via|through) (?:the )?(?:company(?:'s)? )?(?:site|website)\b|^apply externally\b/;
+export const WELLFOUND_OFFSITE_RE =/^apply (?:on|at|via|through) (?:the )?(?:company(?:'s)? )?(?:site|website)\b|^apply externally\b/;
 const WELLFOUND_SUBMIT_RE = /^(?:submit application|send application|submit your application|apply to .+)$/;
 const WELLFOUND_SEND_RE = /^(?:send|send message)$/;
 const WELLFOUND_STEP_RE = /^(?:submit|continue|done|next)$/;

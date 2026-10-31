@@ -20,7 +20,7 @@ import { screenedState } from './state.js';
 export const OpenInput = z.object({ job_id: z.string().regex(/^[\w.:@-]{1,200}$/) }).strict();
 export type OpenInputT = z.infer<typeof OpenInput>;
 
-interface JobRow { id: string; source: string | null; apply_url: string | null; description: string | null }
+interface JobRow { id: string; source: string | null; apply_url: string | null; external_apply_url: string | null; description: string | null }
 
 const firstLocation = (description: string | null): string | undefined => {
   const m = /^Location:\s*(.+)$/m.exec(String(description ?? '').slice(0, 400));
@@ -42,7 +42,7 @@ async function open(input: OpenInputT, deps: ApplierDeps): Promise<ApplyResult> 
   const now = nowOf(deps);
   const jobId = input.job_id;
 
-  const job = db.prepare('SELECT id, source, apply_url, description FROM jobs WHERE id = ?').get(jobId) as JobRow | undefined;
+  const job = db.prepare('SELECT id, source, apply_url, external_apply_url, description FROM jobs WHERE id = ?').get(jobId) as JobRow | undefined;
   if (!job) return refuse('unknown_job', 'no such job');
   const veto = getExcludedReason(db, jobId);
   if (veto) return refuse('vetoed', 'the job is excluded');
@@ -58,7 +58,8 @@ async function open(input: OpenInputT, deps: ApplierDeps): Promise<ApplyResult> 
   }
 
   // Code-authoritative class: re-derived from the stored URL, then narrowed by the queued row's own tier.
-  const url = job.apply_url ?? '';
+  // A platform job whose Apply leads to the company site is applied to at the URL setExternalApply stored; every refusal below still runs on it.
+  const url = job.external_apply_url?.trim() || job.apply_url || '';
   const cls = classifyApplyUrl(url, job.source, env);
   const queued = db.prepare('SELECT apply_tier, apply_platform FROM outreach_queue WHERE job_id = ? ORDER BY id DESC LIMIT 1')
     .get(jobId) as { apply_tier: string | null; apply_platform: string | null } | undefined;

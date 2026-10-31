@@ -29,6 +29,7 @@ import { createLayoutObserver, resolveRunId, type LayoutObserver } from '../layo
 import { naukriKind } from '../layout/fingerprint.js';
 import { createEngine, type Engine, type EngineResult } from '../browserctl/act.js';
 import { armNaukriApply, armNaukriMessage, NAUKRI_ARM_KINDS } from '../browserctl/arm/naukri.js';
+import { createExternalState, resolveExternalApply, type ExternalDeps, type ExternalState } from '../browserctl/externalApply.js';
 import { BC_KEYS, realBcPage, type BcPage } from '../browserctl/driver.js';
 import { IntentStore } from '../browserctl/intent.js';
 import { treeToNaukriSnapshot } from '../browserctl/layoutAdapter.js';
@@ -107,6 +108,9 @@ export interface NaukriDeps {
   paceMs?: () => number;
   confirmTimeoutMs?: number;
   stopFile?: string;
+  /** External apply resolve: per-session counters and test seams (sleep, random, popup wait). */
+  externalState?: ExternalState;
+  resolveTuning?: Pick<ExternalDeps, 'sleep' | 'random' | 'popupWaitMs' | 'popupPollMs' | 'diagDir'>;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -227,6 +231,8 @@ async function closeSession(): Promise<boolean> {
   const s = session;
   session = null;
   engine = null;
+  externalState.resolves = 0;
+  externalState.lastAt = null;
   if (!s) return false;
   if (s.idleTimer) clearTimeout(s.idleTimer);
   try {
@@ -547,6 +553,25 @@ export function naukriArmApply({ job_id }: { job_id: string }, deps: NaukriDeps 
       cfg: deps.cfg ?? loadOutreachConfig(env), screen: screenFn(deps),
       ...(deps.stopFile ? { stopFile: deps.stopFile } : {}),
     }, { job_id });
+    return jsonOut(res);
+  }));
+}
+
+const externalState = createExternalState();
+
+/** Finds the company site behind "Apply on company site" in code and routes the job to the generic applier. Never returns the URL. */
+export function naukriResolveExternal({ job_id }: { job_id: string }, deps: NaukriDeps = {}): Promise<string> {
+  return serial(() => guarded(async () => {
+    const env = envOf(deps);
+    const failed = await ensureSession(deps);
+    if (failed) return failed;
+    touch(deps);
+    const res = await resolveExternalApply({
+      engine: getEngine(deps), db: getDb(deps), now: nowOf(deps), env, cfg: deps.cfg ?? loadOutreachConfig(env),
+      policy: NAUKRI_POLICY, screen: screenFn(deps), state: deps.externalState ?? externalState,
+      ...(deps.stopFile ? { stopFile: deps.stopFile } : {}),
+      ...(deps.resolveTuning ?? {}),
+    }, 'naukri', { job_id });
     return jsonOut(res);
   }));
 }
@@ -1109,6 +1134,18 @@ server.registerTool(
     inputSchema: { job_id: z.string().regex(/^[\w.:@-]{1,200}$/) },
   },
   async ({ job_id }) => text(await naukriArmApply({ job_id }))
+);
+
+server.registerTool(
+  'naukri_resolve_external',
+  {
+    description:
+      'For a job whose page offers "Apply on company site": after naukri_open of that job page, code clicks that one control, reads the company page address from the popup it opens (closing it at once, nothing typed or read there), ' +
+      'validates and classifies it and routes the job to the generic applier (then call apply_open with the same job_id). You supply only the job_id; the address is never returned. ' +
+      'Honours dry run, halts and the kill switch; one daily ceiling and at most 5 per run. Returns {status: resolved|manual_review|refused|rate_limited|dry_run|halted|failed, code, platform?, tier?}. ' + UNTRUSTED,
+    inputSchema: { job_id: z.string().regex(/^[\w.:@-]{1,200}$/) },
+  },
+  async ({ job_id }) => text(await naukriResolveExternal({ job_id }))
 );
 
 server.registerTool(
