@@ -128,6 +128,7 @@ describe('rendered settings and committed settings.json', () => {
     'mcp__linkedin__linkedin_click_at',
     'mcp__linkedin__linkedin_search_jobs',
     'mcp__linkedin__linkedin_search_posts',
+    'mcp__linkedin__linkedin_check_accepted',
     'mcp__naukri__naukri_open',
     'mcp__naukri__naukri_press_key',
     'mcp__naukri__naukri_click_at',
