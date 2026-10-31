@@ -6,6 +6,7 @@ import { openDb } from '../db.js';
 import { dbPath } from '../dbPath.js';
 import { loadOutreachConfig } from '../outreach/config.js';
 import { loadTuning } from '../outreach/tuning.js';
+import { loadLinkedinPlan } from '../accountPlan.js';
 import {
   addEscalation,
   clampLimit,
@@ -49,7 +50,8 @@ const PLATFORM =z.enum(['linkedin', 'naukri', 'wellfound']);
 const KLASS = z.enum(['recruiter_inquiry', 'reply', 'rejection', 'interview', 'noise', 'injection_suspect']);
 
 export function handleListDueTouches(deps: OutreachDeps, a: { platform?: Platform; limit?: number }) {
-  return listDueTouches(getDb(deps), nowOf(deps), loadTuning(), { platform: a.platform, limit: clampLimit(a.limit) });
+  const touches = listDueTouches(getDb(deps), nowOf(deps), loadTuning(), { platform: a.platform, limit: clampLimit(a.limit) });
+  return { linkedin_plan: loadLinkedinPlan(), touches };
 }
 export function handleNextContacts(
   deps: OutreachDeps,
@@ -124,7 +126,7 @@ export function buildServer(deps: OutreachDeps = {}): McpServer {
   server.registerTool(
     'list_due_touches',
     {
-      description: 'Follow-up touches due now (max 20), oldest first, with profile_url and name.',
+      description: 'Follow-up touches due now (max 20), oldest first, as {linkedin_plan, touches}. Each touch has profile_url, name and invite_had_note (true when the accepted invite carried a note; false for a plain or unknown invite). linkedin_plan is free, premium or unknown (owner setting).',
       inputSchema: { platform: PLATFORM.optional(), limit: z.number().int().min(1).max(20).optional() },
     },
     async (a) => safe(() => handleListDueTouches(deps, a)),

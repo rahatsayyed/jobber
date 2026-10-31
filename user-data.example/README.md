@@ -11,5 +11,6 @@ Run `npm run user-data -- init` to copy these templates into `user-data/`, then 
 | `fact-gate.json` | Facts you confirm, which the fact checker may allow, plus phrases to block or warn on. |
 | `languages.json` | The languages you speak, used by the language gate. |
 | `profile.json` | Roles, locations, remote preference, salary floors and targets per currency, notice period and work authorization (written by the setup wizard). |
+| `account.json` | Your LinkedIn plan: `free`, `premium` or `unknown` (the default). Optional: a missing or invalid file means `unknown`. |
 
 The setup skill (plan 7B) asks for your resume and a few questions and writes these files for you.

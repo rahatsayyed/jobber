@@ -49,11 +49,15 @@ already connected.
 
 1. Write a message that:
    - Opens as a message to someone already connected and never says "would love to connect" (you already are).
-     This account is a FREE LinkedIn account: the invite normally went out WITHOUT a note (the monthly note
-     quota is used up), so the person has read nothing from you yet. Unless the context shows the invite carried a
-     note, treat this DM as the FIRST thing they read: start with one short line saying who you are (a full stack
-     React developer) and thanks for connecting, then the role. Never write it as a follow-up ("following up on my
-     note", "as I mentioned") for a `role_ask` or `rapport`; only the `followup` kind may refer to an earlier message.
+     Read the input `invite_had_note` (boolean from the due touch; absent means false) and the optional
+     linkedin_plan (free, premium or unknown; a hint only, `invite_had_note` decides):
+     (a) `invite_had_note` is true: the person already read who you are in the invite note, so the DM is a natural
+     continuation: no re-introduction, go straight to the role.
+     (b) `invite_had_note` is false or missing (a plain invite, nothing was written): this DM is the FIRST thing they
+     read. Start with one short line saying who you are (from the base resume, e.g. "Full stack React developer") and
+     thanks for connecting, then the role.
+     In both cases, for the kinds `role_ask` and `rapport` never word it as a follow-up ("following up on my note",
+     "as I mentioned", "circling back"); only the kind `followup` may refer to an earlier message.
    - References the specific job/company by name (e.g. "the Full Stack Developer role at
      Acme" — not "a role I saw" or "your company").
    - Uses the profile's first name if available (`profile.name`), kept natural.

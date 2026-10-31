@@ -183,6 +183,8 @@ with a Message button and no Connect button sets the row (and every `sent` row o
 `role_ask` or `rapport` through the normal arm flow. Pending leaves the row, Connect again reports `not_accepted`, anything
 unclear changes nothing. It clicks and sends nothing and honours dry run, halts and the kill switch (`src/linkedin/acceptCheck.ts`).
 
+**First DM wording (`invite_had_note`).** Whether the accepted invite carried a note is a per-person fact read from SQLite, not guessed by the model: `outreach.list_due_touches` returns `{linkedin_plan, touches}` and each touch has `invite_had_note`, true when the newest `connections` invite row (status `sent` or `connected`, same normalized profile key) has a non-empty `note`; a plain invite (`connect_plain` or a direct send) stores note `''`, and unknown means false. `draft-linkedin-message` continues the invite note without re-introducing when it is true, and when it is false opens with one short who-we-are and thanks-for-connecting line, then the role; for `role_ask` and `rapport` it is never worded as a follow-up. `linkedin_plan` (`free`, `premium`, `unknown`) comes from the optional owner file `user-data/account.json`; it is only exposed, no code branches on it.
+
 ## External apply from LinkedIn jobs
 
 A `linkedin-jobs` job whose Apply is not Easy Apply is classed `linkedin` (reason `external_resolve`). The `apply-operator` opens the stored job page with `linkedin_open`, then `linkedin_resolve_external({job_id})` decodes the `externalApply` link (or does one code-owned click and reads the popup) and routes the job to the generic applier. Main account only; never the burner or Easy Apply; no connect or message tool is involved. Untested live. See "External apply" in `applying.md`.

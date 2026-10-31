@@ -55,6 +55,30 @@ export function loadConnectedKeys(db: Db): Set<string> {
 }
 
 /**
+ * Normalized profile keys whose invite carried a note. Only invite rows count (status 'sent' or 'connected'); a
+ * 'messaged' row stores the DM text in `note` and says nothing about the invite. A plain invite stores note ''.
+ * The newest invite row of a profile decides. Fail soft: a missing table means no key (treated as a plain invite).
+ */
+export function loadNotedInviteKeys(db: Db): Set<string> {
+  const keys = new Set<string>();
+  try {
+    const rows = db
+      .prepare(
+        "SELECT profile_url, note FROM connections WHERE status IN ('sent', 'connected') AND profile_url IS NOT NULL ORDER BY id ASC",
+      )
+      .all() as { profile_url: string; note: string | null }[];
+    for (const r of rows) {
+      const k = normalizeProfileKey(r.profile_url);
+      if ((r.note ?? '').trim()) keys.add(k);
+      else keys.delete(k);
+    }
+  } catch {
+    // legacy table missing: no signal
+  }
+  return keys;
+}
+
+/**
  * Follow-ups due at `now`, oldest due first. Only people in stage 'active' are considered; a
  * 'connect' step is new outreach, not a follow-up, so it is never returned.
  *

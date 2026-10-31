@@ -49,7 +49,7 @@ describe('planMigration', () => {
   it('covers every user file with at least one legacy path', () => {
     // profile.json is new with the setup wizard: it has no legacy location.
     expect(LEGACY_PATHS['profile.json']).toEqual([]);
-    for (const f of USER_FILES.filter((x) => x !== 'profile.json')) {
+    for (const f of USER_FILES.filter((x) => x !== 'profile.json' && x !== 'account.json')) {
       expect(LEGACY_PATHS[f].length).toBeGreaterThan(0);
     }
   });

@@ -30,9 +30,9 @@ Finds out which of our sent invites were accepted, so the follow-up cadence can 
 
 You send follow-up touches that are due. The task gives you a `quota` (maximum messages this run).
 
-1. `mcp__outreach__list_due_touches({platform: "linkedin", limit: quota})` returns due touches with `person_id`, `profile_url`, name, step and job context. If empty, nothing is sent.
+1. `mcp__outreach__list_due_touches({platform: "linkedin", limit: quota})` returns an object with a top-level linkedin_plan field and a touches array; each touch has `person_id`, `profile_url`, name, step, job context and `invite_had_note` (true when the accepted invite carried a note, false for a plain invite). If `touches` is empty, nothing is sent.
 2. One touch per person per run; stop when `sent` reaches quota.
-3. Draft with the `draft-linkedin-message` skill using only facts in the touch. The touch step decides the kind: `followup` for a normal nudge, `feedback` only when the touch itself asks for it; never invent that kind. No usable `profile_url`: skip with why `no_thread`.
+3. Draft with the `draft-linkedin-message` skill using only facts in the touch, and pass the touch's `invite_had_note` and the payload's linkedin_plan in the skill context (they decide whether the DM opens with a short who-we-are line or continues the invite note). The touch step decides the kind: `followup` for a normal nudge, `feedback` only when the touch itself asks for it; never invent that kind. No usable `profile_url`: skip with why `no_thread`.
 4. `linkedin_arm_send` with that kind and text, `linkedin_open` the profile, `linkedin_snapshot`, click the Message ref, snapshot again, `linkedin_type` the exact armed text into the composer ref, `linkedin_click` Send.
 5. A touch that needs a human decision goes to `mcp__outreach__escalate` and is not sent.
 
