@@ -88,7 +88,7 @@ export class BudgetTracker {
       return;
     }
     const o = obj as {
-      type?: unknown; is_error?: unknown; result?: unknown; error?: unknown; message?: { content?: unknown };
+      type?: unknown; subtype?: unknown; is_error?: unknown; result?: unknown; error?: unknown; message?: { content?: unknown };
     };
     // Never scan assistant or user (tool_result) messages: tool output may say limit reached.
     if (o.type === 'result' || o.type === 'system') {
