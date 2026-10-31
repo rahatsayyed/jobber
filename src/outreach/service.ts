@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 import type { Category, TouchKind } from './cadence.js';
-import { dueTouchesFor, loadConnectedKeys } from './dueTouches.js';
+import { dueTouchesFor, loadConnectedKeys, loadNotedInviteKeys } from './dueTouches.js';
 import type { OutreachConfig } from './config.js';
 import {
   activeByCategory,
@@ -52,6 +52,8 @@ export interface DueTouch {
   job_id: string | null;
   profile_url: string | null;
   thread_ref: string | null;
+  /** True when the accepted LinkedIn invite carried a note; false for a plain invite or when unknown. */
+  invite_had_note: boolean;
 }
 
 export function listDueTouches(
@@ -65,6 +67,7 @@ export function listDueTouches(
   const jobStmt = db.prepare(
     'SELECT job_id FROM touches WHERE person_id = ? AND job_id IS NOT NULL ORDER BY id DESC LIMIT 1',
   );
+  const noted = loadNotedInviteKeys(db);
   return due.map((d) => {
     const p = personStmt.get(d.person_id) as { profile_key: string; name: string | null; company: string | null };
     const j = jobStmt.get(d.person_id) as { job_id: string } | undefined;
@@ -80,6 +83,7 @@ export function listDueTouches(
       job_id: j?.job_id ?? null,
       profile_url: profileUrlFor(d.platform, p.profile_key),
       thread_ref: null, // touches has no thread column yet
+      invite_had_note: noted.has(normalizeProfileKey(p.profile_key)),
     };
   });
 }

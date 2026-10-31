@@ -97,7 +97,7 @@ describe('listDueTouches', () => {
     const db = openDb(':memory:');
     for (let i = 0; i < 25; i++) dueSetup(db, `p${i}`);
     expect(listDueTouches(db, NOW, TUNING_DEFAULTS, { limit: 500 })).toHaveLength(20);
-    expect(handleListDueTouches({ db, now: () => NOW }, { limit: 20 })).toHaveLength(20);
+    expect(handleListDueTouches({ db, now: () => NOW }, { limit: 20 }).touches).toHaveLength(20);
   });
 
   it('matches what countDue counts for the same db', () => {

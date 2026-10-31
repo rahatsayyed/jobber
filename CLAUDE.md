@@ -114,6 +114,7 @@ change for day-to-day tuning.
 - **Role**: `full stack developer / react`
 - **Location**: `india` (remote also acceptable, and remote roles based in any other country are acceptable unless the posting restricts eligibility, see `remote_anywhere` below; the Gulf countries are target regions)
 - **Remote OK**: yes
+- **LinkedIn plan**: optional `user-data/account.json` (`{"linkedin_plan": "free"|"premium"|"unknown"}`, default `unknown`) is exposed on `outreach.list_due_touches` with a per-touch `invite_had_note`, which decides the first DM wording (see "Connecting").
 - **Languages**: declared in `user-data/languages.json` (`{"confirmed": false, "declared":
   [{"language", "level": basic|professional|fluent|native}]}`); the deterministic language gate
   compares posting requirements against it. It ships with English only and `confirmed: false`;

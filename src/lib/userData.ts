@@ -8,6 +8,7 @@ export const USER_FILES = [
   'fact-gate.json',
   'languages.json',
   'profile.json',
+  'account.json',
 ] as const;
 export type UserFile = (typeof USER_FILES)[number];
 
@@ -34,6 +35,7 @@ export const LEGACY_PATHS: Record<UserFile, string[]> = {
   'fact-gate.json': ['config/fact-gate.json'],
   'languages.json': ['config/languages.json'],
   'profile.json': [],
+  'account.json': [],
 };
 
 export interface CopyOp {

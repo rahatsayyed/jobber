@@ -22,6 +22,7 @@ Restart rule of thumb: an MCP server keeps what it loaded at start. After you ch
 | `config/replies.json` | Whether detected replies may be auto-recorded | `src/replies.ts` (`loadRepliesConfig`) | per call | `npm run doctor` check `config-files` (parses, must be a JSON object) |
 | `user-data/resume.json` | Base resume the agent tailors (the agent never edits it) | resume MCP, matcher | restart after a change (unverified inference: MCP servers keep what they loaded) | none found |
 | `user-data/profile.json` | Roles, locations, salary floors, notice period, work authorization | setup wizard (`profile` step) | per use (unverified inference) | `npm run doctor` check `profile-valid` |
+| `user-data/account.json` | Your LinkedIn plan (`free`, `premium`, `unknown`) | `src/accountPlan.ts` | per call | none (optional) |
 | `user-data/languages.json` | Languages you speak and whether you confirmed the list | `src/languageGate.ts` | per call | `npm run doctor` check `languages-confirmed` (parse and `confirmed` only) |
 | `user-data/easy-apply-answers.json` | Answers to common screening questions | `src/apply/answers.ts` | per apply call, no restart | none found |
 | `user-data/fact-gate.json` | Facts you confirmed, plus phrases to block or warn on | `src/resumeFacts.ts` (`loadFactGateConfig`) | per render or check call | none found; a bad file blocks with the `unknown key` error |
@@ -119,6 +120,16 @@ Schema pointer: `loadLanguageConfigStatus` in `src/languageGate.ts`. Each `decla
 ```
 
 While `confirmed` is not exactly `true`, an undeclared required language is only a FLAG. Add a language only if you really speak it.
+
+### user-data/account.json
+
+Purpose: your LinkedIn plan, read by `outreach.list_due_touches` (top-level `linkedin_plan`) so the operator and skills can see it. Optional.
+
+Schema pointer: `loadLinkedinPlan` in `src/accountPlan.ts`. `linkedin_plan` is `free`, `premium` or `unknown`; a missing file, bad JSON or any other value means `unknown`. Nothing in code branches on it (the monthly note quota is still detected at runtime). Template: `user-data.example/account.json`.
+
+```json
+{ "linkedin_plan": "unknown" }
+```
 
 ### user-data/profile.json
 
