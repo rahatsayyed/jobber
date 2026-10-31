@@ -144,6 +144,20 @@ export function messageDialogName(tree: RawTree, dlg: number): string {
     const s = c.replace(/^(?:new message to|message to|messaging with|conversation with|message)\s+/i, '').trim();
     if (s && !GENERIC_HEADS.test(s)) return s;
   }
+  // Live "New message" overlay (profile Message click): the heading is generic and the recipient is a chip, a
+  // `Remove <name>` button next to a `<name> Profile` link. Exactly one distinct recipient is accepted; two or more
+  // recipients name nobody (a group message is never sent).
+  const chips = new Set<string>();
+  for (const x of tree.nodes) {
+    if (x.dialog !== dlg) continue;
+    const m = x.role === 'button' ? /^remove\s+(.+)$/i.exec(x.name ?? '') : x.role === 'link' ? /^(.+?)\s+profile$/i.exec(x.name ?? '') : null;
+    if (m && m[1].trim()) chips.add(m[1].trim().toLowerCase());
+  }
+  if (chips.size === 1) {
+    const only = [...chips][0];
+    const named = tree.nodes.find((x) => x.dialog === dlg && x.role === 'button' && new RegExp(`^remove\\s+${only.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i').test(x.name ?? ''));
+    return (named?.name ?? '').replace(/^remove\s+/i, '').trim() || only;
+  }
   return '';
 }
 
