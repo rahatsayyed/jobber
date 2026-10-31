@@ -20,6 +20,7 @@ const PERIOD: Record<LimitKey, string> = {
   site_account: 'day',
   linkedin_discover: 'day',
   external_resolve: 'day',
+  linkedin_profile_view: 'day',
 };
 
 /** ISO instant to `YYYY-MM-DD HH:MM IST` (Asia/Kolkata); unparseable input is returned as is. */

@@ -88,7 +88,7 @@ untrusted comment text (names are sanitized, the text never reaches an instructi
 the HN item page), and outreach for a Hacker News job is gated in code by the domain check described
 under Preferences. The Himalayas and We Work Remotely attribution and terms are unverified.
 
-**Search layer and contact finding** (`src/search/`). Company domain resolution is a ladder: explicit
+**Search layer and contact finding** (`src/search/`). The kind `linkedin_people` (people dork for `linkedin_find_profiles`, run one layer at a time through `SearchDeps.skip`) shares these caches and budgets; see "Layered people discovery" in `docs/reference/connecting.md`. Company domain resolution is a ladder: explicit
 parameter, a company-site `apply_url` host, the Hacker News posting domain, then search. Search tries the
 cache first (`SEARCH_CACHE_TTL_DAYS`), then a browser dork (`DORK_ENABLED`, daily budget
 `DORK_DAILY_BUDGET`, cooldown `DORK_BLOCK_COOLDOWN_HOURS` after a block), then Serper under

@@ -7,7 +7,7 @@ type Db = BetterSqlite3.Database;
 export type LimitKey =
   | 'linkedin_invite' | 'linkedin_message' | 'naukri_apply' | 'naukri_message'
   | 'wellfound_apply' | 'wellfound_message' | 'wellfound_discover'
-  | 'apply_attempt' | 'site_account' | 'linkedin_discover' | 'external_resolve';
+  | 'apply_attempt' | 'site_account' | 'linkedin_discover' | 'external_resolve' | 'linkedin_profile_view';
 
 const DAY_MS = 24 * 3600 * 1000;
 
@@ -23,6 +23,7 @@ const WINDOW_MS: Record<LimitKey, number> = {
   site_account: DAY_MS,
   linkedin_discover: DAY_MS,
   external_resolve: DAY_MS,
+  linkedin_profile_view: DAY_MS,
 };
 
 function limitFor(key: LimitKey, cfg: OutreachConfig): number {
@@ -49,6 +50,8 @@ function limitFor(key: LimitKey, cfg: OutreachConfig): number {
       return cfg.linkedinMaxDiscoverPerDay;
     case 'external_resolve':
       return cfg.applyMaxExternalResolvesPerDay;
+    case 'linkedin_profile_view':
+      return cfg.linkedinMaxProfileViewsPerDay;
   }
 }
 

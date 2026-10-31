@@ -11,6 +11,7 @@ export interface OutreachConfig {
   siteMaxAccountsPerDay: number;
   linkedinMaxDiscoverPerDay: number;
   applyMaxExternalResolvesPerDay: number;
+  linkedinMaxProfileViewsPerDay: number;
   companyContactLimit: number;
   speculativeCompanyLimit: number;
   quietStartHour: number;
@@ -29,6 +30,7 @@ const DEFAULTS: OutreachConfig = {
   siteMaxAccountsPerDay: 2,
   linkedinMaxDiscoverPerDay: 12,
   applyMaxExternalResolvesPerDay: 30,
+  linkedinMaxProfileViewsPerDay: 80,
   companyContactLimit: 5,
   speculativeCompanyLimit: 2,
   quietStartHour: 1,
@@ -47,6 +49,7 @@ const ENV_KEYS: Record<keyof OutreachConfig, string> = {
   siteMaxAccountsPerDay: 'SITE_MAX_ACCOUNTS_PER_DAY',
   linkedinMaxDiscoverPerDay: 'LINKEDIN_MAX_DISCOVER_PER_DAY',
   applyMaxExternalResolvesPerDay: 'APPLY_MAX_EXTERNAL_RESOLVES_PER_DAY',
+  linkedinMaxProfileViewsPerDay: 'LINKEDIN_MAX_PROFILE_VIEWS_PER_DAY',
   companyContactLimit: 'COMPANY_CONTACT_LIMIT',
   speculativeCompanyLimit: 'SPECULATIVE_COMPANY_LIMIT',
   quietStartHour: 'QUIET_HOURS_START',

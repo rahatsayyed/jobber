@@ -11,6 +11,7 @@ import { connectionState } from './connectionState.js';
 import { activateContact } from './touches.js';
 import { isProfileUrl } from './urls.js';
 import { verifyProfileUrl } from './verify.js';
+import { consumeProfileView, PROFILE_VIEW_LIMIT_CODE } from './profileViews.js';
 import type { RawSnapshot } from './types.js';
 
 type Db = BetterSqlite3.Database;
@@ -139,6 +140,8 @@ export async function checkNextAccepted(io: AcceptIo, deps: AcceptDeps): Promise
     recordDryRun(db, { runId: null, action: 'linkedin_check_accepted', platform: 'linkedin', payload: { profile: next.key } }, now(), env);
     return { status: 'dry_run', code: 'dry_run', remaining: left() };
   }
+  // Daily profile-view ceiling: counted right before the page is opened; a refusal ends the loop cleanly.
+  if (!consumeProfileView(db, env, now(), next.profile_url)) return { status: 'rate_limited', code: PROFILE_VIEW_LIMIT_CODE, remaining: 0 };
   if (state.checked > 0) {
     const rnd = deps.random ?? Math.random;
     const ms = ACCEPT_PACE_MIN_MS + Math.floor(rnd() * (ACCEPT_PACE_MAX_MS - ACCEPT_PACE_MIN_MS));

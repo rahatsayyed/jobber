@@ -17,6 +17,10 @@ import type { Screen, ToolDeps } from '../linkedin/toolDeps.js';
 import { screenUntrusted } from '../safety/screen.js';
 import type { ClassifierPort } from '../safety/inputGate.js';
 import { findProfiles } from '../linkedin/findProfiles.js';
+import { consumeProfileView, PROFILE_VIEW_LIMIT_CODE } from '../linkedin/profileViews.js';
+import { createContactsDork, PEOPLE_ENGINES } from '../search/contactsDork.js';
+import type { SearchProvider } from '../search/index.js';
+import { loadContactsEnv } from '../lib/contactsEnv.js';
 import { searchJobs } from '../linkedin/searchJobs.js';
 import { searchPosts } from '../linkedin/searchPosts.js';
 import { saveNextManualPlatformJob, type ManualJobIo } from '../manual/platformJob.js';
@@ -119,6 +123,9 @@ export interface HandlerDeps {
   /** External apply resolve: per-session counters and test seams (sleep, random, popup wait). */
   externalState?: ExternalState;
   resolveTuning?: Pick<ExternalDeps, 'sleep' | 'random' | 'popupWaitMs' | 'popupPollMs' | 'diagDir'>;
+  /** People discovery test seams: replace the search-engine and Serper providers. */
+  dork?: SearchProvider;
+  serper?: SearchProvider;
   /** Accept check test seams: no real pause between profiles, fixed randomness. */
   acceptTuning?: Pick<AcceptDeps, 'sleep' | 'random'>;
 }
@@ -196,9 +203,19 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
     });
   const screen: Screen = (t, p) =>
     screenUntrusted(t, p, { env, dryRun: cfg.dryRun, classifier: deps.classifier });
+  // Search-engine layer of linkedin_find_profiles: built on first use, no browser before the first miss.
+  let dorkProvider: SearchProvider | undefined = deps.dork;
+  const getDork = (): SearchProvider | undefined => {
+    // Under vitest only an injected provider is used, so no test can launch a real browser by accident.
+    if (!dorkProvider && !process.env.VITEST && cfg.peopleSearchSources.includes('engine')) {
+      dorkProvider = createContactsDork({ db: getDb(), env, now, engines: PEOPLE_ENGINES });
+    }
+    return dorkProvider;
+  };
   const toolDeps = (): ToolDeps => ({
     rt: getRt(), db: getDb(), now, cfg, env, factCheck,
     styleCfg: getStyle(), screen, layoutCfg,
+    dork: getDork(), ...(deps.serper ? { serper: deps.serper } : {}),
   });
   const json = (v: unknown) => JSON.stringify(v);
   const safe = (fn: Handler): Handler => async (args) => {
@@ -261,6 +278,11 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
 
   const handlers: Record<ToolName, Handler> = {
     linkedin_open: safe(async ({ url: u }) => {
+      // Daily profile-view ceiling (LINKEDIN_MAX_PROFILE_VIEWS_PER_DAY): the one choke point for both
+      // navigation paths below. A refused view is never opened.
+      if (!haltReason(getDb(), 'linkedin') && !consumeProfileView(getDb(), env, now(), u)) {
+        return json({ ok: false, status: 'rate_limited', code: PROFILE_VIEW_LIMIT_CODE, reason: 'daily profile view limit reached; stop opening profiles and report limit reached' });
+      }
       const r = getRt();
       // No session yet: the runtime launches it (lock, session file, URL policy, block detection) and
       // lands on the page; the engine then reads that same page. With a session the engine navigates.
@@ -443,6 +465,8 @@ export function buildServer(handlers: Record<ToolName, Handler>): McpServer {
 }
 
 async function main() {
+  // Serper key and budgets for the people-discovery layers come from the project .env (not the wake env).
+  loadContactsEnv();
   const handlers = buildHandlers();
   const server = buildServer(handlers);
   let stopping = false;

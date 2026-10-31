@@ -7,6 +7,8 @@ export interface DorkParams {
   company?: string;
   domain?: string;
   role?: string;
+  /** linkedin_people only: recruiter, hiring_manager or peer (anything else is read as recruiter). */
+  category?: string;
 }
 
 const TOKEN_RE = /^[\p{L}\p{N} .&'\-]{1,80}$/u;
@@ -27,7 +29,13 @@ function domainParam(v: string | undefined): string {
   return d;
 }
 
-const NOISE = ['linkedin.com', 'glassdoor.com', 'indeed.com', 'crunchbase.com', 'facebook.com', 'wikipedia.org'];
+const PEOPLE_TERMS: Record<string, string> = {
+  recruiter: 'recruiter OR "talent acquisition" OR hiring',
+  hiring_manager: '"hiring manager" OR "engineering manager" OR "head of engineering"',
+  peer: 'engineer OR developer',
+};
+
+const NOISE =['linkedin.com', 'glassdoor.com', 'indeed.com', 'crunchbase.com', 'facebook.com', 'wikipedia.org'];
 
 export function buildDork(kind: SearchKind, p: DorkParams): string {
   switch (kind) {
@@ -41,6 +49,12 @@ export function buildDork(kind: SearchKind, p: DorkParams): string {
       return `site:linkedin.com/posts "hiring" "${token('role', p.role)}"`;
     case 'jobs_site':
       return `intitle:"${token('role', p.role)}" "${token('company', p.company)}" careers (inurl:careers OR inurl:jobs OR filetype:pdf)`;
+    case 'linkedin_people': {
+      const company = token('company', p.company);
+      const terms = PEOPLE_TERMS[p.category ?? 'recruiter'] ?? PEOPLE_TERMS.recruiter;
+      const hint = p.role !== undefined && isSafeToken(p.role) ? `"${p.role.trim()}" OR ` : '';
+      return `site:linkedin.com/in "${company}" (${hint}${terms})`;
+    }
     default:
       throw new Error('unknown search kind');
   }

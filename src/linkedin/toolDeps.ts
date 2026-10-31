@@ -5,6 +5,7 @@ import type { LayoutConfig } from '../layout/config.js';
 import type { LinkedinConfig } from './config.js';
 import type { FactCheck } from './guard.js';
 import type { Runtime } from './runtime.js';
+import type { SearchProvider } from '../search/index.js';
 import type { ScreenPurpose, ScreenVerdict } from '../safety/screen.js';
 
 export type Screen = (text: string, purpose: ScreenPurpose) => Promise<ScreenVerdict>;
@@ -21,6 +22,9 @@ export interface ToolDeps {
   screen: Screen;
   /** Layout memory settings (LAYOUT_ENFORCE and friends); defaults to loadLayoutConfig(env). */
   layoutCfg?: LayoutConfig;
+  /** People discovery layers (linkedin_find_profiles): the search-engine and Serper providers. Absent: layer skipped. */
+  dork?: SearchProvider;
+  serper?: SearchProvider;
 }
 
 export type SendStatus =
