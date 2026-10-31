@@ -150,6 +150,11 @@ describe('usage limit detection scope', () => {
     b.feed(JSON.stringify({ type: 'result', is_error: false, result: 'rate limit exceeded' }) + '\n', t0);
     expect(b.check(t0)).toBe('usage_limit');
   });
+  it('does not treat an interrupted run (error_during_execution) as a usage limit', () => {
+    const a = fresh();
+    a.feed(JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true }) + '\n', t0);
+    expect(a.check(t0)).toBeNull();
+  });
   it('counting is unchanged', () => {
     const b = fresh();
     b.feed('x'.repeat(39) + '\n', t0);

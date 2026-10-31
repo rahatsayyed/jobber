@@ -94,7 +94,8 @@ export class BudgetTracker {
     if (o.type === 'result' || o.type === 'system') {
       for (const f of [o.result, o.error]) if (typeof f === 'string' && LIMIT_RE.test(f)) this.usageLimit = true;
     }
-    if (o.type === 'result' && o.is_error === true) this.usageLimit = true;
+    // An interrupted or crashed run also ends in an is_error result; only a bare is_error or a limit text is a limit.
+    if (o.type === 'result' && o.is_error === true && o.subtype !== 'error_during_execution') this.usageLimit = true;
     if (o.type === 'assistant' && o.message && Array.isArray(o.message.content)) {
       for (const block of o.message.content) {
         if (block && typeof block === 'object' && (block as { type?: unknown }).type === 'tool_use') this.toolCalls++;
