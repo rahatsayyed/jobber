@@ -3,6 +3,7 @@ import type { CeilingStatus, LimitKey } from '../outreach/limits.js';
 import { inQuietHours, type QuietConfig } from '../outreach/quiet.js';
 import type { ControlState, Platform } from './control.js';
 import type { DueCounts, DuePlatform } from './due.js';
+import { ACCEPT_CHECK_MAX_PER_WAKE } from '../linkedin/acceptCheck.js';
 
 export type Operator = 'linkedin-operator' | 'naukri-operator' | 'wellfound-operator';
 /**
@@ -16,7 +17,9 @@ export type TaskKind =
   // manual: owner-submitted job URLs and careers pages, ingested by the scheduler in code before the session (always the first step).
   | 'manual'
   // manual_url: one owner-submitted job page for a platform operator (LinkedIn, Naukri, Wellfound); the operator's typed `<platform>_manual_job` tool reads and saves it.
-  | 'manual_url';
+  | 'manual_url'
+  // accept_check: LinkedIn only; the operator calls the typed `linkedin_check_accepted` tool (no argument) once per quota unit.
+  | 'accept_check';
 /** Who executes a wake stage that is not a platform operator. `code` is run by the scheduler itself before the claude run starts. */
 export type StageOperator = 'code' | 'source-operator' | 'pipeline' | 'mail-operator' | 'apply-operator';
 export interface Stage { operator: StageOperator; kind: TaskKind; quota: number }
@@ -127,6 +130,13 @@ export function planWake(i: {
   const mp = due.manualPlatformTasks;
   if (mp) for (const p of ORDER) if ((mp[p] ?? 0) > 0 && allowed.has(p) && (p !== 'wellfound' || wellfoundOn)) byPlatform[p].push({ kind: 'manual_url', quota: mp[p] });
 
+  // LinkedIn accept check: reads profiles of sent invites and marks accepted ones, so the followups task can message them.
+  // Reads only, spends no ceiling; the quota is already bounded in code (ACCEPT_CHECK_MAX_PER_WAKE) by countDue.
+  const acceptDue = due.acceptCheckDue ?? 0;
+  if (allowed.has('linkedin') && acceptDue > 0) {
+    byPlatform.linkedin.push({ kind: 'accept_check', quota: Math.min(acceptDue, ACCEPT_CHECK_MAX_PER_WAKE) });
+  }
+
   const inboxDue = due.inboxLastCheckedMinAgo === null || due.inboxLastCheckedMinAgo >= knobs.inboxEveryMin;
   if (inboxDue) for (const p of control.allowed) if (p !== 'wellfound' || wellfoundOn) byPlatform[p].push({ kind: 'inbox', quota: INBOX_QUOTA });
 
@@ -164,6 +174,12 @@ export function planWake(i: {
       byPlatform[p].push({ kind: 'new_outreach', quota: q });
       spend(key, q);
     }
+  }
+  // Newly accepted people become due for their first message in this same wake: the accept check pulls in a LinkedIn followups task
+  // even when none was due at plan time (the operator reads its real queue and reports done 0 when empty).
+  if (byPlatform.linkedin.some((t) => t.kind === 'accept_check') && !byPlatform.linkedin.some((t) => t.kind === 'followups') && ok('linkedin_message')) {
+    const q = Math.min(roomLeft('linkedin_message'), CHUNK_SIZE);
+    if (q > 0) byPlatform.linkedin.push({ kind: 'followups', quota: q });
   }
   const naukriDiscoverDue =
     due.naukriSearchLastHoursAgo === null || due.naukriSearchLastHoursAgo >= knobs.naukriDiscoverEveryHours;
@@ -268,10 +284,12 @@ export function stepOrder(d: Extract<WakeDecision, { kind: 'run' }>): Step[] {
   stage('discover_agent');
   for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'manual_url') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });
   for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'discover') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota, searches: t.searches });
+  // accept_check reads profiles only and must run before the followups steps so a newly accepted person can be messaged in the same wake.
+  for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'accept_check') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });
   stage('pipeline');
   stage('mail');
   for (const a of d.tasks) for (const t of a.tasks) {
-    if (t.kind === 'discover' || t.kind === 'manual_url') continue;
+    if (t.kind === 'discover' || t.kind === 'manual_url' || t.kind === 'accept_check') continue;
     const sending = t.kind === 'followups' || t.kind === 'new_outreach';
     out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota, ...(sending ? { chunks: chunkQuota(t.quota) } : {}) });
   }

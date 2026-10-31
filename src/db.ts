@@ -287,6 +287,10 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
     db.exec('ALTER TABLE outreach_queue ADD COLUMN connect_company TEXT');
   }
 
+  // Migration: when the LinkedIn accept check last looked at a 'sent' invite (src/linkedin/acceptCheck.ts).
+  const connCols = new Set((db.prepare('PRAGMA table_info(connections)').all() as { name: string }[]).map((c) => c.name));
+  if (!connCols.has('accept_checked_at')) db.exec('ALTER TABLE connections ADD COLUMN accept_checked_at TEXT');
+
   const jobCols = new Set((db.prepare('PRAGMA table_info(jobs)').all() as { name: string }[]).map(c => c.name));
   for (const col of ['match_reasons', 'match_missing', 'location_verdict', 'language_gate', 'excluded_reason',
     'posted_at', 'deadline', 'deadline_reported', 'language_note', 'score_dims', 'requirements', 'strengths', 'gaps', 'hard_stops', 'confidence',

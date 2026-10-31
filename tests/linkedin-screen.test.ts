@@ -77,7 +77,7 @@ describe('linkedin classifier screen', () => {
 
   it('SCREENED_SURFACES: each linkedin_* file calls the screen', () => {
     const entries = SCREENED_SURFACES.filter(
-      (s) => s.id.startsWith('linkedin_') && !['linkedin_find_profiles', 'linkedin_search_jobs', 'linkedin_search_posts', 'linkedin_manual_job'].includes(s.id),
+      (s) => s.id.startsWith('linkedin_') && !['linkedin_find_profiles', 'linkedin_search_jobs', 'linkedin_search_posts', 'linkedin_manual_job', 'linkedin_check_accepted'].includes(s.id),
     );
     expect(entries.map((e) => e.id).sort()).toEqual(['linkedin_arm_send', 'linkedin_check_status', 'linkedin_snapshot']);
     for (const e of entries) {

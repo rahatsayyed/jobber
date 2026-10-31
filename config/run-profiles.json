@@ -65,6 +65,7 @@
         "mcp__naukri__naukri_layout",
         "mcp__linkedin__linkedin_search_jobs",
         "mcp__linkedin__linkedin_manual_job",
+        "mcp__linkedin__linkedin_check_accepted",
         "mcp__linkedin__linkedin_search_posts",
         "mcp__scout__scout_search",
         "mcp__scout__scout_open",

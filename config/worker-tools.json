@@ -18,6 +18,7 @@
     "mcp__linkedin__linkedin_arm_send",
     "mcp__linkedin__linkedin_search_jobs",
     "mcp__linkedin__linkedin_manual_job",
+    "mcp__linkedin__linkedin_check_accepted",
     "mcp__linkedin__linkedin_search_posts",
     "mcp__db__list_queued_outreach",
     "mcp__db__update_outreach_status"

@@ -3,6 +3,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { MATCH_FAIL_LIMIT } from '../db.js';
 import { planPipelineWork } from '../pipelineWork.js';
 import { followupMode, listApprovedFollowups, listFollowupCandidates } from '../followups.js';
+import { countAcceptCandidates } from '../linkedin/acceptCheck.js';
 import { manualPlatformTasks, manualRequestsPending } from '../manual/requests.js';
 import { dueTouchesFor } from '../outreach/dueTouches.js';
 import { normalizeProfileKey } from '../outreach/people.js';
@@ -42,6 +43,8 @@ export interface DueCounts {
   applyQueued?: number;
   /** MAX_APPLIES_PER_DAY minus today's easy_apply counter, never below 0. */
   appliesLeftToday?: number;
+  /** LinkedIn invites ('sent' connections) whose acceptance is due for a check this wake: at most ACCEPT_CHECK_MAX_PER_WAKE, undefined: not tracked. */
+  acceptCheckDue?: number;
   /** Owner-submitted manual requests not yet ingested (status pending): a wake is planned for them even when nothing else is due. */
   manualRequestsPending?: number;
   /** Owner-submitted job pages per platform operator: queued manual_url source tasks plus pending requests whose URL classifies to that platform. */
@@ -182,6 +185,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
     emailFollowupsReady,
     applyQueued,
     appliesLeftToday,
+    acceptCheckDue: countAcceptCandidates(db, now),
     manualRequestsPending: manualRequestsPending(db),
     manualPlatformTasks: manualPlatformTasks(db),
   };
