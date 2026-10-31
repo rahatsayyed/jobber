@@ -12,6 +12,8 @@ export const CONTACTS_ENV_KEYS: readonly string[] = [
   'HUNTER_API_KEY', 'HUNTER_ENABLED', 'HUNTER_MONTHLY_CAP',
   // The linkedin MCP server also uses the search layer for people discovery (no wake env_keys change needed).
   'LINKEDIN_PEOPLE_SEARCH_SOURCES',
+  // The same search layer gates the browser dork by these; without them the linkedin MCP used the defaults (30 a day).
+  'DORK_ENABLED', 'DORK_DAILY_BUDGET', 'DORK_BLOCK_COOLDOWN_HOURS',
 ];
 
 const DEFAULT_ENV_FILE = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'), '.env');

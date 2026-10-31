@@ -12,11 +12,11 @@ const write = (text: string): string => { const p = path.join(dir, '.env'); fs.w
 
 describe('loadContactsEnv', () => {
   it('loads only the allowlisted Serper and Hunter keys and nothing else', () => {
-    const file = write('SERPER_API_KEY=sk-test\nHUNTER_API_KEY="hk-test"\nGMAIL_PASS=leak\nANTHROPIC_API_KEY=leak2\nHUNTER_ENABLED=true\nDORK_ENABLED=false\n');
+    const file = write('SERPER_API_KEY=sk-test\nHUNTER_API_KEY="hk-test"\nGMAIL_PASS=leak\nANTHROPIC_API_KEY=leak2\nHUNTER_ENABLED=true\nDORK_DAILY_BUDGET=1500\nWELLFOUND_PASS=leak3\n');
     const env: Record<string, string | undefined> = {};
     const loaded = loadContactsEnv(env, file);
-    expect(env).toEqual({ SERPER_API_KEY: 'sk-test', HUNTER_API_KEY: 'hk-test', HUNTER_ENABLED: 'true' });
-    expect(loaded.sort()).toEqual(['HUNTER_API_KEY', 'HUNTER_ENABLED', 'SERPER_API_KEY']);
+    expect(env).toEqual({ SERPER_API_KEY: 'sk-test', HUNTER_API_KEY: 'hk-test', HUNTER_ENABLED: 'true', DORK_DAILY_BUDGET: '1500' });
+    expect(loaded.sort()).toEqual(['DORK_DAILY_BUDGET', 'HUNTER_API_KEY', 'HUNTER_ENABLED', 'SERPER_API_KEY']);
     expect(CONTACTS_ENV_KEYS).not.toContain('GMAIL_PASS');
   });
   it('process env wins over the file, and an empty process value counts as unset', () => {
