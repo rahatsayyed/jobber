@@ -6,13 +6,28 @@ export interface LinkedinConfig {
   acceptUnknown: boolean;
   maxAcceptsPerDay: number;
   maxSearchesPerDay: number;
+  /** Priority order of the people-discovery layers (LINKEDIN_PEOPLE_SEARCH_SOURCES). */
+  peopleSearchSources: PeopleSource[];
   allowedUrls: string[];
   allowedEmails: string[];
   idleMs: number;
   settleMs: number;
 }
 
-const csv = (v: string | undefined): string[] =>
+export type PeopleSource = 'engine' | 'serper' | 'linkedin';
+export const DEFAULT_PEOPLE_SOURCES: readonly PeopleSource[] = ['engine', 'serper', 'linkedin'];
+
+// Comma list, order = priority; unknown entries and repeats are ignored; nothing valid gives the default.
+export function parsePeopleSources(raw: string | undefined): PeopleSource[] {
+  const out: PeopleSource[] = [];
+  for (const p of (raw ?? '').split(',')) {
+    const v = p.trim().toLowerCase();
+    if ((v === 'engine' || v === 'serper' || v === 'linkedin') && !out.includes(v)) out.push(v);
+  }
+  return out.length ? out : [...DEFAULT_PEOPLE_SOURCES];
+}
+
+const csv =(v: string | undefined): string[] =>
   (v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 
 export function loadLinkedinConfig(env: NodeJS.ProcessEnv = process.env): LinkedinConfig {
@@ -25,6 +40,7 @@ export function loadLinkedinConfig(env: NodeJS.ProcessEnv = process.env): Linked
   return {
     dryRun: isDryRun(env),
     maxSearchesPerDay: Number.isInteger(srN) && srN >= 0 && srN <= 100000 ? srN : 20,
+    peopleSearchSources: parsePeopleSources(env.LINKEDIN_PEOPLE_SEARCH_SOURCES),
     acceptUnknown: env.LINKEDIN_ACCEPT_UNKNOWN === 'true',
     maxAcceptsPerDay: Number.isInteger(accN) && accN >= 0 && accN <= 1000 ? accN : 30,
     allowedUrls: csv(env.LINKEDIN_ALLOWED_URLS),

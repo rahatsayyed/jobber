@@ -223,6 +223,12 @@ const hand: EnvSpec[] = [
     about: 'Daily cap on accepted invitations.',
     ...tier('guarded', 'More automatic accepts per day raises account-restriction risk.', 'increase'),
   }),
+  e('LINKEDIN_PEOPLE_SEARCH_SOURCES', 'linkedin', 'LinkedIn', 'list', {
+    default: 'engine,serper,linkedin',
+    about: 'Where linkedin_find_profiles looks for people, in priority order: engine (a no-login search-engine query, Google, then DuckDuckGo, then Bing; a blocked engine cools down and is never solved or waited out), serper (needs SERPER_API_KEY, under its budgets) and linkedin (the logged-in people-search page, under MAX_LINKEDIN_SEARCHES_PER_DAY). Unknown names are ignored. Set just linkedin for the old behaviour.',
+    restart: 'mcp',
+    restartEvidence: 'src/linkedin/config.ts',
+  }),
   e('LINKEDIN_ALLOWED_URLS', 'linkedin', 'LinkedIn', 'list', {
     exampleActive: true,
     about: 'Comma-separated URLs that outbound LinkedIn text may contain. Unset: none allowed.',
@@ -961,7 +967,7 @@ const BLANK_OK = new Set<string>([
   'LINKEDIN_MAX_INVITES_PER_DAY', 'LINKEDIN_MAX_MESSAGES_PER_DAY', 'NAUKRI_MAX_APPLIES_PER_DAY',
   'NAUKRI_MAX_MESSAGES_PER_DAY', 'WELLFOUND_MAX_APPLIES_PER_DAY', 'WELLFOUND_MAX_MESSAGES_PER_DAY',
   'WELLFOUND_MAX_DISCOVER_PER_DAY', 'APPLY_MAX_ATTEMPTS_PER_DAY', 'SITE_MAX_ACCOUNTS_PER_DAY',
-  'LINKEDIN_MAX_DISCOVER_PER_DAY', 'APPLY_MAX_EXTERNAL_RESOLVES_PER_DAY', 'COMPANY_CONTACT_LIMIT', 'SPECULATIVE_COMPANY_LIMIT', 'QUIET_HOURS_START',
+  'LINKEDIN_MAX_DISCOVER_PER_DAY', 'LINKEDIN_MAX_PROFILE_VIEWS_PER_DAY', 'APPLY_MAX_EXTERNAL_RESOLVES_PER_DAY', 'COMPANY_CONTACT_LIMIT', 'SPECULATIVE_COMPANY_LIMIT', 'QUIET_HOURS_START',
   'QUIET_HOURS_END',
   'COOLDOWN_IGNORED_DAYS', 'COOLDOWN_NOT_NOW_DAYS', 'COOLDOWN_EXPLICIT_STOP_DAYS', 'CADENCE_GAPS_DAYS',
   'EMAIL_MAX_PER_DAY', 'EMAIL_DRIP_MIN_BATCH', 'EMAIL_DRIP_MAX_BATCH', 'EMAIL_DRIP_MIN_GAP_MIN', 'EMAIL_DRIP_MAX_GAP_MIN',

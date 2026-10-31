@@ -17,8 +17,8 @@ safety layers"), and the ceiling is consumed right before the Send click.
 
 The only connect caps are the daily rolling ceilings (24 hours, like the other daily caps) in `src/outreach/limits.ts`: `linkedin_invite`
 (`LINKEDIN_MAX_INVITES_PER_DAY`) and `linkedin_message` (`LINKEDIN_MAX_MESSAGES_PER_DAY`), plus the
-per-company limits and halts there. `MAX_LINKEDIN_SEARCHES_PER_DAY` (daily counter for
-`linkedin_find_profiles`, 0 to 100000) and `LINKEDIN_MAX_DISCOVER_PER_DAY` (named job and post
+per-company limits and halts there. `MAX_LINKEDIN_SEARCHES_PER_DAY` (daily counter for real LinkedIn people-search pages opened by
+`linkedin_find_profiles`, 0 to 100000; it now counts only the last layer, see below), `LINKEDIN_MAX_PROFILE_VIEWS_PER_DAY` (ceiling `linkedin_profile_view`, default 80: every `/in/` navigation by `linkedin_open` or `linkedin_check_accepted`; a refused open returns `rate_limited` / `profile_view_limit` and the accept check stops its loop) and `LINKEDIN_MAX_DISCOVER_PER_DAY` (named job and post
 searches) also exist. On a `rate_limited` result the operator stops the task and reports it; there is
 no one to ask during a wake, so a cap is never raised from inside a wake. The old `connect` MCP and
 its hybrid Claude fallback are gone; the browser applier's own LinkedIn Easy Apply route is covered
@@ -188,3 +188,18 @@ unclear changes nothing. It clicks and sends nothing and honours dry run, halts 
 ## External apply from LinkedIn jobs
 
 A `linkedin-jobs` job whose Apply is not Easy Apply is classed `linkedin` (reason `external_resolve`). The `apply-operator` opens the stored job page with `linkedin_open`, then `linkedin_resolve_external({job_id})` decodes the `externalApply` link (or does one code-owned click and reads the popup) and routes the job to the generic applier. Main account only; never the burner or Easy Apply; no connect or message tool is involved. Untested live. See "External apply" in `applying.md`.
+
+### Layered people discovery (`linkedin_find_profiles`)
+
+LinkedIn warned the owner about high-volume data access, so the logged-in people-search page is the LAST
+resort. `LINKEDIN_PEOPLE_SEARCH_SOURCES` (default `engine,serper,linkedin`, order = priority, unknown
+names ignored, `linkedin` alone restores the old behaviour) sets the layers: (1) `engine`: a no-login
+dork `site:linkedin.com/in "<company>" (<role terms>)` (category aware) through the search layer's
+browser-dork provider (Google, then DuckDuckGo, then Bing; a block page puts that engine on cooldown, is
+never solved or waited out, and falls through; budget `DORK_DAILY_BUDGET`); (2) `serper` (key and
+`SERPER_*` budgets); (3) `linkedin`. Result titles and snippets are parsed into the same candidate shape
+(non-`/in/` links dropped, at most 3), pass the same field gate, classifier screen, `employer_match` and
+`upsertPerson`, and the result carries `source: search_engine | serper | linkedin`. A headline from a
+snippet may be stale; the live profile employer check at arm time is unchanged. The linkedin MCP reads
+`SERPER_API_KEY` and `LINKEDIN_PEOPLE_SEARCH_SOURCES` from `.env` (`src/lib/contactsEnv.ts`). Live-unverified:
+real result pages and bot walls of the engines.

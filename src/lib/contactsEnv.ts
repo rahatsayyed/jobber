@@ -10,6 +10,8 @@ import { parseEnv } from '../platform/envFile.js';
 export const CONTACTS_ENV_KEYS: readonly string[] = [
   'SERPER_API_KEY', 'SERPER_DAILY_BUDGET', 'SERPER_MONTHLY_BUDGET',
   'HUNTER_API_KEY', 'HUNTER_ENABLED', 'HUNTER_MONTHLY_CAP',
+  // The linkedin MCP server also uses the search layer for people discovery (no wake env_keys change needed).
+  'LINKEDIN_PEOPLE_SEARCH_SOURCES',
 ];
 
 const DEFAULT_ENV_FILE = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'), '.env');

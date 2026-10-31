@@ -10,7 +10,7 @@ import { createSerperProvider } from './serper.js';
 
 type Db = BetterSqlite3.Database;
 
-export type SearchKind = 'company_domain' | 'domain_emails' | 'careers_page' | 'hiring_posts' | 'jobs_site';
+export type SearchKind = 'company_domain' | 'domain_emails' | 'careers_page' | 'hiring_posts' | 'jobs_site' | 'linkedin_people';
 export interface SearchResult { title: string; snippet: string; url: string }
 export interface SearchProvider {
   id: 'browser-dork' | 'serper';
@@ -25,6 +25,8 @@ export interface SearchDeps {
   dork?: SearchProvider;
   /** Override for tests; default is built from SERPER_API_KEY. */
   serper?: SearchProvider;
+  /** Layered callers (linkedin_find_profiles) run one layer at a time: skip the browser dork or Serper. */
+  skip?: { dork?: boolean; serper?: boolean };
 }
 
 export interface SearchOutcome {
@@ -56,7 +58,8 @@ export async function searchWithBudget(db: Db, kind: SearchKind, params: DorkPar
 
   const reasons: string[] = [];
 
-  if (!cfg.dorkEnabled) reasons.push('dork_disabled');
+  if (deps.skip?.dork) reasons.push('dork_skipped');
+  else if (!cfg.dorkEnabled) reasons.push('dork_disabled');
   else if (!deps.dork) reasons.push('dork_unavailable');
   else if (cooldownUntil(db, 'browser-dork', now)) reasons.push('dork_cooldown');
   else if (usageToday(db, 'browser-dork', now) >= cfg.dorkDaily) reasons.push('dork_budget');
@@ -81,6 +84,7 @@ export async function searchWithBudget(db: Db, kind: SearchKind, params: DorkPar
     } else reasons.push('dork_error');
   }
 
+  if (deps.skip?.serper) return { results: [], provider: 'none', reason: [...reasons, 'serper_skipped'].join(',') };
   const key = (env.SERPER_API_KEY ?? '').trim();
   const serper = deps.serper ?? (key ? createSerperProvider(key) : undefined);
   if (!serper) return { results: [], provider: 'none', reason: [...reasons, 'no_serper_key'].join(',') };
