@@ -80,6 +80,7 @@
       "mcp__linkedin__linkedin_find_profiles",
       "mcp__linkedin__linkedin_search_jobs",
       "mcp__linkedin__linkedin_manual_job",
+      "mcp__linkedin__linkedin_check_accepted",
       "mcp__linkedin__linkedin_search_posts",
       "mcp__naukri__naukri_arm_send",
       "mcp__naukri__naukri_arm_apply",

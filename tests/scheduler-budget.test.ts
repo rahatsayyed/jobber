@@ -155,6 +155,15 @@ describe('usage limit detection scope', () => {
     a.feed(JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true }) + '\n', t0);
     expect(a.check(t0)).toBeNull();
   });
+  it('does not treat a network outage as a usage limit', () => {
+    const a = fresh();
+    a.feed(JSON.stringify({ type: 'system', subtype: 'api_retry', error_status: null, error: 'unknown' }) + '\n', t0);
+    a.feed(JSON.stringify({ type: 'result', is_error: true, result: "API Error: Can't reach the API server (ENOTFOUND)" }) + '\n', t0);
+    expect(a.check(t0)).toBeNull();
+    const b = fresh();
+    b.feed(JSON.stringify({ type: 'result', is_error: true, result: "You've hit your limit" }) + '\n', t0);
+    expect(b.check(t0)).toBe('usage_limit');
+  });
   it('counting is unchanged', () => {
     const b = fresh();
     b.feed('x'.repeat(39) + '\n', t0);

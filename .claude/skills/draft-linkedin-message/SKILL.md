@@ -48,8 +48,12 @@ already connected.
 ## Step A — DRAFT
 
 1. Write a message that:
-   - Opens as a message to someone already connected — never re-introduces yourself as if this
-     were a first contact, and never says "would love to connect" (you already are).
+   - Opens as a message to someone already connected and never says "would love to connect" (you already are).
+     This account is a FREE LinkedIn account: the invite normally went out WITHOUT a note (the monthly note
+     quota is used up), so the person has read nothing from you yet. Unless the context shows the invite carried a
+     note, treat this DM as the FIRST thing they read: start with one short line saying who you are (a full stack
+     React developer) and thanks for connecting, then the role. Never write it as a follow-up ("following up on my
+     note", "as I mentioned") for a `role_ask` or `rapport`; only the `followup` kind may refer to an earlier message.
    - References the specific job/company by name (e.g. "the Full Stack Developer role at
      Acme" — not "a role I saw" or "your company").
    - Uses the profile's first name if available (`profile.name`), kept natural.

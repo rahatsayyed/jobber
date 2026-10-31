@@ -28,10 +28,12 @@ export function loadBudget(env: NodeJS.ProcessEnv = process.env): Budget {
 export type StopReason = 'wall_clock' | 'tokens' | 'usage_limit';
 
 const MAX_BUFFER = 1_000_000;
-const LIMIT_RE = /(usage|rate) limit (reached|exceeded)|limit reached/i;
+const LIMIT_RE = /(usage|rate) limit (reached|exceeded)|limit reached|hit your limit/i;
+const NETWORK_RE = /can't reach|ENOTFOUND|ECONN|ETIMEDOUT|EAI_AGAIN|internet|DNS/i;
 
 export class BudgetTracker {
   private toolCalls = 0;
+  private networkRetries = 0;
   private chars = 0;
   private usageLimit = false;
   private buffer = '';
@@ -94,8 +96,12 @@ export class BudgetTracker {
     if (o.type === 'result' || o.type === 'system') {
       for (const f of [o.result, o.error]) if (typeof f === 'string' && LIMIT_RE.test(f)) this.usageLimit = true;
     }
-    // An interrupted or crashed run also ends in an is_error result; only a bare is_error or a limit text is a limit.
-    if (o.type === 'result' && o.is_error === true && o.subtype !== 'error_during_execution') this.usageLimit = true;
+    if (o.type === 'system' && o.subtype === 'api_retry' && (o as { error_status?: unknown }).error_status !== 429) this.networkRetries++;
+    // An interrupted run or a network outage also ends in an is_error result; only a bare is_error or a limit text is a limit.
+    if (o.type === 'result' && o.is_error === true && o.subtype !== 'error_during_execution') {
+      const text = typeof o.result === 'string' ? o.result : '';
+      if (this.networkRetries === 0 && !NETWORK_RE.test(text)) this.usageLimit = true;
+    }
     if (o.type === 'assistant' && o.message && Array.isArray(o.message.content)) {
       for (const block of o.message.content) {
         if (block && typeof block === 'object' && (block as { type?: unknown }).type === 'tool_use') this.toolCalls++;
