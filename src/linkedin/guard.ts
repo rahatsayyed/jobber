@@ -150,7 +150,7 @@ export function preSendGuard(i: GuardInput): GuardResult {
 /** Page-dependent half of the output gate, re-run in the tool with the live page's URL and visible text. */
 export function outputGateContext(a: {
   person: PersonRow; actualProfileUrl: string; rawPageText: string; cfg: LinkedinConfig;
-  env: NodeJS.ProcessEnv; factVerdict: FactVerdict;
+  env: NodeJS.ProcessEnv; factVerdict: FactVerdict; ownTexts?: string[];
 }): OutboundContext {
   const first = (a.person.name ?? '').trim().split(/\s+/)[0] ?? '';
   return {
@@ -161,6 +161,7 @@ export function outputGateContext(a: {
     rawPageText: a.rawPageText,
     secretValues: secretValuesFromEnv(a.env),
     allowedPhrases: first ? [first] : [],
+    ...(a.ownTexts ? { ownTexts: a.ownTexts } : {}),
     factVerdict: a.factVerdict,
   };
 }

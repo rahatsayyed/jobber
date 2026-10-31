@@ -200,8 +200,14 @@ export async function armLinkedinSend(deps: ArmDeps, a: ArmArgs): Promise<ArmRes
   }
 
   if (text !== null) {
+    // Our own earlier messages and notes: the Messaging dock on the page previews them back, which is not a page copy.
+    // The text being armed is excluded: its touch row is already reserved with this body, so it would excuse itself.
+    const ownTexts = [
+      ...(db.prepare("SELECT body FROM touches WHERE body IS NOT NULL AND body <> '' ORDER BY id DESC LIMIT 200").all() as { body: string }[]).map((r) => r.body),
+      ...(db.prepare("SELECT note FROM connections WHERE note IS NOT NULL AND note <> '' ORDER BY id DESC LIMIT 200").all() as { note: string }[]).map((r) => r.note),
+    ].filter((t) => t !== text);
     const og = gateOutbound(text, outputGateContext({
-      person, actualProfileUrl: page.url(), rawPageText: pageText, cfg: deps.cfg, env: deps.env, factVerdict,
+      person, actualProfileUrl: page.url(), rawPageText: pageText, cfg: deps.cfg, env: deps.env, factVerdict, ownTexts,
     }));
     if (!og.ok) return fail('refused', 'output_gate_page', `output gate: ${og.reasons.join(', ')}`);
   }

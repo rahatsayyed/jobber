@@ -13,6 +13,9 @@ export interface OutboundContext {
   rawPageText?: string;
   secretValues?: string[];
   allowedPhrases?: string[];
+  // Our own earlier outbound texts. The platform page can show them back (LinkedIn's Messaging dock previews recent
+  // messages), so a window that also occurs in one of them is not a copy of the third-party page.
+  ownTexts?: string[];
   factVerdict: 'pass' | 'warn' | 'block';
   // Site-account emails are allowlisted only when scope is 'webcore' (plan 8G task 6); ignored elsewhere.
   scope?: 'webcore';
@@ -97,21 +100,22 @@ const words = (s: string): string[] =>
     .split(/\s+/)
     .filter(Boolean);
 
-function copiedFromPage(text: string, page: string, allowed: string[]): boolean {
+function copiedFromPage(text: string, page: string, allowed: string[], own: string[] = []): boolean {
   let body = text;
   for (const phrase of allowed) if (phrase) body = body.split(phrase).join(' ');
   const w = words(body);
   if (w.length < COPY_WINDOW_WORDS) return false;
   const pw = words(page).slice(0, MAX_PAGE_WORDS);
   if (pw.length < COPY_WINDOW_WORDS) return false;
-  const grams = new Set<string>();
-  for (let i = 0; i + COPY_WINDOW_WORDS <= pw.length; i++) {
-    grams.add(pw.slice(i, i + COPY_WINDOW_WORDS).join(' '));
-  }
-  for (let i = 0; i + COPY_WINDOW_WORDS <= w.length; i++) {
-    if (grams.has(w.slice(i, i + COPY_WINDOW_WORDS).join(' '))) return true;
-  }
-  return false;
+  const gramsOf = (ws: string[]): string[] => {
+    const out: string[] = [];
+    for (let i = 0; i + COPY_WINDOW_WORDS <= ws.length; i++) out.push(ws.slice(i, i + COPY_WINDOW_WORDS).join(' '));
+    return out;
+  };
+  const ownGrams = new Set<string>();
+  for (const t of own) for (const g of gramsOf(words(t))) ownGrams.add(g);
+  const pageGrams = new Set(gramsOf(pw));
+  return gramsOf(w).some((g) => pageGrams.has(g) && !ownGrams.has(g));
 }
 
 export function gateOutbound(text: string, ctx: OutboundContext): OutboundResult {
@@ -142,7 +146,7 @@ export function gateOutbound(text: string, ctx: OutboundContext): OutboundResult
   if (SECRET_SHAPES.some((re) => re.test(text))) reasons.push('secret_shaped');
   if ((ctx.secretValues ?? []).some((v) => v.length >= 8 && !accountEmails.includes(v.toLowerCase()) && text.includes(v))) reasons.push('env_secret_value');
 
-  if (ctx.rawPageText && copiedFromPage(text, ctx.rawPageText, ctx.allowedPhrases ?? [])) {
+  if (ctx.rawPageText && copiedFromPage(text, ctx.rawPageText, ctx.allowedPhrases ?? [], ctx.ownTexts ?? [])) {
     reasons.push('copied_from_page');
   }
   return { ok: reasons.length === 0, reasons };
