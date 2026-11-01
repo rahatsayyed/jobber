@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { messageDialogName, ownMessageShown } from '../src/browserctl/commit.js';
+import { messageDialogName, ownMessageShown, recipientMessageDialog } from '../src/browserctl/commit.js';
 import { namesPlausiblyMatch } from '../src/linkedin/verify.js';
 import type { RawNode, RawTree } from '../src/browserctl/snapshot.js';
 
@@ -26,6 +26,32 @@ describe('ownMessageShown', () => {
     expect(ownMessageShown(tree([node(1, 'dialog', 'Messaging'), textNode(3, sent, 99)]), 1, sent)).toBe(false);
     expect(ownMessageShown(tree([node(1, 'dialog', 'Messaging'), textNode(3, 'Thanks for your note', 1)]), 1, sent)).toBe(false);
     expect(ownMessageShown(tree([node(1, 'dialog', 'Messaging'), textNode(3, 'Hi', 1)]), 1, 'Hi')).toBe(false);
+  });
+});
+
+describe('recipientMessageDialog', () => {
+  const textNode = (n: number, text: string, dialog: number): RawNode => ({ ...node(n, 'text', '', dialog), text });
+
+  it('picks the window of the armed person, not the first "Messaging" window (stale chats stay open)', () => {
+    const t = tree([
+      node(10, 'dialog', 'Messaging'),
+      node(11, 'heading', 'Rinki Kumari', 10),
+      node(20, 'dialog', 'Messaging'),
+      node(21, 'heading', 'Anusha D', 20),
+      textNode(22, 'Hi Anusha, I am a full stack React developer and thanks for connecting.', 20),
+    ]);
+    expect(recipientMessageDialog(t, 'Messaging', 'Anusha D')?.n).toBe(20);
+    expect(recipientMessageDialog(t, 'Messaging', 'Rinki Kumari')?.n).toBe(10);
+    expect(recipientMessageDialog(t, 'Messaging', 'Somebody Else')).toBeUndefined();
+  });
+
+  it('works with the composer chip before the send', () => {
+    const t = tree([
+      node(10, 'dialog', 'Messaging'),
+      node(11, 'heading', 'New message', 10),
+      node(12, 'button', 'Remove Anusha D', 10),
+    ]);
+    expect(recipientMessageDialog(t, 'Messaging', 'Anusha D')?.n).toBe(10);
   });
 });
 

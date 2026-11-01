@@ -23,7 +23,7 @@ import { dialogKindOf, normName, type CommitClass } from './guard.js';
 import type { ArmedIntent } from './intent.js';
 import { OPEN_CEILING_MS } from './locatorDialogs.js';
 import { bindTouchRelease } from './intent.js';
-import type { LiveNode, RawTree } from './snapshot.js';
+import type { LiveNode, RawNode, RawTree } from './snapshot.js';
 import { CONFIRM_POLL_MS, CONFIRM_POLL_STEP_MS, errorSignalOf, noteQuotaModal, type ErrorSignal } from './sendSignals.js';
 import { connectionStateOf, directSendSeen } from './topCard.js';
 
@@ -171,8 +171,19 @@ export function ownMessageShown(tree: RawTree, dlg: number, text: string): boole
   return tree.nodes.some((x) => x.dialog === dlg && x.role === 'text' && squash(x.text).includes(head));
 }
 
-function ownMessageSeen(tree: RawTree, dialogName: string | undefined, text: string): boolean {
-  const d = tree.nodes.find((x) => x.role === 'dialog' && x.name === dialogName);
+/** The message dialog of the armed person among all open chat windows. Stale windows of earlier recipients share the
+ *  dialog name ("Messaging"), so the first match by name can be somebody else's: pick the one whose recipient chip or
+ *  heading names this person. undefined when no open window shows them (the window is gone). */
+export function recipientMessageDialog(tree: RawTree, dialogName: string | undefined, expectedName: string | null | undefined): RawNode | undefined {
+  const same = tree.nodes.filter((x) => x.role === 'dialog' && x.name === dialogName);
+  return same.find((d) => {
+    const shown = messageDialogName(tree, d.n);
+    return shown !== '' && namesPlausiblyMatch(expectedName ?? '', shown);
+  });
+}
+
+function ownMessageSeen(tree: RawTree, dialogName: string | undefined, expectedName: string | null | undefined, text: string): boolean {
+  const d = recipientMessageDialog(tree, dialogName, expectedName);
   return !!d && ownMessageShown(tree, d.n, text);
 }
 
@@ -410,7 +421,7 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
     const dialogGoneOf = (t: RawTree): boolean => cls === 'commit_accept_invite' ? acceptCount(t) < acceptBefore
       : cls === 'commit_connect_send' ? !t.nodes.some((x) => x.role === 'dialog' && x.name === live.dialogName)
         : (() => {
-          const d = t.nodes.find((x) => x.role === 'dialog' && x.name === live.dialogName);
+          const d = recipientMessageDialog(t, live.dialogName, expectedName);
           if (!d) return true;
           const box = t.nodes.find((x) => x.dialog === d.n && x.role === 'textbox' && x.composer);
           if (box) return !box.value;
@@ -424,7 +435,7 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
     const read = (t: RawTree): { dialogGone: boolean; strong: boolean; signal: ErrorSignal } => ({
       dialogGone: dialogGoneOf(t),
       strong: cls === 'commit_connect_send' ? directSendSeen(t)
-        : cls === 'commit_message_send' ? ownMessageSeen(t, live.dialogName, intent.text ?? '') : false,
+        : cls === 'commit_message_send' ? ownMessageSeen(t, live.dialogName, expectedName, intent.text ?? '') : false,
       signal: errorSignalOf(tree, t),
     });
     let seen = read(after);
