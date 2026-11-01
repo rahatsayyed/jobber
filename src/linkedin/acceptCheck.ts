@@ -19,7 +19,7 @@ type Db = BetterSqlite3.Database;
 /** Most profiles one scheduler wake (one MCP server process) may check. */
 export const ACCEPT_CHECK_MAX_PER_WAKE = 8;
 /** A profile is not looked at again within this many hours. */
-export const ACCEPT_RECHECK_HOURS = 20;
+export const ACCEPT_RECHECK_HOURS = 24;
 /** An invite is checked for at most this many days after it was sent. */
 export const ACCEPT_WINDOW_DAYS = 21;
 /** Random pause between two profiles of one wake. */

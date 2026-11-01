@@ -85,7 +85,7 @@ describe('connections setter and candidates', () => {
     expect(statusOf(db, 'b')).toEqual(['sent']);
     expect((db.prepare("SELECT COUNT(*) AS n FROM connections WHERE status = 'connected'").get() as { n: number }).n).toBe(2);
   });
-  it('picks never-checked first, then oldest check; honours the 20 h recheck gap and the 21 day window', () => {
+  it('picks never-checked first, then oldest check; honours the 24 h recheck gap and the 21 day window', () => {
     const db = openDb(':memory:');
     sent(db, 'old-check', 5, iso(3));
     sent(db, 'fresh-check', 5, new Date(NOW.getTime() - 3 * 3600 * 1000).toISOString());
@@ -133,7 +133,7 @@ describe('checkNextAccepted', () => {
     // paced 3 to 8 s between profiles, none before the first
     expect(w.sleeps).toHaveLength(2);
     for (const s of w.sleeps) { expect(s).toBeGreaterThanOrEqual(3000); expect(s).toBeLessThanOrEqual(8000); }
-    // a second pass in the same period re-checks nothing (20 h gap)
+    // a second pass in the same period re-checks nothing (24 h gap)
     expect(listAcceptCandidates(w.db, NOW)).toEqual([]);
   });
   it('a failed open changes nothing but is not picked again in the same wake', async () => {

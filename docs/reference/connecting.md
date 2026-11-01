@@ -176,7 +176,7 @@ confirmed send is recorded in `connections` (`status: "messaged"` for a DM).
 from `sent` to `connected`, so `followups` stayed at 0. The `accept_check` task (planned for LinkedIn when an eligible
 invite exists, before the `followups` step; quota at most 8 per wake) makes the `linkedin-operator` call the typed
 `linkedin_check_accepted` tool with no argument. Code picks the next `connections` row with status `sent` (sent at most
-21 days ago, not checked in the last 20 hours, never-checked first; `connections.accept_checked_at`), opens the profile
+21 days ago, not checked in the last 24 hours, never-checked first; `connections.accept_checked_at`), opens the profile
 (3 to 8 seconds random pause between profiles), and reads the header with `connectionState`: only a 1st-degree profile
 with a Message button and no Connect button sets the row (and every `sent` row of the same normalized URL) to
 `connected`, which `dueTouchesFor` (`loadConnectedKeys`) already treats as acceptance, so the next `followups` task sends
