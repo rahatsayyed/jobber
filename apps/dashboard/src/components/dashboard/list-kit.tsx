@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowClockwiseIcon, MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowClockwiseIcon, ArrowLeftIcon, MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/dashboard-api";
 import { buildQuery, humanize, statusTone } from "@/lib/view-models";
@@ -100,12 +100,25 @@ export function RecordRow({ onOpen, title, meta, aside, selected }: { onOpen: ()
   </button>;
 }
 
+/** A row inside a detail panel that opens another record; without `onOpen` it is plain text (nothing to open). */
+export function LinkRow({ onOpen, title, meta, aside, current }: { onOpen?: () => void; title: ReactNode; meta?: ReactNode; aside?: ReactNode; current?: boolean }) {
+  const inner = <>
+    <span className="record-main"><strong>{title}</strong>{meta ? <span className="record-meta">{meta}</span> : null}</span>
+    {aside ? <span className="record-aside">{aside}</span> : null}
+  </>;
+  return onOpen && !current
+    ? <button type="button" className="link-row" onClick={onOpen}>{inner}</button>
+    : <div className={`link-row static${current ? " current" : ""}`} aria-current={current ? "true" : undefined}>{inner}</div>;
+}
+
 export function Panel({ title, children, toolbar }: { title: string; children: ReactNode; toolbar?: ReactNode }) {
   return <section className="workspace-panel"><div className="workspace-panel-header"><h3>{title}</h3></div>{toolbar}<div className="panel-body">{children}</div></section>;
 }
 
 /** Read-only side panel (a dialog on narrow screens). Esc and the backdrop close it. */
-export function DetailDrawer({ title, subtitle, onClose, children }: { title: string; subtitle?: string; onClose: () => void; children: ReactNode }) {
+export function DetailDrawer({ title, subtitle, onClose, children, crumbs, onBack }: {
+  title: string; subtitle?: string; onClose: () => void; children: ReactNode; crumbs?: string[]; onBack?: () => void;
+}) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -116,6 +129,10 @@ export function DetailDrawer({ title, subtitle, onClose, children }: { title: st
   return <div className="drawer-layer">
     <div className="drawer-backdrop" onClick={onClose} aria-hidden="true" />
     <aside className="drawer" role="dialog" aria-modal="true" aria-label={title}>
+      {crumbs && crumbs.length > 1 ? <nav className="drawer-crumbs" aria-label="Panel history">
+        {onBack ? <button type="button" className="button" onClick={onBack}><ArrowLeftIcon size={13} aria-hidden="true" /> Back</button> : null}
+        <ol>{crumbs.map((c, i) => <li key={i} aria-current={i === crumbs.length - 1 ? "page" : undefined}>{c}</li>)}</ol>
+      </nav> : null}
       <header className="drawer-head"><div><h3>{title}</h3>{subtitle ? <p>{subtitle}</p> : null}</div><button ref={closeRef} className="icon-button" type="button" onClick={onClose} aria-label="Close details" title="Close"><XIcon size={16} aria-hidden="true" /></button></header>
       <div className="drawer-body">{children}</div>
     </aside>

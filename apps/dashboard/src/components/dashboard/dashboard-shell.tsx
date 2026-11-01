@@ -7,7 +7,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { InboxView } from "@/components/dashboard/inbox-view";
 import { LoadingLines } from "@/components/dashboard/list-kit";
-import { AuditView, JobsView, MailView, OutcomesView, PeopleView, RunsView, SettingsView } from "@/components/dashboard/record-views";
+import { AuditView, OutcomesView, RunsView, SettingsView } from "@/components/dashboard/record-views";
+import { JobsView, MailView, PeopleView, renderPanel } from "@/components/dashboard/linked-views";
+import { PanelProvider } from "@/components/dashboard/panel-context";
 import { SessionsView } from "@/components/dashboard/terminal-view";
 import { api, readableTime, Snapshot } from "@/lib/dashboard-api";
 import { funnelLabel, inventoryMetrics, JobCounts } from "@/lib/view-models";
@@ -86,11 +88,11 @@ export function DashboardShell({ section: initialSection }: { section: string })
     api<{ mode?: { mode?: "DRY RUN" | "LIVE" }; csrf?: string }>("/api/session").then((session) => { setMode(session.mode?.mode ?? null); setCsrf(session.csrf ?? null); }).catch(() => router.replace("/login"));
   }, [router]);
   async function signOut() { if (csrf) await fetch("/api/logout", { method: "POST", headers: { "X-CSRF-Token": csrf } }).catch(() => undefined); router.replace("/login"); }
-  return <div className="app-shell"><aside className="rail"><Link className="brand" href="/"><span className="brand-mark" aria-hidden="true" /><strong>Jobber</strong><span>operator</span></Link>
+  return <PanelProvider render={renderPanel}><div className="app-shell"><aside className="rail"><Link className="brand" href="/"><span className="brand-mark" aria-hidden="true" /><strong>Jobber</strong><span>operator</span></Link>
     <nav className="rail-nav" aria-label="Dashboard sections">{sections.map((item) => { const Icon = item.icon; const href = item.id === "overview" ? "/" : `/${item.id}`; const active = item.id === section.id && (item.id !== "overview" || pathname === "/"); return <Link key={item.id} href={href} className="nav-link" aria-label={item.label} title={item.label} aria-current={active ? "page" : undefined}><Icon size={18} weight={active ? "fill" : "regular"} aria-hidden="true" /><span>{item.label}</span></Link>; })}</nav>
     <div className="rail-footer"><strong>Local operator surface</strong>Actions remain protected by the Jobber API.</div></aside>
     <main className="workspace"><header className="topbar"><h1>Jobber</h1><div className="topbar-actions"><span className={`status-chip ${mode === "DRY RUN" ? "dry" : mode === "LIVE" ? "live" : ""}`}><i aria-hidden="true" />{mode ?? "Connecting"}</span><ThemeToggle /><button className="icon-button" type="button" onClick={() => void signOut()} aria-label="Sign out" title="Sign out"><SignOutIcon size={17} aria-hidden="true" /></button></div></header>
       <div className="content"><header className="page-heading"><div><h2>{section.label}</h2><p>{section.description}</p></div>{section.id === "overview" ? <p className="updated-at">Refreshes every 30 seconds</p> : null}</header>
         {section.id === "overview" ? <><section className="mode-callout"><div><strong>{mode === "LIVE" ? "Live mode is active" : "Dry-run mode is active"}</strong><span>Review current limits and holds before asking the pipeline to do work.</span></div><a href="#limits-and-holds" className="button">Review limits and holds</a></section><Overview /></> : <SectionBody id={section.id} />}
-      </div></main></div>;
+      </div></main></div></PanelProvider>;
 }

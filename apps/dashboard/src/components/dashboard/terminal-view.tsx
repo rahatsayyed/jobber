@@ -28,13 +28,20 @@ function TerminalPane({ target, inputEnabled, csrf, onState }: { target: Target;
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     let disposed = false; let term: Terminal | null = null; let es: EventSource | null = null; let timer: number | undefined; let attempt = 0;
-    let pending = ""; let flush: number | undefined; let themeObs: MutationObserver | undefined;
+    let pending = ""; let flush: number | undefined; let themeObs: MutationObserver | undefined; let sizeObs: ResizeObserver | undefined;
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const retheme = () => { if (term) term.options.theme = xtermTheme(); };
     const sendKeys = () => {
       flush = undefined; const keys = pending; pending = ""; if (!keys) return;
       apiPost("/api/terminal/input", { session: target.session, window: target.window, keys }, csrf).catch(() => undefined);
     };
+    /** The tmux pane can be far wider than the page: shrink the font so all columns fit, never below 8px. */
+    const fit = () => {
+      if (!term || !host.current) return;
+      const fs = Math.max(8, Math.min(13, Math.floor((host.current.clientWidth - 20) / (term.cols * 0.6))));
+      if (term.options.fontSize !== fs) term.options.fontSize = fs;
+    };
+    const toBottom = () => { if (host.current) host.current.scrollTop = host.current.scrollHeight; };
     const connect = () => {
       if (disposed) return;
       onState(attempt === 0 ? "connecting" : "reconnecting");
@@ -44,8 +51,8 @@ function TerminalPane({ target, inputEnabled, csrf, onState }: { target: Target;
         if (!term) return;
         try {
           const f = JSON.parse((ev as MessageEvent<string>).data) as TerminalFrame;
-          if (f.cols !== term.cols || f.rows !== term.rows) term.resize(Math.max(20, f.cols), Math.max(5, f.rows));
-          term.write(frameToTerminal(f));
+          if (f.cols !== term.cols || f.rows !== term.rows) { term.resize(Math.max(20, f.cols), Math.max(5, f.rows)); fit(); }
+          term.write(frameToTerminal(f), toBottom);
         } catch { /* a bad frame is skipped */ }
       });
       es.addEventListener("end", (ev) => {
@@ -69,6 +76,7 @@ function TerminalPane({ target, inputEnabled, csrf, onState }: { target: Target;
       if (disposed || !host.current) return;
       term = new XTerm({ cols: 100, rows: 30, scrollback: 0, cursorBlink: false, disableStdin: !inputEnabled, fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', theme: xtermTheme(), allowProposedApi: false });
       term.open(host.current);
+      sizeObs = new ResizeObserver(fit); sizeObs.observe(host.current);
       if (inputEnabled) term.onData((d) => { pending += d; if (flush === undefined) flush = window.setTimeout(sendKeys, 60); });
       themeObs = new MutationObserver(retheme);
       themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "class", "style"] });
@@ -77,7 +85,7 @@ function TerminalPane({ target, inputEnabled, csrf, onState }: { target: Target;
     })();
     return () => {
       disposed = true; if (timer) window.clearTimeout(timer); if (flush) window.clearTimeout(flush);
-      es?.close(); themeObs?.disconnect(); media.removeEventListener("change", retheme); term?.dispose();
+      es?.close(); themeObs?.disconnect(); sizeObs?.disconnect(); media.removeEventListener("change", retheme); term?.dispose();
     };
   }, [target.session, target.window, inputEnabled, csrf, onState, retry]);
   return <div className="term-wrap"><div ref={host} className="term-host" role="log" aria-label={`Terminal ${target.session} ${target.window}`} />
@@ -95,6 +103,20 @@ export function SessionsView() {
     api<{ csrf?: string }>("/api/session").then((s) => setCsrf(s.csrf ?? null)).catch(() => undefined);
     return () => { window.clearTimeout(t); window.clearInterval(timer); };
   }, [load]);
+  // Open a window on arrival so the page is never empty: the one used last, else the active window of the first session.
+  useEffect(() => {
+    if (target || !listing) return;
+    const all = listing.sessions.flatMap((s) => s.windows.map((w) => ({ session: s.session, window: w.name, active: w.active })));
+    if (!all.length) return;
+    let saved: Target | null = null;
+    try { saved = JSON.parse(window.localStorage.getItem("jobber.terminal") ?? "null") as Target | null; } catch { /* storage unavailable */ }
+    const pick = all.find((w) => saved && w.session === saved.session && w.window === saved.window) ?? all.find((w) => w.active) ?? all[0];
+    setTarget({ session: pick.session, window: pick.window }); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [listing, target]);
+  useEffect(() => {
+    if (!target) return;
+    try { window.localStorage.setItem("jobber.terminal", JSON.stringify(target)); } catch { /* storage unavailable */ }
+  }, [target]);
   const onState = useCallback((c: Conn) => setConn(c), []);
   const any = listing?.sessions.some((s) => s.windows.length > 0) ?? false;
   return <Panel title="Live terminal">

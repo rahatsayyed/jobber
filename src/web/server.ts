@@ -29,6 +29,7 @@ import { cleanText } from '../dash/clean.js';
 import { JOB_BUCKETS, JOB_STATES, jobCounts, jobDetail, jobFacets, listJobs, type JobBucket, type JobState } from '../dash/queries/jobs.js';
 import { listPeople, personStages, personThread } from '../dash/queries/people.js';
 import { emailDetail, listFollowups, listReplies, listSentEmails } from '../dash/queries/mail.js';
+import { contactDetail, followupDetail, jobLinks, mailLinks, parsePersonRef, personLinks } from '../dash/queries/links.js';
 import { funnelView, listOutcomes } from '../dash/queries/outcomes.js';
 import { listSchedulerRuns, readRunLog } from '../dash/runlog.js';
 import { sessionsPanel } from '../dash/sessionsPanel.js';
@@ -341,6 +342,41 @@ export function createWebServer(deps: WebDeps): http.Server {
 
   add('GET', '/api/jobs/counts', false, (c) => json(c.res, 200, jobCounts(deps.data, threshold)));
   add('GET', '/api/jobs/facets', false, (c) => json(c.res, 200, jobFacets(deps.data)));
+  add('GET', '/api/jobs/:id/links', false, (c, [id]) => {
+    if (!JOB_ID_RE.test(id)) return json(c.res, 400, { error: 'invalid id' });
+    json(c.res, 200, jobLinks(deps.data, id));
+  });
+  add('GET', '/api/emails/:id/links', false, (c, [id]) => {
+    if (!NUM_ID_RE.test(id)) return json(c.res, 400, { error: 'invalid id' });
+    const r = mailLinks(deps.data, { kind: 'cold', id: Number(id) });
+    if (!r) return json(c.res, 404, { error: 'not found' });
+    json(c.res, 200, r);
+  });
+  add('GET', '/api/followups/:id/links', false, (c, [id]) => {
+    if (!NUM_ID_RE.test(id)) return json(c.res, 400, { error: 'invalid id' });
+    const r = mailLinks(deps.data, { kind: 'followup', id: Number(id) });
+    if (!r) return json(c.res, 404, { error: 'not found' });
+    json(c.res, 200, r);
+  });
+  add('GET', '/api/followups/:id', false, (c, [id]) => {
+    if (!NUM_ID_RE.test(id)) return json(c.res, 400, { error: 'invalid id' });
+    const d = followupDetail(deps.data, Number(id));
+    if (!d) return json(c.res, 404, { error: 'not found' });
+    json(c.res, 200, d);
+  });
+  add('GET', '/api/people/:ref/links', false, (c, [ref]) => {
+    const p = parsePersonRef(ref);
+    if (!p) return json(c.res, 400, { error: 'invalid id' });
+    const r = personLinks(deps.data, p);
+    if (!r) return json(c.res, 404, { error: 'not found' });
+    json(c.res, 200, r);
+  });
+  add('GET', '/api/contacts/:id', false, (c, [id]) => {
+    if (!NUM_ID_RE.test(id)) return json(c.res, 400, { error: 'invalid id' });
+    const d = contactDetail(deps.data, Number(id));
+    if (!d) return json(c.res, 404, { error: 'not found' });
+    json(c.res, 200, d);
+  });
   add('GET', '/api/jobs/:id', false, (c, [id]) => {
     if (!JOB_ID_RE.test(id)) return json(c.res, 400, { error: 'invalid id' });
     const d = jobDetail(deps.data, id, threshold);

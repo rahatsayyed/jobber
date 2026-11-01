@@ -108,3 +108,44 @@ export function frameToTerminal(f: TerminalFrame): string {
 export function reconnectDelay(attempt: number): number {
   return Math.min(15_000, 1000 * 2 ** Math.max(0, Math.min(attempt, 4)));
 }
+
+// ---- Linked detail panels: ?job=ID, ?mail=ID, ?person=ID
+export type PanelKind = "job" | "mail" | "person";
+export type PanelRef = { kind: PanelKind; id: string };
+// job id: same shape the API accepts; mail: queue id or f<followup id>; person: people id or c<contact id>.
+const PANEL_ID: Record<PanelKind, RegExp> = { job: /^[A-Za-z0-9:_.-]{1,128}$/, mail: /^f?\d{1,12}$/, person: /^c?\d{1,12}$/ };
+const PANEL_KINDS: PanelKind[] = ["job", "mail", "person"];
+
+/** The panel named by the query string, or null. Only the first valid one is used. */
+export function parsePanelParams(params: URLSearchParams): PanelRef | null {
+  for (const kind of PANEL_KINDS) {
+    const id = params.get(kind);
+    if (id !== null && PANEL_ID[kind].test(id)) return { kind, id };
+  }
+  return null;
+}
+
+/** Path plus the other params, with at most one panel param set (the new one) and all older panel params dropped. */
+export function buildPanelUrl(pathname: string, params: URLSearchParams, ref: PanelRef | null): string {
+  const next = new URLSearchParams(params.toString());
+  for (const kind of PANEL_KINDS) next.delete(kind);
+  if (ref) next.set(ref.kind, ref.id);
+  const qs = next.toString();
+  return qs ? `${pathname}?${qs}` : pathname;
+}
+
+const sameRef = (a: PanelRef, b: PanelRef) => a.kind === b.kind && a.id === b.id;
+/** Push a panel on the back stack; opening the one already on top changes nothing. */
+export function pushPanel(stack: PanelRef[], ref: PanelRef): PanelRef[] {
+  const top = stack[stack.length - 1];
+  return top && sameRef(top, ref) ? stack : [...stack, ref];
+}
+/** Go back one panel; the first panel stays (closing is a separate action). */
+export function popPanel(stack: PanelRef[]): PanelRef[] { return stack.length > 1 ? stack.slice(0, -1) : stack; }
+
+/** Breadcrumb text: Job, Mail #12, Follow-up #3, Person #4, Contact #4. */
+export function crumbLabel(ref: PanelRef): string {
+  if (ref.kind === "job") return "Job";
+  if (ref.kind === "mail") return ref.id.startsWith("f") ? `Follow-up #${ref.id.slice(1)}` : `Mail #${ref.id}`;
+  return ref.id.startsWith("c") ? `Contact #${ref.id.slice(1)}` : `Person #${ref.id}`;
+}
