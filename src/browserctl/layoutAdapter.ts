@@ -6,6 +6,7 @@ import type { NaukriRawSnapshot, WellfoundRawSnapshot } from '../layout/fingerpr
 import { classifyUrl } from '../linkedin/urls.js';
 import type { RawSnapshot } from '../linkedin/types.js';
 import { normName } from './guard.js';
+import { cleanJobTitle } from '../lib/jobTitle.js';
 import type { RawTree } from './snapshot.js';
 
 const DEGREE_RE = /^[\s·.]*(1st|2nd|3rd)\b/i;
@@ -82,7 +83,7 @@ export function treeToRawSnapshot(tree: RawTree): RawSnapshot {
   }
   const jobCards = kind === 'jobs'
     ? links.filter((x) => /\/jobs\/view\//.test(x.href ?? '')).slice(0, LIST_CAP)
-      .map((x) => ({ title: x.name, company: '', href: x.href ?? '', snippet: '', easyApply: false }))
+      .map((x) => ({ title: cleanJobTitle(x.name), company: '', href: x.href ?? '', snippet: '', easyApply: false }))
     : undefined;
   const invitations = kind === 'invitations'
     ? outside.filter((x) => x.role === 'button' && /^accept\b/.test(normName(x.name))).slice(0, 20)

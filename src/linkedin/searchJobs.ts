@@ -5,6 +5,7 @@ import type { Job } from '../db.js';
 import { buildJobsSearchUrl, loadDiscoveryConfig, type DiscoveryConfig } from './discoveryConfig.js';
 import { gateCardField, runDiscovery, type DiscoverResult, type Parsed } from './discoverCommon.js';
 import { canonicalJobUrl, extractLinkedInJobId, linkedInJobDbId } from './jobIds.js';
+import { cleanJobTitle } from '../lib/jobTitle.js';
 import type { RawSnapshot } from './types.js';
 import type { ToolDeps } from './toolDeps.js';
 
@@ -23,7 +24,7 @@ export function parseJobCards(snap: RawSnapshot, limit: number): Parsed {
     if (!num) { skipped++; continue; }
     const id = linkedInJobDbId(num);
     if (ids.has(id)) { skipped++; continue; }
-    const title = gateCardField(c.title, 160);
+    const title = gateCardField(cleanJobTitle(c.title), 160);
     const company = gateCardField(c.company, 100);
     const snippet = gateCardField(c.snippet, 1500);
     if (title.blocked || company.blocked || snippet.blocked) { injection = true; skipped++; continue; }

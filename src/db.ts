@@ -5,6 +5,7 @@ import { classifyDeadlines, type DeadlineSweep } from './freshness.js';
 import type { Legitimacy } from './legitimacy.js';
 import { dbPath } from './dbPath.js';
 import { companyKey, repostCount, titleIdentityKey } from './reposts.js';
+import { cleanJobTitle } from './lib/jobTitle.js';
 import { isApplyBlockedSource, isHeldSource } from './lib/discoverOnly.js';
 import { classifyApplyUrl } from './apply/registry.js';
 import { channelsFor, type ChannelVerdict } from './lib/channels.js';
@@ -480,6 +481,7 @@ export function toIsoDay(v: unknown): string | undefined {
 }
 
 export function saveJob(db: BetterSqlite3.Database, job: Job): void {
+  job = { ...job, title: cleanJobTitle(job.title) || job.title };
   db.prepare(`
     INSERT OR IGNORE INTO jobs (id, source, title, company, url, apply_url, description, score, status, posted_at, title_key, company_key, priority, apply_email, apply_link, poster_url)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
