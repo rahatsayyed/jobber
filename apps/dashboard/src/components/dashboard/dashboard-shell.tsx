@@ -1,6 +1,6 @@
 "use client";
 
-import { ArchiveIcon, BellIcon, BriefcaseIcon, ChartLineUpIcon, ClipboardTextIcon, EnvelopeSimpleIcon, GearSixIcon, HouseIcon, ListChecksIcon, SignOutIcon, UsersThreeIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { ArchiveIcon, BellIcon, DotsThreeOutlineIcon, BriefcaseIcon, ChartLineUpIcon, ClipboardTextIcon, EnvelopeSimpleIcon, GearSixIcon, HouseIcon, ListChecksIcon, SignOutIcon, UsersThreeIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -12,7 +12,7 @@ import { JobsView, MailView, PeopleView, renderPanel } from "@/components/dashbo
 import { PanelProvider } from "@/components/dashboard/panel-context";
 import { SessionsView } from "@/components/dashboard/terminal-view";
 import { api, readableTime, Snapshot } from "@/lib/dashboard-api";
-import { ceilingLabel, funnelHref, funnelLabel, inventoryMetrics, JobCounts, queueStatusInfo } from "@/lib/view-models";
+import { ceilingLabel, funnelHref, funnelLabel, inventoryMetrics, JobCounts, queueStatusInfo, statusLabel, titleWord } from "@/lib/view-models";
 
 type Section = { id: string; label: string; icon: typeof HouseIcon; description: string };
 const sections: Section[] = [
@@ -27,6 +27,39 @@ const sections: Section[] = [
   { id: "settings", label: "Settings", icon: GearSixIcon, description: "Read-only view of the effective limits and flags. Secrets are never shown." },
   { id: "audit", label: "Audit", icon: ArchiveIcon, description: "Sign-ins and operator actions." },
 ];
+
+/** The four pages kept in the phone tab bar; every other page is one tap away under "More". */
+const PRIMARY_TABS = ["overview", "inbox", "jobs", "mail"];
+const hrefOf = (id: string) => (id === "overview" ? "/" : `/${id}`);
+
+/** Bottom tab bar for phones (hidden on wide screens by CSS): four main pages plus a "More" sheet that lists all ten. */
+function MobileNav({ activeId, inboxOpen, pathname }: { activeId: string; inboxOpen: number; pathname: string }) {
+  const [more, setMore] = useState<string | null>(null); // the pathname the sheet was opened on, so a page change closes it
+  const isOpen = more === pathname;
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMore(null); };
+    document.addEventListener("keydown", onKey);
+    const previous = document.body.style.overflow; document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = previous; };
+  }, [isOpen]);
+  const badge = (id: string) => (id === "inbox" && inboxOpen > 0 ? <span className="nav-badge" aria-label={`${inboxOpen} open`}>{inboxOpen}</span> : null);
+  const otherActive = !PRIMARY_TABS.includes(activeId);
+  return <>
+    <nav className="tabbar" aria-label="Main pages">
+      {sections.filter((x) => PRIMARY_TABS.includes(x.id)).map((item) => { const Icon = item.icon; const on = item.id === activeId;
+        return <Link key={item.id} href={hrefOf(item.id)} className="tab" aria-current={on ? "page" : undefined}><span className="tab-icon"><Icon size={22} weight={on ? "fill" : "regular"} aria-hidden="true" />{badge(item.id)}</span><span className="tab-label">{item.label}</span></Link>; })}
+      <button type="button" className="tab" aria-haspopup="dialog" aria-expanded={isOpen} aria-current={otherActive ? "page" : undefined} onClick={() => setMore(isOpen ? null : pathname)}>
+        <span className="tab-icon"><DotsThreeOutlineIcon size={22} weight={otherActive ? "fill" : "regular"} aria-hidden="true" /></span><span className="tab-label">More</span></button>
+    </nav>
+    {isOpen ? <div className="more-layer"><div className="more-backdrop" onClick={() => setMore(null)} aria-hidden="true" />
+      <div className="more-sheet" role="dialog" aria-modal="true" aria-label="All pages">
+        <div className="more-head"><strong>All pages</strong><button type="button" className="icon-button" onClick={() => setMore(null)} aria-label="Close the page list">&times;</button></div>
+        <ul className="more-list">{sections.map((item) => { const Icon = item.icon; const on = item.id === activeId;
+          return <li key={item.id}><Link href={hrefOf(item.id)} className="more-item" aria-current={on ? "page" : undefined} onClick={() => setMore(null)}><Icon size={20} weight={on ? "fill" : "regular"} aria-hidden="true" /><span>{item.label}</span>{badge(item.id)}</Link></li>; })}</ul>
+      </div></div> : null}
+  </>;
+}
 
 function getSection(id: string) { const key = id === "archive" ? "audit" : id; return sections.find((section) => section.id === key) ?? sections[0]; }
 
@@ -79,7 +112,7 @@ function Overview() {
         return info.href ? <Link className="data-row" key={entry.status} href={info.href}>{inner}</Link> : <div className="data-row" key={entry.status}>{inner}</div>; }) : <div className="empty-state"><h3>Queue is clear</h3>There is no queued outreach right now.</div>}</div></section>
   </div><aside className="stack" id="limits-and-holds">
     <section className="section"><div className="section-head"><h3>Daily ceilings</h3></div><div>{Object.entries(snapshot.ceilings).map(([key, ceiling]) => <div className="limit-row" key={key} title={ceiling.ok ? "Room left today" : "Limit reached for today"}><span>{ceilingLabel(key)}</span><b className={ceiling.ok ? "ok" : "blocked"}>{ceiling.used} of {ceiling.limit}</b></div>)}</div><p className="muted">Used so far today, then the daily limit. Counted over a rolling day.</p></section>
-    <section className="section"><div className="section-head"><h3>Safety holds</h3><Link href="/inbox">Open inbox</Link></div>{snapshot.halts.length ? <div className="data-list">{snapshot.halts.map((halt) => <div className="data-row" key={halt.platform}><div className="data-row-main"><strong>{halt.platform}</strong><span>{halt.reason}{halt.setAt ? ` · since ${readableTime(halt.setAt)}` : ""}</span></div><WarningCircleIcon size={17} color="var(--danger)" aria-label="Halted" /></div>)}</div> : <div className="notice"><strong>No active halts.</strong><br />The scheduler can continue subject to its other guards.</div>}</section>
+    <section className="section"><div className="section-head"><h3>Safety holds</h3><Link href="/inbox">Open inbox</Link></div>{snapshot.halts.length ? <div className="data-list">{snapshot.halts.map((halt) => <div className="data-row" key={halt.platform}><div className="data-row-main"><strong>{titleWord(halt.platform)}</strong><span>{statusLabel(halt.reason)}{halt.setAt ? ` · since ${readableTime(halt.setAt)}` : ""}</span></div><WarningCircleIcon size={17} color="var(--danger)" aria-label="Halted" /></div>)}</div> : <div className="notice"><strong>No active halts.</strong><br />The scheduler can continue subject to its other guards.</div>}</section>
     {snapshot.degraded.length ? <div className="notice warning"><strong>Partial data</strong><br />Some status sections are unavailable: {snapshot.degraded.join(", ")}.</div> : null}
   </aside></div>;
 }
@@ -102,5 +135,5 @@ export function DashboardShell({ section: initialSection }: { section: string })
     <main className="workspace"><header className="topbar"><h1>Jobber</h1><div className="topbar-actions"><span className={`status-chip ${mode === "DRY RUN" ? "dry" : mode === "LIVE" ? "live" : ""}`}><i aria-hidden="true" />{mode ?? "Connecting"}</span><ThemeToggle /><button className="icon-button" type="button" onClick={() => void signOut()} aria-label="Sign out" title="Sign out"><SignOutIcon size={17} aria-hidden="true" /></button></div></header>
       <div className="content"><header className="page-heading"><div><h2>{section.label}</h2><p>{section.description}</p></div>{section.id === "overview" ? <p className="updated-at">Refreshes every 30 seconds</p> : null}</header>
         {section.id === "overview" ? <><section className="mode-callout"><div><strong>{mode === "LIVE" ? "Live mode is active" : "Dry-run mode is active"}</strong><span>Review current limits and holds before asking the pipeline to do work.</span></div><a href="#limits-and-holds" className="button">Review limits and holds</a></section><Overview /></> : <SectionBody id={section.id} />}
-      </div></main></div></PanelProvider>;
+      </div></main><MobileNav activeId={section.id} inboxOpen={inboxOpen} pathname={pathname} /></div></PanelProvider>;
 }

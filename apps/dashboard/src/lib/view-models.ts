@@ -120,6 +120,39 @@ export function humanize(value: string | null | undefined): string {
   return (value ?? "").replace(/[_-]+/g, " ").trim();
 }
 
+/** Words for raw status and reason codes the code writes. Anything not listed falls back to humanize() with a capital first letter. */
+const STATUS_WORDS: Record<string, string> = {
+  ok: "Finished", sent: "Sent", queued: "Queued", skipped: "Skipped", done: "Done", failed: "Failed", pending: "Pending", running: "Running",
+  submitted: "Applied", connected: "Connected", manual_review: "Needs your review", needs_answer: "Needs your answer", needs_owner: "Needs you",
+  held_review: "Held until you approve the source", bad_extraction: "Bad extraction", duplicate: "Duplicate", repeat_contact: "Already contacted",
+  no_response: "No response", bounce: "Bounced", auto_ack: "Automatic reply", noise: "Other mail", killed: "Stopped (kill switch)",
+  halted: "Halted", budget: "Out of budget", usage_limit: "Usage limit reached", quiet_hours: "Quiet hours", nothing_due: "Nothing due",
+  ceilings_exhausted: "Daily limits used up", cold: "Cold email", followup: "Follow-up", feedback: "Feedback request", reply: "Reply",
+  dry_run: "Dry run", accepted: "Accepted", rejected: "Rejected", interview: "Interview", offer: "Offer", hired: "Hired", replied: "Replied",
+  active: "Active", approved: "Approved", drafted: "Drafted", sending: "Sending now", cancelled: "Cancelled", withdrawn: "Withdrawn",
+};
+/** A status or reason code in plain words, for badges and sentences. Pure. */
+export function statusLabel(value: string | null | undefined): string {
+  const raw = (value ?? "").trim();
+  if (!raw) return "";
+  const known = STATUS_WORDS[raw.toLowerCase()];
+  if (known) return known;
+  const text = humanize(raw);
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+/** Plain names for the run triggers the scheduler writes (scheduler_runs.trigger). */
+const TRIGGER_NAMES: Record<string, string> = { scheduled: "Scheduled wake", forced: "Forced wake (run now)", manual: "Wake for an Apply request", mail_drip: "Mail drip send", continuation: "Wake continuation" };
+export function triggerName(trigger: string): string { return TRIGGER_NAMES[trigger] ?? `${titleWord(trigger)} run`; }
+
+const BRAND_WORDS: Record<string, string> = { linkedin: "LinkedIn", linkedin_easy: "LinkedIn Easy Apply", naukri: "Naukri", wellfound: "Wellfound", gmail: "Gmail", email: "Email" };
+/** First letter capital, rest as written. Used for platform and category words. */
+export function titleWord(value: string | null | undefined): string {
+  const brand = BRAND_WORDS[(value ?? "").trim().toLowerCase()];
+  if (brand) return brand;
+  const text = humanize(value);
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export type TerminalFrame = { cols: number; rows: number; cx: number; cy: number; text: string };
 
 /** Escape string that repaints a whole captured pane: clear, home, lines joined with CRLF, then place the cursor. */
@@ -137,14 +170,14 @@ export function reconnectDelay(attempt: number): number {
 }
 
 // ---- Linked detail panels: ?job=ID, ?mail=ID, ?person=ID
-export type PanelKind = "job" | "mail" | "person" | "reply";
+export type PanelKind = "job" | "mail" | "person" | "reply" | "run";
 export type PanelRef = { kind: PanelKind; id: string };
 // job id: same shape the API accepts; mail: queue id or f<followup id>; person: people id or c<contact id>; reply: the stored mail message id.
-const PANEL_ID: Record<PanelKind, RegExp> = { job: /^[A-Za-z0-9:_.-]{1,128}$/, mail: /^f?\d{1,12}$/, person: /^c?\d{1,12}$/, reply: /^[A-Za-z0-9._-]{1,128}$/ };
-const PANEL_KINDS: PanelKind[] = ["job", "mail", "person", "reply"];
+const PANEL_ID: Record<PanelKind, RegExp> = { job: /^[A-Za-z0-9:_.-]{1,128}$/, mail: /^f?\d{1,12}$/, person: /^c?\d{1,12}$/, reply: /^[A-Za-z0-9._-]{1,128}$/, run: /^[A-Za-z0-9_.:-]{1,64}$/ };
+const PANEL_KINDS: PanelKind[] = ["job", "mail", "person", "reply", "run"];
 
 /** The page that hosts a panel by default, for a real link (right click, new tab, share). Any page can open any panel from ?job= ?mail= ?person= ?reply=. */
-const PANEL_PAGE: Record<PanelKind, string> = { job: "/jobs", mail: "/mail", person: "/people", reply: "/mail" };
+const PANEL_PAGE: Record<PanelKind, string> = { job: "/jobs", mail: "/mail", person: "/people", reply: "/mail", run: "/runs" };
 export function panelHref(ref: PanelRef): string {
   return `${PANEL_PAGE[ref.kind]}?${ref.kind}=${encodeURIComponent(ref.id)}`;
 }
@@ -152,7 +185,7 @@ export function panelHref(ref: PanelRef): string {
 /** Keys of the Send-keys helper row on the Sessions page (Enter, Ctrl+C, Esc, Tab, arrows). Same bytes xterm sends for these keys. */
 export const TERMINAL_HELPER_KEYS: { label: string; keys: string }[] = [
   { label: "Enter", keys: "\r" }, { label: "Ctrl+C", keys: "\x03" }, { label: "Esc", keys: "\x1b" },
-  { label: "Tab", keys: "\t" }, { label: "Up", keys: "\x1b[A" }, { label: "Down", keys: "\x1b[B" },
+  { label: "Tab", keys: "\t" }, { label: "Left", keys: "\x1b[D" }, { label: "Up", keys: "\x1b[A" }, { label: "Down", keys: "\x1b[B" }, { label: "Right", keys: "\x1b[C" },
 ];
 
 /** The panel named by the query string, or null. Only the first valid one is used. */
@@ -187,5 +220,6 @@ export function crumbLabel(ref: PanelRef): string {
   if (ref.kind === "job") return "Job";
   if (ref.kind === "mail") return ref.id.startsWith("f") ? `Follow-up #${ref.id.slice(1)}` : `Mail #${ref.id}`;
   if (ref.kind === "reply") return "Reply";
+  if (ref.kind === "run") return "Run";
   return ref.id.startsWith("c") ? `Contact #${ref.id.slice(1)}` : `Person #${ref.id}`;
 }

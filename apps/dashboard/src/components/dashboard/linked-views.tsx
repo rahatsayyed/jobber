@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
 import { api, readableTime } from "@/lib/dashboard-api";
-import { humanize, PanelRef, safeExternalUrl } from "@/lib/view-models";
+import { formatDuration, PanelRef, safeExternalUrl, statusLabel, titleWord, triggerName } from "@/lib/view-models";
+import { AppInfo, queueCards, QueueInfo, State } from "@/lib/outreach-view";
 import {
-  Badge, DebouncedSearch, DetailDrawer, DrawerState, FilterSelect, KV, LinkRow, ListFrame, LoadingLines, Panel, RecordRow, StatusBadge, Toolbar, useDetail, usePaged,
+  Badge, DebouncedSearch, DetailDrawer, DrawerState, FilterGroup, FilterSelect, KV, LinkRow, ListFrame, LoadingLines, Panel, RecordRow, StatusBadge, Toolbar, useDetail, usePaged,
 } from "@/components/dashboard/list-kit";
 import { PanelNav, usePanels } from "@/components/dashboard/panel-context";
 
@@ -14,13 +15,14 @@ function ExternalLink({ href, children }: { href: unknown; children: ReactNode }
   const safe = safeExternalUrl(href);
   return safe ? <a href={safe} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>;
 }
-const dash = (v: unknown) => (v === null || v === undefined || v === "" ? "Not recorded" : String(v));
+/** A stored value, or a plain sentence saying what is true when there is none. */
+const orText = (v: unknown, whenEmpty: string) => (v === null || v === undefined || v === "" ? whenEmpty : String(v));
 const when = (v: string | null | undefined) => (v ? readableTime(v) : null);
 
 // ---------------------------------------------------------------- shared link types (see src/dash/queries/links.ts)
 type JobBrief = { id: string; title: string; company: string; status: string | null; score: number | null; excluded_reason: string | null };
 type PersonLink = { ref: string | null; name: string | null; role: string | null; channel: string; email: string | null; status: string | null; verified: boolean | null; note: string | null };
-type MailLink = { ref: string | null; kind: "cold" | "followup" | "feedback" | "reply"; n: number | null; job_id: string; label: string; status: string | null; to: string | null; from: string | null; subject: string | null; sent_at: string | null; created_at: string | null; current?: boolean };
+type MailLink = { ref: string | null; kind: "cold" | "followup" | "feedback" | "reply"; n: number | null; job_id: string; label: string; status: string | null; to: string | null; from: string | null; subject: string | null; sent_at: string | null; created_at: string | null; current?: boolean; duplicates?: number };
 type OtherTouch = { kind: string; status: string; at: string | null; platform: string; person_ref: string | null; person_name: string | null };
 type EscalationLink = { id: number; reason: string; platform: string | null; created_at: string | null; resolved: boolean; person_ref: string | null };
 type TimelineItem = {
@@ -28,7 +30,9 @@ type TimelineItem = {
   job: { id: string; title: string; company: string } | null; open: { kind: PanelRef["kind"]; id: string } | null; inbox_id: number | null;
 };
 
-const personTitle = (p: PersonLink) => p.name || p.email || "Unnamed contact";
+/** What the stored kind of an email contact means. */
+const CONTACT_TYPES: Record<string, string> = { role: "Team address (for example careers@)", personal: "Personal address", generic: "General address", hr: "HR address", recruiter: "Recruiter address" };
+const personTitle =(p: PersonLink) => p.name || p.email || "Unnamed contact";
 const jobTitle = (j: { title: string; company: string }) => `${j.title || "Untitled job"}${j.company ? ` at ${j.company}` : ""}`;
 /** Deep link to an inbox item. The Inbox page owns the `item` query parameter. */
 const inboxHref = (id: number) => `/inbox?item=${id}`;
@@ -64,7 +68,7 @@ export function JobLinkRow({ job }: { job: JobBrief }) {
 /** Row that opens a person (ref = people id) or an email contact (ref = "c" + contacts id). Exported for the Inbox. */
 export function PersonLinkRow({ p }: { p: PersonLink }) {
   const { open } = usePanels();
-  const meta = [p.role, humanize(p.channel), p.email && p.name ? p.email : null, p.note].filter(Boolean).join(" · ");
+  const meta = [p.channel === "email" && p.role ? (CONTACT_TYPES[p.role] ?? titleWord(p.role)) : p.role, titleWord(p.channel), p.email && p.name ? p.email : null, p.note].filter(Boolean).join(" · ");
   return <LinkRow onOpen={p.ref ? () => open({ kind: "person", id: p.ref as string }) : undefined} title={personTitle(p)} meta={meta}
     aside={<><StatusBadge status={p.status} />{p.verified === false ? <Badge tone="warn">unverified</Badge> : null}</>} />;
 }
@@ -75,7 +79,8 @@ export function MailLinkRow({ m, showJob, jobName }: { m: MailLink; showJob?: bo
   const reply = m.kind === "reply";
   const time = reply ? (m.sent_at ? `received ${when(m.sent_at)}` : null)
     : m.sent_at ? `sent ${when(m.sent_at)}` : m.created_at ? `${m.kind === "cold" ? "queued" : "drafted"} ${when(m.created_at)}` : null;
-  const meta = [m.from ? `From ${m.from}` : m.to ? `To ${m.to}` : null, time, m.ref === null ? (reply ? "no panel for this message" : "not sent yet, nothing to open") : null, showJob ? (jobName ?? "another job") : null].filter(Boolean).join(" · ");
+  const dup = m.duplicates ? `+${m.duplicates} duplicate${m.duplicates === 1 ? "" : "s"} hidden (same email, same recipient)` : null;
+  const meta = [m.from ? `From ${m.from}` : m.to ? `To ${m.to}` : null, time, m.ref === null ? (reply ? "the text of this message is not stored" : "not sent yet, so there is nothing to open") : null, dup, showJob ? (jobName ?? "another job") : null].filter(Boolean).join(" · ");
   return <LinkRow current={m.current} onOpen={m.ref ? () => open({ kind: reply ? "reply" : "mail", id: m.ref as string }) : undefined}
     title={<>{m.label}{m.subject ? `: ${m.subject}` : ""}</>} meta={meta}
     aside={<>{m.current ? <Badge>viewing</Badge> : null}<StatusBadge status={m.status} /></>} />;
@@ -98,6 +103,11 @@ function Conversation({ path }: { path: string }) {
   </li>)}</ol>;
 }
 
+/** One labelled line of a queue card: the state in words, a tone colour and the time when there is one. */
+function StateRow({ label, s, note }: { label: string; s: State; note?: string | null }) {
+  return <div><dt>{label}</dt><dd><Badge tone={s.tone}>{s.text}</Badge>{s.at ? <span className="muted"> {readableTime(s.at)}</span> : null}{note ? <span className="muted block">{note}</span> : null}</dd></div>;
+}
+
 function TextList({ title, items }: { title: string; items: string[] }) {
   return items.length ? <><h4>{title}</h4><ul className="plain-list">{items.map((f, i) => <li key={i}>{f}</li>)}</ul></> : null;
 }
@@ -106,8 +116,8 @@ function TextList({ title, items }: { title: string; items: string[] }) {
 type JobRow = { id: string; title: string; company: string; source: string; score: number | null; status: string | null; excluded_reason: string | null; created_at: string; bucket: string[] };
 type JobFull = JobRow & {
   url: string | null; apply_url: string | null; posted_at: string | null; deadline: string | null; confidence: string | null; flags: string[]; strengths: string[]; gaps: string[];
-  queue: { id: number; status: string; email_status: string | null; connect_status: string | null; apply_status: string | null; apply_platform: string | null; apply_tier: string | null; ats_coverage: number | null }[];
-  applications: { platform: string | null; method: string | null; status: string | null; reason: string | null; applied_at: string | null }[];
+  queue: QueueInfo[];
+  applications: AppInfo[];
   outcomes: { outcome: string; note: string | null; created_at: string }[];
 };
 
@@ -121,7 +131,7 @@ function JobDetail({ id, nav }: { id: string; nav: PanelNav }) {
         ["Company", data.company ? <CompanyLinks key="co" company={data.company} /> : null],
         ["Source", data.source], ["Match score", data.score === null ? "Not scored" : `${data.score}${data.confidence ? ` (${data.confidence} confidence)` : ""}`],
         ["Status", data.excluded_reason ? <span key="s"><Badge tone="bad">Excluded</Badge> {data.excluded_reason}</span> : <StatusBadge key="s" status={data.status ?? "active"} />],
-        ["Stages", data.bucket.map(humanize).join(", ")],
+        ["Stages", data.bucket.map(statusLabel).join(", ")],
         ["Posting", data.url ? <ExternalLink key="u" href={data.url}>Open the posting</ExternalLink> : "No link"],
         ["Apply link", data.apply_url && data.apply_url !== data.url ? <ExternalLink key="a" href={data.apply_url}>Open the apply page</ExternalLink> : null],
         ["Posted", data.posted_at ? readableTime(data.posted_at) : null], ["Deadline", data.deadline ? readableTime(data.deadline) : null], ["Found", readableTime(data.created_at)],
@@ -130,10 +140,22 @@ function JobDetail({ id, nav }: { id: string; nav: PanelNav }) {
       <TextList title="Strengths" items={data.strengths} />
       <TextList title="Gaps" items={data.gaps} />
       <h4>Outreach and apply</h4>
-      {data.queue.length || data.applications.length ? <ul className="plain-list">
-        {data.queue.map((q) => <li key={`q${q.id}`}>Queue #{q.id}: <StatusBadge status={q.status} /> email {dash(q.email_status)}, connect {dash(q.connect_status)}, apply {dash(q.apply_status)}{q.apply_platform ? `, apply class ${q.apply_platform}${q.apply_tier ? ` / ${q.apply_tier}` : ""}` : ""}{q.ats_coverage !== null ? `, ATS ${q.ats_coverage}%` : ""}</li>)}
-        {data.applications.map((a, i) => <li key={`a${i}`}>Application via {dash(a.platform)} ({dash(a.method)}): <StatusBadge status={a.status} />{a.reason ? ` ${a.reason}` : ""}{a.applied_at ? ` · ${readableTime(a.applied_at)}` : ""}</li>)}
-      </ul> : <p className="muted">Nothing queued or applied yet.</p>}
+      {data.queue.length || data.applications.length ? <>
+        {queueCards(data.queue, data.applications).map((c) => <section className="queue-card" key={`q${c.id}`} aria-label={c.title}>
+          <h5>{c.title}</h5>
+          <dl className="state-grid">
+            <StateRow label="Email" s={c.email} note={c.emailNote} />
+            <StateRow label="LinkedIn connect" s={c.connect} />
+            <StateRow label="Apply" s={c.apply} />
+            {c.via ? <div><dt>Apply via</dt><dd>{c.via}</dd></div> : null}
+            <div><dt>Resume fit (ATS)</dt><dd><b>{c.fit.value}</b><span className="muted"> {c.fit.meaning}</span></dd></div>
+          </dl>
+        </section>)}
+        {data.applications.length ? <>
+          <p className="related-label">Applications on record</p>
+          <ul className="plain-list">{data.applications.map((a, i) => <li key={`a${i}`}>{titleWord(a.platform || "unknown site")}{a.method ? `, ${titleWord(a.method)}` : ""}: <StatusBadge status={a.status} />{a.reason ? ` ${a.reason}` : ""}{a.applied_at ? ` · ${readableTime(a.applied_at)}` : ""}</li>)}</ul>
+        </> : null}
+      </> : <p className="muted">Nothing is queued for this job and no application was made.</p>}
       {data.outcomes.length ? <><h4>Outcomes</h4><ul className="plain-list">{data.outcomes.map((o, i) => <li key={i}><StatusBadge status={o.outcome} /> {o.note ?? ""} · {readableTime(o.created_at)}</li>)}</ul>
         <p className="muted"><Link href="/outcomes">All outcomes and the funnel</Link></p></> : null}
       <LinksState links={links}>{(l) => <>
@@ -145,11 +167,11 @@ function JobDetail({ id, nav }: { id: string; nav: PanelNav }) {
         <h4>Inbox items ({l.escalations.length})</h4>
         {l.escalations.length ? <ul className="plain-list">{l.escalations.map((e) => <li key={e.id}>
           <Link href={inboxHref(e.id)}>Inbox item #{e.id}</Link> <Badge tone={e.resolved ? "" : "warn"}>{e.resolved ? "resolved" : "open"}</Badge>
-          <p className="muted">{[e.reason, e.platform, when(e.created_at)].filter(Boolean).join(" · ")}</p></li>)}</ul>
+          <p className="muted">{[statusLabel(e.reason), titleWord(e.platform), when(e.created_at)].filter(Boolean).join(" · ")}</p></li>)}</ul>
           : <p className="muted">Nothing from the people of this job needed you.</p>}
         <h4>Other outreach ({l.other.length})</h4>
         {l.other.length ? <div>{l.other.map((o, i) => <LinkRow key={i} onOpen={o.person_ref ? () => open({ kind: "person", id: o.person_ref as string }) : undefined}
-          title={`${humanize(o.kind)}${o.person_name ? ` to ${o.person_name}` : ""}`} meta={[humanize(o.platform), when(o.at)].filter(Boolean).join(" · ")} aside={<StatusBadge status={o.status} />} />)}</div>
+          title={`${statusLabel(o.kind)}${o.person_name ? ` to ${o.person_name}` : ""}`} meta={[titleWord(o.platform), when(o.at)].filter(Boolean).join(" · ")} aside={<StatusBadge status={o.status} />} />)}</div>
           : <p className="muted">No LinkedIn or Naukri messages for this job.</p>}
       </>}</LinksState>
     </> : null}</DrawerState>
@@ -169,9 +191,11 @@ export function JobsView() {
   return <Panel title="Jobs" toolbar={<Toolbar onReload={list.reload} loading={list.loading}>
     {scored || contacted ? <button type="button" className="button" onClick={() => { setScored(false); setContacted(false); }} title="Remove this filter">{scored ? "Only scored jobs" : "Only contacted jobs"} ×</button> : null}
     <DebouncedSearch value={q} onChange={setQ} placeholder="Search title or company" label="Search jobs" />
+    <FilterGroup activeCount={[source, state, bucket, scored, contacted].filter(Boolean).length}>
     <FilterSelect label="Source" value={source} onChange={setSource} options={[{ value: "", label: "All sources" }, ...sources.map((s) => ({ value: s.source, label: `${s.source} (${s.count})` }))]} />
     <FilterSelect label="State" value={state} onChange={setState} options={[{ value: "", label: "Any state" }, { value: "active", label: "Not excluded" }, { value: "excluded", label: "Excluded" }]} />
     <FilterSelect label="Stage" value={bucket} onChange={setBucket} options={[{ value: "", label: "Any stage" }, { value: "matched", label: "Matched" }, { value: "applied", label: "Applied" }, { value: "pending", label: "Awaiting apply" }, { value: "failed", label: "Failed" }]} />
+    </FilterGroup>
   </Toolbar>}>
     <ListFrame state={list} empty={{ title: "No jobs match", text: "Change the search or filters, or wait for the next discovery run." }}>
       {(items) => items.map((j) => <RecordRow key={j.id} onOpen={() => open({ kind: "job", id: j.id })} title={`${j.title} at ${j.company || "unknown company"}`}
@@ -207,9 +231,9 @@ function PersonDetail({ id, nav }: { id: number; nav: PanelNav }) {
   return <DetailDrawer title={p?.name || "Person"} subtitle={p ? [p.headline, p.company].filter(Boolean).join(" · ") : undefined} onClose={nav.onClose} crumbs={nav.crumbs} onBack={nav.onBack}>
     <DrawerState data={data} error={error}>{p && data ? <>
       <KV rows={[
-        ["Company", p.company ? <CompanyLinks key="co" company={p.company} /> : null], ["Role / headline", p.headline], ["Source", p.platform], ["Category", humanize(p.category)],
+        ["Company", p.company ? <CompanyLinks key="co" company={p.company} /> : null], ["Role / headline", p.headline], ["Source", titleWord(p.platform)], ["Category", titleWord(p.category)],
         ["Profile", p.profile_url ? <ExternalLink key="p" href={p.profile_url}>Open the profile</ExternalLink> : "No profile link"],
-        ["Connection", p.connection_status ? <StatusBadge key="c" status={p.connection_status} /> : "No connection request"], ["Stage", p.stage ? humanize(p.stage) : null],
+        ["Connection", p.connection_status ? <StatusBadge key="c" status={p.connection_status} /> : "No connection request"], ["Stage", p.stage ? statusLabel(p.stage) : null],
         ["Follow-ups sent", p.followups_sent], ["Last touch", p.last_touch_at ? readableTime(p.last_touch_at) : null], ["Next due", p.next_due_at ? readableTime(p.next_due_at) : null], ["Paused", p.paused_reason],
       ]} />
       <RelatedRecords links={links} />
@@ -226,7 +250,7 @@ function ContactDetail({ id, nav }: { id: number; nav: PanelNav }) {
   return <DetailDrawer title={data?.email || "Email contact"} subtitle={data?.company ?? undefined} onClose={nav.onClose} crumbs={nav.crumbs} onBack={nav.onBack}>
     <DrawerState data={data} error={error}>{data ? <>
       <KV rows={[
-        ["Email", data.email], ["Company", data.company ? <CompanyLinks key="co" company={data.company} /> : null], ["Type", data.type ? humanize(data.type) : null],
+        ["Email", data.email], ["Company", data.company ? <CompanyLinks key="co" company={data.company} /> : null], ["Type", data.type ? titleWord(data.type) : null],
         ["Verified", data.verified === null ? "Not checked" : data.verified ? <Badge key="v" tone="good">verified</Badge> : <Badge key="v" tone="warn">unverified</Badge>],
         ["Found by", data.source], ["Added", when(data.created_at)],
       ]} />
@@ -246,12 +270,12 @@ export function PeopleView() {
   const list = usePaged<PersonRow>("/api/people", { q: q || undefined, stage: stage || undefined });
   return <Panel title="People" toolbar={<Toolbar onReload={list.reload} loading={list.loading}>
     <DebouncedSearch value={q} onChange={setQ} placeholder="Search name, company or role" label="Search people" />
-    <FilterSelect label="Stage" value={stage} onChange={setStage} options={[{ value: "", label: "Any stage" }, ...stages.map((s) => ({ value: s, label: humanize(s) }))]} />
+    <FilterGroup activeCount={stage ? 1 : 0}><FilterSelect label="Stage" value={stage} onChange={setStage} options={[{ value: "", label: "Any stage" }, ...stages.map((s) => ({ value: s, label: statusLabel(s) }))]} /></FilterGroup>
   </Toolbar>}>
     <ListFrame state={list} empty={{ title: "No people match", text: "Contacts appear after the contact finder runs for matched jobs." }}>
       {(items) => items.map((p) => <RecordRow key={p.id} onOpen={() => open({ kind: "person", id: String(p.id) })} title={p.name || "Unnamed contact"}
         meta={[p.headline, p.company, p.platform, `${p.touch_count} ${p.touch_count === 1 ? "message" : "messages"}`, p.job_count ? `${p.job_count} ${p.job_count === 1 ? "job" : "jobs"}` : null, p.last_job_title ? `latest: ${p.last_job_title}` : null].filter(Boolean).join(" · ")}
-        aside={<>{p.category ? <Badge>{humanize(p.category)}</Badge> : null}{p.connection_status ? <StatusBadge status={p.connection_status} /> : p.stage ? <StatusBadge status={p.stage} /> : null}</>} />)}
+        aside={<>{p.category ? <Badge>{titleWord(p.category)}</Badge> : null}{p.connection_status ? <StatusBadge status={p.connection_status} /> : p.stage ? <StatusBadge status={p.stage} /> : null}</>} />)}
     </ListFrame>
   </Panel>;
 }
@@ -287,7 +311,7 @@ type ReplyFull = {
 };
 function ReplyDetail({ id, nav }: { id: string; nav: PanelNav }) {
   const { data, error } = useDetail<ReplyFull>(`/api/replies/${encodeURIComponent(id)}`);
-  return <DetailDrawer title={data?.subject || data?.label || "Reply"} subtitle={data ? `${data.label} from ${dash(data.from_addr)}` : undefined} onClose={nav.onClose} crumbs={nav.crumbs} onBack={nav.onBack}>
+  return <DetailDrawer title={data?.subject || data?.label || "Reply"} subtitle={data ? `${data.label} from ${orText(data.from_addr, "an unknown sender")}` : undefined} onClose={nav.onClose} crumbs={nav.crumbs} onBack={nav.onBack}>
     <DrawerState data={data} error={error}>{data ? <>
       <section className="related" aria-label="Related">
         <h4>Related</h4>
@@ -302,7 +326,7 @@ function ReplyDetail({ id, nav }: { id: string; nav: PanelNav }) {
       </section>
       <KV rows={[
         ["Kind", <StatusBadge key="k" status={data.classification} />], ["From", data.from_addr], ["Subject", data.subject], ["Received", when(data.received_at)],
-        ["Handled as", data.action ? humanize(data.action) : null], ["Proposed outcome", data.proposed_outcome ? humanize(data.proposed_outcome) : null],
+        ["Handled as", data.action ? statusLabel(data.action) : null], ["Proposed outcome", data.proposed_outcome ? statusLabel(data.proposed_outcome) : null],
       ]} />
       <p className="muted">The text of the reply is not stored in the dashboard database. Open it in Gmail.</p>
     </> : null}</DrawerState>
@@ -312,7 +336,7 @@ function ReplyDetail({ id, nav }: { id: string; nav: PanelNav }) {
 function ColdMailDetail({ id, nav }: { id: number; nav: PanelNav }) {
   const { data, error } = useDetail<MailFull>(`/api/emails/${id}`);
   const links = useDetail<MailLinksData>(`/api/emails/${id}/links`);
-  return <DetailDrawer title={data?.subject || "Email"} subtitle={data ? `To ${dash(data.to)}` : undefined} onClose={nav.onClose} crumbs={nav.crumbs} onBack={nav.onBack}>
+  return <DetailDrawer title={data?.subject || "Email"} subtitle={data ? `To ${orText(data.to, "an unknown address")}` : undefined} onClose={nav.onClose} crumbs={nav.crumbs} onBack={nav.onBack}>
     <DrawerState data={data} error={error}>{data ? <>
       <RelatedBlock links={links} />
       <KV rows={[
@@ -328,7 +352,7 @@ function ColdMailDetail({ id, nav }: { id: number; nav: PanelNav }) {
 function FollowupMailDetail({ id, nav }: { id: number; nav: PanelNav }) {
   const { data, error } = useDetail<FollowupFull>(`/api/followups/${id}`);
   const links = useDetail<MailLinksData>(`/api/followups/${id}/links`);
-  return <DetailDrawer title={data?.subject || data?.label || "Follow-up"} subtitle={data ? `${data.label} · To ${dash(data.to)}` : undefined} onClose={nav.onClose} crumbs={nav.crumbs} onBack={nav.onBack}>
+  return <DetailDrawer title={data?.subject || data?.label || "Follow-up"} subtitle={data ? `${data.label} · To ${orText(data.to, "an unknown address")}` : undefined} onClose={nav.onClose} crumbs={nav.crumbs} onBack={nav.onBack}>
     <DrawerState data={data} error={error}>{data ? <>
       <RelatedBlock links={links} />
       <KV rows={[
@@ -351,14 +375,63 @@ export function MailView() {
   </Toolbar>}>
     <ListFrame state={list} empty={{ title: "No sent mail", text: "Emails sent by the mail drip lane appear here." }}>
       {(items) => items.map((m) => <RecordRow key={m.id} onOpen={() => open({ kind: "mail", id: String(m.id) })} title={m.subject || "(no subject)"}
-        meta={`To ${dash(m.to)} · ${[m.title, m.company].filter(Boolean).join(" at ") || "job no longer in the database"} · ${m.sent_at ? readableTime(m.sent_at) : "not sent"}${m.followups_sent ? ` · ${m.followups_sent} ${m.followups_sent === 1 ? "follow-up" : "follow-ups"} sent` : ""}`}
+        meta={`To ${orText(m.to, "an unknown address")} · ${[m.title, m.company].filter(Boolean).join(" at ") || "job no longer in the database"} · ${m.sent_at ? readableTime(m.sent_at) : "not sent"}${m.followups_sent ? ` · ${m.followups_sent} ${m.followups_sent === 1 ? "follow-up" : "follow-ups"} sent` : ""}`}
         aside={<><StatusBadge status={m.status} />{m.has_reply ? <Badge tone="good">replied</Badge> : null}</>} />)}
     </ListFrame>
   </Panel>;
 }
 
+// ---------------------------------------------------------------- Run panel (what was created while a run was going)
+type RunFull = {
+  run: { id: string; trigger: string; status: string; started_at: string | null; ended_at: string | null; wall_sec: number | null; dry_run: boolean; stop_reason: string | null; tool_calls: number; operators: string[] };
+  window: { from: string; to: string; open: boolean }; overlapping_runs: number;
+  jobs: { total: number; by_source: { source: string; count: number }[]; items: { id: string; title: string; company: string; source: string; score: number | null; created_at: string }[] };
+  touches: { total: number; items: { id: number; kind: string; status: string; at: string | null; platform: string | null; job_id: string | null; person_ref: string | null; person_name: string | null }[] };
+  emails: { total: number; items: { queue_id: number; job_id: string; title: string | null; company: string | null; sent_at: string | null }[] };
+  escalations: { total: number; items: { id: number; reason: string; platform: string | null; created_at: string | null; resolved: boolean }[] };
+};
+const MATCHED_BY_TIME = "Created during this run (matched by time)";
+
+function RunDetail({ id, nav }: { id: string; nav: PanelNav }) {
+  const { open } = usePanels();
+  const { data, error } = useDetail<RunFull>(`/api/runs/${encodeURIComponent(id)}`);
+  const more = (shown: number, total: number) => (total > shown ? <p className="muted">Showing {shown} of {total}.</p> : null);
+  return <DetailDrawer title={data ? triggerName(data.run.trigger) : "Run"} subtitle={data ? readableTime(data.run.started_at) : undefined} onClose={nav.onClose} crumbs={nav.crumbs} onBack={nav.onBack}>
+    <DrawerState data={data} error={error}>{data ? <>
+      <KV rows={[
+        ["Result", <StatusBadge key="s" status={data.run.status} />], ["Mode", data.run.dry_run ? "Dry run, nothing real was sent" : "Live"],
+        ["Started", when(data.run.started_at)], ["Finished", data.run.ended_at ? readableTime(data.run.ended_at) : "Still running"],
+        ["Took", formatDuration(data.run.wall_sec)], ["Tool calls", data.run.tool_calls], ["Stopped because", data.run.stop_reason ? statusLabel(data.run.stop_reason) : null],
+        ["Work planned", data.run.operators.length ? data.run.operators.join(" | ") : null],
+      ]} />
+      <h4>{MATCHED_BY_TIME}</h4>
+      <p className="muted">The database does not record which run created a job or a message. These lists are everything that appeared between the start and the end of this run, so work done by a run that overlapped it can show up here too{data.overlapping_runs ? ` (${data.overlapping_runs} other ${data.overlapping_runs === 1 ? "run overlapped" : "runs overlapped"} this one)` : ""}.</p>
+      <h4>Jobs found ({data.jobs.total})</h4>
+      {data.jobs.by_source.length ? <div className="chip-row">{data.jobs.by_source.map((s) => <span className="chip" key={s.source}>{s.source} <b>{s.count}</b></span>)}</div> : null}
+      {data.jobs.items.length ? <div>{data.jobs.items.map((j) => <LinkRow key={j.id} onOpen={() => open({ kind: "job", id: j.id })} title={jobTitle(j)} meta={`${j.source} · ${readableTime(j.created_at)}`}
+        aside={j.score !== null ? <Badge tone={j.score >= 60 ? "good" : ""}>{j.score}</Badge> : <Badge>unscored</Badge>} />)}</div> : <p className="muted">No new job was saved during this run.</p>}
+      {more(data.jobs.items.length, data.jobs.total)}
+      <h4>LinkedIn and Naukri messages sent ({data.touches.total})</h4>
+      {data.touches.items.length ? <div>{data.touches.items.map((t) => <LinkRow key={t.id} onOpen={t.person_ref ? () => open({ kind: "person", id: t.person_ref as string }) : undefined}
+        title={`${statusLabel(t.kind)}${t.person_name ? ` to ${t.person_name}` : ""}`} meta={[titleWord(t.platform), when(t.at)].filter(Boolean).join(" · ")} aside={<StatusBadge status={t.status} />} />)}</div> : <p className="muted">No LinkedIn or Naukri message was sent in this time window.</p>}
+      {more(data.touches.items.length, data.touches.total)}
+      <h4>Emails sent ({data.emails.total})</h4>
+      {data.emails.items.length ? <div>{data.emails.items.map((e) => <LinkRow key={e.queue_id} onOpen={() => open({ kind: "mail", id: String(e.queue_id) })}
+        title={[e.title, e.company].filter(Boolean).join(" at ") || "Job no longer in the database"} meta={`Cold email · ${when(e.sent_at) ?? "time unknown"}`} />)}</div> : <p className="muted">No cold email was sent in this time window.</p>}
+      {more(data.emails.items.length, data.emails.total)}
+      <h4>Inbox items from this run ({data.escalations.total})</h4>
+      <p className="muted">This one is exact: the inbox item stores the id of the run that created it.</p>
+      {data.escalations.items.length ? <ul className="plain-list">{data.escalations.items.map((e) => <li key={e.id}>
+        <Link href={inboxHref(e.id)}>Inbox item #{e.id}</Link> <Badge tone={e.resolved ? "" : "warn"}>{e.resolved ? "handled" : "open"}</Badge>
+        <p className="muted">{[statusLabel(e.reason), titleWord(e.platform), when(e.created_at)].filter(Boolean).join(" · ")}</p></li>)}</ul> : <p className="muted">This run did not create any inbox item.</p>}
+      {more(data.escalations.items.length, data.escalations.total)}
+    </> : null}</DrawerState>
+  </DetailDrawer>;
+}
+
 /** The side panel for any record kind; mounted once by the shell so it works from every page. */
 export function renderPanel(ref: PanelRef, nav: PanelNav): ReactNode {
+  if (ref.kind === "run") return <RunDetail id={ref.id} nav={nav} />;
   if (ref.kind === "job") return <JobDetail id={ref.id} nav={nav} />;
   if (ref.kind === "reply") return <ReplyDetail id={ref.id} nav={nav} />;
   if (ref.kind === "mail") return ref.id.startsWith("f") ? <FollowupMailDetail id={Number(ref.id.slice(1))} nav={nav} /> : <ColdMailDetail id={Number(ref.id)} nav={nav} />;

@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, apiPost, readableTime } from "@/lib/dashboard-api";
 import {
-  ageText, DEFAULT_FILTERS, describeItem, explainFlag, facetCounts, Filters, filterItems, InboxItem, inboxType, PLATFORM_LABELS, PLATFORM_ORDER,
+  ageText, DEFAULT_FILTERS, describeItem, parseReason, explainFlag, facetCounts, Filters, filterItems, InboxItem, inboxType, PLATFORM_LABELS, PLATFORM_ORDER,
   platformLabel, platformUrl, SCREEN_INTRO, STATUS_LABELS, statusOf, Tone, TYPE_LABELS, TYPE_ORDER,
 } from "@/lib/inbox-model";
-import { Badge, DebouncedSearch, DetailDrawer, KV, LoadingLines, Panel, Toolbar } from "@/components/dashboard/list-kit";
+import { Badge, DebouncedSearch, DetailDrawer, FilterGroup, KV, LoadingLines, Panel, Toolbar } from "@/components/dashboard/list-kit";
+import { statusLabel } from "@/lib/view-models";
 import { usePanels } from "@/components/dashboard/panel-context";
 
 type Payload = { items: InboxItem[]; counts: { open: number; snoozed: number; resolved: number } };
@@ -68,7 +69,7 @@ function InboxDetail({ item, busy, onClose, onResolve, onReopen, onOpenPanel }: 
       ["First seen", readableTime(item.first_at)], ["Last update", readableTime(item.last_at || item.created_at)],
       ["Reported", item.updates > 1 ? `${item.updates} times` : "once"],
       ["Status", handled ? <Badge key="s" tone="good">handled {readableTime(item.resolved_at)}</Badge> : <Badge key="s">open</Badge>],
-      ["Note", item.resolvedNote], ["Reason code", <code key="c" className="break">{item.reason}</code>], ["Row ids", item.ids.join(", ")],
+      ["Note", item.resolvedNote], ["Reason", statusLabel(parseReason(item.reason).base)],
     ]} />
     <h4>{handled ? "Reopen" : "Mark handled"}</h4>
     <p className="muted">Nothing is sent to {P === "Other" ? "any platform" : P} from this page. You answer on the platform yourself; this only changes the state here.</p>
@@ -153,6 +154,7 @@ export function InboxView() {
     <DebouncedSearch value={filters.q} onChange={setQ} placeholder="Search person, company, job or text" label="Search the inbox" />
   </Toolbar>}>
     <p className="muted">Everything the agent could not or must not do alone. Nothing here is sent to any platform; you answer on the platform yourself and then mark the item handled.</p>
+    <FilterGroup activeCount={(filters.type ? 1 : 0) + (filters.platform ? 1 : 0) + (filters.status !== DEFAULT_FILTERS.status ? 1 : 0)}>
     <div className="inbox-filters">
       <Chips label="Type" value={filters.type} onChange={(v) => set({ type: v })}
         options={[{ value: "", label: "All", count: typeTotal }, ...TYPE_ORDER.map((t) => ({ value: t, label: TYPE_LABELS[t], count: facets.type[t] }))]} />
@@ -162,6 +164,7 @@ export function InboxView() {
       <Chips label="Status" value={filters.status} onChange={(v) => set({ status: v as Filters["status"] })}
         options={(["open", "handled", "all"] as const).map((s) => ({ value: s, label: STATUS_LABELS[s], count: facets.status[s] }))} />
     </div>
+    </FilterGroup>
     <div aria-live="polite">
       {message ? <div className="notice inbox-msg">{message.text} {message.undo ? <button type="button" className="text-link" disabled={busy} onClick={() => void undo(message.undo as number[])}>Undo</button> : null}</div> : null}
       {!data && !error ? <div className="object-list"><LoadingLines /></div> : null}
@@ -176,7 +179,7 @@ export function InboxView() {
     <div className="object-list">{visible.map((i) => {
       const d = describeItem(i); const handled = statusOf(i) === "handled"; const person = i.senderName || i.personName;
       return <article className="inbox-card" key={i.id}>
-        {!handled ? <input type="checkbox" className="inbox-check" aria-label={`Select: ${d.summary}`} checked={selected.has(i.id)} onChange={() => toggle(i.id)} /> : <span className="inbox-check-gap" />}
+        {!handled ? <label className="inbox-check-wrap"><input type="checkbox" className="inbox-check" aria-label={`Select: ${d.summary}`} checked={selected.has(i.id)} onChange={() => toggle(i.id)} /></label> : <span className="inbox-check-gap" />}
         <div className="inbox-main">
           <div className="inbox-badges">
             <Badge tone={TONE_BADGE[inboxType(i)]}>{TYPE_LABELS[d.type]}</Badge><Badge>{platformLabel(i)}</Badge>

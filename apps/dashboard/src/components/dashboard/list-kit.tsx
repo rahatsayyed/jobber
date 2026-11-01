@@ -1,9 +1,9 @@
 "use client";
 
-import { ArrowClockwiseIcon, ArrowLeftIcon, MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowClockwiseIcon, ArrowLeftIcon, FunnelSimpleIcon, MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/dashboard-api";
-import { buildQuery, humanize, statusTone } from "@/lib/view-models";
+import { buildQuery, statusLabel, statusTone } from "@/lib/view-models";
 
 export const PAGE_SIZE = 25;
 
@@ -60,10 +60,11 @@ export function useDetail<T>(path: string | null) {
 export function LoadingLines() { return <div className="loading" aria-label="Loading"><span /><span /><span /></div>; }
 
 export function Badge({ children, tone }: { children: ReactNode; tone?: "good" | "warn" | "bad" | "" }) {
-  return <span className={`badge ${tone ?? ""}`}>{children}</span>;
+  const text = typeof children === "string" && children ? children.charAt(0).toUpperCase() + children.slice(1) : children;
+  return <span className={`badge ${tone ?? ""}`}>{text}</span>;
 }
 export function StatusBadge({ status }: { status: string | null | undefined }) {
-  return status ? <Badge tone={statusTone(status)}>{humanize(status)}</Badge> : null;
+  return status ? <Badge tone={statusTone(status)}>{statusLabel(status)}</Badge> : null;
 }
 
 /** Search box plus filter selects. `onChange` for text is debounced by the caller via DebouncedSearch. */
@@ -75,6 +76,20 @@ export function DebouncedSearch({ value, onChange, placeholder, label }: { value
 
 export function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return <label className="filter-select"><span className="sr-only">{label}</span><select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>{options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>;
+}
+
+/**
+ * Filters that sit in a row on wide screens and collapse behind a "Filters (n)" button on phones. `activeCount` is the number of filters
+ * that differ from their default; it shows on the button even while the group is closed.
+ */
+export function FilterGroup({ activeCount, children }: { activeCount: number; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return <div className={`filter-group${open ? " open" : ""}`}>
+    <button type="button" className="button filter-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <FunnelSimpleIcon size={15} aria-hidden="true" /> Filters{activeCount ? ` (${activeCount})` : ""}
+    </button>
+    <div className="filter-body">{children}</div>
+  </div>;
 }
 
 export function Toolbar({ children, onReload, loading }: { children?: ReactNode; onReload: () => void; loading: boolean }) {
@@ -124,16 +139,22 @@ export function DetailDrawer({ title, subtitle, onClose, children, crumbs, onBac
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    // The page behind a panel must not scroll while it is open.
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = previous; };
   }, [onClose]);
   return <div className="drawer-layer">
     <div className="drawer-backdrop" onClick={onClose} aria-hidden="true" />
     <aside className="drawer" role="dialog" aria-modal="true" aria-label={title}>
+      <header className="drawer-head">
+        {onBack ? <button type="button" className="button drawer-back" onClick={onBack} aria-label="Back to the previous panel"><ArrowLeftIcon size={14} aria-hidden="true" /> Back</button> : null}
+        <div className="drawer-title"><h3>{title}</h3>{subtitle ? <p>{subtitle}</p> : null}</div>
+        <button ref={closeRef} className="icon-button drawer-close" type="button" onClick={onClose} aria-label="Close details" title="Close"><XIcon size={16} aria-hidden="true" /></button>
+      </header>
       {crumbs && crumbs.length > 1 ? <nav className="drawer-crumbs" aria-label="Panel history">
-        {onBack ? <button type="button" className="button" onClick={onBack}><ArrowLeftIcon size={13} aria-hidden="true" /> Back</button> : null}
         <ol>{crumbs.map((c, i) => <li key={i} aria-current={i === crumbs.length - 1 ? "page" : undefined}>{c}</li>)}</ol>
       </nav> : null}
-      <header className="drawer-head"><div><h3>{title}</h3>{subtitle ? <p>{subtitle}</p> : null}</div><button ref={closeRef} className="icon-button" type="button" onClick={onClose} aria-label="Close details" title="Close"><XIcon size={16} aria-hidden="true" /></button></header>
       <div className="drawer-body">{children}</div>
     </aside>
   </div>;

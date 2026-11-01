@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api, readableTime } from "@/lib/dashboard-api";
-import { formatDuration, funnelHref, funnelLabel, humanize } from "@/lib/view-models";
+import { formatDuration, funnelHref, funnelLabel, statusLabel, titleWord, triggerName } from "@/lib/view-models";
 import {
-  Badge, DebouncedSearch, FilterSelect, ListFrame, LoadingLines, Panel, RecordRow, StatusBadge, Toolbar, usePaged,
+  Badge, DebouncedSearch, FilterGroup, FilterSelect, ListFrame, LoadingLines, Panel, RecordRow, StatusBadge, Toolbar, usePaged,
 } from "@/components/dashboard/list-kit";
 import { usePanels } from "@/components/dashboard/panel-context";
 import { useUrlParam } from "@/components/dashboard/linked-views";
@@ -31,9 +31,9 @@ export function OutcomesView() {
         <p className="muted">Each step counts jobs, not messages. Reply rate {pct(funnel.rates.reply)} of contacted jobs · interview rate {pct(funnel.rates.interview)} · rejection rate {pct(funnel.rates.rejection)} · median days to first response {funnel.first_response_days_median ?? "n/a"}</p></>}
     </section>
     <Panel title="Recorded outcomes" toolbar={<Toolbar onReload={list.reload} loading={list.loading}>
-      <FilterSelect label="Outcome" value={outcome} onChange={setOutcome} options={[{ value: "", label: "Any outcome" }, ...OUTCOME_KINDS.map((o) => ({ value: o, label: humanize(o) }))]} />
+      <FilterGroup activeCount={outcome ? 1 : 0}><FilterSelect label="Outcome" value={outcome} onChange={setOutcome} options={[{ value: "", label: "Any outcome" }, ...OUTCOME_KINDS.map((o) => ({ value: o, label: statusLabel(o) }))]} /></FilterGroup>
     </Toolbar>}>
-      <ListFrame state={list} empty={{ title: "No outcomes recorded yet", text: "Outcomes appear when a reply is approved in /checkreplies or you run /outcome <job_id> <outcome>." }}>
+      <ListFrame state={list} empty={{ title: "No outcomes recorded yet", text: "An outcome is saved when you approve a reply proposal or record one yourself (for example an interview or a rejection)." }}>
         {(items) => items.map((o) => <RecordRow key={o.id} onOpen={() => open({ kind: "job", id: o.job_id })}
           title={[o.title, o.company].filter(Boolean).join(" at ") || "Job no longer in the database"}
           meta={`${o.note ?? "No note"} · ${readableTime(o.created_at)}`} aside={<StatusBadge status={o.outcome} />} />)}
@@ -44,26 +44,25 @@ export function OutcomesView() {
 
 // ---------------------------------------------------------------- Runs
 type RunRow = { id: string; trigger: string; status: string; planned_at: string; started_at: string | null; ended_at: string | null; wall_sec: number | null; dry_run: boolean; stop_reason: string | null; tool_calls: number; operators: string[]; escalations: number };
-/** Plain names for the run triggers the scheduler writes. */
-const TRIGGER_NAMES: Record<string, string> = { scheduled: "Scheduled wake", forced: "Forced wake (run now)", manual: "Wake for an Apply request", mail_drip: "Mail drip send", continuation: "Wake continuation" };
-const triggerName = (t: string) => TRIGGER_NAMES[t] ?? `${humanize(t)} run`;
 
 export function RunsView() {
+  const { open } = usePanels();
   const [status, setStatus] = useState(""); const [hideSkipped, setHideSkipped] = useState(true);
   const list = usePaged<RunRow>("/api/runs", { status: status || undefined, hideSkipped: hideSkipped && !status ? "1" : undefined });
   const [statuses, setStatuses] = useState<{ status: string; count: number }[]>([]);
   useEffect(() => { api<{ statuses?: { status: string; count: number }[] }>("/api/runs?limit=1").then((r) => setStatuses(r.statuses ?? [])).catch(() => undefined); }, []);
   return <Panel title="Scheduler runs" toolbar={<Toolbar onReload={list.reload} loading={list.loading}>
-    <FilterSelect label="Status" value={status} onChange={setStatus} options={[{ value: "", label: "Any status" }, ...statuses.map((s) => ({ value: s.status, label: `${humanize(s.status)} (${s.count})` }))]} />
-    <label className="check"><input type="checkbox" checked={hideSkipped} onChange={(e) => setHideSkipped(e.target.checked)} disabled={!!status} /> Hide skipped wakes</label>
+    <FilterGroup activeCount={(status ? 1 : 0) + (!hideSkipped && !status ? 1 : 0)}>
+      <FilterSelect label="Status" value={status} onChange={setStatus} options={[{ value: "", label: "Any result" }, ...statuses.map((r) => ({ value: r.status, label: `${statusLabel(r.status)} (${r.count})` }))]} />
+      <label className="check"><input type="checkbox" checked={hideSkipped} onChange={(e) => setHideSkipped(e.target.checked)} disabled={!!status} /> Hide skipped wakes</label>
+    </FilterGroup>
   </Toolbar>}>
     <ListFrame state={list} empty={{ title: "No runs yet", text: "The scheduler has not recorded a wake." }}>
-      {(items) => items.map((r) => <div className="object-row" key={r.id}>
-        <div><strong>{triggerName(r.trigger)}{r.dry_run ? " (dry run, nothing real was sent)" : ""}</strong>
-          <p>{readableTime(r.started_at ?? r.planned_at)} · took {formatDuration(r.wall_sec)} · {r.tool_calls} tool calls{r.stop_reason ? ` · stopped: ${humanize(r.stop_reason)}` : ""}</p>
-          {r.operators.length ? <p>Work planned: {r.operators.join(" | ")}</p> : null}
-          {r.escalations ? <p><Link href="/inbox">{r.escalations} inbox {r.escalations === 1 ? "item" : "items"} from this run</Link></p> : null}</div>
-        <StatusBadge status={r.status} /></div>)}
+      {(items) => items.map((r) => <RecordRow key={r.id} onOpen={() => open({ kind: "run", id: r.id })}
+        title={`${triggerName(r.trigger)}${r.dry_run ? " (dry run, nothing real was sent)" : ""}`}
+        meta={[`${readableTime(r.started_at ?? r.planned_at)} · took ${formatDuration(r.wall_sec)} · ${r.tool_calls} tool calls`, r.stop_reason ? `stopped: ${statusLabel(r.stop_reason)}` : null,
+          r.operators.length ? `work planned: ${r.operators.join(" | ")}` : null, r.escalations ? `${r.escalations} inbox ${r.escalations === 1 ? "item" : "items"} from this run` : null].filter(Boolean).join(" · ")}
+        aside={<StatusBadge status={r.status} />} />)}
     </ListFrame>
   </Panel>;
 }
@@ -77,7 +76,7 @@ export function AuditView() {
     <p className="muted">Who signed in and what they did in this dashboard, newest first. Typed terminal keys and message text are never recorded.</p>
     <ListFrame state={list} empty={{ title: "No audit events", text: "Sign-ins and operator actions are recorded here." }}>
       {(items) => items.map((a) => <div className="object-row" key={a.id}>
-        <div><strong>{humanize(a.kind)}</strong><p>{readableTime(a.at)}{a.ip ? ` · from ${a.ip}` : ""}{a.note ? ` · ${a.note}` : ""}</p>
+        <div><strong>{statusLabel(a.kind)}</strong><p>{readableTime(a.at)}{a.ip ? ` · from ${a.ip}` : ""}{a.note ? ` · ${a.note}` : ""}</p>
           {a.kind.startsWith("terminal_") ? <p><Link href="/sessions">Open Sessions</Link></p> : null}</div><span className="muted" title="Audit event number">event {a.id}</span></div>)}
     </ListFrame>
   </Panel>;
@@ -104,7 +103,7 @@ export function SettingsView() {
     {error ? <div className="notice danger"><strong>Could not load settings.</strong><br />{error}</div> : null}
     {!items && !error ? <LoadingLines /> : null}
     {items && !groups.length ? <div className="empty-state"><h3>No setting matches</h3>Try another search word.</div> : null}
-    {groups.map(([section, rows]) => <details className="setting-group" key={section} open={!!q}><summary>{humanize(section)} <span className="muted">({rows.length})</span></summary>
+    {groups.map(([section, rows]) => <details className="setting-group" key={section} open={!!q}><summary>{titleWord(section)} <span className="muted">({rows.length})</span></summary>
       <div className="object-list">{rows.map((i) => <div className="object-row" key={i.name}>
         <div><strong><code>{i.name}</code></strong><p>{i.about}</p><p>Default {i.default ?? "none"}{i.restart && i.restart !== "none" ? ` · restart ${i.restart}` : ""}</p></div>
         <span>{i.masked ? <Badge tone={i.value === "set" ? "good" : ""}>{i.value}</Badge> : <Badge tone={i.value !== "unset" ? "warn" : ""}>{i.value === "unset" ? `default ${i.default ?? "none"}` : i.value}</Badge>}</span></div>)}</div></details>)}

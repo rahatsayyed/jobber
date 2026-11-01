@@ -53,7 +53,8 @@ function TerminalPane({ target, inputOn, csrf, onState }: { target: Target; inpu
     /** The tmux pane can be far wider than the page: shrink the font so all columns fit, never below 8px. */
     const fit = () => {
       if (!term || !host.current) return;
-      const fs = Math.max(8, Math.min(13, Math.floor((host.current.clientWidth - 20) / (term.cols * 0.6))));
+      const floor = window.innerWidth <= 760 ? 11 : 8; // on a phone keep the text readable; the terminal box scrolls sideways inside itself
+      const fs = Math.max(floor, Math.min(13, Math.floor((host.current.clientWidth - 20) / (term.cols * 0.6))));
       if (term.options.fontSize !== fs) term.options.fontSize = fs;
     };
     const toBottom = () => { if (host.current) host.current.scrollTop = host.current.scrollHeight; };
@@ -164,7 +165,7 @@ export function SessionsView() {
               : <span className="muted" title="WEB_TERMINAL_INPUT=false on the server">Input is turned off on the server</span>}</span></div>
           <TerminalPane key={`${target.session}:${target.window}`} target={target} inputOn={listing.inputEnabled && inputOn && !listing.killed} csrf={csrf} onState={onState} />
           {conn === "ended" ? <p className="muted">This window no longer exists. Pick another one.</p> : null}
-        </> : <div className="empty-state"><h3>Pick a window</h3>Choose a session window on the left to watch it live.{listing.inputEnabled ? " Turn the Input switch On to type; it is Off every time you open this page." : " The terminal is view only."}</div>}
+        </> : <div className="empty-state"><h3>Pick a window</h3>Choose a session window in the list above to watch it live.{listing.inputEnabled ? " Turn the Input switch On to type; it is Off every time you open this page." : " The terminal is view only."}</div>}
       </div>
     </div> : null}
   </Panel>;

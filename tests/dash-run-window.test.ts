@@ -181,7 +181,9 @@ describe('plain-language states', () => {
     expect(statusLabel('submitted')).toBe('Applied');
     expect(statusLabel('some_new_code')).toBe('Some new code');
     expect(statusLabel(null)).toBe('');
-    expect(titleWord('linkedin_easy')).toBe('Linkedin easy');
+    expect(titleWord('linkedin_easy')).toBe('LinkedIn Easy Apply');
+    expect(titleWord('linkedin')).toBe('LinkedIn');
+    expect(titleWord('some_platform')).toBe('Some platform');
     expect(triggerName('mail_drip')).toBe('Mail drip send');
     expect(triggerName('weird_one')).toBe('Weird one run');
   });

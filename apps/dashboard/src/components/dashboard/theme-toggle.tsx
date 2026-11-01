@@ -18,7 +18,19 @@ export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
-    setTheme(currentTheme());
+    setTheme(currentTheme()); // eslint-disable-line react-hooks/set-state-in-effect -- read the theme the head script chose, after hydration
+    // With no saved choice the page follows the system setting, also while it is open.
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const follow = () => {
+      let saved: string | null = null;
+      try { saved = window.localStorage.getItem(THEME_KEY); } catch { /* storage unavailable */ }
+      if (saved === "dark" || saved === "light") return;
+      const next: Theme = media.matches ? "dark" : "light";
+      applyTheme(next);
+      setTheme(next);
+    };
+    media.addEventListener("change", follow);
+    return () => media.removeEventListener("change", follow);
   }, []);
 
   function toggleTheme() {
