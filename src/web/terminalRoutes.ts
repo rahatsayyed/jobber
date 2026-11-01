@@ -77,6 +77,29 @@ export function matchTerminalTarget(allow: readonly string[], session: unknown, 
   return { session: s, window };
 }
 
+/** Lines of scrollback the History view loads. */
+export const HISTORY_LINES = 500;
+
+/**
+ * Picks the window a request means from the live list. An index (when given) wins and, if a name is also given, it must match
+ * (a stale tab is refused instead of typing into whatever window moved there). A name alone picks the first window with that
+ * name, so two windows called "zsh" in one session stay reachable by index. Pure.
+ */
+export function pickTerminalWindow<W extends { name: string; index: number }>(wins: readonly W[], name: string, index: unknown): W | null {
+  const idx = typeof index === 'string' && /^\d{1,6}$/.test(index) ? Number(index) : typeof index === 'number' && Number.isInteger(index) && index >= 0 ? index : null;
+  if (index !== undefined && index !== null && index !== '' && idx === null) return null; // a malformed index is refused, not ignored
+  if (idx !== null) {
+    const w = wins.find((x) => x.index === idx);
+    return w && w.name === name ? w : null;
+  }
+  return wins.find((x) => x.name === name) ?? null;
+}
+
+/** tmux target for one window of one session: exact session (`=`) and the window index, which stays unique when names repeat. Pure. */
+export function terminalWindowTarget(session: string, index: number): string {
+  return `=${session}:${index}`;
+}
+
 const ARROWS: Record<string, string> = { A: 'Up', B: 'Down', C: 'Right', D: 'Left', H: 'Home', F: 'End' };
 const MAX_KEYS = 256;
 
@@ -129,22 +152,36 @@ export function createTerminalRoutes(deps: TerminalDeps, env: { auth: AuthDb; no
     return (await deps.run('tmux', ['-V'])).code === 0;
   }
 
-  async function resolve(session: unknown, window: unknown): Promise<{ session: string; window: string }> {
+  async function resolve(session: unknown, window: unknown, index?: unknown): Promise<{ session: string; window: string; index: number; spec: string }> {
     const t = matchTerminalTarget(deps.sessions, session, window);
     if (!t) throw new HttpError(404, 'not found');
     const wins = await listWindows(deps.run, t.session);
-    if (!wins.some((w) => w.name === t.window)) throw new HttpError(404, 'not found');
-    return t;
+    const w = pickTerminalWindow(wins, t.window, index);
+    if (!w) throw new HttpError(404, 'not found');
+    return { ...t, index: w.index, spec: terminalWindowTarget(t.session, w.index) };
+  }
+
+  /** Pane size per window index of a session, from one list-windows call. A malformed answer gives an empty map. */
+  async function paneSizes(session: string): Promise<Map<number, { cols: number; rows: number }>> {
+    const out = new Map<number, { cols: number; rows: number }>();
+    const r = await deps.run('tmux', ['list-windows', '-t', `=${session}`, '-F', '#{window_index}|#{pane_width}|#{pane_height}']);
+    if (r.code !== 0) return out;
+    for (const line of r.stdout.split('\n')) {
+      const [i, c, rw] = line.split('|').map((n) => Number(n));
+      if (Number.isInteger(i) && Number.isInteger(c) && Number.isInteger(rw) && c > 0 && rw > 0) out.set(i, { cols: c, rows: rw });
+    }
+    return out;
   }
 
   const listing = async (c: Ctx): Promise<void> => {
     const up = await tmuxUp();
-    const sessions: { session: string; up: boolean; windows: { name: string; index: number; active: boolean; command: string }[] }[] = [];
+    const sessions: { session: string; up: boolean; windows: { name: string; index: number; active: boolean; command: string; cols?: number; rows?: number }[] }[] = [];
     for (const s of deps.sessions) {
       const wins = up ? await listWindows(deps.run, s) : [];
+      const sizes = wins.length ? await paneSizes(s) : new Map<number, { cols: number; rows: number }>();
       sessions.push({
         session: s, up: wins.length > 0,
-        windows: wins.map((w) => ({ name: cleanText(w.name, 64), index: w.index, active: w.active, command: cleanText(w.command, 64) })),
+        windows: wins.map((w) => ({ name: cleanText(w.name, 64), index: w.index, active: w.active, command: cleanText(w.command, 64), ...(sizes.get(w.index) ?? {}) })),
       });
     }
     json(c.res, 200, { tmux: up, inputEnabled: deps.inputEnabled, killed: deps.killed(), sessions });
@@ -153,11 +190,11 @@ export function createTerminalRoutes(deps: TerminalDeps, env: { auth: AuthDb; no
   const stream = async (c: Ctx): Promise<void> => {
     if (deps.killed()) return json(c.res, 423, { error: 'killed' });
     if (!(await tmuxUp())) return json(c.res, 503, { error: 'tmux_missing' });
-    const target = await resolve(c.url.searchParams.get('session'), c.url.searchParams.get('window'));
-    const spec = `=${target.session}:=${target.window}`;
+    const target = await resolve(c.url.searchParams.get('session'), c.url.searchParams.get('window'), c.url.searchParams.get('index'));
+    const spec = target.spec;
     const client = c.session!.idHash;
     active.get(client)?.(); // one terminal at a time per client
-    audit(env.auth, 'terminal_open', { ip: c.ip, note: `${target.session}:${target.window}` }, env.now());
+    audit(env.auth, 'terminal_open', { ip: c.ip, note: `${target.session}:${target.index} ${target.window}` }, env.now());
 
     const res = c.res;
     res.writeHead(200, {
@@ -191,19 +228,20 @@ export function createTerminalRoutes(deps: TerminalDeps, env: { auth: AuthDb; no
           if (Date.now() - started > maxStreamMs) { send('end', { reason: 'refresh' }); return stop(); }
           const [screen, dims] = await Promise.all([
             deps.run('tmux', ['capture-pane', '-p', '-e', '-t', spec]),
-            deps.run('tmux', ['display-message', '-p', '-t', spec, '#{pane_width} #{pane_height} #{cursor_x} #{cursor_y}']),
+            deps.run('tmux', ['display-message', '-p', '-t', spec, '#{pane_width} #{pane_height} #{cursor_x} #{cursor_y} #{history_size}']),
           ]);
           if (screen.code !== 0 || dims.code !== 0) { send('end', { reason: 'gone' }); return stop(); }
-          const [cols, rows, cx, cy] = dims.stdout.trim().split(' ').map((n) => Number(n));
+          const [cols, rows, cx, cy, hist] = dims.stdout.trim().split(' ').map((n) => Number(n));
+          const history = Number.isFinite(hist) ? hist : 0;
           const text = deps.redact(screen.stdout).slice(0, 200_000);
-          const hash = createHash('sha1').update(`${text}\0${cx},${cy}`).digest('hex');
+          const hash = createHash('sha1').update(`${text}\0${cx},${cy},${history}`).digest('hex');
           if (hash !== lastHash) {
             lastHash = hash;
             lastWrite = Date.now();
-            send('frame', { cols, rows, cx, cy, text });
+            send('frame', { cols, rows, cx, cy, history, text });
           } else if (Date.now() - lastWrite > 15_000) {
             lastWrite = Date.now();
-            res.write(': keepalive\n\n');
+            send('ping', {}); // a real event, so the page can show "Last update" even while the pane is idle
           }
         } catch {
           send('end', { reason: 'error' });
@@ -211,7 +249,7 @@ export function createTerminalRoutes(deps: TerminalDeps, env: { auth: AuthDb; no
         }
         if (!stopped) timer = setTimeout(() => { void tick(); }, pollMs);
       };
-      send('hello', { session: target.session, window: target.window, inputEnabled: deps.inputEnabled });
+      send('hello', { session: target.session, window: target.window, index: target.index, inputEnabled: deps.inputEnabled });
       void tick();
     });
   };
@@ -222,8 +260,8 @@ export function createTerminalRoutes(deps: TerminalDeps, env: { auth: AuthDb; no
     const body = await readJson(c.req, 2048);
     const o = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
     if (typeof o.keys !== 'string' || o.keys.length === 0 || o.keys.length > MAX_KEYS) return json(c.res, 400, { error: 'invalid keys' });
-    const target = await resolve(o.session, o.window);
-    const spec = `=${target.session}:=${target.window}`;
+    const target = await resolve(o.session, o.window, o.index);
+    const spec = target.spec;
     for (const args of keysToTmux(o.keys)) {
       const r = await deps.run('tmux', ['send-keys', '-t', spec, ...args]);
       if (r.code !== 0) return json(c.res, 502, { error: 'send failed' });
@@ -231,12 +269,24 @@ export function createTerminalRoutes(deps: TerminalDeps, env: { auth: AuthDb; no
     const t = env.now();
     if (t.getTime() - lastInputAudit > 60_000) {
       lastInputAudit = t.getTime();
-      audit(env.auth, 'terminal_input', { ip: c.ip, note: `${target.session}:${target.window}` }, t); // never the keys
+      audit(env.auth, 'terminal_input', { ip: c.ip, note: `${target.session}:${target.index} ${target.window}` }, t); // never the keys
     }
     json(c.res, 200, { ok: true });
   };
 
+  /** One-shot scrollback (last HISTORY_LINES lines plus the screen), redacted like the stream. Content is never logged or audited. */
+  const history = async (c: Ctx): Promise<void> => {
+    if (deps.killed()) return json(c.res, 423, { error: 'killed' });
+    if (!(await tmuxUp())) return json(c.res, 503, { error: 'tmux_missing' });
+    const target = await resolve(c.url.searchParams.get('session'), c.url.searchParams.get('window'), c.url.searchParams.get('index'));
+    const r = await deps.run('tmux', ['capture-pane', '-p', '-e', '-S', `-${HISTORY_LINES}`, '-t', target.spec]);
+    if (r.code !== 0) throw new HttpError(404, 'not found');
+    const text = deps.redact(r.stdout).replace(/\n+$/, '').slice(-400_000);
+    json(c.res, 200, { text, lines: text ? text.split('\n').length : 0 });
+  };
+
   return [
+    { method: 'GET', pattern: '/api/terminal/history', fn: history },
     { method: 'GET', pattern: '/api/terminal/sessions', fn: listing },
     { method: 'GET', pattern: '/api/terminal/stream', fn: stream },
     { method: 'POST', pattern: '/api/terminal/input', fn: input },

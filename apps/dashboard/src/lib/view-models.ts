@@ -153,7 +153,29 @@ export function titleWord(value: string | null | undefined): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-export type TerminalFrame = { cols: number; rows: number; cx: number; cy: number; text: string };
+export type TerminalFrame = { cols: number; rows: number; cx: number; cy: number; history?: number; text: string };
+
+/** Removes colour and cursor escape sequences from captured pane text. */
+export function stripAnsi(text: string): string {
+  return text.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/\x1b[()][A-Za-z0-9]/g, "");
+}
+
+/** True when a pane shows no real content: no non-blank line, or only one or two short lines (a prompt). Pure. */
+export function paneLooksCleared(text: string): boolean {
+  const lines = stripAnsi(text).split("\n").map((l) => l.trim()).filter(Boolean);
+  return lines.length === 0 || (lines.length <= 2 && lines.every((l) => l.length <= 80));
+}
+
+/** "jobber-stack:0 zsh" : session, window index, window name. The index tells two windows of the same name apart. */
+export function windowLabel(session: string, index: number, name: string): string {
+  return `${session}:${index} ${name}`;
+}
+
+/** Local HH:MM:SS for the "Last update" line. */
+export function clockTime(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
 
 /** Escape string that repaints a whole captured pane: clear, home, lines joined with CRLF, then place the cursor. */
 export function frameToTerminal(f: TerminalFrame): string {

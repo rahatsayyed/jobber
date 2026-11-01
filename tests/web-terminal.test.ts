@@ -4,7 +4,8 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Run } from '../src/platform/tmux.js';
-import { allowedTerminalSessions, keysToTmux, matchTerminalTarget, terminalKilled } from '../src/web/terminalRoutes.js';
+import { allowedTerminalSessions, keysToTmux, matchTerminalTarget, pickTerminalWindow, terminalKilled, terminalWindowTarget } from '../src/web/terminalRoutes.js';
+import { clockTime, paneLooksCleared, stripAnsi, windowLabel } from '../apps/dashboard/src/lib/view-models.js';
 import { makeHarness, type Harness } from './helpers/webHarness.js';
 
 let h: Harness | null = null;
@@ -39,6 +40,33 @@ describe('terminal allowlist', () => {
     mkdirSync(join(root, '.jobber'));
     writeFileSync(join(root, '.jobber', 'STOP'), '');
     expect(terminalKilled(root, {})).toBe(true);
+  });
+});
+
+describe('window pick and pane hint helpers', () => {
+  const wins = [{ name: 'zsh', index: 0 }, { name: 'zsh', index: 1 }, { name: 'hunt', index: 2 }];
+  it('picks by index, by unique name, and refuses a stale or missing one', () => {
+    expect(pickTerminalWindow(wins, 'zsh', '1')?.index).toBe(1);
+    expect(pickTerminalWindow(wins, 'zsh', 0)?.index).toBe(0);
+    expect(pickTerminalWindow(wins, 'hunt', null)?.index).toBe(2);
+    expect(pickTerminalWindow(wins, 'zsh', null)?.index).toBe(0);
+    expect(pickTerminalWindow(wins, 'hunt', '1')).toBeNull();
+    expect(pickTerminalWindow(wins, 'zsh', '9')).toBeNull();
+    expect(pickTerminalWindow(wins, 'zsh', 'x1')).toBeNull() ;
+    expect(pickTerminalWindow(wins, 'nope', null)).toBeNull();
+    expect(terminalWindowTarget('jb', 3)).toBe('=jb:3');
+  });
+  it('labels windows and formats the clock', () => {
+    expect(windowLabel('jobber-stack', 0, 'zsh')).toBe('jobber-stack:0 zsh');
+    expect(clockTime(new Date(2026, 0, 2, 3, 4, 5))).toBe('03:04:05');
+  });
+  it('detects a cleared or idle pane but not real content', () => {
+    expect(stripAnsi('\x1b[32mhi\x1b[0m')).toBe('hi');
+    expect(paneLooksCleared('\n\n   \n')).toBe(true);
+    expect(paneLooksCleared('\x1b[32m~/proj %\x1b[0m \n\n')).toBe(true);
+    expect(paneLooksCleared('a\n~/proj %\n')).toBe(true);
+    expect(paneLooksCleared('one\ntwo\nthree\n')).toBe(false);
+    expect(paneLooksCleared(`${'x'.repeat(120)}\n`)).toBe(false);
   });
 });
 
@@ -135,7 +163,57 @@ describe('terminal routes', () => {
     expect(text).toContain('"cols":80');
     expect(text).not.toContain('SECRET-XYZ');
     const kinds = hh.auth.prepare("SELECT kind, note FROM audit_log WHERE kind LIKE 'terminal%'").all() as { kind: string; note: string }[];
-    expect(kinds).toEqual([{ kind: 'terminal_open', note: 'ccgram:hunt' }]);
+    expect(kinds).toEqual([{ kind: 'terminal_open', note: 'ccgram:0 hunt' }]);
+    expect(text).toContain('"history":');
+  });
+
+  it('serves a redacted one-shot history for an allowlisted window and 404s otherwise', async () => {
+    const calls: string[][] = [];
+    const base = terminalRun(calls);
+    const run: Run = async (c, args) => (args[0] === 'capture-pane' ? (calls.push(args), { stdout: 'old SECRET-XYZ-1234567890\nline2\n\n', code: 0 }) : base(c, args));
+    const { h: hh, cookie } = await authed({ run, secrets: ['SECRET-XYZ-1234567890'], terminal: { sessions: ['ccgram'], inputEnabled: false, killed: () => false } });
+    const noCookie = await hh.call('GET', '/api/terminal/history?session=ccgram&window=hunt');
+    expect(noCookie.status).toBe(401);
+    const ok = await hh.call('GET', '/api/terminal/history?session=ccgram&window=hunt', { headers: { cookie } });
+    expect(ok.status).toBe(200);
+    expect(ok.body).not.toContain('SECRET-XYZ');
+    const got = JSON.parse(ok.body) as { text: string; lines: number };
+    expect(got.lines).toBe(2);
+    expect(got.text.startsWith('old ') && got.text.endsWith('\nline2')).toBe(true);
+    expect(calls.find((a) => a[0] === 'capture-pane')).toEqual(['capture-pane', '-p', '-e', '-S', '-500', '-t', '=ccgram:0']);
+    const other = await hh.call('GET', '/api/terminal/history?session=personal&window=hunt', { headers: { cookie } });
+    expect(other.status).toBe(404);
+    expect(calls.some((a) => a.includes('=personal:0'))).toBe(false);
+    const stale = await hh.call('GET', '/api/terminal/history?session=ccgram&window=hunt&index=1', { headers: { cookie } });
+    expect(stale.status).toBe(404);
+    const audits = hh.auth.prepare("SELECT kind FROM audit_log WHERE kind LIKE 'terminal%'").all();
+    expect(audits).toEqual([]);
+  });
+
+  it('reaches two windows with the same name by index', async () => {
+    const calls: string[][] = [];
+    const run: Run = async (c, args) => {
+      if (args[0] === 'list-windows') return { stdout: '0|zsh|1|zsh\n1|zsh|0|zsh\n', code: 0 };
+      return terminalRun(calls)(c, args);
+    };
+    const { h: hh, cookie, csrf } = await authed({ run, terminal: { sessions: ['ccgram'], inputEnabled: true, killed: () => false } });
+    const headers = { cookie, origin: `http://127.0.0.1:${hh.port}`, 'content-type': 'application/json', 'x-csrf-token': csrf };
+    for (const index of [0, 1]) {
+      const r = await hh.call('POST', '/api/terminal/input', { headers, body: JSON.stringify({ session: 'ccgram', window: 'zsh', index, keys: 'a' }) });
+      expect(r.status).toBe(200);
+    }
+    const noIndex = await hh.call('POST', '/api/terminal/input', { headers, body: JSON.stringify({ session: 'ccgram', window: 'zsh', keys: 'b' }) });
+    expect(noIndex.status).toBe(200);
+    const miss = await hh.call('POST', '/api/terminal/input', { headers, body: JSON.stringify({ session: 'ccgram', window: 'zsh', index: 5, keys: 'c' }) });
+    expect(miss.status).toBe(404);
+    expect(calls.filter((a) => a[0] === 'send-keys').map((a) => a[2])).toEqual(['=ccgram:0', '=ccgram:1', '=ccgram:0']);
+  });
+
+  it('lists windows with their index and pane size', async () => {
+    const run: Run = async (c, args) => (args[0] === 'list-windows' && String(args[4]).includes('pane_width') ? { stdout: '0|120|30\n1|80|24\n', code: 0 } : terminalRun([])(c, args));
+    const { h: hh, cookie } = await authed({ run, terminal: { sessions: ['ccgram'], inputEnabled: false, killed: () => false } });
+    const body = JSON.parse((await hh.call('GET', '/api/terminal/sessions', { headers: { cookie } })).body);
+    expect(body.sessions[0].windows.map((w: { index: number; cols: number; rows: number }) => [w.index, w.cols, w.rows])).toEqual([[0, 120, 30], [1, 80, 24]]);
   });
 
   it('input is refused while WEB_TERMINAL_INPUT is off', async () => {
@@ -160,7 +238,7 @@ describe('terminal routes', () => {
     expect(bad.status).toBe(404);
     const ok = await hh.call('POST', '/api/terminal/input', { headers: { ...headers, 'x-csrf-token': csrf }, body: JSON.stringify({ session: 'ccgram', window: 'hunt', keys: 'ls\r' }) });
     expect(ok.status).toBe(200);
-    expect(calls.filter((a) => a[0] === 'send-keys').map((a) => a.slice(1))).toEqual([['-t', '=ccgram:=hunt', '-l', '--', 'ls'], ['-t', '=ccgram:=hunt', 'Enter']]);
+    expect(calls.filter((a) => a[0] === 'send-keys').map((a) => a.slice(1))).toEqual([['-t', '=ccgram:0', '-l', '--', 'ls'], ['-t', '=ccgram:0', 'Enter']]);
     killed = true;
     const dead = await hh.call('POST', '/api/terminal/input', { headers: { ...headers, 'x-csrf-token': csrf }, body: JSON.stringify({ session: 'ccgram', window: 'hunt', keys: 'x' }) });
     expect(dead.status).toBe(423);
