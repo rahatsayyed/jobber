@@ -90,8 +90,8 @@ under Preferences. The Himalayas and We Work Remotely attribution and terms are 
 
 **Search layer and contact finding** (`src/search/`). The kind `linkedin_people` (people dork for `linkedin_find_profiles`, run one layer at a time through `SearchDeps.skip`) shares these caches and budgets; see "Layered people discovery" in `docs/reference/connecting.md`. Company domain resolution is a ladder: explicit
 parameter, a company-site `apply_url` host, the Hacker News posting domain, then search. Search tries the
-cache first (`SEARCH_CACHE_TTL_DAYS`), then a browser dork (`DORK_ENABLED`, daily budget
-`DORK_DAILY_BUDGET`, cooldown `DORK_BLOCK_COOLDOWN_HOURS` after a block), then Serper under
+cache first (`SEARCH_CACHE_TTL_DAYS`), then a browser dork (`DORK_ENABLED`, no daily cap,
+cooldown `DORK_BLOCK_COOLDOWN_HOURS` after a block), then Serper under
 `SERPER_DAILY_BUDGET` and `SERPER_MONTHLY_BUDGET`. Serper and Hunter are contact-finding tools, not job
 sources; Hunter is the last-resort email source and runs only with `HUNTER_ENABLED=true` under
 `HUNTER_MONTHLY_CAP`.

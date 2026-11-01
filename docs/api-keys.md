@@ -66,7 +66,7 @@ unset variables (never values).
 - Variable: `SERPER_API_KEY`.
 - Used by: the search layer (`src/search/`, the only reader of the key outside the setup check and
   the doctor). A search tries the cache first (reused for `SEARCH_CACHE_TTL_DAYS`), then a browser
-  dork (`DORK_ENABLED`, `DORK_DAILY_BUDGET`, off for `DORK_BLOCK_COOLDOWN_HOURS` after a search engine
+  dork (`DORK_ENABLED`, no daily cap, off for `DORK_BLOCK_COOLDOWN_HOURS` after a search engine
   blocks it), then Serper under `SERPER_DAILY_BUDGET` and `SERPER_MONTHLY_BUDGET`. Callers:
   company-domain resolution and `@domain` email search in `contacts.find_company_emails`, and the
   `source-operator`'s careers-page lookups.

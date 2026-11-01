@@ -70,9 +70,6 @@ export const LIMITS: LimitSpec[] = [
   { key: 'SERPER_MONTHLY_BUDGET', group: 'daily-caps', default: 200, min: 0, max: 1000000, unit: 'per month',
     what: 'Serper searches per calendar month for contact finding.',
     raiseNote: 'Serper credits cost money beyond the free allowance.' },
-  { key: 'DORK_DAILY_BUDGET', group: 'daily-caps', default: 30, min: 0, max: 100000, unit: 'per day',
-    what: 'Browser search-engine lookups per day for contact finding.',
-    raiseNote: 'Heavy automated searching gets the search engine to block the browser.' },
 
   // outreach config
   { key: 'LINKEDIN_MAX_INVITES_PER_DAY', group: 'daily-caps', default: 40, min: 0, max: 100000, unit: 'per day',

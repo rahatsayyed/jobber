@@ -81,14 +81,6 @@ describe('contacts browser dork', () => {
     expect(s.browser.launches).toBe(0);
   });
 
-  it('daily dork budget exhausted: no browser, Serper answers', async () => {
-    const s = setup('serp-ok.html', { DORK_DAILY_BUDGET: '0' });
-    const out = await searchWithBudget(s.db, 'careers_page', P, s.deps);
-    expect(out.provider).toBe('serper');
-    expect(out.reason).toContain('dork_budget');
-    expect(s.browser.launches).toBe(0);
-  });
-
   it('dry run: a search is a read, so the dork still runs (same as scout_search)', async () => {
     const s = setup('serp-ok.html', { JOBBER_DRY_RUN: 'true' });
     const out = await searchWithBudget(s.db, 'careers_page', P, s.deps);

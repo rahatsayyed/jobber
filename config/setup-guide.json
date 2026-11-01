@@ -194,13 +194,6 @@
           "purpose": "Serper searches allowed per month for contact finding",
           "where": ".env.example",
           "entered_in": "owner edits .env"
-        },
-        {
-          "name": "DORK_DAILY_BUDGET",
-          "secret": false,
-          "purpose": "browser searches allowed per day for contact finding",
-          "where": ".env.example",
-          "entered_in": "owner edits .env"
         }
       ],
       "explain": "Two optional services: Serper (contact finding) and Hunter (contact finding, last-resort email lookup, off unless you confirm). Each can be skipped and added later. Keys are typed hidden into the wizard and never shown. Skipping only records the choice.",

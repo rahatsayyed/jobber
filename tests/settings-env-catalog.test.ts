@@ -67,7 +67,7 @@ describe('catalog shape', () => {
     }
   });
   it('puts the contact finding keys in their own section', () => {
-    for (const k of ['SERPER_API_KEY', 'HUNTER_API_KEY', 'HUNTER_ENABLED', 'HUNTER_MONTHLY_CAP', 'SERPER_DAILY_BUDGET', 'SERPER_MONTHLY_BUDGET', 'DORK_DAILY_BUDGET', 'DORK_ENABLED']) {
+    for (const k of ['SERPER_API_KEY', 'HUNTER_API_KEY', 'HUNTER_ENABLED', 'HUNTER_MONTHLY_CAP', 'SERPER_DAILY_BUDGET', 'SERPER_MONTHLY_BUDGET', 'DORK_ENABLED']) {
       expect(spec(k).section, k).toBe('contact-finding');
     }
   });
@@ -206,7 +206,7 @@ describe('rules (D22) over the whole catalog', () => {
   it('the guarded tier holds the plan budgets and caps', () => {
     for (const k of [
       'MATCH_THRESHOLD', 'RUN_MAX_WALL_SEC', 'RUN_MAX_TOKENS_APPROX', 'FOLLOWUP_CHECK_MAX_AGE_MIN',
-      'HUNTER_MONTHLY_CAP', 'SERPER_DAILY_BUDGET', 'SERPER_MONTHLY_BUDGET', 'DORK_DAILY_BUDGET', 'APPLY_MAX_ATTEMPTS_PER_DAY',
+      'HUNTER_MONTHLY_CAP', 'SERPER_DAILY_BUDGET', 'SERPER_MONTHLY_BUDGET', 'APPLY_MAX_ATTEMPTS_PER_DAY',
       'SITE_MAX_ACCOUNTS_PER_DAY', TOP_LEVEL_KEY,
     ]) {
       expect(RANK[spec(k).tier]!, k).toBeGreaterThanOrEqual(RANK.guarded!);

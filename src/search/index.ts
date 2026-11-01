@@ -62,7 +62,6 @@ export async function searchWithBudget(db: Db, kind: SearchKind, params: DorkPar
   else if (!cfg.dorkEnabled) reasons.push('dork_disabled');
   else if (!deps.dork) reasons.push('dork_unavailable');
   else if (cooldownUntil(db, 'browser-dork', now)) reasons.push('dork_cooldown');
-  else if (usageToday(db, 'browser-dork', now) >= cfg.dorkDaily) reasons.push('dork_budget');
   else {
     recordUsage(db, 'browser-dork', now);
     let out: { results: SearchResult[]; blocked?: boolean } | null = null;
@@ -105,7 +104,7 @@ export async function searchWithBudget(db: Db, kind: SearchKind, params: DorkPar
 }
 
 export interface SearchStatus {
-  dork: { enabled: boolean; today: number; dailyBudget: number; cooldownUntil: string | null };
+  dork: { enabled: boolean; today: number; cooldownUntil: string | null };
   serper: { keySet: boolean; today: number; dailyBudget: number; month: number; monthlyBudget: number };
   cacheTtlDays: number;
 }
@@ -117,7 +116,7 @@ export function searchStatus(db: Db, deps: SearchDeps = {}): SearchStatus {
   const cfg: SearchConfig = loadSearchConfig(env);
   const cd = cooldownUntil(db, 'browser-dork', now);
   return {
-    dork: { enabled: cfg.dorkEnabled, today: usageToday(db, 'browser-dork', now), dailyBudget: cfg.dorkDaily, cooldownUntil: cd ? cd.toISOString() : null },
+    dork: { enabled: cfg.dorkEnabled, today: usageToday(db, 'browser-dork', now), cooldownUntil: cd ? cd.toISOString() : null },
     serper: {
       keySet: (env.SERPER_API_KEY ?? '').trim() !== '',
       today: usageToday(db, 'serper', now),

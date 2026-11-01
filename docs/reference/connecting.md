@@ -196,7 +196,7 @@ resort. `LINKEDIN_PEOPLE_SEARCH_SOURCES` (default `engine,serper,linkedin`, orde
 names ignored, `linkedin` alone restores the old behaviour) sets the layers: (1) `engine`: a no-login
 dork `site:linkedin.com/in "<company>" (<role terms>)` (category aware) through the search layer's
 browser-dork provider (Google, then DuckDuckGo, then Bing; a block page puts that engine on cooldown, is
-never solved or waited out, and falls through; budget `DORK_DAILY_BUDGET`); (2) `serper` (key and
+never solved or waited out, and falls through; no daily cap); (2) `serper` (key and
 `SERPER_*` budgets); (3) `linkedin`. Result titles and snippets are parsed into the same candidate shape
 (non-`/in/` links dropped, at most 3), pass the same field gate, classifier screen, `employer_match` and
 `upsertPerson`, and the result carries `source: search_engine | serper | linkedin`. A headline from a

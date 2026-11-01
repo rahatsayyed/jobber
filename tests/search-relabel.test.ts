@@ -27,12 +27,12 @@ describe('contact finding relabel', () => {
     const t = readFileSync('.env.example', 'utf8');
     for (const [k, v] of [
       ['DORK_ENABLED', 'true'], ['DORK_BLOCK_COOLDOWN_HOURS', '24'], ['SEARCH_CACHE_TTL_DAYS', '14'],
-      ['SERPER_DAILY_BUDGET', '20'], ['SERPER_MONTHLY_BUDGET', '200'], ['DORK_DAILY_BUDGET', '30'],
+      ['SERPER_DAILY_BUDGET', '20'], ['SERPER_MONTHLY_BUDGET', '200'],
     ]) expect(t, k).toMatch(new RegExp(`^${k}=${v}$`, 'm'));
   });
 
-  it('limits catalog carries the three budgets with the plan defaults', () => {
-    for (const [k, d] of [['SERPER_DAILY_BUDGET', 20], ['SERPER_MONTHLY_BUDGET', 200], ['DORK_DAILY_BUDGET', 30]] as const) {
+  it('limits catalog carries the two Serper budgets with the plan defaults', () => {
+    for (const [k, d] of [['SERPER_DAILY_BUDGET', 20], ['SERPER_MONTHLY_BUDGET', 200]] as const) {
       const s = specFor(k);
       expect(s?.default, k).toBe(d);
       expect(validateLimit(s!, '0')).toBeNull();

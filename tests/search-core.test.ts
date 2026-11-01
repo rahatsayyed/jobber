@@ -120,14 +120,14 @@ describe('searchWithBudget', () => {
     expect(serper.calls).toHaveLength(0);
   });
 
-  it('dork daily budget stops dorking', async () => {
+  it('the browser dork has no daily cap: every call dorks', async () => {
     const db = openDb(':memory:');
     const dork = fake('browser-dork', { results: [] });
-    const deps = { ...base, env: { DORK_DAILY_BUDGET: '1' }, dork: dork.p };
+    const deps = { ...base, env: {}, dork: dork.p };
     await searchWithBudget(db, 'domain_emails', { domain: 'a1.io' }, deps);
     const r = await searchWithBudget(db, 'domain_emails', { domain: 'a2.io' }, deps);
-    expect(r.reason).toContain('dork_budget');
-    expect(dork.calls).toHaveLength(1);
+    expect(r.reason ?? '').not.toContain('dork_budget');
+    expect(dork.calls).toHaveLength(2);
   });
 
   it('no key and no dork returns provider none without throwing', async () => {
@@ -157,7 +157,7 @@ describe('searchWithBudget', () => {
     const db = openDb(':memory:');
     const s = searchStatus(db, { now: () => NOW, env: { SERPER_API_KEY: 'sekret-key-1', SERPER_DAILY_BUDGET: '7' } });
     expect(s.serper).toEqual({ keySet: true, today: 0, dailyBudget: 7, month: 0, monthlyBudget: 200 });
-    expect(s.dork).toEqual({ enabled: true, today: 0, dailyBudget: 30, cooldownUntil: null });
+    expect(s.dork).toEqual({ enabled: true, today: 0, cooldownUntil: null });
     expect(JSON.stringify(s)).not.toContain('sekret');
   });
 });

@@ -1,7 +1,7 @@
 // Browser-dork provider for the `contacts` MCP server (finding 7): cache -> dork -> Serper.
 // The web runtime (patchright + installed Chrome through launchRealChrome, locked headless session) is
 // created on the first search that misses the cache, and the scout engine closes it after every query,
-// also when it throws (src/scout/engine.ts `finally`). Gating (DORK_ENABLED, DORK_DAILY_BUDGET, the block
+// also when it throws (src/scout/engine.ts `finally`). Gating (DORK_ENABLED, the block
 // cooldown) stays in searchWithBudget; a search is a read, so dry-run flags do not stop it (same as
 // scout_search). If another session holds the web lock the engine gets `session_locked`, returns no
 // results and the ladder falls through to Serper.

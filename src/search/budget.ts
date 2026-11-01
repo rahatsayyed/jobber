@@ -10,7 +10,6 @@ export interface SearchConfig {
   cacheTtlDays: number;
   serperDaily: number;
   serperMonthly: number;
-  dorkDaily: number;
 }
 
 function int(raw: string | undefined, def: number, min: number, max: number): number {
@@ -26,7 +25,6 @@ export function loadSearchConfig(env: Record<string, string | undefined>): Searc
     cacheTtlDays: int(env.SEARCH_CACHE_TTL_DAYS, 14, 0, 365),
     serperDaily: int(env.SERPER_DAILY_BUDGET, 20, 0, 100000),
     serperMonthly: int(env.SERPER_MONTHLY_BUDGET, 200, 0, 1000000),
-    dorkDaily: int(env.DORK_DAILY_BUDGET, 30, 0, 100000),
   };
 }
 

@@ -121,10 +121,10 @@ export function sourcesChecks(deps: SourcesCheckDeps = {}): Check[] {
         if (!st) return skip('no database yet: search usage unknown');
         const now = (ctx.now ?? (() => new Date()))();
         const cooling = !!st.dork.cooldownUntil && Date.parse(st.dork.cooldownUntil) > now.getTime();
-        const dorkOk = st.dork.enabled && !cooling && st.dork.today < st.dork.dailyBudget;
+        const dorkOk = st.dork.enabled && !cooling;
         const serperOk = st.serper.keySet && st.serper.today < st.serper.dailyBudget && st.serper.month < st.serper.monthlyBudget;
         const detail =
-          `dork ${st.dork.enabled ? 'enabled' : 'disabled'}${st.dork.cooldownUntil ? `, blocked until ${st.dork.cooldownUntil}` : ''}, ${st.dork.today}/${st.dork.dailyBudget} today; ` +
+          `dork ${st.dork.enabled ? 'enabled' : 'disabled'}${st.dork.cooldownUntil ? `, blocked until ${st.dork.cooldownUntil}` : ''}, ${st.dork.today} today (no daily cap);` +
           `Serper key ${st.serper.keySet ? 'present' : 'absent'}, ${st.serper.today}/${st.serper.dailyBudget} today, ${st.serper.month}/${st.serper.monthlyBudget} this month`;
         const emailOn = (env.SEND_LIMIT_PER_RUN ?? '1').trim() !== '0';
         if (!dorkOk && !serperOk && emailOn) return fail(`${detail}; both providers unavailable while the email channel is on`, 'set SERPER_API_KEY, or enable DORK_ENABLED and wait out the cooldown');
