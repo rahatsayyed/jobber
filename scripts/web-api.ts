@@ -23,7 +23,7 @@ import { loadDesktopKeys, keysFailureMessage, oidcConfigForDesktop, type Desktop
 import { openReadOnlyDb } from '../src/dash/readDb.js';
 import { dbPath } from '../src/dbPath.js';
 import { enqueueManualRequest } from '../src/manual/webRequest.js';
-import { resolveEscalations, snoozeEscalations, withEscalationWriter } from '../src/outreach/escalations.js';
+import { reopenEscalations, resolveEscalations, snoozeEscalations, withEscalationWriter } from '../src/outreach/escalations.js';
 
 let maskLiterals: string[] = [];
 process.on('unhandledRejection', (reason) => {
@@ -203,7 +203,8 @@ export async function main(): Promise<number> {
       env, // .env merged under the shell env, so the read-only config view shows the effective values
       apply: { enqueue: (url, force, now) => enqueueManualRequest(dbPath(), url, force, now) },
       escalations: {
-        resolve: (ids, now) => withEscalationWriter(dbPath(), (w) => resolveEscalations(w, ids, now)),
+        resolve: (ids, now, note) => withEscalationWriter(dbPath(), (w) => resolveEscalations(w, ids, now, note)),
+        reopen: (ids) => withEscalationWriter(dbPath(), (w) => reopenEscalations(w, ids)),
         snooze: (ids, until, now) => withEscalationWriter(dbPath(), (w) => snoozeEscalations(w, ids, until, now)),
       },
       chat: {

@@ -247,9 +247,11 @@ describe('settings editor keys', () => {
 });
 
 describe('WEB_TERMINAL_INPUT', () => {
-  it('is off by default, true only for the exact word and rejects other values', () => {
+  it('is allowed by default, off only for an explicit false and rejects other values', () => {
     const base = { WEB_AUTH_MODE: 'token' };
-    const off = validateRunnerConfig(base, { accountStored: true });
+    const dflt = validateRunnerConfig(base, { accountStored: true });
+    expect(dflt.ok && dflt.config.terminalInput).toBe(true);
+    const off = validateRunnerConfig({ ...base, WEB_TERMINAL_INPUT: 'false' }, { accountStored: true });
     expect(off.ok && off.config.terminalInput).toBe(false);
     const on = validateRunnerConfig({ ...base, WEB_TERMINAL_INPUT: 'true' }, { accountStored: true });
     expect(on.ok && on.config.terminalInput).toBe(true);

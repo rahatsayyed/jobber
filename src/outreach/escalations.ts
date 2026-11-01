@@ -25,6 +25,7 @@ const REASON_MAX = 300;
 const DETAIL_MAX = 600;
 const EXCERPT_MAX = 1500;
 const RAW_MAX = 1500;
+export const NOTE_MAX = 500;
 
 const NOISE_RE = /^\s*\[(blocked|unscreened)\b|injection[_ ]suspect/i;
 // Reason words that mean the tool or the page broke (checked before the human words, so "reply form drift" stays a tool problem).
@@ -152,6 +153,10 @@ export interface EscItem {
   last_at: string;
   /** Text the input screen blocked, for the collapsed owner-only toggle. Never returned by an MCP tool. */
   rawText: string | null;
+  /** The owner's note when the item was marked handled from the dashboard. Plain text. */
+  resolvedNote: string | null;
+  /** The job the person was last contacted about (for the panel link), when known. */
+  jobId: string | null;
 }
 
 export interface EscCounts { open: number; snoozed: number; resolved: number }
@@ -161,10 +166,11 @@ interface Raw {
   created_at: string; resolved_at: string | null; snoozed_until: string | null;
   pid: number | null; pname: string | null; pcompany: string | null; pheadline: string | null; job_title: string | null; job_company: string | null;
   sender_name: string | null; sender_headline: string | null; message_excerpt: string | null; message_at: string | null; ask_kind: string | null;
-  seen_count: number | null; updated_at: string | null; raw_text: string | null; klass: string | null;
+  seen_count: number | null; updated_at: string | null; raw_text: string | null; klass: string | null; resolved_note: string | null;
+  job_id: string | number | null;
 }
 
-const NEW_COLS = ['sender_name', 'sender_headline', 'message_excerpt', 'message_at', 'ask_kind', 'seen_count', 'updated_at', 'raw_text'] as const;
+const NEW_COLS = ['sender_name', 'sender_headline', 'message_excerpt', 'message_at', 'ask_kind', 'seen_count', 'updated_at', 'raw_text', 'resolved_note'] as const;
 
 function hasTable(db: Db, name: string): boolean {
   return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
@@ -220,6 +226,7 @@ export function listEscalations(
       ${people ? `(SELECT p.name FROM people p WHERE p.id = ${pidExpr})` : 'NULL'} AS pname,
       ${people ? `(SELECT p.company FROM people p WHERE p.id = ${pidExpr})` : 'NULL'} AS pcompany,
       ${touchJob ? `(SELECT j.title FROM touches t JOIN jobs j ON j.id = t.job_id WHERE t.person_id = ${pidExpr} ORDER BY t.id DESC LIMIT 1)` : 'NULL'} AS job_title,
+      ${touchJob ? `(SELECT j.id FROM touches t JOIN jobs j ON j.id = t.job_id WHERE t.person_id = ${pidExpr} ORDER BY t.id DESC LIMIT 1)` : 'NULL'} AS job_id,
       ${touchJob ? `(SELECT j.company FROM touches t JOIN jobs j ON j.id = t.job_id WHERE t.person_id = ${pidExpr} ORDER BY t.id DESC LIMIT 1)` : 'NULL'} AS job_company
     FROM escalations e WHERE ${where.join(' AND ')} ORDER BY e.id DESC LIMIT @lim`;
   const rows = db.prepare(sql).all(params) as Raw[];
@@ -257,6 +264,7 @@ export function listEscalations(
       senderName: sender, senderHeadline: headline, excerpt, messageAt: r.message_at, askKind,
       label: reasonLabel(c.group, askKind), todo: whatToDo(c.group, askKind, r.platform, reason),
       updates: seen, last_at: r.updated_at ?? r.created_at, rawText: raw,
+      resolvedNote: r.resolved_note ? cleanText(r.resolved_note, NOTE_MAX) : null, jobId: r.job_id === null || r.job_id === undefined ? null : String(r.job_id),
       id: r.id, ids: [r.id], count: 1, platform: r.platform, reason, detail, group: c.group, flag: c.flag,
       created_at: r.created_at, first_at: r.created_at, threadRef: r.thread_ref, threadUrl: linkedinThreadUrl(r.platform, r.thread_ref),
       personId: r.pid, personName: r.pname === null ? null : cleanText(r.pname, 200), personCompany: r.pcompany === null ? null : cleanText(r.pcompany, 200),
@@ -275,12 +283,38 @@ function cleanIds(ids: number[]): number[] {
   return [...new Set(ids)].filter((i) => Number.isInteger(i) && i > 0).slice(0, MAX_IDS);
 }
 
-/** Marks open escalations handled. Returns how many rows changed (an already resolved row is left alone). */
-export function resolveEscalations(db: Db, ids: number[], now: Date): number {
+function hasColumn(db: Db, name: string): boolean {
+  return (db.prepare('PRAGMA table_info(escalations)').all() as { name: string }[]).some((c) => c.name === name);
+}
+
+/**
+ * Marks open escalations handled. Returns how many rows changed (an already resolved row is left alone). The optional owner note is stored
+ * as plain text next to the row (cleaned and capped); a database without the column ignores it.
+ */
+export function resolveEscalations(db: Db, ids: number[], now: Date, note?: string | null): number {
   const list = cleanIds(ids);
   if (!list.length) return 0;
+  const clean = note ? cleanText(note, NOTE_MAX) || null : null;
+  if (clean !== null && hasColumn(db, 'resolved_note')) {
+    const withNote = db.prepare('UPDATE escalations SET resolved_at = ?, resolved_note = ? WHERE id = ? AND resolved_at IS NULL');
+    return db.transaction(() => list.reduce((n, id) => n + withNote.run(now.toISOString(), clean, id).changes, 0))();
+  }
   const stmt = db.prepare('UPDATE escalations SET resolved_at = ? WHERE id = ? AND resolved_at IS NULL');
   return db.transaction(() => list.reduce((n, id) => n + stmt.run(now.toISOString(), id).changes, 0))();
+}
+
+/** Puts handled escalations back in the open list (clears the handled time, the note and any snooze). Open rows are left alone. */
+export function reopenEscalations(db: Db, ids: number[]): number {
+  const list = cleanIds(ids);
+  if (!list.length) return 0;
+  const sets = ['resolved_at = NULL', ...(hasColumn(db, 'resolved_note') ? ['resolved_note = NULL'] : []), ...(hasSnooze(db) ? ['snoozed_until = NULL'] : [])];
+  const stmt = db.prepare(`UPDATE escalations SET ${sets.join(', ')} WHERE id = ? AND resolved_at IS NOT NULL`);
+  return db.transaction(() => list.reduce((n, id) => n + stmt.run(id).changes, 0))();
+}
+
+/** How many cards the open list shows (rows of one conversation merge into one card); this is what the sidebar badge counts. */
+export function countOpenCards(db: Db, now: Date): number {
+  return listEscalations(db, { now, status: 'open' }).items.length;
 }
 
 /** Hides open escalations until `until`. A resolved row is never snoozed. */

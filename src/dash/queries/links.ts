@@ -26,14 +26,25 @@ export interface PersonLink {
   status: string | null; verified: boolean | null; note: string | null;
 }
 export interface MailLink {
-  /** `<outreach_queue.id>` for the cold email (only once sent), `f<followups.id>` for a follow-up. */
-  ref: string | null; kind: 'cold' | 'followup' | 'feedback'; n: number | null; job_id: string; label: string; status: string | null;
-  to: string | null; subject: string | null; sent_at: string | null; created_at: string | null; current?: boolean;
+  /** `<outreach_queue.id>` for the cold email (only once sent), `f<followups.id>` for a follow-up, the Gmail message id for an inbound reply. */
+  ref: string | null; kind: 'cold' | 'followup' | 'feedback' | 'reply'; n: number | null; job_id: string; label: string; status: string | null;
+  /** Recipient of an outbound mail. For an inbound reply this is null and `from` holds the sender. */
+  to: string | null; from: string | null; subject: string | null;
+  /** Outbound: when it was sent. Inbound: when the reply was received. */
+  sent_at: string | null; created_at: string | null; current?: boolean;
+}
+export interface EscalationLink { id: number; reason: string; platform: string | null; created_at: string | null; resolved: boolean; person_ref: string | null }
+/** One entry in a person's conversation. `open` is the panel the row opens (null: nothing to open); `inbox_id` links an inbox item. */
+export interface TimelineItem {
+  at: string | null; type: 'touch' | 'connection' | 'inbound' | 'escalation' | 'email' | 'followup' | 'reply';
+  direction: 'out' | 'in'; title: string; status: string | null; preview: string | null;
+  job: { id: string; title: string; company: string } | null;
+  open: { kind: 'job' | 'mail' | 'person' | 'reply'; id: string } | null; inbox_id: number | null;
 }
 export interface OtherTouch { kind: string; status: string; at: string | null; platform: string; person_ref: string | null; person_name: string | null }
 
-export interface JobLinks { people: PersonLink[]; mails: MailLink[]; other: OtherTouch[] }
-export interface MailLinks { job: JobBrief | null; job_id: string | null; contact: PersonLink | null; timeline: MailLink[] }
+export interface JobLinks { people: PersonLink[]; mails: MailLink[]; other: OtherTouch[]; escalations: EscalationLink[] }
+export interface MailLinks { job: JobBrief | null; job_id: string | null; contact: PersonLink | null; timeline: MailLink[]; parent: MailLink | null }
 export interface PersonLinks { jobs: (JobBrief & { via: string[] })[]; mails: MailLink[] }
 
 const L = { short: 64, name: 200, text: 500, long: 1000 };
@@ -50,7 +61,37 @@ export function mailStageLabel(kind: MailLink['kind'], n: number | null): string
   if (kind === 'feedback') return 'Feedback request';
   return `Follow-up ${n ?? '?'}`;
 }
-export const followupKind = (n: number): 'followup' | 'feedback' => (n >= 4 ? 'feedback' : 'followup');
+/** Milliseconds for a stored time: SQLite `YYYY-MM-DD HH:MM:SS` is UTC, ISO and RFC 2822 parse as they are. Unparseable or empty gives 0. */
+export function tsOf(s: string | null | undefined): number {
+  if (!s) return 0;
+  const t = /^\d{4}-\d\d-\d\d \d\d:\d\d(:\d\d)?$/.test(s) ? `${s.replace(' ', 'T')}Z` : s;
+  const ms = Date.parse(t);
+  return Number.isNaN(ms) ? 0 : ms;
+}
+const mailTime = (m: MailLink): number => tsOf(m.sent_at ?? m.created_at);
+/** Only ids that are safe in a URL query and a panel ref can be opened. */
+const REPLY_REF_RE = /^[A-Za-z0-9._-]{1,128}$/;
+export const replyRef = (id: unknown): string | null => (typeof id === 'string' && REPLY_REF_RE.test(id) ? id : null);
+
+/**
+ * The message a mail answers or follows: a cold email has none; follow-up n follows follow-up n-1 (the cold email for the first one);
+ * an inbound reply answers the newest sent mail that is not later than the reply (else the cold email). Pure.
+ */
+export function threadParent(list: readonly MailLink[], target: MailLink): MailLink | null {
+  if (target.kind === 'cold') return null;
+  const cold = list.find((m) => m.kind === 'cold' && m.ref !== null) ?? null;
+  if (target.kind === 'reply') {
+    const t = mailTime(target);
+    const sent = list.filter((m) => m.kind !== 'reply' && m.sent_at !== null && mailTime(m) <= t && m.ref !== target.ref);
+    sent.sort((a, b) => mailTime(a) - mailTime(b));
+    return sent[sent.length - 1] ?? cold;
+  }
+  const n = target.n ?? 0;
+  const prev = list.filter((m) => (m.kind === 'followup' || m.kind === 'feedback') && (m.n ?? 0) < n).sort((a, b) => (a.n ?? 0) - (b.n ?? 0));
+  return prev[prev.length - 1] ?? cold;
+}
+
+export const followupKind =(n: number): 'followup' | 'feedback' => (n >= 4 ? 'feedback' : 'followup');
 
 /** `12` -> person 12, `c4` -> contact 4, anything else null. */
 export function parsePersonRef(raw: string): { kind: 'person' | 'contact'; id: number } | null {
@@ -110,7 +151,7 @@ function mailLinksForJob(db: Db, jobId: string, limit: number): MailLink[] {
       const sent = q.email_sent_at !== null && q.email_sent_at !== undefined;
       out.push({
         ref: sent ? String(q.id) : null, kind: 'cold', n: null, job_id: jobId, label: mailStageLabel('cold', null),
-        status: clean(q.email_status, 32) ?? clean(q.status, 32), to: clean(q.email_to, 320), subject: clean(q.email_subject, L.text),
+        status: clean(q.email_status, 32) ?? clean(q.status, 32), to: clean(q.email_to, 320), from: null, subject: clean(q.email_subject, L.text),
         sent_at: clean(q.email_sent_at, L.short), created_at: clean(q.created_at, L.short),
       });
     }
@@ -121,12 +162,37 @@ function mailLinksForJob(db: Db, jobId: string, limit: number): MailLink[] {
       const n = Number(f.n);
       const kind = followupKind(n);
       out.push({
-        ref: `f${f.id}`, kind, n, job_id: jobId, label: mailStageLabel(kind, n), status: clean(f.status, 32), to, subject: clean(f.subject, L.text),
+        ref: `f${f.id}`, kind, n, job_id: jobId, label: mailStageLabel(kind, n), status: clean(f.status, 32), to, from: null, subject: clean(f.subject, L.text),
         sent_at: clean(f.sent_at, L.short), created_at: clean(f.created_at, L.short),
       });
     }
   }
   return out.slice(0, limit);
+}
+
+export function replyLabel(classification: string | null): string {
+  if (classification === 'bounce') return 'Bounce';
+  if (classification === 'auto_ack') return 'Automatic reply';
+  if (classification === 'noise') return 'Other mail';
+  return 'Reply';
+}
+
+/** Inbound mail of a job (processed_messages.job_id), newest first, as thread entries. Reply bodies are not stored, so none is returned. */
+function replyLinksForJob(db: Db, jobId: string, limit: number): MailLink[] {
+  if (!tableExists(db, 'processed_messages')) return [];
+  return all(db, `SELECT message_id, classification, from_addr, subject, reply_date, processed_at FROM processed_messages
+      WHERE job_id = ? ORDER BY rowid DESC LIMIT ?`, jobId, limit).map((m): MailLink => ({
+    ref: replyRef(m.message_id), kind: 'reply', n: null, job_id: jobId, label: replyLabel(clean(m.classification, 32)),
+    status: clean(m.classification, 32), to: null, from: clean(m.from_addr, 320), subject: clean(m.subject, L.text),
+    sent_at: clean(m.reply_date ?? m.processed_at, L.short), created_at: clean(m.processed_at, L.short),
+  }));
+}
+
+/** The whole mail thread of one job in time order (oldest first): cold email(s), follow-ups and inbound replies. Bounded. */
+export function threadForJob(db: Db, jobId: string, limit = MAX_LINKS): MailLink[] {
+  const list = [...mailLinksForJob(db, jobId, limit), ...replyLinksForJob(db, jobId, limit)];
+  list.sort((a, b) => mailTime(a) - mailTime(b));
+  return list.slice(-limit);
 }
 
 function mailsForJobs(db: Db, jobIds: string[]): MailLink[] {
@@ -227,8 +293,19 @@ export function jobLinks(db: Db, jobId: string): JobLinks {
     }
   }
 
-  other.sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''));
-  return { people: [...people.values()].slice(0, MAX_LINKS), mails: mailLinksForJob(db, jobId, MAX_LINKS), other: other.slice(0, MAX_LINKS) };
+  other.sort((a, b) => tsOf(b.at) - tsOf(a.at));
+
+  // Inbox items tied to the job through its people (escalations has no job column; person_id is the join key).
+  const escalations: EscalationLink[] = [];
+  const personIds = [...people.keys()].filter((k) => k.startsWith('p')).map((k) => Number(k.slice(1))).filter((n) => Number.isInteger(n) && n > 0);
+  if (personIds.length && tableExists(db, 'escalations')) {
+    const marks = personIds.map(() => '?').join(',');
+    for (const e of all(db, `SELECT id, reason, platform, person_id, created_at, resolved_at FROM escalations WHERE person_id IN (${marks}) ORDER BY id DESC LIMIT ?`, ...personIds, MAX_LINKS)) {
+      escalations.push({ id: Number(e.id), reason: clean(e.reason, L.text) ?? '', platform: clean(e.platform, 32), created_at: clean(e.created_at, L.short),
+        resolved: e.resolved_at !== null && e.resolved_at !== undefined, person_ref: e.person_id === null ? null : String(e.person_id) });
+    }
+  }
+  return { people: [...people.values()].slice(0, MAX_LINKS), mails: threadForJob(db, jobId, MAX_LINKS), other: other.slice(0, MAX_LINKS), escalations };
 }
 
 // ---------------------------------------------------------------- mail -> job, contact, timeline
@@ -246,14 +323,17 @@ export function mailLinks(db: Db, ref: { kind: 'cold' | 'followup'; id: number }
     if (!f) return null;
     jobId = f.job_id === null ? null : String(f.job_id);
   }
-  if (jobId === null) return { job: null, job_id: null, contact: null, timeline: [] };
-  const timeline = mailLinksForJob(db, jobId, MAX_LINKS);
+  if (jobId === null) return { job: null, job_id: null, contact: null, timeline: [], parent: null };
+  const timeline = threadForJob(db, jobId, MAX_LINKS);
   // The cold row of this job that was sent is the one the mail panel opens; other cold rows (unsent) are not part of the timeline.
   const cold = timeline.filter((m) => m.kind === 'cold' && m.ref !== null);
   const want = ref.kind === 'cold' ? String(ref.id) : `f${ref.id}`;
   const coldPick = cold.find((m) => m.ref === want) ?? cold[0];
-  const finalList = [...(coldPick ? [coldPick] : []), ...timeline.filter((m) => m.kind !== 'cold')];
-  for (const m of finalList) m.current = m.ref === want;
+  // Time order (oldest first); an unsent cold row is not part of the thread.
+  const finalList = timeline.filter((m) => m.kind !== 'cold' || m === coldPick);
+  for (const m of finalList) m.current = m.kind !== 'reply' && m.ref === want;
+  const self = finalList.find((m) => m.current);
+  const parent = self ? threadParent(finalList, self) : null;
 
   const to = (finalList.find((m) => m.to)?.to ?? null);
   let contact: PersonLink | null = null;
@@ -263,7 +343,30 @@ export function mailLinks(db: Db, ref: { kind: 'cold' | 'followup'; id: number }
     contact = c ? personLinkFromContact(c, null)
       : { ref: null, name: null, role: null, channel: 'email', email: to, status: null, verified: null, note: 'Address not in the contacts table' };
   }
-  return { job: briefForJob(db, jobId), job_id: jobId, contact, timeline: finalList };
+  return { job: briefForJob(db, jobId), job_id: jobId, contact, timeline: finalList, parent };
+}
+
+// ---------------------------------------------------------------- one inbound reply (panel kind "reply")
+
+export interface ReplyDetail {
+  message_id: string; job_id: string | null; classification: string | null; label: string; action: string | null; proposed_outcome: string | null;
+  from_addr: string | null; subject: string | null; received_at: string | null; job: JobBrief | null; parent: MailLink | null; timeline: MailLink[];
+}
+export function replyDetail(db: Db, messageId: string): ReplyDetail | null {
+  if (!replyRef(messageId) || !tableExists(db, 'processed_messages')) return null;
+  const m = all(db, `SELECT message_id, job_id, classification, action, proposed_outcome, from_addr, subject, reply_date, processed_at
+      FROM processed_messages WHERE message_id = ?`, messageId)[0];
+  if (!m) return null;
+  const jobId = typeof m.job_id === 'string' && m.job_id !== '' ? m.job_id : null;
+  const timeline = jobId ? threadForJob(db, jobId, MAX_LINKS) : [];
+  for (const t of timeline) t.current = t.kind === 'reply' && t.ref === messageId;
+  const self = timeline.find((t) => t.current);
+  const cls = clean(m.classification, 32);
+  return {
+    message_id: messageId, job_id: jobId, classification: cls, label: replyLabel(cls), action: clean(m.action, 64), proposed_outcome: clean(m.proposed_outcome, 32),
+    from_addr: clean(m.from_addr, 320), subject: clean(m.subject, L.text), received_at: clean(m.reply_date ?? m.processed_at, L.short),
+    job: jobId ? briefForJob(db, jobId) : null, parent: self ? threadParent(timeline, self) : null, timeline,
+  };
 }
 
 // ---------------------------------------------------------------- person / contact -> jobs, mails
@@ -321,6 +424,88 @@ export function personLinks(db: Db, ref: { kind: 'person' | 'contact'; id: numbe
     if (b) { jobs.push({ ...b, via: [...how] }); known.push(id); }
   }
   return { jobs: jobs.slice(0, MAX_LINKS), mails: mailsForJobs(db, known) };
+}
+
+// ---------------------------------------------------------------- person / contact -> the whole conversation
+
+/** `connect_note` -> `Connect note`. */
+export function kindLabel(kind: string): string {
+  const t = kind.replace(/[_-]+/g, ' ').trim();
+  return t ? t[0].toUpperCase() + t.slice(1) : 'Message';
+}
+
+/**
+ * Everything said to or by one person or email contact, oldest first (the newest MAX_LINKS entries): LinkedIn/Naukri touches (kind, status,
+ * body preview), connection requests with their note, inbound-message records (the text itself is never stored, only its class),
+ * inbox items of the person, and the cold emails, follow-ups and replies of the jobs they are linked to.
+ * Join keys: touches.person_id, connections.profile_url -> people.profile_key (exact key), inbound_messages.person_id, escalations.person_id,
+ * and the job list of personLinks for the email side. Every text is cleaned and cut; nothing is HTML.
+ */
+export function personTimeline(db: Db, ref: { kind: 'person' | 'contact'; id: number }): TimelineItem[] | null {
+  const linked = personLinks(db, ref);
+  if (!linked) return null;
+  const items: TimelineItem[] = [];
+  const jobs = new Map<string, TimelineItem['job']>();
+  for (const j of linked.jobs) jobs.set(j.id, { id: j.id, title: j.title, company: j.company });
+  const jobOf = (id: unknown): TimelineItem['job'] => {
+    if (typeof id !== 'string' || id === '') return null;
+    if (!jobs.has(id)) { const b = briefForJob(db, id); jobs.set(id, b ? { id: b.id, title: b.title, company: b.company } : null); }
+    return jobs.get(id) ?? null;
+  };
+
+  if (ref.kind === 'person') {
+    const p = all(db, 'SELECT id, platform, profile_key FROM people WHERE id = ?', ref.id)[0];
+    const key = String(p.profile_key);
+    const platform = clean(p.platform, 32) ?? '';
+    const connectJobs = new Set<string>();
+    if (tableExists(db, 'touches')) {
+      for (const t of all(db, 'SELECT id, job_id, kind, status, body, created_at, sent_at FROM touches WHERE person_id = ? ORDER BY id DESC LIMIT ?', ref.id, MAX_LINKS)) {
+        const kind = clean(t.kind, L.short) ?? '';
+        if (kind.startsWith('connect') && typeof t.job_id === 'string') connectJobs.add(t.job_id);
+        items.push({ at: clean(t.sent_at ?? t.created_at, L.short), type: 'touch', direction: 'out', title: `${kindLabel(kind)}${platform ? ` (${platform})` : ''}`,
+          status: clean(t.status, 32), preview: clean(t.body, 300), job: jobOf(t.job_id), open: typeof t.job_id === 'string' && t.job_id ? { kind: 'job', id: t.job_id } : null, inbox_id: null });
+      }
+    }
+    if (tableExists(db, 'connections')) {
+      const like = `%${key.replace(/[\\%_]/g, (ch) => '\\' + ch)}%`;
+      for (const c of all(db, "SELECT job_id, profile_url, note, status, sent_at, created_at FROM connections WHERE lower(profile_url) LIKE ? ESCAPE '\\' ORDER BY id DESC LIMIT 100", like)) {
+        if (keyOf(c.profile_url) !== key) continue;
+        if (typeof c.job_id === 'string' && connectJobs.has(c.job_id)) continue; // already shown as a touch
+        items.push({ at: clean(c.sent_at ?? c.created_at, L.short), type: 'connection', direction: 'out', title: 'Connection request', status: clean(c.status, 32),
+          preview: clean(c.note, 300), job: jobOf(c.job_id), open: typeof c.job_id === 'string' && c.job_id ? { kind: 'job', id: c.job_id } : null, inbox_id: null });
+      }
+    }
+    if (tableExists(db, 'inbound_messages')) {
+      for (const m of all(db, 'SELECT id, platform, klass, escalated, created_at FROM inbound_messages WHERE person_id = ? ORDER BY id DESC LIMIT ?', ref.id, MAX_LINKS)) {
+        items.push({ at: clean(m.created_at, L.short), type: 'inbound', direction: 'in', title: `Message received (${clean(m.platform, 32) ?? platform})`,
+          status: clean(m.klass, 32), preview: Number(m.escalated) === 1 ? 'Sent to the inbox for you. The message text is not stored here.' : 'The message text is not stored here.', job: null, open: null, inbox_id: null });
+      }
+    }
+    if (tableExists(db, 'escalations')) {
+      const cols = new Set((db.prepare('PRAGMA table_info(escalations)').all() as { name: string }[]).map((c) => c.name));
+      const excerpt = cols.has('message_excerpt') ? 'message_excerpt' : 'NULL';
+      for (const e of all(db, `SELECT id, reason, platform, created_at, resolved_at, ${excerpt} AS excerpt FROM escalations WHERE person_id = ? ORDER BY id DESC LIMIT ?`, ref.id, MAX_LINKS)) {
+        items.push({ at: clean(e.created_at, L.short), type: 'escalation', direction: 'in', title: `Inbox item #${e.id}`, status: e.resolved_at ? 'resolved' : 'open',
+          preview: clean(e.excerpt, 300) ?? clean(e.reason, 300), job: null, open: null, inbox_id: Number(e.id) });
+      }
+    }
+  }
+
+  // Email side: the cold email, follow-ups and replies of every linked job (bounded).
+  // An email contact only owns the threads of jobs mailed to its address (not every job of the same company).
+  const mailJobs = ref.kind === 'contact' ? linked.jobs.filter((j) => j.via.includes('Email sent to this address')) : linked.jobs;
+  for (const j of mailJobs.slice(0, 20)) {
+    for (const m of threadForJob(db, j.id, 20)) {
+      const isReply = m.kind === 'reply';
+      items.push({
+        at: m.sent_at ?? m.created_at, type: isReply ? 'reply' : m.kind === 'cold' ? 'email' : 'followup', direction: isReply ? 'in' : 'out',
+        title: `${m.label}${m.to ? ` to ${m.to}` : m.from ? ` from ${m.from}` : ''}`, status: m.status, preview: m.subject, job: jobOf(j.id),
+        open: m.ref ? { kind: isReply ? 'reply' : 'mail', id: m.ref } : null, inbox_id: null,
+      });
+    }
+  }
+  items.sort((a, b) => tsOf(a.at) - tsOf(b.at));
+  return items.slice(-MAX_LINKS);
 }
 
 // ---------------------------------------------------------------- detail rows for the two new panel kinds

@@ -1,7 +1,7 @@
 // Pure presentation helpers for the dashboard views. No React, no fetch, no path aliases, so vitest can import this file directly.
 
 export type JobCounts = { discovered?: number; matched?: number; applied?: number; pending?: number; failed?: number };
-export type Metric = { key: string; label: string; value: number; hint: string };
+export type Metric = { key: string; label: string; value: number; hint: string; href: string };
 
 /**
  * Home "Job inventory" tiles. Each label says exactly what is counted; the hint is the tooltip. The numbers come from /api/jobs/counts
@@ -9,14 +9,41 @@ export type Metric = { key: string; label: string; value: number; hint: string }
  */
 export function inventoryMetrics(counts: JobCounts, scored: number, threshold: number): Metric[] {
   return [
-    { key: "total", label: "Total jobs", value: counts.discovered ?? 0, hint: "Every job saved so far, including excluded and duplicate ones." },
-    { key: "scored", label: "Scored", value: scored, hint: "Jobs that already have a match score." },
-    { key: "matched", label: `Matched (score ${threshold}+)`, value: counts.matched ?? 0, hint: "Scored at or above the threshold and not excluded (or already contacted). These get outreach." },
-    { key: "applied", label: "Applied", value: counts.applied ?? 0, hint: "Jobs with a submitted application." },
-    { key: "awaiting", label: "Awaiting apply", value: counts.pending ?? 0, hint: "Jobs with outreach still queued, or an application that needs a manual step or an answer." },
-    { key: "failed", label: "Failed", value: counts.failed ?? 0, hint: "Jobs where an email, connect or application attempt failed." },
+    { key: "total", label: "Total jobs", value: counts.discovered ?? 0, hint: "Every job saved so far, including excluded and duplicate ones.", href: "/jobs" },
+    { key: "scored", label: "Scored", value: scored, hint: "Jobs that already have a match score.", href: "/jobs?scored=1" },
+    { key: "matched", label: `Matched (score ${threshold}+)`, value: counts.matched ?? 0, hint: "Scored at or above the threshold and not excluded (or already contacted). These get outreach.", href: "/jobs?bucket=matched" },
+    { key: "applied", label: "Applied", value: counts.applied ?? 0, hint: "Jobs with a submitted application.", href: "/jobs?bucket=applied" },
+    { key: "awaiting", label: "Awaiting apply", value: counts.pending ?? 0, hint: "Jobs with outreach still queued, or an application that needs a manual step or an answer.", href: "/jobs?bucket=pending" },
+    { key: "failed", label: "Failed", value: counts.failed ?? 0, hint: "Jobs where an email, connect or application attempt failed.", href: "/jobs?bucket=failed" },
   ];
 }
+
+/** Where a funnel step leads: the matching filtered list. */
+const FUNNEL_HREFS: Record<string, string> = {
+  discovered: "/jobs", matched: "/jobs?bucket=matched", contacted: "/jobs?contacted=1",
+  replied: "/outcomes?outcome=replied", interview: "/outcomes?outcome=interview", offer: "/outcomes?outcome=offer",
+};
+export function funnelHref(key: string): string | null { return FUNNEL_HREFS[key] ?? null; }
+
+/** Plain-language names for the outreach queue statuses on Home (outreach_queue.status), with the list each one opens when there is one. */
+const QUEUE_STATUS: Record<string, { label: string; hint: string; href: string | null }> = {
+  queued: { label: "Queued", hint: "Prepared and waiting to be sent or applied.", href: "/jobs?bucket=pending" },
+  done: { label: "Done", hint: "Everything planned for the job was sent or applied.", href: "/mail" },
+  skipped: { label: "Skipped", hint: "Dropped on purpose, for example after a reply or a veto.", href: null },
+};
+export function queueStatusInfo(status: string): { label: string; hint: string; href: string | null } {
+  return QUEUE_STATUS[status] ?? { label: humanize(status) || "Unknown", hint: "Queue status as stored.", href: null };
+}
+
+/** Daily ceiling names (db.check_and_increment keys) in words. Unknown keys fall back to a readable form of the key. */
+const CEILING_LABELS: Record<string, string> = {
+  send_email: "Emails sent today", linkedin_invite: "LinkedIn invites today", linkedin_message: "LinkedIn messages today",
+  apply_attempt: "Apply attempts today", apply: "Applications submitted today", naukri_message: "Naukri messages today",
+  wellfound_message: "Wellfound messages today", naukri_apply: "Naukri applications today", wellfound_apply: "Wellfound applications today",
+  wellfound_discover: "Wellfound searches today", linkedin_discover: "LinkedIn searches today", site_account: "New site accounts today",
+  external_resolve: "Company-site link lookups today", linkedin_profile_view: "LinkedIn profile views today",
+};
+export function ceilingLabel(key: string): string { return CEILING_LABELS[key] ?? humanize(key); }
 
 const FUNNEL_LABELS: Record<string, string> = {
   discovered: "Jobs found", matched: "Matched jobs", contacted: "Jobs contacted", replied: "Jobs with a reply", interview: "Interviews", offer: "Offers",
@@ -110,11 +137,23 @@ export function reconnectDelay(attempt: number): number {
 }
 
 // ---- Linked detail panels: ?job=ID, ?mail=ID, ?person=ID
-export type PanelKind = "job" | "mail" | "person";
+export type PanelKind = "job" | "mail" | "person" | "reply";
 export type PanelRef = { kind: PanelKind; id: string };
-// job id: same shape the API accepts; mail: queue id or f<followup id>; person: people id or c<contact id>.
-const PANEL_ID: Record<PanelKind, RegExp> = { job: /^[A-Za-z0-9:_.-]{1,128}$/, mail: /^f?\d{1,12}$/, person: /^c?\d{1,12}$/ };
-const PANEL_KINDS: PanelKind[] = ["job", "mail", "person"];
+// job id: same shape the API accepts; mail: queue id or f<followup id>; person: people id or c<contact id>; reply: the stored mail message id.
+const PANEL_ID: Record<PanelKind, RegExp> = { job: /^[A-Za-z0-9:_.-]{1,128}$/, mail: /^f?\d{1,12}$/, person: /^c?\d{1,12}$/, reply: /^[A-Za-z0-9._-]{1,128}$/ };
+const PANEL_KINDS: PanelKind[] = ["job", "mail", "person", "reply"];
+
+/** The page that hosts a panel by default, for a real link (right click, new tab, share). Any page can open any panel from ?job= ?mail= ?person= ?reply=. */
+const PANEL_PAGE: Record<PanelKind, string> = { job: "/jobs", mail: "/mail", person: "/people", reply: "/mail" };
+export function panelHref(ref: PanelRef): string {
+  return `${PANEL_PAGE[ref.kind]}?${ref.kind}=${encodeURIComponent(ref.id)}`;
+}
+
+/** Keys of the Send-keys helper row on the Sessions page (Enter, Ctrl+C, Esc, Tab, arrows). Same bytes xterm sends for these keys. */
+export const TERMINAL_HELPER_KEYS: { label: string; keys: string }[] = [
+  { label: "Enter", keys: "\r" }, { label: "Ctrl+C", keys: "\x03" }, { label: "Esc", keys: "\x1b" },
+  { label: "Tab", keys: "\t" }, { label: "Up", keys: "\x1b[A" }, { label: "Down", keys: "\x1b[B" },
+];
 
 /** The panel named by the query string, or null. Only the first valid one is used. */
 export function parsePanelParams(params: URLSearchParams): PanelRef | null {
@@ -147,5 +186,6 @@ export function popPanel(stack: PanelRef[]): PanelRef[] { return stack.length > 
 export function crumbLabel(ref: PanelRef): string {
   if (ref.kind === "job") return "Job";
   if (ref.kind === "mail") return ref.id.startsWith("f") ? `Follow-up #${ref.id.slice(1)}` : `Mail #${ref.id}`;
+  if (ref.kind === "reply") return "Reply";
   return ref.id.startsWith("c") ? `Contact #${ref.id.slice(1)}` : `Person #${ref.id}`;
 }

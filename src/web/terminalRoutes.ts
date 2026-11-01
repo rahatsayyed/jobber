@@ -12,7 +12,7 @@
 // - Only sessions in the allowlist (allowedTerminalSessions) are listed, streamed or typed into. The client-supplied names are matched
 //   against that list and against the live tmux window list; a name that matches neither is refused (404) before any tmux call that
 //   would use it.
-// - Input is OFF unless WEB_TERMINAL_INPUT=true. The permission-set rule of the chat box applies: keep the target tmux window on the
+// - Input is allowed unless WEB_TERMINAL_INPUT=false (owner decision; src/web/env.ts). The page's own Input switch starts Off. The permission-set rule of the chat box applies: keep the target tmux window on the
 //   read_only permission set, because anything typed here runs under that window's session.
 // - The kill switch (.jobber/STOP, JOBBER_KILL=1) stops the stream and refuses input, like the other irreversible paths.
 // - Terminal content and typed keys are never logged or audited (only the session and window name and the open event are). Pane text is
@@ -29,7 +29,7 @@ export interface TerminalDeps {
   run: Run;
   /** Session names that may be shown. Everything else is invisible and refused. */
   sessions: readonly string[];
-  /** WEB_TERMINAL_INPUT=true. Default false: view only. */
+  /** False only when WEB_TERMINAL_INPUT=false (view only). */
   inputEnabled: boolean;
   /** True while the kill switch is on. */
   killed: () => boolean;

@@ -12,12 +12,12 @@ import { JobsView, MailView, PeopleView, renderPanel } from "@/components/dashbo
 import { PanelProvider } from "@/components/dashboard/panel-context";
 import { SessionsView } from "@/components/dashboard/terminal-view";
 import { api, readableTime, Snapshot } from "@/lib/dashboard-api";
-import { funnelLabel, inventoryMetrics, JobCounts } from "@/lib/view-models";
+import { ceilingLabel, funnelHref, funnelLabel, inventoryMetrics, JobCounts, queueStatusInfo } from "@/lib/view-models";
 
 type Section = { id: string; label: string; icon: typeof HouseIcon; description: string };
 const sections: Section[] = [
   { id: "overview", label: "Overview", icon: HouseIcon, description: "Pipeline health, limits, and the next owner decision." },
-  { id: "inbox", label: "Inbox", icon: BellIcon, description: "Replies and exceptions that need your attention, grouped by kind." },
+  { id: "inbox", label: "Inbox", icon: BellIcon, description: "One list of everything that needs you: replies, problems and flagged text. Filter by type, platform and status." },
   { id: "jobs", label: "Jobs", icon: BriefcaseIcon, description: "Every discovered job with its score, source and state. Open a row for the full picture." },
   { id: "people", label: "People", icon: UsersThreeIcon, description: "Recruiters and peers the agent found, with connection state and message history." },
   { id: "mail", label: "Mail", icon: EnvelopeSimpleIcon, description: "Cold emails that were sent. Open one to read the message." },
@@ -69,27 +69,35 @@ function Overview() {
   if (!snapshot || !jobCounts) return <LoadingLines />;
   return <div className="overview-grid"><div className="stack">
     <section className="section"><div className="section-head"><h3>Job inventory</h3><Link href="/jobs">Open jobs</Link></div>
-      <div className="metrics">{inventoryMetrics(jobCounts, scored, threshold).map((m) => <div className="metric" key={m.key} title={m.hint}><span className="metric-value">{m.value}</span><span className="metric-label">{m.label}</span><span className="metric-hint">{m.hint}</span></div>)}</div></section>
+      <div className="metrics">{inventoryMetrics(jobCounts, scored, threshold).map((m) => <Link className="metric" href={m.href} key={m.key} title={`${m.hint} Click to see these jobs.`}><span className="metric-value">{m.value}</span><span className="metric-label">{m.label}</span><span className="metric-hint">{m.hint}</span></Link>)}</div></section>
     <section className="section"><div className="section-head"><h3>Outreach funnel</h3><Link href="/outcomes">View outcomes</Link></div>
-      <div className="funnel">{Object.entries(snapshot.funnel).map(([label, value], index) => <div className="funnel-step" key={label}><span>{String(index + 1).padStart(2, "0")}</span><strong>{funnelLabel(label)}</strong><b>{value}</b></div>)}</div></section>
+      <div className="funnel">{Object.entries(snapshot.funnel).map(([label, value], index) => { const href = funnelHref(label); const inner = <><span>{String(index + 1).padStart(2, "0")}</span><strong>{funnelLabel(label)}</strong><b>{value}</b></>;
+        return href ? <Link className="funnel-step" key={label} href={href} title="Open the matching list">{inner}</Link> : <div className="funnel-step" key={label}>{inner}</div>; })}</div>
+      <p className="muted">Each step counts jobs, not messages. Click a step to see them.</p></section>
     <section className="section"><div className="section-head"><h3>Outbound queue</h3><span className="updated-at">Last send: {snapshot.lastSend ? readableTime(snapshot.lastSend.at) : "none"}</span></div>
-      <div className="data-list">{snapshot.queue.length ? snapshot.queue.map((entry) => <div className="data-row" key={entry.status}><div className="data-row-main"><strong>{entry.status}</strong><span>Current queue status</span></div><span className="data-row-value">{entry.count}</span></div>) : <div className="empty-state"><h3>Queue is clear</h3>There is no queued outreach right now.</div>}</div></section>
+      <div className="data-list">{snapshot.queue.length ? snapshot.queue.map((entry) => { const info = queueStatusInfo(entry.status); const inner = <><div className="data-row-main"><strong>{info.label}</strong><span>{info.hint}</span></div><span className="data-row-value">{entry.count}</span></>;
+        return info.href ? <Link className="data-row" key={entry.status} href={info.href}>{inner}</Link> : <div className="data-row" key={entry.status}>{inner}</div>; }) : <div className="empty-state"><h3>Queue is clear</h3>There is no queued outreach right now.</div>}</div></section>
   </div><aside className="stack" id="limits-and-holds">
-    <section className="section"><div className="section-head"><h3>Daily ceilings</h3></div><div>{Object.entries(snapshot.ceilings).map(([key, ceiling]) => <div className="limit-row" key={key}><span>{key}</span><b className={ceiling.ok ? "ok" : "blocked"}>{ceiling.used} / {ceiling.limit}</b></div>)}</div></section>
-    <section className="section"><div className="section-head"><h3>Safety holds</h3><Link href="/inbox">Open inbox</Link></div>{snapshot.halts.length ? <div className="data-list">{snapshot.halts.map((halt) => <div className="data-row" key={halt.platform}><div className="data-row-main"><strong>{halt.platform}</strong><span>{halt.reason}</span></div><WarningCircleIcon size={17} color="var(--danger)" aria-label="Halted" /></div>)}</div> : <div className="notice"><strong>No active halts.</strong><br />The scheduler can continue subject to its other guards.</div>}</section>
+    <section className="section"><div className="section-head"><h3>Daily ceilings</h3></div><div>{Object.entries(snapshot.ceilings).map(([key, ceiling]) => <div className="limit-row" key={key} title={ceiling.ok ? "Room left today" : "Limit reached for today"}><span>{ceilingLabel(key)}</span><b className={ceiling.ok ? "ok" : "blocked"}>{ceiling.used} of {ceiling.limit}</b></div>)}</div><p className="muted">Used so far today, then the daily limit. Counted over a rolling day.</p></section>
+    <section className="section"><div className="section-head"><h3>Safety holds</h3><Link href="/inbox">Open inbox</Link></div>{snapshot.halts.length ? <div className="data-list">{snapshot.halts.map((halt) => <div className="data-row" key={halt.platform}><div className="data-row-main"><strong>{halt.platform}</strong><span>{halt.reason}{halt.setAt ? ` · since ${readableTime(halt.setAt)}` : ""}</span></div><WarningCircleIcon size={17} color="var(--danger)" aria-label="Halted" /></div>)}</div> : <div className="notice"><strong>No active halts.</strong><br />The scheduler can continue subject to its other guards.</div>}</section>
     {snapshot.degraded.length ? <div className="notice warning"><strong>Partial data</strong><br />Some status sections are unavailable: {snapshot.degraded.join(", ")}.</div> : null}
   </aside></div>;
 }
 
 export function DashboardShell({ section: initialSection }: { section: string }) {
-  const pathname = usePathname(); const router = useRouter(); const section = useMemo(() => getSection(initialSection), [initialSection]); const [mode, setMode] = useState<"DRY RUN" | "LIVE" | null>(null); const [csrf, setCsrf] = useState<string | null>(null);
+  const pathname = usePathname(); const router = useRouter(); const section = useMemo(() => getSection(initialSection), [initialSection]); const [mode, setMode] = useState<"DRY RUN" | "LIVE" | null>(null); const [csrf, setCsrf] = useState<string | null>(null); const [inboxOpen, setInboxOpen] = useState(0);
+  useEffect(() => {
+    const refresh = () => { api<{ cards?: number; open?: number }>("/api/escalations/count").then((c) => setInboxOpen(c.cards ?? c.open ?? 0)).catch(() => undefined); };
+    refresh(); const timer = window.setInterval(refresh, 60_000); window.addEventListener("inbox-changed", refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener("inbox-changed", refresh); };
+  }, []);
   useEffect(() => {
     if (window.location.hash.startsWith("#token=")) { router.replace(`/login${window.location.hash}`); return; }
     api<{ mode?: { mode?: "DRY RUN" | "LIVE" }; csrf?: string }>("/api/session").then((session) => { setMode(session.mode?.mode ?? null); setCsrf(session.csrf ?? null); }).catch(() => router.replace("/login"));
   }, [router]);
   async function signOut() { if (csrf) await fetch("/api/logout", { method: "POST", headers: { "X-CSRF-Token": csrf } }).catch(() => undefined); router.replace("/login"); }
   return <PanelProvider render={renderPanel}><div className="app-shell"><aside className="rail"><Link className="brand" href="/"><span className="brand-mark" aria-hidden="true" /><strong>Jobber</strong><span>operator</span></Link>
-    <nav className="rail-nav" aria-label="Dashboard sections">{sections.map((item) => { const Icon = item.icon; const href = item.id === "overview" ? "/" : `/${item.id}`; const active = item.id === section.id && (item.id !== "overview" || pathname === "/"); return <Link key={item.id} href={href} className="nav-link" aria-label={item.label} title={item.label} aria-current={active ? "page" : undefined}><Icon size={18} weight={active ? "fill" : "regular"} aria-hidden="true" /><span>{item.label}</span></Link>; })}</nav>
+    <nav className="rail-nav" aria-label="Dashboard sections">{sections.map((item) => { const Icon = item.icon; const href = item.id === "overview" ? "/" : `/${item.id}`; const active = item.id === section.id && (item.id !== "overview" || pathname === "/"); return <Link key={item.id} href={href} className="nav-link" aria-label={item.label} title={item.label} aria-current={active ? "page" : undefined}><Icon size={18} weight={active ? "fill" : "regular"} aria-hidden="true" /><span>{item.label}</span>{item.id === "inbox" && inboxOpen > 0 ? <span className="nav-badge" aria-label={`${inboxOpen} open`}>{inboxOpen}</span> : null}</Link>; })}</nav>
     <div className="rail-footer"><strong>Local operator surface</strong>Actions remain protected by the Jobber API.</div></aside>
     <main className="workspace"><header className="topbar"><h1>Jobber</h1><div className="topbar-actions"><span className={`status-chip ${mode === "DRY RUN" ? "dry" : mode === "LIVE" ? "live" : ""}`}><i aria-hidden="true" />{mode ?? "Connecting"}</span><ThemeToggle /><button className="icon-button" type="button" onClick={() => void signOut()} aria-label="Sign out" title="Sign out"><SignOutIcon size={17} aria-hidden="true" /></button></div></header>
       <div className="content"><header className="page-heading"><div><h2>{section.label}</h2><p>{section.description}</p></div>{section.id === "overview" ? <p className="updated-at">Refreshes every 30 seconds</p> : null}</header>

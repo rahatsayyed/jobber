@@ -33,7 +33,7 @@ export interface WebConfig {
   settingsEdit: boolean;
   settingsRemoteSafety: boolean;
   settingsBackupKeep: number;
-  /** WEB_TERMINAL_INPUT=true: the Sessions terminal accepts typing. Default false (view only). */
+  /** The Sessions terminal accepts typing. Default true; only WEB_TERMINAL_INPUT=false turns it off. The page also has an Input switch (off on every load). */
   terminalInput: boolean;
 }
 
@@ -72,6 +72,15 @@ function bool(env: RunnerEnv, key: string, errs: ConfigError[]): boolean {
   if (v === '' || v === 'false') return false;
   if (v === 'true') return true;
   errs.push({ scope: 'web', message: `${key} must be true or false` });
+  return false;
+}
+
+/** WEB_TERMINAL_INPUT: blank or `true` allow typing, only an explicit `false` turns it off, anything else is a config error (and off). */
+export function terminalInputAllowed(env: RunnerEnv, errs: ConfigError[]): boolean {
+  const v = val(env, 'WEB_TERMINAL_INPUT').toLowerCase();
+  if (v === '' || v === 'true') return true;
+  if (v === 'false') return false;
+  errs.push({ scope: 'web', message: 'WEB_TERMINAL_INPUT must be true or false' });
   return false;
 }
 
@@ -133,7 +142,8 @@ export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: bool
   const chatEnabled = bool(env, 'WEB_CHAT_ENABLED', errs);
   const authDb = authDbPathFromEnv(env);
   const settingsEdit = bool(env, 'WEB_SETTINGS_EDIT', errs);
-  const terminalInput = bool(env, 'WEB_TERMINAL_INPUT', errs);
+  // Owner decision: typing is allowed unless WEB_TERMINAL_INPUT is explicitly `false`. Blank or unset means allowed.
+  const terminalInput = terminalInputAllowed(env, errs);
   const settingsRemoteSafety = bool(env, 'WEB_SETTINGS_REMOTE_SAFETY', errs);
   let settingsBackupKeep = 10;
   const rawKeep = val(env, 'SETTINGS_BACKUP_KEEP');

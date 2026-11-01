@@ -12,6 +12,8 @@ export interface PersonRow {
   id: number; platform: string; name: string | null; headline: string | null; company: string | null; category: string;
   stage: string | null; followups_sent: number | null; last_touch_at: string | null; next_due_at: string | null; paused_reason: string | null;
   profile_url: string | null; connection_status: string | null; touch_count: number;
+  /** Distinct jobs this person was messaged about, and the newest one (touches.job_id joined to jobs). */
+  job_count: number; last_job_id: string | null; last_job_title: string | null;
 }
 
 /** Public profile link rebuilt from the stored profile_key. Only the exact linkedin.com/in/<slug> shape becomes a link; anything else is null. */
@@ -24,14 +26,18 @@ export interface Touch {
 }
 
 const PERSON_LIMITS: Record<string, number> = {
-  platform: 32, name: 200, headline: 300, company: 200, category: 64, stage: 32, last_touch_at: 64, next_due_at: 64, paused_reason: 300,
+  last_job_id: 200, last_job_title: 300, platform: 32, name: 200, headline: 300, company: 200, category: 64, stage: 32, last_touch_at: 64, next_due_at: 64, paused_reason: 300,
 };
 const TOUCH_LIMITS: Record<string, number> = { job_id: 200, kind: 64, status: 32, body: 4000, created_at: 64, sent_at: 64 };
 
 // connection_status: newest connections row whose profile_url contains the stored profile_key (the table has no person id).
 const EXTRA = (db: Db) => `${tableExists(db, 'connections')
   ? "(SELECT c.status FROM connections c WHERE instr(c.profile_url, p.profile_key) > 0 ORDER BY c.id DESC LIMIT 1)" : 'NULL'} AS connection_status,
-  ${tableExists(db, 'touches') ? '(SELECT COUNT(*) FROM touches t WHERE t.person_id = p.id)' : '0'} AS touch_count, p.profile_key AS profile_key`;
+  ${tableExists(db, 'touches') ? '(SELECT COUNT(*) FROM touches t WHERE t.person_id = p.id)' : '0'} AS touch_count,
+  ${tableExists(db, 'touches') ? '(SELECT COUNT(DISTINCT t.job_id) FROM touches t WHERE t.person_id = p.id AND t.job_id IS NOT NULL)' : '0'} AS job_count,
+  ${tableExists(db, 'touches') && tableExists(db, 'jobs') ? '(SELECT t.job_id FROM touches t JOIN jobs jj ON jj.id = t.job_id WHERE t.person_id = p.id ORDER BY t.id DESC LIMIT 1)' : 'NULL'} AS last_job_id,
+  ${tableExists(db, 'touches') && tableExists(db, 'jobs') ? '(SELECT jj.title FROM touches t JOIN jobs jj ON jj.id = t.job_id WHERE t.person_id = p.id ORDER BY t.id DESC LIMIT 1)' : 'NULL'} AS last_job_title,
+  p.profile_key AS profile_key`;
 const personSelect = (db: Db): string => tableExists(db, 'contact_state')
   ? `SELECT p.id, p.platform, p.name, p.headline, p.company, p.category, s.stage, s.followups_sent,
   s.last_touch_at, s.next_due_at, s.paused_reason, ${EXTRA(db)} FROM people p LEFT JOIN contact_state s ON s.person_id = p.id`

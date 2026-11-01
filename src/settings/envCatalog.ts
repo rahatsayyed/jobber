@@ -720,9 +720,9 @@ const hand: EnvSpec[] = [
 
   e('WEB_TERMINAL_INPUT', 'dashboard', 'dashboard terminal', 'bool', {
     blankMeansDefault: true,
-    default: 'false',
-    about: 'Let the dashboard Sessions page type into the live terminal. While false the terminal is view only. Typing runs under the tmux window\'s own session, so keep that window on the read_only permission set.',
-    ...never('Types into a running agent session: only the owner, by hand in .env, can switch it on.'),
+    default: 'true',
+    about: 'Let the dashboard Sessions page type into the live terminal. Allowed unless set to false (the page still has an Input switch that is off on every load). Typing runs under the tmux window\'s own session, so keep that window on the read_only permission set. Set false to make the terminal view only.',
+    ...never('Types into a running agent session: only the owner, by hand in .env, can change it.'),
     restart: 'dashboard',
     restartEvidence: 'src/web/env.ts',
   }),

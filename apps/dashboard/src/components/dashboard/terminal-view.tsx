@@ -4,7 +4,7 @@ import "@xterm/xterm/css/xterm.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { api, apiPost } from "@/lib/dashboard-api";
-import { frameToTerminal, reconnectDelay, TerminalFrame } from "@/lib/view-models";
+import { frameToTerminal, reconnectDelay, TERMINAL_HELPER_KEYS, TerminalFrame } from "@/lib/view-models";
 import { Badge, LoadingLines, Panel } from "@/components/dashboard/list-kit";
 
 type Win = { name: string; index: number; active: boolean; command: string };
@@ -23,9 +23,24 @@ function xtermTheme() {
   return { background: cssVar("--surface-raised", "#17191e"), foreground: cssVar("--ink", "#f4f5f7"), cursor: cssVar("--accent", "#8994ff"), selectionBackground: cssVar("--nav-active", "#1a1d27") };
 }
 
-function TerminalPane({ target, inputEnabled, csrf, onState }: { target: Target; inputEnabled: boolean; csrf: string | null; onState: (c: Conn) => void }) {
+function TerminalPane({ target, inputOn, csrf, onState }: { target: Target; inputOn: boolean; csrf: string | null; onState: (c: Conn) => void }) {
   const host = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const inputRef = useRef(inputOn);
   const [retry, setRetry] = useState(0);
+  const [sendError, setSendError] = useState(false);
+  const post = useCallback((keys: string) => {
+    if (!keys) return;
+    apiPost("/api/terminal/input", { session: target.session, window: target.window, keys }, csrf).then(() => setSendError(false)).catch(() => setSendError(true));
+  }, [target.session, target.window, csrf]);
+  const postRef = useRef(post);
+  useEffect(() => { postRef.current = post; }, [post]);
+  // The Input switch only flips xterm's stdin gate and the focus; the terminal itself is not rebuilt.
+  useEffect(() => {
+    inputRef.current = inputOn;
+    const t = termRef.current;
+    if (t) { t.options.disableStdin = !inputOn; if (inputOn) t.focus(); }
+  }, [inputOn]);
   useEffect(() => {
     let disposed = false; let term: Terminal | null = null; let es: EventSource | null = null; let timer: number | undefined; let attempt = 0;
     let pending = ""; let flush: number | undefined; let themeObs: MutationObserver | undefined; let sizeObs: ResizeObserver | undefined;
@@ -33,7 +48,7 @@ function TerminalPane({ target, inputEnabled, csrf, onState }: { target: Target;
     const retheme = () => { if (term) term.options.theme = xtermTheme(); };
     const sendKeys = () => {
       flush = undefined; const keys = pending; pending = ""; if (!keys) return;
-      apiPost("/api/terminal/input", { session: target.session, window: target.window, keys }, csrf).catch(() => undefined);
+      postRef.current(keys);
     };
     /** The tmux pane can be far wider than the page: shrink the font so all columns fit, never below 8px. */
     const fit = () => {
@@ -74,10 +89,12 @@ function TerminalPane({ target, inputEnabled, csrf, onState }: { target: Target;
     (async () => {
       const { Terminal: XTerm } = await import("@xterm/xterm");
       if (disposed || !host.current) return;
-      term = new XTerm({ cols: 100, rows: 30, scrollback: 0, cursorBlink: false, disableStdin: !inputEnabled, fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', theme: xtermTheme(), allowProposedApi: false });
+      term = new XTerm({ cols: 100, rows: 30, scrollback: 0, cursorBlink: false, disableStdin: !inputRef.current, fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', theme: xtermTheme(), allowProposedApi: false });
+      termRef.current = term;
       term.open(host.current);
+      if (inputRef.current) term.focus();
       sizeObs = new ResizeObserver(fit); sizeObs.observe(host.current);
-      if (inputEnabled) term.onData((d) => { pending += d; if (flush === undefined) flush = window.setTimeout(sendKeys, 60); });
+      term.onData((d) => { if (!inputRef.current) return; pending += d; if (flush === undefined) flush = window.setTimeout(sendKeys, 60); });
       themeObs = new MutationObserver(retheme);
       themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "class", "style"] });
       media.addEventListener("change", retheme);
@@ -85,16 +102,24 @@ function TerminalPane({ target, inputEnabled, csrf, onState }: { target: Target;
     })();
     return () => {
       disposed = true; if (timer) window.clearTimeout(timer); if (flush) window.clearTimeout(flush);
-      es?.close(); themeObs?.disconnect(); sizeObs?.disconnect(); media.removeEventListener("change", retheme); term?.dispose();
+      es?.close(); themeObs?.disconnect(); sizeObs?.disconnect(); media.removeEventListener("change", retheme); term?.dispose(); termRef.current = null;
     };
-  }, [target.session, target.window, inputEnabled, csrf, onState, retry]);
-  return <div className="term-wrap"><div ref={host} className="term-host" role="log" aria-label={`Terminal ${target.session} ${target.window}`} />
-    <button type="button" className="button term-retry" onClick={() => setRetry((n) => n + 1)}>Reconnect</button></div>;
+  }, [target.session, target.window, onState, retry]);
+  return <>
+    <div className="term-wrap"><div ref={host} className="term-host" role="log" aria-label={`Terminal ${target.session} ${target.window}`} />
+      <button type="button" className="button term-retry" onClick={() => setRetry((n) => n + 1)}>Reconnect</button></div>
+    {inputOn ? <div className="term-keys" role="group" aria-label="Send keys">
+      <span className="muted">Send keys</span>
+      {TERMINAL_HELPER_KEYS.map((k) => <button key={k.label} type="button" className="button" onClick={() => { post(k.keys); termRef.current?.focus(); }}>{k.label}</button>)}
+      {sendError ? <span className="muted" role="alert">Could not send. Check the connection or the kill switch.</span> : null}
+    </div> : null}
+  </>;
 }
 
 export function SessionsView() {
   const [listing, setListing] = useState<Listing | null>(null); const [error, setError] = useState<string | null>(null);
   const [target, setTarget] = useState<Target | null>(null); const [conn, setConn] = useState<Conn>("connecting"); const [csrf, setCsrf] = useState<string | null>(null);
+  const [inputOn, setInputOn] = useState(false); // Off on every page load, by design
   const load = useCallback(async () => {
     try { setListing(await api<Listing>("/api/terminal/sessions")); setError(null); } catch (e) { setError(e instanceof Error ? e.message : "The sessions could not be loaded."); }
   }, []);
@@ -110,7 +135,7 @@ export function SessionsView() {
     if (!all.length) return;
     let saved: Target | null = null;
     try { saved = JSON.parse(window.localStorage.getItem("jobber.terminal") ?? "null") as Target | null; } catch { /* storage unavailable */ }
-    const pick = all.find((w) => saved && w.session === saved.session && w.window === saved.window) ?? all.find((w) => w.active) ?? all[0];
+    const pick = all.find((w) => saved && w.session === saved.session && w.window === saved.window) ?? all.find((w) => w.window === "hunt") ?? all.find((w) => w.active) ?? all[0];
     setTarget({ session: pick.session, window: pick.window }); // eslint-disable-line react-hooks/set-state-in-effect
   }, [listing, target]);
   useEffect(() => {
@@ -133,10 +158,13 @@ export function SessionsView() {
       <div className="term-main">
         {target ? <>
           <div className="term-head"><strong>{target.session} / {target.window}</strong><span className="term-badges"><Badge tone={conn === "live" ? "good" : conn === "failed" || conn === "killed" ? "bad" : "warn"}>{CONN_TEXT[conn]}</Badge>
-            {listing.inputEnabled ? <Badge tone="bad">Input enabled</Badge> : <Badge>View only</Badge>}</span></div>
-          <TerminalPane key={`${target.session}:${target.window}`} target={target} inputEnabled={listing.inputEnabled} csrf={csrf} onState={onState} />
+            {listing.inputEnabled && inputOn ? <Badge tone="bad">Input enabled</Badge> : <Badge>View only</Badge>}
+            {listing.inputEnabled
+              ? <label className="check input-switch"><input type="checkbox" role="switch" checked={inputOn} onChange={(e) => setInputOn(e.target.checked)} disabled={listing.killed} /> Input {inputOn ? "On" : "Off"}</label>
+              : <span className="muted" title="WEB_TERMINAL_INPUT=false on the server">Input is turned off on the server</span>}</span></div>
+          <TerminalPane key={`${target.session}:${target.window}`} target={target} inputOn={listing.inputEnabled && inputOn && !listing.killed} csrf={csrf} onState={onState} />
           {conn === "ended" ? <p className="muted">This window no longer exists. Pick another one.</p> : null}
-        </> : <div className="empty-state"><h3>Pick a window</h3>Choose a session window on the left to watch it live.{listing.inputEnabled ? " Typing is enabled for this dashboard." : " The terminal is view only."}</div>}
+        </> : <div className="empty-state"><h3>Pick a window</h3>Choose a session window on the left to watch it live.{listing.inputEnabled ? " Turn the Input switch On to type; it is Off every time you open this page." : " The terminal is view only."}</div>}
       </div>
     </div> : null}
   </Panel>;

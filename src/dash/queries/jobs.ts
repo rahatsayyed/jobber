@@ -109,6 +109,10 @@ export const JOB_STATES: readonly JobState[] = ['excluded', 'active'];
 
 export function listJobs(db: Db, opts: {
   bucket?: JobBucket; q?: string; source?: string; state?: JobState; cursor?: number | null; limit?: number; threshold?: number;
+  /** Only jobs that already have a match score (the Home "Scored" tile). */
+  scored?: boolean;
+  /** Only contacted jobs: email or connect sent, a submitted application, or a sent legacy outreach (the funnel's "contacted"). */
+  contacted?: boolean;
 }): Page<JobRow> {
   if (!tableExists(db, 'jobs')) return { items: [], nextCursor: null };
   const limit = clampLimit(opts.limit);
@@ -124,6 +128,11 @@ export function listJobs(db: Db, opts: {
   if (opts.source) {
     where.push('j.source = @source');
     params.source = opts.source;
+  }
+  if (opts.scored) where.push('j.score IS NOT NULL');
+  if (opts.contacted) {
+    if (!(tableExists(db, 'outreach') && tableExists(db, 'applications') && tableExists(db, 'outreach_queue'))) return { items: [], nextCursor: null };
+    where.push(`j.id IN (${CONTACTED})`);
   }
   if (opts.state === 'excluded') where.push('j.excluded_reason IS NOT NULL');
   if (opts.state === 'active') where.push('j.excluded_reason IS NULL');

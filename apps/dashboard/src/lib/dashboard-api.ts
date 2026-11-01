@@ -42,7 +42,8 @@ export async function apiPost<T>(path: string, body: unknown, csrf: string | nul
 
 export function readableTime(value?: string | null): string {
   if (!value) return "Not recorded";
-  const date = new Date(value);
+  // SQLite stores `YYYY-MM-DD HH:MM:SS` in UTC with no zone; JavaScript would read it as local time and show the wrong hour.
+  const date = new Date(/^\d{4}-\d\d-\d\d \d\d:\d\d(:\d\d)?$/.test(value) ? `${value.replace(" ", "T")}Z` : value);
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 

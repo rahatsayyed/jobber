@@ -29,7 +29,7 @@ import { cleanText } from '../dash/clean.js';
 import { JOB_BUCKETS, JOB_STATES, jobCounts, jobDetail, jobFacets, listJobs, type JobBucket, type JobState } from '../dash/queries/jobs.js';
 import { listPeople, personStages, personThread } from '../dash/queries/people.js';
 import { emailDetail, listFollowups, listReplies, listSentEmails } from '../dash/queries/mail.js';
-import { contactDetail, followupDetail, jobLinks, mailLinks, parsePersonRef, personLinks } from '../dash/queries/links.js';
+import { contactDetail, followupDetail, jobLinks, mailLinks, parsePersonRef, personLinks, personTimeline, replyDetail } from '../dash/queries/links.js';
 import { funnelView, listOutcomes } from '../dash/queries/outcomes.js';
 import { listSchedulerRuns, readRunLog } from '../dash/runlog.js';
 import { sessionsPanel } from '../dash/sessionsPanel.js';
@@ -371,6 +371,19 @@ export function createWebServer(deps: WebDeps): http.Server {
     if (!r) return json(c.res, 404, { error: 'not found' });
     json(c.res, 200, r);
   });
+  add('GET', '/api/people/:ref/timeline', false, (c, [ref]) => {
+    const p = parsePersonRef(ref);
+    if (!p) return json(c.res, 400, { error: 'invalid id' });
+    const items = personTimeline(deps.data, p);
+    if (!items) return json(c.res, 404, { error: 'not found' });
+    json(c.res, 200, { items });
+  });
+  add('GET', '/api/replies/:id', false, (c, [id]) => {
+    if (!JOB_ID_RE.test(id)) return json(c.res, 400, { error: 'invalid id' });
+    const d = replyDetail(deps.data, id);
+    if (!d) return json(c.res, 404, { error: 'not found' });
+    json(c.res, 200, d);
+  });
   add('GET', '/api/contacts/:id', false, (c, [id]) => {
     if (!NUM_ID_RE.test(id)) return json(c.res, 400, { error: 'invalid id' });
     const d = contactDetail(deps.data, Number(id));
@@ -396,6 +409,8 @@ export function createWebServer(deps: WebDeps): http.Server {
       bucket: bucket as JobBucket | undefined,
       source,
       state: state as JobState | undefined,
+      scored: q(c, 'scored') === '1',
+      contacted: q(c, 'contacted') === '1',
       q: qText(c, 'q'),
       cursor: parseCursor(q(c, 'cursor')),
       limit: clampLimit(q(c, 'limit')),

@@ -12,6 +12,8 @@ type Db = BetterSqlite3.Database;
 export interface SentEmail {
   id: number; job_id: string; title: string | null; company: string | null; to: string | null; subject: string | null;
   sent_at: string | null; thread_id: string | null; status: string | null; has_reply: boolean;
+  /** Follow-ups of the same job that were sent. */
+  followups_sent: number;
 }
 export interface FollowupRow {
   id: number; job_id: string; n: number; status: string; subject: string | null; body: string | null; created_at: string; sent_at: string | null;
@@ -36,7 +38,8 @@ const hasReplySql = (hasPm: boolean) => hasPm
 const hasJobs = (db: Db) => tableExists(db, 'jobs');
 const emailSelect = (db: Db) => `SELECT q.id, q.job_id, ${hasJobs(db) ? 'j.title' : 'NULL'} AS title, ${hasJobs(db) ? 'j.company' : 'NULL'} AS company,
   q.email_to AS "to", q.email_subject AS subject, q.email_sent_at AS sent_at, q.email_thread_id AS thread_id, q.email_status AS status,
-  ${hasReplySql(tableExists(db, 'processed_messages'))} AS has_reply
+  ${hasReplySql(tableExists(db, 'processed_messages'))} AS has_reply,
+  ${tableExists(db, 'followups') ? "(SELECT COUNT(*) FROM followups f WHERE f.job_id = q.job_id AND f.status = 'sent')" : '0'} AS followups_sent
   FROM outreach_queue q ${hasJobs(db) ? 'LEFT JOIN jobs j ON j.id = q.job_id' : ''}`;
 const toEmail = (r: Record<string, unknown>): SentEmail => {
   const c = cleanRow(r, EMAIL_LIMITS) as unknown as SentEmail;

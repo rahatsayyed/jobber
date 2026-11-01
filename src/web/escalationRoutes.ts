@@ -5,13 +5,15 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { audit, type AuthDb } from '../dash/authStore.js';
 import {
-  countEscalations, GROUP_ORDER, listEscalations, resolveEscalations, snoozeEscalations, type EscGroup, type EscStatus,
+  countEscalations, countOpenCards, GROUP_ORDER, listEscalations, NOTE_MAX, type EscGroup, type EscStatus,
 } from '../outreach/escalations.js';
 import { json, readJson, type Ctx } from './router.js';
 
 export interface EscalationDeps {
-  /** Marks rows handled; returns the number of rows changed. */
-  resolve: (ids: number[], now: Date) => number;
+  /** Marks rows handled (with an optional owner note); returns the number of rows changed. */
+  resolve: (ids: number[], now: Date, note?: string) => number;
+  /** Puts handled rows back in the open list; returns the number of rows changed. Absent: the reopen route answers a write failure. */
+  reopen?: (ids: number[], now: Date) => number;
   /** Hides rows until `until`; returns the number of rows changed. */
   snooze: (ids: number[], until: Date, now: Date) => number;
 }
@@ -35,15 +37,21 @@ export function createEscalationRoutes(
   env: { auth: AuthDb; data: BetterSqlite3.Database; now: () => Date },
 ): EscalationRoute[] {
   const { auth, data, now } = env;
-  const act = async (c: Ctx, kind: 'resolve' | 'snooze'): Promise<void> => {
+  const act = async (c: Ctx, kind: 'resolve' | 'snooze' | 'reopen'): Promise<void> => {
     const body = await readJson(c.req, 4096);
     const ids = idsOf(body);
     if (!ids) return json(c.res, 400, { error: 'invalid ids' });
     const t = now();
     let changed: number;
     try {
-      if (kind === 'resolve') changed = deps.resolve(ids, t);
-      else {
+      if (kind === 'resolve') {
+        const note = (body as Record<string, unknown>).note;
+        if (note !== undefined && note !== null && (typeof note !== 'string' || note.length > NOTE_MAX)) return json(c.res, 400, { error: 'invalid note' });
+        changed = deps.resolve(ids, t, typeof note === 'string' && note.trim() ? note : undefined);
+      } else if (kind === 'reopen') {
+        if (!deps.reopen) throw new Error('no escalation reopen writer configured');
+        changed = deps.reopen(ids, t);
+      } else {
         const hours = (body as Record<string, unknown>).hours;
         if (typeof hours !== 'number' || !(SNOOZE_HOURS as readonly number[]).includes(hours)) return json(c.res, 400, { error: 'invalid hours' });
         changed = deps.snooze(ids, new Date(t.getTime() + hours * 3_600_000), t);
@@ -52,7 +60,8 @@ export function createEscalationRoutes(
       console.error(`web: escalation ${kind} failed: ${e instanceof Error ? e.name : 'error'}`);
       return json(c.res, 502, { error: 'write failed' });
     }
-    audit(auth, kind === 'resolve' ? 'escalation_resolve' : 'escalation_snooze', { ip: c.ip, note: `${changed} of ${ids.length}` }, t);
+    // Audit carries the kind and the row ids only, never the note or any escalation text.
+    audit(auth, kind === 'resolve' ? 'escalation_resolve' : kind === 'reopen' ? 'escalation_reopen' : 'escalation_snooze', { ip: c.ip, note: `${changed} of ${ids.length}; ids ${ids.slice(0, 10).join(',')}` }, t);
     json(c.res, 200, { ok: true, changed, counts: countEscalations(data, t) });
   };
 
@@ -69,8 +78,10 @@ export function createEscalationRoutes(
         json(c.res, 200, listEscalations(data, { now: now(), status, platform, group: group as EscGroup | undefined }));
       },
     },
-    { method: 'GET', pattern: '/api/escalations/count', fn: (c) => json(c.res, 200, countEscalations(data, now())) },
+    // `cards` is what the Inbox list shows as open (one card per conversation); open/snoozed/resolved stay raw row counts.
+    { method: 'GET', pattern: '/api/escalations/count', fn: (c) => json(c.res, 200, { ...countEscalations(data, now()), cards: countOpenCards(data, now()) }) },
     { method: 'POST', pattern: '/api/escalations/resolve', fn: (c) => act(c, 'resolve') },
+    { method: 'POST', pattern: '/api/escalations/reopen', fn: (c) => act(c, 'reopen') },
     { method: 'POST', pattern: '/api/escalations/snooze', fn: (c) => act(c, 'snooze') },
   ];
 }

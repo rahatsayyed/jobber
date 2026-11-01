@@ -96,7 +96,7 @@ export function migrateSchedulerTables(db: Db): void {
   // raw_text holds third-party text the input screen blocked or flagged; it is never returned by any MCP tool.
   const added: Array<[string, string]> = [
     ['sender_name', 'TEXT'], ['sender_headline', 'TEXT'], ['message_excerpt', 'TEXT'], ['message_at', 'TEXT'], ['ask_kind', 'TEXT'],
-    ['thread_url', 'TEXT'], ['seen_count', 'INTEGER NOT NULL DEFAULT 1'], ['updated_at', 'TEXT'], ['raw_text', 'TEXT'],
+    ['thread_url', 'TEXT'], ['seen_count', 'INTEGER NOT NULL DEFAULT 1'], ['updated_at', 'TEXT'], ['raw_text', 'TEXT'], ['resolved_note', 'TEXT'],
   ];
   for (const [name, type] of added) if (!escCols.has(name)) db.exec(`ALTER TABLE escalations ADD COLUMN ${name} ${type}`);
 }

@@ -1,11 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { api, readableTime } from "@/lib/dashboard-api";
-import { formatDuration, funnelLabel, humanize } from "@/lib/view-models";
+import { formatDuration, funnelHref, funnelLabel, humanize } from "@/lib/view-models";
 import {
-  Badge, DebouncedSearch, FilterSelect, ListFrame, LoadingLines, Panel, StatusBadge, Toolbar, usePaged,
+  Badge, DebouncedSearch, FilterSelect, ListFrame, LoadingLines, Panel, RecordRow, StatusBadge, Toolbar, usePaged,
 } from "@/components/dashboard/list-kit";
+import { usePanels } from "@/components/dashboard/panel-context";
+import { useUrlParam } from "@/components/dashboard/linked-views";
+
+const OUTCOME_KINDS = ["replied", "interview", "offer", "hired", "rejected", "no_response"] as const;
 
 // ---------------------------------------------------------------- Outcomes
 type Funnel = { threshold: number; discovered: number; matched: number; contacted: number; replied: number; interview: number; offer: number; rates: Record<string, number | null>; first_response_days_median: number | null };
@@ -13,27 +18,35 @@ type OutcomeRow = { id: number; job_id: string; title: string | null; company: s
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? "n/a" : `${Math.round(v * 1000) / 10}%`);
 
 export function OutcomesView() {
-  const [funnel, setFunnel] = useState<Funnel | null>(null); const [fErr, setFErr] = useState<string | null>(null); const [outcome, setOutcome] = useState("");
+  const { open } = usePanels();
+  const [funnel, setFunnel] = useState<Funnel | null>(null); const [fErr, setFErr] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState(useUrlParam("outcome", OUTCOME_KINDS)); // /outcomes?outcome=interview from Home
   useEffect(() => { api<Funnel>("/api/funnel").then(setFunnel).catch((e) => setFErr(e instanceof Error ? e.message : "Could not load the funnel.")); }, []);
   const list = usePaged<OutcomeRow>("/api/outcomes", { outcome: outcome || undefined });
   return <div className="stack">
     <section className="section"><div className="section-head"><h3>Funnel</h3><span className="updated-at">{funnel ? `match threshold ${funnel.threshold}` : ""}</span></div>
       {fErr ? <div className="notice danger">{fErr}</div> : !funnel ? <LoadingLines /> : <>
-        <div className="funnel">{(["discovered", "matched", "contacted", "replied", "interview", "offer"] as const).map((k, i) => <div className="funnel-step" key={k}><span>{String(i + 1).padStart(2, "0")}</span><strong>{funnelLabel(k)}</strong><b>{funnel[k]}</b></div>)}</div>
-        <p className="muted">Reply rate {pct(funnel.rates.reply)} · interview rate {pct(funnel.rates.interview)} · rejection rate {pct(funnel.rates.rejection)} · median days to first response {funnel.first_response_days_median ?? "n/a"}</p></>}
+        <div className="funnel">{(["discovered", "matched", "contacted", "replied", "interview", "offer"] as const).map((k, i) => { const href = funnelHref(k); const inner = <><span>{String(i + 1).padStart(2, "0")}</span><strong>{funnelLabel(k)}</strong><b>{funnel[k]}</b></>;
+          return href ? <Link className="funnel-step" key={k} href={href} title="Open the matching list">{inner}</Link> : <div className="funnel-step" key={k}>{inner}</div>; })}</div>
+        <p className="muted">Each step counts jobs, not messages. Reply rate {pct(funnel.rates.reply)} of contacted jobs · interview rate {pct(funnel.rates.interview)} · rejection rate {pct(funnel.rates.rejection)} · median days to first response {funnel.first_response_days_median ?? "n/a"}</p></>}
     </section>
     <Panel title="Recorded outcomes" toolbar={<Toolbar onReload={list.reload} loading={list.loading}>
-      <FilterSelect label="Outcome" value={outcome} onChange={setOutcome} options={[{ value: "", label: "Any outcome" }, ...["replied", "interview", "offer", "hired", "rejected", "no_response"].map((o) => ({ value: o, label: humanize(o) }))]} />
+      <FilterSelect label="Outcome" value={outcome} onChange={setOutcome} options={[{ value: "", label: "Any outcome" }, ...OUTCOME_KINDS.map((o) => ({ value: o, label: humanize(o) }))]} />
     </Toolbar>}>
       <ListFrame state={list} empty={{ title: "No outcomes recorded yet", text: "Outcomes appear when a reply is approved in /checkreplies or you run /outcome <job_id> <outcome>." }}>
-        {(items) => items.map((o) => <div className="object-row" key={o.id}><div><strong>{[o.title, o.company].filter(Boolean).join(" at ") || o.job_id}</strong><p>{o.note ?? "No note"} · {readableTime(o.created_at)}</p></div><StatusBadge status={o.outcome} /></div>)}
+        {(items) => items.map((o) => <RecordRow key={o.id} onOpen={() => open({ kind: "job", id: o.job_id })}
+          title={[o.title, o.company].filter(Boolean).join(" at ") || "Job no longer in the database"}
+          meta={`${o.note ?? "No note"} · ${readableTime(o.created_at)}`} aside={<StatusBadge status={o.outcome} />} />)}
       </ListFrame>
     </Panel>
   </div>;
 }
 
 // ---------------------------------------------------------------- Runs
-type RunRow = { id: string; trigger: string; status: string; planned_at: string; started_at: string | null; ended_at: string | null; wall_sec: number | null; dry_run: boolean; stop_reason: string | null; tool_calls: number; operators: string[] };
+type RunRow = { id: string; trigger: string; status: string; planned_at: string; started_at: string | null; ended_at: string | null; wall_sec: number | null; dry_run: boolean; stop_reason: string | null; tool_calls: number; operators: string[]; escalations: number };
+/** Plain names for the run triggers the scheduler writes. */
+const TRIGGER_NAMES: Record<string, string> = { scheduled: "Scheduled wake", forced: "Forced wake (run now)", manual: "Wake for an Apply request", mail_drip: "Mail drip send", continuation: "Wake continuation" };
+const triggerName = (t: string) => TRIGGER_NAMES[t] ?? `${humanize(t)} run`;
 
 export function RunsView() {
   const [status, setStatus] = useState(""); const [hideSkipped, setHideSkipped] = useState(true);
@@ -46,9 +59,10 @@ export function RunsView() {
   </Toolbar>}>
     <ListFrame state={list} empty={{ title: "No runs yet", text: "The scheduler has not recorded a wake." }}>
       {(items) => items.map((r) => <div className="object-row" key={r.id}>
-        <div><strong>{humanize(r.trigger)} wake{r.dry_run ? " (dry run)" : ""}</strong>
-          <p>{readableTime(r.started_at ?? r.planned_at)} · {formatDuration(r.wall_sec)} · {r.tool_calls} tool calls{r.stop_reason ? ` · ${humanize(r.stop_reason)}` : ""}</p>
-          {r.operators.length ? <p>{r.operators.join(" | ")}</p> : null}</div>
+        <div><strong>{triggerName(r.trigger)}{r.dry_run ? " (dry run, nothing real was sent)" : ""}</strong>
+          <p>{readableTime(r.started_at ?? r.planned_at)} · took {formatDuration(r.wall_sec)} · {r.tool_calls} tool calls{r.stop_reason ? ` · stopped: ${humanize(r.stop_reason)}` : ""}</p>
+          {r.operators.length ? <p>Work planned: {r.operators.join(" | ")}</p> : null}
+          {r.escalations ? <p><Link href="/inbox">{r.escalations} inbox {r.escalations === 1 ? "item" : "items"} from this run</Link></p> : null}</div>
         <StatusBadge status={r.status} /></div>)}
     </ListFrame>
   </Panel>;
@@ -60,9 +74,11 @@ type AuditRow = { id: number; at: string; kind: string; ip: string | null; note:
 export function AuditView() {
   const list = usePaged<AuditRow>("/api/audit", {}, "before");
   return <Panel title="Audit log" toolbar={<Toolbar onReload={list.reload} loading={list.loading} />}>
+    <p className="muted">Who signed in and what they did in this dashboard, newest first. Typed terminal keys and message text are never recorded.</p>
     <ListFrame state={list} empty={{ title: "No audit events", text: "Sign-ins and operator actions are recorded here." }}>
       {(items) => items.map((a) => <div className="object-row" key={a.id}>
-        <div><strong>{humanize(a.kind)}</strong><p>{readableTime(a.at)}{a.ip ? ` · from ${a.ip}` : ""}{a.note ? ` · ${a.note}` : ""}</p></div><code>#{a.id}</code></div>)}
+        <div><strong>{humanize(a.kind)}</strong><p>{readableTime(a.at)}{a.ip ? ` · from ${a.ip}` : ""}{a.note ? ` · ${a.note}` : ""}</p>
+          {a.kind.startsWith("terminal_") ? <p><Link href="/sessions">Open Sessions</Link></p> : null}</div><span className="muted" title="Audit event number">event {a.id}</span></div>)}
     </ListFrame>
   </Panel>;
 }

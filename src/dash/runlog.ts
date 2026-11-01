@@ -12,6 +12,8 @@ const LIMITS: Record<string, number> = { started_at: 64, finished_at: 64, kind: 
 export interface SchedulerRun {
   rid: number; id: string; trigger: string; status: string; planned_at: string; started_at: string | null; ended_at: string | null;
   wall_sec: number | null; dry_run: boolean; stop_reason: string | null; tool_calls: number; tokens_approx: number;
+  /** Inbox items this run created (escalations.run_id = scheduler_runs.id). The run log has no other link to jobs or messages. */
+  escalations: number;
   /** One short text per operator, for example "linkedin: inbox, followups". Built from the stored task plan, never the raw model log. */
   operators: string[];
 }
@@ -50,7 +52,8 @@ export function listSchedulerRuns(
   else if (opts.hideSkipped) where.push("status != 'skipped'");
   if (opts.cursor != null) { where.push('rowid < @cursor'); params.cursor = opts.cursor; }
   const rows = db.prepare(`SELECT rowid AS rid, id, trigger, status, planned_at, started_at, ended_at, wall_sec, dry_run, stop_reason, tool_calls,
-    tokens_approx, tasks FROM scheduler_runs ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY rowid DESC LIMIT @lim`).all(params) as Record<string, unknown>[];
+    tokens_approx, tasks, ${tableExists(db, 'escalations') ? '(SELECT COUNT(*) FROM escalations e WHERE e.run_id = scheduler_runs.id)' : '0'} AS escalations
+    FROM scheduler_runs ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY rowid DESC LIMIT @lim`).all(params) as Record<string, unknown>[];
   const page = rows.slice(0, limit);
   const items = page.map((r) => {
     const { tasks, dry_run, ...rest } = r;
