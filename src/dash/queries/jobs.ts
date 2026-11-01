@@ -29,10 +29,31 @@ export interface JobRow {
   status: string | null; bucket: JobBucket[]; flags: string[];
 }
 
+/** One outreach_queue row of a job. Rows are unique per job and LinkedIn contact, so several rows of one job can carry the same email. */
+export interface QueueRow {
+  id: number; status: string; email_status: string | null; connect_status: string | null; apply_status: string | null; ats_coverage: number | null;
+  apply_platform: string | null; apply_tier: string | null; apply_note: string | null;
+  /** The row holds an email draft / a LinkedIn connect request. */
+  has_email: boolean; has_connect: boolean;
+  email_sent_at: string | null; updated_at: string | null; created_at: string | null;
+  /** Id of the newer queue row of this job that holds the same email (same recipient), else null. The email is sent once. */
+  email_same_as: number | null;
+}
+
+/** Marks rows (newest first) whose email recipient already appeared in a newer row of the same job. Pure. */
+export function markEmailRepeats<T extends { id: number; email_key: string | null }>(rows: T[]): (Omit<T, 'email_key'> & { email_same_as: number | null })[] {
+  const seen = new Map<string, number>();
+  return rows.map((r) => {
+    const { email_key, ...rest } = r;
+    const prior = email_key ? seen.get(email_key) ?? null : null;
+    if (email_key && prior === null) seen.set(email_key, r.id);
+    return { ...rest, email_same_as: prior };
+  });
+}
+
 export interface JobDetail extends JobRow {
   url: string | null; apply_url: string | null; strengths: string[]; gaps: string[]; requirements: string[];
-  queue: { id: number; status: string; email_status: string | null; connect_status: string | null; apply_status: string | null; ats_coverage: number | null;
-    apply_platform: string | null; apply_tier: string | null }[];
+  queue: QueueRow[];
   applications: { platform: string | null; method: string | null; status: string | null; reason: string | null; applied_at: string | null }[];
   outcomes: { outcome: string; note: string | null; created_at: string }[];
 }
@@ -40,7 +61,7 @@ export interface JobDetail extends JobRow {
 const LIMITS: Record<string, number> = {
   id: 200, title: 300, company: 200, source: 64, confidence: 32, excluded_reason: 500, posted_at: 64, deadline: 64, created_at: 64,
   url: 1000, apply_url: 1000, platform: 64, method: 64, status: 64, reason: 500, applied_at: 64, email_status: 32, connect_status: 32,
-  apply_status: 32, outcome: 64, note: 1000, apply_platform: 64, apply_tier: 32,
+  apply_status: 32, outcome: 64, note: 1000, apply_platform: 64, apply_tier: 32, apply_note: 300, email_sent_at: 64, updated_at: 64, email_key: 320,
 };
 
 const sqlList = (xs: readonly string[]): string => xs.map((x) => `'${x}'`).join(', ');
@@ -175,8 +196,14 @@ export function jobDetail(db: Db, id: string, threshold = 60): JobDetail | null 
   const { url, apply_url, strengths, gaps, requirements, ...base } = r;
   const row = toRow(base, ex, db, threshold);
   const queue = tableExists(db, 'outreach_queue')
-    ? (db.prepare(`SELECT id, status, email_status, connect_status, apply_status, ats_coverage, apply_platform, apply_tier FROM outreach_queue WHERE job_id = ? ORDER BY id DESC LIMIT 50`)
-      .all(id) as Array<Record<string, unknown>>).map((q) => cleanRow(q, LIMITS) as unknown as JobDetail['queue'][number])
+    ? markEmailRepeats((db.prepare(`SELECT id, status, email_status, connect_status, apply_status, ats_coverage, apply_platform, apply_tier, apply_note,
+        (email_to IS NOT NULL OR email_subject IS NOT NULL) AS has_email, (connect_profile_url IS NOT NULL OR connect_note IS NOT NULL) AS has_connect,
+        email_sent_at, updated_at, created_at, lower(trim(email_to)) AS email_key
+        FROM outreach_queue WHERE job_id = ? ORDER BY id DESC LIMIT 50`)
+      .all(id) as Array<Record<string, unknown>>).map((q) => {
+        const { has_email, has_connect, ...rest } = q;
+        return { ...cleanRow(rest, LIMITS), has_email: Number(has_email) === 1, has_connect: Number(has_connect) === 1 } as unknown as QueueRow & { email_key: string | null };
+      })) as QueueRow[]
     : [];
   const applications = tableExists(db, 'applications')
     ? (db.prepare(`SELECT platform, method, status, reason, applied_at FROM applications WHERE job_id = ? ORDER BY id DESC LIMIT 50`)

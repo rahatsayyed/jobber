@@ -89,7 +89,7 @@ describe('terminal Send-keys helper row', () => {
   it('turns each helper button into the tmux key it names', () => {
     const calls = Object.fromEntries(TERMINAL_HELPER_KEYS.map((k) => [k.label, keysToTmux(k.keys)]));
     expect(calls).toEqual({
-      Enter: [['Enter']], 'Ctrl+C': [['C-c']], Esc: [['Escape']], Tab: [['Tab']], Up: [['Up']], Down: [['Down']],
+      Enter: [['Enter']], 'Ctrl+C': [['C-c']], Esc: [['Escape']], Tab: [['Tab']], Left: [['Left']], Up: [['Up']], Down: [['Down']], Right: [['Right']],
     });
   });
   it('types a command literally and ends it with Enter', () => {

@@ -32,6 +32,8 @@ export interface MailLink {
   to: string | null; from: string | null; subject: string | null;
   /** Outbound: when it was sent. Inbound: when the reply was received. */
   sent_at: string | null; created_at: string | null; current?: boolean;
+  /** Cold email only: how many older queue rows of the same job held this same email (same recipient). They are hidden; this is the hint. */
+  duplicates?: number;
 }
 export interface EscalationLink { id: number; reason: string; platform: string | null; created_at: string | null; resolved: boolean; person_ref: string | null }
 /** One entry in a person's conversation. `open` is the panel the row opens (null: nothing to open); `inbox_id` links an inbox item. */
@@ -143,6 +145,28 @@ function personLinkFromContact(r: Row, status: string | null): PersonLink {
 
 // ---------------------------------------------------------------- mails
 
+/**
+ * One cold email per recipient. The queue holds one row per job and LinkedIn contact, and each row repeats the same email, so a thread
+ * would list one message several times. Input is newest first; the newest row of each recipient stays, and when it was not sent but an
+ * older twin was, the sent time and the panel link come from that twin (the email went out once). `duplicates` counts the hidden twins. Pure.
+ */
+export function dedupeColdMails(list: readonly MailLink[]): MailLink[] {
+  const groups = new Map<string, MailLink[]>();
+  const out: { at: number; mail: MailLink }[] = [];
+  list.forEach((m, i) => {
+    const key = m.kind === 'cold' && m.to ? lc(m.to) : null;
+    if (key === null) { out.push({ at: i, mail: m }); return; }
+    const g = groups.get(key);
+    if (g) g.push(m); else { groups.set(key, [m]); out.push({ at: i, mail: m }); }
+  });
+  return out.map(({ mail }) => {
+    const twins = mail.kind === 'cold' && mail.to ? (groups.get(lc(mail.to)) ?? []).slice(1) : [];
+    if (!twins.length) return mail;
+    const sentTwin = mail.sent_at ? null : twins.find((t) => t.sent_at);
+    return { ...mail, ...(sentTwin ? { ref: sentTwin.ref, sent_at: sentTwin.sent_at, status: sentTwin.status ?? mail.status } : {}), duplicates: twins.length };
+  });
+}
+
 function mailLinksForJob(db: Db, jobId: string, limit: number): MailLink[] {
   const out: MailLink[] = [];
   if (tableExists(db, 'outreach_queue')) {
@@ -156,6 +180,9 @@ function mailLinksForJob(db: Db, jobId: string, limit: number): MailLink[] {
       });
     }
   }
+  const cold = dedupeColdMails(out);
+  out.length = 0;
+  out.push(...cold);
   if (tableExists(db, 'followups')) {
     const to = out.find((m) => m.to)?.to ?? null;
     for (const f of all(db, 'SELECT id, n, status, subject, created_at, sent_at FROM followups WHERE job_id = ? ORDER BY n, id LIMIT ?', jobId, limit)) {

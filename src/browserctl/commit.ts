@@ -475,7 +475,7 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
       } catch { /* legacy table only; the touch row is authoritative */ }
       const dgOk = await writeCommitDiag(deps, page, { platform, code: 'sent', live, urlBefore: url, after, send: facts });
       // LinkedIn keeps the conversation window open after a send; close it so it cannot sit over the next person's DM.
-      if (cls === 'commit_message_send') await page.press('Escape').catch(() => undefined);
+      if (cls === 'commit_message_send') await page.closeChatWindows?.().catch(() => 0);
       return { ok: true, status: 'sent', code: 'sent', ...(dgOk ? { reason: `confirmed by ${strong ? 'the page' : 'the network response only'}${diagNote(dgOk)}` } : {}), ...(intent.touchId !== undefined ? { touch_id: intent.touchId } : {}) };
     }
     release('unconfirmed');

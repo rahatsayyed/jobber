@@ -32,6 +32,7 @@ import { emailDetail, listFollowups, listReplies, listSentEmails } from '../dash
 import { contactDetail, followupDetail, jobLinks, mailLinks, parsePersonRef, personLinks, personTimeline, replyDetail } from '../dash/queries/links.js';
 import { funnelView, listOutcomes } from '../dash/queries/outcomes.js';
 import { listSchedulerRuns, readRunLog } from '../dash/runlog.js';
+import { runWindow } from '../dash/queries/runs.js';
 import { sessionsPanel } from '../dash/sessionsPanel.js';
 import { buildConfigView } from '../dash/configView.js';
 import { createSettingsRoutes, type SettingsDeps } from './settingsRoutes.js';
@@ -597,6 +598,12 @@ export function createWebServer(deps: WebDeps): http.Server {
     });
     // No scheduler_runs table: fall back to the legacy run log answer, which says so.
     json(c.res, 200, r ?? readRunLog(deps.data, clampLimit(q(c, 'limit'))));
+  });
+  add('GET', '/api/runs/:id', false, (c, [id]) => {
+    if (!JOB_ID_RE.test(id)) return json(c.res, 400, { error: 'invalid id' });
+    const d = runWindow(deps.data, id, now());
+    if (!d) return json(c.res, 404, { error: 'not found' });
+    json(c.res, 200, d);
   });
   add('GET', '/api/config', false, (c) => {
     const snapshot = buildSnapshot(deps.data, deps.cfg, now());

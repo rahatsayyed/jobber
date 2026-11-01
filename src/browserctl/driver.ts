@@ -47,6 +47,9 @@ export interface BcPage {
   robustClick?(n: number): Promise<void>;
   // Optional: start watching the context for popups and apply responses (call right before the click).
   watch?(): BcWatch;
+  // Optional: close every open LinkedIn chat window (the "Close your conversation with <name>" control; its name sits in a
+  // visually hidden span, so the snapshot shows it unnamed). Code-owned, no ref from the model. Returns how many it closed.
+  closeChatWindows?(): Promise<number>;
   clickNode(n: number): Promise<void>;
   clickPoint(x: number, y: number): Promise<void>;
   /** Replace the value of a stamped text field with exactly this text. */
@@ -217,6 +220,19 @@ function realBcPageInner(basePage: RealPage): BcPage {
     async press(key) {
       if (!BC_KEYS.includes(key)) throw new Error('browserctl: key not allowed');
       await page.keyboard.press(key === 'Space' ? ' ' : key);
+    },
+    async closeChatWindows() {
+      const close = page.locator('button[aria-label*="Close your conversation" i], button:has(span:text-matches("Close your conversation", "i"))');
+      let closed = 0;
+      for (let i = 0; i < 6; i++) {
+        try {
+          if ((await close.count()) === 0) break;
+          await close.first().click({ timeout: 3000 });
+          closed++;
+          await page.waitForTimeout(400);
+        } catch { break; }
+      }
+      return closed;
     },
     async scroll(direction) { await page.keyboard.press(direction === 'down' ? 'PageDown' : 'PageUp'); },
     screenshot: () => page.screenshot({ type: 'png' }),
