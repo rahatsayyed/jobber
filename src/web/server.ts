@@ -26,16 +26,17 @@ import {
 } from '../dash/cookies.js';
 import { clampLimit, MAX_Q, parseCursor } from '../dash/readDb.js';
 import { cleanText } from '../dash/clean.js';
-import { JOB_BUCKETS, jobCounts, jobDetail, listJobs, type JobBucket } from '../dash/queries/jobs.js';
-import { listPeople, personThread } from '../dash/queries/people.js';
+import { JOB_BUCKETS, JOB_STATES, jobCounts, jobDetail, jobFacets, listJobs, type JobBucket, type JobState } from '../dash/queries/jobs.js';
+import { listPeople, personStages, personThread } from '../dash/queries/people.js';
 import { emailDetail, listFollowups, listReplies, listSentEmails } from '../dash/queries/mail.js';
 import { funnelView, listOutcomes } from '../dash/queries/outcomes.js';
-import { readRunLog } from '../dash/runlog.js';
+import { listSchedulerRuns, readRunLog } from '../dash/runlog.js';
 import { sessionsPanel } from '../dash/sessionsPanel.js';
 import { buildConfigView } from '../dash/configView.js';
 import { createSettingsRoutes, type SettingsDeps } from './settingsRoutes.js';
 import { createApplyRoutes, type ApplyDeps } from './applyRoutes.js';
 import { createEscalationRoutes, type EscalationDeps } from './escalationRoutes.js';
+import { createTerminalRoutes } from './terminalRoutes.js';
 import { applySecurityHeaders, HttpError, json, readJson, securityHeaders, type Ctx } from './router.js';
 
 export interface WebDeps {
@@ -62,6 +63,7 @@ export interface WebDeps {
   root?: string; // project root for the config view, default cwd
   settings?: SettingsDeps; // dashboard settings editor (plan 8H); routes exist only when set. Never given to chat.
   apply?: ApplyDeps; // /apply request box write; absent: confirm answers a refusal and nothing is written
+  terminal?: { sessions: string[]; inputEnabled: boolean; killed: () => boolean }; // Sessions page live terminal; absent: view only, no kill check
   escalations?: EscalationDeps; // Inbox actions (mark handled, snooze); absent: both answer a write failure and nothing is written
 }
 
@@ -77,6 +79,7 @@ const LOOPBACK_BINDS = new Set(['127.0.0.1', '::1', 'localhost']);
 const JOB_ID_RE = /^[A-Za-z0-9:_.-]{1,128}$/;
 const NUM_ID_RE = /^\d{1,12}$/;
 const STAGE_RE = /^[A-Za-z0-9_ -]{1,32}$/;
+const SOURCE_RE = /^[A-Za-z0-9_:. -]{1,64}$/;
 
 const sha256Hex = (s: string): string => createHash('sha256').update(s).digest('hex');
 const hint = (s: string): string => sha256Hex(s).slice(0, 12);
@@ -337,6 +340,7 @@ export function createWebServer(deps: WebDeps): http.Server {
   });
 
   add('GET', '/api/jobs/counts', false, (c) => json(c.res, 200, jobCounts(deps.data, threshold)));
+  add('GET', '/api/jobs/facets', false, (c) => json(c.res, 200, jobFacets(deps.data)));
   add('GET', '/api/jobs/:id', false, (c, [id]) => {
     if (!JOB_ID_RE.test(id)) return json(c.res, 400, { error: 'invalid id' });
     const d = jobDetail(deps.data, id, threshold);
@@ -348,8 +352,14 @@ export function createWebServer(deps: WebDeps): http.Server {
     if (bucket !== undefined && !(JOB_BUCKETS as readonly string[]).includes(bucket)) {
       return json(c.res, 400, { error: 'invalid bucket' });
     }
+    const state = q(c, 'state');
+    if (state !== undefined && !(JOB_STATES as readonly string[]).includes(state)) return json(c.res, 400, { error: 'invalid state' });
+    const source = q(c, 'source');
+    if (source !== undefined && !SOURCE_RE.test(source)) return json(c.res, 400, { error: 'invalid source' });
     json(c.res, 200, listJobs(deps.data, {
       bucket: bucket as JobBucket | undefined,
+      source,
+      state: state as JobState | undefined,
       q: qText(c, 'q'),
       cursor: parseCursor(q(c, 'cursor')),
       limit: clampLimit(q(c, 'limit')),
@@ -363,6 +373,7 @@ export function createWebServer(deps: WebDeps): http.Server {
     if (!r) return json(c.res, 404, { error: 'not found' });
     json(c.res, 200, r);
   });
+  add('GET', '/api/people/stages', false, (c) => json(c.res, 200, { stages: personStages(deps.data) }));
   add('GET', '/api/people', false, (c) => {
     const stage = q(c, 'stage');
     if (stage !== undefined && !STAGE_RE.test(stage)) return json(c.res, 400, { error: 'invalid stage' });
@@ -513,13 +524,29 @@ export function createWebServer(deps: WebDeps): http.Server {
     add(r.method, r.pattern, false, r.fn);
   }
 
+  for (const r of createTerminalRoutes({
+    run: deps.run,
+    sessions: deps.terminal?.sessions ?? deps.sessionsToShow,
+    inputEnabled: deps.terminal?.inputEnabled ?? false,
+    killed: deps.terminal?.killed ?? ((): boolean => false),
+    redact,
+  }, { auth: deps.auth, now })) add(r.method, r.pattern, false, r.fn);
+
   if (deps.settings) {
     for (const r of createSettingsRoutes(deps.settings, { auth: deps.auth, now, authMode, reauthMaxAgeSec })) {
       add(r.method, r.pattern, false, r.fn);
     }
   }
 
-  add('GET', '/api/runs', false, (c) => json(c.res, 200, readRunLog(deps.data, clampLimit(q(c, 'limit')))));
+  add('GET', '/api/runs', false, (c) => {
+    const status = q(c, 'status');
+    if (status !== undefined && !STAGE_RE.test(status)) return json(c.res, 400, { error: 'invalid status' });
+    const r = listSchedulerRuns(deps.data, {
+      status, hideSkipped: q(c, 'hideSkipped') === '1', cursor: parseCursor(q(c, 'cursor')), limit: clampLimit(q(c, 'limit')),
+    });
+    // No scheduler_runs table: fall back to the legacy run log answer, which says so.
+    json(c.res, 200, r ?? readRunLog(deps.data, clampLimit(q(c, 'limit'))));
+  });
   add('GET', '/api/config', false, (c) => {
     const snapshot = buildSnapshot(deps.data, deps.cfg, now());
     const view = buildConfigView({
@@ -540,7 +567,13 @@ export function createWebServer(deps: WebDeps): http.Server {
   });
   add('GET', '/api/audit', false, (c) => {
     const before = parseCursor(q(c, 'before'));
-    json(c.res, 200, { items: listAudit(deps.auth, clampLimit(q(c, 'limit')), before ?? undefined) });
+    const limit = clampLimit(q(c, 'limit'));
+    const rows = listAudit(deps.auth, limit + 1, before ?? undefined);
+    const items = rows.slice(0, limit).map((r) => ({
+      id: r.id, at: r.at, kind: cleanText(r.kind, 64), ip: r.ip === null ? null : cleanText(r.ip, 64), note: r.note === null ? null : cleanText(redact(r.note), 300),
+    }));
+    // Hash columns (idHint, textHash) and any token text are never selected by listAudit; the note is code-built and redacted again here.
+    json(c.res, 200, { items, nextCursor: rows.length > limit ? items[items.length - 1].id : null });
   });
 
   // ---- request handling --------------------------------------------------------------------------------------
@@ -612,7 +645,8 @@ export function createWebServer(deps: WebDeps): http.Server {
     if (!route) return json(res, 405, { error: 'method not allowed' }, { Allow: matching.map((r) => r.method).join(', ') });
 
     if (!route.open && session) {
-      if (rateLimited(session.idHash, now().getTime())) {
+      // Typing in the terminal sends many small authenticated, CSRF-checked POSTs; the shared 120/min budget would cut it off.
+      if (route.name !== 'POST /api/terminal/input' && rateLimited(session.idHash, now().getTime())) {
         return json(res, 429, { error: 'rate limited' }, { 'Retry-After': '60' });
       }
       if (method !== 'GET') {

@@ -718,6 +718,15 @@ const hand: EnvSpec[] = [
     restartEvidence: 'src/web/env.ts',
   }),
 
+  e('WEB_TERMINAL_INPUT', 'dashboard', 'dashboard terminal', 'bool', {
+    blankMeansDefault: true,
+    default: 'false',
+    about: 'Let the dashboard Sessions page type into the live terminal. While false the terminal is view only. Typing runs under the tmux window\'s own session, so keep that window on the read_only permission set.',
+    ...never('Types into a running agent session: only the owner, by hand in .env, can switch it on.'),
+    restart: 'dashboard',
+    restartEvidence: 'src/web/env.ts',
+  }),
+
   // ---- Telegram
   e('TELEGRAM_BOT_TOKEN', 'telegram', 'Telegram bridge', 'secret', {
     exampleActive: true,

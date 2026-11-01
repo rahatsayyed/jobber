@@ -14,6 +14,7 @@ import { currentMode, fileFlags } from '../src/stack/mode.js';
 import type { EnvSpec } from '../src/settings/types.js';
 import type { SettingsDeps } from '../src/web/settingsRoutes.js';
 import { redactSecrets, startWebServer } from '../src/web/server.js';
+import { allowedTerminalSessions, terminalKilled } from '../src/web/terminalRoutes.js';
 import { openAuthStore, getAllowedAccount, recordAuthMode } from '../src/dash/authStore.js';
 import { allowAccount } from '../src/dash/account.js';
 import { createOidc } from '../src/dash/oidc.js';
@@ -193,7 +194,13 @@ export async function main(): Promise<number> {
       cfg: loadOutreachConfig(),
       run: defaultRun,
       sessionsToShow: [cfg.session],
+      terminal: {
+        sessions: allowedTerminalSessions(env, cfg.session),
+        inputEnabled: cfg.terminalInput,
+        killed: () => terminalKilled(root, process.env),
+      },
       secrets: allSecrets,
+      env, // .env merged under the shell env, so the read-only config view shows the effective values
       apply: { enqueue: (url, force, now) => enqueueManualRequest(dbPath(), url, force, now) },
       escalations: {
         resolve: (ids, now) => withEscalationWriter(dbPath(), (w) => resolveEscalations(w, ids, now)),

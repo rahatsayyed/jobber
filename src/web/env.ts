@@ -33,6 +33,8 @@ export interface WebConfig {
   settingsEdit: boolean;
   settingsRemoteSafety: boolean;
   settingsBackupKeep: number;
+  /** WEB_TERMINAL_INPUT=true: the Sessions terminal accepts typing. Default false (view only). */
+  terminalInput: boolean;
 }
 
 export type ErrorScope = 'web' | 'oidc' | 'account' | 'token' | 'google';
@@ -131,6 +133,7 @@ export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: bool
   const chatEnabled = bool(env, 'WEB_CHAT_ENABLED', errs);
   const authDb = authDbPathFromEnv(env);
   const settingsEdit = bool(env, 'WEB_SETTINGS_EDIT', errs);
+  const terminalInput = bool(env, 'WEB_TERMINAL_INPUT', errs);
   const settingsRemoteSafety = bool(env, 'WEB_SETTINGS_REMOTE_SAFETY', errs);
   let settingsBackupKeep = 10;
   const rawKeep = val(env, 'SETTINGS_BACKUP_KEEP');
@@ -219,7 +222,7 @@ export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: bool
       issuer, clientId, clientSecret,
       redirectUri: authMode === 'google_desktop' ? redirectFor(googleRedirectShape, port) : redirectUri,
       reauthPrompt, reauthMaxAgeSec, allowedEmail, authMode, authModeImplicit, googleKeysPath, googleRedirectShape,
-      settingsEdit, settingsRemoteSafety, settingsBackupKeep,
+      settingsEdit, settingsRemoteSafety, settingsBackupKeep, terminalInput,
     },
   };
 }

@@ -30,6 +30,16 @@ export async function api<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export async function apiPost<T>(path: string, body: unknown, csrf: string | null): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST", cache: "no-store", credentials: "same-origin",
+    headers: { "Content-Type": "application/json", ...(csrf ? { "X-CSRF-Token": csrf } : {}) },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(response.status === 401 ? "Sign in is required." : response.status === 403 ? "Not allowed." : "The request failed.");
+  return response.json() as Promise<T>;
+}
+
 export function readableTime(value?: string | null): string {
   if (!value) return "Not recorded";
   const date = new Date(value);

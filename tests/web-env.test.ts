@@ -245,3 +245,14 @@ describe('settings editor keys', () => {
     }
   });
 });
+
+describe('WEB_TERMINAL_INPUT', () => {
+  it('is off by default, true only for the exact word and rejects other values', () => {
+    const base = { WEB_AUTH_MODE: 'token' };
+    const off = validateRunnerConfig(base, { accountStored: true });
+    expect(off.ok && off.config.terminalInput).toBe(false);
+    const on = validateRunnerConfig({ ...base, WEB_TERMINAL_INPUT: 'true' }, { accountStored: true });
+    expect(on.ok && on.config.terminalInput).toBe(true);
+    expect(validateRunnerConfig({ ...base, WEB_TERMINAL_INPUT: 'yes' }, { accountStored: true }).ok).toBe(false);
+  });
+});

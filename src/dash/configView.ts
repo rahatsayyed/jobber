@@ -10,6 +10,12 @@ export interface ConfigItem {
   name: string;
   value: string;
   masked: boolean;
+  /** Catalog keys only: where the key sits and what it does, for the read-only Settings page. Never a value. */
+  section?: string;
+  feature?: string;
+  about?: string;
+  default?: string | null;
+  restart?: string;
 }
 export interface ConfigView {
   env: ConfigItem[];
@@ -66,7 +72,12 @@ export function buildConfigView(deps: {
     }
   }
   const known = new Set(deps.catalog.map((c) => c.key));
-  const env: ConfigItem[] = deps.catalog.map((c) => catalogItem(c, deps.env[c.key]));
+  const env: ConfigItem[] = deps.catalog.map((c) => ({
+    ...catalogItem(c, deps.env[c.key]),
+    section: c.section, feature: cleanText(c.feature, 80), about: cleanText(c.about, 400),
+    // A secret's default is never shown (it has none worth showing, and the rule is simple: secrets show set or unset only).
+    default: isSecret(c) ? null : c.default, restart: c.restart,
+  }));
   for (const n of names) {
     if (known.has(n)) continue;
     const isSet = deps.env[n] !== undefined && deps.env[n] !== '';

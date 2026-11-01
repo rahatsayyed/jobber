@@ -48,6 +48,8 @@ export async function proxyDashboardRequest(request: Request, path: string[]): P
     if (value) responseHeaders.set(name, value);
   }
   for (const cookie of upstream.headers.getSetCookie?.() ?? []) responseHeaders.append("Set-Cookie", cookie);
-  responseHeaders.set("Cache-Control", "no-store");
+  // A live stream (the Sessions terminal) must not be buffered or compressed on its way to the browser.
+  const stream = (upstream.headers.get("content-type") ?? "").startsWith("text/event-stream");
+  responseHeaders.set("Cache-Control", stream ? "no-store, no-transform" : "no-store");
   return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
 }

@@ -26,12 +26,13 @@ export const QUEUE_FAILED = 'failed';
 export interface JobRow {
   id: string; title: string; company: string; source: string; score: number | null; confidence: string | null;
   excluded_reason: string | null; posted_at: string | null; deadline: string | null; created_at: string;
-  bucket: JobBucket[]; flags: string[];
+  status: string | null; bucket: JobBucket[]; flags: string[];
 }
 
 export interface JobDetail extends JobRow {
   url: string | null; apply_url: string | null; strengths: string[]; gaps: string[]; requirements: string[];
-  queue: { id: number; status: string; email_status: string | null; connect_status: string | null; apply_status: string | null; ats_coverage: number | null }[];
+  queue: { id: number; status: string; email_status: string | null; connect_status: string | null; apply_status: string | null; ats_coverage: number | null;
+    apply_platform: string | null; apply_tier: string | null }[];
   applications: { platform: string | null; method: string | null; status: string | null; reason: string | null; applied_at: string | null }[];
   outcomes: { outcome: string; note: string | null; created_at: string }[];
 }
@@ -39,7 +40,7 @@ export interface JobDetail extends JobRow {
 const LIMITS: Record<string, number> = {
   id: 200, title: 300, company: 200, source: 64, confidence: 32, excluded_reason: 500, posted_at: 64, deadline: 64, created_at: 64,
   url: 1000, apply_url: 1000, platform: 64, method: 64, status: 64, reason: 500, applied_at: 64, email_status: 32, connect_status: 32,
-  apply_status: 32, outcome: 64, note: 1000,
+  apply_status: 32, outcome: 64, note: 1000, apply_platform: 64, apply_tier: 32,
 };
 
 const sqlList = (xs: readonly string[]): string => xs.map((x) => `'${x}'`).join(', ');
@@ -80,7 +81,7 @@ function parseList(raw: unknown): string[] {
 }
 
 const COLS = `j.rowid AS rid, j.id, j.title, j.company, j.source, j.score, j.confidence, j.excluded_reason, j.posted_at, j.deadline,
-  j.created_at, j.gate_flags`;
+  j.created_at, j.gate_flags, j.status`;
 
 function toRow(r: Record<string, unknown>, ex: Exprs, db: Db, threshold: number): JobRow {
   const flags = parseList(r.gate_flags);
@@ -93,7 +94,8 @@ function toRow(r: Record<string, unknown>, ex: Exprs, db: Db, threshold: number)
     id: String(clean.id), title: String(clean.title ?? ''), company: String(clean.company ?? ''), source: String(clean.source ?? ''),
     score: (clean.score as number | null) ?? null, confidence: (clean.confidence as string | null) ?? null,
     excluded_reason: (clean.excluded_reason as string | null) ?? null, posted_at: (clean.posted_at as string | null) ?? null,
-    deadline: (clean.deadline as string | null) ?? null, created_at: String(clean.created_at ?? ''), bucket, flags,
+    deadline: (clean.deadline as string | null) ?? null, created_at: String(clean.created_at ?? ''),
+    status: (clean.status as string | null) ?? null, bucket, flags,
   };
 }
 
@@ -102,7 +104,12 @@ function toRow(r: Record<string, unknown>, ex: Exprs, db: Db, threshold: number)
  * alias), which increases with insertion and so tracks created_at DESC. The cursor is the rowid of the last item returned; the next
  * page is `rowid < cursor`. Caveat: VACUUM may renumber rowids of such a table, which at worst reshuffles an in-flight paging session.
  */
-export function listJobs(db: Db, opts: { bucket?: JobBucket; q?: string; cursor?: number | null; limit?: number; threshold?: number }): Page<JobRow> {
+export type JobState = 'excluded' | 'active';
+export const JOB_STATES: readonly JobState[] = ['excluded', 'active'];
+
+export function listJobs(db: Db, opts: {
+  bucket?: JobBucket; q?: string; source?: string; state?: JobState; cursor?: number | null; limit?: number; threshold?: number;
+}): Page<JobRow> {
   if (!tableExists(db, 'jobs')) return { items: [], nextCursor: null };
   const limit = clampLimit(opts.limit);
   const threshold = Number.isFinite(opts.threshold) ? (opts.threshold as number) : 60;
@@ -114,6 +121,12 @@ export function listJobs(db: Db, opts: { bucket?: JobBucket; q?: string; cursor?
     where.push("(j.title LIKE @like ESCAPE '\\' OR j.company LIKE @like ESCAPE '\\')");
     params.like = likePattern(opts.q);
   }
+  if (opts.source) {
+    where.push('j.source = @source');
+    params.source = opts.source;
+  }
+  if (opts.state === 'excluded') where.push('j.excluded_reason IS NOT NULL');
+  if (opts.state === 'active') where.push('j.excluded_reason IS NULL');
   if (opts.cursor != null) {
     where.push('j.rowid < @cursor');
     params.cursor = opts.cursor;
@@ -135,6 +148,15 @@ export function jobCounts(db: Db, threshold: number): Record<JobBucket, number> 
   return { discovered: r.discovered, matched: r.matched, applied: r.applied, pending: r.pending, failed: r.failed };
 }
 
+/** Filter choices for the Jobs page and the scored total for Home. Counts are per job row; a missing table gives empty facets. */
+export function jobFacets(db: Db): { scored: number; sources: { source: string; count: number }[] } {
+  if (!tableExists(db, 'jobs')) return { scored: 0, sources: [] };
+  const scored = (db.prepare('SELECT COUNT(*) AS n FROM jobs WHERE score IS NOT NULL').get() as { n: number }).n;
+  const rows = db.prepare('SELECT source, COUNT(*) AS count FROM jobs GROUP BY source ORDER BY count DESC, source LIMIT 100').all() as
+    { source: string | null; count: number }[];
+  return { scored, sources: rows.map((r) => ({ source: cleanText(r.source ?? '', 64), count: r.count })).filter((r) => r.source !== '') };
+}
+
 export function jobDetail(db: Db, id: string, threshold = 60): JobDetail | null {
   if (!tableExists(db, 'jobs')) return null;
   const ex = bucketExprs(db);
@@ -144,7 +166,7 @@ export function jobDetail(db: Db, id: string, threshold = 60): JobDetail | null 
   const { url, apply_url, strengths, gaps, requirements, ...base } = r;
   const row = toRow(base, ex, db, threshold);
   const queue = tableExists(db, 'outreach_queue')
-    ? (db.prepare(`SELECT id, status, email_status, connect_status, apply_status, ats_coverage FROM outreach_queue WHERE job_id = ? ORDER BY id DESC LIMIT 50`)
+    ? (db.prepare(`SELECT id, status, email_status, connect_status, apply_status, ats_coverage, apply_platform, apply_tier FROM outreach_queue WHERE job_id = ? ORDER BY id DESC LIMIT 50`)
       .all(id) as Array<Record<string, unknown>>).map((q) => cleanRow(q, LIMITS) as unknown as JobDetail['queue'][number])
     : [];
   const applications = tableExists(db, 'applications')

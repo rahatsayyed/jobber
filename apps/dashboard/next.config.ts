@@ -1,8 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // NEXT_DIST_DIR lets a check build go to a separate folder so it never overwrites the build a running server uses.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   cacheComponents: true,
   partialPrefetching: true,
+  async redirects() {
+    // The old Audit URL keeps working.
+    return [{ source: "/archive", destination: "/audit", permanent: false }];
+  },
   async headers() {
     return [{
       source: "/:path*",
