@@ -24,6 +24,7 @@ import { markStaleSending } from '../linkedin/touches.js';
 import { loadLinkedinConfig } from '../linkedin/config.js';
 import { loadStyleConfigSafe, type StyleConfig } from '../safety/styleGate.js';
 import type { FactCheck } from '../linkedin/guard.js';
+import { completeInstruction } from '../owner/instructions.js';
 import { saveReplyDraft } from '../outreach/replyDrafts.js';
 import { screenUntrusted, type ScreenDeps, type ScreenPurpose, type ScreenVerdict } from '../safety/screen.js';
 
@@ -214,6 +215,14 @@ export function buildServer(deps: OutreachDeps = {}): McpServer {
       inputSchema: { escalation_id: z.number().int().positive(), text: z.string().min(1).max(1800) },
     },
     async (a) => safe(() => handleSaveReplyDraft(deps, a)),
+  );
+  server.registerTool(
+    'complete_instruction',
+    {
+      description: 'Record the outcome of ONE owner instruction listed in the wake prompt (OWNER INSTRUCTIONS). status done when it was acted on, rejected when it would break a Safety rule, cap or gate. note is one short line (max 500 chars).',
+      inputSchema: { id: z.number().int().positive(), status: z.enum(['done', 'rejected']), note: z.string().max(500).optional() },
+    },
+    async (a) => safe(async () => completeInstruction(getDb(deps), a.id, a.status, a.note ?? null, nowOf(deps))),
   );
   server.registerTool(
     'list_open_escalations',

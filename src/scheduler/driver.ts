@@ -9,6 +9,7 @@ import type { OutreachConfig } from '../outreach/config.js';
 import type { Tuning } from '../outreach/tuning.js';
 import { ceilings } from '../outreach/limits.js';
 import { inQuietHours, nextWake, quietFromConfig, type Rng } from '../outreach/quiet.js';
+import { claimPending, type OwnerInstruction } from '../owner/instructions.js';
 import { manualRequestsPending } from '../manual/requests.js';
 import { BudgetTracker, loadBudget, type StopReason } from './budget.js';
 import { readControl, statExists, type ControlDeps, type ControlState } from './control.js';
@@ -353,6 +354,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       runId, dryRun: dry, tasks: decision.tasks, budget, allowed: control.allowed, now: startAt,
       order,
       pipeline: pipelineInput,
+      instructions: ((): OwnerInstruction[] => { try { return claimPending(d.db, startAt); } catch { return []; } })(),
     });
     const pollMs = d.pollMs ?? DEFAULT_POLL_MS;
 

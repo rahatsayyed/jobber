@@ -264,7 +264,7 @@ export function planWake(i: {
   const unmatched = due.unmatchedJobs ?? 0;
   const matchedWaiting = due.matchedAwaitingPrepare ?? 0;
   // Email follow-ups need the reply check the pipeline stage starts with (step 0b), so they pull the stage in.
-  const pipelineDue = unmatched > 0 || matchedWaiting > 0 || newJobsExpected || (due.emailFollowupsReady ?? 0) > 0;
+  const pipelineDue = unmatched > 0 || matchedWaiting > 0 || newJobsExpected || (due.ownerInstructionsPending ?? 0) > 0 || (due.emailFollowupsReady ?? 0) > 0;
 
   // The pipeline creates work in this same wake (matches, enqueued outreach rows), so like mail it pulls in LinkedIn
   // new_outreach even when the due count was 0 at plan time. The operator reads its real queue (outreach.next_contacts)
