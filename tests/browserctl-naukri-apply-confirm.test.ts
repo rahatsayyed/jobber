@@ -107,7 +107,7 @@ describe('naukri apply click: confirmation signals within the wait', () => {
     w.page.watch = () => fakeWatch({ popups: [{ url: 'about:blank' }] }).w;
     const r = await armedClick(w);
     expect(r).toMatchObject({ ok: false, status: 'unconfirmed', code: 'unconfirmed' });
-    expect(appliedRows(w)).toEqual([]);
+    expect(appliedRows(w)).toEqual([{ status: 'manual_review' }]);
   });
 });
 
@@ -118,7 +118,7 @@ describe('naukri apply click: ignored click', () => {
     const r = await armedClick(w);
     expect(r).toMatchObject({ ok: false, status: 'unconfirmed', code: 'apply_click_ignored' });
     expect(applyCount(w)).toBe(1);
-    expect(appliedRows(w)).toEqual([]);
+    expect(appliedRows(w)).toEqual([{ status: 'manual_review' }]);
     expect(w.intents.peek('naukri')).toBeNull();
     const d = diagOf(r.reason) as { code: string; apply_responses: { path: string; status: number }[]; near_buttons: string[]; popups: unknown[] };
     expect(d.code).toBe('apply_click_ignored');

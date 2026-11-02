@@ -10,6 +10,7 @@
 //          MAX_APPLIES_PER_DAY counter together (rolled back together), clicks once, and confirms ONLY by a "sent" text that was not on the page
 //          before the click (or the job page now showing Applied after the modal closed). Anything else is `unconfirmed`, never retried.
 // Anything unexpected closes the modal and marks the queue row needs_owner with a closed reason code (easyApply.parkNeedsOwner).
+import { parseMaxAppliesPerDay } from '../lib/maxApplies.js';
 import { getExcludedReason, getFirstHardStop, saveApplication } from '../db.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
 import { resolveApplyEscalationsForJob } from '../outreach/applyEscalations.js';
@@ -184,8 +185,7 @@ export async function commitEasyApply(i: EasyApplyCommitInput): Promise<EngineRe
 
   // ---- submit ----
   const ocfg = loadOutreachConfig(deps.env);
-  const maxRaw = Number(deps.env.MAX_APPLIES_PER_DAY ?? DEFAULT_MAX_APPLIES_PER_DAY);
-  const max = Number.isFinite(maxRaw) && maxRaw >= 0 ? maxRaw : DEFAULT_MAX_APPLIES_PER_DAY;
+  const max = parseMaxAppliesPerDay(deps.env);
   if (!st.counted.has(key)) {
     // linkedin_easy_apply first; when the shared daily counter then refuses, the event just recorded is removed so a refusal leaves BOTH unconsumed.
     if (!tryConsume(db, 'linkedin_easy_apply', ocfg, now())) {

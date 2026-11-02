@@ -659,7 +659,7 @@ describe('naukri_apply commit path and the chatbot', () => {
     expect((await w.armApply()).status).toBe('armed');
     const r = await w.engine.click(refOf(await w.snap(), 'button', 'Apply'));
     expect(r).toMatchObject({ ok: false, status: 'unconfirmed' });
-    expect(w.db.prepare('SELECT COUNT(*) AS n FROM applications').get()).toMatchObject({ n: 0 });
+    expect(w.db.prepare('SELECT COUNT(*) AS n FROM applications').get()).toMatchObject({ n: 1 });
     expect(w.intents.peek('naukri')).toBeNull();
   });
 
@@ -669,7 +669,7 @@ describe('naukri_apply commit path and the chatbot', () => {
     expect((await w.armApply()).status).toBe('armed');
     const r = await w.engine.click(refOf(await w.snap(), 'button', 'Apply'));
     expect(r.status).toBe('unconfirmed');
-    expect(w.db.prepare('SELECT COUNT(*) AS n FROM applications').get()).toMatchObject({ n: 0 });
+    expect(w.db.prepare('SELECT COUNT(*) AS n FROM applications').get()).toMatchObject({ n: 1 });
   });
 
   it('a confirmation that shows up after a free chatbot click is recorded once', async () => {

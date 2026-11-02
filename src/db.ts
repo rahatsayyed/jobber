@@ -403,7 +403,7 @@ export function releaseEmailSend(db: BetterSqlite3.Database, jobId: string): { r
     if (already) return { rows: 0, slot_released: false };
     const rows = db.prepare(
       `UPDATE outreach_queue SET email_status = NULL, email_released_day = date('now'), updated_at = datetime('now')
-        WHERE job_id = ? AND email_status = 'failed' AND email_sent_at IS NULL AND email_message_id IS NULL
+        WHERE job_id = ? AND email_status IN ('failed', 'sending') AND email_sent_at IS NULL AND email_message_id IS NULL
           AND date(updated_at) = date('now')`,
     ).run(jobId).changes;
     if (rows === 0) return { rows: 0, slot_released: false };

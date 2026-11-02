@@ -9,6 +9,7 @@
 // screen, reserveTouch. tryConsume('naukri_message') moves to the commit path (right before the click).
 // armNaukriApply = job known, not vetoed, not applied, apply class naukri, caps readable; the job page is
 // opened from the stored apply_url (never a model URL).
+import { parseMaxAppliesPerDay } from '../../lib/maxApplies.js';
 import type BetterSqlite3 from 'better-sqlite3';
 import { classifyApplyUrl } from '../../apply/registry.js';
 import { getExcludedReason, getFirstHardStop } from '../../db.js';
@@ -234,8 +235,7 @@ interface JobRow { id: string; source: string | null; apply_url: string | null }
 
 /** Today's easy_apply counter has room (read only; the commit path consumes it). */
 function easyApplyRoom(db: BetterSqlite3.Database, env: NodeJS.ProcessEnv): { used: number; max: number } {
-  const maxRaw = Number(env.MAX_APPLIES_PER_DAY ?? DEFAULT_MAX_APPLIES_PER_DAY);
-  const max = Number.isFinite(maxRaw) && maxRaw >= 0 ? maxRaw : DEFAULT_MAX_APPLIES_PER_DAY;
+  const max = parseMaxAppliesPerDay(env);
   const row = db.prepare("SELECT count FROM daily_counters WHERE day = date('now') AND key = 'easy_apply'").get() as { count: number } | undefined;
   return { used: row?.count ?? 0, max };
 }
@@ -257,7 +257,7 @@ export async function armNaukriApply(d: Omit<NaukriArmDeps, 'checkText' | 'style
     if (!job) return fail('refused', 'unknown_job', 'no such job');
     if (getExcludedReason(db, a.job_id)) return fail('refused', 'vetoed', 'the job is excluded');
     if (getFirstHardStop(db, a.job_id)) return fail('refused', 'hard_stop', 'the job has a hard stop');
-    if (db.prepare("SELECT 1 FROM applications WHERE job_id = ? AND status = 'submitted' LIMIT 1").get(a.job_id)) {
+    if (db.prepare("SELECT 1 FROM applications WHERE job_id = ? AND status IN ('submitted', 'manual_review') LIMIT 1").get(a.job_id)) {
       return fail('refused', 'already_applied', 'an application was already submitted for this job');
     }
     const url = job.apply_url ?? '';

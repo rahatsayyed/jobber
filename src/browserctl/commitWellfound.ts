@@ -16,6 +16,7 @@
 //   against it. A confirmation is only text that was NOT on the page before the Apply click (a job
 //   description can never confirm itself).
 // Anything after a click that cannot be confirmed is 'unconfirmed', never guessed.
+import { parseMaxAppliesPerDay } from '../lib/maxApplies.js';
 import type BetterSqlite3 from 'better-sqlite3';
 import { getExcludedReason, getFirstHardStop, saveApplication } from '../db.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
@@ -28,7 +29,7 @@ import { threadRefOfUrl, wellfoundJobIdOfUrl } from '../wellfound/page.js';
 import { bumpFailures, loadWellfoundPerson, norm, recordWellfoundSent } from '../wellfound/sendState.js';
 import { diagNote, writeCommitDiag } from './diag.js';
 import type { BcPage } from './driver.js';
-import { DEFAULT_MAX_APPLIES_PER_DAY, pageTexts, threadHeaderName } from './commitNaukri.js';
+import { DEFAULT_MAX_APPLIES_PER_DAY, markUnconfirmedApply, pageTexts, threadHeaderName } from './commitNaukri.js';
 import { killReason, type EngineDeps, type EngineResult } from './engineTypes.js';
 import { isWellfoundApplyName, normName, textMatches } from './guard.js';
 import type { ArmedIntent, IntentStore } from './intent.js';
@@ -326,8 +327,7 @@ async function commitApply(i: WellfoundCommitInput): Promise<EngineResult> {
 
   if (isApplyClick && !counted) {
     const ocfg = loadOutreachConfig(deps.env);
-    const maxRaw = Number(deps.env.MAX_APPLIES_PER_DAY ?? DEFAULT_MAX_APPLIES_PER_DAY);
-    const max = Number.isFinite(maxRaw) && maxRaw >= 0 ? maxRaw : DEFAULT_MAX_APPLIES_PER_DAY;
+    const max = parseMaxAppliesPerDay(deps.env);
     // Consume wellfound_apply first; if the shared daily counter then refuses, remove the event just recorded
     // so a refusal leaves BOTH counters unconsumed.
     if (!tryConsume(db, 'wellfound_apply', ocfg, now())) {
@@ -348,14 +348,14 @@ async function commitApply(i: WellfoundCommitInput): Promise<EngineResult> {
     // The click may have gone through: the apply is unresolved, the counters stay spent.
     deps.intents.disarm(platform);
     const dga = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after: null });
-    return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `error after the click; check the application by hand${diagNote(dga)}` };
+    return { ...markUnconfirmedApply(db, jobId, 'wellfound'), ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `error after the click; check the application by hand${diagNote(dga)}` };
   }
   await page.waitMs(deps.settleMs ?? 800).catch(() => undefined);
   let after: RawTree;
   try { after = await page.snapshot(); } catch {
     deps.intents.disarm(platform);
     const dgb = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after: null });
-    return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `could not read the page after the click; check the application by hand${diagNote(dgb)}` };
+    return { ...markUnconfirmedApply(db, jobId, 'wellfound'), ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `could not read the page after the click; check the application by hand${diagNote(dgb)}` };
   }
   const base = st.baseline.get(key) ?? pageTexts(before);
   if (confirmedNewWellfound(base, after)) {
@@ -370,5 +370,5 @@ async function commitApply(i: WellfoundCommitInput): Promise<EngineResult> {
   }
   deps.intents.disarm(platform);
   const dgc = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after });
-  return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `clicked but no confirmation or form appeared; check the application by hand${diagNote(dgc)}` };
+  return { ...markUnconfirmedApply(db, jobId, 'wellfound'), ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `clicked but no confirmation or form appeared; check the application by hand${diagNote(dgc)}` };
 }
