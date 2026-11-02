@@ -7,13 +7,15 @@ import {
 } from './budget.js';
 import { buildDork, type DorkParams } from './dork.js';
 import { createSerperProvider } from './serper.js';
+import { createGooglePseProvider } from './googlePse.js';
+import { createTavilyProvider } from './tavily.js';
 
 type Db = BetterSqlite3.Database;
 
 export type SearchKind = 'company_domain' | 'domain_emails' | 'careers_page' | 'hiring_posts' | 'jobs_site' | 'linkedin_people';
 export interface SearchResult { title: string; snippet: string; url: string }
 export interface SearchProvider {
-  id: 'browser-dork' | 'serper';
+  id: 'browser-dork' | 'serper' | 'google_pse' | 'tavily';
   search(q: string, o: { kind: SearchKind }): Promise<{ results: SearchResult[]; blocked?: boolean }>;
 }
 export type { DorkParams } from './dork.js';
@@ -26,7 +28,9 @@ export interface SearchDeps {
   /** Override for tests; default is built from SERPER_API_KEY. */
   serper?: SearchProvider;
   /** Layered callers (linkedin_find_profiles) run one layer at a time: skip the browser dork or Serper. */
-  skip?: { dork?: boolean; serper?: boolean };
+  google_pse?: SearchProvider;
+  tavily?: SearchProvider;
+  skip?: { dork?: boolean; serper?: boolean; google_pse?: boolean; tavily?: boolean };
 }
 
 export interface SearchOutcome {
@@ -83,28 +87,49 @@ export async function searchWithBudget(db: Db, kind: SearchKind, params: DorkPar
     } else reasons.push('dork_error');
   }
 
-  if (deps.skip?.serper) return { results: [], provider: 'none', reason: [...reasons, 'serper_skipped'].join(',') };
-  const key = (env.SERPER_API_KEY ?? '').trim();
-  const serper = deps.serper ?? (key ? createSerperProvider(key) : undefined);
-  if (!serper) return { results: [], provider: 'none', reason: [...reasons, 'no_serper_key'].join(',') };
-  if (usageToday(db, 'serper', now) >= cfg.serperDaily) return { results: [], provider: 'none', reason: [...reasons, 'serper_daily_budget'].join(',') };
-  if (usageMonth(db, 'serper', now) >= cfg.serperMonthly) return { results: [], provider: 'none', reason: [...reasons, 'serper_monthly_budget'].join(',') };
-  recordUsage(db, 'serper', now);
-  let sOut: { results: SearchResult[] } = { results: [] };
-  let serperErr = false;
-  try {
-    sOut = await serper.search(q, { kind });
-  } catch {
-    serperErr = true;
+  // API providers after the browser dork: google_pse, tavily, serper. In a layered call (deps.skip set) a missing
+  // key is reported; in the implicit chain google_pse and tavily are silent when unkeyed.
+  const layered = deps.skip !== undefined;
+  const pseKey = (env.GOOGLE_PSE_API_KEY ?? '').trim();
+  const pseCx = (env.GOOGLE_PSE_CX ?? '').trim();
+  const tavKey = (env.TAVILY_API_KEY ?? '').trim();
+  const serKey = (env.SERPER_API_KEY ?? '').trim();
+  const chain: Array<{
+    id: 'google_pse' | 'tavily' | 'serper'; skipped: boolean; prov?: SearchProvider; noKey: string; daily: number; monthly?: number; always: boolean;
+  }> = [
+    { id: 'google_pse', skipped: !!deps.skip?.google_pse, prov: deps.google_pse ?? (pseKey && pseCx ? createGooglePseProvider(pseKey, pseCx) : undefined), noKey: 'no_google_pse_key', daily: cfg.googlePseDaily, always: false },
+    { id: 'tavily', skipped: !!deps.skip?.tavily, prov: deps.tavily ?? (tavKey ? createTavilyProvider(tavKey) : undefined), noKey: 'no_tavily_key', daily: cfg.tavilyDaily, always: false },
+    { id: 'serper', skipped: !!deps.skip?.serper, prov: deps.serper ?? (serKey ? createSerperProvider(serKey) : undefined), noKey: 'no_serper_key', daily: cfg.serperDaily, monthly: cfg.serperMonthly, always: true },
+  ];
+  let last: SearchOutcome | null = null;
+  for (const c of chain) {
+    if (c.skipped) { if (c.id === 'serper' || layered) reasons.push(`${c.id}_skipped`); continue; }
+    if (!c.prov) { if (c.always || layered) reasons.push(c.noKey); continue; }
+    if (usageToday(db, c.id, now) >= c.daily) { reasons.push(`${c.id}_daily_budget`); continue; }
+    if (c.monthly !== undefined && usageMonth(db, c.id, now) >= c.monthly) { reasons.push(`${c.id}_monthly_budget`); continue; }
+    recordUsage(db, c.id, now);
+    let pOut: { results: SearchResult[] } = { results: [] };
+    let err = false;
+    try {
+      pOut = await c.prov.search(q, { kind });
+    } catch {
+      err = true;
+    }
+    const results = clean(pOut.results);
+    if (results.length > 0) cachePut(db, qhash, c.id, kind, results, now);
+    const rs = err ? [...reasons, `${c.id}_error`] : reasons;
+    last = { results, provider: c.id, ...(rs.length ? { reason: rs.join(',') } : {}) };
+    if (results.length > 0) return last;
+    if (err) reasons.push(`${c.id}_error`);
   }
-  const results = clean(sOut.results);
-  if (results.length > 0) cachePut(db, qhash, 'serper', kind, results, now);
-  const rs = serperErr ? [...reasons, 'serper_error'] : reasons;
-  return { results, provider: 'serper', ...(rs.length ? { reason: rs.join(',') } : {}) };
+  if (last) return last;
+  return { results: [], provider: 'none', reason: reasons.join(',') };
 }
 
 export interface SearchStatus {
   dork: { enabled: boolean; today: number; cooldownUntil: string | null };
+  google_pse: { keySet: boolean; today: number; dailyBudget: number };
+  tavily: { keySet: boolean; today: number; dailyBudget: number };
   serper: { keySet: boolean; today: number; dailyBudget: number; month: number; monthlyBudget: number };
   cacheTtlDays: number;
 }
@@ -117,6 +142,8 @@ export function searchStatus(db: Db, deps: SearchDeps = {}): SearchStatus {
   const cd = cooldownUntil(db, 'browser-dork', now);
   return {
     dork: { enabled: cfg.dorkEnabled, today: usageToday(db, 'browser-dork', now), cooldownUntil: cd ? cd.toISOString() : null },
+    google_pse: { keySet: (env.GOOGLE_PSE_API_KEY ?? '').trim() !== '' && (env.GOOGLE_PSE_CX ?? '').trim() !== '', today: usageToday(db, 'google_pse', now), dailyBudget: cfg.googlePseDaily },
+    tavily: { keySet: (env.TAVILY_API_KEY ?? '').trim() !== '', today: usageToday(db, 'tavily', now), dailyBudget: cfg.tavilyDaily },
     serper: {
       keySet: (env.SERPER_API_KEY ?? '').trim() !== '',
       today: usageToday(db, 'serper', now),

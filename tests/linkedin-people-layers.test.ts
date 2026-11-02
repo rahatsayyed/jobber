@@ -141,12 +141,13 @@ describe('layered people discovery', () => {
 
 describe('LINKEDIN_PEOPLE_SEARCH_SOURCES parse', () => {
   it('default, order, invalid entries and repeats', () => {
-    expect(parsePeopleSources(undefined)).toEqual(['engine', 'serper']);
-    expect(parsePeopleSources('')).toEqual(['engine', 'serper']);
+    expect(parsePeopleSources(undefined)).toEqual(['engine', 'google_pse', 'tavily', 'serper']);
+    expect(parsePeopleSources('')).toEqual(['engine', 'google_pse', 'tavily', 'serper']);
+    expect(parsePeopleSources('tavily,google_pse')).toEqual(['tavily', 'google_pse']);
     expect(parsePeopleSources('engine,serper,linkedin')).toEqual(['engine', 'serper', 'linkedin']);
     expect(parsePeopleSources('linkedin')).toEqual(['linkedin']);
     expect(parsePeopleSources(' Serper , bogus,engine,serper')).toEqual(['serper', 'engine']);
-    expect(parsePeopleSources('bogus')).toEqual(['engine', 'serper']);
+    expect(parsePeopleSources('bogus')).toEqual(['engine', 'google_pse', 'tavily', 'serper']);
   });
 });
 

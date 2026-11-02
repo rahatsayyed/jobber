@@ -32,7 +32,7 @@ export interface FindProfilesResult {
   /** Layout verdict class for the search page (advisory; never a refusal). */
   layout?: string;
   /** Which layer produced the candidates (telemetry): the search engine, Serper or the LinkedIn people-search page. */
-  source?: 'search_engine' | 'serper' | 'linkedin';
+  source?: 'search_engine' | 'google_pse' | 'tavily' | 'serper' | 'linkedin';
 }
 
 /** Same rule as the MCP wrapper: under the test runner the window applies only when the env names LINKEDIN_ACTIVE_HOURS. */
@@ -122,13 +122,13 @@ export async function findProfiles(a: FindProfilesArgs, deps: ToolDeps): Promise
   // Layered discovery, order from LINKEDIN_PEOPLE_SEARCH_SOURCES. The first layer that yields a usable
   // candidate wins; an empty, blocked, over-budget or failed layer falls through to the next one.
   for (const layer of deps.cfg.peopleSearchSources ?? ['linkedin']) {
-    if (layer === 'engine' || layer === 'serper') {
+    if (layer !== 'linkedin') {
       const params = { company: dorkCompany(company), role: hint || undefined, category: a.category };
       let out;
       try {
         out = await searchWithBudget(deps.db, 'linkedin_people', params, {
           env: deps.env, now: deps.now, dork: deps.dork, serper: deps.serper,
-          skip: layer === 'engine' ? { serper: true } : { dork: true },
+          skip: { dork: layer !== 'engine', google_pse: layer !== 'google_pse', tavily: layer !== 'tavily', serper: layer !== 'serper' },
         });
       } catch {
         continue;
@@ -138,7 +138,7 @@ export async function findProfiles(a: FindProfilesArgs, deps: ToolDeps): Promise
       if (built.injection) injection = true;
       if (built.cands.length > 0) {
         cands = built.cands;
-        source = out.provider === 'serper' ? 'serper' : 'search_engine';
+        source = out.provider === 'serper' || out.provider === 'google_pse' || out.provider === 'tavily' ? out.provider : 'search_engine';
         break;
       }
       continue;

@@ -387,7 +387,7 @@ describe('shipped defaults and status screens', () => {
       linkedinMaxInvitesPerDay: 25, linkedinMaxMessagesPerDay: 25, linkedinMaxProfileViewsPerDay: 40,
       linkedinMaxDiscoverPerDay: 6, companyContactLimit: 2,
     });
-    expect(loadLinkedinConfig({})).toMatchObject({ maxSearchesPerDay: 10, peopleSearchSources: ['engine', 'serper'] });
+    expect(loadLinkedinConfig({})).toMatchObject({ maxSearchesPerDay: 10, peopleSearchSources: ['engine', 'google_pse', 'tavily', 'serper'] });
   });
   it('/limits shows the LinkedIn active hours and whether they are open', () => {
     const db = openDb(':memory:');

@@ -14,15 +14,15 @@ export interface LinkedinConfig {
   settleMs: number;
 }
 
-export type PeopleSource = 'engine' | 'serper' | 'linkedin';
-export const DEFAULT_PEOPLE_SOURCES: readonly PeopleSource[] = ['engine', 'serper'];
+export type PeopleSource = 'engine' | 'google_pse' | 'tavily' | 'serper' | 'linkedin';
+export const DEFAULT_PEOPLE_SOURCES: readonly PeopleSource[] = ['engine', 'google_pse', 'tavily', 'serper'];
 
 // Comma list, order = priority; unknown entries and repeats are ignored; nothing valid gives the default.
 export function parsePeopleSources(raw: string | undefined): PeopleSource[] {
   const out: PeopleSource[] = [];
   for (const p of (raw ?? '').split(',')) {
     const v = p.trim().toLowerCase();
-    if ((v === 'engine' || v === 'serper' || v === 'linkedin') && !out.includes(v)) out.push(v);
+    if ((v === 'engine' || v === 'google_pse' || v === 'tavily' || v === 'serper' || v === 'linkedin') && !out.includes(v)) out.push(v);
   }
   return out.length ? out : [...DEFAULT_PEOPLE_SOURCES];
 }
