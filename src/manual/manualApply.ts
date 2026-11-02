@@ -20,7 +20,7 @@ export const SKIPPED_BY_OWNER = 'skipped_by_owner';
 export const MANUAL_STATUSES = ['needs_owner', 'manual_review'] as const;
 export const MANUAL_ITEMS_CAP = 30;
 
-export type ManualReason = 'easy_apply_off' | 'company_site_form' | 'listing_page' | 'easy_apply_failed' | 'no_relevant_role';
+export type ManualReason = 'easy_apply_off' | 'company_site_form' | 'listing_page' | 'easy_apply_failed' | 'no_relevant_role' | 'company_site_unresolved';
 
 export interface ManualApplyItem {
   /** outreach_queue row id (the one `apply:manual done|skip` takes). */
@@ -38,7 +38,10 @@ export interface ManualApplyItem {
   since: string;
 }
 // Plain words for a reason code (the dashboard chip).
+/** Resolver codes (see externalApply.ts in browserctl) that mean the company-site link could not be read. */
+const UNRESOLVED_CODES = new Set(['no_external_control', 'no_click_path', 'no_popup', 'popup_unstable', 'still_on_platform', 'invalid_url', 'interstitial_no_link']);
 export const MANUAL_REASON_LABELS: Record<ManualReason, string> = {
+  company_site_unresolved: 'Could not read the company site link',
   easy_apply_off: 'Easy Apply is off',
   company_site_form: 'Company site form',
   listing_page: 'Careers listing page',
@@ -69,7 +72,9 @@ function reasonOf(r: Row, linkedinPage: boolean, url: string): ManualReason {
   const p = r.apply_platform ?? '';
   // A careers listing the apply-operator read and found no role for the resume on (apply_escalate reason no_relevant_role).
   if ((r.apply_note ?? '') === 'no_relevant_role') return 'no_relevant_role';
-  if ((r.apply_note ?? '').startsWith('external:')) return 'company_site_form';
+  // external:<code> from the resolver: a code that means the company link could not be read is company_site_unresolved; a host or form the applier cannot drive stays company_site_form.
+  const note = r.apply_note ?? '';
+  if (note.startsWith('external:')) return UNRESOLVED_CODES.has(note.slice('external:'.length)) ? 'company_site_unresolved' : 'company_site_form';
   if (p === 'none' || p === '' || p === 'naukri' || p === 'wellfound' || hostMatches(url, 'naukri.com') || hostMatches(url, 'wellfound.com')) return 'listing_page';
   return 'company_site_form';
 }

@@ -12,7 +12,7 @@
 //  - Kill switch, halts, dry run, one daily ceiling (`external_resolve`) and a per-session cap with a random pause apply.
 import type BetterSqlite3 from 'better-sqlite3';
 import { classifyApplyUrl } from '../apply/registry.js';
-import { externalApplyDuplicate, getExcludedReason, getFirstHardStop, getExternalApplyUrl, setExternalApply } from '../db.js';
+import { externalApplyDuplicate, getExcludedReason, getFirstHardStop, getExternalApplyUrl, setExternalApply, setExternalManualReview } from '../db.js';
 import { hostMatches } from '../lib/hostClass.js';
 import { extractLinkedInJobId } from '../linkedin/jobIds.js';
 import { validateManualUrl } from '../manual/url.js';
@@ -192,7 +192,7 @@ export async function resolveExternalApply(d: ExternalDeps, platform: ExternalPl
       });
       return p ? ` (diag: ${p})` : '';
     };
-    if (!ctl) return fail('manual_review', 'no_external_control', `no company-site apply control on the page${await diag('external_no_control')}`);
+    if (!ctl) return review(db, a.job_id, 'no_external_control',`no company-site apply control on the page${await diag('external_no_control')}`);
 
     if (isDryRun(d.env)) {
       try { recordDryRun(db, { runId: d.env.JOBBER_RUN_ID ?? null, action: `${platform}_resolve_external`, platform, payload: { job_id: a.job_id } }, d.now(), d.env); } catch { /* the result is still dry_run */ }
@@ -207,7 +207,7 @@ export async function resolveExternalApply(d: ExternalDeps, platform: ExternalPl
     }
 
     // (b) one code-owned click and the popup it opens
-    if (ctl.n < 0 || !page.watch) return fail('manual_review', 'no_click_path', `the control cannot be clicked from code${await diag('external_no_click_path')}`);
+    if (ctl.n < 0 || !page.watch) return review(db, a.job_id, 'no_click_path',`the control cannot be clicked from code${await diag('external_no_click_path')}`);
     if (!tryConsume(db, 'external_resolve', d.cfg, d.now())) return fail('rate_limited', 'rate_limited', 'external_resolve ceiling reached');
     d.state.resolves += 1;
     const sleep = d.sleep ?? sleepReal;
@@ -219,42 +219,103 @@ export async function resolveExternalApply(d: ExternalDeps, platform: ExternalPl
     }
     d.state.lastAt = d.now().getTime();
 
-    const watch = page.watch();
-    let popups: { url: string }[] = [];
-    let found: string | null = null;
-    try {
+    const pathOf = (u: string): string => { try { const x = new URL(u); return x.origin + x.pathname; } catch { return u; } };
+    const nowUrl = (): string => { try { return page.url(); } catch { return ''; } };
+    // One code-owned click, then watch BOTH the popups and the page's own URL. A company page (popup or a same-tab redirect) is a candidate
+    // only once its URL is stable; a same-tab move to another Naukri path is an interstitial (for example /myapply/showAcp).
+    const clickAndWait = async (n: number, startUrl: string): Promise<{ found: string | null; popups: { url: string }[]; interstitial: boolean; failed?: boolean }> => {
+      const watch = page.watch!();
+      let popups: { url: string }[] = [];
+      let found: string | null = null;
+      let interstitial = false;
       try {
-        if (page.robustClick) await page.robustClick(ctl.n); else await page.clickNode(ctl.n);
-      } catch {
-        return fail('failed', 'click_failed', `the control click failed${await diag('external_click_failed')}`);
+        try {
+          if (page.robustClick) await page.robustClick(n); else await page.clickNode(n);
+        } catch {
+          return { found: null, popups, interstitial: false, failed: true };
+        }
+        const waitMs = d.popupWaitMs ?? POPUP_WAIT_MS;
+        const pollMs = d.popupPollMs ?? POPUP_POLL_MS;
+        let last: string | null = null;
+        for (let t = 0; t <= waitMs; t += pollMs) {
+          await page.waitMs(pollMs).catch(() => undefined);
+          popups = watch.popups();
+          const here = nowUrl();
+          const moved = here !== '' && pathOf(here) !== pathOf(startUrl) && /^https?:/i.test(here);
+          const cand = popups.map((p) => p.url).find((u) => u && u !== 'about:blank' && !onPlatform(u)) ?? (moved && !onPlatform(here) ? here : null);
+          if (cand && cand === last) { found = cand; break; }
+          last = cand;
+        }
+        const end = nowUrl();
+        interstitial = !found && end !== '' && pathOf(end) !== pathOf(startUrl) && /^https?:/i.test(end) && onPlatform(end);
+      } finally {
+        // Close at once; nothing is read from the popup beyond its URL.
+        try { await watch.closePopups?.(); } catch { /* best effort */ }
+        watch.stop();
       }
-      const waitMs = d.popupWaitMs ?? POPUP_WAIT_MS;
-      const pollMs = d.popupPollMs ?? POPUP_POLL_MS;
-      let last: string | null = null;
-      for (let t = 0; t <= waitMs; t += pollMs) {
-        await page.waitMs(pollMs).catch(() => undefined);
-        popups = watch.popups();
-        // Candidate: a popup that left about:blank and the platform, else the main page itself when it navigated away.
-        const here = (() => { try { return page.url(); } catch { return ''; } })();
-        const cand = popups.map((p) => p.url).find((u) => u && u !== 'about:blank' && !onPlatform(u))
-          ?? (here && here !== urlBefore && /^https?:/i.test(here) && !onPlatform(here) ? here : null);
-        if (cand && cand === last) { found = cand; break; }
-        last = cand;
-      }
-    } finally {
-      // Close at once; nothing is read from the popup beyond its URL.
-      try { await watch.closePopups?.(); } catch { /* best effort */ }
-      watch.stop();
+      return { found, popups, interstitial };
+    };
+    // Leave the engine page clean: if the tab moved off the job page (a redirect or an interstitial), go back to the stored job page.
+    const restore = async (): Promise<void> => {
+      if (pathOf(nowUrl()) === pathOf(urlBefore)) return;
+      try { await page.goto(urlBefore); } catch { /* best effort */ }
+    };
+
+    const first = await clickAndWait(ctl.n, urlBefore);
+    if (first.failed) return fail('failed', 'click_failed', `the control click failed${await diag('external_click_failed')}`);
+    let found = first.found;
+    let popups = first.popups;
+    let viaPage: string | null = null;
+    if (!found && first.interstitial) {
+      // A Naukri interstitial: read the company link from the Naukri page itself (a link href, else one more code-owned click on its control).
+      try {
+        await d.engine.peek();
+        const t2 = d.engine.lastTree();
+        if (t2) {
+          const v2 = await d.screen(renderTree(t2, d.engine.refs.epoch), 'read');
+          if (v2.blocked) {
+            await restore();
+            return v2.code === 'classifier_unavailable' ? fail('failed', 'classifier_unavailable') : fail('refused', 'injection_suspected', 'page text flagged by the input screen');
+          }
+          const here = nowUrl();
+          const ctls = t2.nodes.filter(isControl).filter((n) => !n.disabled && INTERSTITIAL_LINK_RE.test(normName(n.name)));
+          for (const c2 of ctls) {
+            const t = resolveHrefTarget(platform, c2.href, here);
+            if (t && !onPlatform(t)) { viaPage = t; break; }
+          }
+          if (!viaPage) {
+            const btn = ctls.find((c2) => !c2.href && c2.n >= 0);
+            if (btn && tryConsume(db, 'external_resolve', d.cfg, d.now())) {
+              const second = await clickAndWait(btn.n, here);
+              found = second.found;
+              popups = [...popups, ...second.popups];
+            }
+          }
+        }
+      } catch { /* falls through to the failure code below */ }
     }
-    if (!found) {
-      const code = popups.length === 0 ? 'no_popup' : (popups.some((p) => p.url && p.url !== 'about:blank' && !onPlatform(p.url)) ? 'popup_unstable' : 'still_on_platform');
-      return fail('manual_review', code, `Apply did not lead to a stable company page${await diag(`external_${code}`, popups)}`);
+    const landed = found ?? viaPage;
+    await restore();
+    if (!landed) {
+      const code = first.interstitial ? 'interstitial_no_link'
+        : popups.length === 0 ? 'no_popup'
+        : (popups.some((p) => p.url && p.url !== 'about:blank' && !onPlatform(p.url)) ? 'popup_unstable' : 'still_on_platform');
+      return review(db, a.job_id, code, `Apply did not lead to a stable company page${await diag(`external_${code}`, popups)}`);
     }
-    return finalize(d, a.job_id, job.source, found);
+    return finalize(d, a.job_id, job.source, landed);
   } catch {
     return fail('failed', 'error', 'unexpected error while resolving');
   }
 }
+
+/** A manual_review outcome of the resolver: the code goes into the queue row note as `external:<code>` so the owner sees why. */
+function review(db: BetterSqlite3.Database, jobId: string, code: string, reason?: string): ExternalResult {
+  try { setExternalManualReview(db, jobId, code); } catch { /* the result still carries the code */ }
+  return { status: 'manual_review', code, ...(reason ? { reason } : {}) };
+}
+
+// Controls on a Naukri interstitial that lead on to the company site (matched on the visible name only).
+const INTERSTITIAL_LINK_RE = /(?:company|employer|official)\b.*\b(?:site|website|page)|\b(?:continue|proceed|visit|go)\b.*\b(?:site|website|apply|company)|^apply(?: now)?$|^click here$/;
 
 const onPlatform = (url: string): boolean => PLATFORM_APEXES.some((a) => hostMatches(url, a));
 
@@ -262,8 +323,8 @@ const onPlatform = (url: string): boolean => PLATFORM_APEXES.some((a) => hostMat
 function finalize(d: ExternalDeps, jobId: string, source: string | null, raw: string): ExternalResult {
   const url = trimExternalUrl(raw);
   const v = validateManualUrl(url);
-  if (!v.ok) return { status: 'manual_review', code: 'invalid_url', reason: v.reason };
-  if (onPlatform(v.url)) return { status: 'manual_review', code: 'still_on_platform', reason: 'the apply link stays on the platform' };
+  if (!v.ok) return review(d.db, jobId, 'invalid_url', v.reason);
+  if (onPlatform(v.url)) return review(d.db, jobId, 'still_on_platform', 'the apply link stays on the platform');
   const cls = classifyApplyUrl(v.url, source, d.env);
   setExternalApply(d.db, jobId, v.url, cls);
   if (cls.platform === 'none') {

@@ -228,6 +228,17 @@ escalated as `account_needed`); CAPTCHA, MFA and phone verification are never so
 Easy Apply. Hold mode is unchanged: with `APPLY_SUBMIT_MODE` not `submit` these jobs end `held`; after setting `submit`, run
 `npm run apply:release-held [-- --dry]` to put held generic rows back in the queue (idempotent).
 
+Click outcomes and notes: after the one code-owned click the resolver watches the popups AND the tab's own URL. A popup or a same-tab
+redirect to a company host is taken once its URL is stable. A same-tab move to another Naukri path (an interstitial such as
+`/myapply/showAcp`) is read from the Naukri page itself (screened, link `href` first, else one more code click on a "company site"
+control), and the page is sent back to the stored job page before the tool returns (also after a redirect to the company host);
+nothing is read or typed on the external page. Every resolver `manual_review` writes `external:<code>` to `outreach_queue.apply_note`
+(`no_external_control`, `no_click_path`, `no_popup`, `popup_unstable`, `still_on_platform`, `interstitial_no_link`, `invalid_url`,
+`host_unknown` and the other `none` classes). The manual apply queue shows the first group as "Could not read the company site link"
+(`company_site_unresolved`) and host/form codes as `company_site_form`. The apply-operator never writes `manual_review` itself for
+these jobs and retries `no_popup` / `no_external_control` once after a fresh snapshot. One-time repair for rows that ended
+`manual_review` with no note: `npm run apply:requeue-company-site [-- --dry]` (Naukri rows, empty note, no resolved URL; idempotent).
+
 **Manual apply queue.** `src/manual/manualApply.ts` lists what the owner must apply to by hand: LinkedIn job pages that are Easy Apply jobs
 while `APPLY_LINKEDIN_EASY` is not `true` (reason `easy_apply_off`), and any queue row the machine gave up on (`apply_status` `needs_owner` or
 `manual_review`, not `needs_answer` or `needs_human`, which have `npm run answers` and `npm run apply:assist`) that has a usable https address

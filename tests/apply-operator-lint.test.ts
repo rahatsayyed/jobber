@@ -97,4 +97,9 @@ describe('apply-operator', () => {
     for (const p of ['linkedin_easy', 'naukri', 'browser', 'naukri_apply']) expect(body, p).toContain(p);
     expect(body).toMatch(/^## Verification$/m);
   });
+  it('never writes manual_review itself for a company-site job and allows one resolver retry', () => {
+    expect(body).toContain('do NOT write `manual_review` yourself');
+    expect(body).toContain('interstitial_no_link');
+    expect(body).toMatch(/ONE retry per job per run/);
+  });
 });
