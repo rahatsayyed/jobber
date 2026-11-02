@@ -10,6 +10,8 @@ import { parseEnv } from '../platform/envFile.js';
 export const CONTACTS_ENV_KEYS: readonly string[] = [
   'SERPER_API_KEY', 'SERPER_DAILY_BUDGET', 'SERPER_MONTHLY_BUDGET',
   'HUNTER_API_KEY', 'HUNTER_ENABLED', 'HUNTER_MONTHLY_CAP',
+  // Search layer providers (Google Programmable Search and Tavily), read by the same search layer.
+  'GOOGLE_PSE_API_KEY', 'GOOGLE_PSE_CX', 'GOOGLE_PSE_DAILY_BUDGET', 'TAVILY_API_KEY', 'TAVILY_DAILY_BUDGET',
   // The linkedin MCP server also uses the search layer for people discovery (no wake env_keys change needed).
   'LINKEDIN_PEOPLE_SEARCH_SOURCES',
   // LinkedIn pacing read by the linkedin MCP server (active hours gate and the per-navigation pause); also no wake env_keys change.
