@@ -5,6 +5,7 @@
 // stopped / already applied, a pending queue row of the LinkedIn class, ceilings (linkedin_easy_apply, the shared MAX_APPLIES_PER_DAY room,
 // the profile-view ceiling for the job page), the resume file, page checks (right job, an Easy Apply control, not already applied), the
 // input screen on the page text. A job whose Apply goes to the company site is handed back to the external-apply route, never opened here.
+import { parseMaxAppliesPerDay } from '../../lib/maxApplies.js';
 import { getExcludedReason, getFirstHardStop } from '../../db.js';
 import { classifyApplyUrl } from '../../apply/registry.js';
 import { isLinkedInEasyApplyCandidate } from '../../apply/easyApplyRows.js';
@@ -31,8 +32,7 @@ interface QueueRow { id: number; apply_url: string | null; apply_status: string 
 
 /** Today's shared apply counter room (read only; the commit path consumes it with the linkedin_easy_apply ceiling). */
 function sharedRoom(deps: ArmDeps): { used: number; max: number } {
-  const raw = Number(deps.env.MAX_APPLIES_PER_DAY ?? DEFAULT_MAX_APPLIES_PER_DAY);
-  const max = Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_MAX_APPLIES_PER_DAY;
+  const max = parseMaxAppliesPerDay(deps.env);
   const row = deps.db.prepare("SELECT count FROM daily_counters WHERE day = date('now') AND key = 'easy_apply'").get() as { count: number } | undefined;
   return { used: row?.count ?? 0, max };
 }

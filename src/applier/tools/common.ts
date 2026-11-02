@@ -1,6 +1,7 @@
 // Shared plumbing for the typed apply tools (plan 8G-2 task 18). Pure handler functions take injected
 // deps (db, runtime, env, answer book, classifier) so tests need no MCP server; MCP wiring is task 20.
 // Results that reach a model never carry raw exception text, a typed value, a path or a credential.
+import { parseMaxAppliesPerDay } from '../../lib/maxApplies.js';
 import type BetterSqlite3 from 'better-sqlite3';
 import { lstatSync } from 'node:fs';
 import path from 'node:path';
@@ -281,9 +282,7 @@ export async function needsAnswer(
 
 /** MAX_APPLIES_PER_DAY, same parsing the legacy tools used (integer, default 5). */
 export function maxAppliesPerDay(env: NodeJS.ProcessEnv): number {
-  const raw = env.MAX_APPLIES_PER_DAY;
-  if (raw === undefined || !/^\d+$/.test(raw.trim())) return 5;
-  return Number(raw.trim());
+  return parseMaxAppliesPerDay(env);
 }
 
 export function hostDayCount(db: Db, host: string): number {

@@ -14,6 +14,7 @@
 //   that counted Apply, are capped and re-checked through the text gate. A confirmation is only text that
 //   was NOT on the page before the Apply click (a job description can never confirm itself).
 // Anything after a click that cannot be confirmed is 'unconfirmed', never guessed.
+import { parseMaxAppliesPerDay } from '../lib/maxApplies.js';
 import type BetterSqlite3 from 'better-sqlite3';
 import { getExcludedReason, getFirstHardStop, saveApplication } from '../db.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
@@ -42,6 +43,19 @@ export interface NaukriCommitInput {
 }
 
 export const DEFAULT_MAX_APPLIES_PER_DAY = 5;
+
+// An Apply click whose result could not be confirmed: write a manual_review applications row (once) so a second arm is refused.
+// Returns an empty object so it can be spread into a return value.
+export function markUnconfirmedApply(db: import('better-sqlite3').Database, jobId: string, platform: string): Record<string, never> {
+  try {
+    const has = db.prepare("SELECT 1 FROM applications WHERE job_id = ? AND platform = ? AND status IN ('submitted', 'manual_review') LIMIT 1").get(jobId, platform);
+    if (!has) db.prepare("INSERT INTO applications (job_id, platform, method, status, reason) VALUES (?, ?, 'native', 'manual_review', 'apply clicked, result unconfirmed')").run(jobId, platform);
+  } catch {
+    // best effort
+  }
+  return {};
+}
+
 export const MAX_CHATBOT_STEPS = 20;
 const CONFIRM_RE = /(applied to\s*["“'].+["”']|successfully applied|application (has been )?(submitted|sent)|you have successfully applied)/i;
 
@@ -340,8 +354,7 @@ async function commitApply(i: NaukriCommitInput): Promise<EngineResult> {
 
   if (isApplyClick && !counted) {
     const ocfg = loadOutreachConfig(deps.env);
-    const maxRaw = Number(deps.env.MAX_APPLIES_PER_DAY ?? DEFAULT_MAX_APPLIES_PER_DAY);
-    const max = Number.isFinite(maxRaw) && maxRaw >= 0 ? maxRaw : DEFAULT_MAX_APPLIES_PER_DAY;
+    const max = parseMaxAppliesPerDay(deps.env);
     // Consume naukri_apply first; if the shared daily counter then refuses, remove the event just recorded
     // so a refusal leaves BOTH counters unconsumed.
     if (!tryConsume(db, 'naukri_apply', ocfg, now())) {
@@ -370,7 +383,7 @@ async function commitApply(i: NaukriCommitInput): Promise<EngineResult> {
       // The click may have gone through: the apply is unresolved, the counters stay spent.
       deps.intents.disarm(platform);
       const dga = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after: null, extra: diagExtra(null) });
-      return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `error after the click; check the application by hand${diagNote(dga)}` };
+      return { ...markUnconfirmedApply(db, jobId, 'naukri'), ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `error after the click; check the application by hand${diagNote(dga)}` };
     }
 
     const base = st.baseline.get(key) ?? pageTexts(before);
@@ -382,7 +395,7 @@ async function commitApply(i: NaukriCommitInput): Promise<EngineResult> {
       try { after = await page.snapshot(); } catch {
         deps.intents.disarm(platform);
         const dgb = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after: null, extra: diagExtra(null) });
-        return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `could not read the page after the click; check the application by hand${diagNote(dgb)}` };
+        return { ...markUnconfirmedApply(db, jobId, 'naukri'), ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `could not read the page after the click; check the application by hand${diagNote(dgb)}` };
       }
       const last = k === polls - 1;      // 1. a popup the click opened: an off-site one is never touched; a naukri.com one is followed
       const pops = watch?.popups() ?? [];
@@ -430,7 +443,7 @@ async function commitApply(i: NaukriCommitInput): Promise<EngineResult> {
       return { ok: false, status: 'unconfirmed', code: 'apply_click_ignored', reason: `Apply was clicked but the page did not react and the same Apply button is still there; escalate once and do not retry this job in this run${diagNote(dgi)}` };
     }
     const dgc = await writeCommitDiag(deps, page, { platform, code: 'unconfirmed', live, urlBefore, after, extra: diagExtra(after) });
-    return { ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `clicked but no confirmation or chatbot appeared; check the application by hand${diagNote(dgc)}` };
+    return { ...markUnconfirmedApply(db, jobId, 'naukri'), ok: false, status: 'unconfirmed', code: 'unconfirmed', reason: `clicked but no confirmation or chatbot appeared; check the application by hand${diagNote(dgc)}` };
   } finally {
     watch?.stop();
   }

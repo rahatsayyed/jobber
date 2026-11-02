@@ -107,7 +107,7 @@ describe('naukri apply click: confirmation signals within the wait', () => {
     w.page.watch = () => fakeWatch({ popups: [{ url: 'about:blank' }] }).w;
     const r = await armedClick(w);
     expect(r).toMatchObject({ ok: false, status: 'unconfirmed', code: 'unconfirmed' });
-    expect(appliedRows(w)).toEqual([]);
+    expect(appliedRows(w)).toEqual([{ status: 'manual_review' }]);
   });
 });
 

@@ -652,7 +652,7 @@ describe('wellfound_apply commit path', () => {
     const r = await w.engine.click(refOf(await w.snap(), 'button', 'Apply'));
     expect(r).toMatchObject({ ok: false, status: 'unconfirmed', code: 'unconfirmed' });
     expect(ceiling(w, 'wellfound_apply')).toBe(1);
-    expect(applications(w)).toEqual([]);
+    expect(applications(w).map((a) => a.status)).toEqual(['manual_review']);
     expect(w.intents.peek('wellfound')).toBeNull();
   });
 
@@ -661,7 +661,7 @@ describe('wellfound_apply commit path', () => {
     await w.armApply();
     const r = await w.engine.click(refOf(await w.snap(), 'button', 'Apply'));
     expect(r.status).toBe('unconfirmed');
-    expect(applications(w)).toEqual([]);
+    expect(applications(w).map((a) => a.status)).toEqual(['manual_review']);
   });
 
   it('the wellfound_apply ceiling at commit time refuses before the click and leaves both counters unspent', async () => {

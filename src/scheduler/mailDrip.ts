@@ -30,6 +30,9 @@ export const NO_CAP_LIMIT = 100000;
 export const STATE_NEXT_AT = 'mail_drip_next_at';
 export const STATE_LAST_AT = 'mail_drip_last_at';
 export const STATE_QUARANTINE = 'mail_drip_quarantine';
+export const STATE_TRIED = 'mail_drip_tried';
+// An item a run already handled is not offered again for this long (a run that ends ok without sending must not loop every tick).
+export const TRIED_HOURS = 3;
 const DEFAULT_SESSION = 'jobber-wake';
 
 export interface DripConfig {
@@ -140,9 +143,13 @@ export function releaseDripQuarantine(db: DriverDeps['db'], id: number, now: Dat
     | { job_id: string; email_status: string | null; email_sent_at: string | null; email_message_id: string | null }
     | undefined;
   if (r && (r.email_status === 'sent' || r.email_sent_at || r.email_message_id)) return { released: false, reason: 'already_sent' };
+  db.prepare("UPDATE outreach_queue SET email_status = NULL, updated_at = datetime('now') WHERE id = ? AND email_status = 'sending'").run(id);
   s.delete(`cold:${id}`);
   if (r) s.delete(`job:${r.job_id}`);
   setState(db, STATE_QUARANTINE, JSON.stringify([...s]), now);
+  const tm = triedMap(db);
+  delete tm[`cold:${id}`];
+  setState(db, STATE_TRIED, JSON.stringify(tm), now);
   return { released: true, id, job_id: r?.job_id ?? '' };
 }
 
@@ -178,6 +185,33 @@ function quarantine(db: DriverDeps['db'], key: string, now: Date): void {
   const s = quarantined(db);
   s.add(key);
   setState(db, STATE_QUARANTINE, JSON.stringify([...s].slice(-200)), now);
+}
+
+function triedMap(db: DriverDeps['db']): Record<string, string> {
+  try {
+    const raw = getState(db, STATE_TRIED);
+    const v = raw ? (JSON.parse(raw) as unknown) : {};
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+// Item keys a drip run handled in the last TRIED_HOURS.
+export function recentlyTriedItems(db: DriverDeps['db'], now: Date): Set<string> {
+  const out = new Set<string>();
+  for (const [k, at] of Object.entries(triedMap(db))) {
+    const t = Date.parse(at);
+    if (Number.isFinite(t) && now.getTime() - t < TRIED_HOURS * 3600_000) out.add(k);
+  }
+  return out;
+}
+
+function markTried(db: DriverDeps['db'], key: string, now: Date): void {
+  const m = triedMap(db);
+  m[key] = now.toISOString();
+  const keep = Object.entries(m).filter(([, at]) => now.getTime() - Date.parse(at) < 24 * 3600_000).slice(-100);
+  setState(db, STATE_TRIED, JSON.stringify(Object.fromEntries(keep)), now);
 }
 
 /** Every address a cold email was ever sent to (sent rows, any age). The cold path never emails one address twice; two people at one company are fine. */
@@ -220,14 +254,17 @@ export type PickResult = { item: DripItem } | { item: null; reason: 'nothing_que
  * skipped when its exact address was ever sent a cold email (dedupe is per address, never per domain), when the row or address is in
  * `exclude` (already tried in this tick), when a failed drip run left it unsent (quarantine) and for any address without a verified contacts row (Safety rule 1, fail closed: no row is not verified).
  */
-export function pickDripItem(db: DriverDeps['db'], now: Date, env: NodeJS.ProcessEnv, exclude: ReadonlySet<string> = new Set()): PickResult {
+export function pickDripItem(db: DriverDeps['db'], now: Date, env: NodeJS.ProcessEnv, excludeIn: ReadonlySet<string> = new Set()): PickResult {
+  const exclude = new Set<string>([...excludeIn, ...recentlyTriedItems(db, now)]);
+  const liveMode = !isDryRun(env);
   const already = sentAddresses(db);
   const held = quarantined(db);
   let anyCandidate = false;
   const seenJobs = new Set<string>();
   for (const r of listQueuedOutreach(db)) {
     const to = (r.email_to ?? '').trim();
-    if (!to || (r.email_status && r.email_status !== 'queued')) continue;
+    // a row prepared in a dry run ('dry_run') is sendable once dry-run is off; 'sending' (claimed) is never picked
+    if (!to || (r.email_status && r.email_status !== 'queued' && !(r.email_status === 'dry_run' && liveMode))) continue;
     if (seenJobs.has(r.job_id)) continue; // sibling rows of one job carry the same email
     if (held.has(`cold:${r.id}`) || held.has(`job:${r.job_id}`) || exclude.has(`cold:${r.id}`)) continue;
     const addr = addrOf(to);
@@ -253,7 +290,7 @@ export function pickDripItem(db: DriverDeps['db'], now: Date, env: NodeJS.Proces
       else {
         for (const f of approved) {
           const addr = addrOf(f.email_to);
-          if (!addr || exclude.has(`followup:${f.id}`)) continue;
+          if (!addr || exclude.has(`followup:${f.id}`) || !isVerifiedAddress(db, addr)) continue;
           anyCandidate = true;
           return { item: { kind: 'followup', id: f.id, job_id: f.job_id, address: addr } };
         }
@@ -374,6 +411,11 @@ async function runOne(
       tasks: [{ operator: 'mail-operator', kind: 'mail', quota: 1, item: itemKey(item) }], status: 'running',
     });
     started = true;
+    // Claim the cold row BEFORE the send (like follow-ups): a send whose record step fails leaves 'sending', never 'queued'.
+    if (item.kind === 'cold' && !dry) {
+      const claimed = d.db.prepare("UPDATE outreach_queue SET email_status = 'sending', updated_at = datetime('now') WHERE id = ? AND (email_status IS NULL OR email_status IN ('', 'queued', 'dry_run'))").run(item.id).changes;
+      if (claimed === 0) throw new Error('claim_refused: row is no longer sendable');
+    }
     tracker = new BudgetTracker(budget, now);
     const prompt = buildDripPrompt({
       runId, dryRun: dry, now, budget, item, dailyLimit, batch,
@@ -490,10 +532,11 @@ async function runOne(
     }
   }
   // A run that did not end cleanly may have sent the email without recording it: that cold row is never picked again automatically.
-  if (launched && status !== 'ok' && item.kind === 'cold') {
+  // Any launched run (ok or not) that leaves the cold row unrecorded (still 'sending' or queued) is quarantined: never re-sent, never retried.
+  if (launched && item.kind === 'cold' && !dry) {
     try {
       const row = d.db.prepare('SELECT email_status FROM outreach_queue WHERE id = ?').get(item.id) as { email_status: string | null } | undefined;
-      if (row && (!row.email_status || row.email_status === 'queued')) {
+      if (row && (!row.email_status || row.email_status === 'queued' || row.email_status === 'sending')) {
         quarantine(d.db, `cold:${item.id}`, d.now());
         quarantine(d.db, `job:${item.job_id}`, d.now());
         await d.notifier.notify({
@@ -560,6 +603,11 @@ export async function dripTick(d: DriverDeps, opts: { abort?: () => boolean } = 
       tried.add(`addr:${item.address}`);
       const r = await runOne(d, lock, item, dailyLimit, { n, of: size }, opts);
       runs.push(r);
+      try {
+        markTried(d.db, itemKey(item), d.now());
+      } catch {
+        // memory only
+      }
       if (r.status !== 'ok' || n === size) break;
       // random pause between two sends of one tick, in code; the heartbeat keeps the lock alive
       let left = Math.round((cfg.pauseMinSec + d.rng() * (cfg.pauseMaxSec - cfg.pauseMinSec)) * 1000);
