@@ -353,6 +353,20 @@ const hand: EnvSpec[] = [
     restart: 'mcp',
     restartEvidence: 'src/webcore/config.ts',
   }),
+  e('BROWSER_HOST', 'web-core', 'shared web browser', 'bool', {
+    default: 'true',
+    about: 'One shared Chrome (profile secrets/browser-profile/) for LinkedIn, Naukri, Wellfound and the web tasks: each process opens its own tab in it. Set false to go back to one browser per process.',
+    restart: 'mcp',
+    restartEvidence: 'src/webcore/config.ts',
+  }),
+  e('BROWSER_HOST_IDLE_MIN', 'web-core', 'shared web browser', 'int', {
+    default: '10',
+    min: 1,
+    max: 240,
+    about: 'Minutes the shared Chrome stays open with no task attached before it closes by itself.',
+    restart: 'mcp',
+    restartEvidence: 'src/webcore/config.ts',
+  }),
 
   // ---- Browser apply and site accounts
   e('APPLY_ALLOW_ACCOUNT_CREATION', 'apply', 'browser apply', 'bool', {

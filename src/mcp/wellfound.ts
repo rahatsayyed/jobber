@@ -383,13 +383,18 @@ async function ensureSession(deps: WellfoundDeps): Promise<string | null> {
   if (!lock.ok) return jsonOut({ ok: false, code: 'session_locked', reason: lock.reason.replace(/LinkedIn/g, 'Wellfound') });
   let browser: any;
   try {
-    // Headless only, never headed (shared launcher: real Chrome + real UA under --headless=new). The persistent profile (extensions
-    // load there) is used when it exists; the lock above is ours already, so no second Chrome opens the directory.
+    // Headless only, never headed (shared launcher: real Chrome + real UA under --headless=new). A tab in the shared browser host when
+    // it runs; else the old Wellfound profile when it exists; the lock above is ours, so this is the only Wellfound session.
     const r = await openPlatformContext({
       name: 'wellfound', statePath, launcher: deps.chromium, contextOptions: HEADLESS_CONTEXT_OPTIONS,
       profileDir: deps.profileDir === undefined ? (deps.sessionStatePath ? null : platformProfileDir('wellfound')) : deps.profileDir,
+      env: envOf(deps),
     });
-    if (!r.ok) { lock.handle.release(); return jsonOut({ ok: false, code: 'failed', reason: 'could not start the Wellfound browser session' }); }
+    if (!r.ok) {
+      lock.handle.release();
+      if (r.code === 'session_locked' || r.code === 'halted') return jsonOut({ ok: false, code: r.code, reason: r.reason ?? 'the shared browser is busy' });
+      return jsonOut({ ok: false, code: 'failed', reason: 'could not start the Wellfound browser session' });
+    }
     browser = r.browser;
     const page = await r.context.newPage();
     session = { browser, context: r.context, page, idleTimer: null, lock: lock.handle, layout: makeObserver(deps), ...(r.persistent ? { persistentStatePath: statePath } : {}) };

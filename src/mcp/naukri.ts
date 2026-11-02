@@ -429,14 +429,18 @@ async function ensureSession(deps: NaukriDeps): Promise<string | null> {
   let browser: any;
   let profileLock: LockHandle | null = null;
   try {
-    // Headless only, never headed: Akamai passes real Chrome + real UA under --headless=new (shared launcher). The persistent
-    // profile (extensions load there) is used when it exists and its lock is free; otherwise a fresh browser plus the state file.
+    // Headless only, never headed: Akamai passes real Chrome + real UA under --headless=new (shared launcher). A tab in the shared
+    // browser host when it runs (its lock is free); else the old Naukri profile when it exists; else a fresh browser plus the state file.
     const r = await openPlatformContext({
       name: 'naukri', statePath, launcher: deps.chromium, contextOptions: HEADLESS_CONTEXT_OPTIONS,
       profileDir: deps.profileDir === undefined ? (deps.sessionStatePath ? null : platformProfileDir('naukri')) : deps.profileDir,
       profileLockPath: deps.profileLockPath ?? DEFAULT_PROFILE_LOCK_PATH,
+      env: envOf(deps),
     });
-    if (!r.ok) return jsonOut({ ok: false, code: 'failed', reason: 'could not start the Naukri browser session' });
+    if (!r.ok) {
+      if (r.code === 'session_locked' || r.code === 'halted') return jsonOut({ ok: false, code: r.code, reason: r.reason ?? 'the shared browser is busy' });
+      return jsonOut({ ok: false, code: 'failed', reason: 'could not start the Naukri browser session' });
+    }
     browser = r.browser;
     profileLock = r.lock;
     const page = await r.context.newPage();

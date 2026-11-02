@@ -18,8 +18,10 @@ type Db = BetterSqlite3.Database;
 export interface RuntimeDeps {
   db: Db; launcher?: LiLauncher; now?: () => Date; env?: NodeJS.ProcessEnv;
   sessionPath?: string; lockPath?: string; settleMs?: number; idleMs?: number;
-  /** Persistent profile directory of the main account (default secrets/browser-profile-linkedin-main); null turns it off. */
+  /** Persistent profile directory of the main account (default secrets/browser-profile-linkedin-main); null turns it (and the shared host) off. */
   profileDir?: string | null;
+  /** Shared browser host (tests inject a fake; null turns it off; default on with the real launcher). */
+  host?: import('../webcore/hostClient.js').HostAttach | null;
   /** Advisory layout observer: sees each fresh snapshot of open() and snapshot(); never fails a tool. */
   layout?: LayoutObserver;
   /** True while a tool call is in flight: the idle timer then re-arms instead of closing the session. */
@@ -144,15 +146,16 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
     if (!chk.ok) return { ok: false, code: 'session_invalid', reason: chk.reason ?? 'session invalid' };
     const lock = acquireLock(lockPath);
     if (!lock.ok) return { ok: false, code: 'session_locked', reason: lock.reason };
-    // Headless in the account's persistent profile when it exists (extensions load there), else a fresh browser plus the state file.
-    // The lock above is already ours, so no second Chrome can open the profile directory.
+    // A tab in the shared browser host (one profile for every platform) when it runs; else headless in the account's own profile
+    // when it exists, else a fresh browser plus the state file. The lock above is ours, so this is the only LinkedIn session.
     let browser: LiBrowser;
     let context: LiContext;
     try {
-      const r = await openPlatformContext({ name: 'linkedin-main', statePath: sessionPath, launcher: deps.launcher, contextOptions: LINKEDIN_CONTEXT_OPTIONS, profileDir: deps.profileDir === undefined && deps.sessionPath ? null : deps.profileDir });
+      const r = await openPlatformContext({ name: 'linkedin-main', statePath: sessionPath, launcher: deps.launcher, contextOptions: LINKEDIN_CONTEXT_OPTIONS, profileDir: deps.profileDir === undefined && deps.sessionPath ? null : deps.profileDir, host: deps.host, env });
       if (!r.ok) {
         lock.handle.release();
         if (r.code === 'chrome_unavailable') { logErr('launch', new Error('chrome_unavailable')); return { ok: false, code: 'chrome_unavailable', reason: 'could not launch Chrome' }; }
+        if (r.code === 'session_locked' || r.code === 'halted') return { ok: false, code: r.code, reason: r.reason ?? (r.code === 'halted' ? 'kill switch is on' : 'the shared browser is busy') };
         return { ok: false, code: 'failed', reason: 'open failed' };
       }
       browser = r.browser; context = r.context;

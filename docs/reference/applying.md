@@ -189,13 +189,15 @@ puts that job and every other `needs_human` job on the host back in the queue; i
 host's captcha/mfa/login blocks (never a `bot_wall` halt). It never reads what you type and stores no
 password. `APPLY_ALLOW_ACCOUNT_CREATION` and `SITE_MAX_ACCOUNTS_PER_DAY` are unchanged.
 
-**The one web profile.** Scout, applier, the search-engine dork, `apply:assist` and `npm run browser:open
--- <url>` share ONE persistent Chrome profile, `secrets/browser-profile/` (mode 0700, git-ignored, inside
-the `secrets/` exclusions of backup and auto-update), under the one `secrets/webcore.lock`. Cookies and
-Chrome's own history persist there; Chrome's password manager is off. `secrets/site-sessions/*.json` are
-imported into it once and kept as the fallback if the profile cannot be opened. Read the history with
-`npm run browser:history -- [--host x] [--limit n]` (a copy of the profile's `Default/History`).
-LinkedIn, Naukri and Wellfound keep their own state files.
+**The one profile.** Scout, applier, the search-engine dork, `apply:assist`, `npm run browser:open
+-- <url>` and LinkedIn, Naukri and Wellfound share ONE persistent Chrome profile, `secrets/browser-profile/`
+(mode 0700, git-ignored, inside the `secrets/` exclusions of backup and auto-update), through the shared
+browser host: each process opens its own tab, so the applier and the scout no longer block each other
+(see `docs/reference/platform-and-sessions.md`). Cookies and Chrome's own history persist there; Chrome's
+password manager is off. `secrets/site-sessions/*.json` and the platform state files are imported into it
+once and kept as the fallback if the host cannot be used (then the old `secrets/webcore.lock` path runs).
+Read the history with `npm run browser:history -- [--host x] [--limit n]` (a copy of the profile's
+`Default/History`).
 
 The page, form, posting, email and chatbot text stays untrusted data.
 

@@ -247,15 +247,16 @@ A browser or native Apply that was clicked but never confirmed is recorded as `m
 
 A connect that ends `unconfirmed` (the click went out but neither Pending nor an "Invitation sent" toast was seen) is never retried. Check LinkedIn's Sent invitations page. A touch stuck in `sending` for more than 30 minutes is moved to `unconfirmed` on its own. When the monthly note quota is used up, the agent sends plain invites with no note (an Inbox notice says so) until the first of next month, IST.
 
-## Browser extensions (Bitwarden) in the project browsers
+## The shared browser and extensions
 
-Chrome keeps extensions per profile. The project has four persistent profiles: `web` (scout, applier, search), and one each for
-`linkedin-main`, `naukri` and `wellfound` (created by their login commands). Install the extension once
-per profile, headed: `npm run browser:open -- --profile naukri` (also `web`, `linkedin-main`, `wellfound`) opens the Chrome Web Store in
-that profile; install and sign in, then press Enter in the terminal. The unattended headless runs open the same profile, so an
-installed extension loads there too, as far as Chrome's new headless mode supports it (an extension that needs a visible popup does not
-work headless). The command refuses while a wake holds that profile; try again later. `npm run doctor` shows which profiles exist and
-how many extensions each holds. If a profile cannot be opened, the run falls back to the saved login file, as before.
+All platforms and the web tasks use ONE Chrome profile, `secrets/browser-profile/`, through one shared browser host that starts on
+first use and closes itself after `BROWSER_HOST_IDLE_MIN` minutes (default 10) with no task attached. `npm run browser:host -- status`
+shows its pid, mode (headless or headed), attached clients and tabs; `npm run browser:host -- stop` closes it. Extensions are allowed in
+general: install one once with `npm run browser:open` (it opens the Chrome Web Store in a window on the shared profile), sign in, then
+press Enter in the terminal. The unattended headless runs open the same profile, so an installed extension loads there too, as far as
+Chrome's new headless mode supports it (an extension that needs a visible popup does not work headless). The window command refuses
+while a wake is using the browser; try again later. While your window is open, the wake's browser tools wait (they report
+`session_locked`). To go back to one browser per process, set `BROWSER_HOST=false` and restart the MCP servers.
 
 ## Where logs and state live
 

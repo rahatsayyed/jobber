@@ -1,5 +1,6 @@
-// Locked headless web session for company sites and ATS pages: one browser, one serial queue, idle
-// auto-close, halt check, navigation guard, per-host gap and per-job budgets. Mirrors
+// Headless web session for company sites and ATS pages: a tab of the shared browser host (one profile for every process; the
+// per-host gap is shared across processes by file) or, when the host is off or unreachable, one locked browser of its own; one
+// serial queue, idle auto-close, halt check, navigation guard, per-host gap and per-job budgets. Mirrors
 // src/linkedin/runtime.ts. It never types, clicks or submits: those belong to the callers (and are
 // dry-run gated there). Failure text is fixed and code-authored, never browser error text.
 import type BetterSqlite3 from 'better-sqlite3';
@@ -9,6 +10,8 @@ import { DEFAULT_PROFILE_DIR, importLegacySessions, prepareProfileDir } from './
 import { loadWebConfig, type WebConfig } from './config.js';
 import { acquireLock, checkSiteSessionDir, checkSiteSessionFile, siteSessionPath, DEFAULT_SITE_SESSION_DIR, DEFAULT_WEB_LOCK_PATH, type LockHandle } from './session.js';
 import { haltReason } from '../outreach/limits.js';
+import { resolveHost, type HostAttach } from './hostClient.js';
+import { DEFAULT_NAV_FILE, recordSharedNav, sharedLastNav } from './navShare.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -27,6 +30,10 @@ export interface WebRuntimeDeps {
   /** Test seam for the code-drawn jitter, 0..1. */
   random?: () => number;
   idleMs?: number;
+  /** Shared browser host: injected (tests), null (off), undefined (on by default with the real launcher and a profile). */
+  host?: HostAttach | null;
+  /** Cross-process per-host navigation times, used while on the shared host (default .jobber/web-nav.json). */
+  navFile?: string;
 }
 
 export interface OpenOptions {
@@ -79,6 +86,8 @@ interface Session {
   browser: LiBrowser; context: LiContext; page: LiPage; lock: LockHandle;
   idle: ReturnType<typeof setTimeout> | null;
   allowedHosts: string[];
+  /** A tab in the shared browser host (no web lock: every process has its own tab; the per-host gap is shared by file). */
+  shared: boolean;
 }
 interface Job { id: string; startedAt: number; calls: number }
 
@@ -92,6 +101,8 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
   const profileDir = deps.profileDir === undefined ? DEFAULT_PROFILE_DIR : deps.profileDir;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const random = deps.random ?? Math.random;
+  const host = profileDir ? resolveHost(deps.host, env, deps.launcher) : null;
+  const navFile = deps.navFile ?? DEFAULT_NAV_FILE;
   let session: Session | null = null;
   let job: Job | null = null;
   const lastNav = new Map<string, number>();
@@ -137,8 +148,10 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
     if (job.calls >= cfg.maxCallsPerJob) return fail('budget_calls', 'per-job call budget reached');
     if (now().getTime() - job.startedAt > cfg.maxJobMin * 60_000) return fail('budget_time', 'per-job time budget reached');
     if (!hostAllowed(url, allowedHosts)) return fail('refused', 'host_change');
-    const host = hostOf(url);
-    const last = lastNav.get(host);
+    const h2 = hostOf(url);
+    const own = lastNav.get(h2);
+    const other = host ? sharedLastNav(h2, navFile) : undefined;
+    const last = own === undefined ? other : other === undefined ? own : Math.max(own, other);
     if (last !== undefined && cfg.minGapSec > 0) {
       const gapMs = cfg.minGapSec * 1000;
       const want = gapMs + Math.floor(random() * 0.25 * gapMs);
@@ -151,6 +164,7 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
   async function go(page: LiPage, url: string, allowedHosts: string[]): Promise<NavResult> {
     job!.calls++;
     lastNav.set(hostOf(url), now().getTime());
+    if (session?.shared) recordSharedNav(hostOf(url), now().getTime(), navFile);
     try {
       await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(cfg.settleMs).catch(() => undefined);
@@ -179,6 +193,28 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
       const chk = checkSiteSessionFile(sessionFile);
       if (!chk.ok) return fail('session_invalid', chk.reason ?? 'session invalid');
       storageState = sessionFile;
+    }
+    // First choice: a tab of the shared browser host. No web lock is needed there (each process has its own tab of the same profile).
+    if (host) {
+      const r = await host({ contextOptions: HEADLESS_CONTEXT_OPTIONS });
+      if (r.ok) {
+        try {
+          const page = await r.context.newPage();
+          session = { browser: r.browser, context: r.context, page, lock: { release() { /* no web lock on the shared host */ } }, idle: null, allowedHosts: opts.allowedHosts, shared: true };
+          process.once('beforeExit', onExit);
+          touch();
+          const res = await go(page, url, opts.allowedHosts);
+          if (!res.ok) await closeSession();
+          return res;
+        } catch (e) {
+          if (session) await closeSession(); else await r.browser.close().catch(() => undefined);
+          logErr('open', e);
+          return fail('failed', 'open failed');
+        }
+      }
+      if (r.code === 'halted') return fail('halted', r.reason);
+      if (r.code === 'busy' || r.code === 'busy_headed') return fail('session_locked', r.reason);
+      // disabled or unavailable: today's path below.
     }
     const lock = acquireLock(lockPath);
     if (!lock.ok) return fail('session_locked', lock.reason);
@@ -212,7 +248,7 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
     try {
       context ??= await browser.newContext({ ...HEADLESS_CONTEXT_OPTIONS, ...(storageState ? { storageState } : {}) });
       const page = await context.newPage();
-      session = { browser, context, page, lock: lock.handle, idle: null, allowedHosts: opts.allowedHosts };
+      session = { browser, context, page, lock: lock.handle, idle: null, allowedHosts: opts.allowedHosts, shared: false };
       process.once('beforeExit', onExit);
       touch();
       const r = await go(page, url, opts.allowedHosts);

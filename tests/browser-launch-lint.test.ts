@@ -19,6 +19,7 @@ export function launchViolations(src: string): string[] {
   const out: string[] = [];
   if (/[cC]hromium\w*\s*\.\s*launch\w*\s*\(/.test(src)) out.push('chromium.launch');
   if (/\blaunchPersistentContext\b/.test(src)) out.push('launchPersistentContext');
+  if (/\.connectOverCDP\s*\(/.test(src)) out.push('connectOverCDP');
   const imp = /import\s+(type\s+)?\{([^}]*)\}\s*from\s*['"](playwright|patchright|playwright-core)['"]/g;
   for (const m of src.matchAll(imp)) {
     if (m[1]) continue;
@@ -82,6 +83,33 @@ describe('browser launch lint', () => {
       const deps = JSON.parse(readFileSync(join(ROOT, pkg), 'utf8')).dependencies ?? {};
       expect(Object.keys(deps), pkg).not.toContain('playwright');
     }
+  });
+
+  it('flags a CDP attach outside the home file', () => {
+    expect(launchViolations('await chromium.connectOverCDP(ws)')).toContain('connectOverCDP');
+    expect(launchViolations("import { connectChromeOverCDP } from '../linkedin/browser.js';")).toEqual([]);
+  });
+
+  it('only the shared browser host runtimes import the host code', () => {
+    const files: string[] = [];
+    for (const d of ['src', 'scripts', 'renderer']) walk(join(ROOT, d), files);
+    const importers = (re: RegExp) => files.filter((f) => re.test(readFileSync(f, 'utf8'))).map((f) => relative(ROOT, f).split('\\').join('/')).sort();
+    // The host process itself: only its entry script.
+    expect(importers(/from\s*['"][./]*(?:src\/)?webcore\/hostServer\.js['"]|from\s*['"]\.\/hostServer\.js['"]/)).toEqual(['scripts/browser-host.ts']);
+    // The attach side: the runtimes that open tabs, the owner window flows and the host CLI.
+    expect(importers(/from\s*['"][./]*(?:src\/)?webcore\/hostClient\.js['"]|from\s*['"]\.\/hostClient\.js['"]/)).toEqual([
+      'scripts/browser-host.ts',
+      'src/lib/scrape.ts',
+      'src/webcore/headed.ts',
+      'src/webcore/headedProfile.ts',
+      'src/webcore/loginBrowser.ts',
+      'src/webcore/platformProfile.ts',
+      'src/webcore/runtime.ts',
+    ]);
+    // The two browser functions behind them are used by exactly one file each (besides the home file that defines them).
+    const users = (name: string) => importers(new RegExp(`\\b${name}\\b`)).filter((f) => f !== HOME);
+    expect(users('launchHostChrome')).toEqual(['src/webcore/hostServer.ts']);
+    expect(users('connectChromeOverCDP')).toEqual(['src/webcore/hostClient.ts']);
   });
 
   it('the legacy launch allowlist is empty (task 23)', () => {

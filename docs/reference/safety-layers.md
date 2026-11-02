@@ -103,6 +103,22 @@ gates and that the engine re-verifies against the live page. Layers, outermost f
    ignored (the doctor warns when `.env` still has one). Dry actions are recorded in `dry_run_actions`
    (`npm run dry-run:report`), redacted and clamped.
 
+8. **Shared browser host** (`src/webcore/hostServer.ts`, `src/webcore/hostClient.ts`, see
+   `docs/reference/platform-and-sessions.md`): every platform and web tool runs in a tab of ONE Chrome on
+   `secrets/browser-profile/`. The DevTools channel is an unauthenticated local channel over logged-in cookies,
+   so: loopback only, a port Chrome picks at random, the endpoint only in the 0600 pidfile
+   `secrets/browser-host.json` (never in a log, tool result, doctor or status line), the client refuses
+   any endpoint that is not `ws://127.0.0.1:<port>/devtools/browser/<id>`, the host exits after
+   `BROWSER_HOST_IDLE_MIN` minutes with no client and at once on the kill switch, and it closes every new
+   tab while an `all` halt is on (or the halt state is unreadable). Platform halts are still checked by the
+   runtimes before they open a tab, and the platform locks still allow one session per platform. Residual
+   risk (honest): any local process running as the owner's user that can read the 0600 pidfile, or that
+   scans loopback ports while the host runs, can drive the logged-in browser; that is the same trust
+   boundary as the profile directory itself. Extensions are allowed (installed by the owner in the
+   profile); an extension sees the pages the tasks open, so install only ones you trust.
+   Only `src/linkedin/browser.ts` imports the browser library, only `src/webcore/hostServer.ts` launches
+   the host Chrome and only `src/webcore/hostClient.ts` attaches (`tests/browser-launch-lint.test.ts`).
+
 Not covered by code: `gmail.send_email` has the kill-switch and `JOBBER_DRY_RUN` hook only (no
 `halt_flags` read). The
 browserctl actions do check halts and the kill switch themselves, but the semantic guard is a word

@@ -1,5 +1,6 @@
 import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS, type LiLauncher } from '../webcore/launch.js';
 import { extractEmails } from './emails.js';
+import { resolveHost } from '../webcore/hostClient.js';
 
 const PATHS = ['', '/careers', '/contact', '/about', '/jobs'];
 
@@ -17,7 +18,11 @@ export async function scrapeEmails(domain: string, opts: { launcher?: LiLauncher
   const found = new Set<string>();
 
   try {
-    browser = await launchRealChrome({ launcher: opts.launcher });
+    // A tab of the shared browser host when it runs (one profile for every task), else a throwaway browser of its own.
+    const host = resolveHost(undefined, process.env, opts.launcher);
+    const shared = host ? await host({ contextOptions: HEADLESS_CONTEXT_OPTIONS }) : null;
+    if (shared && !shared.ok && shared.code === 'halted') return [];
+    browser = shared?.ok ? shared.browser : await launchRealChrome({ launcher: opts.launcher });
     const context = await browser.newContext({ ...HEADLESS_CONTEXT_OPTIONS });
     const page = await context.newPage();
 

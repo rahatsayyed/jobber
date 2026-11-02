@@ -8,6 +8,7 @@ import { skip } from './doctor.js';
 import { parseEnv } from './envFile.js';
 import { validateSets, type RawSets } from './permissions.js';
 import { userDataDir } from '../lib/userData.js';
+import { hostStatus } from '../webcore/hostFile.js';
 import { LIMITS, validateLimit, validatePairs } from '../setup/limitsCatalog.js';
 import { validateProfile } from '../setup/profile.js';
 
@@ -499,8 +500,8 @@ export const setupAccountChecks: Check[] = [
     },
   },
   {
-    // Information only: which persistent Chrome profiles exist and whether browser extensions (a password manager) are installed in
-    // them (Default/Extensions entries, extension ids only).
+    // Information only: which persistent Chrome profiles exist and whether browser extensions are installed in them (extensions are
+    // allowed in general; Default/Extensions entries, extension ids only). `web` is the ONE shared profile of the browser host.
     id: 'browser-profiles',
     title: 'Browser profiles and extensions',
     async run(ctx) {
@@ -520,6 +521,17 @@ export const setupAccountChecks: Check[] = [
       const any = profiles.some((p) => ctx.fs.exists(p.dir));
       if (!any) return skip('no browser profile yet; npm run browser:open -- --profile <web|linkedin-main|naukri|wellfound> creates one and installs an extension', 'npm run browser:open -- --profile web');
       return pass(parts.join('; '));
+    },
+  },
+  {
+    // Information only: the shared browser host (pid, mode, attached clients, tabs; never the endpoint). Read-only: a stale pidfile
+    // is reported, `npm run browser:host -- status` (or the next client) removes it.
+    id: 'browser-host',
+    title: 'Shared browser host',
+    async run(ctx) {
+      const s = hostStatus(join(ctx.root, 'secrets', 'browser-host.json'));
+      if (s.stale) return { status: 'warn', detail: s.line, fix: 'npm run browser:host -- status (removes the stale pidfile)' };
+      return pass(s.line);
     },
   },
   placeholder('mcp-connect', 'MCP servers connect', 'skipped: needs a live launch, run the owner checklist in plan 7B'),

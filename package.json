@@ -44,6 +44,7 @@
     "apply:manual": "tsx scripts/apply-manual.ts",
     "answers": "tsx scripts/answers.ts",
     "browser:open": "tsx scripts/browser-open.ts",
+    "browser:host": "tsx scripts/browser-host.ts",
     "browser:history": "tsx scripts/browser-history.ts",
     "ats:fix-incomplete": "tsx scripts/fix-ats-incomplete.ts",
     "build": "tsc -p .",
