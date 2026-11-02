@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { FULL_JD } from './helpers/jdFixtures.js';
 import { openDb, listUnscoredJobs, saveMatchResultsChecked, MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT, UNSCORED_DESCRIPTION_CHARS, unscoredDescriptionCap, type Job } from '../src/db.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
@@ -252,7 +253,7 @@ describe('list_unscored_jobs', () => {
   afterEach(() => { vi.useRealTimers(); });
   const add =(db: ReturnType<typeof openDb>, id: string, o: Record<string, unknown> = {}) => {
     db.prepare("INSERT INTO jobs (id, source, title, company, url, apply_url, description, created_at) VALUES (?,?,?,?,?,?,?,?)")
-      .run(id, o.source ?? 'greenhouse', 'React Dev', o.company ?? 'Acme', 'https://x.test/u', o.apply_url ?? 'https://boards.greenhouse.io/a/jobs/1', 'Location: Remote\n\nbody', o.at ?? '2026-10-14 10:00:00');
+      .run(id, o.source ?? 'greenhouse', 'React Dev', o.company ?? 'Acme', 'https://x.test/u', o.apply_url ?? 'https://boards.greenhouse.io/a/jobs/1', o.source === 'naukri' ? FULL_JD : 'Location: Remote\n\nbody', o.at ?? '2026-10-14 10:00:00');
   };
   it('returns full rows oldest first, skipping scored, excluded and given-up jobs', () => {
     const db = openDb(':memory:');

@@ -2,19 +2,13 @@
 // Is the stored job description complete enough to score keyword coverage against? Naukri and LinkedIn list pages only give a
 // snippet (about 90 and 20 characters), and a coverage figure computed against a snippet is a measurement of the snippet, not of the
 // job. Such a job gets coverage NULL and the note `jd_incomplete` instead of a misleading low number. Pure, no I/O.
+// The definition of "complete" lives in ONE place, src/jdComplete.ts; this file only applies it to the ATS coverage figure.
+import { JD_MIN_CHARS_COMPLETE, isJdIncomplete } from './jdComplete.js';
 
-/** Shorter than this (after trimming) is a snippet, not a posting. The shortest full posting in the data is about 960 characters. */
-export const JD_MIN_CHARS = 300;
+export { isJdIncomplete };
+/** Shorter than this (after cleaning) is a snippet, not a posting. */
+export const JD_MIN_CHARS = JD_MIN_CHARS_COMPLETE;
 export const ATS_NOTE_JD_INCOMPLETE = 'jd_incomplete';
-
-// A description cut by the source: an ellipsis or a "read more" style tail.
-const TRUNCATION_TAIL = /(?:\.{3}|…|\[(?:truncated|\.\.\.|more)\]|\(more\)|\b(?:read|show|see|view) more)\s*$/i;
-
-export function isJdIncomplete(description: string | null | undefined): boolean {
-  const t = String(description ?? '').replace(/\s+/g, ' ').trim();
-  if (t.length < JD_MIN_CHARS) return true;
-  return TRUNCATION_TAIL.test(t);
-}
 
 export interface AtsOutcome { coverage: number | null; note: string | null }
 

@@ -6,7 +6,8 @@
 // the minimum gap, and whether there is any work. Only a due tick launches ONE tiny restricted `claude` run (profile `linkedin_drip`) that
 // dispatches `linkedin-operator` in DRIP MODE for exactly one item chosen HERE, in code. The operator never picks. Afterwards the next tick is
 // pushed out by a random LINKEDIN_DRIP_MIN_GAP_MIN..MAX_GAP_MIN (scheduler_state, so a restart never resets it).
-// Priority, one item per tick: (a) inbox read when none in the last LINKEDIN_INBOX_MIN_GAP_MIN, (b) an owner-approved reply, (c) the accept
+// Priority, one item per tick: (a) inbox read when none in the last LINKEDIN_INBOX_MIN_GAP_MIN, (b) an owner-approved reply, (b2) the job description of one
+// job found without one (linkedin_fetch_jd, LINKEDIN_MAX_JD_FETCH_PER_DAY), (c) the accept
 // check, (d) a DM to a newly connected person, then due follow-ups, (e) a new invite. A person with an unhandled inbound message is skipped by
 // every outbound pick (only the owner-approved reply to that very message may go).
 import { readFileSync } from 'node:fs';
@@ -27,6 +28,7 @@ import { loadOutreachConfig } from '../outreach/config.js';
 import { drawUniformMinMs, inQuietHours, quietFromConfig } from '../outreach/quiet.js';
 import { approvedReplyDrafts, draftIsStale, type DraftView } from '../outreach/replyDrafts.js';
 import { listDueTouches, nextPosterContacts, nextQueueContacts } from '../outreach/service.js';
+import { listJdCandidates } from '../jdStore.js';
 import type { TouchKind } from '../outreach/cadence.js';
 import { BudgetTracker, loadBudget, type Budget } from './budget.js';
 import { readControl, statExists, type ControlDeps } from './control.js';
@@ -109,6 +111,7 @@ export function linkedinDripEnabled(env: NodeJS.ProcessEnv): boolean {
 export type LiItem =
   | { kind: 'inbox' }
   | { kind: 'reply'; draft_id: number; escalation_id: number; person_id: number; profile_url: string; name: string | null; attach_resume: boolean }
+  | { kind: 'jd_fetch'; job_id: string; title: string | null }
   | { kind: 'accept_recent' }
   | { kind: 'accept_check' }
   | { kind: 'dm'; touch_kind: TouchKind; person_id: number; profile_url: string; name: string | null; company: string | null; category: string; job_id: string | null; invite_had_note: boolean }
@@ -119,6 +122,7 @@ export function itemKey(i: LiItem): string {
   switch (i.kind) {
     case 'inbox': return 'inbox';
     case 'accept_recent': return 'accept_recent';
+    case 'jd_fetch': return `jd_fetch:${i.job_id}`;
     case 'accept_check': return 'accept_check';
     case 'reply': return `reply:${i.draft_id}`;
     case 'dm': return `dm:${i.person_id}`;
@@ -146,7 +150,7 @@ export function easyApplyRows(db: Db, env: NodeJS.ProcessEnv, limit = 20): EasyA
       `SELECT q.id AS queue_id, q.job_id, j.title, j.company, q.apply_url, q.apply_status, j.apply_url AS job_apply_url, j.url, j.source, j.external_apply_url, j.excluded_reason,
               EXISTS (SELECT 1 FROM applications a WHERE a.job_id = q.job_id AND a.status = 'submitted') AS already_applied
          FROM outreach_queue q JOIN jobs j ON j.id = q.job_id
-        WHERE COALESCE(q.apply_status, '') IN ('', 'queued')
+        WHERE COALESCE(q.apply_status, '') IN ('', 'queued') AND COALESCE(q.status, '') <> 'needs_reprep' AND COALESCE(j.status, '') <> 'jd_pending'
           AND COALESCE(q.apply_note, '') <> 'easy_apply:not_easy_apply'
           AND q.resume_pdf_path IS NOT NULL AND q.resume_pdf_path <> ''
         ORDER BY q.id LIMIT 200`,
@@ -302,6 +306,18 @@ export async function pickLinkedinItem(d: DriverDeps, now: Date, cfg: LinkedinDr
 
   const unhandled = unhandledInboundPersons(db);
 
+  // (b2) the job description of one job found without one (a job is matched, tailored, emailed and applied to only on its full JD); one page per tick
+  if (ok(c, 'linkedin_jd_fetch') && ok(c, 'linkedin_profile_view')) {
+    try {
+      for (const j of listJdCandidates(db, 'linkedin', now, 20)) {
+        if (gone.has(`jd_fetch:${j.id}`)) continue;
+        return { item: { kind: 'jd_fetch', job_id: j.id, title: j.title } };
+      }
+    } catch {
+      // advisory: an unreadable candidate list means no JD item this tick
+    }
+  }
+
   // (c) the accept check: one page first, then the capped per-profile fallback (one profile per tick)
   if (!gone.has('accept_recent') && acceptRecentDue(db, now)) return { item: { kind: 'accept_recent' } };
   if (!gone.has('accept_check') && ok(c, 'linkedin_profile_view')) {
@@ -364,6 +380,11 @@ export function describeItem(i: LiItem): { task: string; line: string } {
       return {
         task: 'reply quota 1',
         line: `Drip item: reply, reply_draft_id ${i.draft_id}, person_id ${i.person_id}, profile_url ${i.profile_url}, name "${clean(i.name, 80)}", attach_resume ${i.attach_resume ? 'yes' : 'no'}. The owner approved this draft. Send exactly it: linkedin_open the profile, linkedin_snapshot, linkedin_arm_send({kind: "reply", profile_url, reply_draft_id${i.attach_resume ? ', attachment: "job_resume"' : ''}}), type the text the arm result returns, ${i.attach_resume ? 'call linkedin_attach_file once the person\'s message window is open, ' : ''}click Send. Draft no text yourself.`,
+      };
+    case 'jd_fetch':
+      return {
+        task: 'jd_fetch quota 1',
+        line: `Drip item: jd_fetch, job_id ${clean(i.job_id, 200)}, title "${clean(i.title, 100)}". Read the full job description of exactly this job: call the typed tool \`linkedin_fetch_jd\` ONCE with {job_id}. Code takes the job page URL from SQLite, opens it, reads the description, screens and saves it, or marks a removed job unavailable. Open no URL yourself, click nothing, send nothing, apply to nothing. Report the tool's status and code.`,
       };
     case 'accept_recent':
       return { task: 'accept_recent quota 1', line: 'Drip item: accept_recent. Call linkedin_check_accepted_recent exactly once.' };
@@ -643,7 +664,7 @@ export interface LinkedinDripStatus {
   nextAt: string | null;
   lastAction: { at: string; kind: string; key: string; run_id: string; status: string } | null;
   inboxLastAt: string | null;
-  waiting: { inbox: boolean; replies_approved: number; drafts_to_approve: number; accept_recent: boolean; accept_check: number; dms_due: number; easy_applies_ready: number; invites_ready: number; unhandled_inbound_people: number };
+  waiting: { jd_fetch: number; inbox: boolean; replies_approved: number; drafts_to_approve: number; accept_recent: boolean; accept_check: number; dms_due: number; easy_applies_ready: number; invites_ready: number; unhandled_inbound_people: number };
   /** APPLY_LINKEDIN_EASY: Easy Apply applications are a lane action (true) or left to the owner's manual queue (false, the default). */
   easyApply: boolean;
 }
@@ -666,6 +687,7 @@ export function linkedinDripStatus(db: Db, env: NodeJS.ProcessEnv, d: { now: Dat
     inboxLastAt: getState(db, LI_STATE_INBOX_AT),
     easyApply: easyApplyOn(env),
     waiting: {
+      jd_fetch: n(() => listJdCandidates(db, 'linkedin', d.now, 100000).length),
       inbox: inboxDue(db, d.now, cfg.inboxGapMin),
       replies_approved: n(() => approvedReplyDrafts(db).length),
       drafts_to_approve: n(() => (db.prepare("SELECT COUNT(*) AS n FROM reply_drafts WHERE status = 'drafted'").get() as { n: number }).n),
@@ -690,7 +712,7 @@ export function renderLinkedinDripLines(s: LinkedinDripStatus, now: Date): strin
   lines.push(`linkedin drip lane: on, ${next}${s.problems.length ? ` WARNING: ${s.problems.join('; ')} (the lane does nothing until fixed)` : ''}`);
   lines.push(s.lastAction ? `  last action: ${s.lastAction.kind} ${s.lastAction.at} (${s.lastAction.status})` : '  last action: none yet');
   const w = s.waiting;
-  lines.push(`  waiting: inbox ${w.inbox ? 'due' : 'ok'}, approved replies ${w.replies_approved}, accept check ${w.accept_recent ? 'recent page due' : 'no'}${w.accept_check ? ` + ${w.accept_check} profile(s)` : ''}, DMs due ${w.dms_due}, ${s.easyApply ? `Easy Apply ready ${w.easy_applies_ready}` : 'Easy Apply off (owner applies by hand: npm run apply:manual -- list)'}, invites ready ${w.invites_ready}`);
+  lines.push(`  waiting: job descriptions to read ${w.jd_fetch}, inbox ${w.inbox ? 'due' : 'ok'}, approved replies ${w.replies_approved}, accept check ${w.accept_recent ? 'recent page due' : 'no'}${w.accept_check ? ` + ${w.accept_check} profile(s)` : ''}, DMs due ${w.dms_due}, ${s.easyApply ? `Easy Apply ready ${w.easy_applies_ready}` : 'Easy Apply off (owner applies by hand: npm run apply:manual -- list)'}, invites ready ${w.invites_ready}`);
   lines.push(`  reply drafts waiting for your approval: ${w.drafts_to_approve} (npm run replies -- list)${w.unhandled_inbound_people ? `; people paused for an unanswered message: ${w.unhandled_inbound_people}` : ''}`);
   return lines;
 }

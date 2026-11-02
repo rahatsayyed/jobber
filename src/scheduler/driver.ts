@@ -19,6 +19,7 @@ import { sourcesNotice } from '../status/sources.js';
 import type { Notice, Notifier } from './notify.js';
 import { loadPlanKnobs, planWake, stepOrder, type Assignment, type DiscoverSearches, type Step, type WakeDecision } from './plan.js';
 import { targetRegionsLine, type CodePassResult } from './pipeline.js';
+import { jdReportLine } from '../jdStore.js';
 import { buildContinuationPrompt, buildWakePrompt } from './prompt.js';
 import { describeStep, MAX_CONTINUATIONS, StreamInspector, unprovenSteps } from './stream.js';
 import { dripLoop } from './mailDrip.js';
@@ -346,6 +347,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       targetRegions: targetRegionsLine(d.projectRoot),
       followupsAutonomous: d.env.FOLLOWUPS_AUTONOMOUS === 'true',
       codePass,
+      jdLine: ((): string => { try { return jdReportLine(d.db, startAt); } catch { return ''; } })(),
     } : undefined;
     const prompt = buildWakePrompt({
       runId, dryRun: dry, tasks: decision.tasks, budget, allowed: control.allowed, now: startAt,

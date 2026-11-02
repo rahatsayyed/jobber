@@ -235,6 +235,10 @@ snippet may be stale; the live profile employer check at arm time is unchanged. 
 `SERPER_API_KEY` and `LINKEDIN_PEOPLE_SEARCH_SOURCES` from `.env` (`src/lib/contactsEnv.ts`). Live-unverified:
 real result pages and bot walls of the engines.
 
+## Job descriptions of LinkedIn jobs (`linkedin_fetch_jd`, drip item `jd_fetch`)
+
+A LinkedIn job card carries about 20 characters, so a job from `linkedin-jobs` waits (`jd_pending`) until its full description was read. It is an item of the LinkedIn drip lane, after the inbox read and approved replies and before the accept checks, DMs and invites: ONE job per tick, chosen by code (`listJdCandidates`: owner requests first, then the newest), human paced like every other tick, only inside `LINKEDIN_ACTIVE_HOURS`. The `linkedin-operator` calls the typed read-only `linkedin_fetch_jd({job_id})` once; code takes the job page URL from SQLite, opens it, reads the description (the `#job-details` family of selectors, with the text after "About the job" as fallback), screens it and stores it when it is complete. A page that says "Unable to load the page", "no longer accepting applications" or that the posting was removed marks the job `jd_unavailable`. Ceilings: `linkedin_jd_fetch` (`LINKEDIN_MAX_JD_FETCH_PER_DAY`, default 20) and each fetch also counts as one `linkedin_profile_view`. With `LINKEDIN_DRIP=false` a wake plans up to 3 `jd_fetch` pages instead. The page structure is live-unverified.
+
 ## LinkedIn Easy Apply (drip lane, main account)
 
 Off by default (`APPLY_LINKEDIN_EASY`, exactly `true` turns it on). It is one action of the LinkedIn drip lane

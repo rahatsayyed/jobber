@@ -92,6 +92,7 @@ export function buildManualQueue(db: Db, env: NodeJS.ProcessEnv = process.env, o
            EXISTS (SELECT 1 FROM applications a WHERE a.job_id = q.job_id AND a.status = 'submitted') AS already_applied
       FROM outreach_queue q JOIN jobs j ON j.id = q.job_id
      WHERE j.excluded_reason IS NULL
+       AND COALESCE(q.status, '') <> 'needs_reprep' AND COALESCE(j.status, '') <> 'jd_pending'
        AND COALESCE(q.apply_status, '') NOT IN ('submitted', 'submitted_by_owner', 'skipped_by_owner', 'unconfirmed', 'needs_answer', 'needs_human')
        AND NOT EXISTS (SELECT 1 FROM outreach_queue q2 WHERE q2.job_id = q.job_id AND q2.apply_status IN ('submitted', 'submitted_by_owner', 'skipped_by_owner'))
      ORDER BY q.id`).all() as unknown as (Omit<Row, 'already_applied'> & { already_applied: number })[];

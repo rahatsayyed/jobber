@@ -47,6 +47,7 @@
     "browser:open": "tsx scripts/browser-open.ts",
     "browser:history": "tsx scripts/browser-history.ts",
     "ats:fix-incomplete": "tsx scripts/fix-ats-incomplete.ts",
+    "jd:backfill": "tsx scripts/jd-backfill.ts",
     "build": "tsc -p .",
     "mcp:job-fetch": "tsx src/mcp/job-fetch.ts",
     "mcp:resume": "tsx src/mcp/resume.ts",

@@ -1,4 +1,5 @@
 import { saveNextManualPlatformJob, MANUAL_PAGE_SRC, type ManualJobIo, type PageRead } from '../manual/platformJob.js';
+import { fetchJd, jdGapMs, JD_FETCH_PER_RUN_MAX, JD_NOTICE_SRC, type JdFetchIo, type JdPageRead } from '../jdFetch.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -886,6 +887,53 @@ export function naukriManualJob(deps: NaukriDeps = {}): Promise<string> {
   });
 }
 
+/** Job pages read by `naukri_fetch_jd` in the current session (reset when a new session starts); capped at JD_FETCH_PER_RUN_MAX. */
+let jdFetchSession: Session | null = null;
+let jdFetchCount = 0;
+
+/**
+ * Reads the full job description of ONE waiting Naukri job (code picks it; `job_id` is optional and must name a waiting job), loads the stored job
+ * URL from SQLite in the open session, reads the description section, screens it and saves it in code when it is a complete JD. A page that says the
+ * job is gone marks it jd_unavailable. Read-only toward Naukri: never sends or applies. Needs naukri_open first.
+ */
+export function naukriFetchJd({ job_id }: { job_id?: string } = {}, deps: NaukriDeps = {}): Promise<string> {
+  return serial(async () => {
+    if (!session) return jsonOut({ status: 'no_session', hint: 'call naukri_open first' });
+    if (jdFetchSession !== session) { jdFetchSession = session; jdFetchCount = 0; }
+    const db = getDb(deps);
+    if (jdFetchCount >= JD_FETCH_PER_RUN_MAX) return jsonOut({ status: 'rate_limited', code: 'jd_fetch_run_cap', waiting: 0 });
+    const io: JdFetchIo = {
+      load: async (url) => {
+        if (!isNaukriUrl(url)) return 'failed';
+        const refused = await loadPage(url, deps);
+        if (!refused) return 'ok';
+        const st = (JSON.parse(refused) as { status?: string }).status;
+        return st === 'login_required' ? 'login_required' : st === 'halted' ? 'halted' : 'failed';
+      },
+      read: async () => {
+        const page = session!.page;
+        const jd = await page.evaluate(DETAIL_SRC);
+        const notice = ((await page.evaluate(JD_NOTICE_SRC)) ?? {}) as JdPageRead;
+        return { ...notice, jd: typeof jd === 'string' ? jd : '' };
+      },
+    };
+    try {
+      const r = await fetchJd('naukri', io, {
+        db, env: deps.env ?? process.env, now: deps.now ?? (() => new Date()), screen: screenFn(deps),
+        // 3 to 8 seconds between two job pages of one session, never before the first.
+        beforeLoad: async () => {
+          if (jdFetchCount > 0) await session!.page.waitForTimeout(jdGapMs()).catch(() => {});
+          jdFetchCount++;
+        },
+      }, { job_id });
+      return jsonOut(r);
+    } catch (err) {
+      void err; // exception text can carry page content
+      return jsonOut({ status: 'failed', code: 'fetch_jd_error' });
+    }
+  });
+}
+
 export function naukriInbox({ unread_only }: { unread_only?: boolean } = {}, deps: NaukriDeps = {}): Promise<string> {
   return serial(async () => {
     const halted = haltGate(deps);
@@ -1205,6 +1253,19 @@ server.registerTool(
     inputSchema: {},
   },
   async () => text(await naukriManualJob())
+);
+
+server.registerTool(
+  'naukri_fetch_jd',
+  {
+    description:
+      'Reads the full job description of ONE Naukri job that has none yet. Code picks the next waiting job (job_id is optional and must name a waiting job; the URL always comes from SQLite), ' +
+      'loads its page in the open session, reads the description section, screens it and saves it in code when it is complete (the job then returns to unscored). A page that says the job is closed or removed marks it jd_unavailable. ' +
+      'Daily ceiling NAUKRI_MAX_JD_FETCH_PER_DAY, at most 15 per run, 3 to 8 seconds between pages. Read-only toward Naukri: never sends or applies. Needs naukri_open first. ' +
+      'Returns {status: ok|dry_run|halted|rate_limited|failed|no_session, code (saved|none|unavailable|incomplete|injection_suspected|login_required|blocked|...), job_id?, chars?, waiting}; never page text. ' + UNTRUSTED_NOTE,
+    inputSchema: { job_id: z.string().regex(/^[\w.:@-]{1,200}$/).optional() },
+  },
+  async ({ job_id }) => text(await naukriFetchJd({ job_id }))
 );
 
 server.registerTool(

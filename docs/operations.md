@@ -225,6 +225,16 @@ A wake no longer sends LinkedIn invites or messages. The scheduler daemon runs a
 - `npm run status -- working` and `limits` show the lane: next tick, last action, what is waiting, drafts waiting for your approval. `npm run scheduler -- --status` prints `next linkedin drip not before`. The doctor check `linkedin-drip-config` names a bad value (the lane does nothing until it is fixed).
 - A run that ends without a confirmed send leaves the touch `sending` (it turns `unconfirmed` after 30 minutes and is never re-sent): check LinkedIn first. Restart the scheduler after changing any `LINKEDIN_DRIP*` value.
 
+## Job descriptions: nothing is matched, emailed or applied to on a title alone
+
+Naukri search cards and LinkedIn job cards carry only a snippet (about 90 and 20 characters). A job from them is marked `jd_pending` and waits until its full job description (at least 400 characters, no `...` or "read more" tail) was read from the job page. Naukri: the wake task `jd_fetch` (`naukri_fetch_jd`, at most 15 pages per wake, 3 to 8 seconds apart, `NAUKRI_MAX_JD_FETCH_PER_DAY` default 60). LinkedIn: one job per drip tick (`linkedin_fetch_jd`, `LINKEDIN_MAX_JD_FETCH_PER_DAY` default 20, also counted as a profile view, only inside `LINKEDIN_ACTIVE_HOURS`). A page that says the job is closed or removed marks it `jd_unavailable` (vetoed, `/include` can undo it). `npm run status -- working` shows `job descriptions: waiting N, fetched in 24h N, unavailable N`, and a manual request reports "waiting for the job description".
+
+One-time repair for jobs prepared before this existed (do not run it while a wake is running):
+
+1. `npm run jd:backfill -- --dry` and read the counts.
+2. `npm run jd:backfill`. Jobs with nothing sent yet become `jd_pending`, their score is cleared and their queue rows become `needs_reprep` (not sendable, not applicable; rebuilt in place after the description arrived). Jobs already emailed, applied to or messaged are only flagged `jd_note = prepared_without_jd`.
+3. Restart the scheduler daemon so the new tools, ceilings and lane item load.
+
 ## The Inbox and escalations
 
 Everything the agent will not answer or cannot finish alone becomes an escalation row: a LinkedIn, Naukri or Wellfound reply or recruiter message, a salary or interview-slot ask, a platform or tool problem, a custom-note quota notice, an apply row that needs you. You see them in three places, all built by code: the dashboard Inbox tab (`#/inbox`), a Telegram digest from the scheduler daemon (at most one message per 15 minutes, outside quiet hours) and `/escalations`.

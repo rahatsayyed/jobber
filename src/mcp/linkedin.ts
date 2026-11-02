@@ -42,6 +42,7 @@ import { checkAcceptedRecent, type RecentDeps } from '../linkedin/acceptRecent.j
 import { linkedinActiveNow, OUTSIDE_ACTIVE_HOURS_CODE, loadActiveHours } from '../linkedin/activeHours.js';
 import { createNavGap, type NavGap } from '../linkedin/navGap.js';
 import type { ResolveDeps } from '../linkedin/attachment.js';
+import { fetchJd, jdFromLinkedinBody, JD_LINKEDIN_SRC, type JdFetchIo, type JdPageRead } from '../jdFetch.js';
 
 /**
  * `linkedin` MCP server: a locked headless LinkedIn session driven by the browserctl engine.
@@ -61,7 +62,7 @@ export const TOOL_NAMES = [
   'linkedin_close', 'linkedin_limits', 'linkedin_layout',
   'linkedin_find_profiles', 'linkedin_search_jobs', 'linkedin_search_posts', 'linkedin_manual_job', 'linkedin_resolve_external',
   'linkedin_check_accepted', 'linkedin_check_accepted_recent', 'linkedin_attach_file',
-  'linkedin_easy_apply_fill', 'linkedin_easy_apply_abort',
+  'linkedin_easy_apply_fill', 'linkedin_easy_apply_abort', 'linkedin_fetch_jd',
 ] as const;
 type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -111,6 +112,8 @@ export const schemas = {
   // Take nothing: code answers the current Easy Apply modal step (answer book, resume-derived values, owner answers) / closes the modal and parks the job.
   linkedin_easy_apply_fill: {},
   linkedin_easy_apply_abort: {},
+  // Optional job id of a job that waits for its description; code picks the job and takes its URL from SQLite.
+  linkedin_fetch_jd: { job_id: z.string().regex(/^[\w.:@-]{1,200}$/).optional() },
   // A job id only: the page must already be open; code finds the company site behind a non-Easy Apply.
   linkedin_resolve_external: { job_id: z.string().regex(/^[\w.:@-]{1,200}$/) },
 } as const;
@@ -404,6 +407,30 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
       };
       return json(await saveNextManualPlatformJob('linkedin', io, { db: td.db, env: td.env, now: td.now, screen: td.screen }));
     }),
+    // Reads the full job description of ONE waiting LinkedIn job (code picks it; the URL comes from SQLite) and saves it in code when it is complete.
+    linkedin_fetch_jd: safe(async ({ job_id }) => {
+      const td = toolDeps();
+      let snap: RawSnapshot | null = null;
+      const io: JdFetchIo = {
+        load: async (u) => {
+          const r = await td.rt.open(u);
+          if (!r.ok) return r.code === 'halted' ? 'halted' : 'failed';
+          snap = r.snapshot;
+          return /\/(?:login|authwall|checkpoint|uas\/login)/.test(snap.url) ? 'login_required' : 'ok';
+        },
+        read: async () => {
+          if (!snap) return null;
+          let dom: JdPageRead = {};
+          try { dom = ((await td.rt.page()?.evaluate<JdPageRead>(JD_LINKEDIN_SRC)) ?? {}) as JdPageRead; } catch { dom = {}; }
+          const fromDom = typeof dom.jd === 'string' ? dom.jd : '';
+          return {
+            title: dom.title || snap.title, heading: dom.heading ?? '', alerts: [...(Array.isArray(dom.alerts) ? dom.alerts : []), ...snap.notices],
+            bodyHead: dom.bodyHead || snap.bodyText.slice(0, 1500), jd: fromDom || jdFromLinkedinBody(snap.bodyText),
+          };
+        },
+      };
+      return json(await fetchJd('linkedin', io, { db: td.db, env: td.env, now: td.now, screen: td.screen }, { job_id }));
+    }),
     // Reads the next 'sent' invite's profile and marks the row 'connected' in code when it is a first-degree profile; sends and clicks nothing.
     linkedin_check_accepted: safe(async () => {
       const td = toolDeps();
@@ -516,6 +543,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   linkedin_easy_apply_abort: 'TYPED, takes no arguments. Use when the modal shows something unexpected that linkedin_easy_apply_fill did not catch: code closes the modal, marks the job needs_owner and drops the armed intent. ' + UNTRUSTED,
   linkedin_resolve_external: 'For a LinkedIn job whose Apply is NOT Easy Apply: after linkedin_open of that job page, code reads the Apply link (or clicks it once and reads the company page address from the popup, closing it at once, nothing typed or read there), validates and classifies it and routes the job to the generic applier (then call apply_open with the same job_id). You supply only the job_id; the address is never returned. Honours dry run, halts and the kill switch; one daily ceiling and at most 5 per run. Returns {status: resolved|manual_review|refused|rate_limited|dry_run|halted|failed, code, platform?, tier?}. Main account session only. ' + UNTRUSTED,
   linkedin_manual_job: 'TYPED, read-only toward LinkedIn: takes no arguments. Code picks the next queued owner-submitted LinkedIn job page (the URL comes from SQLite), loads it in this session, reads and screens the posting and saves it as a priority job in code. Returns {status: ok|dry_run|halted|failed, code, task_id, job_ids, remaining}; never page text. Never sends or applies. ' + UNTRUSTED,
+  linkedin_fetch_jd: 'TYPED, read-only toward LinkedIn: reads the full job description of ONE job that has none yet. Code picks the next waiting job (job_id is optional and must name a waiting job; the job page URL always comes from SQLite), opens it in this session, reads the description section, screens it and saves it in code when it is complete (the job then returns to unscored). A page that says the job was removed or no longer accepts applications marks it jd_unavailable. Charged to the linkedin_jd_fetch ceiling (LINKEDIN_MAX_JD_FETCH_PER_DAY) and the profile-view ceiling; only inside LINKEDIN_ACTIVE_HOURS; used by the LinkedIn drip lane, one job per tick. Returns {status: ok|dry_run|halted|rate_limited|failed, code (saved|none|unavailable|incomplete|injection_suspected|login_required|blocked|...), job_id?, chars?, waiting}; never page text. Never clicks, sends or applies. ' + UNTRUSTED,
   linkedin_check_accepted: 'TYPED, read-only toward LinkedIn: takes no arguments. Code picks the next sent invite whose acceptance is due for a check (the profile URL comes from SQLite), opens that profile, reads its header and, only for a first-degree profile with a Message button and no Connect button, marks the invite accepted in code (which makes the person due for the follow-up cadence). Pending or Connect-again changes nothing. Fallback only (invites older than 3 days that the connections page did not show): pauses 3 to 8 s between profiles, at most 3 per run, each profile at most once per 72 hours. Returns {status: accepted|pending|not_accepted|unclear|none|dry_run|halted|rate_limited|failed, code, remaining}; never page text. Clicks and sends nothing. ' + UNTRUSTED,
   linkedin_check_accepted_recent: 'TYPED, read-only toward LinkedIn: takes no arguments. Code opens LinkedIn\'s own recent-connections list ONCE (sorted newest first, scrolled at most twice), reads the visible entries and marks as accepted every sent invite whose profile URL appears in it (which makes the person due for the follow-up cadence). Matches by profile URL only, never by name; fewer than 3 readable entries, a login redirect or an unexpected page changes nothing (unclear). At most one page load per 24 hours. Returns {status: ok|unclear|none|dry_run|halted|rate_limited|failed, code, entries, marked}; never page text. Clicks and sends nothing. ' + UNTRUSTED,
   linkedin_search_posts: 'TYPED, read-only toward LinkedIn: runs ONE named hiring-post search from config/linkedin-discovery.json (pass only its name), saves hiring posts as jobs in code and returns counts and new job ids, never page text. Shares the daily search ceiling plus the discover ceiling. Dry run saves nothing. ' + UNTRUSTED,

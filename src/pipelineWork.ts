@@ -1,6 +1,8 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { classifyApplyUrl } from './apply/registry.js';
 import { channelsFor } from './lib/channels.js';
+import { JD_FETCH_SOURCES, JOB_STATUS_JD_PENDING, QUEUE_STATUS_NEEDS_REPREP, needsJdFetch } from './jdComplete.js';
+import { markJdPending } from './jdStore.js';
 
 /**
  * The pipeline stage considers every unscored job saved in the last PIPELINE_WINDOW_HOURS hours (jobs.created_at, UTC), not a fixed count.
@@ -33,12 +35,18 @@ export const DUPLICATE_LOOKBACK_DAYS = 90;
 /** Closed `jobs.status` values the pipeline writes; the row is kept, only no longer offered. */
 export const JOB_STATUS_DUPLICATE = 'duplicate';
 export const JOB_STATUS_REPEAT_CONTACT = 'repeat_contact';
-export const PIPELINE_SKIP_STATUSES = [JOB_STATUS_DUPLICATE, JOB_STATUS_REPEAT_CONTACT] as const;
-export const PIPELINE_SKIP_SQL = `(status IS NULL OR status NOT IN ('${JOB_STATUS_DUPLICATE}', '${JOB_STATUS_REPEAT_CONTACT}'))`;
+export { JOB_STATUS_JD_PENDING };
+// jd_pending: a job from a snippet-only source (Naukri, LinkedIn jobs) whose job description has not been fetched yet; it is not matched until it has.
+export const PIPELINE_SKIP_STATUSES = [JOB_STATUS_DUPLICATE, JOB_STATUS_REPEAT_CONTACT, JOB_STATUS_JD_PENDING] as const;
+export const PIPELINE_SKIP_SQL = `(status IS NULL OR status NOT IN ('${JOB_STATUS_DUPLICATE}', '${JOB_STATUS_REPEAT_CONTACT}', '${JOB_STATUS_JD_PENDING}'))`;
+// SQL list of the JD-gated sources, for `source IN (...)`.
+export const JD_FETCH_SOURCES_SQL = JD_FETCH_SOURCES.map((s) => `'${s}'`).join(', ');
+// A queue row waiting for its material to be rebuilt (it was prepared without a job description) does not count as an outreach row.
+export const QUEUE_NOT_REPREP_SQL = `COALESCE(q.status, '') <> '${QUEUE_STATUS_NEEDS_REPREP}'`;
 
 export interface PipelineSkip {
   job_id: string;
-  reason: typeof JOB_STATUS_DUPLICATE | typeof JOB_STATUS_REPEAT_CONTACT;
+  reason: typeof JOB_STATUS_DUPLICATE | typeof JOB_STATUS_REPEAT_CONTACT | typeof JOB_STATUS_JD_PENDING;
   /** The job (or earlier twin) that caused the skip. */
   of: string;
 }
@@ -52,6 +60,8 @@ interface Cand {
   title_key: string | null;
   rid: number;
   prep_offers: number;
+  /** The stored description, selected only for the JD-gated sources (null for every other source). */
+  jd: string | null;
 }
 
 /** SQLite `datetime('now')` format (UTC, no zone), comparable as text with jobs.created_at. */
@@ -88,22 +98,24 @@ export function planPipelineWork(db: BetterSqlite3.Database, o: PipelineWorkOpts
   const cutoff = sqlTime(new Date(now.getTime() - (o.windowHours ?? PIPELINE_WINDOW_HOURS) * 3600_000));
   const cutoffRepeat = sqlTime(new Date(now.getTime() - REPEAT_CONTACT_DAYS * 86400_000));
   const cutoffDup = sqlTime(new Date(now.getTime() - DUPLICATE_LOOKBACK_DAYS * 86400_000));
-  const cols = 'id, source, apply_url, created_at, company_key, title_key, prep_offers, rowid AS rid';
+  const cols = `id, source, apply_url, created_at, company_key, title_key, prep_offers, rowid AS rid,
+    CASE WHEN source IN (${JD_FETCH_SOURCES_SQL}) THEN COALESCE(description, '') ELSE NULL END AS jd`;
+  // A job whose JD was fetched inside the window counts as inside it too (its old created_at must not strand a job that waited for its JD).
   const fresh = db.prepare(
     `SELECT ${cols} FROM jobs
-      WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ? AND created_at >= ? AND priority = 0 AND ${PIPELINE_SKIP_SQL}`,
-  ).all(o.failLimit, cutoff) as Cand[];
+      WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ? AND (created_at >= ? OR COALESCE(jd_fetched_at, '') >= ?) AND priority = 0 AND ${PIPELINE_SKIP_SQL}`,
+  ).all(o.failLimit, cutoff, cutoff) as Cand[];
   const matched = typeof o.matchThreshold === 'number'
     ? (db.prepare(
       `SELECT ${cols} FROM jobs
         WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ? AND priority = 0 AND ${PIPELINE_SKIP_SQL}
-          AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id)`,
+          AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id AND ${QUEUE_NOT_REPREP_SQL})`,
     ).all(o.matchThreshold, PREP_OFFER_LIMIT_APPLY) as Cand[]).filter((r) => r.prep_offers < prepOfferLimitFor(r))
     : [];
   const repeatStmt = db.prepare(
     `SELECT j2.id AS id FROM jobs j2
       WHERE j2.id != ? AND j2.company_key = ? AND j2.title_key = ? AND (
-        EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = j2.id AND q.created_at >= ? AND coalesce(q.status, '') != 'skipped')
+        EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = j2.id AND q.created_at >= ? AND coalesce(q.status, '') NOT IN ('skipped', '${QUEUE_STATUS_NEEDS_REPREP}'))
         OR EXISTS (SELECT 1 FROM outreach o WHERE o.job_id = j2.id AND o.created_at >= ? AND o.status = 'sent')
         OR EXISTS (SELECT 1 FROM connections c WHERE c.job_id = j2.id AND c.created_at >= ?)
         OR EXISTS (SELECT 1 FROM applications a WHERE a.job_id = j2.id AND a.created_at >= ?))
@@ -118,12 +130,16 @@ export function planPipelineWork(db: BetterSqlite3.Database, o: PipelineWorkOpts
   const repeatOf = (r: Cand): string | undefined =>
     hasKeys(r) ? (repeatStmt.get(r.id, r.company_key, r.title_key, cutoffRepeat, cutoffRepeat, cutoffRepeat, cutoffRepeat) as { id: string } | undefined)?.id : undefined;
 
+  // Snippet-only sources: a job whose JD has not been fetched is not matched, prepared or contacted (marked jd_pending, never deleted).
+  const waitsForJd = (r: Cand): boolean => r.jd !== null && needsJdFetch(r.source, r.jd);
   for (const r of matched) {
+    if (waitsForJd(r)) { skips.push({ job_id: r.id, reason: JOB_STATUS_JD_PENDING, of: r.id }); skipped.add(r.id); continue; }
     const of = repeatOf(r);
     if (of) { skips.push({ job_id: r.id, reason: JOB_STATUS_REPEAT_CONTACT, of }); skipped.add(r.id); }
   }
   const survivors: Cand[] = [];
   for (const r of fresh) {
+    if (waitsForJd(r)) { skips.push({ job_id: r.id, reason: JOB_STATUS_JD_PENDING, of: r.id }); skipped.add(r.id); continue; }
     const rep = repeatOf(r);
     if (rep) { skips.push({ job_id: r.id, reason: JOB_STATUS_REPEAT_CONTACT, of: rep }); skipped.add(r.id); continue; }
     const twin = hasKeys(r) ? (scoredTwinStmt.get(r.id, r.company_key, r.title_key, cutoffDup) as { id: string } | undefined)?.id : undefined;
@@ -158,7 +174,7 @@ export function repeatContactOf(db: BetterSqlite3.Database, jobId: string, now: 
   return (db.prepare(
     `SELECT j2.id AS id FROM jobs j2
       WHERE j2.id != ? AND j2.company_key = ? AND j2.title_key = ? AND (
-        EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = j2.id AND q.created_at >= ? AND coalesce(q.status, '') != 'skipped')
+        EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = j2.id AND q.created_at >= ? AND coalesce(q.status, '') NOT IN ('skipped', '${QUEUE_STATUS_NEEDS_REPREP}'))
         OR EXISTS (SELECT 1 FROM outreach o WHERE o.job_id = j2.id AND o.created_at >= ? AND o.status = 'sent')
         OR EXISTS (SELECT 1 FROM connections c WHERE c.job_id = j2.id AND c.created_at >= ?)
         OR EXISTS (SELECT 1 FROM applications a WHERE a.job_id = j2.id AND a.created_at >= ?))
@@ -188,6 +204,7 @@ export function applyPipelineSkips(db: BetterSqlite3.Database, skips: PipelineSk
   if (!skips.length) return 0;
   const upd = db.prepare(`UPDATE jobs SET status = ? WHERE id = ? AND ${PIPELINE_SKIP_SQL}`);
   let n = 0;
-  db.transaction(() => { for (const s of skips) n += upd.run(s.reason, s.job_id).changes; })();
+  // jd_pending goes through markJdPending: it never marks a vetoed job or one that was already emailed, applied to, connected or messaged.
+  db.transaction(() => { for (const s of skips) n += s.reason === JOB_STATUS_JD_PENDING ? (markJdPending(db, s.job_id) ? 1 : 0) : upd.run(s.reason, s.job_id).changes; })();
   return n;
 }

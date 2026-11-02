@@ -52,6 +52,7 @@ home IP; Akamai may treat a datacenter/VPS IP harder, so re-run the check from t
   (`NAUKRI_MAX_APPLIES_PER_DAY`) beside the shared `MAX_APPLIES_PER_DAY`.
 - **Cold Naukri outreach is not possible by design**: a message goes out only on a thread already
   verified server-side (a recruiter inquiry or reply inbound, or a prior confirmed send).
+- **Job descriptions (`naukri_fetch_jd`, task `jd_fetch`)**: a Naukri search card carries only a snippet, so a Naukri job waits (`jd_pending`) until its full description was read. The `naukri-operator` calls `naukri_fetch_jd` with no arguments, once per quota unit (planned by code before the pipeline, at most 15 pages per wake, a random 3 to 8 s between pages, ceiling `NAUKRI_MAX_JD_FETCH_PER_DAY` default 60). Code picks the job and loads its stored URL from SQLite, reads the description section (`DETAIL_SRC`), screens it and saves it when it is complete; a closed or removed job becomes `jd_unavailable`; a login redirect or block page ends the task. Read-only, never applies. The job page selectors and closed-page phrases are live-unverified.
 - **Still live-unverified**: the snapshot walker and the semantic guard have not seen a live Naukri
   page; the search, inbox and thread extraction selectors and thread URL shape were
   written from fixtures, not live pages; Naukri's real message limits are unmeasured; the

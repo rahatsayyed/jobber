@@ -20,6 +20,8 @@ const base: Snapshot = {
     linkedin_discover: { used: 0, limit: 12, ok: true },
     external_resolve: { used: 0, limit: 30, ok: true },
     linkedin_profile_view: { used: 0, limit: 80, ok: true },
+    naukri_jd_fetch: { used: 0, limit: 60, ok: true },
+    linkedin_jd_fetch: { used: 0, limit: 20, ok: true },
   },
   dailyCounters: [{ key: 'send_email', count: 1 }],
   halts: [],
@@ -31,6 +33,7 @@ const base: Snapshot = {
   lastSend: { kind: 'email', at: '2026-10-14T10:00:00.000Z' },
   openQuestions: { count: 0, items: [] },
   needsHuman: { count: 0, hosts: [] },
+  jd: { waiting: 0, pending: 0, fetched24h: 0, unavailable: 0 },
   degraded: [],
 };
 
@@ -50,6 +53,8 @@ const empty: Snapshot = {
     linkedin_discover: { used: 0, limit: 12, ok: true },
     external_resolve: { used: 0, limit: 30, ok: true },
     linkedin_profile_view: { used: 0, limit: 80, ok: true },
+    naukri_jd_fetch: { used: 0, limit: 60, ok: true },
+    linkedin_jd_fetch: { used: 0, limit: 20, ok: true },
   },
   dailyCounters: [],
   queue: [],
@@ -88,7 +93,10 @@ describe('renderLimits', () => {
         'linkedin_discover 0/12 per day',
         'external_resolve 0/30 per day',
         'linkedin_profile_view 0/80 per day',
+        'naukri_jd_fetch 0/60 per day',
+        'linkedin_jd_fetch 0/20 per day',
         'send_email 1 today',
+        'job descriptions fetched in the last 24 hours: 0 (fetch ceilings above: naukri_jd_fetch, linkedin_jd_fetch)',
         'no halts',
       ].join('\n'),
     );

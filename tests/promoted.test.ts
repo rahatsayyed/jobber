@@ -13,6 +13,7 @@ import { parseDiscoverCards as parseWellfound } from '../src/wellfound/discover.
 import { parseSearchCards } from '../src/naukri/parse.js';
 import { parseNaukriCards } from '../src/sources/naukri.js';
 import type { ScreenVerdict } from '../src/safety/screen.js';
+import { FULL_JD } from './helpers/jdFixtures.js';
 
 const NOW = new Date('2026-10-15T12:00:00.000Z');
 const at = sqlTime(new Date(NOW.getTime() - 3600_000));
@@ -21,7 +22,7 @@ type Db = ReturnType<typeof openDb>;
 function add(db: Db, id: string, o: { source?: string; promoted?: boolean; priority?: number; score?: number } = {}): void {
   const job: Job = {
     id, source: o.source ?? 'greenhouse', title: `Role ${id}`, company: `Co ${id}`, url: `https://x.test/${id}`,
-    apply_url: 'https://boards.greenhouse.io/acme/jobs/1', description: 'Location: Remote\n\nbody',
+    apply_url: 'https://boards.greenhouse.io/acme/jobs/1', description: o.source === 'naukri' ? FULL_JD : 'Location: Remote\n\nbody',
     ...(o.promoted ? { promoted: true } : {}), ...(o.priority ? { priority: o.priority } : {}),
   };
   saveJob(db, job);

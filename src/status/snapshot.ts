@@ -5,6 +5,7 @@ import type { OutreachConfig } from '../outreach/config.js';
 import { ceilings, type CeilingStatus, type LimitKey } from '../outreach/limits.js';
 import { manualApplySummary, type ManualApplyItem } from '../manual/manualApply.js';
 import { openQuestionViews, type OpenQuestionView } from '../outreach/escalations.js';
+import { jdStats } from '../jdStore.js';
 
 export interface Snapshot {
   generatedAt: string;
@@ -20,6 +21,8 @@ export interface Snapshot {
   needsHuman: { count: number; hosts: { host: string; jobs: number; example_job_id: string; command: string }[] };
   /** Jobs the owner applies to by hand (Easy Apply off, or the machine could not finish): `npm run apply:manual -- list`. Read-only. */
   manualApply: { count: number; easyApplyOff: number; items: ManualApplyItem[] };
+  /** Job description (JD) flow: jobs waiting for their JD, JDs fetched in the last 24 hours and jobs given up as jd_unavailable. */
+  jd: { waiting: number; pending: number; fetched24h: number; unavailable: number };
   // Sections not readable because a table is missing; their values are fallbacks, not facts.
   degraded: string[];
 }
@@ -50,7 +53,7 @@ export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, n
   const section = makeSection(degraded);
   // Fail-safe: if the counters cannot be read, report every ceiling as not ok rather than a fabricated safe state.
   const zeroCeilings = Object.fromEntries(
-    (['linkedin_invite', 'linkedin_message', 'linkedin_easy_apply', 'naukri_apply', 'naukri_message', 'wellfound_apply', 'wellfound_message', 'wellfound_discover', 'apply_attempt', 'site_account', 'linkedin_discover', 'external_resolve', 'linkedin_profile_view'] as LimitKey[]).map((k) => [
+    (['linkedin_invite', 'linkedin_message', 'linkedin_easy_apply', 'naukri_apply', 'naukri_message', 'wellfound_apply', 'wellfound_message', 'wellfound_discover', 'apply_attempt', 'site_account', 'linkedin_discover', 'external_resolve', 'linkedin_profile_view', 'naukri_jd_fetch', 'linkedin_jd_fetch'] as LimitKey[]).map((k) => [
       k,
       { used: 0, limit: 0, ok: false },
     ]),
@@ -145,6 +148,10 @@ export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, n
       return { count: rows.length, hosts: [...byHost.values()] };
     }, { count: 0, hosts: [] }),
     manualApply: section('manualApply', () => manualApplySummary(db, env), { count: 0, easyApplyOff: 0, items: [] }),
+    jd: section('jd', () => {
+      const s = jdStats(db, now);
+      return { waiting: s.waiting, pending: s.pending, fetched24h: s.fetched24h, unavailable: s.unavailable };
+    }, { waiting: 0, pending: 0, fetched24h: 0, unavailable: 0 }),
     degraded,
   };
 }

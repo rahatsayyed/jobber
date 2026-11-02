@@ -39,11 +39,11 @@ What the code enforces around that skill (resume MCP: `get_base_resume`, `render
   (`src/atsKeywords.ts` `coveragePct`). A term only in a bullet the tailoring dropped, and a real gap, are
   not credited, and nothing is ever claimed that the resume does not have (the fact gate is unchanged).
   Generic boilerplate (communication, team, experience, degree words, ...) is dropped from the keyword list
-  before scoring. When the stored job description is a snippet (under 300 characters) or ends in a
+  before scoring. When the stored job description is a snippet (under 400 characters, see src/jdComplete.ts) or ends in a
   truncation marker (`...`, "read more"), as most Naukri and LinkedIn list rows do, the coverage is stored
   NULL with `ats_note = 'jd_incomplete'` (decided in code in `enqueue_outreach` and `render_resume`), and
   the dashboard should show "JD incomplete", not a number. `npx tsx scripts/fix-ats-incomplete.ts [--dry]`
-  marks the old rows once (idempotent).
+  marks the old rows once (idempotent). For a job from Naukri or LinkedIn jobs this can no longer happen to a newly prepared job: such a job is matched, tailored and queued only on its fetched description (`jd_pending`, `npm run jd:backfill`, docs/operations.md).
 - Node.js, and any other item that is only in the Skills list, is `skills_only`: it counts as shown on the
   page for ATS coverage, but `tailor-resume` never writes it into a bullet or the summary. If the
   user has real Node.js work to claim, they add it to `user-data/resume.json` (the agent never edits

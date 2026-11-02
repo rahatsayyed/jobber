@@ -91,6 +91,9 @@ export const SCREENED_SURFACES: ReadonlyArray<{ id: string; file: string }> = [
   { id: 'linkedin_manual_job', file: 'src/manual/platformJob.ts' },
   { id: 'naukri_manual_job', file: 'src/manual/platformJob.ts' },
   { id: 'wellfound_manual_job', file: 'src/manual/platformJob.ts' },
+  // Job description fetch (snippet-only Naukri and LinkedIn jobs): one typed read per platform, both in src/jdFetch.ts.
+  { id: 'linkedin_fetch_jd', file: 'src/jdFetch.ts' },
+  { id: 'naukri_fetch_jd', file: 'src/jdFetch.ts' },
   { id: 'outreach_escalate', file: 'src/mcp/outreach.ts' },
   { id: 'apply_state', file: 'src/applier/tools/state.ts' },
   { id: 'apply_escalate', file: 'src/applier/escalate.ts' },

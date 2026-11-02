@@ -13,6 +13,7 @@ import { funnelStats } from '../funnel.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
 import { patternStats } from '../patterns.js';
 import { updateJobCompany } from '../lib/jobCompany.js';
+import { jdBlocksPrepare } from '../jdStore.js';
 
 const db = openDb(dbPath());
 
@@ -217,6 +218,10 @@ server.registerTool(
     },
   },
   async (params) => {
+    // A job from a snippet-only source (Naukri, LinkedIn jobs) is prepared only on its fetched job description.
+    if (jdBlocksPrepare(db, params.job_id)) {
+      return { content: [{ type: 'text', text: JSON.stringify({ error: 'jd_incomplete', note: 'the job description of this job has not been fetched yet; nothing was queued' }) }] };
+    }
     // The model's apply_platform is ignored unless it is 'none'; code classifies from the job source and apply_url.
     const { id, duplicate } = enqueueOutreachClassifiedResult(db, {
       job_id: params.job_id,

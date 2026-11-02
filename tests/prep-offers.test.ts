@@ -7,10 +7,12 @@ import { planPipelineWork, prepOfferLimitFor } from '../src/pipelineWork.js';
 const NOW = new Date('2026-10-27T12:00:00.000Z');
 type Db = ReturnType<typeof openDb>;
 
+import { FULL_JD } from './helpers/jdFixtures.js';
+
 function addMatched(db: Db, id: string, o: { source: string; apply_url: string | null; offers: number; score?: number }): void {
   db.prepare(
-    'INSERT INTO jobs (id, source, title, company, apply_url, score, prep_offers, created_at, company_key, title_key) VALUES (?,?,?,?,?,?,?,?,?,?)',
-  ).run(id, o.source, `Role ${id}`, `Co ${id}`, o.apply_url, o.score ?? 75, o.offers, '2026-10-20 00:00:00', `co${id}`, `role${id}`);
+    'INSERT INTO jobs (id, source, title, company, apply_url, score, prep_offers, created_at, company_key, title_key, description) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+  ).run(id, o.source, `Role ${id}`, `Co ${id}`, o.apply_url, o.score ?? 75, o.offers, '2026-10-20 00:00:00', `co${id}`, `role${id}`, FULL_JD);
 }
 const offered = (db: Db): string[] => listUnscoredJobs(db, { kind: 'matched', limit: 15, matchThreshold: 60, now: NOW }).map((r) => r.id);
 

@@ -21,7 +21,9 @@ export type TaskKind =
   // accept_check: LinkedIn only; the operator calls the typed `linkedin_check_accepted` tool (no argument) once per quota unit (the per-profile fallback).
   | 'accept_check'
   // accept_recent: LinkedIn only; ONE call of `linkedin_check_accepted_recent` (no argument) reads the recent-connections page, at most once per 24 hours.
-  | 'accept_recent';
+  | 'accept_recent'
+  // jd_fetch: Naukri (always) and LinkedIn (only when its drip lane is off); the operator's typed `<platform>_fetch_jd` tool reads the full job description of a job found without one. Read-only; runs BEFORE the pipeline.
+  | 'jd_fetch';
 /** Who executes a wake stage that is not a platform operator. `code` is run by the scheduler itself before the claude run starts. */
 export type StageOperator = 'code' | 'source-operator' | 'pipeline' | 'mail-operator' | 'apply-operator';
 export interface Stage { operator: StageOperator; kind: TaskKind; quota: number }
@@ -71,6 +73,10 @@ export const PIPELINE_LIST_PAGE = 20;
 export const PIPELINE_MAX_PREPARE_PER_WAKE = 15;
 /** Most source_tasks one source-operator task may work per wake. */
 export const SOURCE_TASK_QUOTA = 10;
+/** Most Naukri job pages one wake reads for descriptions (also the tool's own per-run cap). */
+export const JD_FETCH_NAUKRI_PER_WAKE = 15;
+/** Most LinkedIn job pages a wake reads for descriptions, only when the LinkedIn drip lane is off (the lane reads one per tick otherwise). */
+export const JD_FETCH_LINKEDIN_PER_WAKE = 3;
 
 function posInt(v: string | undefined, fallback: number): number {
   if (v === undefined || v.trim() === '') return fallback;
@@ -210,6 +216,18 @@ export function planWake(i: {
   if (naukriDiscoverDue && discoverPlats.length > 0) {
     byPlatform.naukri.push({ kind: 'discover', quota: NAUKRI_DETAIL_QUOTA, searches: { jobs: naukriNames, posts: [] } });
   }
+  // Job descriptions: a job from a snippet-only source waits for its JD before it is matched, so the fetch runs before the pipeline.
+  // Naukri: bounded by what waits, JD_FETCH_NAUKRI_PER_WAKE and the room left under the daily naukri_jd_fetch ceiling. LinkedIn: one job per drip tick
+  // in the lane (src/scheduler/linkedinDrip.ts); only when the lane is off does a wake read a few (also bounded by the profile-view ceiling).
+  const jdw = due.jdWaiting;
+  if (jdw && allowed.has('naukri') && ceilings.naukri_jd_fetch?.ok) {
+    const q = Math.min(jdw.naukri, JD_FETCH_NAUKRI_PER_WAKE, roomLeft('naukri_jd_fetch'));
+    if (q > 0) { byPlatform.naukri.push({ kind: 'jd_fetch', quota: q }); spend('naukri_jd_fetch', q); }
+  }
+  if (jdw && !liDrip && allowed.has('linkedin') && ceilings.linkedin_jd_fetch?.ok && ceilings.linkedin_profile_view?.ok) {
+    const q = Math.min(jdw.linkedin, JD_FETCH_LINKEDIN_PER_WAKE, roomLeft('linkedin_jd_fetch'), roomLeft('linkedin_profile_view'));
+    if (q > 0) { byPlatform.linkedin.push({ kind: 'jd_fetch', quota: q }); spend('linkedin_jd_fetch', q); spend('linkedin_profile_view', q); }
+  }
   // Wellfound discovery: a named search, the daily wellfound_discover ceiling, and a last-run age (undefined: not tracked, never due).
   const wellfoundAge = due.wellfoundDiscoverLastHoursAgo;
   const wellfoundDiscoverDue =
@@ -242,7 +260,7 @@ export function planWake(i: {
   const sourceTasks = (due.sourceTasksQueued ?? 0) + manualPending;
   if (sourceTasks > 0) stages.push({ operator: 'source-operator', kind: 'discover_agent', quota: Math.min(sourceTasks, SOURCE_TASK_QUOTA) });
   const newJobsExpected =
-    scriptDue || sourceTasks > 0 || manualPending > 0 || ORDER.some((p) => byPlatform[p].some((t) => t.kind === 'manual_url')) || byPlatform.linkedin.some((t) => t.kind === 'discover') || byPlatform.naukri.some((t) => t.kind === 'discover') || byPlatform.wellfound.some((t) => t.kind === 'discover');
+    scriptDue || sourceTasks > 0 || manualPending > 0 || ORDER.some((p) => byPlatform[p].some((t) => t.kind === 'manual_url')) || byPlatform.linkedin.some((t) => t.kind === 'discover') || byPlatform.naukri.some((t) => t.kind === 'discover') || byPlatform.wellfound.some((t) => t.kind === 'discover') || byPlatform.naukri.some((t) => t.kind === 'jd_fetch') || byPlatform.linkedin.some((t) => t.kind === 'jd_fetch');
   const unmatched = due.unmatchedJobs ?? 0;
   const matchedWaiting = due.matchedAwaitingPrepare ?? 0;
   // Email follow-ups need the reply check the pipeline stage starts with (step 0b), so they pull the stage in.
@@ -308,13 +326,15 @@ export function stepOrder(d: Extract<WakeDecision, { kind: 'run' }>): Step[] {
   stage('discover_agent');
   for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'manual_url') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });
   for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'discover') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota, searches: t.searches });
+  // jd_fetch reads the full job description of jobs found without one; it runs before the pipeline so those jobs are matched in the same wake.
+  for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'jd_fetch') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });
   // accept_recent (one page) and accept_check (a few profiles) read only and must run before the followups steps so a newly accepted person can be messaged in the same wake.
   for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'accept_recent') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });
   for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'accept_check') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });
   stage('pipeline');
   stage('mail');
   for (const a of d.tasks) for (const t of a.tasks) {
-    if (t.kind === 'discover' || t.kind === 'manual_url' || t.kind === 'accept_check' || t.kind === 'accept_recent') continue;
+    if (t.kind === 'discover' || t.kind === 'manual_url' || t.kind === 'accept_check' || t.kind === 'accept_recent' || t.kind === 'jd_fetch') continue;
     const sending = t.kind === 'followups' || t.kind === 'new_outreach';
     out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota, ...(sending ? { chunks: chunkQuota(t.quota) } : {}) });
   }

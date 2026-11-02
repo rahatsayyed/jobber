@@ -6,6 +6,7 @@ import { followupMode, listApprovedFollowups, listFollowupCandidates } from '../
 import { countAcceptCandidates, hasOpenInvites } from '../linkedin/acceptCheck.js';
 import { ACCEPT_RECENT_EVERY_HOURS, hoursSinceRecentCheck } from '../linkedin/acceptRecent.js';
 import { manualPlatformTasks, manualRequestsPending } from '../manual/requests.js';
+import { countJdWaiting } from '../jdStore.js';
 import { dueTouchesFor } from '../outreach/dueTouches.js';
 import { normalizeProfileKey } from '../outreach/people.js';
 import { TUNING_DEFAULTS, type Tuning } from '../outreach/tuning.js';
@@ -48,6 +49,8 @@ export interface DueCounts {
   acceptCheckDue?: number;
   /** True when the recent-connections page should be read this wake: open invites exist and it was not read in the last 24 hours. Absent: not tracked. */
   acceptRecentDue?: boolean;
+  /** Jobs whose job description (JD) waits to be fetched, per platform (src/jdStore.ts listJdCandidates); absent: not tracked. */
+  jdWaiting?: { naukri: number; linkedin: number };
   /** Owner-submitted manual requests not yet ingested (status pending): a wake is planned for them even when nothing else is due. */
   manualRequestsPending?: number;
   /** Owner-submitted job pages per platform operator: queued manual_url source tasks plus pending requests whose URL classifies to that platform. */
@@ -109,7 +112,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
         WHERE q.status = 'queued'
           AND q.connect_profile_url IS NOT NULL AND q.connect_note IS NOT NULL
           AND (q.connect_status IS NULL OR q.connect_status = 'queued')
-          AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = q.job_id AND j.excluded_reason IS NULL)`,
+          AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = q.job_id AND j.excluded_reason IS NULL AND COALESCE(j.status, '') <> 'jd_pending')`,
     )
     .all() as { url: string }[];
   for (const r of rows) add('linkedin', normalizeProfileKey(r.url));
@@ -121,7 +124,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
             AND q.apply_platform IS NOT NULL AND q.apply_platform <> 'none'
             AND q.apply_platform <> 'linkedin_easy'
             AND (q.apply_status IS NULL OR q.apply_status = 'queued')
-            AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = q.job_id AND j.excluded_reason IS NULL)`,
+            AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = q.job_id AND j.excluded_reason IS NULL AND COALESCE(j.status, '') <> 'jd_pending')`,
       )
       .get() as { n: number }
   ).n;
@@ -183,7 +186,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
     emailQueued: n(
       `SELECT COUNT(*) AS n FROM outreach_queue q
         WHERE q.status = 'queued' AND q.email_to IS NOT NULL AND (q.email_status IS NULL OR q.email_status = 'queued')
-          AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = q.job_id AND j.excluded_reason IS NULL)`,
+          AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = q.job_id AND j.excluded_reason IS NULL AND COALESCE(j.status, '') <> 'jd_pending')`,
     ),
     emailFollowupsReady,
     applyQueued,
@@ -196,6 +199,9 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
       } catch {
         return false;
       }
+    })(),
+    jdWaiting: ((): { naukri: number; linkedin: number } => {
+      try { return countJdWaiting(db, now); } catch { return { naukri: 0, linkedin: 0 }; }
     })(),
     manualRequestsPending: manualRequestsPending(db),
     manualPlatformTasks: manualPlatformTasks(db),

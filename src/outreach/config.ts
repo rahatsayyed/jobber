@@ -13,6 +13,8 @@ export interface OutreachConfig {
   linkedinMaxDiscoverPerDay: number;
   applyMaxExternalResolvesPerDay: number;
   linkedinMaxProfileViewsPerDay: number;
+  naukriMaxJdFetchPerDay: number;
+  linkedinMaxJdFetchPerDay: number;
   companyContactLimit: number;
   speculativeCompanyLimit: number;
   quietStartHour: number;
@@ -33,6 +35,8 @@ const DEFAULTS: OutreachConfig = {
   linkedinMaxDiscoverPerDay: 6,
   applyMaxExternalResolvesPerDay: 100,
   linkedinMaxProfileViewsPerDay: 40,
+  naukriMaxJdFetchPerDay: 60,
+  linkedinMaxJdFetchPerDay: 20,
   companyContactLimit: 2,
   speculativeCompanyLimit: 2,
   quietStartHour: 1,
@@ -53,6 +57,8 @@ const ENV_KEYS: Record<keyof OutreachConfig, string> = {
   linkedinMaxDiscoverPerDay: 'LINKEDIN_MAX_DISCOVER_PER_DAY',
   applyMaxExternalResolvesPerDay: 'APPLY_MAX_EXTERNAL_RESOLVES_PER_DAY',
   linkedinMaxProfileViewsPerDay: 'LINKEDIN_MAX_PROFILE_VIEWS_PER_DAY',
+  naukriMaxJdFetchPerDay: 'NAUKRI_MAX_JD_FETCH_PER_DAY',
+  linkedinMaxJdFetchPerDay: 'LINKEDIN_MAX_JD_FETCH_PER_DAY',
   companyContactLimit: 'COMPANY_CONTACT_LIMIT',
   speculativeCompanyLimit: 'SPECULATIVE_COMPANY_LIMIT',
   quietStartHour: 'QUIET_HOURS_START',

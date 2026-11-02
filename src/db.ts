@@ -9,17 +9,19 @@ import { cleanJobTitle } from './lib/jobTitle.js';
 import { isApplyBlockedSource, isHeldSource } from './lib/discoverOnly.js';
 import { classifyApplyUrl } from './apply/registry.js';
 import { channelsFor, type ChannelVerdict } from './lib/channels.js';
-import { applyPipelineSkips, applyPriorityRepeats, JOB_STATUS_REPEAT_CONTACT, planPipelineWork, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_SKIP_SQL, PIPELINE_WINDOW_HOURS, PREP_OFFER_LIMIT, PREP_OFFER_LIMIT_APPLY, prepOfferLimitFor, sqlTime } from './pipelineWork.js';
+import { applyPipelineSkips, applyPriorityRepeats, JOB_STATUS_JD_PENDING, JOB_STATUS_REPEAT_CONTACT, planPipelineWork, QUEUE_NOT_REPREP_SQL, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_SKIP_SQL, PIPELINE_WINDOW_HOURS, PREP_OFFER_LIMIT, PREP_OFFER_LIMIT_APPLY, prepOfferLimitFor, sqlTime } from './pipelineWork.js';
 import { laneOrder } from './promoted.js';
 import { UNVERIFIED_ADDRESS, isVerifiedAddress } from './lib/verifiedAddress.js';
 import { migrateOutreachTables } from './outreach/schema.js';
 import { migrateSchedulerTables } from './scheduler/runLog.js';
 import { buildEmailParts, loadEmailLinks, stripMarkers, type EmailLink } from './emailHtml.js';
 import { applyJdNote } from './atsJd.js';
+import { needsJdFetch } from './jdComplete.js';
+import { markJdPending } from './jdStore.js';
 import { migrateApplyQuestions } from './apply/questions.js';
+import { resolveApplyEscalationsForJob } from './outreach/applyEscalations.js';
 
 /** enqueue_outreach.ats_coverage: an integer percentage, or null when the final render had no keywords (tailor contract). */
-import { resolveApplyEscalationsForJob } from './outreach/applyEscalations.js';
 export const atsCoverageSchema = z.number().int().min(0).max(100).nullable().optional();
 
 export function openDb(path: string = dbPath()): BetterSqlite3.Database {
@@ -319,6 +321,10 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   if (!followupCols.has('body_html')) db.exec('ALTER TABLE followups ADD COLUMN body_html TEXT');
   // Hand-backs of a matched job without an outreach row to the wake pipeline (PREP_OFFER_LIMIT).
   if (!jobCols.has('prep_offers')) db.exec('ALTER TABLE jobs ADD COLUMN prep_offers INTEGER NOT NULL DEFAULT 0');
+  // Job description (JD) flow, see src/jdComplete.ts and src/jdStore.ts: jd_note (`reprep`, `prepared_without_jd`, why a JD is unavailable),
+  // jd_fetched_at (when a complete JD was stored), jd_fetch_attempts and jd_fetch_at (page reads that did not give a complete JD).
+  for (const col of ['jd_note', 'jd_fetched_at', 'jd_fetch_at']) if (!jobCols.has(col)) db.exec(`ALTER TABLE jobs ADD COLUMN ${col} TEXT`);
+  if (!jobCols.has('jd_fetch_attempts')) db.exec('ALTER TABLE jobs ADD COLUMN jd_fetch_attempts INTEGER NOT NULL DEFAULT 0');
   if (!outreachQueueColumnNames.has('resume_json')) db.exec('ALTER TABLE outreach_queue ADD COLUMN resume_json TEXT');
   // External apply (Naukri "Apply on company site", Wellfound "Apply externally", LinkedIn non-Easy Apply): the company-site URL
   // resolved in code, and the closed reason a row stays manual_review (apply_note, e.g. `external:host_unknown`).
@@ -789,14 +795,14 @@ export function setExternalApply(
     return db.prepare(`UPDATE outreach_queue SET apply_platform = ?, apply_tier = ?, apply_url = ?, apply_status = NULL, apply_note = NULL, updated_at = datetime('now') WHERE ${pending}`)
       .run(cls.platform, cls.tier, url, jobId).changes;
   })();
+  if (changed > 0 && cls.platform !== 'none') resolveApplyEscalationsForJob(db, jobId);
+  return changed;
 }
 
 /** Resolver manual_review: status plus an `external:<code>` note on the job's pending or manual_review queue rows. Never touches a submitted or later row. */
 export function setExternalManualReview(db: BetterSqlite3.Database, jobId: string, code: string): number {
   const safe = String(code).replace(/[^\w.-]/g, '').slice(0, 60) || 'unknown';
   return db.prepare("UPDATE outreach_queue SET apply_status = 'manual_review', apply_note = ?, updated_at = datetime('now') WHERE job_id = ? AND COALESCE(apply_status, '') IN ('', 'manual_review')")
-  if (changed > 0 && cls.platform !== 'none') resolveApplyEscalationsForJob(db, jobId);
-  return changed;
     .run(`external:${safe}`, jobId).changes;
 }
 
@@ -886,6 +892,23 @@ export function enqueueOutreachResult(
   // Generated-provider jobs (source gen:*) are matched and listed, but their outreach rows wait for the owner (plan 8G D7): held_review
   // until `npm run providers -- approve <id>` releases them. list_queued_outreach returns only status 'queued', so a held row is never sent.
   const held = isHeldSource(source) && !(db.prepare('SELECT approved FROM generated_providers WHERE id = ?').get(String(source).slice(4)) as { approved: number } | undefined)?.approved;
+  // A row that was prepared without a job description (status needs_reprep) is rebuilt IN PLACE once the JD arrived: same job and profile key,
+  // fresh material, and every send/apply state cleared (such a row was never sent, see src/jdStore.ts).
+  const reprep = db.prepare(
+    "SELECT id FROM outreach_queue WHERE job_id = ? AND COALESCE(connect_profile_url, '') = COALESCE(?, '') AND status = 'needs_reprep' ORDER BY id LIMIT 1",
+  ).get(item.job_id, item.connect_profile_url) as { id: number } | undefined;
+  if (reprep) {
+    db.prepare(`UPDATE outreach_queue SET resume_pdf_path = ?, email_subject = ?, email_body = ?, email_to = ?, connect_note = ?, connect_profile_url = ?,
+        connect_category = ?, connect_company = ?, apply_platform = ?, apply_tier = ?, apply_url = ?, resume_json = ?, ats_coverage = ?, ats_gaps = ?,
+        fact_warnings = ?, review_applied = ?, review_rejected = ?, status = ?, email_html = ?, ats_note = ?, email_status = NULL, connect_status = NULL,
+        apply_status = NULL, apply_note = NULL, created_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`).run(
+      item.resume_pdf_path, item.email_subject, item.email_body, item.email_to, item.connect_note, item.connect_profile_url,
+      item.connect_category, item.connect_company, applyPlatform, applyPlatform === 'none' ? 'never' : (item.apply_tier ?? 'never'), item.apply_url,
+      item.resume_json ?? null, ats.coverage, item.ats_gaps ? JSON.stringify(item.ats_gaps) : null, item.fact_warnings ? JSON.stringify(item.fact_warnings) : null,
+      item.review_applied ?? null, item.review_rejected ?? null, held ? 'held_review' : 'queued', parts ? parts.html : null, ats.note, reprep.id,
+    );
+    return { id: reprep.id, duplicate: false };
+  }
   const result = db.prepare(`
     INSERT OR IGNORE INTO outreach_queue (
       job_id, resume_pdf_path, email_subject, email_body, email_to,
@@ -932,7 +955,7 @@ export function listQueuedOutreach(db: BetterSqlite3.Database): OutreachQueueIte
       apply_platform, apply_tier, apply_url, apply_status, status, created_at, updated_at
       FROM outreach_queue
       WHERE status = 'queued'
-        AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = outreach_queue.job_id AND j.excluded_reason IS NULL)
+        AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = outreach_queue.job_id AND j.excluded_reason IS NULL AND COALESCE(j.status, '') <> 'jd_pending')
       ORDER BY COALESCE((SELECT j.priority FROM jobs j WHERE j.id = outreach_queue.job_id), 0) DESC, created_at ASC, id ASC`)
     .all()
     // A draft queued before the HTML part existed gets it built now from its stored text (links, no emphasis).
@@ -970,7 +993,7 @@ export function listQueuedOutreachCompact(
 ): { total: number; offset: number; limit: number; rows: ApplyQueueRow[] } {
   const limit = Math.min(Math.max(Math.trunc(opts.limit ?? QUEUE_COMPACT_DEFAULT_LIMIT), 1), QUEUE_COMPACT_MAX_LIMIT);
   const offset = Math.max(Math.trunc(opts.offset ?? 0), 0);
-  const where = `q.status = 'queued' AND j.excluded_reason IS NULL${opts.onlyPendingApply
+  const where = `q.status = 'queued' AND j.excluded_reason IS NULL AND COALESCE(j.status, '') <> 'jd_pending'${opts.onlyPendingApply
     ? " AND COALESCE(q.apply_platform, '') NOT IN ('', 'none') AND COALESCE(q.apply_status, '') = ''"
     : ''}`;
   const from = 'FROM outreach_queue q JOIN jobs j ON j.id = q.job_id';
@@ -1013,6 +1036,11 @@ export function updateOutreachStatus(
     throw new Error(`updateOutreachStatus: invalid field "${field}"`);
   }
   db.prepare(`UPDATE outreach_queue SET ${field} = ?, updated_at = datetime('now') WHERE id = ?`).run(value, id);
+  // A job that left the failing apply states no longer needs its open apply escalations (the Inbox would show a card for a finished job).
+  if (field === 'apply_status') {
+    const row = db.prepare('SELECT job_id FROM outreach_queue WHERE id = ?').get(id) as { job_id: string } | undefined;
+    if (row) resolveApplyEscalationsForJob(db, row.job_id);
+  }
 }
 
 export type Outcome = 'replied' | 'interview' | 'offer' | 'hired' | 'rejected' | 'no_response';
@@ -1036,11 +1064,6 @@ export function skipPendingFollowups(db: BetterSqlite3.Database, jobId: string):
 }
 
 // Records the outcome even for an unknown job_id, but flags it so a typo'd id is visible.
-  // A job that left the failing apply states no longer needs its open apply escalations (the Inbox would show a card for a finished job).
-  if (field === 'apply_status') {
-    const row = db.prepare('SELECT job_id FROM outreach_queue WHERE id = ?').get(id) as { job_id: string } | undefined;
-    if (row) resolveApplyEscalationsForJob(db, row.job_id);
-  }
 export function recordOutcomeChecked(
   db: BetterSqlite3.Database,
   jobId: string,
@@ -1076,7 +1099,7 @@ export function saveMatchResultsChecked(
   const suspects: Array<{ job_id: string; phrases: string[] }> = [];
   const scores: Array<{ job_id: string; score: number; score_cap_reason: string | null; confidence: 'high' | 'medium' | 'low' }> = [];
   let saved = 0;
-  const descOf = db.prepare("SELECT trim(coalesce(description, '') || ' ' || coalesce(jd_snapshot, '')) AS d FROM jobs WHERE id = ?");
+  const descOf = db.prepare("SELECT source, description AS own, trim(coalesce(description, '') || ' ' || coalesce(jd_snapshot, '')) AS d FROM jobs WHERE id = ?");
   const upd = db.prepare(`UPDATE jobs SET score = ?, match_reasons = ?, match_missing = ?, location_verdict = ?, language_gate = ?,
     language_note = ?, score_dims = ?, requirements = ?, strengths = ?, gaps = ?, hard_stops = ?, confidence = ?,
     deadline = COALESCE(?, deadline), score_cap_reason = ? WHERE id = ?`);
@@ -1093,9 +1116,13 @@ export function saveMatchResultsChecked(
       // First occurrence of a job_id wins (an error row counts as an occurrence); later ones are duplicates.
       if (seen.has(row.job_id)) { errors.push({ job_id: row.job_id, error: 'duplicate job_id' }); continue; }
       seen.add(row.job_id);
+      // The matcher found no complete job description: not a failed match, the job waits for its JD (no fail count).
+      if (row.error === 'jd_incomplete') { markJdPending(db, row.job_id); errors.push({ job_id: row.job_id, error: 'jd_incomplete' }); continue; }
       if (typeof row.error === 'string') { errors.push({ job_id: row.job_id, error: row.error }); failed.run(row.job_id); continue; }
-      const found = descOf.get(row.job_id) as { d: string | null } | undefined;
+      const found = descOf.get(row.job_id) as { source: string | null; own: string | null; d: string | null } | undefined;
       if (!found) { errors.push({ job_id: row.job_id, error: 'unknown job_id' }); continue; }
+      // Code gate behind the matcher prompt: a snippet-only source without its fetched JD is never scored.
+      if (needsJdFetch(found.source, found.own)) { markJdPending(db, row.job_id); errors.push({ job_id: row.job_id, error: 'jd_incomplete' }); continue; }
       const desc = found.d ?? undefined;
       const n = normalizeMatchRow(row, desc);
       if (!n.ok) { errors.push({ job_id: row.job_id, error: n.error }); failed.run(row.job_id); continue; }
@@ -1192,10 +1219,17 @@ export function listUnscoredJobs(
     AND instr(COALESCE(r.job_ids, ''), '"' || jobs.id || '"') > 0)`;
   let prio: Row[] = offset > 0 && kind === 'unscored' ? [] : db.prepare(
     `SELECT ${cols}, ${forcedSql} AS forced FROM jobs
-      WHERE priority > 0 AND excluded_reason IS NULL AND match_fails < ? AND (status IS NULL OR status <> '${JOB_STATUS_REPEAT_CONTACT}')
-        AND (score IS NULL OR (prep_offers < ? AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id) AND (score >= ? OR ${forcedSql})))
+      WHERE priority > 0 AND excluded_reason IS NULL AND match_fails < ? AND (status IS NULL OR status NOT IN ('${JOB_STATUS_REPEAT_CONTACT}', '${JOB_STATUS_JD_PENDING}'))
+        AND (score IS NULL OR (prep_offers < ? AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id AND ${QUEUE_NOT_REPREP_SQL}) AND (score >= ? OR ${forcedSql})))
       ORDER BY priority DESC, COALESCE(promoted, 0) DESC, created_at ASC, rowid ASC LIMIT ?`,
   ).all(MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT + 1, typeof opts.matchThreshold === 'number' ? opts.matchThreshold : 101, MANUAL_PRIORITY_PER_WAKE) as Row[];
+  // An owner request also waits for its job description (snippet-only sources): marked jd_pending, not offered; the owner report says so.
+  const prioWaiting = prio.filter((r) => needsJdFetch(r.source as string | null, r.description as string | null));
+  if (prioWaiting.length) {
+    for (const w of prioWaiting) markJdPending(db, w.id as string);
+    const waitingIds = new Set(prioWaiting.map((w) => w.id));
+    prio = prio.filter((r) => !waitingIds.has(r.id));
+  }
   prio = applyPriorityRepeats(db, prio, now);
   if (kind === 'matched') prio = prio.filter((r) => r.score !== null && r.score !== undefined);
   if (kind === 'unscored') prio = prio.filter((r) => r.score === null || r.score === undefined);
@@ -1207,7 +1241,7 @@ export function listUnscoredJobs(
     ? (db.prepare(
       `SELECT ${cols} FROM jobs
         WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ? AND priority = 0 AND ${PIPELINE_SKIP_SQL}
-          AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id)
+          AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id AND ${QUEUE_NOT_REPREP_SQL})
         ORDER BY score DESC, created_at ASC, rowid ASC`,
     ).all(opts.matchThreshold, PREP_OFFER_LIMIT_APPLY) as Row[])
       .filter((r) => (r.prep_offers as number) < prepOfferLimitFor({ source: r.source as string | null, apply_url: r.apply_url as string | null }))
@@ -1224,9 +1258,9 @@ export function listUnscoredJobs(
   const freshAll: Row[] = kind === 'matched' || freshCount === 0 ? [] : db.prepare(
     `SELECT ${cols} FROM (
        SELECT *, rowid AS rid, ROW_NUMBER() OVER (PARTITION BY source ORDER BY created_at ASC, rowid ASC) AS rn FROM jobs
-        WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ? AND created_at >= ? AND priority = 0 AND ${PIPELINE_SKIP_SQL})
+        WHERE score IS NULL AND excluded_reason IS NULL AND match_fails < ? AND (created_at >= ? OR COALESCE(jd_fetched_at, '') >= ?) AND priority = 0 AND ${PIPELINE_SKIP_SQL})
       ORDER BY rn ASC, created_at ASC, rid ASC LIMIT ?`,
-  ).all(MATCH_FAIL_LIMIT, windowStart, PIPELINE_MAX_JOBS_PER_WAKE_CEILING) as Row[];
+  ).all(MATCH_FAIL_LIMIT, windowStart, windowStart, PIPELINE_MAX_JOBS_PER_WAKE_CEILING) as Row[];
   // Round-robin order first, then the promoted-first lane (at most 40 percent of each page, of the whole batch in kind `all`) is pulled forward.
   const fresh: Row[] = laneOrder(freshAll.map((r) => ({ r, promoted: r.promoted === 1 })), kind === 'all' ? freshCount : limit)
     .map((x) => x.r).slice(offset, offset + freshCount);

@@ -2,7 +2,7 @@
 // field escaped as untrusted. Email goes out later through the mail stage, so it says "queued", never "sent", unless the db says sent.
 import type BetterSqlite3 from 'better-sqlite3';
 import { MATCH_FAIL_LIMIT } from '../db.js';
-import { JOB_STATUS_REPEAT_CONTACT, repeatContactOf } from '../pipelineWork.js';
+import { JOB_STATUS_JD_PENDING, JOB_STATUS_REPEAT_CONTACT, repeatContactOf } from '../pipelineWork.js';
 import { finishManualRequest, jobIdsOf, listManualRequests, type ManualRequest } from './requests.js';
 
 type Db = BetterSqlite3.Database;
@@ -59,6 +59,7 @@ interface QueueRow {
 
 /** A job is settled once the pipeline is done with it: vetoed, scored, or given up on after repeated rejected match saves. */
 export function jobSettled(j: Pick<JobRow, 'score' | 'excluded_reason' | 'match_fails'> & { status?: string | null }): boolean {
+  if (j.status === JOB_STATUS_JD_PENDING) return false; // waits for its job description: the request stays open
   return j.excluded_reason !== null || j.status === JOB_STATUS_REPEAT_CONTACT || j.score !== null || j.match_fails >= MATCH_FAIL_LIMIT;
 }
 
@@ -67,6 +68,14 @@ function jobLines(db: Db, r: ManualRequest, jobId: string, threshold: number): s
   if (!j) return [`- job ${cleanUntrusted(jobId, 60)}: no longer in the database`];
   const head = `${cleanUntrusted(j.title, 90) || 'Untitled'} at ${cleanUntrusted(j.company, 60) || 'unknown company'}`;
   const out: string[] = [];
+  if (j.excluded_reason === 'jd_unavailable') {
+    out.push(`- ${head}: the job description could not be read (the page is closed or removed, or never gave a full description). Nothing was matched or sent. /include can override.`);
+    return out;
+  }
+  if (j.status === JOB_STATUS_JD_PENDING) {
+    out.push(`- ${head}: waiting for the job description. It is matched, prepared and contacted only after the full description was read from the job page (the next wake or LinkedIn drip tick does that).`);
+    return out;
+  }
   if (j.excluded_reason) {
     out.push(`- ${head}: VETOED (${cleanUntrusted(j.excluded_reason, 160)})${j.score !== null ? `, score ${j.score}` : ''}. Not contacted. /include can override.`);
     return out;

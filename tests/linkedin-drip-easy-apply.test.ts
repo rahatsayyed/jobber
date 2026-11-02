@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, saveJob } from '../src/db.js';
+import { FULL_JD } from './helpers/jdFixtures.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
 import { recordEvent } from '../src/outreach/limits.js';
@@ -56,7 +57,7 @@ type S = ReturnType<typeof setup>;
 /** A LinkedIn job with a queue row stored the way enqueue stored it while Easy Apply was off (class none). */
 function easyJob(s: S, n: string, o: { status?: string | null; note?: string | null; resume?: string | null; external?: string; source?: string; excluded?: string } = {}): string {
   const id = `li-job:${n}`;
-  saveJob(s.db, { id, source: o.source ?? 'linkedin-jobs', title: `Dev ${n}`, company: 'Acme', url: URL_(n), apply_url: URL_(n), description: 'd' });
+  saveJob(s.db, { id, source: o.source ?? 'linkedin-jobs', title: `Dev ${n}`, company: 'Acme', url: URL_(n), apply_url: URL_(n), description: FULL_JD });
   if (o.external) s.db.prepare('UPDATE jobs SET external_apply_url = ? WHERE id = ?').run(o.external, id);
   if (o.excluded) s.db.prepare('UPDATE jobs SET excluded_reason = ? WHERE id = ?').run(o.excluded, id);
   s.db.prepare("INSERT INTO outreach_queue (job_id, resume_pdf_path, apply_platform, apply_tier, apply_url, apply_status, apply_note, status) VALUES (?,?,?,?,?,?,?,'queued')")

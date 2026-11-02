@@ -2,6 +2,23 @@
 
 ## Sources and operators
 
+**Job description (JD) gate** (`src/jdComplete.ts`, `src/jdStore.ts`, `src/jdFetch.ts`). A JD is COMPLETE when the cleaned description is at
+least 400 characters (a leading `Location:` line never counts) and does not end in `...`, `…`, `read more` or `show more`; `src/atsJd.ts`
+reuses the same rule. The sources whose list pages give only a snippet are `JD_FETCH_SOURCES` (`naukri`, `linkedin-jobs`, and the manual
+`manual:naukri` and `manual:linkedin`); API and board sources deliver full text and are never gated. Wellfound has no JD fetch tool: it is
+left as it was (most of its jobs carry full text). `db.list_unscored_jobs` (matched list, unscored list and owner requests alike) does not
+offer a job of those sources with an incomplete JD: code marks it `jobs.status = 'jd_pending'` (rows are never deleted), `save_match_result`
+refuses to score it (`jd_incomplete`, no failed-match count) and `enqueue_outreach` refuses to prepare it. The typed read-only fetch tools
+`naukri_fetch_jd` (naukri-operator task `jd_fetch`, planned by code before the pipeline) and `linkedin_fetch_jd` (an item of the LinkedIn drip
+lane; a wake task only while the lane is off) take at most a job id: code picks the job, takes its URL from SQLite, loads the page, reads the
+description section, runs the field gate and the classifier screen and stores it only when it is complete; the job then returns to unscored
+(score and match fields cleared). A page that says the job is closed or removed, a URL that is not a plain job page, an injection-suspect text
+or three reads without a complete JD mark it `jd_unavailable` (`excluded_reason`, queue rows skipped; a job already emailed, applied to or
+messaged is never excluded). Ceilings `naukri_jd_fetch` (`NAUKRI_MAX_JD_FETCH_PER_DAY`, 60) and `linkedin_jd_fetch`
+(`LINKEDIN_MAX_JD_FETCH_PER_DAY`, 20; each LinkedIn fetch is also a `linkedin_profile_view`). Queue rows prepared without a JD get status
+`needs_reprep` (`npm run jd:backfill`, see docs/operations.md): not sendable, not applicable, rebuilt in place by `enqueue_outreach`. The page
+structure of the real Naukri and LinkedIn job pages is NOT live-verified (selectors and closed-page phrases come from fixtures and known markup).
+
 **Platform registry** (`config/platforms.json`, `src/sources/registry.ts`). One list of every job
 source. A row is `{id, kind, label, provider, tier, enabled, stability, attribution?}`: `kind` is
 `board`, `aggregator`, `api`, `search`, `linkedin`, `naukri`, `wellfound` or `generated`; `tier` is `script` (a

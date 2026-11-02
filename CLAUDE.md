@@ -524,6 +524,10 @@ The wake summary carries counts from the pipeline stage and the operator results
 
 ## Sources and operators
 
+Job description gate: a Naukri or LinkedIn-jobs job is matched, tailored, emailed or applied to only after its full description (400+ characters, no truncation tail) was fetched by the typed `naukri_fetch_jd` (naukri-operator
+task `jd_fetch`) or `linkedin_fetch_jd` (LinkedIn drip item); until then it is `jd_pending`, a gone page is `jd_unavailable`, rows prepared without a JD are `needs_reprep`
+(`npm run jd:backfill`, ceilings `NAUKRI_MAX_JD_FETCH_PER_DAY` 60 and `LINKEDIN_MAX_JD_FETCH_PER_DAY` 20). Details: `docs/reference/sources-and-operators.md`.
+
 The platform registry (`config/platforms.json`), script-first and agent-fallback source runs, `source_status`, the `source-operator`, generated and imported providers, manual sources, the discover-only rule, the search layer and contact finding, and the other operators. Details: `docs/reference/sources-and-operators.md` (read it before working in this area).
 
 ## Applying

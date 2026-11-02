@@ -24,6 +24,8 @@ const PERIOD: Record<LimitKey, string> = {
   linkedin_discover: 'day',
   external_resolve: 'day',
   linkedin_profile_view: 'day',
+  naukri_jd_fetch: 'day',
+  linkedin_jd_fetch: 'day',
 };
 
 /** ISO instant to `YYYY-MM-DD HH:MM IST` (Asia/Kolkata); unparseable input is returned as is. */
@@ -70,6 +72,7 @@ export function renderLimits(s: Snapshot, opts: { env?: NodeJS.ProcessEnv; now?:
     lines.push(`${key} ${c.used}/${c.limit} per ${PERIOD[key]}${c.ok ? '' : ' FULL'}`);
   }
   for (const d of s.dailyCounters) lines.push(`${d.key} ${d.count} today`);
+  if (s.jd) lines.push(`job descriptions fetched in the last 24 hours: ${s.jd.fetched24h} (fetch ceilings above: naukri_jd_fetch, linkedin_jd_fetch)`);
   lines.push(...haltLines(s), ...degradedLine(s));
   return lines.join('\n');
 }
@@ -83,6 +86,9 @@ export function renderWorking(s: Snapshot): string {
   lines.push(
     `discovered ${f.discovered} -> matched ${f.matched} -> contacted ${f.contacted} -> replied ${f.replied} -> interview ${f.interview} -> offer ${f.offer}`,
   );
+  if (s.jd && (s.jd.waiting > 0 || s.jd.fetched24h > 0 || s.jd.unavailable > 0)) {
+    lines.push(`job descriptions: waiting ${s.jd.waiting} (jd_pending ${s.jd.pending}), fetched in 24h ${s.jd.fetched24h}, unavailable ${s.jd.unavailable}; a job is matched only after its description is read`);
+  }
   if (s.openQuestions.count > 0) lines.push(`needs your answer: ${s.openQuestions.count} question(s) pause applications (npm run answers -- list)`);
   for (const h of s.needsHuman.hosts) lines.push(`needs you: ${h.jobs} job(s) wait at ${h.host} for a login or human check (${h.command})`);
   const manual = s.manualApply ? manualApplyLine(s.manualApply) : null;

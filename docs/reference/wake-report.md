@@ -9,7 +9,7 @@ closing soon with `days_left`, unparseable, or `deadline sweep failed: <error>`)
 and rejected match rows; one line per matched job (`stored score (confidence) - top strength / top gap
 - flags`, with `score_cap_reason` when capped); per prepared job the ATS coverage %, gap count, review
 applied/rejected and any `flags` (dropped email or notes, gate fallbacks); jobs with no usable contact
-or profile; the Hacker News domain-check skips; priority (manual) jobs and any `repeat_contact` skips;
+or profile; the job-description line `JD fetched N, unavailable N, waiting N` (jobs of Naukri and LinkedIn jobs wait for their full description before they are matched; code puts the figures into the prompt, the wake corrects them with the `jd_fetch` results); the Hacker News domain-check skips; priority (manual) jobs and any `repeat_contact` skips;
 promoted jobs and prepares deferred by the cap; emails queued (a wake sends none; sent, failed and
 capped counts belong to the drip lane: `npm run status -- limits`, `db.get_outreach_stats`); connects and
 messages; applies submitted/held/manual_review/needs_owner/failed/rate_limited/queued; and the
