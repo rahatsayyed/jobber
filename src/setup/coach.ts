@@ -29,6 +29,13 @@ export const COACH_TEXT: Record<string, string[]> = {
     'Serper is used for contact finding: it searches Google for a company site and contact pages.',
     'It runs only after the cache and the browser search miss. Each check uses one search credit.',
   ],
+  'apikeys.google_pse': [
+    'Google Programmable Search: make your own search engine and turn on Search the entire web.',
+    'Copy its Search engine ID (cx) into GOOGLE_PSE_CX, and use the Custom Search JSON API key. Free tier: 100 queries a day.',
+  ],
+  'apikeys.tavily': [
+    'Tavily is a search API used for contact finding and LinkedIn people search, under TAVILY_DAILY_BUDGET.',
+  ],
   'apikeys.hunter': [
     'Hunter is used for contact finding: it looks up emails as a last resort.',
     'It spends monthly credits, so it stays off unless you turn it on.',

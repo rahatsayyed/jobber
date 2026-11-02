@@ -91,6 +91,21 @@ const hand: EnvSpec[] = [
     about: 'Serper search key (serper.dev). Optional, used for contact finding only, and only after the search cache and browser dorking miss, under the Serper budgets. Unset: Serper is never called.',
     ...tier('normal', R_VENDOR),
   }),
+  e('GOOGLE_PSE_API_KEY', 'contact-finding', 'contact finding', 'secret', {
+    exampleActive: true,
+    about: 'Google Programmable Search Engine (Custom Search JSON API) key. Optional, used for contact finding and LinkedIn people search, after the browser dork. Needs GOOGLE_PSE_CX too. Create your own key; nothing is shipped. Unset: google_pse is never called. Secret.',
+    ...tier('normal', R_VENDOR),
+  }),
+  e('GOOGLE_PSE_CX', 'contact-finding', 'contact finding', 'string', {
+    exampleActive: true,
+    about: 'Search engine ID (cx) of your own Programmable Search Engine (programmablesearchengine.google.com/controlpanel/create, with Search the entire web on). Needs GOOGLE_PSE_API_KEY too. Unset: google_pse is never called.',
+    ...tier('normal', R_VENDOR),
+  }),
+  e('TAVILY_API_KEY', 'contact-finding', 'contact finding', 'secret', {
+    exampleActive: true,
+    about: 'Tavily search key (tavily.com). Optional, used for contact finding and LinkedIn people search, under TAVILY_DAILY_BUDGET. Unset: Tavily is never called. Secret.',
+    ...tier('normal', R_VENDOR),
+  }),
   e('HUNTER_API_KEY', 'contact-finding', 'contact finding', 'secret', {
     exampleActive: true,
     about: 'Hunter.io key (hunter.io). Optional, the last resort email source. Unset, or HUNTER_ENABLED not true: Hunter is never called.',
@@ -225,8 +240,8 @@ const hand: EnvSpec[] = [
     ...tier('guarded', 'More automatic accepts per day raises account-restriction risk.', 'increase'),
   }),
   e('LINKEDIN_PEOPLE_SEARCH_SOURCES', 'linkedin', 'LinkedIn', 'list', {
-    default: 'engine,serper',
-    about: 'Where linkedin_find_profiles looks for people, in priority order: engine (a no-login search-engine query, Google, then DuckDuckGo, then Bing; a blocked engine cools down and is never solved or waited out), serper (needs SERPER_API_KEY, under its budgets) and linkedin (the logged-in people-search page, under MAX_LINKEDIN_SEARCHES_PER_DAY). Unknown names are ignored. The LinkedIn page is opt-in: add linkedin to the list (it opens real people-search pages, a traffic risk).',
+    default: 'engine,google_pse,tavily,serper',
+    about: 'Where linkedin_find_profiles looks for people, in priority order: engine (a browser Google dork first, then DuckDuckGo, then Bing; a block is never solved or waited out), google_pse (needs GOOGLE_PSE_API_KEY and GOOGLE_PSE_CX, under GOOGLE_PSE_DAILY_BUDGET), tavily (needs TAVILY_API_KEY, under TAVILY_DAILY_BUDGET), serper (needs SERPER_API_KEY, under its budgets) and linkedin (the logged-in people-search page, under MAX_LINKEDIN_SEARCHES_PER_DAY). Unknown names are ignored. The LinkedIn page is opt-in (real people-search pages, a traffic risk).',
     restart: 'mcp',
     restartEvidence: 'src/linkedin/config.ts',
   }),
@@ -1045,9 +1060,9 @@ const BLANK_OK = new Set<string>([
 const ACTIVE_IN_EXAMPLE = new Set([
   'MATCH_THRESHOLD', 'SEND_LIMIT_PER_RUN', 'MAX_APPLIES_PER_DAY', 'MAX_LINKEDIN_SEARCHES_PER_DAY',
   'FOLLOWUP_CHECK_MAX_AGE_MIN', TOP_LEVEL_KEY, 'APPLY_MAX_STEPS', 'APPLY_HOST_COOLDOWN_DAYS', 'HUNTER_MONTHLY_CAP',
-  'SERPER_DAILY_BUDGET', 'SERPER_MONTHLY_BUDGET',
+  'SERPER_DAILY_BUDGET', 'SERPER_MONTHLY_BUDGET', 'GOOGLE_PSE_DAILY_BUDGET', 'TAVILY_DAILY_BUDGET',
 ]);
-const CONTACT_FINDING = new Set(['HUNTER_MONTHLY_CAP', 'SERPER_DAILY_BUDGET', 'SERPER_MONTHLY_BUDGET']);
+const CONTACT_FINDING = new Set(['HUNTER_MONTHLY_CAP', 'SERPER_DAILY_BUDGET', 'SERPER_MONTHLY_BUDGET', 'GOOGLE_PSE_DAILY_BUDGET', 'TAVILY_DAILY_BUDGET']);
 const APPLY_KEYS = new Set(['APPLY_MAX_ATTEMPTS_PER_DAY', 'APPLY_MAX_EXTERNAL_RESOLVES_PER_DAY', 'SITE_MAX_ACCOUNTS_PER_DAY', 'APPLY_HOST_COOLDOWN_DAYS', 'APPLY_MAX_STEPS']);
 
 function limitOverride(key: string): LimitOverride {

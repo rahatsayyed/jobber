@@ -207,7 +207,7 @@ This prints today's limits and usage. To walk the limits interactively use `npm 
 Groups in `.env.example` (one line each):
 
 - Job sources: none needs a key (Remotive and RemoteOK are keyless); the optional Serper and Hunter keys below are for contact finding. See [api-keys](api-keys.md) and `.env.example`.
-- Contact finding: Serper and Hunter keys, the dork and search budgets, the Hunter enable switch and monthly cap.
+- Contact finding: Google PSE (`GOOGLE_PSE_API_KEY`, `GOOGLE_PSE_CX`, `GOOGLE_PSE_DAILY_BUDGET`), Tavily (`TAVILY_API_KEY`, `TAVILY_DAILY_BUDGET`), Serper and Hunter keys, `LINKEDIN_PEOPLE_SEARCH_SOURCES` (default `engine,google_pse,tavily,serper`), the dork and search budgets, the Hunter enable switch and monthly cap.
 - Browser apply and web: `APPLY_SUBMIT_MODE`, the per-host caps and the account flags; see [apply.md](apply.md).
 - Email: Gmail OAuth paths and the legacy SMTP fallback.
 - Telegram: bot token and allowed user ids for the ccgram bridge.

@@ -140,6 +140,41 @@
           "entered_in": "owner edits .env"
         },
         {
+          "name": "GOOGLE_PSE_API_KEY",
+          "secret": true,
+          "purpose": "Google Programmable Search key for contact finding and people search (create your own)",
+          "where": "docs/api-keys.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "GOOGLE_PSE_CX",
+          "secret": false,
+          "purpose": "search engine ID (cx) of your own Programmable Search Engine",
+          "where": "docs/api-keys.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "TAVILY_API_KEY",
+          "secret": true,
+          "purpose": "Tavily search key for contact finding and people search",
+          "where": "docs/api-keys.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "GOOGLE_PSE_DAILY_BUDGET",
+          "secret": false,
+          "purpose": "Google PSE queries allowed per day (free tier 100)",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "TAVILY_DAILY_BUDGET",
+          "secret": false,
+          "purpose": "Tavily searches allowed per day",
+          "where": ".env.example",
+          "entered_in": "owner edits .env"
+        },
+        {
           "name": "HUNTER_API_KEY",
           "secret": true,
           "purpose": "Hunter key for contact finding, last-resort email lookup",

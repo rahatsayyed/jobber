@@ -104,10 +104,13 @@ describe('api-keys check', () => {
   it('warns with names only, never fails', async () => {
     const r = await run({});
     expect(r.status).toBe('warn');
-    expect(r.detail).toBe('not set: SERPER_API_KEY, HUNTER_API_KEY');
+    expect(r.detail).toBe('not set: GOOGLE_PSE_API_KEY, GOOGLE_PSE_CX, TAVILY_API_KEY, SERPER_API_KEY, HUNTER_API_KEY');
   });
   it('passes when all are set, and leaks no value', async () => {
     const env = {
+      GOOGLE_PSE_API_KEY: 'invented-gpse-eeee5555',
+      GOOGLE_PSE_CX: 'invented-cx-ffff6666',
+      TAVILY_API_KEY: 'invented-tavily-gggg7777',
       SERPER_API_KEY: 'invented-serper-cccc3333',
       HUNTER_API_KEY: 'invented-hunter-dddd4444',
     };

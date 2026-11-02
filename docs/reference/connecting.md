@@ -223,12 +223,13 @@ A `linkedin-jobs` job whose Apply is not Easy Apply is classed `linkedin` (reaso
 ### Layered people discovery (`linkedin_find_profiles`)
 
 LinkedIn warned the owner about high-volume data access, so the logged-in people-search page is the LAST
-resort. `LINKEDIN_PEOPLE_SEARCH_SOURCES` (default `engine,serper`, order = priority, unknown
-names ignored, add `linkedin` to opt in to the people-search page) sets the layers: (1) `engine`: a no-login
+resort. `LINKEDIN_PEOPLE_SEARCH_SOURCES` (default `engine,google_pse,tavily,serper`, order = priority, unknown
+names ignored; allowed: `engine`, `google_pse`, `tavily`, `serper`, `linkedin`; add `linkedin` to opt in to the people-search page) sets the layers: (1) `engine`: a no-login
 dork `site:linkedin.com/in "<company>" (<role terms>)` (category aware) through the search layer's
 browser-dork provider (Google, then DuckDuckGo, then Bing; a block page puts that engine on cooldown, is
-never solved or waited out, and falls through; no daily cap); (2) `serper` (key and
-`SERPER_*` budgets); (3) `linkedin`. Result titles and snippets are parsed into the same candidate shape
+never solved or waited out, and falls through; no daily cap); (2) `google_pse` (`GOOGLE_PSE_API_KEY`,
+`GOOGLE_PSE_CX`, `GOOGLE_PSE_DAILY_BUDGET` 90); (3) `tavily` (`TAVILY_API_KEY`, `TAVILY_DAILY_BUDGET` 30);
+(4) `serper` (key and `SERPER_*` budgets); (5) `linkedin` (opt-in, last). Result titles and snippets are parsed into the same candidate shape
 (non-`/in/` links dropped, at most 3), pass the same field gate, classifier screen, `employer_match` and
 `upsertPerson`, and the result carries `source: search_engine | serper | linkedin`. A headline from a
 snippet may be stale; the live profile employer check at arm time is unchanged. The linkedin MCP reads

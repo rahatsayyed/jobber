@@ -12,7 +12,7 @@ type Verdict = 'ok' | 'rejected' | 'unknown';
 type Init = { method?: string; headers?: Record<string, string>; body?: string };
 
 interface Provider {
-  id: 'serper' | 'hunter';
+  id: 'serper' | 'hunter' | 'google_pse' | 'tavily';
   name: string;
   does: string;
   where: string;
@@ -55,6 +55,38 @@ const PROVIDERS: Provider[] = [
       url: `https://api.hunter.io/v2/account?api_key=${encodeURIComponent(v.HUNTER_API_KEY)}`,
     }),
   },
+  {
+    id: 'google_pse',
+    name: 'Google Programmable Search',
+    does: 'Google Custom Search JSON API (about 100 free queries a day) for contact finding and LinkedIn people search',
+    where: 'create your OWN search engine at programmablesearchengine.google.com/controlpanel/create (turn on "Search the entire web"), copy the Search engine ID (cx) into GOOGLE_PSE_CX, and get the API key from the Google Custom Search JSON API page. Google may limit the JSON API for new projects, so the check below runs a test query',
+    keys: [
+      { env: 'GOOGLE_PSE_API_KEY', prompt: 'Google PSE API key (input is hidden)' },
+      { env: 'GOOGLE_PSE_CX', prompt: 'Google PSE search engine ID, cx (input is hidden)' },
+    ],
+    lose: 'Google PSE: one fewer people-search and contact-finding source.',
+    defaultChoice: 'later',
+    request: (v) => ({
+      url: `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(v.GOOGLE_PSE_API_KEY)}&cx=${encodeURIComponent(v.GOOGLE_PSE_CX)}&q=jobber&num=1`,
+    }),
+  },
+  {
+    id: 'tavily',
+    name: 'Tavily',
+    does: 'search API for contact finding and LinkedIn people search',
+    where: 'tavily.com (free credits on signup; check the site)',
+    keys: [{ env: 'TAVILY_API_KEY', prompt: 'Tavily API key (input is hidden)' }],
+    lose: 'Tavily: one fewer people-search and contact-finding source.',
+    defaultChoice: 'later',
+    request: (v) => ({
+      url: 'https://api.tavily.com/search',
+      init: {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${v.TAVILY_API_KEY}` },
+        body: JSON.stringify({ query: 'jobber setup check', max_results: 1 }),
+      },
+    }),
+  },
 ];
 
 const keyValidate = (v: string): string | null =>
@@ -78,7 +110,7 @@ function readEnvText(ctx: SetupContext): string {
 
 export const apikeysStep: SetupStep = {
   id: 'apikeys',
-  title: 'Optional API keys (Serper and Hunter for contact finding)',
+  title: 'Optional API keys (Google PSE, Tavily, Serper and Hunter for contact finding)',
   checkIds: ['api-keys'],
   async run(ctx) {
     const { io } = ctx;

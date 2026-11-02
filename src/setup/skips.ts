@@ -89,11 +89,13 @@ export const SKIP_SPECS: readonly SkipSpec[] = [
     title: 'Optional API keys',
     label: 'OPTIONAL',
     lose: [
-      'Serper and Hunter: contact finding has fewer verified contacts.',
+      'Google PSE, Tavily, Serper and Hunter: contact finding has fewer verified contacts.',
       'Hunter: last-resort email lookup stays off.',
     ],
     checkIds: ['api-keys'],
     configured: (env) =>
+      set(env, 'GOOGLE_PSE_API_KEY') ||
+      set(env, 'TAVILY_API_KEY') ||
       set(env, 'SERPER_API_KEY') ||
       set(env, 'HUNTER_API_KEY'),
   },

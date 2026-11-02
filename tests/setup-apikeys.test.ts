@@ -37,7 +37,7 @@ function mk(o: {
     copy: () => undefined,
     list: () => [],
   };
-  const sio = scriptedIO(o.script);
+  const sio = scriptedIO([...o.script, { choose: 'later' }, { choose: 'later' }]); // google_pse and tavily come last, skipped here
   const calls: string[] = [];
   const doctor = {
     root: 'proj',
