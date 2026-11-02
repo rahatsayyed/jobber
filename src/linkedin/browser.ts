@@ -35,7 +35,7 @@ export async function launchRealChrome(opts: { headed?: boolean; launcher?: LiLa
 // ---- Persistent profile (web runtime only: scout, applier, search dork, apply:assist, browser:open) ----
 // ONE real Chrome profile directory holds the cookies and the browser's own history of everything the web runtime does. The platform
 // sessions (LinkedIn main, Naukri, Wellfound) use their OWN profile directory (secrets/browser-profile-<name>/, see
-// src/webcore/platformProfile.ts); the LinkedIn burner never uses a profile. This is the only file allowed to start a persistent context.
+// src/webcore/platformProfile.ts); there is only one LinkedIn identity (the main account). This is the only file allowed to start a persistent context.
 export type LiPersistentContext = LiContext & { close(): Promise<void> };
 type PersistentCapable = { launchPersistentContext?: (dir: string, opts: Record<string, unknown>) => Promise<LiPersistentContext> };
 

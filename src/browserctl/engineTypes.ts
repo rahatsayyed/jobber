@@ -55,6 +55,8 @@ export interface EngineDeps {
   textGate?: (text: string, mode: 'chatbot' | 'plain') => string | null;
   /** Repo root against which an armed attachment path is validated (default: the project root). Tests pass a temp dir. */
   attachRoot?: string;
+  /** LinkedIn Easy Apply seams (tests): replaces the answer book loader. */
+  easyApply?: { answers?: () => import('../apply/answers.js').AnswerBook };
 }
 
 export interface EngineResult {
@@ -66,6 +68,8 @@ export interface EngineResult {
   epoch?: number;
   status?: SendStatus;
   touch_id?: number;
+  /** Easy Apply fill and commit steps: a few codes, counts and flags (never page text or a value), shown to the model in the result head. */
+  detail?: Record<string, string | number | boolean>;
   /** screenshot only: raw pixels, never classifier screened. */
   base64?: string;
   unscreened?: boolean;

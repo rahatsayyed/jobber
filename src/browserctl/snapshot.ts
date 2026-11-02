@@ -32,7 +32,8 @@ export interface RawNode {
   role: BcRole;
   name: string;            // accessible name, capped
   text: string;            // own text for role 'text', else ''
-  value?: string;          // textbox current value (never for secret fields)
+  value?: string;          // textbox current value (never for secret fields); a combobox (select) shows its selected option text
+  checked?: true;          // checkbox or radio that is checked (aria-checked included)
   href?: string;
   disabled: boolean;
   secret?: true;           // password-like field: value never read
@@ -359,6 +360,11 @@ const BODY_SRC = String.raw`
       var tg = String(e.tagName || '').toUpperCase();
       var val = (tg === 'INPUT' || tg === 'TEXTAREA') ? String(e.value || '') : String(e.innerText || e.textContent || '');
       o.value = val.length > (full ? 5000 : 300) ? val.slice(0, full ? 5000 : 300) : val;
+    } else if (role === 'checkbox' || role === 'radio') {
+      if (e.checked === true || attr(e, 'aria-checked').toLowerCase() === 'true') o.checked = true;
+    } else if (role === 'combobox' && String(e.tagName || '').toUpperCase() === 'SELECT') {
+      var so = e.options && e.selectedIndex >= 0 ? e.options[e.selectedIndex] : null;
+      if (so) o.value = norm(so.text, 200);
     }
     if (isSubmitEl(e)) o.submit = true;
     var dlg = role === 'dialog' ? enclosingDialog(e) : enclosingDialog(e);
@@ -759,6 +765,13 @@ export function buildTreeFromHtml(html: string, url: string): RawTree {
           else if (role === 'textbox' || role === 'searchbox') {
             const v = nd.tag === 'input' ? (nd.attrs['value'] ?? '') : nd.tag === 'textarea' ? visibleText({ ...nd, hidden: false }) : flatOf(nd);
             node.value = cap(v, 300);
+          } else if (role === 'checkbox' || role === 'radio') {
+            if ('checked' in nd.attrs || (nd.attrs['aria-checked'] ?? '').toLowerCase() === 'true') node.checked = true;
+          } else if (role === 'combobox' && nd.tag === 'select') {
+            // A browser shows the selected option, else the first one.
+            const opts = findAll(nd, (x) => x.tag === 'option');
+            const sel = opts.find((x) => 'selected' in x.attrs) ?? opts[0];
+            if (sel) node.value = cap(visibleText({ ...sel, hidden: false }).replace(/\s+/g, ' ').trim(), 200);
           }
           const ty = (nd.attrs['type'] ?? '').trim().toLowerCase();
           if (nd.tag === 'input' ? (ty === 'submit' || ty === 'image')

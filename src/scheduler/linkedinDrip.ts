@@ -19,6 +19,8 @@ import { countAcceptCandidates, hasOpenInvites } from '../linkedin/acceptCheck.j
 import { ACCEPT_RECENT_EVERY_HOURS, hoursSinceRecentCheck } from '../linkedin/acceptRecent.js';
 import { linkedinActiveNow } from '../linkedin/activeHours.js';
 import { resolveJobResume } from '../linkedin/attachment.js';
+import { classifyApplyUrl } from '../apply/registry.js';
+import { isLinkedInEasyApplyCandidate } from '../apply/easyApplyRows.js';
 import { markStaleSending } from '../linkedin/touches.js';
 import { ceilings, type CeilingStatus, type LimitKey } from '../outreach/limits.js';
 import { loadOutreachConfig } from '../outreach/config.js';
@@ -110,6 +112,7 @@ export type LiItem =
   | { kind: 'accept_recent' }
   | { kind: 'accept_check' }
   | { kind: 'dm'; touch_kind: TouchKind; person_id: number; profile_url: string; name: string | null; company: string | null; category: string; job_id: string | null; invite_had_note: boolean }
+  | { kind: 'easy_apply'; job_id: string; queue_id: number; title: string | null; company: string | null }
   | { kind: 'invite'; person_id: number; profile_url: string; name: string | null; company: string | null; company_key: string; category: string; job_id: string | null; job_title: string | null; queue_id: number | null; post_text?: string };
 
 export function itemKey(i: LiItem): string {
@@ -120,6 +123,59 @@ export function itemKey(i: LiItem): string {
     case 'reply': return `reply:${i.draft_id}`;
     case 'dm': return `dm:${i.person_id}`;
     case 'invite': return `invite:${i.person_id}`;
+    case 'easy_apply': return `easy_apply:${i.job_id}`;
+  }
+}
+
+/** APPLY_LINKEDIN_EASY: exactly `true` turns the lane's Easy Apply action on; anything else (the default) leaves those jobs to the owner (manual queue). */
+export function easyApplyOn(env: NodeJS.ProcessEnv): boolean {
+  return env.APPLY_LINKEDIN_EASY === 'true';
+}
+
+export interface EasyApplyPick { queue_id: number; job_id: string; title: string | null; company: string | null }
+
+/**
+ * The next LinkedIn Easy Apply jobs, oldest queue row first: a queued row with a prepared resume whose job is a LinkedIn job page with no resolved
+ * company-site link (the same rule the manual queue uses, src/apply/easyApplyRows.ts), not vetoed, not applied, and not handed back as
+ * "not Easy Apply". The stored apply_platform is NOT read: the class is recomputed from the URL with the current env.
+ */
+export function easyApplyRows(db: Db, env: NodeJS.ProcessEnv, limit = 20): EasyApplyPick[] {
+  let rows: { queue_id: number; job_id: string; title: string | null; company: string | null; apply_url: string | null; apply_status: string | null; job_apply_url: string | null; url: string | null; source: string | null; external_apply_url: string | null; excluded_reason: string | null; already_applied: number }[];
+  try {
+    rows = db.prepare(
+      `SELECT q.id AS queue_id, q.job_id, j.title, j.company, q.apply_url, q.apply_status, j.apply_url AS job_apply_url, j.url, j.source, j.external_apply_url, j.excluded_reason,
+              EXISTS (SELECT 1 FROM applications a WHERE a.job_id = q.job_id AND a.status = 'submitted') AS already_applied
+         FROM outreach_queue q JOIN jobs j ON j.id = q.job_id
+        WHERE COALESCE(q.apply_status, '') IN ('', 'queued')
+          AND COALESCE(q.apply_note, '') <> 'easy_apply:not_easy_apply'
+          AND q.resume_pdf_path IS NOT NULL AND q.resume_pdf_path <> ''
+        ORDER BY q.id LIMIT 200`,
+    ).all() as typeof rows;
+  } catch {
+    return [];
+  }
+  const out: EasyApplyPick[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    if (seen.has(r.job_id)) continue;
+    if (!isLinkedInEasyApplyCandidate({ apply_url: r.apply_url, job_apply_url: r.job_apply_url, url: r.url, source: r.source, external_apply_url: r.external_apply_url, apply_status: r.apply_status, excluded_reason: r.excluded_reason, already_applied: r.already_applied === 1 }, env)) continue;
+    if (classifyApplyUrl(r.apply_url || r.job_apply_url || r.url, r.source, env).platform !== 'linkedin_easy') continue;
+    seen.add(r.job_id);
+    out.push({ queue_id: r.queue_id, job_id: r.job_id, title: r.title, company: r.company });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** True when today's shared apply counter (MAX_APPLIES_PER_DAY) still has room. */
+function sharedApplyRoom(db: Db, env: NodeJS.ProcessEnv): boolean {
+  const raw = Number(env.MAX_APPLIES_PER_DAY ?? 5);
+  const max = Number.isFinite(raw) && raw >= 0 ? raw : 5;
+  try {
+    const row = db.prepare("SELECT count FROM daily_counters WHERE day = date('now') AND key = 'easy_apply'").get() as { count: number } | undefined;
+    return (row?.count ?? 0) < max;
+  } catch {
+    return false;
   }
 }
 
@@ -267,6 +323,14 @@ export async function pickLinkedinItem(d: DriverDeps, now: Date, cfg: LinkedinDr
     }
   }
 
+  // (d2) one LinkedIn Easy Apply application (only with APPLY_LINKEDIN_EASY=true), after replies, the accept check and DMs, before new invites
+  if (easyApplyOn(d.env) && ok(c, 'linkedin_easy_apply') && ok(c, 'linkedin_profile_view') && sharedApplyRoom(db, d.env)) {
+    for (const r of easyApplyRows(db, d.env, 20)) {
+      if (gone.has(`easy_apply:${r.job_id}`)) continue;
+      return { item: { kind: 'easy_apply', job_id: r.job_id, queue_id: r.queue_id, title: r.title, company: r.company } };
+    }
+  }
+
   // (e) a new invite for the next queued contact (the per-company contact limit is enforced by nextQueueContacts / nextPosterContacts)
   if (ok(c, 'linkedin_invite') && ok(c, 'linkedin_profile_view')) {
     const ocfg = loadOutreachConfig(d.env);
@@ -310,6 +374,11 @@ export function describeItem(i: LiItem): { task: string; line: string } {
         task: 'followups quota 1',
         line: `Drip item: dm, touch kind ${i.touch_kind}, person_id ${i.person_id}, profile_url ${i.profile_url}, name "${clean(i.name, 80)}", company "${clean(i.company, 80)}", category ${clean(i.category, 20)}, job_id ${clean(i.job_id, 80) || 'none'}, invite_had_note ${i.invite_had_note}, linkedin_plan ${loadLinkedinPlan()}. Send this ONE touch only (your followups steps for one person); the kind to arm is ${i.touch_kind}.`,
       };
+    case 'easy_apply':
+      return {
+        task: 'easy_apply quota 1',
+        line: `Drip item: easy_apply, job_id ${clean(i.job_id, 200)}, title "${clean(i.title, 100)}", company "${clean(i.company, 80)}". Apply to exactly this job with LinkedIn Easy Apply (your easy_apply steps): linkedin_arm_send({kind: "easy_apply", job_id}) with NO profile_url and NO text, linkedin_snapshot, click the page's own Easy Apply control by ref, then for each modal step call linkedin_easy_apply_fill (it answers the fields and uploads the resume from code; you type and choose nothing), linkedin_snapshot, click Next, Review or Submit application by ref as the fill result says. Stop and call linkedin_easy_apply_abort if the modal shows anything unexpected. Never open any URL yourself.`,
+      };
     case 'invite':
       return {
         task: 'new_outreach quota 1',
@@ -336,7 +405,7 @@ export function buildLinkedinDripPrompt(i: { runId: string; dryRun: boolean; now
 
 // ---- env, gates, run ----
 
-const DRIP_ENV_KEYS = new Set(['TZ', 'QUIET_HOURS_START', 'QUIET_HOURS_END', 'COMPANY_CONTACT_LIMIT', 'SPECULATIVE_COMPANY_LIMIT', 'MAX_LINKEDIN_SEARCHES_PER_DAY', 'MATCH_THRESHOLD']);
+const DRIP_ENV_KEYS = new Set<string>(['TZ', 'QUIET_HOURS_START', 'QUIET_HOURS_END', 'COMPANY_CONTACT_LIMIT', 'SPECULATIVE_COMPANY_LIMIT', 'MAX_LINKEDIN_SEARCHES_PER_DAY', 'MATCH_THRESHOLD', 'APPLY_LINKEDIN_EASY', 'MAX_APPLIES_PER_DAY']);
 const DRIP_ENV_PREFIXES = ['LINKEDIN_', 'COOLDOWN_', 'CADENCE_', 'CLASSIFIER_', 'LAYOUT_'];
 
 function dripEnv(env: NodeJS.ProcessEnv): Record<string, string> {
@@ -345,6 +414,8 @@ function dripEnv(env: NodeJS.ProcessEnv): Record<string, string> {
     if (typeof v !== 'string' || /[\r\n\0]/.test(v)) continue;
     if (DRIP_ENV_KEYS.has(k) || DRIP_ENV_PREFIXES.some((p) => k.startsWith(p))) out[k] = v;
   }
+  // Marks the run as the LinkedIn drip lane: linkedin_arm_send kind easy_apply works only here (never in a wake or an interactive session).
+  out.JOBBER_RUN_LANE = LI_DRIP_TRIGGER;
   return out;
 }
 
@@ -572,7 +643,9 @@ export interface LinkedinDripStatus {
   nextAt: string | null;
   lastAction: { at: string; kind: string; key: string; run_id: string; status: string } | null;
   inboxLastAt: string | null;
-  waiting: { inbox: boolean; replies_approved: number; drafts_to_approve: number; accept_recent: boolean; accept_check: number; dms_due: number; invites_ready: number; unhandled_inbound_people: number };
+  waiting: { inbox: boolean; replies_approved: number; drafts_to_approve: number; accept_recent: boolean; accept_check: number; dms_due: number; easy_applies_ready: number; invites_ready: number; unhandled_inbound_people: number };
+  /** APPLY_LINKEDIN_EASY: Easy Apply applications are a lane action (true) or left to the owner's manual queue (false, the default). */
+  easyApply: boolean;
 }
 
 /** Read-only picture of the lane for `npm run status` (working, limits). Fail-soft: an unreadable part reads as empty. */
@@ -591,6 +664,7 @@ export function linkedinDripStatus(db: Db, env: NodeJS.ProcessEnv, d: { now: Dat
     nextAt: getState(db, LI_STATE_NEXT_AT),
     lastAction,
     inboxLastAt: getState(db, LI_STATE_INBOX_AT),
+    easyApply: easyApplyOn(env),
     waiting: {
       inbox: inboxDue(db, d.now, cfg.inboxGapMin),
       replies_approved: n(() => approvedReplyDrafts(db).length),
@@ -598,6 +672,7 @@ export function linkedinDripStatus(db: Db, env: NodeJS.ProcessEnv, d: { now: Dat
       accept_recent: acceptRecentDue(db, d.now),
       accept_check: n(() => countAcceptCandidates(db, d.now)),
       dms_due: n(() => listDueTouches(db, d.now, d.tuning, { platform: 'linkedin', limit: 20 }).length),
+      easy_applies_ready: n(() => (easyApplyOn(env) ? easyApplyRows(db, env, 20).length : 0)),
       invites_ready: n(() => nextQueueContacts(db, ocfg, 'linkedin', { limit: 20, now: d.now, readOnly: true }).length),
       unhandled_inbound_people: n(() => unhandledInboundPersons(db).size),
     },
@@ -615,7 +690,7 @@ export function renderLinkedinDripLines(s: LinkedinDripStatus, now: Date): strin
   lines.push(`linkedin drip lane: on, ${next}${s.problems.length ? ` WARNING: ${s.problems.join('; ')} (the lane does nothing until fixed)` : ''}`);
   lines.push(s.lastAction ? `  last action: ${s.lastAction.kind} ${s.lastAction.at} (${s.lastAction.status})` : '  last action: none yet');
   const w = s.waiting;
-  lines.push(`  waiting: inbox ${w.inbox ? 'due' : 'ok'}, approved replies ${w.replies_approved}, accept check ${w.accept_recent ? 'recent page due' : 'no'}${w.accept_check ? ` + ${w.accept_check} profile(s)` : ''}, DMs due ${w.dms_due}, invites ready ${w.invites_ready}`);
+  lines.push(`  waiting: inbox ${w.inbox ? 'due' : 'ok'}, approved replies ${w.replies_approved}, accept check ${w.accept_recent ? 'recent page due' : 'no'}${w.accept_check ? ` + ${w.accept_check} profile(s)` : ''}, DMs due ${w.dms_due}, ${s.easyApply ? `Easy Apply ready ${w.easy_applies_ready}` : 'Easy Apply off (owner applies by hand: npm run apply:manual -- list)'}, invites ready ${w.invites_ready}`);
   lines.push(`  reply drafts waiting for your approval: ${w.drafts_to_approve} (npm run replies -- list)${w.unhandled_inbound_people ? `; people paused for an unanswered message: ${w.unhandled_inbound_people}` : ''}`);
   return lines;
 }

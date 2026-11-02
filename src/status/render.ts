@@ -1,4 +1,5 @@
 // src/status/render.ts
+import { manualApplyLine } from '../manual/manualApply.js';
 import type { Snapshot } from './snapshot.js';
 import type { LimitKey } from '../outreach/limits.js';
 import { inActiveHours, loadActiveHours } from '../linkedin/activeHours.js';
@@ -12,6 +13,7 @@ export interface WindowInfo {
 const PERIOD: Record<LimitKey, string> = {
   linkedin_invite: 'day',
   linkedin_message: 'day',
+  linkedin_easy_apply: 'day',
   naukri_apply: 'day',
   naukri_message: 'day',
   wellfound_apply: 'day',
@@ -58,6 +60,11 @@ export function renderLimits(s: Snapshot, opts: { env?: NodeJS.ProcessEnv; now?:
     const now = opts.now ?? new Date();
     lines.push(`linkedin active hours ${hm(h.startMin)}-${hm(h.endMin)} IST (${inActiveHours(now, h) ? 'open now' : 'closed now, no LinkedIn work'})${h.problem ? ` WARNING: ${h.problem}` : ''}`);
   }
+  if (opts.env) {
+    lines.push(opts.env.APPLY_LINKEDIN_EASY === 'true'
+      ? 'linkedin easy apply: ON (APPLY_LINKEDIN_EASY=true): one application per LinkedIn drip tick, main account'
+      : 'linkedin easy apply: off (APPLY_LINKEDIN_EASY): you apply by hand, see npm run apply:manual -- list');
+  }
   for (const key of Object.keys(PERIOD) as LimitKey[]) {
     const c = s.ceilings[key];
     lines.push(`${key} ${c.used}/${c.limit} per ${PERIOD[key]}${c.ok ? '' : ' FULL'}`);
@@ -78,6 +85,8 @@ export function renderWorking(s: Snapshot): string {
   );
   if (s.openQuestions.count > 0) lines.push(`needs your answer: ${s.openQuestions.count} question(s) pause applications (npm run answers -- list)`);
   for (const h of s.needsHuman.hosts) lines.push(`needs you: ${h.jobs} job(s) wait at ${h.host} for a login or human check (${h.command})`);
+  const manual = s.manualApply ? manualApplyLine(s.manualApply) : null;
+  if (manual) lines.push(manual);
   lines.push(...degradedLine(s));
   return lines.join('\n');
 }

@@ -4,7 +4,7 @@
 // Google, DuckDuckGo, Bing or a job site once by hand; the cookies then stay in the profile for the headless tasks.
 // --profile linkedin-main | naukri | wellfound opens that platform's own profile (secrets/browser-profile-<name>/): use it to install
 // or configure a browser extension (Bitwarden) once from the Chrome Web Store (the default page). Installed extensions load in the
-// unattended headless runs of that platform too. The LinkedIn burner has no profile and is not offered.
+// unattended headless runs of that platform too.
 // Press Enter in the terminal when done. Nothing you type is read, and no password is stored. It refuses while the profile's lock is held.
 import { createInterface } from 'node:readline';
 import path from 'node:path';

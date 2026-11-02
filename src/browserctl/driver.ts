@@ -54,6 +54,9 @@ export interface BcPage {
   // Optional: click the stamped attach control `n` and answer the browser's file chooser with this one in-memory file. Code-owned (the engine's
   // attachFile resolved the file; no model value reaches here). Throws when no chooser opens. Absent in fakes that do not test attachments.
   attachFile?(n: number, file: ChooserFile): Promise<void>;
+  // Optional: choose the option with exactly this visible label in a stamped native select. Code-owned (the Easy Apply fill resolved the label
+  // from the answer book). Resolves false when the select has no such option. Absent in fakes that do not test selects.
+  selectOption?(n: number, label: string): Promise<boolean>;
   clickNode(n: number): Promise<void>;
   clickPoint(x: number, y: number): Promise<void>;
   /** Replace the value of a stamped text field with exactly this text. */
@@ -220,6 +223,12 @@ function realBcPageInner(basePage: RealPage): BcPage {
     async fillNode(n, text) {
       if (typeof text !== 'string' || text.length > MAX_VALUE) throw new Error('browserctl: bad text');
       await (await locate(n)).fill(text, { timeout: CLICK_TIMEOUT_MS });
+    },
+    async selectOption(n, label) {
+      if (typeof label !== 'string' || label.length === 0 || label.length > 200) throw new Error('browserctl: bad option');
+      const loc = (await locate(n)) as unknown as { selectOption?: (v: { label: string }, o?: { timeout?: number }) => Promise<unknown> };
+      if (!loc.selectOption) return false;
+      try { await loc.selectOption({ label }, { timeout: CLICK_TIMEOUT_MS }); return true; } catch { return false; }
     },
     async press(key) {
       if (!BC_KEYS.includes(key)) throw new Error('browserctl: key not allowed');

@@ -3,6 +3,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { funnelStats } from '../funnel.js';
 import type { OutreachConfig } from '../outreach/config.js';
 import { ceilings, type CeilingStatus, type LimitKey } from '../outreach/limits.js';
+import { manualApplySummary, type ManualApplyItem } from '../manual/manualApply.js';
 import { openQuestionViews, type OpenQuestionView } from '../outreach/escalations.js';
 
 export interface Snapshot {
@@ -17,6 +18,8 @@ export interface Snapshot {
   openQuestions: { count: number; items: OpenQuestionView[] };
   /** Applications paused for a human step (login, CAPTCHA, MFA): job count per host; the command is `npm run apply:assist -- <job_id>`. */
   needsHuman: { count: number; hosts: { host: string; jobs: number; example_job_id: string; command: string }[] };
+  /** Jobs the owner applies to by hand (Easy Apply off, or the machine could not finish): `npm run apply:manual -- list`. Read-only. */
+  manualApply: { count: number; easyApplyOff: number; items: ManualApplyItem[] };
   // Sections not readable because a table is missing; their values are fallbacks, not facts.
   degraded: string[];
 }
@@ -42,12 +45,12 @@ function toIso(s: string): string {
   return Number.isNaN(d.getTime()) ? s : d.toISOString();
 }
 
-export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, now: Date): Snapshot {
+export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, now: Date, env: NodeJS.ProcessEnv = process.env): Snapshot {
   const degraded: string[] = [];
   const section = makeSection(degraded);
   // Fail-safe: if the counters cannot be read, report every ceiling as not ok rather than a fabricated safe state.
   const zeroCeilings = Object.fromEntries(
-    (['linkedin_invite', 'linkedin_message', 'naukri_apply', 'naukri_message', 'wellfound_apply', 'wellfound_message', 'wellfound_discover', 'apply_attempt', 'site_account', 'linkedin_discover', 'external_resolve', 'linkedin_profile_view'] as LimitKey[]).map((k) => [
+    (['linkedin_invite', 'linkedin_message', 'linkedin_easy_apply', 'naukri_apply', 'naukri_message', 'wellfound_apply', 'wellfound_message', 'wellfound_discover', 'apply_attempt', 'site_account', 'linkedin_discover', 'external_resolve', 'linkedin_profile_view'] as LimitKey[]).map((k) => [
       k,
       { used: 0, limit: 0, ok: false },
     ]),
@@ -141,6 +144,7 @@ export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, n
       }
       return { count: rows.length, hosts: [...byHost.values()] };
     }, { count: 0, hosts: [] }),
+    manualApply: section('manualApply', () => manualApplySummary(db, env), { count: 0, easyApplyOff: 0, items: [] }),
     degraded,
   };
 }

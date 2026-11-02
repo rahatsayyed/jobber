@@ -1,7 +1,7 @@
 // A HEADED Chrome window on one PLATFORM profile (linkedin-main, naukri, wellfound), for `npm run browser:open -- --profile <name>`:
 // the owner installs or configures a browser extension (Bitwarden) there once, from the Chrome Web Store. Extensions installed in
 // the profile then load in the unattended headless runs too. It reads nothing the owner does, takes the platform's lock first (a
-// running wake or another command holds it: refused, never a second Chrome on the directory) and never opens the LinkedIn burner.
+// running wake or another command holds it: refused, never a second Chrome on the directory) and opens only the profiles of the web runtime, LinkedIn main, Naukri and Wellfound.
 import { launchPersistentChrome, persistentSupported, type LiLauncher } from './launch.js';
 import { importStateOnce, platformLockPath, platformProfileDir, platformStatePath, refreshStateFile, PLATFORM_PROFILES, type PlatformProfileName } from './platformProfile.js';
 import { prepareProfileDir } from './profile.js';

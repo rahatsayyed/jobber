@@ -1,6 +1,5 @@
 // Persistent Chrome profile of ONE platform session (LinkedIn main, Naukri, Wellfound): secrets/browser-profile-<name>/. The platform
-// runtimes open it HEADLESS so extensions the owner installed there (a password manager) load in unattended runs too. The LinkedIn
-// burner never uses a profile (Safety rule 6). The platform state file (secrets/<x>-state.json) stays the fallback and the source for
+// runtimes open it HEADLESS so extensions the owner installed there (a password manager) load in unattended runs too. The platform state file (secrets/<x>-state.json) stays the fallback and the source for
 // the session checks: it is imported into the profile once, and refreshed from the context when a persistent run ends.
 // Never logs or returns a cookie value. Launches only through src/webcore/launch.ts.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';

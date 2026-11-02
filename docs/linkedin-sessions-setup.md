@@ -4,10 +4,8 @@ The `linkedin` MCP (`linkedin_find_profiles`, connection requests, messages, inv
 saved session for the MAIN account at `secrets/linkedin-main-state.json`, in one locked headless
 Chrome session at a time. The path is hardcoded, which is a structural safeguard.
 
-The burner account's session file (`secrets/linkedin-burner-state.json`) is used only by the
-`applier` MCP for LinkedIn Easy Apply (`APPLY_LINKEDIN_EASY`, off by default; the scripted
-`apply.linkedin` is gone). There is no login command for it any more: an existing file keeps
-working until it expires. Never use the burner session for the `linkedin` MCP.
+There is no second LinkedIn identity. LinkedIn Easy Apply (`APPLY_LINKEDIN_EASY`, off by default) also
+uses the main account, through the LinkedIn drip lane and the same locked session, never the `applier` MCP.
 
 ## One-time login procedure
 

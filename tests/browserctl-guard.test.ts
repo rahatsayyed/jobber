@@ -27,7 +27,7 @@ describe('classify: linkedin', () => {
     ['Follow', {}, 'irreversible_other'],
     ['Like', {}, 'irreversible_other'],
     ['Post', {}, 'irreversible_other'],
-    ['Easy Apply', {}, 'irreversible_other'],
+    ['Easy Apply', {}, 'linkedin_easy_apply'],
     ['Add a note', { dialogName: 'Add a note' }, 'free'],
     ['Cancel', { dialogName: 'Add a note', inFooter: true }, 'free'],
     ['Close', { dialogName: 'Add a note' }, 'free'],

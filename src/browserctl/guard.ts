@@ -15,9 +15,10 @@ export type ActionClass =
   | 'naukri_apply'
   | 'wellfound_send'
   | 'wellfound_apply'
+  | 'linkedin_easy_apply'
   | 'irreversible_other';
 export type CommitClass = Exclude<ActionClass, 'free' | 'irreversible_other'>;
-export type DialogKind = 'invite' | 'message' | 'other';
+export type DialogKind = 'invite' | 'message' | 'easy_apply' | 'other';
 
 export interface GuardInput {
   platform: Platform;
@@ -59,6 +60,8 @@ export function normName(s: string | null | undefined): string {
 export function dialogKindOf(dialogName: string | null | undefined): DialogKind | null {
   const n = normName(dialogName);
   if (!n) return null;
+  // The Easy Apply modal is named "Apply to <company>"; checked first so a company called Connect or Messaging is not read as another kind.
+  if (/^apply to\b/.test(n)) return 'easy_apply';
   if (/invit|connect|add a note|personali[sz]e|how do you know/.test(n)) return 'invite';
   if (/messag|compose|conversation|inmail|chat/.test(n)) return 'message';
   return 'other';
@@ -112,6 +115,13 @@ function sameFullName(a: string, b: string): boolean {
 export const ATTACH_CONTROL_RE = /^attach (?:a )?(?:file|files|image|photo|document)\b/;
 const SEND_CONNECT_RE =/^send (?:an? )?(?:invitation|invite|without a note)\b/;
 const SEND_RE = new RegExp(`^(?:send|${EXTRA_LABELS.send.join('|')})\\b`);
+/** The job page's own Easy Apply control (also "Easy Apply to <company>"). Outside the modal it only opens the modal. */
+export const EASY_APPLY_OPEN_RE = /^easy apply(?: to .+)?$/;
+/** Modal step controls of the LinkedIn Easy Apply form: Next, Review and the final Submit application. */
+export const EASY_APPLY_STEP_RE = /^(?:next|review|continue|continue to next step|submit application)$/;
+export const EASY_APPLY_SUBMIT_RE = /^submit application$/;
+/** Roles inside the Easy Apply modal that only the code-owned fill (linkedin_easy_apply_fill) may touch. */
+export const EASY_APPLY_CODE_ROLES: ReadonlySet<string> = new Set(['radio', 'checkbox', 'combobox', 'option', 'file']);
 const NAUKRI_APPLY_RE = /^(?:apply|apply now|easy apply)$/;
 export const NAUKRI_OFFSITE_RE =/^apply on (?:the )?company(?:'s)? (?:site|website)\b/;
 const NAUKRI_SEND_RE = /^(?:send|send message)$/;
@@ -153,6 +163,7 @@ export function classify(input: GuardInput): ActionClass {
   // A listbox option on LinkedIn that carries a connect, accept or state-changing name is treated like a button of that name.
   const optionAction = input.role === 'option' && platform === 'linkedin'
     && (CONNECT_RE.test(name) || SEND_CONNECT_RE.test(name) || ACCEPT_RE.test(name) || IRREVERSIBLE_RE.test(name));
+  if (platform === 'linkedin' && dk === 'easy_apply' && EASY_APPLY_CODE_ROLES.has(input.role)) return 'irreversible_other';
   if (!ACTION_ROLES.has(input.role) && !optionAction) {
     // Fields, checkboxes, headings and plain text do not act by being clicked. A point that lands on
     // something non-actionable inside a dialog footer may still hit a scripted button: fail closed.
@@ -163,6 +174,14 @@ export function classify(input: GuardInput): ActionClass {
   if (input.role === 'link' && input.href && DANGEROUS_HREF_RE.test(input.href)) return 'irreversible_other';
 
   if (platform === 'linkedin') {
+    // LinkedIn Easy Apply: the job page's Easy Apply control and the modal's step controls are the one commit class of the flow; every
+    // other control of the modal is refused unless it only closes or goes back (the form itself is filled by code).
+    if (dk === 'easy_apply') {
+      if (EASY_APPLY_STEP_RE.test(name)) return 'linkedin_easy_apply';
+      if (SAFE_NAMES.has(name)) return 'free';
+      return 'irreversible_other';
+    }
+    if (EASY_APPLY_OPEN_RE.test(name)) return 'linkedin_easy_apply';
     // The attach-a-file control is code-owned (linkedin_attach_file clicks it and feeds the chooser itself): the model never clicks it.
     if (ATTACH_CONTROL_RE.test(name)) return 'irreversible_other';
     if (ACCEPT_RE.test(name)) return 'commit_accept_invite';
@@ -220,7 +239,7 @@ export function classifyKey(input: GuardInput & { key: string }): ActionClass {
     const dk = input.dialogKind ?? dialogKindOf(input.dialogName);
     if (input.platform === 'naukri') return input.pageKind === 'thread' ? 'naukri_send' : 'naukri_apply';
     if (input.platform === 'wellfound') return input.pageKind === 'thread' ? 'wellfound_send' : 'wellfound_apply';
-    if (input.platform === 'linkedin') return dk === 'invite' ? 'commit_connect_send' : 'commit_message_send';
+    if (input.platform === 'linkedin') return dk === 'easy_apply' ? 'irreversible_other' : dk === 'invite' ? 'commit_connect_send' : 'commit_message_send';
     return 'irreversible_other';
   }
   return 'free';
@@ -298,6 +317,9 @@ export function checkType(
   }
   if (node.composer) {
     if (!armed) return { ok: false, code: 'no_armed_intent', reason: 'composer text needs an armed intent' };
+    if (armed.class === 'linkedin_easy_apply') {
+      return { ok: false, code: 'text_not_allowed', reason: 'the Easy Apply form is filled by code (linkedin_easy_apply_fill); no text is typed by hand' };
+    }
     if (armed.class === 'naukri_apply') return plainCheck(text, MAX_CHATBOT_TYPE, 'chatbot');
     if (armed.class === 'wellfound_apply') {
       // The application note: only the exact text armed (and gated) by wellfound_arm_apply, never a free answer.

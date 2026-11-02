@@ -5,7 +5,7 @@ import type { OutreachConfig } from './config.js';
 type Db = BetterSqlite3.Database;
 
 export type LimitKey =
-  | 'linkedin_invite' | 'linkedin_message' | 'naukri_apply' | 'naukri_message'
+  | 'linkedin_invite' | 'linkedin_message' | 'linkedin_easy_apply' | 'naukri_apply' | 'naukri_message'
   | 'wellfound_apply' | 'wellfound_message' | 'wellfound_discover'
   | 'apply_attempt' | 'site_account' | 'linkedin_discover' | 'external_resolve' | 'linkedin_profile_view';
 
@@ -14,6 +14,7 @@ const DAY_MS = 24 * 3600 * 1000;
 const WINDOW_MS: Record<LimitKey, number> = {
   linkedin_invite: DAY_MS,
   linkedin_message: DAY_MS,
+  linkedin_easy_apply: DAY_MS,
   naukri_apply: DAY_MS,
   naukri_message: DAY_MS,
   wellfound_apply: DAY_MS,
@@ -30,6 +31,8 @@ function limitFor(key: LimitKey, cfg: OutreachConfig): number {
   switch (key) {
     case 'linkedin_invite':
       return cfg.linkedinMaxInvitesPerDay;
+    case 'linkedin_easy_apply':
+      return cfg.linkedinMaxEasyApplesPerDay;
     case 'linkedin_message':
       return cfg.linkedinMaxMessagesPerDay;
     case 'naukri_apply':

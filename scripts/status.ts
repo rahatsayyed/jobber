@@ -6,6 +6,7 @@ import { loadOutreachConfig } from '../src/outreach/config.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { loadLayoutConfig, loadLayoutEnv } from '../src/layout/config.js';
 import { renderSummary, summarize } from '../src/layout/summary.js';
+import { buildManualQueue, manualApplyLine } from '../src/manual/manualApply.js';
 import { buildSnapshot } from '../src/status/snapshot.js';
 import { renderHealth, renderLimits, renderWorking } from '../src/status/render.js';
 import { buildSourceRows, DEFAULT_WINDOW_HOURS, renderSources } from '../src/status/sources.js';
@@ -66,7 +67,8 @@ async function main(): Promise<number> {
     if (cmd === 'escalations') {
       const now = new Date();
       const r = listEscalations(db, { now });
-      console.log([renderEscalations(r.items, r.counts, now), ...renderReplyDraftLines(db)].join('\n'));
+      const ml = manualApplyLine(buildManualQueue(db, { ...(existsSync('.env') ? parseEnv(readFileSync('.env', 'utf8')) : {}), ...process.env }));
+      console.log([renderEscalations(r.items, r.counts, now, ml ? [ml] : []), ...renderReplyDraftLines(db)].join('\n'));
       return 0;
     }
     if (cmd === 'sources') {
@@ -76,8 +78,8 @@ async function main(): Promise<number> {
     }
     // The limits shown are the ones a run uses: .env fills what the process env lacks (the launcher does the same).
     const dotenv = existsSync('.env') ? parseEnv(readFileSync('.env', 'utf8')) : {};
-    const snap = buildSnapshot(db, loadOutreachConfig({ ...dotenv, ...process.env }), new Date());
     const env = { ...dotenv, ...process.env };
+    const snap = buildSnapshot(db, loadOutreachConfig(env), new Date(), env);
     const dripLines = (): string[] => renderLinkedinDripLines(linkedinDripStatus(db!, env, { now: new Date(), tuning: loadTuning(env) }), new Date());
     if (cmd === 'limits') console.log([renderLimits(snap, { env }), ...dripLines()].join('\n'));
     else if (cmd === 'working') console.log([renderWorking(snap), ...dripLines()].join('\n'));

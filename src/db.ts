@@ -271,7 +271,7 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   `);
 
   // Migration: older databases created before `method`/`account` existed on
-  // `applications` (added for linkedin-apply's Easy Apply tracking). Add them
+  // `applications` (added for Easy Apply tracking). Add them
   // if missing so existing data.sqlite files don't break.
   const applicationColumns = db.prepare("PRAGMA table_info(applications)").all() as Array<{ name: string }>;
   const columnNames = new Set(applicationColumns.map((c) => c.name));

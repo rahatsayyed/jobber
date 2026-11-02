@@ -19,6 +19,7 @@ import { recordDryRun } from '../../safety/dryRun.js';
 import { gateOutbound } from '../../safety/outputGate.js';
 import type { StyleConfig } from '../../safety/styleGate.js';
 import type { Engine } from '../act.js';
+import { armEasyApply } from './linkedinEasyApply.js';
 import { profileHeadingName } from '../commit.js';
 import { killReason, type EngineDeps } from '../engineTypes.js';
 import { normName, type CommitClass } from '../guard.js';
@@ -28,8 +29,8 @@ import { renderTree, type RawTree } from '../snapshot.js';
 import { connectionStateOf, hasRegions } from '../topCard.js';
 
 /** connect_plain is a note-less invite ("Send without a note"): no text, used while the monthly note quota is used up. */
-export type ArmKind = 'connect_note' | 'connect_plain' | 'role_ask' | 'rapport' | 'referral_ask' | 'followup' | 'feedback' | 'accept' | 'reply';
-export const ARM_KINDS: readonly ArmKind[] = ['connect_note', 'connect_plain', 'role_ask', 'rapport', 'referral_ask', 'followup', 'feedback', 'accept', 'reply'];
+export type ArmKind = 'connect_note' | 'connect_plain' | 'role_ask' | 'rapport' | 'referral_ask' | 'followup' | 'feedback' | 'accept' | 'reply' | 'easy_apply';
+export const ARM_KINDS: readonly ArmKind[] = ['connect_note', 'connect_plain', 'role_ask', 'rapport', 'referral_ask', 'followup', 'feedback', 'accept', 'reply', 'easy_apply'];
 
 export interface ArmDeps {
   engine: Engine;
@@ -47,7 +48,7 @@ export interface ArmDeps {
 }
 
 export interface ArmArgs {
-  kind: ArmKind; profile_url: string; text?: string; job_id?: string; company?: string;
+  kind: ArmKind; profile_url?: string; text?: string; job_id?: string; company?: string;
   /** `job_resume`: attach the tailored resume of the person's latest job. Replies (with attach_resume) always; role_ask, rapport and followup only when LINKEDIN_DM_ATTACH_RESUME is true. */
   attachment?: typeof ATTACH_KIND;
   /** Kind `reply` only: the owner-approved reply_drafts row. The text is read from it by code. */
@@ -97,7 +98,7 @@ export function statusFromTree(tree: RawTree): { state: 'connected' | 'pending' 
 
 const KIND_TO_GUARD: Record<ArmKind, Kind | null> = {
   connect_note: 'connect', connect_plain: 'connect', role_ask: 'role_ask', rapport: 'rapport', referral_ask: 'referral_ask',
-  followup: 'followup', feedback: 'feedback', accept: null, reply: 'reply',
+  followup: 'followup', feedback: 'feedback', accept: null, reply: 'reply', easy_apply: null,
 };
 
 export async function armLinkedinSend(deps: ArmDeps, a: ArmArgs): Promise<ArmResult> {
@@ -115,6 +116,8 @@ export async function armLinkedinSend(deps: ArmDeps, a: ArmArgs): Promise<ArmRes
   if (!ARM_KINDS.includes(a.kind)) return fail('refused', 'bad_kind', 'unknown kind');
   const k = killReason(deps);
   if (k) return fail('halted', k.startsWith('kill switch') ? 'killed' : 'halted', k);
+  // Kind easy_apply names a JOB (its page URL comes from SQLite), not a person: its own arm path.
+  if (a.kind === 'easy_apply') return armEasyApply(deps, { job_id: a.job_id });
   if (typeof a.profile_url !== 'string' || !isProfileUrl(a.profile_url)) return fail('refused', 'bad_url', 'not a LinkedIn profile URL');
 
   const isAccept = a.kind === 'accept';

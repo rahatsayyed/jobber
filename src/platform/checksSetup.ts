@@ -500,7 +500,7 @@ export const setupAccountChecks: Check[] = [
   },
   {
     // Information only: which persistent Chrome profiles exist and whether browser extensions (a password manager) are installed in
-    // them (Default/Extensions entries, extension ids only). The LinkedIn burner has no profile by design.
+    // them (Default/Extensions entries, extension ids only).
     id: 'browser-profiles',
     title: 'Browser profiles and extensions',
     async run(ctx) {
