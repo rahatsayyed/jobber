@@ -9,6 +9,7 @@ import { importStateOnce, platformLockPath, platformProfileDir, platformStatePat
 import { DEFAULT_PROFILE_DIR, prepareProfileDir } from './profile.js';
 import { acquireLock } from '../linkedin/session.js';
 import { resolveHost, type HostAttach } from './hostClient.js';
+import { hostProcessExists } from './hostFile.js';
 import type { HeadedIo } from './headed.js';
 
 export type HeadedProfileResult =
@@ -26,7 +27,7 @@ async function interact(url: string, label: string, ctx: LiContext, statePath: s
 
 export async function runHeadedProfile(
   url: string,
-  deps: { name: PlatformProfileName; io: HeadedIo; launcher?: LiLauncher; root?: string; host?: HostAttach | null; sharedProfileDir?: string },
+  deps: { name: PlatformProfileName; io: HeadedIo; launcher?: LiLauncher; root?: string; host?: HostAttach | null; sharedProfileDir?: string; hostPidPath?: string },
 ): Promise<HeadedProfileResult> {
   const info = PLATFORM_PROFILES[deps.name];
   const lock = acquireLock(platformLockPath(deps.name, deps.root));
@@ -48,6 +49,7 @@ export async function runHeadedProfile(
       }
       if (r.code === 'busy' || r.code === 'busy_headed') return { ok: false, code: 'session_locked', reason: r.reason };
       if (r.code === 'halted') return { ok: false, code: 'failed', reason: 'the kill switch is on' };
+      if (r.code === 'unavailable' && hostProcessExists(deps.hostPidPath)) return { ok: false, code: 'session_locked', reason: 'the shared browser host is starting or not answering and holds the profile; try again in a few minutes' };
     }
     if (!persistentSupported(deps.launcher)) return { ok: false, code: 'unsupported', reason: 'this Chrome launcher cannot open a profile' };
     const dir = platformProfileDir(deps.name, deps.root);

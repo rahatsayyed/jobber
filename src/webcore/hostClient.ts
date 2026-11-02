@@ -150,10 +150,12 @@ export function createHostClient(deps: HostClientDeps = {}): HostClient {
     if (!lock) return fail('unavailable', 'the shared browser host is starting elsewhere');
     let lease: string | null = null;
     let cdp: CdpBrowser | null = null;
+    let first: PageLike | null = null;
     try {
       let l = live();
       if (l.kind === 'stale') {
-        // A stale pidfile: the host died (or hung). Remove it; a hung Chrome still holding the profile makes the new start fail.
+        // A stale pidfile: the host died (or hung). A hung but alive host is killed first, so it cannot keep the profile lock.
+        if (l.why === 'heartbeat' && l.pid > 0 && isAlive(l.pid)) { try { signal(l.pid, 'SIGKILL'); } catch { /* gone */ } }
         try { unlinkSync(pidPath); } catch { /* raced */ }
         l = { kind: 'none' };
       }
@@ -178,8 +180,8 @@ export function createHostClient(deps: HostClientDeps = {}): HostClient {
       const ctx = cdp.contexts()[0];
       if (!ctx) { await cdp.close().catch(() => undefined); cdp = null; return fail('unavailable', 'the shared browser has no profile context'); }
       // The first tab is opened under the start lock, so the host cannot go idle between attach and the first page.
-      const first = await ctx.newPage();
-      if (killed(stopFile, env)) { await (first as PageLike).close?.().catch(() => undefined); await cdp.close().catch(() => undefined); cdp = null; return fail('halted', 'kill switch is on'); }
+      first = (await ctx.newPage()) as PageLike;
+      if (killed(stopFile, env)) { await first.close?.().catch(() => undefined); await cdp.close().catch(() => undefined); cdp = null; return fail('halted', 'kill switch is on'); }
       lease = writeLease(leaseDir);
       const shared = wrapShared(cdp, ctx, first, opts.contextOptions, async () => {
         if (lease) removeLease(lease);
@@ -189,6 +191,7 @@ export function createHostClient(deps: HostClientDeps = {}): HostClient {
       return { ok: true, browser: shared.browser, context: shared.context, mode: want };
     } catch {
       if (lease) removeLease(lease);
+      if (first) await first.close?.().catch(() => undefined);
       if (cdp) await cdp.close().catch(() => undefined);
       return fail('unavailable', 'could not attach to the shared browser host');
     } finally {
@@ -199,7 +202,11 @@ export function createHostClient(deps: HostClientDeps = {}): HostClient {
   async function stop(): Promise<boolean> {
     const l = live();
     if (l.kind !== 'live') return true;
-    return stopPid(l.info.pid, 'SIGTERM');
+    if (await stopPid(l.info.pid, 'SIGTERM')) return true;
+    // SIGTERM did not end it (a hung Chrome): SIGKILL and drop the pidfile.
+    const gone = await stopPid(l.info.pid, 'SIGKILL');
+    if (gone || !isAlive(l.info.pid)) { try { unlinkSync(pidPath); } catch { /* gone */ } return true; }
+    return false;
   }
 
   return { attach, stop };

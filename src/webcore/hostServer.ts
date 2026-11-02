@@ -40,6 +40,10 @@ export interface HostServerDeps {
   allHalted: () => boolean;
   idleMs: number;
   heartbeatMs?: number;
+  /** Longest wait for Chrome to close at shutdown before the process exits anyway (default 10000). */
+  closeTimeoutMs?: number;
+  /** Test seam for process.exit. */
+  exit?: (code: number) => void;
   now?: () => number;
   pid?: number;
   isAlive?: (pid: number) => boolean;
@@ -91,9 +95,17 @@ export async function startHost(deps: HostServerDeps): Promise<StartResult> {
   if (live.kind !== 'none') { try { unlinkSync(pidPath); } catch { /* raced */ } }
   const base: HostInfo = { v: 1, pid, mode: deps.mode, state: 'starting', startedAt: iso(), heartbeatAt: iso(), clients: 0, tabs: 0 };
   if (!claimHostFile(base, pidPath)) return { ok: false, code: 'running' };
+  // Heartbeat from the claim on: a slow Chrome launch or profile import must not leave the 'starting' stamp to go stale, or another
+  // client would delete the pidfile and start a second host on the same profile.
+  let preBeat: ReturnType<typeof setInterval> | null = null;
+  if (deps.heartbeatMs && deps.heartbeatMs > 0) {
+    preBeat = setInterval(() => { try { writeHostFile({ ...base, heartbeatAt: iso() }, pidPath); } catch { /* next beat */ } }, deps.heartbeatMs);
+    preBeat.unref?.();
+  }
+  const stopPreBeat = (): void => { if (preBeat) { clearInterval(preBeat); preBeat = null; } };
 
   const prep = prepareProfileDir(profileDir);
-  if (!prep.ok) { removeHostFile(pid, pidPath); log('profile refused'); return { ok: false, code: 'profile_refused' }; }
+  if (!prep.ok) { stopPreBeat(); removeHostFile(pid, pidPath); log('profile refused'); return { ok: false, code: 'profile_refused' }; }
   // A port file left by an earlier Chrome would point at a dead port.
   try { unlinkSync(path.join(profileDir, DEVTOOLS_PORT_FILE)); } catch { /* none */ }
 
@@ -101,6 +113,7 @@ export async function startHost(deps: HostServerDeps): Promise<StartResult> {
   try {
     ctx = await (deps.launch ?? ((o) => launchHostChrome({ ...o, launcher: deps.launcher })))({ userDataDir: profileDir, headed: deps.mode === 'headed' });
   } catch {
+    stopPreBeat();
     removeHostFile(pid, pidPath);
     log('chrome could not be started on the shared profile');
     return { ok: false, code: 'chrome_unavailable' };
@@ -114,6 +127,7 @@ export async function startHost(deps: HostServerDeps): Promise<StartResult> {
     await sleep(100);
   }
   if (!ws) {
+    stopPreBeat();
     await ctx.close().catch(() => undefined);
     removeHostFile(pid, pidPath);
     log('chrome did not open its DevTools port');
@@ -126,12 +140,16 @@ export async function startHost(deps: HostServerDeps): Promise<StartResult> {
     try { await importStateOnce(ctx, profileDir, platformStatePath(name, deps.secretsRoot), `.platform-state-imported-${name}.json`); } catch { /* never fatal */ }
   }
 
+  stopPreBeat();
   const hostPages = new Set<HostPage>(ctx.pages());
   let closed = false;
   let resolveDone!: (r: string) => void;
   const done = new Promise<string>((r) => { resolveDone = r; });
   let idleSince = now();
   let clients = 0;
+  const startedAtMs = Date.parse(base.startedAt);
+  // A headed window with no client lease is only left over (an owner command that is gone): it exits after about a minute.
+  const idleLimit = deps.mode === 'headed' ? Math.min(deps.idleMs, 60_000) : deps.idleMs;
   let timer: ReturnType<typeof setInterval> | null = null;
 
   const refuseNew = (): boolean => { try { return deps.killed() || deps.allHalted(); } catch { return true; } };
@@ -151,21 +169,30 @@ export async function startHost(deps: HostServerDeps): Promise<StartResult> {
     closed = true;
     if (timer) clearInterval(timer);
     log(`shutting down (${reason})`);
-    await ctx.close().catch(() => undefined);
+    // Chrome can hang on close: wait a bounded time, then drop the pidfile and exit so nothing is left half-dead.
+    const limit = deps.closeTimeoutMs ?? 10000;
+    let timedOut = false;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      ctx.close().catch(() => undefined),
+      new Promise<void>((r) => { t = setTimeout(() => { timedOut = true; r(); }, limit); t.unref?.(); }),
+    ]);
+    if (t) clearTimeout(t);
     removeHostFile(pid, pidPath);
     resolveDone(reason);
+    if (timedOut) { log('chrome did not close in time, exiting'); (deps.exit ?? ((c: number) => process.exit(c)))(1); }
   }
 
   async function tick(): Promise<void> {
     if (closed) return;
     if (deps.killed()) { await shutdown('kill switch'); return; }
-    clients = liveLeases(leaseDir, isAlive);
+    clients = liveLeases(leaseDir, isAlive, startedAtMs);
     if (clients > 0) idleSince = now();
-    else if (now() - idleSince >= deps.idleMs) {
+    else if (now() - idleSince >= idleLimit) {
       // The start lock keeps a client from attaching while the host goes away; busy means try again next beat.
       const l = acquireLock(startLock);
       if (l.ok) {
-        try { if (liveLeases(leaseDir, isAlive) === 0) { await shutdown('idle'); return; } } finally { l.handle.release(); }
+        try { if (liveLeases(leaseDir, isAlive, startedAtMs) === 0) { await shutdown('idle'); return; } } finally { l.handle.release(); }
       }
     }
     write();
@@ -173,7 +200,7 @@ export async function startHost(deps: HostServerDeps): Promise<StartResult> {
 
   async function handover(): Promise<boolean> {
     if (closed) return true;
-    if (liveLeases(leaseDir, isAlive) > 0) return false;
+    if (liveLeases(leaseDir, isAlive, startedAtMs) > 0) return false;
     await shutdown('handover');
     return true;
   }

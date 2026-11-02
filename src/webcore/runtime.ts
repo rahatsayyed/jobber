@@ -11,6 +11,7 @@ import { loadWebConfig, type WebConfig } from './config.js';
 import { acquireLock, checkSiteSessionDir, checkSiteSessionFile, siteSessionPath, DEFAULT_SITE_SESSION_DIR, DEFAULT_WEB_LOCK_PATH, type LockHandle } from './session.js';
 import { haltReason } from '../outreach/limits.js';
 import { resolveHost, type HostAttach } from './hostClient.js';
+import { hostProcessExists } from './hostFile.js';
 import { DEFAULT_NAV_FILE, recordSharedNav, sharedLastNav } from './navShare.js';
 
 type Db = BetterSqlite3.Database;
@@ -21,6 +22,8 @@ export interface WebRuntimeDeps {
   now?: () => Date;
   env?: NodeJS.ProcessEnv;
   lockPath?: string;
+  /** Pidfile of the shared browser host (tests); default is the real one. */
+  hostPidPath?: string;
   sessionDir?: string;
   /** The persistent Chrome profile (default secrets/browser-profile); null turns it off (per-host session files only). */
   profileDir?: string | null;
@@ -214,7 +217,8 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
       }
       if (r.code === 'halted') return fail('halted', r.reason);
       if (r.code === 'busy' || r.code === 'busy_headed') return fail('session_locked', r.reason);
-      // disabled or unavailable: today's path below.
+      if (r.code === 'unavailable' && hostProcessExists(deps.hostPidPath)) return fail('session_locked', 'the shared browser host is starting or not answering and holds the profile; try again in a few minutes');
+      // disabled, or unavailable with no host process: today's path below.
     }
     const lock = acquireLock(lockPath);
     if (!lock.ok) return fail('session_locked', lock.reason);

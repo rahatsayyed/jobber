@@ -88,6 +88,13 @@ export function hostLiveness(p: string = DEFAULT_HOST_PIDFILE, deps: LivenessDep
   return { kind: 'live', info };
 }
 
+/** True when a pidfile names a process that is still alive (starting, ready or hung): its Chrome may hold the profile lock. */
+export function hostProcessExists(p: string = DEFAULT_HOST_PIDFILE, isAlive: (pid: number) => boolean = pidAlive): boolean {
+  if (!existsSync(p)) return false;
+  const info = readHostFile(p);
+  return info !== null && isAlive(info.pid);
+}
+
 /** Removes a stale pidfile (dead pid, stale heartbeat or unreadable). Returns true when one was removed. */
 export function cleanStaleHostFile(p: string = DEFAULT_HOST_PIDFILE, deps: LivenessDeps = {}): boolean {
   const l = hostLiveness(p, deps);
@@ -99,25 +106,33 @@ export function cleanStaleHostFile(p: string = DEFAULT_HOST_PIDFILE, deps: Liven
 
 const LEASE_RE = /^(\d+)-[a-z0-9]{6,16}\.json$/;
 
-export function writeLease(dir: string = DEFAULT_HOST_LEASE_DIR, pid: number = process.pid): string {
+export function writeLease(dir: string = DEFAULT_HOST_LEASE_DIR, pid: number = process.pid, at: Date = new Date()): string {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const p = path.join(dir, `${pid}-${Math.random().toString(36).slice(2, 12).padEnd(6, '0')}.json`);
-  writeFileSync(p, JSON.stringify({ pid, at: new Date().toISOString() }), { mode: 0o600 });
+  writeFileSync(p, JSON.stringify({ pid, at: at.toISOString() }), { mode: 0o600 });
   return p;
 }
 
 export function removeLease(p: string): void { try { unlinkSync(p); } catch { /* gone */ } }
 
-/** Live leases (pid alive); leases of dead pids are removed on the way. */
-export function liveLeases(dir: string = DEFAULT_HOST_LEASE_DIR, isAlive: (pid: number) => boolean = pidAlive): number {
+/**
+ * Live leases (pid alive); leases of dead pids are removed on the way. With notBefore (the host start time, epoch ms) a lease
+ * written before that time cannot belong to a client of this host (the pid may have been reused), so it is removed too.
+ */
+export function liveLeases(dir: string = DEFAULT_HOST_LEASE_DIR, isAlive: (pid: number) => boolean = pidAlive, notBefore?: number): number {
   let n = 0;
   let names: string[] = [];
   try { names = readdirSync(dir); } catch { return 0; }
   for (const name of names) {
     const m = LEASE_RE.exec(name);
     if (!m) continue;
-    if (isAlive(Number(m[1]))) n++;
-    else removeLease(path.join(dir, name));
+    const file = path.join(dir, name);
+    let old = false;
+    if (notBefore !== undefined) {
+      try { const at = Date.parse((JSON.parse(readFileSync(file, 'utf8')) as { at?: string }).at ?? ''); old = Number.isFinite(at) && at < notBefore; } catch { old = false; }
+    }
+    if (!old && isAlive(Number(m[1]))) n++;
+    else removeLease(file);
   }
   return n;
 }
