@@ -282,9 +282,16 @@ describe('client attach (hostClient)', () => {
     const launcher = { launch: async (o: unknown) => { launched.push(o); return { newContext: async () => fakeCtx().ctx as never, close: async () => {} }; } };
     const state = path.join(dir, 'secrets', 'naukri-state.json');
     writeFileSync(state, JSON.stringify({ cookies: [] }), { mode: 0o600 });
-    const pc = await openPlatformContext({ name: 'naukri', statePath: state, launcher: launcher as never, profileDir: path.join(dir, 'none'), host: a.client.attach });
+    const pc = await openPlatformContext({ name: 'naukri', statePath: state, launcher: launcher as never, profileDir: path.join(dir, 'none'), host: a.client.attach, hostPidPath: path.join(dir, 'no-such-host.json') });
     expect(pc.ok && pc.shared).toBeFalsy();
     expect(pc.ok).toBe(true);
+    expect(launched).toHaveLength(1);
+
+    // A live host pid that does not answer: no second browser on the same profile, session_locked instead.
+    const livePid = path.join(dir, 'live-host.json');
+    writeFileSync(livePid, JSON.stringify({ v: 1, pid: process.pid, mode: 'headless', at: Date.now() }), { mode: 0o600 });
+    const locked = await openPlatformContext({ name: 'naukri', statePath: state, launcher: launcher as never, profileDir: path.join(dir, 'none'), host: a.client.attach, hostPidPath: livePid });
+    expect(locked.ok).toBe(false);
     expect(launched).toHaveLength(1);
   });
 

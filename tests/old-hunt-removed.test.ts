@@ -14,6 +14,7 @@ function walk(dir: string): string[] {
   const out: string[] = [];
   for (const e of readdirSync(join(ROOT, dir))) {
     const rel = `${dir}/${e}`;
+    if (e === 'worktrees') continue; // agent worktrees hold full copies of old checkouts, not this tree's config
     if (statSync(join(ROOT, rel)).isDirectory()) out.push(...walk(rel));
     else out.push(rel);
   }

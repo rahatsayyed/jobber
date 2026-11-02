@@ -46,6 +46,7 @@ Setup is resumable and safe to rerun: a step whose checks already pass skips its
 In this order:
 
 - `prereqs`: checks Node, tmux, Chrome (every browser and the resume PDF render run on the installed Google Chrome), the patchright package and the pinned ccgram version, and prints a fix for anything missing.
+- `userdata`: copies the template files from `user-data.example/` into `user-data/` (for example `fact-gate.json` and `account.json`) and never overwrites a file that already exists.
 - `claude`: checks that the Claude Code CLI is installed and logged in, and tells you how to log in if it is not.
 - `telegram`: walks you through creating a bot with @BotFather, tells you to enable Topics and turn Group Privacy off, stores the bot token in `.env` (never echoed), asks you to confirm Threaded Mode (topics) is on, records your numeric Telegram ID in `ALLOWED_USERS` (a comma-separated list of numeric IDs; each extra ID needs an explicit extra confirmation), and sends a test message. Skippable (RECOMMENDED): without it there is no phone control, no Telegram alerts and no approved email follow-ups, and `npm run up` starts no bridge or ccgram windows.
 - `gmail`: guides you through creating a Desktop OAuth client in your own Google Cloud project, then runs the consent screen so the send token stays on this machine. Skippable (NEEDED FOR EMAIL OUTREACH): without it there is no cold email, no email follow-ups and no reply watching; LinkedIn and Naukri outreach still run.

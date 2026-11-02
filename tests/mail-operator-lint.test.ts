@@ -30,7 +30,7 @@ const WAKE_ALLOW_FULL_SESSION = [
 const WAKE_ALLOW = [
   'mcp__naukri__naukri_open', 'mcp__naukri__naukri_snapshot', 'mcp__naukri__naukri_close', 'mcp__naukri__naukri_screenshot',
   'mcp__db__list_queued_outreach', 'mcp__db__get_funnel', 'mcp__db__get_outreach_stats', 'mcp__db__get_job_stats',
-  'mcp__outreach__list_due_touches', 'mcp__outreach__next_contacts', 'mcp__outreach__record_inbound', 'mcp__outreach__escalate', 'mcp__outreach__save_reply_draft',
+  'mcp__outreach__list_due_touches', 'mcp__outreach__next_contacts', 'mcp__outreach__record_inbound', 'mcp__outreach__escalate', 'mcp__outreach__save_reply_draft', 'mcp__outreach__complete_instruction',
   'mcp__outreach__list_open_escalations',
   'mcp__linkedin__linkedin_open', 'mcp__linkedin__linkedin_snapshot', 'mcp__linkedin__linkedin_scroll', 'mcp__linkedin__linkedin_click',
   'mcp__linkedin__linkedin_type', 'mcp__linkedin__linkedin_press_key', 'mcp__linkedin__linkedin_wait_for', 'mcp__linkedin__linkedin_screenshot',
