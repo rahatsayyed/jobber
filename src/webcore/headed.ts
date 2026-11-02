@@ -34,9 +34,14 @@ async function interact(url: string, host: string, context: LiContext, persisten
   deps.io.log(`A Chrome window opened on ${host}.`);
   deps.io.log('Log in, solve the check or finish the verification there yourself. Nothing you type is read by this tool.');
   await deps.io.ask('When the page shows you are in (or the check is done), press Enter here to save the session: ');
-  const state = (await context.storageState()) as { cookies?: unknown[] } | null;
+  // storageState() opens helper pages to read localStorage, which can throw or crash a window the owner just used (shared host).
+  // Cookies are enough for the per-host fallback file; the profile itself keeps everything else.
+  let state: { cookies?: unknown[] } | null = null;
+  try { const c = await context.cookies?.(); if (Array.isArray(c)) state = { cookies: c }; } catch { /* try storageState below */ }
+  if (!state) { try { state = (await context.storageState()) as { cookies?: unknown[] } | null; } catch { state = null; } }
   const cookies = Array.isArray(state?.cookies) ? state!.cookies!.length : -1;
-  if (cookies < 0) return { ok: false, code: 'not_saved', reason: 'the browser state could not be read (was the window closed?)' };
+  // In the shared profile Chrome keeps the session itself when it closes; do not fail the command over the fallback file.
+  if (cookies < 0) return persistent ? { ok: true, host, cookies: 0, profile: true } : { ok: false, code: 'not_saved', reason: 'the browser state could not be read (was the window closed?)' };
   // The per-host file stays current as the fallback when the profile cannot be opened.
   try { saveSiteStateAtomic(siteSessionPath(host, sessionDir), state); } catch { if (!persistent) return { ok: false, code: 'not_saved', reason: 'the session file could not be written' }; }
   return { ok: true, host, cookies, profile: persistent };

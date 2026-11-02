@@ -112,7 +112,7 @@ export function createHostClient(deps: HostClientDeps = {}): HostClient {
   const signal = deps.signal ?? ((pid: number, sig: NodeJS.Signals) => { process.kill(pid, sig); });
   const spawnHost = deps.spawnHost ?? ((mode: HostMode) => defaultSpawn(mode, env));
   const readyWaitMs = deps.readyWaitMs ?? 30000;
-  const exitWaitMs = deps.exitWaitMs ?? 15000;
+  const exitWaitMs = deps.exitWaitMs ?? 30000;
   const lockWaitMs = deps.lockWaitMs ?? 40000;
   const fail = (code: HostAttachCode, reason: string): HostAttachResult => ({ ok: false, code, reason });
 
@@ -186,7 +186,7 @@ export function createHostClient(deps: HostClientDeps = {}): HostClient {
       const shared = wrapShared(cdp, ctx, first, opts.contextOptions, async () => {
         if (lease) removeLease(lease);
         if (want === 'headed') await stopPid(ready!.pid, 'SIGTERM');
-      });
+      }, want === 'headed');
       cdp = null;
       return { ok: true, browser: shared.browser, context: shared.context, mode: want };
     } catch {
@@ -233,7 +233,7 @@ async function applyFingerprint(ctx: CtxLike, page: PageLike, o: Record<string, 
  * The shared context as this client sees it: newPage() and waitForEvent('page') track the tabs, close() closes only those (and any
  * popup they opened). Every other property passes through to the real context.
  */
-export function wrapShared(cdp: CdpBrowser, ctx: LiContext, first: LiPage | null, contextOptions: Record<string, unknown> | undefined, onClose: () => Promise<void>): { browser: LiBrowser; context: LiContext } {
+export function wrapShared(cdp: CdpBrowser, ctx: LiContext, first: LiPage | null, contextOptions: Record<string, unknown> | undefined, onClose: () => Promise<void>, skipTabClose = false): { browser: LiBrowser; context: LiContext } {
   const c = ctx as CtxLike;
   const mine = new Set<PageLike>();
   let pending: PageLike | null = first as PageLike | null;
@@ -280,7 +280,8 @@ export function wrapShared(cdp: CdpBrowser, ctx: LiContext, first: LiPage | null
       if (closed) return;
       closed = true;
       if (pending) { mine.add(pending); pending = null; }
-      await closeTabs();
+      // A headed window is closed by the host itself (SIGTERM below): closing its last tab here races Chrome's own shutdown.
+      if (!skipTabClose) await closeTabs();
       await cdp.close().catch(() => undefined);
       await onClose().catch(() => undefined);
     },

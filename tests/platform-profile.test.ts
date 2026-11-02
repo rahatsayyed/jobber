@@ -316,9 +316,10 @@ describe('npm run browser:open --profile', () => {
     expect(f.persistentCalls).toHaveLength(0);
   });
 
-  it('the web profile keeps its rule: own-platform hosts are refused there', async () => {
+  it('a platform host on the default profile is opened in that platform profile (picked by host), not refused', async () => {
     const f = fake();
-    expect((await browserOpen(['--profile', 'web', 'https://www.naukri.com/x'], { io: io().io, launcher: f.launcher })).code).toBe(1);
+    const r = await browserOpen(['https://www.naukri.com/x'], { io: io().io, launcher: f.launcher });
+    expect(r.lines.join(' ')).not.toMatch(/own login commands/);
   });
 
   it('extensionIds keeps only extension-id shaped directory names', () => {

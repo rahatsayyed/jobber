@@ -67,6 +67,29 @@ export async function importStateOnce(ctx: LiContext, profileDir: string, stateP
   }
 }
 
+/**
+ * Shared-host path: top up the live profile with the platform state file's cookies that the profile LACKS (matched by name, domain
+ * and path; live cookies are never overwritten). Why: the one-time import only runs when the host starts, a state file refreshed
+ * later (npm run naukri:login, a session check) never reached the profile, and cookies without an expiry (csrf and session ids)
+ * are dropped whenever the host's Chrome exits after its idle time. Never throws; never logs a value.
+ */
+export async function topUpFromStateFile(ctx: LiContext, statePath: string): Promise<number> {
+  try {
+    if (typeof ctx.addCookies !== 'function' || typeof ctx.cookies !== 'function' || !existsSync(statePath)) return 0;
+    const state = JSON.parse(readFileSync(statePath, 'utf8')) as { cookies?: unknown };
+    const wanted = cleanCookies(state.cookies) as Array<{ name?: string; domain?: string; path?: string }>;
+    if (!wanted.length) return 0;
+    const key = (c: { name?: unknown; domain?: unknown; path?: unknown }): string => `${String(c.name)}|${String(c.domain ?? '').replace(/^\./, '')}|${String(c.path ?? '/')}`;
+    const have = new Set((await ctx.cookies()).map((c) => key(c as { name?: unknown })));
+    const missing = wanted.filter((c) => !have.has(key(c)));
+    if (!missing.length) return 0;
+    await ctx.addCookies(missing);
+    return missing.length;
+  } catch {
+    return 0;
+  }
+}
+
 /** Writes the context's storage state to the platform state file, atomically, only when it still holds the auth cookie. Never throws. */
 export async function refreshStateFile(ctx: LiContext, statePath: string, name: PlatformProfileName): Promise<boolean> {
   try {
@@ -121,7 +144,10 @@ export async function openPlatformContext(opts: PlatformContextOpts): Promise<Pl
     }
     if (!lockHeld) {
       const r = await host({ contextOptions: opts.contextOptions ?? HEADLESS_CONTEXT_OPTIONS });
-      if (r.ok) return { ok: true, browser: r.browser, context: r.context, persistent: true, lock, shared: true };
+      if (r.ok) {
+        await topUpFromStateFile(r.context, opts.statePath);
+        return { ok: true, browser: r.browser, context: r.context, persistent: true, lock, shared: true };
+      }
       lock?.release();
       if (r.code === 'halted') return { ok: false, code: 'halted', reason: r.reason };
       if (r.code === 'busy_headed' || r.code === 'busy') return { ok: false, code: 'session_locked', reason: r.reason };

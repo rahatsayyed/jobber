@@ -20,7 +20,13 @@ export interface CliDeps { io?: HeadedIo; launcher?: HeadedDeps['launcher']; loc
 
 export const CHROME_WEB_STORE = 'https://chromewebstore.google.com/';
 const USAGE = 'usage: npm run browser:open -- [--profile <web|linkedin-main|naukri|wellfound>] [<https url>]';
-const OWN_SESSION_HOSTS = /(^|\.)(linkedin\.com|naukri\.com|wellfound\.com|angel\.co)$/i;
+export function platformForHost(hostname: string): 'linkedin-main' | 'naukri' | 'wellfound' | null {
+  const h = hostname.toLowerCase();
+  if (/(^|\.)linkedin\.com$/.test(h)) return 'linkedin-main';
+  if (/(^|\.)naukri\.com$/.test(h)) return 'naukri';
+  if (/(^|\.)(wellfound\.com|angel\.co)$/.test(h)) return 'wellfound';
+  return null;
+}
 
 /** Pure argument parsing: at most one --profile and at most one URL; anything else is a usage error. */
 export function parseArgs(argv: string[]): { profile: string; url: string | null } | null {
@@ -59,7 +65,14 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<{ code: n
     const ids = extensionIds((p) => readdirSync(p), r.profileDir);
     return { code: 0, lines: [...out, `closed the ${r.shared ? `shared profile (${name})` : `${name} profile`} (${ids.length} extension${ids.length === 1 ? '' : 's'} installed)`] };
   }
-  if (OWN_SESSION_HOSTS.test(u.hostname)) return { code: 1, lines: ['LinkedIn, Naukri and Wellfound have their own login commands; the web profile is for the other sites (use --profile linkedin-main, naukri or wellfound to open their own profile)'] };
+  // A LinkedIn, Naukri or Wellfound address is opened in the profile the platform tools use (picked by host): the shared profile with
+  // the host on, else that platform's own old profile. It also refreshes the platform state file when the window is closed.
+  const auto = platformForHost(u.hostname);
+  if (auto) {
+    const r = await runHeadedProfile(u.href, { name: auto, io: wrapped, launcher: deps.launcher, root: deps.root });
+    if (!r.ok) return { code: 1, lines: [...out, `not opened: ${r.reason}`] };
+    return { code: 0, lines: [...out, `closed the ${r.shared ? `shared profile (${auto})` : `${auto} profile`}; the platform session file ${r.stateRefreshed ? 'was refreshed' : 'was left as it was (no login cookie seen)'}`] };
+  }
   const r = await runHeaded(u.href, { io: wrapped, launcher: deps.launcher, lockPath: deps.lockPath, sessionDir: deps.sessionDir, profileDir: deps.profileDir });
   if (!r.ok) return { code: 1, lines: [...out, `not saved: ${r.reason}`] };
   return { code: 0, lines: [...out, `saved the browser state for ${r.host} (${r.cookies} cookies${r.profile ? ', in the browser profile' : ', in the per-host session file'})`] };

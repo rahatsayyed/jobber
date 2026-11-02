@@ -83,6 +83,8 @@ export interface LiPage {
 export interface LiContext {
   newPage(): Promise<LiPage>;
   storageState(opts?: { path?: string }): Promise<unknown>;
+  /** Optional: cookies of the context (patchright contexts have it). */
+  cookies?(): Promise<unknown[]>;
   waitForEvent(name: 'page', opts?: { timeout?: number }): Promise<LiPage>;
   /** Optional: used once to import old per-host session cookies into the persistent web profile (patchright contexts have it). */
   addCookies?(cookies: unknown[]): Promise<void>;

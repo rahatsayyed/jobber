@@ -170,7 +170,7 @@ export async function startHost(deps: HostServerDeps): Promise<StartResult> {
     if (timer) clearInterval(timer);
     log(`shutting down (${reason})`);
     // Chrome can hang on close: wait a bounded time, then drop the pidfile and exit so nothing is left half-dead.
-    const limit = deps.closeTimeoutMs ?? 10000;
+    const limit = deps.closeTimeoutMs ?? 25000;
     let timedOut = false;
     let t: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
