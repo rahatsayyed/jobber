@@ -5,6 +5,7 @@ import { planPipelineWork } from '../pipelineWork.js';
 import { followupMode, listApprovedFollowups, listFollowupCandidates } from '../followups.js';
 import { countAcceptCandidates, hasOpenInvites } from '../linkedin/acceptCheck.js';
 import { ACCEPT_RECENT_EVERY_HOURS, hoursSinceRecentCheck } from '../linkedin/acceptRecent.js';
+import { pendingInstructionCount } from '../owner/instructions.js';
 import { manualPlatformTasks, manualRequestsPending } from '../manual/requests.js';
 import { countJdWaiting } from '../jdStore.js';
 import { dueTouchesFor } from '../outreach/dueTouches.js';
@@ -53,6 +54,8 @@ export interface DueCounts {
   jdWaiting?: { naukri: number; linkedin: number };
   /** Owner-submitted manual requests not yet ingested (status pending): a wake is planned for them even when nothing else is due. */
   manualRequestsPending?: number;
+  /** Owner instructions not yet finished (pending or in_progress): a wake is planned for them. */
+  ownerInstructionsPending?: number;
   /** Owner-submitted job pages per platform operator: queued manual_url source tasks plus pending requests whose URL classifies to that platform. */
   manualPlatformTasks?: Record<Platform, number>;
 }
@@ -204,6 +207,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
       try { return countJdWaiting(db, now); } catch { return { naukri: 0, linkedin: 0 }; }
     })(),
     manualRequestsPending: manualRequestsPending(db),
+    ownerInstructionsPending: pendingInstructionCount(db),
     manualPlatformTasks: manualPlatformTasks(db),
   };
 }

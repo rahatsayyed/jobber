@@ -15,6 +15,7 @@ import { Badge, DebouncedSearch, DetailDrawer, FilterGroup, KV, LoadingLines, Pa
 import { statusLabel } from "@/lib/view-models";
 import { usePanels } from "@/components/dashboard/panel-context";
 import { NeedsAnswer } from "@/components/dashboard/needs-answer";
+import { InstructionBox } from "@/components/dashboard/instruction-box";
 import { ManualApply } from "@/components/dashboard/manual-apply";
 
 type Payload = { items: InboxItem[]; counts: { open: number; snoozed: number; resolved: number } };
@@ -147,6 +148,7 @@ function Card({ item: i, selected, busy, csrf, onToggle, onOpen, onPanel, onRun 
       {i.excerpt && d.type !== "flagged" ? <p className="quote clip">{i.excerpt}</p> : null}
       {d.type === "flagged" ? <p className="muted">The held text is shown in the details, as plain text.</p> : null}
       <Todo tone={d.tone} text={d.action} />
+      {!handled ? <InstructionBox csrf={csrf} escalationId={i.id} /> : null}
       {i.resolvedNote ? <p className="muted">Note: {i.resolvedNote}</p> : null}
       <div className="inbox-actions">
         <button type="button" className="button" onClick={onOpen}>Details</button>
@@ -300,6 +302,7 @@ export function InboxView() {
       <button type="button" className="button primary" disabled={busy || !csrf || !chosen.length} onClick={() => void run("resolve", chosen)}>Mark selected handled{chosen.length ? ` (${chosen.length})` : ""}</button>
     </div> : null}
 
+    <InstructionBox csrf={csrf} />
     {section("replies", sections.replies, plain(sections.replies), "People who wrote to you. Each card says whether the agent replies by itself or you do.")}
     <NeedsAnswer csrf={csrf} />
     {section("platform", sections.platform, groupApplyByHost(sections.platform), "Sessions, pauses and page changes the agent could not fix alone. Application problems of one site are grouped.")}

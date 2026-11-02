@@ -44,6 +44,7 @@
     "apply:assist": "tsx scripts/apply-assist.ts",
     "apply:manual": "tsx scripts/apply-manual.ts",
     "answers": "tsx scripts/answers.ts",
+    "instructions": "tsx scripts/instructions.ts",
     "browser:open": "tsx scripts/browser-open.ts",
     "browser:host": "tsx scripts/browser-host.ts",
     "browser:history": "tsx scripts/browser-history.ts",

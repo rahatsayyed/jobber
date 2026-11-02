@@ -2,6 +2,7 @@
 import type { Budget } from './budget.js';
 import type { Platform } from './control.js';
 import { CHUNK_SIZE, type Assignment, type DiscoverSearches, type Step } from './plan.js';
+import { instructionPromptLines, type OwnerInstruction } from '../owner/instructions.js';
 import { pipelineLines, type PipelinePromptInput } from './pipeline.js';
 
 /** The named searches of a discover task; the operator runs only these, so a missing list would leave it with nothing to do. */
@@ -137,6 +138,8 @@ export function buildWakePrompt(i: {
   order?: Step[];
   // Inputs of the pipeline and mail stages; used when `order` holds a pipeline or mail step.
   pipeline?: PipelinePromptInput;
+  /** Owner instructions claimed for this wake (src/owner/instructions.ts); absent or empty: no section. */
+  instructions?: OwnerInstruction[];
 }): string {
   const lines: string[] = [];
   lines.push(`Scheduler wake run ${i.runId} at ${i.now.toISOString()}. Dry run: ${i.dryRun ? 'yes' : 'no'}.`);
@@ -164,6 +167,7 @@ export function buildWakePrompt(i: {
   lines.push(
     'Dispatch the operators sequentially in the order listed (linkedin before naukri), one Agent call each; do not do their work yourself.',
   );
+  if (i.instructions && i.instructions.length > 0) lines.push(...instructionPromptLines(i.instructions));
   lines.push(...DIAGNOSTIC_RULES);
   lines.push(...AWAIT_RULES);
   lines.push(

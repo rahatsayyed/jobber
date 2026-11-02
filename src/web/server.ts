@@ -38,6 +38,7 @@ import { buildConfigView } from '../dash/configView.js';
 import { createSettingsRoutes, type SettingsDeps } from './settingsRoutes.js';
 import { createApplyRoutes, type ApplyDeps } from './applyRoutes.js';
 import { createEscalationRoutes, type EscalationDeps } from './escalationRoutes.js';
+import { createInstructionRoutes, type InstructionDeps } from './instructionRoutes.js';
 import { createQuestionRoutes, type QuestionDeps } from './questionRoutes.js';
 import { createManualApplyRoutes, type ManualApplyDeps } from './manualApplyRoutes.js';
 import { createTerminalRoutes } from './terminalRoutes.js';
@@ -68,6 +69,7 @@ export interface WebDeps {
   settings?: SettingsDeps; // dashboard settings editor (plan 8H); routes exist only when set. Never given to chat.
   apply?: ApplyDeps; // /apply request box write; absent: confirm answers a refusal and nothing is written
   terminal?: { sessions: string[]; inputEnabled: boolean; killed: () => boolean }; // Sessions page live terminal; absent: view only, no kill check
+  instructions?: InstructionDeps; // owner instructions box; absent: adding one answers a write failure
   questions?: QuestionDeps; // Inbox 'Needs your answer' actions; absent: the three actions answer a write failure and nothing is written
   manualApply?: ManualApplyDeps; // Inbox 'Apply by hand': done/skip writes; absent: both answer a write failure and nothing is written
   escalations?: EscalationDeps; // Inbox actions (mark handled, snooze); absent: both answer a write failure and nothing is written
@@ -581,6 +583,10 @@ export function createWebServer(deps: WebDeps): http.Server {
   }
 
   for (const r of createManualApplyRoutes(deps.manualApply ?? { write: noWriter }, { auth: deps.auth, data: deps.data, now, processEnv: deps.env ?? process.env })) {
+    add(r.method, r.pattern, false, r.fn);
+  }
+
+  for (const r of createInstructionRoutes(deps.instructions ?? { write: noWriter }, { auth: deps.auth, data: deps.data, now })) {
     add(r.method, r.pattern, false, r.fn);
   }
 
