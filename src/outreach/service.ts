@@ -22,6 +22,7 @@ import { gateInput } from '../safety/inputGate.js';
 import { cleanText } from '../dash/clean.js';
 import { deriveAskKind, linkedinThreadUrl } from './escalations.js';
 import type { Platform } from '../scheduler/control.js';
+import { noiseKind, closeGoneJob, dedupeHost } from './escalationPolicy.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -396,6 +397,12 @@ export function addEscalation(
   if (!ESC_PLATFORMS.includes(e.platform)) throw new Error('invalid platform');
   if (e.threadRef !== undefined && !THREAD_RE.test(e.threadRef)) throw new Error('invalid thread_ref');
   requirePerson(db, e.personId);
+  // Owner-Inbox policy: telemetry, ceilings and dead jobs never become an Inbox row (id 0 = not stored).
+  const noise = noiseKind(e.platform, e.reason, e.detail);
+  if (noise) {
+    if (noise === 'job_gone') closeGoneJob(db, e.detail, e.threadRef);
+    return 0;
+  }
   // The operator found the person is not who or where the record says (live page employer, wrong profile, follow-only):
   // pause them so next_contacts never offers them again.
   if (e.personId !== undefined) {
@@ -445,6 +452,15 @@ export function addEscalation(
   const messageAt = Number.isFinite(parsedAt) ? new Date(parsedAt).toISOString() : null;
   const at = now.toISOString();
 
+  // captcha, consent and blocked: one open card per reason and host, whatever the job.
+  const dh = dedupeHost(reason, detail);
+  if (dh) {
+    const dup = db.prepare('SELECT id FROM escalations WHERE platform = ? AND reason = ? AND resolved_at IS NULL AND detail LIKE ? ORDER BY id DESC LIMIT 1').get(e.platform, reason, `%host=${dh}%`) as { id: number } | undefined;
+    if (dup) {
+      db.prepare('UPDATE escalations SET seen_count = COALESCE(seen_count, 1) + 1, updated_at = ? WHERE id = ?').run(at, dup.id);
+      return dup.id;
+    }
+  }
   // One OPEN escalation per conversation: a repeat for the same thread updates that row instead of adding a duplicate.
   const open = e.threadRef === undefined
     ? undefined
