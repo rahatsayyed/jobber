@@ -177,7 +177,7 @@ describe('rules (D22) over the whole catalog', () => {
   });
   it('the never set is exactly the plan list plus the reviewed additions', () => {
     const PLAN = [
-      'WEB_AUTH_MODE', 'WEB_AUTH_DB', 'WEB_BIND', 'WEB_PORT', 'WEB_ALLOW_REMOTE_BIND', 'WEB_ALLOWED_HOSTS', 'WEB_TRUST_PROXY',
+      'WEB_AUTH_MODE', 'WEB_AUTH_DB', 'WEB_BIND', 'WEB_PORT', 'WEB_INTERNAL_PORT', 'WEB_ALLOW_REMOTE_BIND', 'WEB_ALLOWED_HOSTS', 'WEB_TRUST_PROXY',
       'WEB_REAUTH_MAX_AGE_SEC', 'WEB_CHAT_ENABLED', 'WEB_TMUX_SESSION', 'WEB_TMUX_WINDOW', 'WEB_OIDC_ISSUER', 'WEB_OIDC_CLIENT_ID',
       'WEB_OIDC_CLIENT_SECRET', 'WEB_OIDC_REDIRECT_URI', 'WEB_OIDC_REAUTH_PROMPT', 'WEB_GOOGLE_KEYS_PATH', 'WEB_GOOGLE_REDIRECT_SHAPE',
       'DASHBOARD_ALLOWED_EMAIL', 'WEB_SETTINGS_EDIT', 'WEB_SETTINGS_REMOTE_SAFETY', 'WEB_TERMINAL_INPUT',
@@ -357,7 +357,7 @@ describe('blankMeansDefault (real loaders)', () => {
     for (const k of RUNNER_KEYS) expect(run({ [k]: '' }), k).toEqual(run({}));
   });
   it('the catalog marks exactly the loader-covered keys', () => {
-    const covered = new Set([...cases.map(([k]) => k), ...RUNNER_KEYS]);
+    const covered = new Set([...cases.map(([k]) => k), ...RUNNER_KEYS, 'WEB_INTERNAL_PORT']);
     const marked = ENV_CATALOG.filter((s) => s.blankMeansDefault).map((s) => s.key).sort();
     expect(marked).toEqual([...covered].sort());
   });

@@ -622,10 +622,10 @@ const hand: EnvSpec[] = [
   }),
   e('WEB_INTERNAL_PORT', 'dashboard', 'dashboard', 'int', {
     blankMeansDefault: true,
-    default: 'WEB_PORT + 1',
+    default: null,
     min: 1024,
     max: 65535,
-    about: 'Loopback port of the dashboard API process. Must differ from WEB_PORT.',
+    about: 'Loopback port of the dashboard API process. Must differ from WEB_PORT. Default WEB_PORT + 1.',
     ...never(R_DASH),
     restart: 'dashboard',
     restartEvidence: 'scripts/web.ts',
