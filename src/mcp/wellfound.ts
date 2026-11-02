@@ -7,7 +7,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb } from '../db.js';
 import { dbPath } from '../dbPath.js';
-import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS, type LiLauncher } from '../webcore/launch.js';
+import { HEADLESS_CONTEXT_OPTIONS, type LiLauncher } from '../webcore/launch.js';
+import { openPlatformContext, platformProfileDir, refreshStateFile } from '../webcore/platformProfile.js';
 import { acquireLock, type LockHandle } from '../linkedin/session.js';
 import { isWellfoundUrl, THREAD_REF_RE, threadRefOfUrl, threadUrl, wellfoundKind } from '../wellfound/page.js';
 import { saveNextManualPlatformJob, MANUAL_PAGE_SRC, type ManualJobIo, type PageRead } from '../manual/platformJob.js';
@@ -76,6 +77,8 @@ export interface WellfoundDeps {
   chromium?: LiLauncher;
   sessionStatePath?: string;
   lockPath?: string;
+  /** Persistent profile directory (default secrets/browser-profile-wellfound); null turns the persistent launch off. */
+  profileDir?: string | null;
   /** Wait after navigation/click before reading the page. Injectable so tests do not sleep. */
   settleMs?: number;
   idleMs?: number;
@@ -165,6 +168,8 @@ interface Session {
   lock: LockHandle | null;
   /** Layout observer for this session (advisory; null when it could not be created). */
   layout: LayoutObserver | null;
+  /** Set when the session runs in the persistent profile: the state file is refreshed from it on close. */
+  persistentStatePath?: string;
 }
 
 let session: Session | null = null;
@@ -184,7 +189,8 @@ function serial<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-async function closeSession(): Promise<boolean> {
+/** `save` false (a block page): a flagged session must never overwrite the good state file. */
+async function closeSession(save = true): Promise<boolean> {
   const s = session;
   session = null;
   engine = null;
@@ -192,6 +198,8 @@ async function closeSession(): Promise<boolean> {
   externalState.lastAt = null;
   if (!s) return false;
   if (s.idleTimer) clearTimeout(s.idleTimer);
+  // A persistent run keeps the state file in step (the fallback and the session checks read it).
+  if (save && s.persistentStatePath) await refreshStateFile(s.context, s.persistentStatePath, 'wellfound');
   try {
     await s.browser.close();
   } catch {
@@ -326,7 +334,7 @@ function getEngine(deps: WellfoundDeps): Engine {
       if (!o) return;
       try { o.observeWellfound(treeToWellfoundSnapshot(tree), wellfoundKind(tree.url) === 'login' || tree.nodes.some((n) => n.secret === true)); } catch { /* advisory */ }
     },
-    afterBlock: async () => { await closeSession(); },
+    afterBlock: async () => { await closeSession(false); },
     textGate: textGateFor(deps),
     settleMs: deps.settleMs ?? 2500,
     ...(deps.paceMs ? { paceMs: deps.paceMs } : {}),
@@ -375,16 +383,21 @@ async function ensureSession(deps: WellfoundDeps): Promise<string | null> {
   if (!lock.ok) return jsonOut({ ok: false, code: 'session_locked', reason: lock.reason.replace(/LinkedIn/g, 'Wellfound') });
   let browser: any;
   try {
-    // Headless only, never headed (shared launcher: real Chrome + real UA under --headless=new).
-    browser = await launchRealChrome({ launcher: deps.chromium });
-    const context = await browser.newContext({ ...HEADLESS_CONTEXT_OPTIONS, storageState: statePath });
-    const page = await context.newPage();
-    session = { browser, context, page, idleTimer: null, lock: lock.handle, layout: makeObserver(deps) };
+    // Headless only, never headed (shared launcher: real Chrome + real UA under --headless=new). The persistent profile (extensions
+    // load there) is used when it exists; the lock above is ours already, so no second Chrome opens the directory.
+    const r = await openPlatformContext({
+      name: 'wellfound', statePath, launcher: deps.chromium, contextOptions: HEADLESS_CONTEXT_OPTIONS,
+      profileDir: deps.profileDir === undefined ? (deps.sessionStatePath ? null : platformProfileDir('wellfound')) : deps.profileDir,
+    });
+    if (!r.ok) { lock.handle.release(); return jsonOut({ ok: false, code: 'failed', reason: 'could not start the Wellfound browser session' }); }
+    browser = r.browser;
+    const page = await r.context.newPage();
+    session = { browser, context: r.context, page, idleTimer: null, lock: lock.handle, layout: makeObserver(deps), ...(r.persistent ? { persistentStatePath: statePath } : {}) };
     touch(deps);
     return null;
   } catch (err) {
     console.error(`[wellfound] launch failed: ${errText(err)}`);
-    if (session) await closeSession();
+    if (session) await closeSession(false);
     else {
       if (browser) await browser.close().catch(() => {});
       lock.handle.release();

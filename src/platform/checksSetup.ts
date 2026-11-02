@@ -498,6 +498,30 @@ export const setupAccountChecks: Check[] = [
       return pass('Wellfound session looks valid');
     },
   },
+  {
+    // Information only: which persistent Chrome profiles exist and whether browser extensions (a password manager) are installed in
+    // them (Default/Extensions entries, extension ids only). The LinkedIn burner has no profile by design.
+    id: 'browser-profiles',
+    title: 'Browser profiles and extensions',
+    async run(ctx) {
+      const profiles = [
+        { label: 'web', dir: join(ctx.root, 'secrets', 'browser-profile') },
+        { label: 'linkedin-main', dir: join(ctx.root, 'secrets', 'browser-profile-linkedin-main') },
+        { label: 'naukri', dir: join(ctx.root, 'secrets', 'browser-profile-naukri') },
+        { label: 'wellfound', dir: join(ctx.root, 'secrets', 'browser-profile-wellfound') },
+      ];
+      const parts: string[] = [];
+      for (const p of profiles) {
+        if (!ctx.fs.exists(p.dir)) { parts.push(`${p.label}: no profile yet`); continue; }
+        let ids: string[] = [];
+        try { ids = (ctx.fs.list?.(join(p.dir, 'Default', 'Extensions')) ?? []).filter((n) => /^[a-p]{32}$/.test(n)); } catch { ids = []; }
+        parts.push(`${p.label}: ${ids.length ? `${ids.length} extension${ids.length === 1 ? '' : 's'} (${ids.map((i) => i.slice(0, 8)).join(', ')})` : 'no extensions'}`);
+      }
+      const any = profiles.some((p) => ctx.fs.exists(p.dir));
+      if (!any) return skip('no browser profile yet; npm run browser:open -- --profile <web|linkedin-main|naukri|wellfound> creates one and installs an extension', 'npm run browser:open -- --profile web');
+      return pass(parts.join('; '));
+    },
+  },
   placeholder('mcp-connect', 'MCP servers connect', 'skipped: needs a live launch, run the owner checklist in plan 7B'),
   placeholder('sessions-live', 'sessions log in headless', 'skipped: headless login check is owner-run: npm run linkedin:check and npm run naukri:check'),
   placeholder('dashboard-login', 'dashboard sign-in', 'judged by the doctor per auth mode (plan 8C)'),

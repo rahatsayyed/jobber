@@ -245,6 +245,16 @@ A browser or native Apply that was clicked but never confirmed is recorded as `m
 
 A connect that ends `unconfirmed` (the click went out but neither Pending nor an "Invitation sent" toast was seen) is never retried. Check LinkedIn's Sent invitations page. A touch stuck in `sending` for more than 30 minutes is moved to `unconfirmed` on its own. When the monthly note quota is used up, the agent sends plain invites with no note (an Inbox notice says so) until the first of next month, IST.
 
+## Browser extensions (Bitwarden) in the project browsers
+
+Chrome keeps extensions per profile. The project has four persistent profiles: `web` (scout, applier, search), and one each for
+`linkedin-main`, `naukri` and `wellfound` (created by their login commands). The LinkedIn burner has none. Install the extension once
+per profile, headed: `npm run browser:open -- --profile naukri` (also `web`, `linkedin-main`, `wellfound`) opens the Chrome Web Store in
+that profile; install and sign in, then press Enter in the terminal. The unattended headless runs open the same profile, so an
+installed extension loads there too, as far as Chrome's new headless mode supports it (an extension that needs a visible popup does not
+work headless). The command refuses while a wake holds that profile; try again later. `npm run doctor` shows which profiles exist and
+how many extensions each holds. If a profile cannot be opened, the run falls back to the saved login file, as before.
+
 ## Where logs and state live
 
 Paths marked git-ignored are never committed. Do not read or paste the contents of `secrets/`, `user-data/` or `.env` into a chat.

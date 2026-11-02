@@ -2,7 +2,8 @@
 //   npm run linkedin:login
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { launchRealChrome, LINKEDIN_CONTEXT_OPTIONS } from '../src/webcore/launch.js';
+import { LINKEDIN_CONTEXT_OPTIONS } from '../src/webcore/launch.js';
+import { launchLoginBrowser } from '../src/webcore/loginBrowser.js';
 import { DEFAULT_SESSION_PATH, saveStateAtomic } from '../src/linkedin/session.js';
 import type { LiLauncher } from '../src/webcore/launch.js';
 
@@ -30,7 +31,7 @@ export async function main(deps: LoginDeps = {}): Promise<number> {
   const io = deps.io ?? stdinIo();
   let browser;
   try {
-    browser = await launchRealChrome({ headed: true, launcher: deps.launcher });
+    browser = await launchLoginBrowser({ name: 'linkedin-main', launcher: deps.launcher });
   } catch (e) {
     console.error(`Login failed: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
     return 1;

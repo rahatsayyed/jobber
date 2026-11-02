@@ -147,7 +147,8 @@ the listed options), and puts the job back in the queue for the next apply stage
 The agent never solves these. The job is parked as `needs_human`, you get one Telegram message per site per
 6 hours with the command, and one card in the Inbox. Run `npm run apply:assist -- <job_id>`: Chrome opens
 that page in the project profile, you log in or finish the check yourself, press Enter, and every job
-waiting on that site is retried. `npm run browser:open -- <https url>` opens any page in the same profile
+waiting on that site is retried. `npm run browser:open -- [--profile web|linkedin-main|naukri|wellfound] [<https url>]` opens any page in the same profile
+(or, with `--profile`, in a platform profile to install a browser extension, see `docs/operations.md`)
 (clear a Google, DuckDuckGo or Bing consent/CAPTCHA page once); `npm run browser:history` shows what the
 profile visited. The login is stored in the profile and in `secrets/site-sessions/`, never your typing.
 

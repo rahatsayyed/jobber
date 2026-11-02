@@ -9,7 +9,9 @@ import { fileURLToPath } from 'node:url';
 import { openDb } from '../db.js';
 import { dbPath } from '../dbPath.js';
 import { hostMatches } from '../lib/hostClass.js';
-import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS, type LiLauncher } from '../webcore/launch.js';
+import { HEADLESS_CONTEXT_OPTIONS, type LiLauncher } from '../webcore/launch.js';
+import { openPlatformContext, platformProfileDir, refreshStateFile } from '../webcore/platformProfile.js';
+import type { LockHandle } from '../linkedin/session.js';
 import { slugify, buildSearchUrl } from '../naukri/url.js';
 import { isNaukriUrl, THREAD_REF_RE, threadUrl } from '../naukri/page.js';
 import { discoverGapMs, runNaukriDiscover, type DiscoverIo, type NaukriDiscoverResult } from '../naukri/discover.js';
@@ -50,6 +52,7 @@ export { isNaukriUrl, THREAD_REF_RE };
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..', '..');
 const DEFAULT_STATE_PATH = path.join(projectRoot, 'secrets', 'naukri-state.json');
+const DEFAULT_PROFILE_LOCK_PATH = path.join(projectRoot, 'secrets', 'naukri-profile.lock');
 
 const IDLE_CLOSE_MS = 10 * 60 * 1000;
 const SCREENSHOT_MAX_WIDTH = 900;
@@ -87,6 +90,10 @@ export interface NaukriDeps {
   /** Injectable launcher handed to the shared real-Chrome launcher, for testing without a real browser. */
   chromium?: LiLauncher;
   sessionStatePath?: string;
+  /** Persistent profile directory (default secrets/browser-profile-naukri); null turns the persistent launch off. */
+  profileDir?: string | null;
+  /** Lock file that guards the profile directory (default secrets/naukri-profile.lock). */
+  profileLockPath?: string;
   /** Wait after navigation/click before reading the page. Injectable so tests do not sleep. */
   settleMs?: number;
   idleMs?: number;
@@ -206,6 +213,8 @@ interface Session {
   idleTimer: NodeJS.Timeout | null;
   /** Layout observer for this session (advisory; null when it could not be created). */
   layout: LayoutObserver | null;
+  /** Set when the session runs in the persistent profile: the profile lock and the state file refreshed on close. */
+  persistent?: { lock: LockHandle | null; statePath: string };
 }
 
 let session: Session | null = null;
@@ -227,7 +236,8 @@ function serial<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-async function closeSession(): Promise<boolean> {
+/** `save` false (a block page): a flagged session must never overwrite the good state file. */
+async function closeSession(save = true): Promise<boolean> {
   const s = session;
   session = null;
   engine = null;
@@ -235,11 +245,14 @@ async function closeSession(): Promise<boolean> {
   externalState.lastAt = null;
   if (!s) return false;
   if (s.idleTimer) clearTimeout(s.idleTimer);
+  // A persistent run keeps the state file in step (the fallback and the session checks read it).
+  if (save && s.persistent) await refreshStateFile(s.context, s.persistent.statePath, 'naukri');
   try {
     await s.browser.close();
   } catch {
     /* already gone */
   }
+  try { s.persistent?.lock?.release(); } catch { /* already gone */ }
   return true;
 }
 
@@ -368,7 +381,7 @@ function getEngine(deps: NaukriDeps): Engine {
       if (!o) return;
       try { o.observeNaukri(treeToNaukriSnapshot(tree), naukriKind(tree.url) === 'login' || tree.nodes.some((n) => n.secret === true)); } catch { /* advisory */ }
     },
-    afterBlock: async () => { await closeSession(); },
+    afterBlock: async () => { await closeSession(false); },
     textGate: textGateFor(deps),
     settleMs: deps.settleMs ?? 2500,
     ...(deps.paceMs ? { paceMs: deps.paceMs } : {}),
@@ -414,18 +427,29 @@ async function ensureSession(deps: NaukriDeps): Promise<string | null> {
   const statePath = deps.sessionStatePath ?? DEFAULT_STATE_PATH;
   if (!existsSync(statePath)) return jsonOut({ ok: false, code: 'no_session_state', reason: 'naukri session state not found (secrets/naukri-state.json)' });
   let browser: any;
+  let profileLock: LockHandle | null = null;
   try {
-    // Headless only, never headed: Akamai passes real Chrome + real UA under --headless=new (shared launcher).
-    browser = await launchRealChrome({ launcher: deps.chromium });
-    const context = await browser.newContext({ ...HEADLESS_CONTEXT_OPTIONS, storageState: statePath });
-    const page = await context.newPage();
-    session = { browser, context, page, idleTimer: null, layout: makeObserver(deps) };
+    // Headless only, never headed: Akamai passes real Chrome + real UA under --headless=new (shared launcher). The persistent
+    // profile (extensions load there) is used when it exists and its lock is free; otherwise a fresh browser plus the state file.
+    const r = await openPlatformContext({
+      name: 'naukri', statePath, launcher: deps.chromium, contextOptions: HEADLESS_CONTEXT_OPTIONS,
+      profileDir: deps.profileDir === undefined ? (deps.sessionStatePath ? null : platformProfileDir('naukri')) : deps.profileDir,
+      profileLockPath: deps.profileLockPath ?? DEFAULT_PROFILE_LOCK_PATH,
+    });
+    if (!r.ok) return jsonOut({ ok: false, code: 'failed', reason: 'could not start the Naukri browser session' });
+    browser = r.browser;
+    profileLock = r.lock;
+    const page = await r.context.newPage();
+    session = { browser, context: r.context, page, idleTimer: null, layout: makeObserver(deps), ...(r.persistent ? { persistent: { lock: r.lock, statePath } } : {}) };
     touch(deps);
     return null;
   } catch (err) {
     console.error(`[naukri] launch failed: ${errText(err)}`);
-    if (session) await closeSession();
-    else if (browser) await browser.close().catch(() => {});
+    if (session) await closeSession(false);
+    else {
+      if (browser) await browser.close().catch(() => {});
+      profileLock?.release();
+    }
     return jsonOut({ ok: false, code: 'failed', reason: 'could not start the Naukri browser session' });
   }
 }

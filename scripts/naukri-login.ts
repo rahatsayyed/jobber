@@ -5,7 +5,8 @@
 import { createInterface } from 'node:readline';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS } from '../src/webcore/launch.js';
+import { HEADLESS_CONTEXT_OPTIONS } from '../src/webcore/launch.js';
+import { launchLoginBrowser } from '../src/webcore/loginBrowser.js';
 import { writeStateAtomic } from '../src/linkedin/session.js';
 import type { LiLauncher } from '../src/webcore/launch.js';
 
@@ -45,7 +46,7 @@ export async function main(deps: NaukriLoginDeps = {}): Promise<number> {
   const io = deps.io ?? stdinIo();
   let browser;
   try {
-    browser = await launchRealChrome({ headed: true, launcher: deps.launcher });
+    browser = await launchLoginBrowser({ name: 'naukri', launcher: deps.launcher });
   } catch (e) {
     console.error(`Login failed: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
     return 1;
