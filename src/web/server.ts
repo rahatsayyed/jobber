@@ -38,6 +38,7 @@ import { buildConfigView } from '../dash/configView.js';
 import { createSettingsRoutes, type SettingsDeps } from './settingsRoutes.js';
 import { createApplyRoutes, type ApplyDeps } from './applyRoutes.js';
 import { createEscalationRoutes, type EscalationDeps } from './escalationRoutes.js';
+import { createQuestionRoutes, type QuestionDeps } from './questionRoutes.js';
 import { createTerminalRoutes } from './terminalRoutes.js';
 import { applySecurityHeaders, HttpError, json, readJson, securityHeaders, type Ctx } from './router.js';
 
@@ -66,6 +67,7 @@ export interface WebDeps {
   settings?: SettingsDeps; // dashboard settings editor (plan 8H); routes exist only when set. Never given to chat.
   apply?: ApplyDeps; // /apply request box write; absent: confirm answers a refusal and nothing is written
   terminal?: { sessions: string[]; inputEnabled: boolean; killed: () => boolean }; // Sessions page live terminal; absent: view only, no kill check
+  questions?: QuestionDeps; // Inbox 'Needs your answer' actions; absent: the three actions answer a write failure and nothing is written
   escalations?: EscalationDeps; // Inbox actions (mark handled, snooze); absent: both answer a write failure and nothing is written
 }
 
@@ -573,6 +575,10 @@ export function createWebServer(deps: WebDeps): http.Server {
     throw new Error('no escalation writer configured');
   };
   for (const r of createEscalationRoutes(deps.escalations ?? { resolve: noWriter, snooze: noWriter }, { auth: deps.auth, data: deps.data, now })) {
+    add(r.method, r.pattern, false, r.fn);
+  }
+
+  for (const r of createQuestionRoutes(deps.questions ?? { write: noWriter }, { auth: deps.auth, data: deps.data, now })) {
     add(r.method, r.pattern, false, r.fn);
   }
 

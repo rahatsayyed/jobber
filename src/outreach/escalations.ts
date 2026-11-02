@@ -6,6 +6,7 @@
 import BetterSqlite3 from 'better-sqlite3';
 import { cleanText } from '../dash/clean.js';
 import { migrateSchedulerTables } from '../scheduler/runLog.js';
+import { agentHandleAllowed, QUESTION_KINDS, type QuestionKind } from '../apply/questions.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -167,6 +168,11 @@ export interface EscItem {
 export interface OpenQuestionView {
   id: number; label: string; kind: string; options: string[]; host: string; jobIds: string[];
   answerCommand: string;
+  /** Command that leaves the question to the agent; null when the question is factual (never allowed). */
+  agentCommand: string | null;
+  maxLength: number | null;
+  /** The first job that met the question (title at company, https apply link), when known. */
+  jobTitle: string | null; applyUrl: string | null;
 }
 
 export interface EscCounts { open: number; snoozed: number; resolved: number }
@@ -177,18 +183,32 @@ const QUESTION_ROWS_MAX = 25;
 export function openQuestionViews(db: Db, host?: string): OpenQuestionView[] {
   if (!hasTable(db, 'apply_questions')) return [];
   const rows = (host
-    ? db.prepare("SELECT id, host, label, kind, options FROM apply_questions WHERE status = 'open' AND host = ? ORDER BY id LIMIT ?").all(host.toLowerCase(), QUESTION_ROWS_MAX)
-    : db.prepare("SELECT id, host, label, kind, options FROM apply_questions WHERE status = 'open' ORDER BY id LIMIT ?").all(QUESTION_ROWS_MAX)) as
-    { id: number; host: string; label: string; kind: string; options: string | null }[];
+    ? db.prepare("SELECT id, host, label, kind, options, max_length FROM apply_questions WHERE status = 'open' AND host = ? ORDER BY id LIMIT ?").all(host.toLowerCase(), QUESTION_ROWS_MAX)
+    : db.prepare("SELECT id, host, label, kind, options, max_length FROM apply_questions WHERE status = 'open' ORDER BY id LIMIT ?").all(QUESTION_ROWS_MAX)) as
+    { id: number; host: string; label: string; kind: string; options: string | null; max_length: number | null }[];
   return rows.map((r) => {
     let options: string[] = [];
     try { const p = JSON.parse(r.options ?? '[]'); if (Array.isArray(p)) options = p.filter((x): x is string => typeof x === 'string').map((x) => cleanText(x, 80)); } catch { /* none */ }
     const jobIds = hasTable(db, 'apply_question_jobs')
       ? (db.prepare('SELECT job_id FROM apply_question_jobs WHERE question_id = ? ORDER BY rowid LIMIT 20').all(r.id) as { job_id: string }[]).map((x) => cleanText(x.job_id, 200))
       : [];
+    let jobTitle: string | null = null;
+    let applyUrl: string | null = null;
+    if (jobIds[0] && hasTable(db, 'jobs')) {
+      const j = db.prepare('SELECT title, company, apply_url FROM jobs WHERE id = ?').get(jobIds[0]) as { title: string | null; company: string | null; apply_url: string | null } | undefined;
+      if (j) {
+        jobTitle = `${cleanText(j.title ?? '', 120)}${j.company ? ` at ${cleanText(j.company, 80)}` : ''}`.trim() || null;
+        const u = cleanText(j.apply_url ?? '', 500);
+        applyUrl = /^https:\/\/\S+$/i.test(u) ? u : null;
+      }
+    }
+    const label = cleanText(r.label, 300);
+    const kind: QuestionKind = (QUESTION_KINDS as readonly string[]).includes(r.kind) ? (r.kind as QuestionKind) : 'text';
     return {
-      id: r.id, label: cleanText(r.label, 300), kind: r.kind, options, host: cleanText(r.host, 200), jobIds,
-      answerCommand: `npm run answers -- answer ${r.id} "<your answer>"`,
+      id: r.id, label, kind: r.kind, options, host: cleanText(r.host, 200), jobIds,
+      answerCommand: `npm run answers -- answer ${r.id} "<your answer>" [--always] [--comment "..."]`,
+      agentCommand: agentHandleAllowed(label, kind) ? `npm run answers -- agent ${r.id} [--comment "..."]` : null,
+      maxLength: r.max_length, jobTitle, applyUrl,
     };
   });
 }
@@ -311,7 +331,7 @@ export function listEscalations(
       const host = (it.threadRef ?? '').replace(/^answers:/, '');
       it.questions = hasTable(db, 'apply_questions') ? openQuestionViews(db, host) : [];
       it.label = 'Needs your answer';
-      it.todo = 'The application is paused. Answer each question once with the command shown; --always keeps it for every later form.';
+      it.todo = 'The application is paused. Answer each question in the Inbox tab (or with the command shown), or leave a free-text one to the agent; --always keeps an answer for every later form.';
       it.askKind = 'question';
     } else if (/^apply:needs_human/.test(it.reason)) {
       const m = /npm run apply:assist -- (\S+)/.exec(it.detail ?? '');

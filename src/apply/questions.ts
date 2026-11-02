@@ -7,12 +7,14 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { cleanText } from '../dash/clean.js';
 import { normalizeQuestion } from './answers.js';
+import { deriveFromResume } from './derive.js';
 
 type Db = BetterSqlite3.Database;
 
 export const QUESTION_KINDS = ['text', 'select', 'radio', 'checkbox'] as const;
 export type QuestionKind = (typeof QUESTION_KINDS)[number];
-export type QuestionStatus = 'open' | 'answered' | 'skipped';
+// `agent_handle`: the owner asked the agent to draft the answer itself (the drafting is a later task); until then the question is still unanswered.
+export type QuestionStatus = 'open' | 'answered' | 'skipped' | 'agent_handle';
 export type AnswerScope = 'once' | 'always';
 
 export const NEEDS_ANSWER = 'needs_answer';
@@ -35,6 +37,8 @@ export interface QuestionRow {
   answer_scope: AnswerScope | null;
   created_at: string;
   answered_at: string | null;
+  /** The owner's note: guidance for `agent_handle`, the reason for `skipped`, context for an answer. */
+  owner_comment: string | null;
   /** Every job that met this question (the row's own job first). */
   job_ids: string[];
 }
@@ -64,6 +68,30 @@ export function migrateApplyQuestions(db: Db): void {
       PRIMARY KEY (question_id, job_id)
     );
   `);
+  const cols = new Set((db.prepare('PRAGMA table_info(apply_questions)').all() as { name: string }[]).map((c) => c.name));
+  if (!cols.has('owner_comment')) db.exec('ALTER TABLE apply_questions ADD COLUMN owner_comment TEXT');
+}
+
+export const COMMENT_MAX = 1000;
+
+/** Owner comment as stored: controls removed, angle brackets dropped, capped. Empty becomes null. */
+export function cleanComment(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const t = cleanText(raw, COMMENT_MAX).replace(/[<>]/g, '').trim();
+  return t || null;
+}
+
+// Only free-text motivational or descriptive questions may be left to the agent to draft. Anything factual (money, dates, places, work
+// authorization, links, ids, consent, personal data) is refused: the agent must never invent those.
+const FACTUAL_RE = /salary|ctc|compensation|remunerat|\bpay\b|expected|notice|start date|available|availability|joining|location|city|country|state\b|relocat|authori[sz]|visa|sponsor|citizen|work permit|\burl\b|link|linkedin|github|portfolio|website|\bphone\b|mobile|email|address|\bid\b|number|consent|agree|gdpr|privacy|terms|gender|race|ethnic|veteran|disab|pronoun|birth|\bage\b|years?\b|how many|referr|how did you hear|\bname\b|degree|graduat|cgpa|percentage|current employer|current company|current title/i;
+const DESCRIPTIVE_RE = /why (do|are|would|should|did)|why (this|our|us)|why you|motivat|what (excites|interests|attracts|draws)|interested in|interest in|about (you|yourself)|tell us|describe|cover letter|passion|what makes you|anything else|additional information|your experience with|proud|challenge|strengths?/i;
+
+/** True only for a free-text question the agent may draft (why this company or role, interests, about you, cover-letter style). */
+export function agentHandleAllowed(label: string, kind: QuestionKind): boolean {
+  if (kind !== 'text') return false;
+  const l = cleanLabel(label);
+  if (!l || FACTUAL_RE.test(l)) return false;
+  return DESCRIPTIVE_RE.test(l);
 }
 
 /** Cleaned label as shown to the owner: no controls, no angle brackets, one line, capped. */
@@ -80,7 +108,7 @@ const hostKey = (h: string): string => String(h ?? '').toLowerCase().slice(0, 25
 
 interface Raw {
   id: number; job_id: string; host: string; label: string; norm_label: string; kind: string; options: string | null; max_length: number | null;
-  status: string; answer: string | null; answer_scope: string | null; created_at: string; answered_at: string | null;
+  status: string; answer: string | null; answer_scope: string | null; created_at: string; answered_at: string | null; owner_comment?: string | null;
 }
 
 function toRow(db: Db, r: Raw): QuestionRow {
@@ -88,7 +116,7 @@ function toRow(db: Db, r: Raw): QuestionRow {
   try { const p = JSON.parse(r.options ?? '[]'); if (Array.isArray(p)) options = p.filter((x): x is string => typeof x === 'string'); } catch { /* none */ }
   const jobs = (db.prepare('SELECT job_id FROM apply_question_jobs WHERE question_id = ? ORDER BY rowid').all(r.id) as { job_id: string }[]).map((x) => x.job_id);
   return {
-    ...r, kind: (QUESTION_KINDS as readonly string[]).includes(r.kind) ? (r.kind as QuestionKind) : 'text', options,
+    ...r, owner_comment: r.owner_comment ?? null, kind: (QUESTION_KINDS as readonly string[]).includes(r.kind) ? (r.kind as QuestionKind) : 'text', options,
     status: r.status as QuestionStatus, answer_scope: (r.answer_scope as AnswerScope | null), job_ids: jobs.length ? jobs : [r.job_id],
   };
 }
@@ -114,7 +142,7 @@ export function recordQuestion(db: Db, i: RecordInput, now: Date): { id: number;
   const options = (i.options ?? []).map((o) => cleanText(String(o), OPTION_MAX).replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, OPTIONS_CAP);
   const maxLength = i.maxLength && i.maxLength > 0 && i.maxLength < 100000 ? Math.floor(i.maxLength) : null;
   const existing = db.prepare(
-    "SELECT * FROM apply_questions WHERE norm_label = ? AND host = ? AND (status = 'open' OR (status = 'skipped') OR (status = 'answered' AND answer_scope = 'always')) ORDER BY (status = 'open') DESC, id DESC LIMIT 1",
+    "SELECT * FROM apply_questions WHERE norm_label = ? AND host = ? AND (status = 'open' OR status = 'agent_handle' OR (status = 'skipped') OR (status = 'answered' AND answer_scope = 'always')) ORDER BY (status = 'open') DESC, (status = 'agent_handle') DESC, id DESC LIMIT 1",
   ).get(norm, host) as Raw | undefined;
   if (existing) {
     db.prepare('INSERT OR IGNORE INTO apply_question_jobs (question_id, job_id) VALUES (?, ?)').run(existing.id, i.jobId);
@@ -158,6 +186,14 @@ export function openQuestionsForHost(db: Db, host: string): QuestionRow[] {
   return (db.prepare("SELECT * FROM apply_questions WHERE host = ? AND status = 'open' ORDER BY id").all(hostKey(host)) as Raw[]).map((r) => toRow(db, r));
 }
 
+/** Questions of one job the owner left to the agent to draft (still unanswered: nothing is guessed until the drafting exists). */
+export function agentQuestionsForJob(db: Db, jobId: string): QuestionRow[] {
+  const rows = db.prepare(
+    "SELECT q.* FROM apply_questions q JOIN apply_question_jobs j ON j.question_id = q.id WHERE j.job_id = ? AND q.status = 'agent_handle' ORDER BY q.id",
+  ).all(jobId) as Raw[];
+  return rows.map((r) => toRow(db, r));
+}
+
 export function countOpenQuestions(db: Db): number {
   try { return (db.prepare("SELECT COUNT(*) AS n FROM apply_questions WHERE status = 'open'").get() as { n: number }).n; } catch { return 0; }
 }
@@ -182,7 +218,8 @@ export function storedAnswer(db: Db, jobId: string, host: string, label: string)
 function releaseJobs(db: Db, jobIds: string[]): string[] {
   const out: string[] = [];
   for (const jobId of new Set(jobIds)) {
-    if (openQuestionsForJob(db, jobId).length) {
+    if (openQuestionsForJob(db, jobId).length || agentQuestionsForJob(db, jobId).length) {
+      // Open questions, or questions waiting for the agent to draft: the job stays paused (the applier never guesses).
       refreshCount(db, jobId);
       continue;
     }
@@ -193,8 +230,13 @@ function releaseJobs(db: Db, jobIds: string[]): string[] {
 }
 
 function refreshCount(db: Db, jobId: string): void {
+  db.prepare("UPDATE outreach_queue SET apply_note = ?, updated_at = datetime('now') WHERE job_id = ? AND apply_status = ?").run(jobNote(db, jobId), jobId, NEEDS_ANSWER);
+}
+
+function jobNote(db: Db, jobId: string): string {
   const n = openQuestionsForJob(db, jobId).length;
-  db.prepare("UPDATE outreach_queue SET apply_note = ?, updated_at = datetime('now') WHERE job_id = ? AND apply_status = ?").run(needsAnswerNote(n), jobId, NEEDS_ANSWER);
+  const a = agentQuestionsForJob(db, jobId).length;
+  return n === 0 && a > 0 ? `${a} question${a === 1 ? '' : 's'} waiting for the agent to draft` : needsAnswerNote(n);
 }
 
 export const needsAnswerNote = (n: number): string => `${n} question${n === 1 ? '' : 's'} need${n === 1 ? 's' : ''} your answer`;
@@ -204,7 +246,7 @@ export function pauseJobNeedsAnswer(db: Db, jobId: string): number {
   const n = openQuestionsForJob(db, jobId).length;
   db.prepare(
     "UPDATE outreach_queue SET apply_status = ?, apply_note = ?, updated_at = datetime('now') WHERE job_id = ? AND COALESCE(apply_status, '') IN ('', 'queued', ?, 'needs_owner')",
-  ).run(NEEDS_ANSWER, needsAnswerNote(n), jobId, NEEDS_ANSWER);
+  ).run(NEEDS_ANSWER, jobNote(db, jobId), jobId, NEEDS_ANSWER);
   return n;
 }
 
@@ -231,35 +273,91 @@ export interface AnswerOutcome { answered: number[]; released: string[] }
  * normalized label (any host), because the answer book reuses it for every later form. Jobs with nothing left open become retryable.
  * The caller has already run the shape, output and fact gates and (for `always`) written the answer book.
  */
-export function markAnswered(db: Db, id: number, value: string, scope: AnswerScope, now: Date): AnswerOutcome {
+export function markAnswered(db: Db, id: number, value: string, scope: AnswerScope, now: Date, comment?: string | null): AnswerOutcome {
   const q = getQuestion(db, id);
   if (!q) throw new Error('no such question');
-  if (q.status !== 'open') throw new Error(`question ${id} is already ${q.status}`);
+  if (q.status !== 'open' && q.status !== 'agent_handle') throw new Error(`question ${id} is already ${q.status}`);
+  const note = cleanComment(comment);
   const run = db.transaction((): AnswerOutcome => {
     const targets = scope === 'always'
-      ? (db.prepare("SELECT id FROM apply_questions WHERE status = 'open' AND norm_label = ?").all(q.norm_label) as { id: number }[]).map((r) => r.id)
+      ? (db.prepare("SELECT id FROM apply_questions WHERE status IN ('open', 'agent_handle') AND norm_label = ?").all(q.norm_label) as { id: number }[]).map((r) => r.id)
       : [id];
     const jobs: string[] = [];
     for (const tid of targets) {
       const t = getQuestion(db, tid)!;
       jobs.push(...t.job_ids);
-      db.prepare("UPDATE apply_questions SET status = 'answered', answer = ?, answer_scope = ?, answered_at = ? WHERE id = ?").run(value, scope, now.toISOString(), tid);
+      db.prepare("UPDATE apply_questions SET status = 'answered', answer = ?, answer_scope = ?, answered_at = ?, owner_comment = COALESCE(?, owner_comment) WHERE id = ?").run(value, scope, now.toISOString(), note, tid);
     }
     return { answered: targets, released: releaseJobs(db, jobs) };
   });
   return run();
 }
 
-/** The owner declines to answer: the question is not asked again on this host and its jobs go to manual_review (a clean end, not a failure). */
-export function markSkipped(db: Db, id: number, now: Date): { jobs: string[] } {
+/** The owner declines to answer ("I applied by hand"): the question is not asked again on this host and its jobs go to manual_review (a clean end, not a failure). */
+export function markSkipped(db: Db, id: number, now: Date, comment?: string | null): { jobs: string[] } {
   const q = getQuestion(db, id);
   if (!q) throw new Error('no such question');
-  if (q.status !== 'open') throw new Error(`question ${id} is already ${q.status}`);
+  if (q.status !== 'open' && q.status !== 'agent_handle') throw new Error(`question ${id} is already ${q.status}`);
+  const note = cleanComment(comment);
   db.transaction(() => {
-    db.prepare("UPDATE apply_questions SET status = 'skipped', answered_at = ? WHERE id = ?").run(now.toISOString(), id);
+    db.prepare("UPDATE apply_questions SET status = 'skipped', answered_at = ?, owner_comment = COALESCE(?, owner_comment) WHERE id = ?").run(now.toISOString(), note, id);
     for (const j of q.job_ids) {
       db.prepare("UPDATE outreach_queue SET apply_status = 'manual_review', apply_note = 'question_skipped', updated_at = datetime('now') WHERE job_id = ? AND apply_status = ?").run(j, NEEDS_ANSWER);
     }
   })();
   return { jobs: q.job_ids };
+}
+
+/**
+ * The owner leaves the question to the agent. Only a free-text motivational or descriptive question qualifies (`agentHandleAllowed`).
+ * The question stays unanswered (nothing is guessed): the job stays paused until the later drafting task answers it. The comment is
+ * guidance that task reads.
+ */
+export function markAgentHandle(db: Db, id: number, now: Date, comment?: string | null): { jobs: string[] } {
+  const q = getQuestion(db, id);
+  if (!q) throw new Error('no such question');
+  if (q.status !== 'open' && q.status !== 'agent_handle') throw new Error(`question ${id} is already ${q.status}`);
+  if (!agentHandleAllowed(q.label, q.kind)) throw new Error('not_allowed: only a free-text motivational question can be left to the agent');
+  const note = cleanComment(comment);
+  db.transaction(() => {
+    db.prepare("UPDATE apply_questions SET status = 'agent_handle', answered_at = ?, owner_comment = COALESCE(?, owner_comment) WHERE id = ?").run(now.toISOString(), note, id);
+    for (const j of q.job_ids) refreshCount(db, j);
+  })();
+  return { jobs: q.job_ids };
+}
+
+/** Saves a comment on a question without changing its status. */
+export function setOwnerComment(db: Db, id: number, comment: string | null): void {
+  db.prepare('UPDATE apply_questions SET owner_comment = ? WHERE id = ?').run(cleanComment(comment), id);
+}
+
+export interface Guidance { label: string; host: string; comment: string; status: QuestionStatus }
+
+/**
+ * Prior owner comments for the same normalized label (same host first, newest first). Read model for the later drafting task: the
+ * comments are guidance, never an answer. Similar = same normalized label, or one label contains the other (both at least 12 chars).
+ */
+export function ownerGuidanceFor(db: Db, label: string, host?: string, limit = 5): Guidance[] {
+  const norm = normLabel(label);
+  if (!norm) return [];
+  let rows: Raw[];
+  try {
+    rows = db.prepare("SELECT * FROM apply_questions WHERE owner_comment IS NOT NULL AND owner_comment != '' ORDER BY id DESC LIMIT 500").all() as Raw[];
+  } catch { return []; }
+  const h = host ? hostKey(host) : '';
+  const similar = (n: string): boolean => n === norm || (n.length >= 12 && norm.length >= 12 && (n.includes(norm) || norm.includes(n)));
+  const hits = rows.filter((r) => similar(r.norm_label));
+  hits.sort((a, b) => Number(Boolean(h) && b.host === h) - Number(Boolean(h) && a.host === h) || b.id - a.id);
+  return hits.slice(0, Math.max(1, limit)).map((r) => ({ label: r.label, host: r.host, comment: r.owner_comment as string, status: r.status as QuestionStatus }));
+}
+
+/** A value the system could derive from the resume for this label, shown as a prefilled hint. Never applied automatically. */
+export function suggestedAnswer(label: string, resume: Record<string, unknown> | null, now: Date = new Date()): string | null {
+  if (!resume) return null;
+  const l = cleanLabel(label).toLowerCase();
+  const d = deriveFromResume(resume, now);
+  if (/years?.*(experience|work)|experience.*years?|how many years/.test(l) && d.years_experience !== null) return String(d.years_experience);
+  if (/(current|present).*(location|city)|where are you (based|located)|current city/.test(l) && d.current_location) return d.current_location;
+  if (/\b(skills|tech stack|technologies)\b/.test(l) && d.skills) return d.skills;
+  return null;
 }

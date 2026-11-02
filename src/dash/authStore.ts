@@ -18,7 +18,8 @@ export type AuditKind =
   | 'token_created' | 'token_rotated' | 'token_login_ok' | 'token_login_denied' | 'mode_changed'
   | 'settings_env_apply' | 'settings_file_apply' | 'settings_rollback' | 'settings_reject'
   | 'apply_prepare' | 'apply_request' | 'apply_reject'
-  | 'escalation_resolve' | 'escalation_snooze' | 'escalation_reopen' | 'terminal_open' | 'terminal_input';
+  | 'escalation_resolve' | 'escalation_snooze' | 'escalation_reopen' | 'terminal_open' | 'terminal_input'
+  | 'apply_question_answer' | 'apply_question_agent' | 'apply_question_skip' | 'apply_question_reject';
 
 const NOTE_MAX = 200;
 const ID_HINT_MAX = 12;

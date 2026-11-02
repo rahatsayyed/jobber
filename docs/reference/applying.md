@@ -123,6 +123,15 @@ left blank. Owner commands:
   job back in the apply queue (`apply_status` NULL); the next apply stage retries it.
 - `npm run answers -- skip <id>`: the question is not asked again on that host and its jobs end
   `manual_review`.
+- `npm run answers -- agent <id> [--comment "..."]`: leave a free-text motivational question (why this
+  company or role, interests, about you, cover-letter style) to the agent: status `agent_handle`. Factual
+  questions (salary, CTC, notice, location, work authorization, links, ids, consent) are refused. This only
+  stores the choice: the question stays unanswered, the applier never guesses it and the job stays paused
+  (`apply_note` says it waits for the agent) until the drafting task exists. `answer` and `skip` also take
+  `--comment`; the comment (`apply_questions.owner_comment`) is guidance for that later task and is read back
+  with `ownerGuidanceFor(label, host)` (`src/apply/questions.ts`). `list` shows every job with its link and ALL
+  its missing questions. The same choices are in the dashboard Inbox tab ("Needs your answer", one card per
+  job; API `/api/apply-questions`, `src/web/questionRoutes.ts`; gates in `src/apply/answerService.ts`).
 
 `/escalations`, `npm run status -- working|json` and the Telegram digest say "needs your answer" and
 show each question with the command. `drift` stays for a page whose structure cannot be read.

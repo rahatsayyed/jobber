@@ -7,6 +7,7 @@ import { audit, type AuthDb } from '../dash/authStore.js';
 import {
   countEscalations, countOpenCards, GROUP_ORDER, listEscalations, NOTE_MAX, type EscGroup, type EscStatus,
 } from '../outreach/escalations.js';
+import { questionCounts } from '../apply/questionInbox.js';
 import { json, readJson, type Ctx } from './router.js';
 
 export interface EscalationDeps {
@@ -79,7 +80,13 @@ export function createEscalationRoutes(
       },
     },
     // `cards` is what the Inbox list shows as open (one card per conversation); open/snoozed/resolved stay raw row counts.
-    { method: 'GET', pattern: '/api/escalations/count', fn: (c) => json(c.res, 200, { ...countEscalations(data, now()), cards: countOpenCards(data, now()) }) },
+    { method: 'GET', pattern: '/api/escalations/count', fn: (c) => {
+        const cards = countOpenCards(data, now());
+        const q = questionCounts(data);
+        // `badge` is what the Inbox tab shows: the cards plus the jobs that wait for an answer.
+        json(c.res, 200, { ...countEscalations(data, now()), cards, questions: q.questions, questionJobs: q.jobs, badge: cards + q.jobs });
+      },
+    },
     { method: 'POST', pattern: '/api/escalations/resolve', fn: (c) => act(c, 'resolve') },
     { method: 'POST', pattern: '/api/escalations/reopen', fn: (c) => act(c, 'reopen') },
     { method: 'POST', pattern: '/api/escalations/snooze', fn: (c) => act(c, 'snooze') },

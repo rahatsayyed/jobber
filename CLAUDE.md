@@ -537,7 +537,7 @@ Acceptance of a sent invite is detected in code: the `accept_recent` task calls 
 
 ## Owner help commands (apply)
 
-The applier never guesses an answer: an unanswerable required question parks the job as `needs_answer` (`apply_questions`; owner: `npm run answers -- list|answer <id> "<text>" [--always]|skip <id>`), and a login wall, CAPTCHA or MFA parks it as `needs_human` (`npm run apply:assist -- <job_id>`, one Telegram ping per host per 6 h). Web tasks share one persistent profile `secrets/browser-profile/` (`npm run browser:open -- <url>`, `browser:history`); ATS coverage is NULL with `ats_note='jd_incomplete'` for snippet-only postings. Details: `docs/reference/applying.md`, `docs/reference/resume-tailoring.md`.
+The applier never guesses an answer: an unanswerable required question parks the job as `needs_answer` (`apply_questions`; owner: `npm run answers -- list|answer <id> "<text>" [--always] [--comment ".."]|agent <id>|skip <id>`, or the dashboard Inbox "Needs your answer" cards; `agent_handle` = owner left a free-text question to the agent, still unanswered and never guessed), and a login wall, CAPTCHA or MFA parks it as `needs_human` (`npm run apply:assist -- <job_id>`, one Telegram ping per host per 6 h). Web tasks share one persistent profile `secrets/browser-profile/` (`npm run browser:open -- <url>`, `browser:history`); ATS coverage is NULL with `ats_note='jd_incomplete'` for snippet-only postings. Details: `docs/reference/applying.md`, `docs/reference/resume-tailoring.md`.
 
 ## Owner docs
 

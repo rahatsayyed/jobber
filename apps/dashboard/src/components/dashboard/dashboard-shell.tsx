@@ -120,7 +120,7 @@ function Overview() {
 export function DashboardShell({ section: initialSection }: { section: string }) {
   const pathname = usePathname(); const router = useRouter(); const section = useMemo(() => getSection(initialSection), [initialSection]); const [mode, setMode] = useState<"DRY RUN" | "LIVE" | null>(null); const [csrf, setCsrf] = useState<string | null>(null); const [inboxOpen, setInboxOpen] = useState(0);
   useEffect(() => {
-    const refresh = () => { api<{ cards?: number; open?: number }>("/api/escalations/count").then((c) => setInboxOpen(c.cards ?? c.open ?? 0)).catch(() => undefined); };
+    const refresh = () => { api<{ badge?: number; cards?: number; open?: number }>("/api/escalations/count").then((c) => setInboxOpen(c.badge ?? c.cards ?? c.open ?? 0)).catch(() => undefined); };
     refresh(); const timer = window.setInterval(refresh, 60_000); window.addEventListener("inbox-changed", refresh);
     return () => { window.clearInterval(timer); window.removeEventListener("inbox-changed", refresh); };
   }, []);
