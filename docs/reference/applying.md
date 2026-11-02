@@ -170,7 +170,7 @@ and `apply_status` NULL, in one transaction). The result is `{status, code, plat
 
 Guards: kill switch, halts and dry run (the control is not clicked in a dry run); dedupe before any click (already submitted, or the
 same company and title key submitted within 90 days); a page that shows Applied or expired is refused; daily ceiling
-`APPLY_MAX_EXTERNAL_RESOLVES_PER_DAY` (rate event `external_resolve`, default 30; popup clicks only); at most 5 resolves per
+`APPLY_MAX_EXTERNAL_RESOLVES_PER_DAY` (rate event `external_resolve`, default 100; popup clicks only); at most 5 resolves per
 apply-operator session with a random 3 to 8 s pause. An unknown company host stays `manual_review` and the row note
 (`outreach_queue.apply_note`, `external:host_unknown`) says why, unless `APPLY_ALLOW_UNKNOWN_HOSTS=true`. If the company site needs an
 account, the existing `site_signup` rules apply (`APPLY_ALLOW_ACCOUNT_CREATION`, `SITE_MAX_ACCOUNTS_PER_DAY`; ships off, so the job is

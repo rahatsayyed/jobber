@@ -29,7 +29,7 @@ const DEFAULTS: OutreachConfig = {
   applyMaxAttemptsPerDay: 30,
   siteMaxAccountsPerDay: 2,
   linkedinMaxDiscoverPerDay: 6,
-  applyMaxExternalResolvesPerDay: 30,
+  applyMaxExternalResolvesPerDay: 100,
   linkedinMaxProfileViewsPerDay: 40,
   companyContactLimit: 2,
   speculativeCompanyLimit: 2,
