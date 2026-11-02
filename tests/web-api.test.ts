@@ -389,25 +389,14 @@ describe('data routes', () => {
   });
 });
 
-describe('static frontend', () => {
-  it('GET root serves the shell with the CSP header and every static file is reachable', async () => {
+describe('legacy static frontend', () => {
+  it('GET root is no longer served by the API server (the Next dashboard is the default), and the API still answers', async () => {
     h = await makeHarness();
     const root = await h.call('GET', '/');
-    expect(root.status).toBe(200);
-    expect(String(root.headers['content-type'])).toContain('text/html');
-    expect(String(root.headers['content-security-policy'])).toContain("script-src 'self'");
-    expect(root.body).toContain('<div id="app">');
-    const { readdirSync, statSync } = await import('node:fs');
-    const base = join(process.cwd(), 'src', 'web', 'static');
-    const walk = (d: string, rel = ''): string[] =>
-      readdirSync(d).flatMap((n) => (statSync(join(d, n)).isDirectory() ? walk(join(d, n), `${rel}/${n}`) : [`${rel}/${n}`]));
-    const want: Record<string, string> = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html' };
-    for (const p of walk(base)) {
-      const url = p === '/index.html' ? '/' : p;
-      const r = await h.call('GET', url);
-      expect(r.status, url).toBe(200);
-      expect(String(r.headers['content-type']), url).toContain(want[p.slice(p.lastIndexOf('.'))]);
-    }
+    expect(root.status).toBe(404);
+    expect(root.body).not.toContain('<div id="app">');
+    expect((await h.call('GET', '/app.js')).status).toBe(404);
+    expect((await h.call('GET', '/api/health')).status).toBe(200);
   });
 });
 

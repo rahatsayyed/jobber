@@ -12,6 +12,7 @@ import { loginProfileDir } from './loginBrowser.js';
 import { cleanCookies, prepareProfileDir } from './profile.js';
 import { acquireLock, writeStateAtomic, type LockHandle } from '../linkedin/session.js';
 import { resolveHost, type HostAttach } from './hostClient.js';
+import { hostProcessExists } from './hostFile.js';
 
 const SECRETS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'secrets');
 
@@ -97,6 +98,8 @@ export interface PlatformContextOpts {
   profileLockPath?: string;
   /** Shared browser host: injected (tests), null (off), or undefined (on by default with the real launcher, see resolveHost). */
   host?: HostAttach | null;
+  /** Pidfile of the shared host (tests); default is the real one. */
+  hostPidPath?: string;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -122,7 +125,9 @@ export async function openPlatformContext(opts: PlatformContextOpts): Promise<Pl
       lock?.release();
       if (r.code === 'halted') return { ok: false, code: 'halted', reason: r.reason };
       if (r.code === 'busy_headed' || r.code === 'busy') return { ok: false, code: 'session_locked', reason: r.reason };
-      // disabled or unavailable: the old path below.
+      // A host process that exists (starting or hung) may hold the profile lock: never open the same profile a second time.
+      if (r.code === 'unavailable' && hostProcessExists(opts.hostPidPath)) return { ok: false, code: 'session_locked', reason: 'the shared browser host is starting or not answering and holds the profile; try again in a few minutes' };
+      // disabled, or unavailable with no host process: the old path below.
     }
   }
   if (dir && existsSync(dir) && persistentSupported(opts.launcher) && prepareProfileDirSafe(dir)) {

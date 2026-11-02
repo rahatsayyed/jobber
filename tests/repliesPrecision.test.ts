@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterAll, describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { buildReplyQuery, classifyReply, classifyReplyDetail, loadRepliesConfig, matchReply, stripQuoted, type ReplyClass } from '../src/replies.js';
@@ -8,6 +8,7 @@ const sent = (over: Partial<SentEmail>): SentEmail => ({ job_id: 'j1', company: 
 
 describe('loadRepliesConfig (opt-in, safe default false)', () => {
   const dir = fs.mkdtempSync(path.join(process.cwd(), 'tmp-replies-cfg-'));
+  afterAll(() => { fs.rmSync(dir, { recursive: true, force: true }); });
   const write = (name: string, text: string) => { const f = path.join(dir, name); fs.writeFileSync(f, text); return f; };
   it('is true only for a literal boolean true; missing, invalid or wrong-typed => false', () => {
     expect(loadRepliesConfig(write('on.json', '{"auto_record_enabled": true}'))).toEqual({ auto_record_enabled: true });

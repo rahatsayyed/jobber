@@ -29,3 +29,6 @@ models/
 .update/
 .backups/
 /generated/
+
+# Leftover temp dirs of the reply-config tests
+tmp-replies-cfg-*/

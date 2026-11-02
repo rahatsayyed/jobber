@@ -74,7 +74,7 @@ describe('headers and methods', () => {
       await h.call('POST', '/'),
       await h.call('GET', '/api/health', { headers: { host: 'evil.example' } }),
     ];
-    expect(rs.map((r) => r.status)).toEqual([404, 401, 404, 405, 421]);
+    expect(rs.map((r) => r.status)).toEqual([404, 401, 404, 404, 421]);
     for (const r of rs) {
       for (const [k, v] of Object.entries(HEADERS)) expect(r.headers[k], k).toBe(v);
       expect(Object.keys(r.headers).filter((k) => k.startsWith('access-control-'))).toEqual([]);

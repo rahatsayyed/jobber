@@ -12,7 +12,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { extractNaukriJobId } from './sources/naukri.js';
 import { isNaukriUrl } from './naukri/page.js';
 import { canonicalJobUrl, extractLinkedInJobId } from './linkedin/jobIds.js';
-import { cleanJdText, isJdComplete, jdFetchPlatform } from './jdComplete.js';
+import { cleanJdText, isJdComplete, jdFetchPlatform, JD_FETCH_MAX_ATTEMPTS } from './jdComplete.js';
 import { listJdCandidates, markJdPending, markJdUnavailable, recordJdAttempt, saveFetchedJd } from './jdStore.js';
 import { loadOutreachConfig } from './outreach/config.js';
 import { ceilings, haltReason, tryConsume, type LimitKey } from './outreach/limits.js';
@@ -160,6 +160,13 @@ export interface JdFetchResult {
   injection_suspected?: boolean;
 }
 
+// After a login wall the platform is not tried again by this process for this long (the session needs the owner).
+const LOGIN_BLOCK_MIN = 30;
+const loginBlockedUntil = new Map<JdPlatform, number>();
+// Test hook: forget the in-process login blocks.
+export function resetJdLoginBlocks(): void { loginBlockedUntil.clear(); }
+const sqlStamp = (d: Date): string => d.toISOString().slice(0, 19).replace('T', ' ');
+
 const waitingOf = (db: Db, platform: JdPlatform, now: Date): number => {
   try { return listJdCandidates(db, platform, now, 100000).length; } catch { return 0; }
 };
@@ -179,6 +186,8 @@ export async function fetchJd(platform: JdPlatform, io: JdFetchIo, deps: JdFetch
   const candidates = listJdCandidates(db, platform, now, a.job_id ? 100000 : 1);
   const job = a.job_id ? candidates.find((c) => c.id === a.job_id) : candidates[0];
   if (!job) return out(a.job_id ? 'failed' : 'ok', a.job_id ? 'not_waiting' : 'none');
+  const blockedUntil = loginBlockedUntil.get(platform);
+  if (blockedUntil !== undefined && now.getTime() < blockedUntil) return out('failed', 'login_required', { job_id: job.id });
   if (jdFetchPlatform(job.source) !== platform) return out('failed', 'not_waiting', { job_id: job.id });
   const url = jdUrlFor(platform, job.url);
   if (!url) {
@@ -202,37 +211,53 @@ export async function fetchJd(platform: JdPlatform, io: JdFetchIo, deps: JdFetch
   if (platform === 'linkedin' && !tryConsume(db, 'linkedin_profile_view', cfg, now)) return out('rate_limited', 'profile_view_limit', { job_id: job.id });
 
   try { await deps.beforeLoad?.(); } catch { /* a failed pause never blocks the fetch */ }
+  // A failed page read counts as an attempt (the job leaves the queue after JD_FETCH_MAX_ATTEMPTS and sits out a cooldown
+  // meanwhile), so one dead job cannot be picked forever and burn the daily fetch ceiling.
+  const failRead = (code: string): JdFetchResult => {
+    const attempts = recordJdAttempt(db, job.id, now);
+    if (attempts >= JD_FETCH_MAX_ATTEMPTS) markJdUnavailable(db, job.id, code);
+    return out('failed', code, { job_id: job.id });
+  };
+  const loginWall = (): JdFetchResult => {
+    loginBlockedUntil.set(platform, now.getTime() + LOGIN_BLOCK_MIN * 60_000);
+    db.prepare('UPDATE jobs SET jd_fetch_at = ? WHERE id = ?').run(sqlStamp(now), job.id);
+    return out('failed', 'login_required', { job_id: job.id });
+  };
   const loaded = await io.load(url);
   if (loaded === 'halted') return out('halted', 'halted', { job_id: job.id });
-  if (loaded !== 'ok') return out('failed', loaded === 'login_required' ? 'login_required' : 'load_failed', { job_id: job.id });
+  if (loaded === 'login_required') return loginWall();
+  if (loaded !== 'ok') return failRead('load_failed');
   let page: JdPageRead | null;
   try { page = await io.read(); } catch { page = null; }
-  if (!page) return out('failed', 'unreadable', { job_id: job.id });
-  if (looksLikeLoginWall(page)) return out('failed', 'login_required', { job_id: job.id });
+  if (!page) return failRead('unreadable');
+  if (looksLikeLoginWall(page)) return loginWall();
 
   const verdict = classifyJdPage(platform, page);
-  if (verdict === 'blocked') return out('failed', 'blocked', { job_id: job.id });
+  if (verdict === 'blocked') return failRead('blocked');
+  // One flagged read may be a false positive: retry once, only the second flagged read gives the job up.
+  const flagged = (): JdFetchResult => {
+    if (recordJdAttempt(db, job.id, now) < 2) return out('ok', 'injection_retry', { job_id: job.id, injection_suspected: true });
+    markJdUnavailable(db, job.id, 'injection_suspected');
+    return out('ok', 'injection_suspected', { job_id: job.id, injection_suspected: true });
+  };
   if (verdict === 'closed') {
     markJdUnavailable(db, job.id, 'closed');
     return out('ok', 'unavailable', { job_id: job.id });
   }
 
   const g = gateField(jdTextOf(page), JD_MAX_CHARS + 500);
-  if (g.blocked) {
-    markJdUnavailable(db, job.id, 'injection_suspected');
-    return out('ok', 'injection_suspected', { job_id: job.id, injection_suspected: true });
-  }
+  if (g.blocked) return flagged();
   if (g.text) {
     let v: ScreenVerdict;
-    try { v = await deps.screen(g.text, 'read'); } catch { return out('failed', 'classifier_unavailable', { job_id: job.id }); }
-    if (v.blocked) {
-      markJdUnavailable(db, job.id, 'injection_suspected');
-      return out('ok', 'injection_suspected', { job_id: job.id, injection_suspected: true });
+    try { v = await deps.screen(g.text, 'read'); } catch {
+      db.prepare('UPDATE jobs SET jd_fetch_at = ? WHERE id = ?').run(sqlStamp(now), job.id);
+      return out('failed', 'classifier_unavailable', { job_id: job.id });
     }
+    if (v.blocked) return flagged();
   }
   if (!isJdComplete(g.text)) {
     const attempts = recordJdAttempt(db, job.id, now);
-    if (attempts >= 3) {
+    if (attempts >= JD_FETCH_MAX_ATTEMPTS) {
       markJdUnavailable(db, job.id, 'incomplete');
       return out('ok', 'unavailable', { job_id: job.id });
     }
