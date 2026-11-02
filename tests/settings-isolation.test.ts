@@ -35,6 +35,7 @@ describe('import graph', () => {
     'src/web/settingsRoutes.ts',
     'src/web/server.ts',
     'scripts/web.ts',
+    'scripts/web-api.ts', // internal web API process (WEB_INTERNAL_PORT), same owner-only settings wiring as web.ts
     'scripts/gen-env-example.ts',
     'scripts/settings.ts',
     'src/platform/checksSettings.ts', // later task
