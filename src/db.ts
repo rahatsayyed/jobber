@@ -1138,8 +1138,22 @@ export function saveMatchResultsChecked(
       if (x.hard_stops.length) stops.push({ job_id: x.job_id, hard_stops: x.hard_stops });
       if (x.injection_phrases.length) suspects.push({ job_id: x.job_id, phrases: x.injection_phrases });
     }
+    // Jobs offered for matching earlier in this process but absent from the saved rows were silently omitted by the matcher: count a failure.
+    const offered = OFFERED_UNSCORED.get(db);
+    if (offered && seen.size > 0) {
+      for (const id of offered) if (!seen.has(id)) failed.run(id);
+      offered.clear();
+    }
   })();
   return { saved, errors, hard_stops: stops, injection_suspects: suspects, scores };
+}
+/** Per db handle (one MCP process is one run): unscored jobs listed for the matcher and prep-offer bumps already made in this run. */
+const OFFERED_UNSCORED = new WeakMap<object, Set<string>>();
+const BUMPED_IN_RUN = new WeakMap<object, Set<string>>();
+function setFor(m: WeakMap<object, Set<string>>, db: object): Set<string> {
+  let s = m.get(db);
+  if (!s) { s = new Set(); m.set(db, s); }
+  return s;
 }
 
 /** Rejected match saves after which a job is no longer offered to the wake pipeline. */
@@ -1197,7 +1211,7 @@ export { PREP_OFFER_LIMIT, PREP_OFFER_LIMIT_APPLY } from './pipelineWork.js';
  */
 export function listUnscoredJobs(
   db: BetterSqlite3.Database,
-  opts: { limit?: number; matchThreshold?: number; kind?: 'all' | 'matched' | 'unscored'; offset?: number; now?: Date } = {},
+  opts: { limit?: number; matchThreshold?: number; kind?: 'all' | 'matched' | 'unscored'; offset?: number; now?: Date; oncePerRun?: boolean } = {},
 ): UnscoredJob[] {
   const limit = Math.max(1, Math.min(100, Math.floor(opts.limit ?? 25)));
   const kind = opts.kind ?? 'all';
@@ -1236,7 +1250,10 @@ export function listUnscoredJobs(
   if (kind === 'matched') prio = prio.filter((r) => r.score !== null && r.score !== undefined);
   if (kind === 'unscored') prio = prio.filter((r) => r.score === null || r.score === undefined);
   const bumpPrio = db.prepare('UPDATE jobs SET prep_offers = prep_offers + 1 WHERE id = ?');
-  db.transaction(() => { for (const r of prio) if (r.score !== null && r.score !== undefined) bumpPrio.run(r.id as string); })();
+  // A re-list of the same job inside one run (same process) does not burn another offer.
+  // (the MCP tool sets oncePerRun: one process is one run; direct callers keep one offer per call)
+  const bumped = opts.oncePerRun ? setFor(BUMPED_IN_RUN, db) : new Set<string>();
+  db.transaction(() => { for (const r of prio) if (r.score !== null && r.score !== undefined && !bumped.has(r.id as string)) { bumpPrio.run(r.id as string); bumped.add(r.id as string); } })();
   const rest = Math.max(0, limit - prio.length);
   const pendingLimitRest = rest === 0 ? 0 : kind === 'matched' ? rest : Math.max(1, Math.floor(rest / 2));
   const pending: Row[] = typeof opts.matchThreshold === 'number' && kind !== 'unscored' && pendingLimitRest > 0
@@ -1254,7 +1271,7 @@ export function listUnscoredJobs(
   pending.push(...pendingTaken);
   if (pending.length) {
     const bump = db.prepare('UPDATE jobs SET prep_offers = prep_offers + 1 WHERE id = ?');
-    db.transaction(() => { for (const r of pending) bump.run(r.id as string); })();
+    db.transaction(() => { for (const r of pending) if (!bumped.has(r.id as string)) { bump.run(r.id as string); bumped.add(r.id as string); } })();
   }
   const freshCount = Math.max(0, Math.min(rest - pending.length, PIPELINE_MAX_JOBS_PER_WAKE_CEILING - offset));
   const freshAll: Row[] = kind === 'matched' || freshCount === 0 ? [] : db.prepare(
@@ -1266,6 +1283,10 @@ export function listUnscoredJobs(
   // Round-robin order first, then the promoted-first lane (at most 40 percent of each page, of the whole batch in kind `all`) is pulled forward.
   const fresh: Row[] = laneOrder(freshAll.map((r) => ({ r, promoted: r.promoted === 1 })), kind === 'all' ? freshCount : limit)
     .map((x) => x.r).slice(offset, offset + freshCount);
+  if (kind === 'unscored') {
+    const offeredSet = setFor(OFFERED_UNSCORED, db);
+    for (const r of [...prio, ...fresh]) if (r.score === null || r.score === undefined) offeredSet.add(r.id as string);
+  }
   const toJob = (r: Row, matched: boolean, manual = false): UnscoredJob => {
     const job: Job = {
       id: r.id as string, source: (r.source ?? '') as string, title: (r.title ?? '') as string, company: (r.company ?? '') as string,

@@ -27,6 +27,7 @@ import { getState, listRuns } from '../src/scheduler/runLog.js';
 import { makeAfterWakeHooks } from '../src/scheduler/hooks.js';
 import { parseSchedulerArgs } from '../src/scheduler/args.js';
 import { ingestManualRequests } from '../src/manual/ingest.js';
+import { linkedinActiveNow } from '../src/linkedin/activeHours.js';
 import { finalizeManualRequests } from '../src/manual/report.js';
 import { telegramNotifier } from '../src/platform/notify.js';
 import { linkedinDripEnabled, linkedinDripStatus, renderLinkedinDripLines } from '../src/scheduler/linkedinDrip.js';
@@ -160,7 +161,17 @@ async function main(): Promise<void> {
         send: async (text) => {
           const sent = await tg.send(text);
           // The text is always kept in the request row; the notify file gets only a title so a missing Telegram setup is visible.
-          if (!sent.ok) await notifier.notify({ level: 'warn', title: 'manual request report not delivered to Telegram', detail: sent.detail });
+          if (!sent.ok) {
+            await notifier.notify({ level: 'warn', title: 'manual request report not delivered to Telegram', detail: sent.detail });
+            throw new Error('telegram send failed'); // the request stays running and the next wake retries
+          }
+        },
+        platformActive: (p) => {
+          const ctl = readControl(db, controlDefaults(env, stopFile));
+          if (!ctl.allowed.includes(p as never)) return p === 'manual';
+          if (p === 'linkedin') return linkedinActiveNow(env, now());
+          if (p === 'wellfound') return existsSync(WELLFOUND_STATE_PATH);
+          return true;
         },
       });
       if (r.reported.length) await notifier.notify({ level: 'info', title: `manual request report sent: ${r.reported.map((i) => `#${i}`).join(' ')}` });
