@@ -314,6 +314,20 @@ export const profileStep: SetupStep = {
       if (await io.confirm('Mark this language list as confirmed?', false)) langNext.confirmed = true;
     }
 
+    // LinkedIn plan (free, premium or unknown): read by src/accountPlan.ts to pick the first DM wording.
+    const accountPath = path.join(dir, 'account.json');
+    const account: Json = load(ctx, dir, 'account.json') ?? {};
+    const planNow = typeof account.linkedin_plan === 'string' ? account.linkedin_plan : 'unknown';
+    const plan = await io.choose(
+      'Your LinkedIn plan',
+      [
+        { value: 'free', label: 'free' },
+        { value: 'premium', label: 'premium' },
+        { value: 'unknown', label: 'unknown' },
+      ],
+      ['free', 'premium', 'unknown'].includes(planNow) ? planNow : 'unknown',
+    );
+
     const profile: Profile = {
       version: 1,
       roles,
@@ -334,6 +348,7 @@ export const profileStep: SetupStep = {
     if (writeJson(ctx, profilePath, profile)) changed.push('profile.json');
     if (hasAnswers && writeJson(ctx, answersPath, next)) changed.push('easy-apply-answers.json');
     if (langNext && writeJson(ctx, langPath, langNext)) changed.push('languages.json');
+    if (writeJson(ctx, accountPath, { ...account, linkedin_plan: plan })) changed.push('account.json');
     io.say(changed.length > 0 ? `Wrote: ${changed.join(', ')}` : 'Nothing changed.');
     return 'done';
   },

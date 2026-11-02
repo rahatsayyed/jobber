@@ -46,6 +46,6 @@ export const prereqsStep: SetupStep = {
       await ctx.io.pause('Run the commands above, then press Enter');
     }
     ctx.io.say('Some prerequisites are still missing. Fix them (or run bash scripts/bootstrap.sh) and run setup again.');
-    return 'done';
+    return 'pending';
   },
 };

@@ -17,6 +17,12 @@ export interface LoginDeps {
   outPath?: string;
 }
 
+// Cookie NAME check only (same rule as the doctor `sessions` check); values are never read.
+export function hasLinkedinAuthCookie(state: unknown): boolean {
+  const cookies = (state as { cookies?: unknown } | null)?.cookies;
+  return Array.isArray(cookies) && cookies.some((c) => (c as { name?: unknown } | null)?.name === 'li_at');
+}
+
 function stdinIo(): LoginIo {
   return {
     ask: (q) =>
@@ -45,6 +51,10 @@ export async function main(deps: LoginDeps = {}): Promise<number> {
     console.log('When you see your LinkedIn feed, come back here and press Enter to save the session.\n');
     await io.ask('');
     const state = (await context.storageState()) as { cookies?: unknown[] };
+    if (!hasLinkedinAuthCookie(state)) {
+      console.error('Not saved: no LinkedIn login cookie (li_at) found. Finish logging in, then run this again.');
+      return 1;
+    }
     saveStateAtomic(deps.outPath ?? DEFAULT_SESSION_PATH, state);
     console.log(`Saved session (${Array.isArray(state.cookies) ? state.cookies.length : 0} cookies)`);
     console.log('Verify it with: npm run linkedin:check');

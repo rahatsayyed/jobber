@@ -26,6 +26,7 @@ const ctx: DoctorContext = {
     read: (p) => readFileSync(p, 'utf8'),
     list: (p) => (existsSync(p) ? readdirSync(p) : []),
     mode: (p) => (existsSync(p) ? statSync(p).mode & 0o777 : null),
+    mtimeMs: (p) => (existsSync(p) ? statSync(p).mtimeMs : null),
   },
   fetch: async (url, init) => {
     const res = await fetch(url, { ...init, signal: AbortSignal.timeout(5000) });

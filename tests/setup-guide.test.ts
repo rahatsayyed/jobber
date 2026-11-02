@@ -48,7 +48,7 @@ const guide = JSON.parse(readFileSync(join(ROOT, 'config/setup-guide.json'), 'ut
 
 const SECRET_NAME = /(^|_)(KEY|SECRET|TOKEN|PASS|PASSWORD|COOKIE)(_|$)/;
 const SECRET_ALLOW = new Set<string>([]);
-const ORDER = ['overview', 'prereqs', 'claude', 'telegram', 'gmail', 'apikeys', 'sessions', 'resume', 'profile', 'limits', 'access', 'classifier', 'dashboard', 'final'];
+const ORDER = ['overview', 'prereqs', 'userdata', 'claude', 'telegram', 'gmail', 'apikeys', 'sessions', 'resume', 'profile', 'limits', 'access', 'classifier', 'dashboard', 'final'];
 
 describe('config/setup-guide.json', () => {
   it('has version 1 and the required step order', () => {

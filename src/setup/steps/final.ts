@@ -30,6 +30,15 @@ const NOT_READY: {
   { id: 'profile-valid', label: 'Profile', stepId: 'profile' },
 ];
 
+export const DRY_RUN_BANNER =
+  'DRY RUN is ON: nothing real is sent until you set JOBBER_DRY_RUN=false in .env yourself.';
+
+/** Same rule as the runtime: only 1 or true (any case, trimmed) mean dry. */
+export function isDryRun(env: Record<string, string | undefined>): boolean {
+  const v = (env.JOBBER_DRY_RUN ?? '').trim().toLowerCase();
+  return v === '1' || v === 'true';
+}
+
 export const finalStep: SetupStep = {
   id: 'final',
   title: 'Final doctor run',
@@ -62,8 +71,8 @@ export const finalStep: SetupStep = {
     }
     // Skipped by choice: recorded skips that are still unconfigured (state and .env, no secrets).
     let skipped: SkippableId[] = [];
+    let fileEnv: Record<string, string> = {};
     try {
-      let fileEnv: Record<string, string> = {};
       if (ctx.envPath && ctx.fs.exists(ctx.envPath)) fileEnv = parseEnv(ctx.fs.read(ctx.envPath));
       skipped = skippedFeatures({
         state: ctx.state,
@@ -92,9 +101,12 @@ export const finalStep: SetupStep = {
       return r.result.status === 'fail' || r.result.status === 'warn';
     });
     if (notReady.length > 0) {
+      io.say('NOT READY TO GO LIVE: fix these first.');
       io.say('Not ready for live:');
       for (const n of notReady) io.say(`  ${n.label}: npm run setup -- --step ${n.stepId}`);
     }
+    // The wizard only reports the dry-run flag; it never changes it. Only the owner does.
+    if (isDryRun({ ...fileEnv, ...ctx.env })) io.say(DRY_RUN_BANNER);
 
     const next: string[] = [];
     if (!skipped.includes('telegram')) {

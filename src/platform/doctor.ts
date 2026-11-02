@@ -15,6 +15,8 @@ export interface DoctorContext {
     exists(path: string): boolean;
     read(path: string): string;
     mode(path: string): number | null;
+    /** Optional: last modified time in ms; absent means age checks are skipped. */
+    mtimeMs?(path: string): number | null;
     list?(path: string): string[];
   };
   /** Injected network call; absent means "offline" and network checks report skip. */
