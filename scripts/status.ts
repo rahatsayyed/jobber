@@ -11,6 +11,9 @@ import { renderHealth, renderLimits, renderWorking } from '../src/status/render.
 import { buildSourceRows, DEFAULT_WINDOW_HOURS, renderSources } from '../src/status/sources.js';
 import { listEscalations } from '../src/outreach/escalations.js';
 import { renderEscalations } from '../src/status/escalations.js';
+import { renderReplyDraftLines } from '../src/outreach/replyDraftsCli.js';
+import { linkedinDripStatus, renderLinkedinDripLines } from '../src/scheduler/linkedinDrip.js';
+import { loadTuning } from '../src/outreach/tuning.js';
 import { renderRunToolCounts, summarizeRunLog } from '../src/status/runs.js';
 import { defaultRun, listWindows } from '../src/platform/tmux.js';
 
@@ -63,7 +66,7 @@ async function main(): Promise<number> {
     if (cmd === 'escalations') {
       const now = new Date();
       const r = listEscalations(db, { now });
-      console.log(renderEscalations(r.items, r.counts, now));
+      console.log([renderEscalations(r.items, r.counts, now), ...renderReplyDraftLines(db)].join('\n'));
       return 0;
     }
     if (cmd === 'sources') {
@@ -74,8 +77,10 @@ async function main(): Promise<number> {
     // The limits shown are the ones a run uses: .env fills what the process env lacks (the launcher does the same).
     const dotenv = existsSync('.env') ? parseEnv(readFileSync('.env', 'utf8')) : {};
     const snap = buildSnapshot(db, loadOutreachConfig({ ...dotenv, ...process.env }), new Date());
-    if (cmd === 'limits') console.log(renderLimits(snap, { env: { ...dotenv, ...process.env } }));
-    else if (cmd === 'working') console.log(renderWorking(snap));
+    const env = { ...dotenv, ...process.env };
+    const dripLines = (): string[] => renderLinkedinDripLines(linkedinDripStatus(db!, env, { now: new Date(), tuning: loadTuning(env) }), new Date());
+    if (cmd === 'limits') console.log([renderLimits(snap, { env }), ...dripLines()].join('\n'));
+    else if (cmd === 'working') console.log([renderWorking(snap), ...dripLines()].join('\n'));
     else if (cmd === 'json') console.log(JSON.stringify(snap, null, 2));
     else {
       const session = process.env.WEB_TMUX_SESSION?.trim() || 'ccgram';

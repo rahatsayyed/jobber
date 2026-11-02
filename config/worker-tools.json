@@ -5,6 +5,7 @@
     "mcp__outreach__next_contacts",
     "mcp__outreach__record_inbound",
     "mcp__outreach__escalate",
+    "mcp__outreach__save_reply_draft",
     "mcp__linkedin__linkedin_layout",
     "mcp__linkedin__linkedin_open",
     "mcp__linkedin__linkedin_snapshot",
@@ -20,6 +21,7 @@
     "mcp__linkedin__linkedin_manual_job",
     "mcp__linkedin__linkedin_check_accepted",
     "mcp__linkedin__linkedin_check_accepted_recent",
+    "mcp__linkedin__linkedin_attach_file",
     "mcp__linkedin__linkedin_search_posts",
     "mcp__db__list_queued_outreach",
     "mcp__db__update_outreach_status"

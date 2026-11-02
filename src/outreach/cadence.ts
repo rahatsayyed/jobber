@@ -1,7 +1,8 @@
 // src/outreach/cadence.ts
 export type Category = 'recruiter' | 'hiring_manager' | 'peer' | 'connection';
 export type Variant = 'rapport_first' | 'direct_referral';
-export type TouchKind = 'connect' | 'role_ask' | 'rapport' | 'referral_ask' | 'followup' | 'feedback';
+// `reply` is an owner-approved answer to an inbound message (LinkedIn drip lane): it is in no sequence and never advances or restarts one.
+export type TouchKind = 'connect' | 'role_ask' | 'rapport' | 'referral_ask' | 'followup' | 'feedback' | 'reply';
 export type CooldownReason = 'ignored' | 'not_now' | 'explicit_stop';
 
 export const GAPS_DAYS = [3, 4, 5, 7, 10] as const;

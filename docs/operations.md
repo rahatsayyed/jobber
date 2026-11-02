@@ -2,7 +2,7 @@
 
 Audience: owner
 Last verified against: 21e67ef
-Source files: scripts/jobber-control.ts, src/scheduler/control.ts, .claude/hooks/kill-switch.cjs, run-hunt.sh, scripts/linkedin-clear-halt.ts, scripts/layout.ts, src/safety/dryRun.ts, scripts/dry-run-report.ts, scripts/status.ts, src/status/render.ts, src/scheduler/plan.ts, src/scheduler/runLog.ts, src/scheduler/notify.ts, src/scheduler/launch.ts, src/scheduler/mailDrip.ts, src/scheduler/driver.ts, scripts/apply-request.ts, src/manual/requests.ts, src/web/applyRoutes.ts, scripts/stack.ts, src/stack/up.ts, src/stack/down.ts, src/verify/cli.ts, src/platform/checksSetup.ts, src/platform/checksLayout.ts, src/platform/checksScheduler.ts, src/applier/cooldown.ts, src/sources/status.ts
+Source files: scripts/jobber-control.ts, src/scheduler/control.ts, .claude/hooks/kill-switch.cjs, run-hunt.sh, scripts/linkedin-clear-halt.ts, scripts/layout.ts, src/safety/dryRun.ts, scripts/dry-run-report.ts, scripts/status.ts, src/status/render.ts, src/scheduler/plan.ts, src/scheduler/runLog.ts, src/scheduler/notify.ts, src/scheduler/launch.ts, src/scheduler/mailDrip.ts, src/scheduler/linkedinDrip.ts, scripts/replies.ts, src/scheduler/driver.ts, scripts/apply-request.ts, src/manual/requests.ts, src/web/applyRoutes.ts, scripts/stack.ts, src/stack/up.ts, src/stack/down.ts, src/verify/cli.ts, src/platform/checksSetup.ts, src/platform/checksLayout.ts, src/platform/checksScheduler.ts, src/applier/cooldown.ts, src/sources/status.ts
 
 Day-to-day running of Jobber: stop it, resume it, read its state, find its files, fix common failures.
 Safety rules are not restated here; they live in `CLAUDE.md` under "Safety" and "Outreach safety layers". Read layer 6 there for the full kill switch scope.
@@ -216,6 +216,14 @@ npm run doctor
 ```
 
 Prints ok, warn, fail or skip per check with a fix line. A feature you skipped in setup shows as `skip` and the last line reads `Skipped by choice: ...`; the fix is `npm run setup -- --step <id>`. Safety checks (classifier, permission set, hooks, limits, kill switch, halts) are never skipped.
+
+## The LinkedIn drip lane (how LinkedIn work goes out)
+
+A wake no longer sends LinkedIn invites or messages. The scheduler daemon runs a LinkedIn lane beside the wakes (`LINKEDIN_DRIP`, default `true`; `false` gives the LinkedIn tasks back to the wakes): every 30 seconds it checks, in code, whether one LinkedIn action is due, and does at most ONE per tick, a random `LINKEDIN_DRIP_MIN_GAP_MIN` to `LINKEDIN_DRIP_MAX_GAP_MIN` minutes (8 to 20) apart, only inside `LINKEDIN_ACTIVE_HOURS` and outside quiet hours, and never with the kill switch, a LinkedIn halt or a usage pause. Order: read the inbox first (at most every `LINKEDIN_INBOX_MIN_GAP_MIN`, 60 minutes), then an approved reply, the accept check, a DM, an invite. A person who wrote to you and is still in your Inbox gets nothing else from the agent until you mark it handled.
+
+- **Replies with an optional resume.** For a plain request (a resume, a simple question) the inbox read stores a short draft. Nothing is sent until you approve it: `npm run replies -- list`, then `npm run replies -- approve <id>` or `skip <id>` (drafts also show in `/escalations`). An approved draft goes out at the next free turn; a draft for a resume request attaches the tailored resume of that person's job. A newer message in the thread makes the draft stale: skip it. First DMs carry the resume only if you set `LINKEDIN_DM_ATTACH_RESUME=true` (default `false`).
+- `npm run status -- working` and `limits` show the lane: next tick, last action, what is waiting, drafts waiting for your approval. `npm run scheduler -- --status` prints `next linkedin drip not before`. The doctor check `linkedin-drip-config` names a bad value (the lane does nothing until it is fixed).
+- A run that ends without a confirmed send leaves the touch `sending` (it turns `unconfirmed` after 30 minutes and is never re-sent): check LinkedIn first. Restart the scheduler after changing any `LINKEDIN_DRIP*` value.
 
 ## The Inbox and escalations
 

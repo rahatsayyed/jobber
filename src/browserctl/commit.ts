@@ -14,6 +14,7 @@ import { markNoteQuotaExhausted } from '../linkedin/noteQuota.js';
 import { classifyUrl, profileKeyOf } from '../linkedin/urls.js';
 import { finishTouch, finishTouchSentNoNote, releaseNoDialog } from '../linkedin/touches.js';
 import { loadOutreachConfig } from '../outreach/config.js';
+import { markReplyDraftFailed, markReplyDraftSent } from '../outreach/replyDrafts.js';
 import { recordEvent, tryConsume } from '../outreach/limits.js';
 import { recordDryRun } from '../safety/dryRun.js';
 import { diagNote, writeCommitDiag } from './diag.js';
@@ -182,9 +183,44 @@ export function recipientMessageDialog(tree: RawTree, dialogName: string | undef
   });
 }
 
-function ownMessageSeen(tree: RawTree, dialogName: string | undefined, expectedName: string | null | undefined, text: string): boolean {
+/**
+ * The armed file now stands as a SENT attachment in this dialog: a node holds its (generic) file name and no remove/discard control of a
+ * still-pending attachment chip is left in the dialog. Before the send the chip carries such a control, so the name alone proves nothing.
+ * Live shape unverified: when LinkedIn words these differently the send ends `unconfirmed`, never a false `sent`.
+ */
+export function attachmentShown(tree: RawTree, dlg: number, fileName: string): boolean {
+  const want = squash(fileName);
+  if (!want) return false;
+  const inDialog = tree.nodes.filter((x) => x.dialog === dlg);
+  const named = inDialog.some((x) => squash(x.role === 'text' ? x.text : x.name).includes(want));
+  if (!named) return false;
+  const pendingChip = inDialog.some((x) => (x.role === 'button' || x.role === 'link')
+    && /^(?:remove|delete|discard|cancel|dismiss|clear)\b/.test(normName(x.name)) && /attach|file|pdf|resume/.test(normName(x.name)));
+  return !pendingChip;
+}
+
+/**
+ * The ONE open message window of this person (a message dialog whose recipient chip or heading names them), among all open chat windows.
+ * 'none' when no window names them, 'ambiguous' when two do. Used by linkedin_attach_file: the file goes only into that window.
+ */
+export function personMessageDialog(tree: RawTree, expectedName: string | null | undefined): RawNode | 'none' | 'ambiguous' {
+  const hits = tree.nodes.filter((d) => {
+    if (d.role !== 'dialog' || effectiveDialogKind(tree, d.n, d.name) !== 'message') return false;
+    const shown = messageDialogName(tree, d.n);
+    return shown !== '' && namesPlausiblyMatch(expectedName ?? '', shown);
+  });
+  return hits.length === 0 ? 'none' : hits.length === 1 ? hits[0] : 'ambiguous';
+}
+
+/** True when a node of the dialog already holds this (generic) file name: the attachment chip is on screen. */
+export function fileChipShown(tree: RawTree, dlg: number, fileName: string): boolean {
+  const want = squash(fileName);
+  return want !== '' && tree.nodes.some((x) => x.dialog === dlg && squash(x.role === 'text' ? x.text : x.name).includes(want));
+}
+
+function ownMessageSeen(tree: RawTree, dialogName: string | undefined, expectedName: string | null | undefined, text: string, fileName?: string): boolean {
   const d = recipientMessageDialog(tree, dialogName, expectedName);
-  return !!d && ownMessageShown(tree, d.n, text);
+  return !!d && ownMessageShown(tree, d.n, text) && (fileName === undefined || attachmentShown(tree, d.n, fileName));
 }
 
 /** Name of the person on a profile page: the first heading of the top card, else the first heading; '' when none. */
@@ -208,7 +244,13 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
   let keepArmed = false;
 
   const release = (status: 'failed' | 'unconfirmed' | 'refused'): void => {
-    if (intent?.touchId !== undefined && !intent.dry) finishTouch(db, intent.touchId, status, now());
+    if (intent?.touchId !== undefined && !intent.dry) {
+      finishTouch(db, intent.touchId, status, now());
+      // A reply that was clicked but did not end as sent is not picked again until the owner approves its draft once more.
+      if (clickIssued && intent.kind === 'reply') {
+        try { markReplyDraftFailed(db, intent.touchId); } catch { /* the touch row is authoritative */ }
+      }
+    }
   };
   const closeDialog = async (): Promise<void> => {
     if (live.dialog !== undefined) await page.press('Escape').catch(() => undefined);
@@ -316,6 +358,11 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
   if (!again || !sameTarget(again, live)) return abort('target_changed', 'page changed under the action; nothing clicked', { close: true });
   const k1 = killReason(deps);
   if (k1) return abort('halted', k1, { status: 'halted', close: true });
+
+  // 6b. a message armed with a file may be sent only after linkedin_attach_file put it in THIS person's window (not in a dry run: it attaches nothing)
+  if (cls === 'commit_message_send' && intent.attachment && !intent.attachment.attached && !(intent.dry || deps.cfg.dryRun)) {
+    return { ok: false, status: 'refused', code: 'attachment_not_attached', reason: 'this send was armed with a file: call linkedin_attach_file in the open message window first, then click Send (the arm stays valid)' };
+  }
 
   // 7. dry run
   if (intent.dry || deps.cfg.dryRun) {
@@ -432,10 +479,12 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
     // The dialog going away is not proof: an error modal can replace it, and any LinkedIn POST satisfies the network half.
     // Re-read for a while: stop at once on an error signal, or when the dialog is gone and the page shows the invite as
     // sent (Pending or a sent toast, connect only).
+    // With a file armed the page must show BOTH the text and the file name in the sent bubble: the network response alone is not enough.
+    const fileName = cls === 'commit_message_send' && intent.attachment ? intent.attachment.name : undefined;
     const read = (t: RawTree): { dialogGone: boolean; strong: boolean; signal: ErrorSignal } => ({
       dialogGone: dialogGoneOf(t),
       strong: cls === 'commit_connect_send' ? directSendSeen(t)
-        : cls === 'commit_message_send' ? ownMessageSeen(t, live.dialogName, expectedName, intent.text ?? '') : false,
+        : cls === 'commit_message_send' ? ownMessageSeen(t, live.dialogName, expectedName, intent.text ?? '', fileName) : false,
       signal: errorSignalOf(tree, t),
     });
     let seen = read(after);
@@ -461,13 +510,17 @@ export async function commitAction(i: CommitInput): Promise<EngineResult> {
       const dgE = await writeCommitDiag(deps, page, { platform, code, live, urlBefore: url, after, send: facts });
       return { ok: false, status: 'failed', code, reason: `clicked, but the page shows ${signal === 'limit' ? 'a limit message; nothing was sent, stop this task' : 'an error message; nothing was sent'}${diagNote(dgE)}`, ...(intent.touchId !== undefined ? { touch_id: intent.touchId } : {}) };
     }
-    if (dialogGone && (strong || confirmedNet)) {
+    if (dialogGone && (strong || (confirmedNet && fileName === undefined))) {
       if (cls !== 'commit_accept_invite' && intent.touchId !== undefined) {
         if (intent.kind === 'connect_plain') finishTouchSentNoNote(db, intent.touchId, now());
         else finishTouch(db, intent.touchId, 'sent', now());
+        if (intent.kind === 'reply') {
+          try { markReplyDraftSent(db, intent.touchId, now()); } catch { /* the touch row is authoritative */ }
+        }
       }
       try {
-        saveConnection(db, {
+        // A reply is cadence-neutral: no `messaged` connection row (that row marks a person as messaged by the cadence).
+        if (intent.kind !== 'reply') saveConnection(db, {
           job_id: intent.jobId === undefined ? null : String(intent.jobId), company: intent.company ?? null, profile_url: profileUrl,
           headline: null, note: intent.text ?? '', status: cls === 'commit_connect_send' ? 'sent' : cls === 'commit_message_send' ? 'messaged' : 'sent',
           sent_at: now().toISOString(),

@@ -49,9 +49,21 @@ describe('scheduler doctor checks', () => {
     expect((await bad({ EMAIL_SEND_WINDOW_START: 'nine' }))['mail-drip-config'].status).toBe('fail');
   });
 
-  it('has the nine kebab-case ids', () => {
+  it('linkedin-drip-config: defaults and an explicit off pass, a bad value or an inverted gap fails and says why', async () => {
+    expect((await run(ctxWith({})))['linkedin-drip-config'].status).toBe('pass');
+    const ok = (env: NodeJS.ProcessEnv) => run(ctxWith({}, { env }));
+    expect((await ok({ LINKEDIN_DRIP: 'false' }))['linkedin-drip-config'].status).toBe('pass');
+    expect((await ok({ LINKEDIN_DRIP_MIN_GAP_MIN: '12', LINKEDIN_DRIP_MAX_GAP_MIN: '30' }))['linkedin-drip-config'].detail).toMatch(/12-30 min/);
+    for (const env of [{ LINKEDIN_DRIP: 'sometimes' }, { LINKEDIN_DRIP_MIN_GAP_MIN: '30', LINKEDIN_DRIP_MAX_GAP_MIN: '10' }, { LINKEDIN_INBOX_MIN_GAP_MIN: '1' }, { LINKEDIN_DRIP_MAX_GAP_MIN: 'soon' }]) {
+      const r = (await ok(env))['linkedin-drip-config'];
+      expect(r.status, JSON.stringify(env)).toBe('fail');
+      expect(r.detail).toMatch(/does nothing until fixed/);
+    }
+  });
+
+  it('has the ten kebab-case ids', () => {
     expect(schedulerChecks().map((c) => c.id)).toEqual([
-      'scheduler-tmux', 'scheduler-lock-dir', 'scheduler-stop-file', 'scheduler-dry-run', 'mail-drip-config', 'linkedin-active-hours', 'dry-run-legacy-keys', 'scheduler-units', 'agents-worker-tools',
+      'scheduler-tmux', 'scheduler-lock-dir', 'scheduler-stop-file', 'scheduler-dry-run', 'mail-drip-config', 'linkedin-active-hours', 'linkedin-drip-config', 'dry-run-legacy-keys', 'scheduler-units', 'agents-worker-tools',
     ]);
   });
 

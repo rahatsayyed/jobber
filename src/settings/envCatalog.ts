@@ -264,6 +264,23 @@ const hand: EnvSpec[] = [
     restart: 'mcp',
     restartEvidence: 'src/linkedin/session.ts',
   }),
+  e('LINKEDIN_DRIP', 'scheduler', 'LinkedIn drip lane', 'bool', {
+    default: 'true',
+    exampleActive: false,
+    blankMeansDefault: true,
+    about: 'The LinkedIn drip lane (scheduler daemon only): LinkedIn work happens as ONE slow action at a time (inbox read first, then an approved reply, the accept check, a DM, an invite), a random LINKEDIN_DRIP_MIN_GAP_MIN to MAX_GAP_MIN apart, inside LINKEDIN_ACTIVE_HOURS. While it is on, wakes plan no LinkedIn inbox, accept check, follow-up or new outreach (they keep discovery, the pipeline and apply). Set false to give those tasks back to the wakes (the old burst behaviour). An invalid value reads as true and the doctor warns.',
+    ...tier('guarded', 'Turning it off lets wakes send LinkedIn invites and DMs in bursts again, which drew a LinkedIn warning and repeated logouts.', 'false'),
+    restart: 'scheduler',
+    restartEvidence: 'src/scheduler/linkedinDrip.ts',
+  }),
+  e('LINKEDIN_DM_ATTACH_RESUME', 'linkedin', 'LinkedIn', 'bool', {
+    default: 'false',
+    exampleActive: false,
+    about: 'Lets first LinkedIn messages (role_ask, rapport, followup) carry the tailored resume PDF of the latest job tied to the person (code resolves the file; the upload name is generic). Off by default. Owner-approved replies whose draft asks for the resume always carry it, whatever this says.',
+    ...tier('safety', R_SEND, 'true'),
+    restart: 'mcp',
+    restartEvidence: 'src/linkedin/attachment.ts',
+  }),
   e('LINKEDIN_ACTIVE_HOURS', 'linkedin', 'LinkedIn', 'string', {
     default: '09:30-20:30',
     maxLen: 11,
@@ -1007,6 +1024,7 @@ const BLANK_OK = new Set<string>([
   'COOLDOWN_IGNORED_DAYS', 'COOLDOWN_NOT_NOW_DAYS', 'COOLDOWN_EXPLICIT_STOP_DAYS', 'CADENCE_GAPS_DAYS',
   'EMAIL_MAX_PER_DAY', 'EMAIL_DRIP_MIN_BATCH', 'EMAIL_DRIP_MAX_BATCH', 'EMAIL_DRIP_MIN_GAP_MIN', 'EMAIL_DRIP_MAX_GAP_MIN',
   'EMAIL_DRIP_INTRA_PAUSE_MIN_SEC', 'EMAIL_DRIP_INTRA_PAUSE_MAX_SEC',
+  'LINKEDIN_DRIP_MIN_GAP_MIN', 'LINKEDIN_DRIP_MAX_GAP_MIN', 'LINKEDIN_INBOX_MIN_GAP_MIN',
   TOP_LEVEL_KEY, ...APPLY_HOST_PLATFORM_IDS.map(hostCapKey),
 ]);
 const ACTIVE_IN_EXAMPLE = new Set([
@@ -1031,6 +1049,12 @@ function limitOverride(key: string): LimitOverride {
     o.feature = 'mail drip lane';
     o.restart = 'scheduler';
     o.restartEvidence = 'src/scheduler/mailDrip.ts';
+  }
+  if (key === 'LINKEDIN_DRIP_MIN_GAP_MIN' || key === 'LINKEDIN_DRIP_MAX_GAP_MIN' || key === 'LINKEDIN_INBOX_MIN_GAP_MIN') {
+    o.section = 'scheduler';
+    o.feature = 'LinkedIn drip lane';
+    o.restart = 'scheduler';
+    o.restartEvidence = 'src/scheduler/linkedinDrip.ts';
   }
   if (key === 'HUNTER_MONTHLY_CAP') o.aboutExtra = 'Needed only when HUNTER_ENABLED=true.';
   if (key === 'FOLLOWUP_CHECK_MAX_AGE_MIN') o.aboutExtra = 'Used only when FOLLOWUPS_AUTONOMOUS=true.';

@@ -101,6 +101,12 @@ export function planWake(i: {
   codePassEnabled?: boolean;
   /** False when `now` is outside LINKEDIN_ACTIVE_HOURS: no LinkedIn task is planned at all (inbox included). Absent: active. */
   linkedinActive?: boolean;
+  /**
+   * True when the LinkedIn drip lane is on (LINKEDIN_DRIP, default true; src/scheduler/linkedinDrip.ts): the lane does the LinkedIn inbox, accept
+   * check, follow-ups and new outreach one action at a time, so a wake plans NONE of them (it keeps the LinkedIn manual_url and discover tasks,
+   * the pipeline and apply). Absent or false: today's wake behaviour.
+   */
+  linkedinDrip?: boolean;
 }): WakeDecision {
   const { control, ceilings, due, knobs } = i;
   if (control.killed) return { kind: 'skip', reason: 'killed', detail: control.killReason ?? undefined };
@@ -114,11 +120,12 @@ export function planWake(i: {
   if (inQuietHours(i.now, i.quiet)) return { kind: 'skip', reason: 'quiet_hours' };
 
   const allowed = new Set<Platform>(control.allowed);
+  const liDrip = i.linkedinDrip === true;
   // Outside the LinkedIn active hours LinkedIn is treated like a halted platform for planning: nothing is planned for it.
   if (i.linkedinActive === false) allowed.delete('linkedin');
   const ok = (k: LimitKey): boolean => ceilings[k].ok;
   const plats = (pairs: [DuePlatform, LimitKey[]][]): DuePlatform[] =>
-    pairs.filter(([p, keys]) => allowed.has(p) && keys.some(ok)).map(([p]) => p);
+    pairs.filter(([p, keys]) => allowed.has(p) && !(liDrip && p === 'linkedin') && keys.some(ok)).map(([p]) => p);
 
   const ORDER: Platform[] = ['linkedin', 'naukri', 'wellfound']; // stable order: linkedin first
   const byPlatform: Record<Platform, OperatorTask[]> = { linkedin: [], naukri: [], wellfound: [] };
@@ -142,9 +149,9 @@ export function planWake(i: {
   // Reads only, spends no ceiling; the quota is already bounded in code (ACCEPT_CHECK_MAX_PER_WAKE) by countDue.
   // The main detection is ONE read of the recent-connections page (accept_recent, at most once per 24 hours, decided in due.ts);
   // accept_check (a few profile pages, each profile at most once per 72 hours) is only the fallback for older invites.
-  if (allowed.has('linkedin') && due.acceptRecentDue === true) byPlatform.linkedin.push({ kind: 'accept_recent', quota: 1 });
+  if (!liDrip && allowed.has('linkedin') && due.acceptRecentDue === true) byPlatform.linkedin.push({ kind: 'accept_recent', quota: 1 });
   const acceptDue = due.acceptCheckDue ?? 0;
-  if (allowed.has('linkedin') && acceptDue > 0) {
+  if (!liDrip && allowed.has('linkedin') && acceptDue > 0) {
     byPlatform.linkedin.push({ kind: 'accept_check', quota: Math.min(acceptDue, ACCEPT_CHECK_MAX_PER_WAKE) });
   }
 
@@ -153,7 +160,7 @@ export function planWake(i: {
   // LinkedIn's messaging page is opened at most every LINKEDIN_INBOX_MIN_GAP_MIN minutes whatever INBOX_EVERY_MIN says.
   const linkedinInboxDue = inboxAge === null || inboxAge >= Math.max(knobs.inboxEveryMin, LINKEDIN_INBOX_MIN_GAP_MIN);
   for (const p of control.allowed) {
-    if (p === 'linkedin' ? !allowed.has('linkedin') || !linkedinInboxDue : !inboxDue) continue;
+    if (p === 'linkedin' ? liDrip || !allowed.has('linkedin') || !linkedinInboxDue : !inboxDue) continue;
     if (p !== 'wellfound' || wellfoundOn) byPlatform[p].push({ kind: 'inbox', quota: INBOX_QUOTA });
   }
 
@@ -244,7 +251,7 @@ export function planWake(i: {
   // The pipeline creates work in this same wake (matches, enqueued outreach rows), so like mail it pulls in LinkedIn
   // new_outreach even when the due count was 0 at plan time. The operator reads its real queue (outreach.next_contacts)
   // and reports done 0 when nothing is ready. Never for Naukri: cold Naukri outreach is not possible by design.
-  if (pipelineDue && allowed.has('linkedin') && ceilings.linkedin_invite?.ok && !byPlatform.linkedin.some((t) => t.kind === 'new_outreach')) {
+  if (!liDrip && pipelineDue && allowed.has('linkedin') && ceilings.linkedin_invite?.ok && !byPlatform.linkedin.some((t) => t.kind === 'new_outreach')) {
     const q = roomLeft('linkedin_invite');
     if (q > 0) byPlatform.linkedin.push({ kind: 'new_outreach', quota: q });
   }
@@ -268,7 +275,7 @@ export function planWake(i: {
 
   if (tasks.length > 0 || stages.length > 0) return { kind: 'run', tasks, ...(stages.length > 0 ? { stages } : {}) };
 
-  const allowedTotal = (by: Record<DuePlatform, number>): number => control.allowed.filter((p) => allowed.has(p)).reduce((n, p) => n + (p === 'wellfound' ? 0 : by[p]), 0);
+  const allowedTotal = (by: Record<DuePlatform, number>): number => control.allowed.filter((p) => allowed.has(p) && !(liDrip && p === 'linkedin')).reduce((n, p) => n + (p === 'wellfound' ? 0 : by[p]), 0);
   const workExists =
     allowedTotal(due.followupsDueByPlatform) > 0 ||
     allowedTotal(due.newOutreachReadyByPlatform) > 0 ||

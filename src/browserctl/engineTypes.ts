@@ -53,6 +53,8 @@ export interface EngineDeps {
    * own lexical check only.
    */
   textGate?: (text: string, mode: 'chatbot' | 'plain') => string | null;
+  /** Repo root against which an armed attachment path is validated (default: the project root). Tests pass a temp dir. */
+  attachRoot?: string;
 }
 
 export interface EngineResult {

@@ -60,7 +60,7 @@ start before end; an invalid value falls back to the default and the doctor warn
 accept checks, follow-ups, new outreach and manual pages included; Naukri and Wellfound are unaffected), and every `linkedin`
 MCP tool except `linkedin_limits`, `linkedin_layout`, `linkedin_close` and `linkedin_find_profiles` (which skips only its
 LinkedIn layer) answers `rate_limited` / `outside_active_hours` without opening anything. (2) The LinkedIn messaging page
-(`inbox`) is planned at most every 60 minutes (`LINKEDIN_INBOX_MIN_GAP_MIN`, a floor under `INBOX_EVERY_MIN`, using the
+(`inbox`; with the drip lane on it is a lane item, see below) is read at most every 60 minutes (`LINKEDIN_INBOX_MIN_GAP_MIN`, a floor under `INBOX_EVERY_MIN`, using the
 `inbox_last_checked_at` timestamp). (3) Acceptance detection is one page a day: the `accept_recent` task (at most once per 24 hours,
 `scheduler_state` key `linkedin_accept_recent_last_at`, only while a sent invite is open) calls `linkedin_check_accepted_recent`;
 the per-profile `accept_check` is only the fallback (3 profiles per wake, invites older than 3 days, each profile once per 72 hours,
@@ -68,3 +68,28 @@ the per-profile `accept_check` is only the fallback (3 profiles per wake, invite
 page navigation to linkedin.com after the first of a process (`src/linkedin/navGap.ts`, shared by the runtime and the engine;
 clicks on the same page are not delayed). Shipped defaults were lowered: invites 25, messages 25, profile views 40,
 `MAX_LINKEDIN_SEARCHES_PER_DAY` 10, `LINKEDIN_MAX_DISCOVER_PER_DAY` 6, `COMPANY_CONTACT_LIMIT` 2.
+
+**The LinkedIn drip lane** (`src/scheduler/linkedinDrip.ts`). A wake used to send 5 to 9 invites and several DMs within minutes, which drew a
+LinkedIn warning and repeated logouts. Now LinkedIn work is one slow action at a time, in the scheduler daemon only (never `--once` or
+`--now`), under its own lock (name `linkedin`) so a long wake never pauses it. `LINKEDIN_DRIP` (default `true`) switches it; `false` gives the
+LinkedIn tasks back to the wakes (today's burst behaviour). While it is on, `planWake` (`linkedinDrip: true`) plans NO LinkedIn `inbox`,
+`accept_recent`, `accept_check`, `followups` or `new_outreach` (and the pipeline no longer pulls `new_outreach` in); wakes keep the LinkedIn
+`manual_url` and `discover` tasks, the pipeline and apply (a drip tick waits while a wake with a `linkedin-operator` step runs, so there is never a
+second LinkedIn session). Every 30 seconds a tick runs in code with zero LLM calls and does nothing unless: no kill switch and no `all` or `linkedin`
+halt, outside quiet hours AND inside `LINKEDIN_ACTIVE_HOURS`, no usage backoff, the stored next-tick time (`linkedin_drip_next_at` in
+`scheduler_state`) and the minimum gap since the last action have passed, the configuration is sane (an invalid `LINKEDIN_DRIP*` /
+`LINKEDIN_INBOX_MIN_GAP_MIN` value is the default AND stops the lane with `bad_config`; the doctor check `linkedin-drip-config` says which key), and
+there is work. A due tick runs exactly ONE action as ONE tiny restricted `claude` run (profile `linkedin_drip`, trigger `linkedin_drip` in
+`scheduler_runs`, only the `linkedin-operator` tools, an allowlisted env with no secrets) that dispatches `linkedin-operator` in DRIP MODE for the one
+item code chose; afterwards the next tick is pushed out by a random `LINKEDIN_DRIP_MIN_GAP_MIN` to `LINKEDIN_DRIP_MAX_GAP_MIN` minutes (defaults 8 and 20).
+An item a run already tried is not offered again for 3 hours (6 for the accept check), so a failing item never becomes a loop.
+Priority, one item per tick, chosen in code: (a) **replies first**: an `inbox` read when none was done in the last `LINKEDIN_INBOX_MIN_GAP_MIN`
+minutes (60; `linkedin_inbox_last_at`); (b) an **owner-approved reply** (below); (c) the **accept check**: `accept_recent` (one page, once per 24 hours)
+then the capped per-profile `accept_check` (one profile per tick); (d) a **DM** to a newly connected person (`role_ask`, `rapport`), then the other due
+follow-ups, in the order `dueTouchesFor` returns them; (e) a **new invite** (`connect_note` or `connect_plain`) for the next queued contact (one person per
+company, the per-company contact limit and the profile-view ceiling apply). The run prompt names exactly that item (`Drip item: ...`); the operator never
+picks. Daily caps, the profile-view ceiling, halts, kill switch, dry run, arm-then-commit, recipient verification and the output and fact gates are
+unchanged. **Unanswered messages pause a person.** A person with an inbound message the owner has not dealt with (an open escalation on their thread,
+or an inbound row never escalated, noise excepted) gets no DM, follow-up or invite from any pick until the escalation is resolved; only the approved
+reply to that very message may go. `npm run status -- working` and `limits` show the lane (next tick, last action, what is waiting, drafts waiting for
+approval); `npm run scheduler -- --status` prints `next linkedin drip not before`.

@@ -67,7 +67,8 @@ function setup(sessions: Sess[], opts: { env?: NodeJS.ProcessEnv; start?: Date; 
   const dir = mkdtempSync(join(tmpdir(), 'sched-inc-'));
   dirs.push(dir);
   let t = (opts.start ?? NOON_IST).getTime();
-  const env = opts.env ?? {};
+  // These tests are about the wake machinery with both platform operators planned: the LinkedIn drip lane (default on) would take the LinkedIn tasks away.
+  const env = opts.env ?? { LINKEDIN_DRIP: 'false' };
   const notices: Notice[] = [];
   const launcher = new SeqLauncher(sessions);
   const db = openDb(':memory:');

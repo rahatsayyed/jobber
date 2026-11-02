@@ -41,6 +41,7 @@ import { checkNextAccepted, type AcceptDeps } from '../linkedin/acceptCheck.js';
 import { checkAcceptedRecent, type RecentDeps } from '../linkedin/acceptRecent.js';
 import { linkedinActiveNow, OUTSIDE_ACTIVE_HOURS_CODE, loadActiveHours } from '../linkedin/activeHours.js';
 import { createNavGap, type NavGap } from '../linkedin/navGap.js';
+import type { ResolveDeps } from '../linkedin/attachment.js';
 
 /**
  * `linkedin` MCP server: a locked headless LinkedIn session driven by the browserctl engine.
@@ -59,7 +60,7 @@ export const TOOL_NAMES = [
   'linkedin_scroll', 'linkedin_wait_for', 'linkedin_screenshot', 'linkedin_click_at', 'linkedin_arm_send',
   'linkedin_close', 'linkedin_limits', 'linkedin_layout',
   'linkedin_find_profiles', 'linkedin_search_jobs', 'linkedin_search_posts', 'linkedin_manual_job', 'linkedin_resolve_external',
-  'linkedin_check_accepted', 'linkedin_check_accepted_recent',
+  'linkedin_check_accepted', 'linkedin_check_accepted_recent', 'linkedin_attach_file',
 ] as const;
 type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -82,6 +83,10 @@ export const schemas = {
     text: z.string().max(1800).optional(),
     job_id: short.optional(),
     company: short.optional(),
+    // Only the tailored resume of the person's latest job; code resolves the file, no path is ever accepted.
+    attachment: z.enum(['job_resume']).optional(),
+    // Kind reply only: the owner-approved reply draft whose stored text is sent.
+    reply_draft_id: z.number().int().positive().optional(),
   },
   linkedin_close: {},
   linkedin_limits: {},
@@ -99,6 +104,8 @@ export const schemas = {
   linkedin_check_accepted: {},
   // Takes nothing: code opens LinkedIn's recent-connections page once (at most every 24 hours).
   linkedin_check_accepted_recent: {},
+  // Takes nothing: puts the armed attachment into the armed person's open message window (code resolved the file at arm time).
+  linkedin_attach_file: {},
   // A job id only: the page must already be open; code finds the company site behind a non-Easy Apply.
   linkedin_resolve_external: { job_id: z.string().regex(/^[\w.:@-]{1,200}$/) },
 } as const;
@@ -137,6 +144,8 @@ export interface HandlerDeps {
   recentTuning?: Pick<RecentDeps, 'sleep' | 'random'>;
   /** Test seam: replaces the per-navigation pause (default: LINKEDIN_NAV_GAP_MIN_SEC / MAX_SEC). */
   navGap?: NavGap;
+  /** Attachment seams (tests): repo root for the renderer/automation check, PDF re-render and the resume.json name. */
+  attach?: ResolveDeps;
 }
 
 export type Handler = (args: any) => Promise<unknown>;
@@ -260,6 +269,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
       db: getDb(), now, env, cfg, getPage, intents, screen,
       screenshotEnabled: env.LINKEDIN_SCREENSHOT !== 'false',
       navGap,
+      ...(deps.attach?.root ? { attachRoot: deps.attach.root } : {}),
       layoutFeed: (tree) => { getRt().layout?.observe(treeToRawSnapshot(tree), null); },
       afterBlock: async () => { await getRt().discard(); },
       ...(deps.paceMs ? { paceMs: deps.paceMs } : {}),
@@ -323,9 +333,11 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
     linkedin_arm_send: safe(async (a) => {
       const res = await armLinkedinSend({
         engine: getEngine(), intents, db: getDb(), now, env, cfg, factCheck, styleCfg: getStyle(), screen,
+        ...(deps.attach ? { attach: deps.attach } : {}),
       }, a);
       return json(res);
     }),
+    linkedin_attach_file: act((e) => e.attachFile()),
     linkedin_close: safe(async () => {
       engine?.refs.invalidate();
       return rt && (await rt.close()) ? 'closed' : 'no open session';
@@ -481,12 +493,13 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   linkedin_wait_for: 'Waits up to 10 s (ms) or until some text appears, then returns a fresh tree. ' + UNTRUSTED,
   linkedin_screenshot: 'EMERGENCY fallback, on unless LINKEDIN_SCREENSHOT=false: PNG of the viewport at most 900px wide, after a snapshot. The pixels are NOT checked by the injection classifier. ' + UNTRUSTED,
   linkedin_click_at: 'Clicks a viewport point (needs LINKEDIN_SCREENSHOT not false, a snapshot and a screenshot at the current epoch). The element under the point is classified exactly like linkedin_click. ' + UNTRUSTED,
-  linkedin_arm_send: 'Arms ONE send intent after every code gate passed (known recipient, employer, style, fact and output gates, ceiling, page and name verification). kind is connect_note, connect_plain (a note-less invite, no text; the only click is "Send without a note"; used once the monthly note quota is used up, connect_note is then refused with note_quota_exhausted), role_ask, rapport, referral_ask, followup, feedback or accept. The send itself is then a linkedin_click (or Enter) on the matching control within 120 s. Dry run when JOBBER_DRY_RUN is true. ' + UNTRUSTED,
+  linkedin_arm_send: 'Arms ONE send intent after every code gate passed (known recipient, employer, style, fact and output gates, ceiling, page and name verification). kind is connect_note, connect_plain (a note-less invite, no text; the only click is "Send without a note"; used once the monthly note quota is used up, connect_note is then refused with note_quota_exhausted), role_ask, rapport, referral_ask, followup, feedback, accept or reply (reply: pass reply_draft_id of an OWNER-APPROVED reply draft; the text comes from the stored draft and is returned in the result; it is never sent without that approval). attachment job_resume (only for reply, role_ask, rapport, followup) arms the tailored resume of the latest job tied to the person; code resolves the file, then linkedin_attach_file puts it into the open message window before Send. The send itself is then a linkedin_click (or Enter) on the matching control within 120 s. Dry run when JOBBER_DRY_RUN is true. ' + UNTRUSTED,
   linkedin_close: 'Closes the LinkedIn session, saves session state and releases the lock.',
   linkedin_limits: 'Read-only: halt reason, daily invite and message ceilings, daily accept counter, dry_run flag and session validity (booleans and reasons only).',
   linkedin_layout: 'Read-only: layout memory enforcement mode, the verdict class of the last observed page, and a compact vocabulary-only summary of learned page layouts (no page text).',
   linkedin_find_profiles: 'TYPED, read-only toward LinkedIn: searches people by company (and optional role_hint) and returns at most 3 verified profile candidates (canonical profile_url, name, headline), registering them as people rows for the given category. Shares the daily search ceiling. Never clicks or sends. ' + UNTRUSTED,
   linkedin_search_jobs: 'TYPED, read-only toward LinkedIn: runs ONE named jobs search from config/linkedin-discovery.json (pass only its name), saves new jobs in code and returns counts and new job ids, never page text. Shares the daily search ceiling plus the discover ceiling. Dry run saves nothing. ' + UNTRUSTED,
+  linkedin_attach_file: 'TYPED, takes no arguments. Only works while a message armed with attachment job_resume is held, the browser is on that profile and exactly one open message window names that person: code clicks the window\'s "Attach a file to your conversation with <name>" control, answers the file chooser with the file code resolved at arm time (a tailored resume PDF from renderer/automation, uploaded under a generic name) and waits until the file shows in that window. The Send click is refused until this succeeded. Dry run attaches nothing. Never accepts a path. ' + UNTRUSTED,
   linkedin_resolve_external: 'For a LinkedIn job whose Apply is NOT Easy Apply: after linkedin_open of that job page, code reads the Apply link (or clicks it once and reads the company page address from the popup, closing it at once, nothing typed or read there), validates and classifies it and routes the job to the generic applier (then call apply_open with the same job_id). You supply only the job_id; the address is never returned. Honours dry run, halts and the kill switch; one daily ceiling and at most 5 per run. Returns {status: resolved|manual_review|refused|rate_limited|dry_run|halted|failed, code, platform?, tier?}. Main account session only. ' + UNTRUSTED,
   linkedin_manual_job: 'TYPED, read-only toward LinkedIn: takes no arguments. Code picks the next queued owner-submitted LinkedIn job page (the URL comes from SQLite), loads it in this session, reads and screens the posting and saves it as a priority job in code. Returns {status: ok|dry_run|halted|failed, code, task_id, job_ids, remaining}; never page text. Never sends or applies. ' + UNTRUSTED,
   linkedin_check_accepted: 'TYPED, read-only toward LinkedIn: takes no arguments. Code picks the next sent invite whose acceptance is due for a check (the profile URL comes from SQLite), opens that profile, reads its header and, only for a first-degree profile with a Message button and no Connect button, marks the invite accepted in code (which makes the person due for the follow-up cadence). Pending or Connect-again changes nothing. Fallback only (invites older than 3 days that the connections page did not show): pauses 3 to 8 s between profiles, at most 3 per run, each profile at most once per 72 hours. Returns {status: accepted|pending|not_accepted|unclear|none|dry_run|halted|rate_limited|failed, code, remaining}; never page text. Clicks and sends nothing. ' + UNTRUSTED,

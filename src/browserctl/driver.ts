@@ -6,6 +6,7 @@ import type { LiLocator, LiPage } from '../linkedin/types.js';
 import type { PageDiag } from './diag.js';
 import { withLocatorDialogs, type LdPage } from './locatorDialogs.js';
 import { bcScript, MAX_VALUE, type LiveNode, type RawTree } from './snapshot.js';
+import { answerFileChooser, type ChooserFile } from './fileChooser.js';
 
 export type BcKey = 'Enter' | 'Escape' | 'Tab' | 'ArrowDown' | 'ArrowUp' | 'PageDown' | 'PageUp' | 'Backspace' | 'Space';
 export const BC_KEYS: readonly BcKey[] = ['Enter', 'Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Backspace', 'Space'];
@@ -50,6 +51,9 @@ export interface BcPage {
   // Optional: close every open LinkedIn chat window (the "Close your conversation with <name>" control; its name sits in a
   // visually hidden span, so the snapshot shows it unnamed). Code-owned, no ref from the model. Returns how many it closed.
   closeChatWindows?(): Promise<number>;
+  // Optional: click the stamped attach control `n` and answer the browser's file chooser with this one in-memory file. Code-owned (the engine's
+  // attachFile resolved the file; no model value reaches here). Throws when no chooser opens. Absent in fakes that do not test attachments.
+  attachFile?(n: number, file: ChooserFile): Promise<void>;
   clickNode(n: number): Promise<void>;
   clickPoint(x: number, y: number): Promise<void>;
   /** Replace the value of a stamped text field with exactly this text. */
@@ -220,6 +224,10 @@ function realBcPageInner(basePage: RealPage): BcPage {
     async press(key) {
       if (!BC_KEYS.includes(key)) throw new Error('browserctl: key not allowed');
       await page.keyboard.press(key === 'Space' ? ' ' : key);
+    },
+    async attachFile(n, file) {
+      const loc = await locate(n);
+      await answerFileChooser(page, () => loc.click({ timeout: CLICK_TIMEOUT_MS }), file);
     },
     async closeChatWindows() {
       const close = page.locator('button[aria-label*="Close your conversation" i], button:has(span:text-matches("Close your conversation", "i"))');

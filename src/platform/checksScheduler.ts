@@ -8,6 +8,7 @@ import { parseEnv } from './envFile.js';
 import { isDryRun, LEGACY_DRY_RUN_KEYS } from '../safety/dryRun.js';
 import { loadDripConfig } from '../scheduler/mailDrip.js';
 import { loadActiveHours } from '../linkedin/activeHours.js';
+import { loadLinkedinDripConfig } from '../scheduler/linkedinDrip.js';
 import { DEFAULT_LABEL, SERVICE_NAME } from '../scheduler/units.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -117,6 +118,19 @@ export function schedulerChecks(): Check[] {
         return h.problem === null
           ? pass(`LinkedIn work only ${hm(h.startMin)}-${hm(h.endMin)} IST`)
           : warn(h.problem, 'write LINKEDIN_ACTIVE_HOURS as HH:MM-HH:MM (IST, start before end) in .env, e.g. 09:30-20:30');
+      },
+    },
+    {
+      id: 'linkedin-drip-config',
+      title: 'LinkedIn drip lane: switch, gap and inbox settings are sane',
+      async run(ctx) {
+        const c = loadLinkedinDripConfig(mergedEnv(ctx));
+        if (c.problems.length > 0) {
+          return fail(`the LinkedIn drip lane does nothing until fixed: ${c.problems.join('; ')}`, 'fix LINKEDIN_DRIP, LINKEDIN_DRIP_MIN_GAP_MIN, LINKEDIN_DRIP_MAX_GAP_MIN and LINKEDIN_INBOX_MIN_GAP_MIN in .env');
+        }
+        return pass(c.enabled
+          ? `on: one LinkedIn action every ${c.minGapMin}-${c.maxGapMin} min, inbox read at most every ${c.inboxGapMin} min; wakes plan no LinkedIn sends`
+          : 'off (LINKEDIN_DRIP=false): wakes plan the LinkedIn inbox, follow-ups and new outreach like before');
       },
     },
     {

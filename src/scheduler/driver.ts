@@ -22,6 +22,7 @@ import { targetRegionsLine, type CodePassResult } from './pipeline.js';
 import { buildContinuationPrompt, buildWakePrompt } from './prompt.js';
 import { describeStep, MAX_CONTINUATIONS, StreamInspector, unprovenSteps } from './stream.js';
 import { dripLoop } from './mailDrip.js';
+import { linkedinDripEnabled, linkedinDripLoop } from './linkedinDrip.js';
 import { finishRun, getState, markOrphans, setRunLogPath, setRunSession, setState, startRun, type RunStatus } from './runLog.js';
 
 type Db = BetterSqlite3.Database;
@@ -51,6 +52,8 @@ export interface DriverDeps {
   codePass?: () => Promise<CodePassResult>;
   /** Run the mail drip lane (src/scheduler/mailDrip.ts) beside the wakes in the daemon loop. Absent or false: no drip. */
   mailDrip?: boolean;
+  /** Run the LinkedIn drip lane (src/scheduler/linkedinDrip.ts) beside the wakes in the daemon loop. Absent or false: no LinkedIn drip. */
+  linkedinDrip?: boolean;
   /** One tick of the owner's escalation digest (src/scheduler/escalationDigest.ts), run every 30 seconds beside the wakes in the daemon loop. Never throws. Absent: no digest. */
   escalationDigest?: () => Promise<void>;
   /** Stage `manual`, run in code before the model session when a manual request is pending: ingests the requests (src/manual/ingest.ts). Never throws into the wake. */
@@ -293,6 +296,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
         discoverSearches: d.discoverSearches,
         codePassEnabled: !!d.codePass,
         linkedinActive: linkedinActiveNow(d.env, now),
+        linkedinDrip: linkedinDripEnabled(d.env),
       });
     } catch (e) {
       await say(d, { level: 'warn', title: 'scheduler plan failed, not launching', detail: safeMsg(e), runId });
@@ -676,6 +680,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     }
   };
   let drip: Promise<void> | null = null;
+  let liDrip: Promise<void> | null = null;
   let digest: Promise<void> | null = null;
   try {
     // Orphans from a previous daemon: kill their windows BEFORE marking them crashed, unless a live
@@ -715,6 +720,8 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     let stopSeen = stopPresent();
     // The mail drip lane runs beside the wakes (its own `mail` lock), so a long wake never pauses the slow email trickle.
     drip = deps.mailDrip ? dripLoop(deps, stop) : null;
+    // The LinkedIn drip lane (its own `linkedin` lock): one slow LinkedIn action at a time, so wakes never burst on LinkedIn.
+    liDrip = deps.linkedinDrip ? linkedinDripLoop(deps, stop) : null;
     // New escalations reach the owner on Telegram even while a long wake runs, so the digest has its own loop too.
     digest = deps.escalationDigest ? digestLoop(deps, stop) : null;
     // A manual request must not wait for the next random wake: every slice (30 s) the daemon checks for a pending one and wakes early,
@@ -768,6 +775,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
   } finally {
     stop.stopped = true; // the drip loop (if any) exits on the same flag
     if (drip) await drip;
+    if (liDrip) await liDrip;
     if (digest) await digest;
     try {
       dl.release();

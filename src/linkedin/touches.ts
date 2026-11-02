@@ -172,8 +172,9 @@ export function activateContact(db: Db, personId: number, now: Date): void {
 }
 
 function activateContactForTouch(db: Db, touchId: number, now: Date): void {
-  const row = db.prepare('SELECT person_id FROM touches WHERE id = ?').get(touchId) as { person_id: number } | undefined;
-  if (row) activateContact(db, row.person_id, now);
+  const row = db.prepare('SELECT person_id, kind FROM touches WHERE id = ?').get(touchId) as { person_id: number; kind: string } | undefined;
+  // A reply (owner-approved answer to an inbound message) is cadence-neutral: it never starts, advances or restarts a cycle.
+  if (row && row.kind !== 'reply') activateContact(db, row.person_id, now);
 }
 
 /**

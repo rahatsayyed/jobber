@@ -15,6 +15,30 @@ URL and the recipient name shown in the dialog are verified against the expected
 (`src/linkedin/verify.ts`: `verifyProfileUrl`, `verifyRecipientName`, `namesPlausiblyMatch`), outbound text passes the style and output gates and the classifier screen (see "Outreach
 safety layers"), and the ceiling is consumed right before the Send click.
 
+**Drip lane, approved replies and attachments.** With `LINKEDIN_DRIP=true` (the default) the scheduler's LinkedIn drip lane
+(see `scheduler.md`) does the LinkedIn inbox, accept check, follow-ups and invites, one action per tick, 8 to 20 minutes apart, inside
+`LINKEDIN_ACTIVE_HOURS`; wakes no longer do them. The `linkedin-operator` works exactly one named "Drip item" per run (DRIP MODE in its agent file).
+*Replies.* The inbox read still only records and escalates, but for an escalation with reason `documents` (a request for the resume or CV) or
+`linkedin_reply_needed` with a plain ask it also stores ONE short draft in `reply_drafts` (`outreach.save_reply_draft`: style, fact and output gates; never for
+salary or interview-slot asks; `documents` sets `attach_resume`). A draft is NEVER sent unless the owner approved it: `npm run replies -- list`,
+`approve <id>`, `skip <id>` (these only change the status; the drafts are also listed by `/escalations`). A newer message in the thread makes a draft stale
+(not approvable, not sent). An approved draft is sent by the lane as arm kind `reply` (`linkedin_arm_send({kind: "reply", profile_url, reply_draft_id})`; the
+text is the stored one, returned by the arm tool): the recipient was paused as `replied`, and that one pause (and the employer gate) does not stop the
+approved reply, any other pause does. A reply is cadence-neutral: no cycle starts or advances (`finishTouch` does not activate the contact, `dueTouchesFor`
+ignores `reply` touches, no `connections` row), the person stays paused. After a confirmed send code marks the draft `sent` and resolves the escalation
+with a note; a clicked-but-unconfirmed or failed send marks it `failed` (approve it again after checking LinkedIn). *Attachment.* Arm accepts
+`attachment: "job_resume"` only for kinds `reply`, `role_ask`, `rapport` and `followup`: replies whose draft has `attach_resume` always (code arms it by
+itself), the others only when `LINKEDIN_DM_ATTACH_RESUME=true` (default `false`). CODE resolves the file (`src/linkedin/attachment.ts`): the newest touch with a
+job, then `outreach_queue.resume_pdf_path`; the path must lie inside `<repo>/renderer/automation/` (symlinks resolved), end in `.pdf`, exist (a missing PDF
+is re-rendered from the `resume.html` beside it with `htmlToPdf`) and be at most 2 MB; no tool takes a path. The typed tool `linkedin_attach_file` (no
+arguments) works only while an intent armed with an attachment is held, the browser is on that profile and exactly one open Messaging window names that
+person: it clicks that window's "Attach a file to your conversation with <name>" control (the model can never click it: `irreversible_refused`), answers
+the file chooser with the file under a generic name from `resume.json` `name` (`Rahat-Sayyed-Resume.pdf` style), and waits for the chip. The Send click is
+refused (`attachment_not_attached`, the arm stays valid) until that succeeded, and a send with a file is `sent` only when the page shows the text AND the
+file name in the sent bubble with no remove control left; a network response alone ends `unconfirmed`. Dry run records and attaches nothing.
+**Not live-verified:** the real attach control and file chooser, the chip and sent-bubble shapes (`attachmentShown`), and opening the existing conversation
+through the profile's Message button for a reply.
+
 The only connect caps are the daily rolling ceilings (24 hours, like the other daily caps) in `src/outreach/limits.ts`: `linkedin_invite`
 (`LINKEDIN_MAX_INVITES_PER_DAY`) and `linkedin_message` (`LINKEDIN_MAX_MESSAGES_PER_DAY`), plus the
 per-company limits and halts there. `MAX_LINKEDIN_SEARCHES_PER_DAY` (daily counter for real LinkedIn people-search pages opened by

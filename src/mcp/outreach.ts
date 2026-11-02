@@ -21,6 +21,10 @@ import {
 } from '../outreach/service.js';
 import type { Platform } from '../scheduler/control.js';
 import { markStaleSending } from '../linkedin/touches.js';
+import { loadLinkedinConfig } from '../linkedin/config.js';
+import { loadStyleConfigSafe, type StyleConfig } from '../safety/styleGate.js';
+import type { FactCheck } from '../linkedin/guard.js';
+import { saveReplyDraft } from '../outreach/replyDrafts.js';
 import { screenUntrusted, type ScreenDeps, type ScreenPurpose, type ScreenVerdict } from '../safety/screen.js';
 
 /**
@@ -35,6 +39,10 @@ export interface OutreachDeps {
   now?: () => Date;
   /** Injected screen (tests). Default screenUntrusted. */
   screen?: (raw: string, purpose: ScreenPurpose, deps?: ScreenDeps) => Promise<ScreenVerdict>;
+  /** Test seams for save_reply_draft: env, style config and fact gate (defaults: process.env, config/ai-tells.json, the base resume). */
+  env?: NodeJS.ProcessEnv;
+  styleCfg?: StyleConfig;
+  factCheck?: FactCheck;
 }
 
 let lazyDb: Db | null = null;
@@ -107,6 +115,18 @@ export async function handleEscalate(
     nowOf(deps),
   );
   return { id };
+}
+/**
+ * Stores ONE drafted reply for an open LinkedIn escalation (reason documents or linkedin_reply_needed). The draft is never sent before the owner
+ * approves it (npm run replies -- approve <id>). Text passes the length, style, fact and output gates here and again when it is armed.
+ */
+export function handleSaveReplyDraft(deps: OutreachDeps, a: { escalation_id: number; text: string }) {
+  const env = deps.env ?? process.env;
+  const cfg = loadLinkedinConfig(env);
+  const styleCfg = deps.styleCfg ?? loadStyleConfigSafe('config/ai-tells.json').cfg;
+  return saveReplyDraft(getDb(deps), { escalationId: a.escalation_id, text: a.text }, {
+    now: nowOf(deps), env, styleCfg, cfg: { allowedUrls: cfg.allowedUrls, allowedEmails: cfg.allowedEmails }, ...(deps.factCheck ? { factCheck: deps.factCheck } : {}),
+  });
 }
 export function handleListOpenEscalations(deps: OutreachDeps, a: { limit?: number }) {
   return listOpenEscalations(getDb(deps), clampLimit(a.limit));
@@ -186,6 +206,14 @@ export function buildServer(deps: OutreachDeps = {}): McpServer {
         return { ...text({ error: String(err?.message ?? err).slice(0, 300) }), isError: true as const };
       }
     },
+  );
+  server.registerTool(
+    'save_reply_draft',
+    {
+      description: 'Store ONE short drafted reply for an open LinkedIn escalation whose reason is documents (they asked for a resume or CV; the tailored resume is attached by code when the owner approves) or linkedin_reply_needed (a plain request). Never for salary or interview-time asks. Returns {ok, id, attach_resume} or {ok: false, code, reason}. The draft is NOT sent: the owner approves it with npm run replies -- approve <id>, and only then does the LinkedIn drip lane send it. Facts only from the resume and the profile; no invented claims.',
+      inputSchema: { escalation_id: z.number().int().positive(), text: z.string().min(1).max(1800) },
+    },
+    async (a) => safe(() => handleSaveReplyDraft(deps, a)),
   );
   server.registerTool(
     'list_open_escalations',
