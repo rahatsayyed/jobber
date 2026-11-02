@@ -73,7 +73,8 @@ function mk(o: { env?: Record<string, string>; html?: string; approve?: boolean;
     now: NOW, env: {}, styleCfg: DEFAULT_STYLE_CONFIG, cfg: { allowedUrls: [], allowedEmails: [] }, factCheck: (t) => ({ verdict: 'pass', normalized_text: t }),
   });
   if (!saved.ok) throw new Error(`draft not saved: ${saved.code}`);
-  if (o.approve !== false) approveReplyDraft(w.db, saved.id, NOW);
+  // A saved draft is auto-approved now; `approve: false` puts it back to drafted for the refusal cases.
+  if (o.approve === false) w.db.prepare("UPDATE reply_drafts SET status = 'drafted', approved_at = NULL WHERE id = ?").run(saved.id);
   return { w, root: r.root, draftId: saved.id, escalationId, personId: person };
 }
 

@@ -57,9 +57,6 @@ export async function launchPersistentChrome(opts: { userDataDir: string; headed
       // Extensions installed in the profile (a password manager) must load, also under --headless=new.
       ignoreDefaultArgs: ['--disable-extensions'],
       args: [...(opts.headed ? [] : LINKEDIN_LAUNCH_OPTIONS.args), ...PERSISTENT_PROFILE_ARGS],
-      // Headed owner sessions (browser:open, apply:assist) may install and use extensions such as a password manager;
-      // the unattended headless tasks keep Playwright's default --disable-extensions.
-      ignoreDefaultArgs: ['--disable-extensions'],
       ...HEADLESS_CONTEXT_OPTIONS,
     });
   } catch (e) {
