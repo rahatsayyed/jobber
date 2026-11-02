@@ -6,7 +6,7 @@ import { createInterface } from 'node:readline';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HEADLESS_CONTEXT_OPTIONS } from '../src/webcore/launch.js';
-import { launchLoginBrowser } from '../src/webcore/loginBrowser.js';
+import { launchLoginBrowser, readLoginState, closeLoginBrowser, lastLoginProfile } from '../src/webcore/loginBrowser.js';
 import { writeStateAtomic } from '../src/linkedin/session.js';
 import type { LiLauncher } from '../src/webcore/launch.js';
 
@@ -59,20 +59,20 @@ export async function main(deps: NaukriLoginDeps = {}): Promise<number> {
     console.log('Log in there yourself (OTP and CAPTCHA prompts are normal).');
     console.log('When you see your Naukri homepage, come back here and press Enter to save the session.\n');
     await io.ask('');
-    const state = (await context.storageState()) as { cookies?: unknown[] };
+    const state = await readLoginState(context);
     if (!hasNaukriAuthCookie(state)) {
       console.error('Not saved: no Naukri login cookie found. Finish logging in, then run this again.');
       return 1;
     }
     writeStateAtomic(deps.outPath ?? NAUKRI_STATE_PATH, state);
     console.log(`Saved session (${Array.isArray(state.cookies) ? state.cookies.length : 0} cookies)`);
-    console.log('Verify it with: npm run naukri:check');
+    console.log(`Session saved: login done in ${lastLoginProfile}, state file refreshed. Verify: npm run naukri:check`);
     return 0;
   } catch (e) {
     console.error(`Login failed: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
     return 1;
   } finally {
-    await browser.close();
+    await closeLoginBrowser(browser);
   }
 }
 

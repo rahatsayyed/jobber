@@ -133,7 +133,7 @@ describe('linkedin session check', () => {
   it('script main prints the one line and returns 0 on OK, 1 on FAIL', async () => {
     const d = tmp();
     const lines: string[] = [];
-    const log = (s: string) => lines.push(s);
+    const log = (s: string) => { if (!s.startsWith('profile tested:')) lines.push(s); };
     const ok = fake({ url: 'https://www.linkedin.com/feed/', evalResult: snap({}) });
     expect(await linkedinMain({ sessionPath: sessionFile(d, 's.json', 'li_at'), lockPath: path.join(d, 'l.lock'), launcher: ok.launcher, log })).toBe(0);
     expect(await linkedinMain({ sessionPath: path.join(d, 'nope.json'), lockPath: path.join(d, 'l.lock'), log })).toBe(1);
@@ -185,7 +185,7 @@ describe('naukri session check', () => {
   it('script main returns 0 on OK and 1 on FAIL', async () => {
     const d = tmp();
     const lines: string[] = [];
-    const log = (s: string) => lines.push(s);
+    const log = (s: string) => { if (!s.startsWith('profile tested:')) lines.push(s); };
     const f = fake({ url: 'https://www.naukri.com/mnjuser/homepage', evalResult: nk({}) });
     expect(await naukriMain({ sessionPath: sessionFile(d, 's.json', 'nauk_at'), launcher: f.launcher, log })).toBe(0);
     expect(await naukriMain({ sessionPath: path.join(d, 'nope.json'), log })).toBe(1);

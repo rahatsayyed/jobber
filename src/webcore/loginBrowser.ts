@@ -16,11 +16,24 @@ export function loginProfileDir(name: string, root: string = SECRETS): string {
   return path.join(root, `browser-profile-${name.replace(/[^a-z0-9-]/gi, '')}`);
 }
 
+// Where the last login window ran, for the one final line of each login command.
+export let lastLoginProfile = 'a plain headed browser';
+
+/** Cookies of a login window. Cookies first: storageState() opens helper pages that can crash a window the owner just used. */
+export async function readLoginState(context: { cookies?: () => Promise<unknown[]>; storageState: () => Promise<unknown> }): Promise<{ cookies?: unknown[] }> {
+  try { const c = await context.cookies?.(); if (Array.isArray(c)) return { cookies: c }; } catch { /* try storageState */ }
+  return (await context.storageState()) as { cookies?: unknown[] };
+}
+
+export async function closeLoginBrowser(browser: { close(): Promise<void> }): Promise<void> {
+  try { await browser.close(); } catch { /* the owner already closed the window */ }
+}
+
 export async function launchLoginBrowser(opts: { name: string; launcher?: LiLauncher; root?: string; host?: HostAttach | null }): Promise<LiBrowser> {
   const shared = resolveHost(opts.host, process.env, opts.launcher);
   if (shared) {
     const r = await shared({ headed: true });
-    if (r.ok) return r.browser;
+    if (r.ok) { lastLoginProfile = 'the shared browser profile (secrets/browser-profile/)'; return r.browser; }
     if (r.code === 'busy' || r.code === 'busy_headed') throw new Error(`session_locked: ${r.reason}`);
     if (r.code === 'halted') throw new Error('halted: the kill switch is on');
   }
@@ -28,6 +41,7 @@ export async function launchLoginBrowser(opts: { name: string; launcher?: LiLaun
   if (persistentSupported(opts.launcher) && prepareProfileDir(dir).ok) {
     try {
       const pc = await launchPersistentChrome({ userDataDir: dir, headed: true, launcher: opts.launcher });
+      lastLoginProfile = `the own ${opts.name} profile`;
       return { newContext: async () => pc, close: () => pc.close() };
     } catch {
       /* fall through to a plain headed browser */
