@@ -302,7 +302,7 @@ describe('npm run browser:open --profile', () => {
     expect(fs.existsSync(path.join(root, 'naukri-profile.lock'))).toBe(false);
   });
 
-  it('refuses while the profile lock is held (no launch), and refuses an unknown or burner profile', async () => {
+  it('refuses while the profile lock is held (no launch), and refuses an unknown or second-LinkedIn profile', async () => {
     const root = tmp(); const f = fake();
     const held = acquireLock(path.join(root, 'wellfound.lock'));
     const r = await browserOpen(['--profile', 'wellfound'], { io: io().io, launcher: f.launcher, root });
@@ -310,7 +310,7 @@ describe('npm run browser:open --profile', () => {
     expect(r.lines[r.lines.length - 1]).toMatch(/busy/);
     expect(f.persistentCalls).toHaveLength(0);
     if (held.ok) held.handle.release();
-    expect((await browserOpen(['--profile', 'linkedin-burner'], { io: io().io, launcher: f.launcher, root })).code).toBe(2);
+    expect((await browserOpen(['--profile', 'linkedin-second'], { io: io().io, launcher: f.launcher, root })).code).toBe(2);
     expect((await browserOpen(['--profile', 'nope'], { io: io().io, launcher: f.launcher, root })).code).toBe(2);
     expect((await browserOpen(['--profile', 'naukri', 'http://x.example/'], { io: io().io, launcher: f.launcher, root })).code).toBe(2);
     expect(f.persistentCalls).toHaveLength(0);
@@ -347,7 +347,6 @@ describe('doctor: browser-profiles line', () => {
     expect(r.detail).toContain('wellfound: no extensions');
     expect(r.detail).toContain('web: no profile yet');
     expect(r.detail).toContain('linkedin-main: no profile yet');
-    expect(r.detail).not.toContain('burner');
   });
 
   it('is a skip with the install hint when no profile exists yet', async () => {

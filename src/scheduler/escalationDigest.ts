@@ -5,6 +5,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { GROUP_ORDER, listEscalations, type EscItem } from '../outreach/escalations.js';
 import { inQuietHours, type QuietConfig } from '../outreach/quiet.js';
+import { buildManualQueue, manualApplyLine } from '../manual/manualApply.js';
 import { telegramNotifier } from '../platform/notify.js';
 import { itemBlock } from '../status/escalations.js';
 import { getState, setState } from './runLog.js';
@@ -33,7 +34,7 @@ export type DigestResult =
   | { sent: true; count: number }
   | { sent: false; reason: 'nothing_new' | 'only_flagged' | 'too_soon' | 'send_failed' };
 
-function compose(fresh: EscItem[], rowCount: number, url: string | null, now: Date): string {
+function compose(fresh: EscItem[], rowCount: number, url: string | null, now: Date, manualLine: string | null = null): string {
   const rows = (g: EscItem['group']): number => fresh.filter((i) => i.group === g).reduce((n, i) => n + i.count, 0);
   const lines = [
     `Jobber: ${rowCount} new escalation${rowCount === 1 ? '' : 's'} need a look`,
@@ -42,7 +43,7 @@ function compose(fresh: EscItem[], rowCount: number, url: string | null, now: Da
   ];
   const shown: EscItem[] = [];
   for (const g of GROUP_ORDER) if (g !== 'noise') shown.push(...fresh.filter((i) => i.group === g));
-  const tail = ['', 'Full list: /escalations'];
+  const tail = ['', ...(manualLine ? [manualLine] : []), 'Full list: /escalations'];
   if (url) tail.push(`Dashboard Inbox: ${url}`);
   let used = lines.join('\n').length + tail.join('\n').length + 40;
   let n = 0;
@@ -59,9 +60,14 @@ function compose(fresh: EscItem[], rowCount: number, url: string | null, now: Da
   return [...lines, ...tail].join('\n');
 }
 
+/** The manual-apply nudge, or null when nothing waits or the tables are unreadable (the digest must never fail on it). */
+function manualLineOf(db: Db, env: NodeJS.ProcessEnv): string | null {
+  try { return manualApplyLine(buildManualQueue(db, env)); } catch { return null; }
+}
+
 export async function runEscalationDigest(
   db: Db,
-  d: { send: (text: string) => Promise<{ ok: boolean }>; now: Date; url: string | null },
+  d: { send: (text: string) => Promise<{ ok: boolean }>; now: Date; url: string | null; env?: NodeJS.ProcessEnv },
 ): Promise<DigestResult> {
   const lastAt = Date.parse(getState(db, KEY_LAST_AT) ?? '');
   if (Number.isFinite(lastAt) && d.now.getTime() - lastAt < ESCALATION_DIGEST_GAP_MS) return { sent: false, reason: 'too_soon' };
@@ -72,7 +78,7 @@ export async function runEscalationDigest(
   const rowCount = fresh.reduce((n, i) => n + i.ids.filter((id) => id > lastId).length, 0);
   // Recorded before the send so a failing Telegram is retried at most once per gap.
   setState(db, KEY_LAST_AT, d.now.toISOString(), d.now);
-  const sent = await d.send(compose(fresh, rowCount, d.url, d.now));
+  const sent = await d.send(compose(fresh, rowCount, d.url, d.now, manualLineOf(db, d.env ?? process.env)));
   if (!sent.ok) return { sent: false, reason: 'send_failed' };
   setState(db, KEY_LAST_ID, String(Math.max(...fresh.flatMap((i) => i.ids))), d.now);
   return { sent: true, count: rowCount };

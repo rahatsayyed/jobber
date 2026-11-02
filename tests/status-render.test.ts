@@ -5,9 +5,11 @@ import type { Snapshot } from '../src/status/snapshot.js';
 
 const base: Snapshot = {
   generatedAt: '2026-10-14T10:00:00.000Z',
+  manualApply: { count: 0, easyApplyOff: 0, items: [] },
   ceilings: {
     linkedin_invite: { used: 12, limit: 100, ok: true },
     linkedin_message: { used: 3, limit: 50, ok: true },
+    linkedin_easy_apply: { used: 0, limit: 5, ok: true },
     naukri_apply: { used: 20, limit: 20, ok: false },
     naukri_message: { used: 0, limit: 10, ok: true },
     wellfound_apply: { used: 0, limit: 20, ok: true },
@@ -37,6 +39,7 @@ const empty: Snapshot = {
   ceilings: {
     linkedin_invite: { used: 0, limit: 100, ok: true },
     linkedin_message: { used: 0, limit: 50, ok: true },
+    linkedin_easy_apply: { used: 0, limit: 5, ok: true },
     naukri_apply: { used: 0, limit: 20, ok: true },
     naukri_message: { used: 0, limit: 10, ok: true },
     wellfound_apply: { used: 0, limit: 20, ok: true },
@@ -60,12 +63,21 @@ const halted: Snapshot = {
   degraded: ['queue', 'funnel'],
 };
 
+describe('renderLimits: Easy Apply mode', () => {
+  it('says whether LinkedIn Easy Apply is a lane action or left to the owner', () => {
+    expect(renderLimits(base, { env: {} })).toContain('linkedin easy apply: off (APPLY_LINKEDIN_EASY): you apply by hand');
+    expect(renderLimits(base, { env: { APPLY_LINKEDIN_EASY: 'true' } })).toContain('linkedin easy apply: ON');
+    expect(renderLimits(base)).not.toContain('easy apply:');
+  });
+});
+
 describe('renderLimits', () => {
   it('lists ceilings, counters and no halts', () => {
     expect(renderLimits(base)).toBe(
       [
         'linkedin_invite 12/100 per day',
         'linkedin_message 3/50 per day',
+        'linkedin_easy_apply 0/5 per day',
         'naukri_apply 20/20 per day FULL',
         'naukri_message 0/10 per day',
         'wellfound_apply 0/20 per day',

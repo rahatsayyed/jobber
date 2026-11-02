@@ -43,7 +43,7 @@ from the stored apply URL (`src/apply/registry.ts`):
 | Fast path (shipped recipe) | Greenhouse, Lever, Ashby, Workable, SmartRecruiters | recipes in `config/ats-recipes/` |
 | Agent path (no recipe) | Workday, Recruitee, Personio | the operator fills the form from the state; Workday normally needs an account |
 | `browser` | any other host | only when `APPLY_ALLOW_UNKNOWN_HOSTS` is `true` |
-| `linkedin_easy` | linkedin.com | only when `APPLY_LINKEDIN_EASY` is `true`; uses the burner session |
+| `linkedin_easy` | linkedin.com | only when `APPLY_LINKEDIN_EASY` is `true`; done by the LinkedIn drip lane on the main account (not the applier, not the apply-operator); when off, the job waits in the manual apply queue |
 | `naukri` | naukri.com | the native Naukri Apply through the Naukri tools; it also consumes `NAUKRI_MAX_APPLIES_PER_DAY` |
 | `wellfound` | wellfound.com | the native Wellfound Apply through the Wellfound tools (`wellfound_arm_apply`, then a click by ref); it also consumes `WELLFOUND_MAX_APPLIES_PER_DAY`; needs `npm run wellfound:login`; live-unverified |
 | never | everything else | discover-only and generated sources, no apply URL, look-alike hosts, credentials in the URL, non-http(s) URLs, an unknown host or LinkedIn while the matching flag is off |

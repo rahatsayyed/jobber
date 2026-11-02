@@ -88,17 +88,25 @@ export function looksLikeInvite(tree: RawTree, dlg: number): boolean {
 }
 
 /** Kind of a dialog: by its name, or (when the name says nothing) by the invite controls inside it. */
-export function effectiveDialogKind(tree: RawTree, dlg: number, name: string | null | undefined): 'invite' | 'message' | 'other' {
+export function effectiveDialogKind(tree: RawTree, dlg: number, name: string | null | undefined): 'invite' | 'message' | 'easy_apply' | 'other' {
   const byName = dialogKindOf(name) ?? 'other';
   if (byName !== 'other') return byName;
+  if (looksLikeEasyApply(tree, dlg)) return 'easy_apply';
   return looksLikeInvite(tree, dlg) ? 'invite' : 'other';
+}
+
+/** A dialog that holds the Easy Apply submit control, or its Next button beside a form progress line: the Easy Apply modal even when its name says nothing. */
+export function looksLikeEasyApply(tree: RawTree, dlg: number): boolean {
+  const ctl = tree.nodes.filter((x) => x.dialog === dlg && (x.role === 'button' || x.role === 'link')).map((x) => normName(x.name));
+  if (ctl.includes('submit application')) return true;
+  return ctl.includes('next') && /\bprogress\b|\b\d{1,3}%/i.test(dialogText(tree, dlg)) && /\bapply\b|\bresume\b|contact info/i.test(dialogText(tree, dlg));
 }
 
 const hasControls = (tree: RawTree, dlg: number): boolean =>
   tree.nodes.some((x) => x.dialog === dlg && (x.role === 'button' || x.role === 'link' || x.role === 'textbox'));
 
 /** Kind of a dialog that lists no control: by its name, else by its text ("invitation"), else unknown. */
-function emptyDialogKind(tree: RawTree, d: { n: number; name: string }): 'invite' | 'message' | 'other' | 'unknown' {
+function emptyDialogKind(tree: RawTree, d: { n: number; name: string }): 'invite' | 'message' | 'easy_apply' | 'other' | 'unknown' {
   const byName = dialogKindOf(d.name);
   if (byName && byName !== 'other') return byName;
   if (/\binvit/i.test(dialogText(tree, d.n))) return 'invite';

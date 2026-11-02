@@ -16,6 +16,7 @@ describe('limits catalog drift against code defaults', () => {
     const map: Record<string, keyof OutreachConfig> = {
       LINKEDIN_MAX_INVITES_PER_DAY: 'linkedinMaxInvitesPerDay',
       LINKEDIN_MAX_MESSAGES_PER_DAY: 'linkedinMaxMessagesPerDay',
+      LINKEDIN_MAX_EASY_APPLIES_PER_DAY: 'linkedinMaxEasyApplesPerDay',
       NAUKRI_MAX_APPLIES_PER_DAY: 'naukriMaxAppliesPerDay',
       NAUKRI_MAX_MESSAGES_PER_DAY: 'naukriMaxMessagesPerDay',
       COMPANY_CONTACT_LIMIT: 'companyContactLimit',

@@ -61,6 +61,7 @@ export const TOOL_NAMES = [
   'linkedin_close', 'linkedin_limits', 'linkedin_layout',
   'linkedin_find_profiles', 'linkedin_search_jobs', 'linkedin_search_posts', 'linkedin_manual_job', 'linkedin_resolve_external',
   'linkedin_check_accepted', 'linkedin_check_accepted_recent', 'linkedin_attach_file',
+  'linkedin_easy_apply_fill', 'linkedin_easy_apply_abort',
 ] as const;
 type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -79,7 +80,8 @@ export const schemas = {
   linkedin_click_at: { x: z.number().int().min(0).max(5000), y: z.number().int().min(0).max(5000) },
   linkedin_arm_send: {
     kind: z.enum(ARM_KINDS as unknown as [string, ...string[]]),
-    profile_url: url,
+    // Required for every kind except easy_apply (which names a job_id; its page URL comes from SQLite).
+    profile_url: url.optional(),
     text: z.string().max(1800).optional(),
     job_id: short.optional(),
     company: short.optional(),
@@ -106,6 +108,9 @@ export const schemas = {
   linkedin_check_accepted_recent: {},
   // Takes nothing: puts the armed attachment into the armed person's open message window (code resolved the file at arm time).
   linkedin_attach_file: {},
+  // Take nothing: code answers the current Easy Apply modal step (answer book, resume-derived values, owner answers) / closes the modal and parks the job.
+  linkedin_easy_apply_fill: {},
+  linkedin_easy_apply_abort: {},
   // A job id only: the page must already be open; code finds the company site behind a non-Easy Apply.
   linkedin_resolve_external: { job_id: z.string().regex(/^[\w.:@-]{1,200}$/) },
 } as const;
@@ -146,6 +151,8 @@ export interface HandlerDeps {
   navGap?: NavGap;
   /** Attachment seams (tests): repo root for the renderer/automation check, PDF re-render and the resume.json name. */
   attach?: ResolveDeps;
+  /** Easy Apply seams (tests): replaces the answer book loader. */
+  easyApply?: { answers?: () => import('../apply/answers.js').AnswerBook };
 }
 
 export type Handler = (args: any) => Promise<unknown>;
@@ -270,6 +277,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
       screenshotEnabled: env.LINKEDIN_SCREENSHOT !== 'false',
       navGap,
       ...(deps.attach?.root ? { attachRoot: deps.attach.root } : {}),
+      ...(deps.easyApply ? { easyApply: deps.easyApply } : {}),
       layoutFeed: (tree) => { getRt().layout?.observe(treeToRawSnapshot(tree), null); },
       afterBlock: async () => { await getRt().discard(); },
       ...(deps.paceMs ? { paceMs: deps.paceMs } : {}),
@@ -291,6 +299,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
       ...(r.epoch !== undefined ? { epoch: r.epoch } : {}),
       ...(r.status ? { status: r.status } : {}),
       ...(r.touch_id !== undefined ? { touch_id: r.touch_id } : {}),
+      ...(r.detail ? { detail: r.detail } : {}),
       dry_run: cfg.dryRun,
       ...(layout ? { layout } : {}),
     });
@@ -338,6 +347,8 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
       return json(res);
     }),
     linkedin_attach_file: act((e) => e.attachFile()),
+    linkedin_easy_apply_fill: act((e) => e.easyApplyFill()),
+    linkedin_easy_apply_abort: act((e) => e.easyApplyAbort()),
     linkedin_close: safe(async () => {
       engine?.refs.invalidate();
       return rt && (await rt.close()) ? 'closed' : 'no open session';
@@ -354,6 +365,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
         dry_run: cfg.dryRun,
         linkedin_invite: c.linkedin_invite,
         linkedin_message: c.linkedin_message,
+        linkedin_easy_apply: c.linkedin_easy_apply,
         accept: { used: row?.count ?? 0, limit: cfg.maxAcceptsPerDay },
         notes: { quota_exhausted_until: noteQuotaUntil(d, now())?.toISOString() ?? null },
         session: { ok: s.ok, ...(s.reason ? { reason: s.reason } : {}) },
@@ -435,7 +447,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
         },
       ));
     }),
-    // Finds the company site behind a non-Easy Apply in code (main account session only, never the burner); the URL is never returned.
+    // Finds the company site behind a non-Easy Apply in code (main account session only); the URL is never returned.
     linkedin_resolve_external: safe(async ({ job_id }) => json(await resolveExternalApply({
       engine: getEngine(), db: getDb(), now, env, cfg: loadOutreachConfig(env), policy: LINKEDIN_POLICY, screen,
       state: (deps.externalState ??= createExternalState()),
@@ -493,13 +505,15 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   linkedin_wait_for: 'Waits up to 10 s (ms) or until some text appears, then returns a fresh tree. ' + UNTRUSTED,
   linkedin_screenshot: 'EMERGENCY fallback, on unless LINKEDIN_SCREENSHOT=false: PNG of the viewport at most 900px wide, after a snapshot. The pixels are NOT checked by the injection classifier. ' + UNTRUSTED,
   linkedin_click_at: 'Clicks a viewport point (needs LINKEDIN_SCREENSHOT not false, a snapshot and a screenshot at the current epoch). The element under the point is classified exactly like linkedin_click. ' + UNTRUSTED,
-  linkedin_arm_send: 'Arms ONE send intent after every code gate passed (known recipient, employer, style, fact and output gates, ceiling, page and name verification). kind is connect_note, connect_plain (a note-less invite, no text; the only click is "Send without a note"; used once the monthly note quota is used up, connect_note is then refused with note_quota_exhausted), role_ask, rapport, referral_ask, followup, feedback, accept or reply (reply: pass reply_draft_id of an OWNER-APPROVED reply draft; the text comes from the stored draft and is returned in the result; it is never sent without that approval). attachment job_resume (only for reply, role_ask, rapport, followup) arms the tailored resume of the latest job tied to the person; code resolves the file, then linkedin_attach_file puts it into the open message window before Send. The send itself is then a linkedin_click (or Enter) on the matching control within 120 s. Dry run when JOBBER_DRY_RUN is true. ' + UNTRUSTED,
+  linkedin_arm_send: 'Arms ONE send intent after every code gate passed (known recipient, employer, style, fact and output gates, ceiling, page and name verification). kind is connect_note, connect_plain (a note-less invite, no text; the only click is "Send without a note"; used once the monthly note quota is used up, connect_note is then refused with note_quota_exhausted), role_ask, rapport, referral_ask, followup, feedback, accept, easy_apply or reply (easy_apply: pass ONLY job_id, no profile_url and no text; only with APPLY_LINKEDIN_EASY=true and a pending queue row of the LinkedIn Easy Apply class; code reads the job page URL from SQLite, opens it, resolves the tailored resume, checks the ceilings (linkedin_easy_apply, MAX_APPLIES_PER_DAY, profile views) and the page, then arms; the application itself is linkedin_click on the Easy Apply control, linkedin_easy_apply_fill for each modal step, and linkedin_click on Next, Review and Submit application; a job whose Apply goes to the company site is refused not_easy_apply and handed to the external-apply route); reply: pass reply_draft_id of an OWNER-APPROVED reply draft; the text comes from the stored draft and is returned in the result; it is never sent without that approval). attachment job_resume (only for reply, role_ask, rapport, followup) arms the tailored resume of the latest job tied to the person; code resolves the file, then linkedin_attach_file puts it into the open message window before Send. The send itself is then a linkedin_click (or Enter) on the matching control within 120 s. Dry run when JOBBER_DRY_RUN is true. ' + UNTRUSTED,
   linkedin_close: 'Closes the LinkedIn session, saves session state and releases the lock.',
   linkedin_limits: 'Read-only: halt reason, daily invite and message ceilings, daily accept counter, dry_run flag and session validity (booleans and reasons only).',
   linkedin_layout: 'Read-only: layout memory enforcement mode, the verdict class of the last observed page, and a compact vocabulary-only summary of learned page layouts (no page text).',
   linkedin_find_profiles: 'TYPED, read-only toward LinkedIn: searches people by company (and optional role_hint) and returns at most 3 verified profile candidates (canonical profile_url, name, headline), registering them as people rows for the given category. Shares the daily search ceiling. Never clicks or sends. ' + UNTRUSTED,
   linkedin_search_jobs: 'TYPED, read-only toward LinkedIn: runs ONE named jobs search from config/linkedin-discovery.json (pass only its name), saves new jobs in code and returns counts and new job ids, never page text. Shares the daily search ceiling plus the discover ceiling. Dry run saves nothing. ' + UNTRUSTED,
   linkedin_attach_file: 'TYPED, takes no arguments. Only works while a message armed with attachment job_resume is held, the browser is on that profile and exactly one open message window names that person: code clicks the window\'s "Attach a file to your conversation with <name>" control, answers the file chooser with the file code resolved at arm time (a tailored resume PDF from renderer/automation, uploaded under a generic name) and waits until the file shows in that window. The Send click is refused until this succeeded. Dry run attaches nothing. Never accepts a path. ' + UNTRUSTED,
+  linkedin_easy_apply_fill: 'TYPED, takes no arguments. Only while a kind easy_apply intent is armed and its modal is open: code reads the current Easy Apply modal step and answers every field ONLY from the answer book (profile, user-data/easy-apply-answers.json), values derived from the resume, or an answer the owner stored with npm run answers; it uploads the armed tailored resume through the code-owned resolver and verifies the form. A required question nothing reliable answers is recorded for the owner, the job is parked needs_answer and the modal is closed. A CAPTCHA, verification, a premium upsell, an unknown button, more than 8 steps or a failed fill closes the modal and parks the job needs_owner. Returns {ok, code, status, detail: {filled, next: next|review|submit, step}}; never page text or a value. Then take a snapshot and click the named control. Dry run fills nothing. ' + UNTRUSTED,
+  linkedin_easy_apply_abort: 'TYPED, takes no arguments. Use when the modal shows something unexpected that linkedin_easy_apply_fill did not catch: code closes the modal, marks the job needs_owner and drops the armed intent. ' + UNTRUSTED,
   linkedin_resolve_external: 'For a LinkedIn job whose Apply is NOT Easy Apply: after linkedin_open of that job page, code reads the Apply link (or clicks it once and reads the company page address from the popup, closing it at once, nothing typed or read there), validates and classifies it and routes the job to the generic applier (then call apply_open with the same job_id). You supply only the job_id; the address is never returned. Honours dry run, halts and the kill switch; one daily ceiling and at most 5 per run. Returns {status: resolved|manual_review|refused|rate_limited|dry_run|halted|failed, code, platform?, tier?}. Main account session only. ' + UNTRUSTED,
   linkedin_manual_job: 'TYPED, read-only toward LinkedIn: takes no arguments. Code picks the next queued owner-submitted LinkedIn job page (the URL comes from SQLite), loads it in this session, reads and screens the posting and saves it as a priority job in code. Returns {status: ok|dry_run|halted|failed, code, task_id, job_ids, remaining}; never page text. Never sends or applies. ' + UNTRUSTED,
   linkedin_check_accepted: 'TYPED, read-only toward LinkedIn: takes no arguments. Code picks the next sent invite whose acceptance is due for a check (the profile URL comes from SQLite), opens that profile, reads its header and, only for a first-degree profile with a Message button and no Connect button, marks the invite accepted in code (which makes the person due for the follow-up cadence). Pending or Connect-again changes nothing. Fallback only (invites older than 3 days that the connections page did not show): pauses 3 to 8 s between profiles, at most 3 per run, each profile at most once per 72 hours. Returns {status: accepted|pending|not_accepted|unclear|none|dry_run|halted|rate_limited|failed, code, remaining}; never page text. Clicks and sends nothing. ' + UNTRUSTED,

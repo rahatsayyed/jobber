@@ -5,7 +5,7 @@
 Jobber is an autonomous job-hunting agent. A scheduler wake fetches new job postings from the sources listed in the platform registry, scores each one against your base resume, tailors the resume for good matches, finds a verified contact at the hiring company, drafts a cold outreach email, and sends it. The same wake sends LinkedIn connection requests and messages and applies through the browser. It sends real email and takes real LinkedIn and web actions on your own accounts, always inside daily caps that the code enforces, and everything ships in dry mode until you flip the dry-run flags yourself.
 
 **Phase 1 (complete):** cold-email discovery and outreach.
-**Phase 2 (substantially complete):** browser apply through the `applier` MCP (typed tools, refs only, ATS recipes, answer book, per-host caps; LinkedIn Easy Apply with the burner account is off by default; see [docs/apply.md](docs/apply.md)) and LinkedIn connection requests and messages (main account, typed `linkedin` tools). See [Phase 2 known issues](docs/phase2-known-issues.md) before treating it as fully production-proven.
+**Phase 2 (substantially complete):** browser apply through the `applier` MCP (typed tools, refs only, ATS recipes, answer book, per-host caps; LinkedIn Easy Apply on the main account, run by the LinkedIn drip lane, is off by default; see [docs/apply.md](docs/apply.md)) and LinkedIn connection requests and messages (main account, typed `linkedin` tools). See [Phase 2 known issues](docs/phase2-known-issues.md) before treating it as fully production-proven.
 **Phase 3 (in progress):** reply detection, email follow-ups (autonomous mode is built but ships off, see `FOLLOWUPS_AUTONOMOUS` in `.env.example`) and the funnel report.
 
 ---

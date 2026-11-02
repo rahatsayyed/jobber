@@ -49,9 +49,9 @@ export function itemBlock(i: EscItem, now: Date, detailMax = 140): string[] {
   return out;
 }
 
-export function renderEscalations(items: EscItem[], counts: EscCounts, now: Date): string {
+export function renderEscalations(items: EscItem[], counts: EscCounts, now: Date, extraLines: string[] = []): string {
   if (!items.length) {
-    return `No open escalations.${counts.snoozed ? ` (${counts.snoozed} snoozed)` : ''}`;
+    return [`No open escalations.${counts.snoozed ? ` (${counts.snoozed} snoozed)` : ''}`, ...extraLines].join('\n');
   }
   const lines = [`Escalations: ${counts.open} open${counts.snoozed ? `, ${counts.snoozed} snoozed (hidden)` : ''}. Answer on the platform itself; mark them handled in the dashboard Inbox tab.`];
   const nq = items.reduce((n, i) => n + i.questions.length, 0);
@@ -68,5 +68,6 @@ export function renderEscalations(items: EscItem[], counts: EscCounts, now: Date
     }
   }
   if (items.length > shown) lines.push('', `... and ${items.length - shown} more (see the dashboard Inbox tab)`);
+  if (extraLines.length) lines.push('', ...extraLines);
   return lines.join('\n');
 }

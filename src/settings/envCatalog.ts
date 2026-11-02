@@ -22,6 +22,7 @@ export const INTERNAL_NAMES: Record<string, string> = {
   VITEST: 'set by the test runner',
   JOBAPPLIER_DB: 'test harness only (vitest.config.ts points it at an in-memory database)',
   JOBBER_RUN_ID: 'set by the scheduler launcher per wake',
+  JOBBER_RUN_LANE: 'set by the LinkedIn drip lane for its run; linkedin_arm_send kind easy_apply works only when it is linkedin_drip',
   SCHEDULER_RUN_ID: 'set by the scheduler per run',
   JOBBER_RUN_PROFILE: 'set by the restricted runner to the profile name',
   IS_SANDBOX: 'refused if set; never a configuration value',
@@ -369,7 +370,7 @@ const hand: EnvSpec[] = [
   e('APPLY_LINKEDIN_EASY', 'apply', 'browser apply', 'bool', {
     default: 'false',
     exampleActive: true,
-    about: 'LinkedIn Easy Apply through the burner account.',
+    about: 'LinkedIn Easy Apply on the main account, done by the LinkedIn drip lane through the LinkedIn engine (one application per tick, never the applier). When false, Easy Apply jobs wait in the manual apply queue.',
     ...tier('safety', R_SEND, 'true'),
   }),
   e('APPLY_SUBMIT_MODE', 'apply', 'browser apply', 'enum', {
@@ -1016,7 +1017,7 @@ const hand: EnvSpec[] = [
 
 // Keys whose loader treats a blank value exactly like an unset one (a test runs the real loaders to prove it).
 const BLANK_OK = new Set<string>([
-  'LINKEDIN_MAX_INVITES_PER_DAY', 'LINKEDIN_MAX_MESSAGES_PER_DAY', 'NAUKRI_MAX_APPLIES_PER_DAY',
+  'LINKEDIN_MAX_INVITES_PER_DAY', 'LINKEDIN_MAX_MESSAGES_PER_DAY', 'LINKEDIN_MAX_EASY_APPLIES_PER_DAY', 'NAUKRI_MAX_APPLIES_PER_DAY',
   'NAUKRI_MAX_MESSAGES_PER_DAY', 'WELLFOUND_MAX_APPLIES_PER_DAY', 'WELLFOUND_MAX_MESSAGES_PER_DAY',
   'WELLFOUND_MAX_DISCOVER_PER_DAY', 'APPLY_MAX_ATTEMPTS_PER_DAY', 'SITE_MAX_ACCOUNTS_PER_DAY',
   'LINKEDIN_MAX_DISCOVER_PER_DAY', 'LINKEDIN_MAX_PROFILE_VIEWS_PER_DAY', 'APPLY_MAX_EXTERNAL_RESOLVES_PER_DAY', 'COMPANY_CONTACT_LIMIT', 'SPECULATIVE_COMPANY_LIMIT', 'QUIET_HOURS_START',

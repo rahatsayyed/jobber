@@ -16,9 +16,11 @@ import { noteQuotaModal } from './sendSignals.js';
 import { dialogWithoutControls, writeCommitDiag } from './diag.js';
 import { applyCounted, commitNaukri, observeApplyConfirmation } from './commitNaukri.js';
 import { commitWellfound, observeWellfoundApplyConfirmation, wellfoundApplyCounted } from './commitWellfound.js';
+import { commitEasyApply } from './commitEasyApply.js';
+import { parkNeedsOwner, runEasyApplyFill } from './easyApply.js';
 import { BC_KEYS, type BcKey, type BcPage } from './driver.js';
 import { killReason, refused, type EngineDeps, type EngineResult } from './engineTypes.js';
-import { ATTACH_CONTROL_RE, checkType, classify, classifyKey, classifyPoint, connectPlacementRefusal, guardInputOf, isConnectControlName, normName, type ActionClass, type CommitClass } from './guard.js';
+import { ATTACH_CONTROL_RE, EASY_APPLY_CODE_ROLES, checkType, classify, classifyKey, classifyPoint, connectPlacementRefusal, guardInputOf, isConnectControlName, normName, type ActionClass, type CommitClass } from './guard.js';
 import { LINKEDIN_POLICY } from './policy.js';
 import { RefStore } from './refs.js';
 import { renderTree, type LiveNode, type RawTree } from './snapshot.js';
@@ -50,6 +52,14 @@ export interface Engine {
    * while an intent armed with an attachment is held and the browser is on that profile with exactly one message window naming that person.
    */
   attachFile(): Promise<EngineResult>;
+  /**
+   * LinkedIn Easy Apply, no argument: code answers the fields of the CURRENT modal step from the answer book, resume-derived values and the
+   * owner's stored answers, uploads the armed tailored resume, and verifies it. An unanswered required question parks the job as needs_answer;
+   * anything unexpected closes the modal and parks it needs_owner. The model supplies no value, no file and no URL.
+   */
+  easyApplyFill(): Promise<EngineResult>;
+  /** LinkedIn Easy Apply, no argument: the operator saw something unexpected; code closes the modal and parks the job needs_owner. */
+  easyApplyAbort(): Promise<EngineResult>;
   /** The tree of the latest successful read (arm tools use it; never given to the model raw). */
   lastTree(): RawTree | null;
   /** The session page, or null. */
@@ -222,6 +232,15 @@ export function createEngine(deps: EngineDeps): Engine {
     if (P.platform === 'linkedin' && cls === 'commit_connect_send') {
       const bad = connectPlacementRefusal(live, moreOpened,tree ? profileHeadingName(tree) : '');
       if (bad) return refused(bad.code, bad.reason);
+    }
+    if (cls === 'linkedin_easy_apply') {
+      const res = await commitEasyApply({ deps, page, live, act, redescribe });
+      if (res.code !== 'no_armed_intent') refs.invalidate();
+      return res;
+    }
+    // While an Easy Apply is armed, the modal's choice fields belong to code (linkedin_easy_apply_fill): never clicked by hand, whatever the modal is named.
+    if (P.platform === 'linkedin' && live.dialog !== undefined && EASY_APPLY_CODE_ROLES.has(live.role) && deps.intents.peek('linkedin')?.class === 'linkedin_easy_apply') {
+      return refused('code_owned_field', 'the Easy Apply form is filled by code (linkedin_easy_apply_fill); choice fields are never clicked by hand');
     }
     if (cls !== 'free') {
       const res = P.platform === 'naukri'
@@ -475,8 +494,35 @@ export function createEngine(deps: EngineDeps): Engine {
     return finish(g.page, 'attached');
   }
 
+  /** linkedin_easy_apply_fill: see Engine.easyApplyFill. A passing fill returns the fresh screened page so the next control can be clicked by ref. */
+  async function doEasyApplyFill(): Promise<EngineResult> {
+    if (P.platform !== 'linkedin') return refused('wrong_platform', 'Easy Apply exists only on LinkedIn');
+    const g = await gate();
+    if (!g.ok) return g.res;
+    await pace(g.page);
+    const r = await runEasyApplyFill(deps, g.page, deps.easyApply ?? {});
+    refs.invalidate();
+    if (!r.ok || r.status === 'dry_run') return r;
+    const f = await finish(g.page, r.code);
+    return f.ok ? { ...f, ...(r.detail ? { detail: r.detail } : {}) } : f;
+  }
+
+  /** linkedin_easy_apply_abort: see Engine.easyApplyAbort. */
+  async function doEasyApplyAbort(): Promise<EngineResult> {
+    if (P.platform !== 'linkedin') return refused('wrong_platform', 'Easy Apply exists only on LinkedIn');
+    const g = await gate();
+    if (!g.ok) return g.res;
+    const it = deps.intents.peek('linkedin');
+    if (!it || it.class !== 'linkedin_easy_apply' || !it.pageKey || it.jobId === undefined) return refused('no_armed_intent', 'no Easy Apply is armed');
+    const r = await parkNeedsOwner({ deps, page: g.page, jobId: String(it.jobId), key: it.pageKey }, 'operator_abort');
+    refs.invalidate();
+    return r;
+  }
+
   return {
     refs,
+    easyApplyFill: () => serial(() => doEasyApplyFill()),
+    easyApplyAbort: () => serial(() => doEasyApplyAbort()),
     attachFile: () => serial(() => doAttach()),
     lastTree: () => tree,
     page: () => deps.getPage(),

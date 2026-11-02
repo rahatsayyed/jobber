@@ -138,7 +138,6 @@ describe('sessionsStep', () => {
     const said = t.sio.transcript.join('\n');
     expect(said).toMatch(/MAIN LinkedIn/);
     expect(said).toContain('real Chrome');
-    expect(said).not.toMatch(/BURNER/);
     expect(t.reads.some((p) => SECRET_RE.test(p))).toBe(false);
     t.sio.assertDone();
   });

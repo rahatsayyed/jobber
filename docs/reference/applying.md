@@ -68,9 +68,10 @@ unique code-generated password per host, read only inside the MCP process and ne
 tool); the owner manages them with `npm run site:account` (`add`, `list`, `remove`, `status`; the agent
 never runs it). Email verification is owner assist by default (`SITE_MAIL_VERIFY=owner_assist`); `gmail`
 mode needs a non-empty `SITE_MAIL_SENDERS`, and a verification link is opened only by `site_open_link`
-under host and path rules in code. A LinkedIn Easy Apply row (`linkedin_easy`) is routed only when
-`APPLY_LINKEDIN_EASY=true`, through the burner session (`secrets/linkedin-burner-state.json`, host
-linkedin.com), never the main account.
+under host and path rules in code. A LinkedIn Easy Apply row (`linkedin_easy`) is never driven by the
+`applier` MCP or the `apply-operator`: with `APPLY_LINKEDIN_EASY=true` the LinkedIn drip lane applies to it on
+the main account through the LinkedIn engine (`linkedin_arm_send` kind `easy_apply`); otherwise it waits for
+the owner in the manual apply queue.
 
 **Boxes and escalation.** Checkboxes are classified by closed rules in code
 (`src/webcore/checkboxes.ts`). Marketing and newsletter boxes are never checked and `apply_submit`
@@ -183,6 +184,16 @@ same company and title key submitted within 90 days); a page that shows Applied 
 apply-operator session with a random 3 to 8 s pause. An unknown company host stays `manual_review` and the row note
 (`outreach_queue.apply_note`, `external:host_unknown`) says why, unless `APPLY_ALLOW_UNKNOWN_HOSTS=true`. If the company site needs an
 account, the existing `site_signup` rules apply (`APPLY_ALLOW_ACCOUNT_CREATION`, `SITE_MAX_ACCOUNTS_PER_DAY`; ships off, so the job is
-escalated as `account_needed`); CAPTCHA, MFA and phone verification are never solved. LinkedIn: main account only, never the burner or
+escalated as `account_needed`); CAPTCHA, MFA and phone verification are never solved. LinkedIn: main account only, never
 Easy Apply. Hold mode is unchanged: with `APPLY_SUBMIT_MODE` not `submit` these jobs end `held`; after setting `submit`, run
 `npm run apply:release-held [-- --dry]` to put held generic rows back in the queue (idempotent).
+
+**Manual apply queue.** `src/manual/manualApply.ts` lists what the owner must apply to by hand: LinkedIn job pages that are Easy Apply jobs
+while `APPLY_LINKEDIN_EASY` is not `true` (reason `easy_apply_off`), and any queue row the machine gave up on (`apply_status` `needs_owner` or
+`manual_review`, not `needs_answer` or `needs_human`, which have `npm run answers` and `npm run apply:assist`) that has a usable https address
+(reasons `easy_apply_failed`, `company_site_form`, `listing_page`). Each entry: `id` (queue row), `job_id`, `title`, `company`, `platform`,
+`open_url` (validated with `validateManualUrl`), `resume_pdf` (the tailored PDF, re-rendered on demand by the attachment resolver), `ats_note`,
+`reason`, `since`. `npm run apply:manual -- list`, `done <id>` (apply_status `submitted_by_owner`, one `applications` row with method `manual`,
+so the funnel counts it and follow-ups see it as applied) and `skip <id>` (`skipped_by_owner`). It also shows as `manualApply {count, easyApplyOff,
+items[]}` in the status snapshot JSON, as a line in `status working`, `/escalations` and the Telegram digest. Turning `APPLY_LINKEDIN_EASY` on
+moves the Easy Apply rows from this list to the LinkedIn drip lane (see "LinkedIn Easy Apply" in `connecting.md`); a row the lane gives up on comes back here.

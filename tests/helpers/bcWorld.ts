@@ -45,6 +45,8 @@ export function world(o: {
   navGap?: { before(): Promise<void> };
   /** Attachment seams: repo root for the renderer/automation check, PDF re-render, resume.json name. */
   attach?: ResolveDeps;
+  /** LinkedIn Easy Apply seams: answer book loader. */
+  easyApply?: NonNullable<Parameters<typeof createEngine>[0]['easyApply']>;
 }): World {
   const dir = mkdtempSync(path.join(tmpdir(), 'bc-'));
   const env = { ...(o.env ?? {}) } as NodeJS.ProcessEnv;
@@ -65,6 +67,7 @@ export function world(o: {
     ...(o.layoutFeed ? { layoutFeed: o.layoutFeed as never } : {}),
     ...(o.navGap ? { navGap: o.navGap } : {}),
     ...(o.attach?.root ? { attachRoot: o.attach.root } : {}),
+    ...(o.easyApply ? { easyApply: o.easyApply } : {}),
   });
   const armDeps: ArmDeps = {
     engine, intents, db, now: () => NOW, env, cfg, screen: screen as never, stopFile,

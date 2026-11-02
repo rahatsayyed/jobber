@@ -218,7 +218,7 @@ unclear changes nothing. It clicks and sends nothing and honours dry run, halts 
 
 ## External apply from LinkedIn jobs
 
-A `linkedin-jobs` job whose Apply is not Easy Apply is classed `linkedin` (reason `external_resolve`). The `apply-operator` opens the stored job page with `linkedin_open`, then `linkedin_resolve_external({job_id})` decodes the `externalApply` link (or does one code-owned click and reads the popup) and routes the job to the generic applier. Main account only; never the burner or Easy Apply; no connect or message tool is involved. Untested live. See "External apply" in `applying.md`.
+A `linkedin-jobs` job whose Apply is not Easy Apply is classed `linkedin` (reason `external_resolve`). The `apply-operator` opens the stored job page with `linkedin_open`, then `linkedin_resolve_external({job_id})` decodes the `externalApply` link (or does one code-owned click and reads the popup) and routes the job to the generic applier. Main account only; never Easy Apply; no connect or message tool is involved. Untested live. See "External apply" in `applying.md`.
 
 ### Layered people discovery (`linkedin_find_profiles`)
 
@@ -234,3 +234,35 @@ never solved or waited out, and falls through; no daily cap); (2) `serper` (key 
 snippet may be stale; the live profile employer check at arm time is unchanged. The linkedin MCP reads
 `SERPER_API_KEY` and `LINKEDIN_PEOPLE_SEARCH_SOURCES` from `.env` (`src/lib/contactsEnv.ts`). Live-unverified:
 real result pages and bot walls of the engines.
+
+## LinkedIn Easy Apply (drip lane, main account)
+
+Off by default (`APPLY_LINKEDIN_EASY`, exactly `true` turns it on). It is one action of the LinkedIn drip lane
+(`src/scheduler/linkedinDrip.ts`), never a wake step and never the `applier` MCP, so the single LinkedIn session and its lock are
+never contended. Order inside one tick: inbox read, owner-approved reply, accept check, DM to a newly connected person (and the other
+due follow-ups), then ONE Easy Apply application, then new invites. Scheduler code picks the job (`easyApplyRows`: a queue row with a
+prepared resume whose job is a LinkedIn job page with no resolved company-site link, not vetoed, not applied, apply_status empty or
+`queued`; the class is recomputed from the URL with the current env, the stored `apply_platform` is not trusted). Ceilings:
+`LINKEDIN_MAX_EASY_APPLIES_PER_DAY` (ceiling `linkedin_easy_apply`, default 5, rolling 24 hours), the shared `MAX_APPLIES_PER_DAY` counter
+(both consumed together right before the Submit click, rolled back together) and the profile-view ceiling (the job page is a view).
+
+The `linkedin-operator` (drip item `easy_apply`) runs: `linkedin_arm_send({kind: "easy_apply", job_id})` (no profile URL, no text; code
+reads the job page URL from SQLite, rebuilds it from the numeric id, opens it, resolves the tailored resume with the same resolver DM
+attachments use, checks the page and screens it; it refuses outside the drip lane run, `drip_lane_only`) -> click the page's own
+`Easy Apply` control -> per modal step `linkedin_easy_apply_fill` (code reads the step, answers each field ONLY from the answer book
+`user-data/easy-apply-answers.json`, the resume-derived values (`src/apply/derive.ts`) or an answer the owner stored with
+`npm run answers`; uploads the armed resume; verifies; the model types and chooses nothing, a hand click on a radio, checkbox, select or
+upload control and any typing in the modal are refused) -> click `Next`, `Review` or `Submit application` by ref (guard class
+`linkedin_easy_apply`; Next and Submit are refused until the fill passed for that very step). Confirmation is only a "sent" text that was
+not on the page before the Submit click, or the job page showing Applied once the modal closed; anything else is `unconfirmed` (the row
+becomes `manual_review`, never retried).
+
+Fail closed: an unanswered required question records an `apply_questions` row (host `linkedin.com`), parks the job `needs_answer`,
+closes the modal and raises the usual answers card; a CAPTCHA or verification, a Premium upsell, an unknown button, more than 8 steps,
+an inline validation error, a failed fill or upload, or an operator `linkedin_easy_apply_abort` closes the modal and marks the row
+`needs_owner` with `apply_note` `easy_apply:<code>` (it then shows in the manual apply queue as `easy_apply_failed`). A job whose
+page offers only a plain Apply is refused `not_easy_apply`, handed back to the external-apply route (`apply_note`
+`easy_apply:not_easy_apply`) and never picked again by the lane. Dry run records and clicks nothing. Live-unverified: the real modal
+markup (labels, field kinds, button names, the "Application sent" text and the Applied marker); every rule above fails closed.
+
+While the flag is off the same jobs wait in the manual apply queue (`npm run apply:manual -- list`, `done <id>`, `skip <id>`).

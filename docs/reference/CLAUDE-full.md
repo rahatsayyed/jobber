@@ -687,9 +687,10 @@ unique code-generated password per host, read only inside the MCP process and ne
 tool); the owner manages them with `npm run site:account` (`add`, `list`, `remove`, `status`; the agent
 never runs it). Email verification is owner assist by default (`SITE_MAIL_VERIFY=owner_assist`); `gmail`
 mode needs a non-empty `SITE_MAIL_SENDERS`, and a verification link is opened only by `site_open_link`
-under host and path rules in code. A LinkedIn Easy Apply row (`linkedin_easy`) is routed only when
-`APPLY_LINKEDIN_EASY=true`, through the burner session (`secrets/linkedin-burner-state.json`, host
-linkedin.com), never the main account.
+under host and path rules in code. A LinkedIn Easy Apply row (`linkedin_easy`) is never driven by the
+`applier` MCP or the `apply-operator`: with `APPLY_LINKEDIN_EASY=true` the LinkedIn drip lane applies to it on
+the main account through the LinkedIn engine (`linkedin_arm_send` kind `easy_apply`); otherwise it waits for
+the owner in the manual apply queue.
 
 **Boxes and escalation.** Checkboxes are classified by closed rules in code
 (`src/webcore/checkboxes.ts`). Marketing and newsletter boxes are never checked and `apply_submit`
@@ -1590,12 +1591,11 @@ together if one ever appears.
    recipient-verification safety net (`src/linkedin/verify.ts`:
    `verifyRecipientName`, `verifyProfileUrl`, `namesPlausiblyMatch`, fail-closed, and a recipient that must already be
    in `people`) runs at arm time and again on the live page at commit time, whoever triggered it.
-6. Never use the burner account's session for the `linkedin` MCP or its typed tools, and never use
-   the main account's session for the browser applier's LinkedIn Easy Apply. The `linkedin` MCP uses
-   the main account only (`secrets/linkedin-main-state.json`), in ONE locked headless browser session
-   at a time (`secrets/linkedin.lock` stops a second session; an interactive session and a wake can
-   collide as `session_locked`); the burner session (`secrets/linkedin-burner-state.json`) stays for
-   Easy Apply through `applier` only (`APPLY_LINKEDIN_EASY`, ships off).
+6. One LinkedIn session at a time on the main account (`secrets/linkedin-main-state.json`; `secrets/linkedin.lock`
+   stops a second session; an interactive session and a wake can collide as `session_locked`). Easy Apply
+   also uses the main account, through the LinkedIn engine (the LinkedIn drip lane, `linkedin_arm_send` kind
+   `easy_apply`, `APPLY_LINKEDIN_EASY`, ships off), never through the `applier` MCP. There is no second
+   LinkedIn identity.
 7. Respect `MAX_APPLIES_PER_DAY`, `APPLY_MAX_ATTEMPTS_PER_DAY`, the per-host apply caps
    (`APPLY_MAX_PER_HOST`, `APPLY_MAX_PER_HOST_<ID>`) and the LinkedIn weekly ceilings (`LINKEDIN_MAX_INVITES_PER_WEEK`,
    `LINKEDIN_MAX_MESSAGES_PER_WEEK`) — stop and report "limit reached" rather than erroring or

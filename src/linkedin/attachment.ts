@@ -107,17 +107,35 @@ function jobIdsOf(db: Db, personId: number): string[] {
 
 /** Resolve the tailored resume PDF for this person. Never throws. */
 export async function resolveJobResume(db: Db, personId: number, deps: ResolveDeps = {}): Promise<ResolveResult> {
+  try {
+    for (const jobId of jobIdsOf(db, personId)) {
+      const r = await resolveJobIdResume(db, jobId, deps);
+      if (r.ok || r.code !== 'attachment_no_resume') return r;
+    }
+    return { ok: false, code: 'attachment_no_resume', reason: 'no tailored resume is on file for a job tied to this person' };
+  } catch {
+    return { ok: false, code: 'attachment_error', reason: 'resume attachment could not be resolved' };
+  }
+}
+
+/** Resolve the tailored resume PDF stored for ONE job (newest queue row with a resume). Same checks as resolveJobResume. Never throws. */
+export async function resolveJobIdResume(db: Db, jobId: string, deps: ResolveDeps = {}): Promise<ResolveResult> {
+  try {
+    const r = db
+      .prepare("SELECT resume_pdf_path FROM outreach_queue WHERE job_id = ? AND resume_pdf_path IS NOT NULL AND resume_pdf_path <> '' ORDER BY id DESC LIMIT 1")
+      .get(jobId) as { resume_pdf_path: string } | undefined;
+    if (!r) return { ok: false, code: 'attachment_no_resume', reason: 'no tailored resume is on file for this job' };
+    return await resolveStoredResume(r.resume_pdf_path, deps);
+  } catch {
+    return { ok: false, code: 'attachment_error', reason: 'resume attachment could not be resolved' };
+  }
+}
+
+/** The shared checks for a stored resume path: inside renderer/automation, re-rendered when missing, size-checked, generic upload name. */
+export async function resolveStoredResume(stored: string, deps: ResolveDeps = {}): Promise<ResolveResult> {
   const root = deps.root ?? PROJECT_ROOT;
   const fail = (code: string, reason: string): ResolveResult => ({ ok: false, code, reason });
   try {
-    let stored: string | null = null;
-    for (const jobId of jobIdsOf(db, personId)) {
-      const r = db
-        .prepare("SELECT resume_pdf_path FROM outreach_queue WHERE job_id = ? AND resume_pdf_path IS NOT NULL AND resume_pdf_path <> '' ORDER BY id DESC LIMIT 1")
-        .get(jobId) as { resume_pdf_path: string } | undefined;
-      if (r) { stored = r.resume_pdf_path; break; }
-    }
-    if (stored === null) return fail('attachment_no_resume', 'no tailored resume is on file for a job tied to this person');
     if (!lexicallyAllowed(stored, root)) return fail('attachment_outside_dir', 'resume path is not a .pdf inside renderer/automation');
     const abs = path.resolve(root, stored);
     let rendered = false;

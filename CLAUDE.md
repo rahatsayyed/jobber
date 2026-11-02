@@ -528,7 +528,7 @@ The platform registry (`config/platforms.json`), script-first and agent-fallback
 
 ## Applying
 
-Browser apply through the `applier` MCP and the `apply-operator`: what can be applied to, how the operator applies, caps, accounts, boxes and escalation, recipes and drift, and the answering rules for questions a form asks. Naukri, Wellfound and LinkedIn jobs whose Apply goes to the company site are resolved in code by `<platform>_resolve_external` and then applied through `apply_open` (never a model URL; ceiling `APPLY_MAX_EXTERNAL_RESOLVES_PER_DAY`; `npm run apply:release-held`). Details: `docs/reference/applying.md` (read it before working in this area).
+Browser apply through the `applier` MCP and the `apply-operator`: what can be applied to, how the operator applies, caps, accounts, boxes and escalation, recipes and drift, and the answering rules for questions a form asks. Naukri, Wellfound and LinkedIn jobs whose Apply goes to the company site are resolved in code by `<platform>_resolve_external` and then applied through `apply_open` (never a model URL; ceiling `APPLY_MAX_EXTERNAL_RESOLVES_PER_DAY`; `npm run apply:release-held`). LinkedIn Easy Apply (`APPLY_LINKEDIN_EASY`, ships false, ceiling `LINKEDIN_MAX_EASY_APPLIES_PER_DAY` 5) is one action of the LinkedIn drip lane on the main account, never a wake or the applier (`linkedin_arm_send` kind `easy_apply`, then `linkedin_easy_apply_fill` and the Next, Review and Submit clicks); while it is off those jobs, and any queue row the machine cannot finish, wait in the manual apply queue (`npm run apply:manual -- list`, `done <id>`, `skip <id>`; the owner-set statuses are `submitted_by_owner` and `skipped_by_owner`). Details: `docs/reference/applying.md` (read it before working in this area).
 
 ## Connecting
 
@@ -615,12 +615,11 @@ Everything built and tested only with fakes or not yet checked against a real si
    recipient-verification safety net (`src/linkedin/verify.ts`:
    `verifyRecipientName`, `verifyProfileUrl`, `namesPlausiblyMatch`, fail-closed, and a recipient that must already be
    in `people`) runs at arm time and again on the live page at commit time, whoever triggered it.
-6. Never use the burner account's session for the `linkedin` MCP or its typed tools, and never use
-   the main account's session for the browser applier's LinkedIn Easy Apply. The `linkedin` MCP uses
-   the main account only (`secrets/linkedin-main-state.json`), in ONE locked headless browser session
-   at a time (`secrets/linkedin.lock` stops a second session; an interactive session and a wake can
-   collide as `session_locked`); the burner session (`secrets/linkedin-burner-state.json`) stays for
-   Easy Apply through `applier` only (`APPLY_LINKEDIN_EASY`, ships off).
+6. One LinkedIn session at a time on the main account (`secrets/linkedin-main-state.json`; `secrets/linkedin.lock`
+   stops a second session; an interactive session and a wake can collide as `session_locked`). Easy Apply
+   also uses the main account, through the LinkedIn engine (the LinkedIn drip lane, `linkedin_arm_send` kind
+   `easy_apply`, `APPLY_LINKEDIN_EASY`, ships off), never through the `applier` MCP. There is no second
+   LinkedIn identity.
 7. Respect `MAX_APPLIES_PER_DAY`, `APPLY_MAX_ATTEMPTS_PER_DAY`, the per-host apply caps
    (`APPLY_MAX_PER_HOST`, `APPLY_MAX_PER_HOST_<ID>`) and the LinkedIn daily ceilings (`LINKEDIN_MAX_INVITES_PER_DAY`,
    `LINKEDIN_MAX_MESSAGES_PER_DAY`) — stop and report "limit reached" rather than erroring or

@@ -278,7 +278,8 @@ describe('apply task (8G-2 task 21)', () => {
     ins.run('e', 'greenhouse', 'manual_review', 'queued');
     expect(countDue(db, NOW, TUNING_DEFAULTS, {}).applyQueued).toBe(1);
     expect(countDue(db, NOW, TUNING_DEFAULTS, { APPLY_LINKEDIN_EASY: 'yes' }).applyQueued).toBe(1);
-    expect(countDue(db, NOW, TUNING_DEFAULTS, { APPLY_LINKEDIN_EASY: 'true' }).applyQueued).toBe(2);
+    // Easy Apply rows belong to the LinkedIn drip lane whatever the flag says: a wake never plans apply work for them.
+    expect(countDue(db, NOW, TUNING_DEFAULTS, { APPLY_LINKEDIN_EASY: 'true' }).applyQueued).toBe(1);
   });
 });
 

@@ -61,9 +61,20 @@ describe('scheduler doctor checks', () => {
     }
   });
 
-  it('has the ten kebab-case ids', () => {
+  it('linkedin-easy-apply: off by default passes, a misspelled value warns, on warns about a missing answer file and a zero cap', async () => {
+    const ok = (env: NodeJS.ProcessEnv) => run(ctxWith({}, { env }));
+    expect((await ok({}))['linkedin-easy-apply']).toMatchObject({ status: 'pass', detail: expect.stringMatching(/apply:manual/) });
+    expect((await ok({ APPLY_LINKEDIN_EASY: 'false' }))['linkedin-easy-apply'].status).toBe('pass');
+    expect((await ok({ APPLY_LINKEDIN_EASY: 'yes' }))['linkedin-easy-apply'].status).toBe('warn');
+    const on = (await ok({ APPLY_LINKEDIN_EASY: 'true', LINKEDIN_DRIP: 'false', LINKEDIN_MAX_EASY_APPLIES_PER_DAY: '0' }))['linkedin-easy-apply'];
+    expect(on.status).toBe('warn');
+    expect(on.detail).toMatch(/drip lane is off/);
+    expect(on.detail).toMatch(/is 0/);
+  });
+
+  it('has the eleven kebab-case ids', () => {
     expect(schedulerChecks().map((c) => c.id)).toEqual([
-      'scheduler-tmux', 'scheduler-lock-dir', 'scheduler-stop-file', 'scheduler-dry-run', 'mail-drip-config', 'linkedin-active-hours', 'linkedin-drip-config', 'dry-run-legacy-keys', 'scheduler-units', 'agents-worker-tools',
+      'scheduler-tmux', 'scheduler-lock-dir', 'scheduler-stop-file', 'scheduler-dry-run', 'mail-drip-config', 'linkedin-active-hours', 'linkedin-drip-config', 'linkedin-easy-apply', 'dry-run-legacy-keys', 'scheduler-units', 'agents-worker-tools',
     ]);
   });
 

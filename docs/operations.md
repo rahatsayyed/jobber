@@ -249,7 +249,7 @@ A connect that ends `unconfirmed` (the click went out but neither Pending nor an
 ## Browser extensions (Bitwarden) in the project browsers
 
 Chrome keeps extensions per profile. The project has four persistent profiles: `web` (scout, applier, search), and one each for
-`linkedin-main`, `naukri` and `wellfound` (created by their login commands). The LinkedIn burner has none. Install the extension once
+`linkedin-main`, `naukri` and `wellfound` (created by their login commands). Install the extension once
 per profile, headed: `npm run browser:open -- --profile naukri` (also `web`, `linkedin-main`, `wellfound`) opens the Chrome Web Store in
 that profile; install and sign in, then press Enter in the terminal. The unattended headless runs open the same profile, so an
 installed extension loads there too, as far as Chrome's new headless mode supports it (an extension that needs a visible popup does not

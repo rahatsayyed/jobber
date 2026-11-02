@@ -3,7 +3,7 @@
 Historical record. The scripted apply flows, the `connect` MCP and the discovery tools named below were
 removed when apply moved to the browser applier and discovery to the operators (see
 [apply.md](apply.md) and [sources-and-platforms.md](sources-and-platforms.md)); the findings about
-LinkedIn's DOM and the burner/main session split stay useful background.
+LinkedIn's DOM and the single-session rules stay useful background.
 
 Recorded 2026-07-11/12, after the Task 6 end-to-end live smoke test (see
 `docs/superpowers/plans/2026-07-07-jobapplier-phase2.md`, Task 6). This captures what a
@@ -14,7 +14,7 @@ no stable public contract (fully obfuscated/hashed CSS classes, no `data-test-*`
 
 - **Rate limiting** (`src/lib/rateLimit.ts`) — confirmed for real: `MAX_APPLIES_PER_DAY` was hit
   organically during testing and correctly blocked further attempts without erroring.
-- **Session isolation** — burner (`linkedin-apply`) vs. main (`connect`) accounts never cross;
+- **Session isolation** — only the main LinkedIn account exists;
   verified structurally (hardcoded paths) and in every code review this phase.
 - **Safety fallbacks** — every "can't proceed safely" path (`manual_review`, `failed`) was
   exercised live and never produced a wrong click, a garbled submission, or a bypass of the
@@ -30,7 +30,7 @@ no stable public contract (fully obfuscated/hashed CSS classes, no `data-test-*`
 
 ## Bugs found and fixed this session (all committed, all re-reviewed clean)
 
-`linkedin-apply.ts`:
+the retired Easy Apply script:
 1. Stale `ElementHandle` queries crashed on LinkedIn's dynamic Easy Apply modal → converted to
    Playwright's `Locator` API throughout (commit `42b45e8`).
 2. `aria-label`-based Next/Review/Submit selectors were obsolete → replaced with
@@ -78,8 +78,8 @@ no stable public contract (fully obfuscated/hashed CSS classes, no `data-test-*`
   LinkedIn flows — verify before relying on `manual_review` never firing spuriously in
   production.
 - **`connect_send`'s `connectButton`/`addNoteButton`/`sendButton` selectors, and
-  `linkedin-apply`'s Next/Review/Submit selectors, are inherently fragile** — LinkedIn's DOM has
+  the Easy Apply Next/Review/Submit selectors, are inherently fragile** — LinkedIn's DOM has
   no stable public contract. Expect to revisit these selectors periodically as LinkedIn ships
   UI changes; the fix pattern established this session (live headless inspection with
-  `secrets/linkedin-{burner,main}-state.json`, ARIA-role or visible-text anchors over class
+  `secrets/linkedin-main-state.json`, ARIA-role or visible-text anchors over class
   names, bounded auto-retrying waits, never fixed sleeps) is the reusable playbook.

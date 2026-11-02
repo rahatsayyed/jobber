@@ -69,6 +69,8 @@
         "mcp__linkedin__linkedin_check_accepted",
         "mcp__linkedin__linkedin_check_accepted_recent",
         "mcp__linkedin__linkedin_attach_file",
+        "mcp__linkedin__linkedin_easy_apply_fill",
+        "mcp__linkedin__linkedin_easy_apply_abort",
         "mcp__linkedin__linkedin_search_posts",
         "mcp__scout__scout_search",
         "mcp__scout__scout_open",
@@ -318,6 +320,8 @@
         "mcp__linkedin__linkedin_check_accepted",
         "mcp__linkedin__linkedin_check_accepted_recent",
         "mcp__linkedin__linkedin_attach_file",
+        "mcp__linkedin__linkedin_easy_apply_fill",
+        "mcp__linkedin__linkedin_easy_apply_abort",
         "mcp__linkedin__linkedin_search_posts",
         "mcp__db__list_queued_outreach",
         "mcp__db__update_outreach_status"
@@ -339,6 +343,9 @@
         "SPECULATIVE_COMPANY_LIMIT",
         "JOBBER_RUN_ID",
         "JOBBER_DRY_RUN",
+        "JOBBER_RUN_LANE",
+        "APPLY_LINKEDIN_EASY",
+        "MAX_APPLIES_PER_DAY",
         "MAX_LINKEDIN_SEARCHES_PER_DAY",
         "MATCH_THRESHOLD"
       ],

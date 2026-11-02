@@ -134,6 +134,27 @@ export function schedulerChecks(): Check[] {
       },
     },
     {
+      id: 'linkedin-easy-apply',
+      title: 'LinkedIn Easy Apply (APPLY_LINKEDIN_EASY): a drip lane action on the main account, or the owner applies by hand',
+      async run(ctx) {
+        const env = mergedEnv(ctx);
+        const raw = (env.APPLY_LINKEDIN_EASY ?? '').trim();
+        if (raw !== 'true') {
+          if (raw === '' || raw === 'false') return pass('off (the default): LinkedIn Easy Apply jobs wait in the manual apply queue (npm run apply:manual -- list)');
+          return warn('APPLY_LINKEDIN_EASY is not exactly true or false, so Easy Apply stays off', 'write APPLY_LINKEDIN_EASY=true (lower case) in .env to turn it on, or false to keep it off');
+        }
+        const problems: string[] = [];
+        if (!loadLinkedinDripConfig(env).enabled) problems.push('the LinkedIn drip lane is off (LINKEDIN_DRIP=false), so nothing is applied');
+        if (!ctx.fs.exists(join(ctx.root, 'user-data', 'easy-apply-answers.json'))) problems.push('user-data/easy-apply-answers.json is missing, so most questions park the job (npm run answers -- list)');
+        const capRaw = (env.LINKEDIN_MAX_EASY_APPLIES_PER_DAY ?? '').trim();
+        const cap = capRaw === '' ? 5 : Number(capRaw);
+        if (!Number.isInteger(cap) || cap < 0) problems.push('LINKEDIN_MAX_EASY_APPLIES_PER_DAY is not a whole number, the default 5 applies');
+        else if (cap === 0) problems.push('LINKEDIN_MAX_EASY_APPLIES_PER_DAY is 0, so nothing is applied');
+        if (problems.length > 0) return warn(`on, but ${problems.join('; ')}`, 'fix the settings above in .env or user-data');
+        return pass(`on: up to ${Number.isInteger(cap) ? cap : 5} per day, one application per LinkedIn drip tick on the main account, answers only from the answer book`);
+      },
+    },
+    {
       id: 'dry-run-legacy-keys',
       title: 'no retired *_DRY_RUN keys in the environment',
       async run(ctx) {
