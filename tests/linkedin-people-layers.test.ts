@@ -67,7 +67,7 @@ describe('layered people discovery', () => {
   it('both empty -> falls to the LinkedIn search page and counts a real LinkedIn search', async () => {
     const dork = provider('browser-dork', { results: [] });
     const serper = provider('serper', { results: [] });
-    const { deps, db, open } = setup({ ...LIVE, SERPER_API_KEY: 'k' }, { dork: dork.p, serper: serper.p });
+    const { deps, db, open } = setup({ ...LIVE, SERPER_API_KEY: 'k', LINKEDIN_PEOPLE_SEARCH_SOURCES: 'engine,serper,linkedin' },{ dork: dork.p, serper: serper.p });
     const r = await findProfiles({ company: 'Acme Robotics', category: 'recruiter' }, deps);
     expect(open).toHaveBeenCalledTimes(1);
     expect(r).toMatchObject({ status: 'failed', code: 'failed' });
@@ -84,7 +84,7 @@ describe('layered people discovery', () => {
   });
 
   it('LinkedIn layer is not reached when search_limit is 0 and nothing else yields (rate_limited)', async () => {
-    const { deps, open } = setup({ ...LIVE, MAX_LINKEDIN_SEARCHES_PER_DAY: '0' });
+    const { deps, open } = setup({ ...LIVE, MAX_LINKEDIN_SEARCHES_PER_DAY: '0', LINKEDIN_PEOPLE_SEARCH_SOURCES: 'engine,serper,linkedin' });
     const r = await findProfiles({ company: 'Acme Robotics', category: 'recruiter' }, deps);
     expect(r).toMatchObject({ status: 'rate_limited', code: 'search_limit' });
     expect(open).not.toHaveBeenCalled();
@@ -141,18 +141,19 @@ describe('layered people discovery', () => {
 
 describe('LINKEDIN_PEOPLE_SEARCH_SOURCES parse', () => {
   it('default, order, invalid entries and repeats', () => {
-    expect(parsePeopleSources(undefined)).toEqual(['engine', 'serper', 'linkedin']);
-    expect(parsePeopleSources('')).toEqual(['engine', 'serper', 'linkedin']);
+    expect(parsePeopleSources(undefined)).toEqual(['engine', 'serper']);
+    expect(parsePeopleSources('')).toEqual(['engine', 'serper']);
+    expect(parsePeopleSources('engine,serper,linkedin')).toEqual(['engine', 'serper', 'linkedin']);
     expect(parsePeopleSources('linkedin')).toEqual(['linkedin']);
     expect(parsePeopleSources(' Serper , bogus,engine,serper')).toEqual(['serper', 'engine']);
-    expect(parsePeopleSources('bogus')).toEqual(['engine', 'serper', 'linkedin']);
+    expect(parsePeopleSources('bogus')).toEqual(['engine', 'serper']);
   });
 });
 
 describe('linkedin_profile_view ceiling', () => {
-  it('counts profile urls only, stops at the limit, default 80', () => {
+  it('counts profile urls only, stops at the limit, default 40', () => {
     const db = openDb(':memory:');
-    expect(loadOutreachConfig({}).linkedinMaxProfileViewsPerDay).toBe(80);
+    expect(loadOutreachConfig({}).linkedinMaxProfileViewsPerDay).toBe(40);
     const env = { LINKEDIN_MAX_PROFILE_VIEWS_PER_DAY: '2' } as NodeJS.ProcessEnv;
     expect(consumeProfileView(db, env, NOW, 'https://www.linkedin.com/feed/')).toBe(true);
     expect(consumeProfileView(db, env, NOW, 'https://www.linkedin.com/in/a')).toBe(true);
@@ -164,7 +165,7 @@ describe('linkedin_profile_view ceiling', () => {
   it('accept check stops cleanly with rate_limited and opens nothing', async () => {
     const db = openDb(':memory:');
     db.prepare("INSERT INTO connections (profile_url, status, sent_at) VALUES (?, 'sent', ?)")
-      .run('https://www.linkedin.com/in/jane', new Date(NOW.getTime() - 2 * 86400_000).toISOString());
+      .run('https://www.linkedin.com/in/jane', new Date(NOW.getTime() - 5 * 86400_000).toISOString());
     const opened: string[] = [];
     const io: AcceptIo = { open: async (u) => { opened.push(u); return { ok: false, code: 'x' }; } };
     const deps: AcceptDeps = {

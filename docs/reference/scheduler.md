@@ -31,7 +31,7 @@ After a non-killed wake outside quiet hours the scheduler may run the update and
 (feature-detected, flags above).
 
 Pipeline and limit details that changed with the pacing removal: the LinkedIn ceilings are DAILY, a rolling 24 hours
-(`LINKEDIN_MAX_INVITES_PER_DAY` default 40, `LINKEDIN_MAX_MESSAGES_PER_DAY` default 100); the old weekly names are gone. The
+(`LINKEDIN_MAX_INVITES_PER_DAY` default 25, `LINKEDIN_MAX_MESSAGES_PER_DAY` default 25); the old weekly names are gone. The
 pipeline takes every unscored job saved in the last 168 hours (7 days, `PIPELINE_WINDOW_HOURS` in `src/pipelineWork.ts`, a
 constant), not 24 hours. A matched job that never got an outreach row is handed back to prepare at most
 `PREP_OFFER_LIMIT_APPLY` (12) times when it is apply-capable and `PREP_OFFER_LIMIT` (4) times otherwise; a Naukri job
@@ -52,3 +52,19 @@ Phase 4 "Mac, autonomous" (ceilings raised one at a time, 5+ days unattended); P
 cutover" (re-check Naukri headless from that IP, recreate sessions, repeat phases 1 and 2
 briefly: 24 hours dry, a day read-only). Plan:
 `docs/superpowers/plans/2026-10-14-6d-scheduler-agents-naukri.md`.
+
+**LinkedIn traffic limits (human-like pacing).** LinkedIn warned the owner about high-volume data access and expired the
+session, so LinkedIn work is shaped like a person's day. (1) `LINKEDIN_ACTIVE_HOURS` (default `09:30-20:30`, IST, `HH:MM-HH:MM`,
+start before end; an invalid value falls back to the default and the doctor warns): outside it `planWake` gets
+`linkedinActive: false` (computed by the driver, `src/linkedin/activeHours.ts`) and plans NO LinkedIn task (inbox, discover,
+accept checks, follow-ups, new outreach and manual pages included; Naukri and Wellfound are unaffected), and every `linkedin`
+MCP tool except `linkedin_limits`, `linkedin_layout`, `linkedin_close` and `linkedin_find_profiles` (which skips only its
+LinkedIn layer) answers `rate_limited` / `outside_active_hours` without opening anything. (2) The LinkedIn messaging page
+(`inbox`) is planned at most every 60 minutes (`LINKEDIN_INBOX_MIN_GAP_MIN`, a floor under `INBOX_EVERY_MIN`, using the
+`inbox_last_checked_at` timestamp). (3) Acceptance detection is one page a day: the `accept_recent` task (at most once per 24 hours,
+`scheduler_state` key `linkedin_accept_recent_last_at`, only while a sent invite is open) calls `linkedin_check_accepted_recent`;
+the per-profile `accept_check` is only the fallback (3 profiles per wake, invites older than 3 days, each profile once per 72 hours,
+14 day window). (4) A random 4 to 9 second pause (`LINKEDIN_NAV_GAP_MIN_SEC` / `LINKEDIN_NAV_GAP_MAX_SEC`, `0`/`0` off) precedes every
+page navigation to linkedin.com after the first of a process (`src/linkedin/navGap.ts`, shared by the runtime and the engine;
+clicks on the same page are not delayed). Shipped defaults were lowered: invites 25, messages 25, profile views 40,
+`MAX_LINKEDIN_SEARCHES_PER_DAY` 10, `LINKEDIN_MAX_DISCOVER_PER_DAY` 6, `COMPANY_CONTACT_LIMIT` 2.

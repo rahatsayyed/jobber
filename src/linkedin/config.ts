@@ -15,7 +15,7 @@ export interface LinkedinConfig {
 }
 
 export type PeopleSource = 'engine' | 'serper' | 'linkedin';
-export const DEFAULT_PEOPLE_SOURCES: readonly PeopleSource[] = ['engine', 'serper', 'linkedin'];
+export const DEFAULT_PEOPLE_SOURCES: readonly PeopleSource[] = ['engine', 'serper'];
 
 // Comma list, order = priority; unknown entries and repeats are ignored; nothing valid gives the default.
 export function parsePeopleSources(raw: string | undefined): PeopleSource[] {
@@ -39,7 +39,7 @@ export function loadLinkedinConfig(env: NodeJS.ProcessEnv = process.env): Linked
   const idleN = idleRaw !== undefined && /^\d+$/.test(idleRaw.trim()) ? Number(idleRaw.trim()) : 600000;
   return {
     dryRun: isDryRun(env),
-    maxSearchesPerDay: Number.isInteger(srN) && srN >= 0 && srN <= 100000 ? srN : 20,
+    maxSearchesPerDay: Number.isInteger(srN) && srN >= 0 && srN <= 100000 ? srN : 10,
     peopleSearchSources: parsePeopleSources(env.LINKEDIN_PEOPLE_SEARCH_SOURCES),
     acceptUnknown: env.LINKEDIN_ACCEPT_UNKNOWN === 'true',
     maxAcceptsPerDay: Number.isInteger(accN) && accN >= 0 && accN <= 1000 ? accN : 30,

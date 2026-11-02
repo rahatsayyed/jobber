@@ -347,7 +347,7 @@ trigger (`forced` instead of `scheduled`); the wake still goes through `planWake
 switch, halts, quiet hours, ceilings and a `nothing_due` skip apply as for any wake, and the
 dry-run flags decide whether anything real happens. The wake takes the shared run lock. There is no random burst size and no `PACING_*` setting: a wake plans every due task, each
 task's quota being what is due bounded by the room left under the real ceiling of its action (`LINKEDIN_MAX_INVITES_PER_DAY`,
-`LINKEDIN_MAX_MESSAGES_PER_DAY`, the `NAUKRI_`/`WELLFOUND_` daily caps, `MAX_APPLIES_PER_DAY`, `APPLY_MAX_ATTEMPTS_PER_DAY`; the LinkedIn caps are daily rolling 24-hour windows like the others, defaults 40 invites and 100
+`LINKEDIN_MAX_MESSAGES_PER_DAY`, the `NAUKRI_`/`WELLFOUND_` daily caps, `MAX_APPLIES_PER_DAY`, `APPLY_MAX_ATTEMPTS_PER_DAY`; the LinkedIn caps are daily rolling 24-hour windows like the others, defaults 25 invites and 25
 messages); the sending steps (LinkedIn and Naukri `followups` and `new_outreach`, `apply`) are split by code into chunks of at most
 `CHUNK_SIZE` (5, a constant in `src/scheduler/plan.ts`) and the prompt lists them (`new_outreach quota 12 -> calls of 5, 5, 2`): the
 session makes separate sequential Agent calls, each a fresh subagent context, until the quota is spent or a call reports done 0,
@@ -528,7 +528,7 @@ Browser apply through the `applier` MCP and the `apply-operator`: what can be ap
 ## Connecting
 
 LinkedIn connects and messages by the `linkedin-operator`: the arm-then-commit flow, caps (daily, rolling 24 hours), the profile page rules (a Connect is legal only in the profile's own top card or its More menu; `connect_state`; invite dialog; send confirmation; plain invites and the monthly note quota), what is and is not live-verified, hiring posts and poster outreach, the failure ladder and the manual `/connect` steps. Details: `docs/reference/connecting.md` (read it before working in this area).
-Acceptance of a sent invite is detected in code: the `accept_check` task calls the typed `linkedin_check_accepted` tool (no argument, read-only, at most 8 profiles per wake) and sets `connections.status='connected'`, which makes the person due for `followups` (see the same document).
+Acceptance of a sent invite is detected in code: the `accept_recent` task calls `linkedin_check_accepted_recent` once a day (one recent-connections page; LinkedIn work only inside `LINKEDIN_ACTIVE_HOURS`, 09:30-20:30 IST) and `accept_check` (`linkedin_check_accepted`, 3 older profiles per wake) is the fallback; both set `connections.status='connected'`, which makes the person due for `followups` (see the same document).
 
 ## Owner docs
 

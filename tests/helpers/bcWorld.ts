@@ -41,6 +41,7 @@ export function world(o: {
   seed?: boolean; screenshot?: boolean; layoutFeed?: (t: unknown) => void;
   /** Wrap the fake page (e.g. the locator dialog layer) before the engine uses it; World.page stays the fake. */
   wrapPage?: (p: FakeBc) => BcPage;
+  navGap?: { before(): Promise<void> };
 }): World {
   const dir = mkdtempSync(path.join(tmpdir(), 'bc-'));
   const env = { ...(o.env ?? {}) } as NodeJS.ProcessEnv;
@@ -59,6 +60,7 @@ export function world(o: {
     db, now: () => NOW, env, cfg, getPage: async () => bcPage, intents, screen: screen as never, stopFile,
     screenshotEnabled: o.screenshot === true, paceMs: () => 0, settleMs: 0, confirmTimeoutMs: 50, diagDir: path.join(dir, 'diag'),
     ...(o.layoutFeed ? { layoutFeed: o.layoutFeed as never } : {}),
+    ...(o.navGap ? { navGap: o.navGap } : {}),
   });
   const armDeps: ArmDeps = {
     engine, intents, db, now: () => NOW, env, cfg, screen: screen as never, stopFile,

@@ -12,6 +12,8 @@ export const CONTACTS_ENV_KEYS: readonly string[] = [
   'HUNTER_API_KEY', 'HUNTER_ENABLED', 'HUNTER_MONTHLY_CAP',
   // The linkedin MCP server also uses the search layer for people discovery (no wake env_keys change needed).
   'LINKEDIN_PEOPLE_SEARCH_SOURCES',
+  // LinkedIn pacing read by the linkedin MCP server (active hours gate and the per-navigation pause); also no wake env_keys change.
+  'LINKEDIN_ACTIVE_HOURS', 'LINKEDIN_NAV_GAP_MIN_SEC', 'LINKEDIN_NAV_GAP_MAX_SEC',
   // The same search layer gates the browser dork by these; without them the linkedin MCP used the defaults.
   'DORK_ENABLED', 'DORK_BLOCK_COOLDOWN_HOURS',
 ];

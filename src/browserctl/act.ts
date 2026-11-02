@@ -265,6 +265,7 @@ export function createEngine(deps: EngineDeps): Engine {
     if (!allowed.ok) return refused(allowed.code, allowed.why);
     const g = await gate();
     if (!g.ok) return g.res;
+    await deps.navGap?.before();
     await pace(g.page);
     recordNav(url);
     moreOpened = false;

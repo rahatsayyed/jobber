@@ -16,12 +16,14 @@ import type { RawSnapshot } from './types.js';
 
 type Db = BetterSqlite3.Database;
 
-/** Most profiles one scheduler wake (one MCP server process) may check. */
-export const ACCEPT_CHECK_MAX_PER_WAKE = 8;
+/** Profile fallback: most profiles one scheduler wake (one MCP server process) may check. The main detection is the one recent-connections page (acceptRecent.ts). */
+export const ACCEPT_CHECK_MAX_PER_WAKE = 3;
 /** A profile is not looked at again within this many hours. */
-export const ACCEPT_RECHECK_HOURS = 24;
+export const ACCEPT_RECHECK_HOURS = 72;
 /** An invite is checked for at most this many days after it was sent. */
-export const ACCEPT_WINDOW_DAYS = 21;
+export const ACCEPT_WINDOW_DAYS = 14;
+/** The profile fallback only looks at invites at least this many days old (a younger one is left to the recent-connections page). */
+export const ACCEPT_FALLBACK_MIN_AGE_DAYS = 3;
 /** Random pause between two profiles of one wake. */
 export const ACCEPT_PACE_MIN_MS = 3000;
 export const ACCEPT_PACE_MAX_MS = 8000;
@@ -31,20 +33,23 @@ export interface AcceptCandidate { profile_url: string; key: string }
 interface Row { profile_url: string; sent_at: string; accept_checked_at: string | null }
 
 /** Eligible 'sent' invites, one per normalized profile, oldest check first (never checked first), then oldest invite. */
-export function listAcceptCandidates(db: Db, now: Date, skip: ReadonlySet<string> = new Set()): AcceptCandidate[] {
+export function listAcceptCandidates(
+  db: Db, now: Date, skip: ReadonlySet<string> = new Set(), opts: { minAgeDays?: number; recheckHours?: number } = {},
+): AcceptCandidate[] {
   const windowCut = new Date(now.getTime() - ACCEPT_WINDOW_DAYS * 24 * 3600 * 1000).toISOString();
-  const recheckCut = new Date(now.getTime() - ACCEPT_RECHECK_HOURS * 3600 * 1000).toISOString();
+  const recheckCut = new Date(now.getTime() - (opts.recheckHours ?? ACCEPT_RECHECK_HOURS) * 3600 * 1000).toISOString();
+  const youngCut = new Date(now.getTime() - (opts.minAgeDays ?? ACCEPT_FALLBACK_MIN_AGE_DAYS) * 24 * 3600 * 1000).toISOString();
   let rows: Row[];
   let done: { profile_url: string }[];
   try {
     rows = db
       .prepare(
         `SELECT profile_url, sent_at, accept_checked_at FROM connections
-          WHERE status = 'sent' AND profile_url IS NOT NULL AND profile_url <> '' AND sent_at IS NOT NULL AND sent_at >= ?
+          WHERE status = 'sent' AND profile_url IS NOT NULL AND profile_url <> '' AND sent_at IS NOT NULL AND sent_at >= ? AND sent_at <= ?
             AND (accept_checked_at IS NULL OR accept_checked_at <= ?)
           ORDER BY accept_checked_at IS NOT NULL, accept_checked_at ASC, sent_at ASC, id ASC`,
       )
-      .all(windowCut, recheckCut) as Row[];
+      .all(windowCut, youngCut, recheckCut) as Row[];
     done = db.prepare("SELECT profile_url FROM connections WHERE status IN ('messaged', 'connected') AND profile_url IS NOT NULL").all() as { profile_url: string }[];
   } catch {
     return [];
@@ -60,6 +65,11 @@ export function listAcceptCandidates(db: Db, now: Date, skip: ReadonlySet<string
     out.push({ profile_url: r.profile_url, key });
   }
   return out;
+}
+
+/** True when at least one sent invite (any age inside the window, any check state) could still be accepted: the recent-connections page has something to look for. */
+export function hasOpenInvites(db: Db, now: Date): boolean {
+  return listAcceptCandidates(db, now, new Set(), { minAgeDays: 0, recheckHours: 0 }).length > 0;
 }
 
 /** How many profiles the next wake may check (what the planner plans), at most ACCEPT_CHECK_MAX_PER_WAKE. */

@@ -46,10 +46,10 @@ describe('new ceilings and catalog drift', () => {
     const cfg = loadOutreachConfig({});
     expect(cfg.applyMaxAttemptsPerDay).toBe(30);
     expect(cfg.siteMaxAccountsPerDay).toBe(2);
-    expect(cfg.linkedinMaxDiscoverPerDay).toBe(12);
+    expect(cfg.linkedinMaxDiscoverPerDay).toBe(6);
     expect(specFor('APPLY_MAX_ATTEMPTS_PER_DAY')!.default).toBe(30);
     expect(specFor('SITE_MAX_ACCOUNTS_PER_DAY')!.default).toBe(2);
-    expect(specFor('LINKEDIN_MAX_DISCOVER_PER_DAY')!.default).toBe(12);
+    expect(specFor('LINKEDIN_MAX_DISCOVER_PER_DAY')!.default).toBe(6);
   });
   it('values are read', () => {
     const cfg = loadOutreachConfig(env({ APPLY_MAX_ATTEMPTS_PER_DAY: '7', SITE_MAX_ACCOUNTS_PER_DAY: '1', LINKEDIN_MAX_DISCOVER_PER_DAY: '3' }));

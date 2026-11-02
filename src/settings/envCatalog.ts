@@ -224,8 +224,8 @@ const hand: EnvSpec[] = [
     ...tier('guarded', 'More automatic accepts per day raises account-restriction risk.', 'increase'),
   }),
   e('LINKEDIN_PEOPLE_SEARCH_SOURCES', 'linkedin', 'LinkedIn', 'list', {
-    default: 'engine,serper,linkedin',
-    about: 'Where linkedin_find_profiles looks for people, in priority order: engine (a no-login search-engine query, Google, then DuckDuckGo, then Bing; a blocked engine cools down and is never solved or waited out), serper (needs SERPER_API_KEY, under its budgets) and linkedin (the logged-in people-search page, under MAX_LINKEDIN_SEARCHES_PER_DAY). Unknown names are ignored. Set just linkedin for the old behaviour.',
+    default: 'engine,serper',
+    about: 'Where linkedin_find_profiles looks for people, in priority order: engine (a no-login search-engine query, Google, then DuckDuckGo, then Bing; a blocked engine cools down and is never solved or waited out), serper (needs SERPER_API_KEY, under its budgets) and linkedin (the logged-in people-search page, under MAX_LINKEDIN_SEARCHES_PER_DAY). Unknown names are ignored. The LinkedIn page is opt-in: add linkedin to the list (it opens real people-search pages, a traffic risk).',
     restart: 'mcp',
     restartEvidence: 'src/linkedin/config.ts',
   }),
@@ -263,6 +263,32 @@ const hand: EnvSpec[] = [
     about: 'Days a saved LinkedIn session file may age before it counts as expired.',
     restart: 'mcp',
     restartEvidence: 'src/linkedin/session.ts',
+  }),
+  e('LINKEDIN_ACTIVE_HOURS', 'linkedin', 'LinkedIn', 'string', {
+    default: '09:30-20:30',
+    maxLen: 11,
+    about: 'Daily window (HH:MM-HH:MM, IST like the mail send window) in which any LinkedIn work happens. Outside it the scheduler plans no LinkedIn task at all (inbox included) and the linkedin tools refuse with outside_active_hours. An invalid value falls back to the default and the doctor warns.',
+    ...tier('guarded', 'A wider window puts LinkedIn traffic at more hours of the day, which looks less human.', 'any'),
+    restart: 'scheduler',
+    restartEvidence: 'src/linkedin/activeHours.ts',
+  }),
+  e('LINKEDIN_NAV_GAP_MIN_SEC', 'linkedin', 'LinkedIn', 'int', {
+    default: '4',
+    min: 0,
+    max: 600,
+    about: 'Shortest random pause, in seconds, before each page navigation to linkedin.com after the first of a session. 0 with LINKEDIN_NAV_GAP_MAX_SEC 0 turns the pause off. Clicks on the same page are never delayed.',
+    ...tier('guarded', 'A shorter pause makes page loads come faster, which looks automated.', 'decrease'),
+    restart: 'mcp',
+    restartEvidence: 'src/linkedin/navGap.ts',
+  }),
+  e('LINKEDIN_NAV_GAP_MAX_SEC', 'linkedin', 'LinkedIn', 'int', {
+    default: '9',
+    min: 0,
+    max: 600,
+    about: 'Longest random pause, in seconds, before each page navigation to linkedin.com after the first of a session. Not below the minimum.',
+    ...tier('guarded', 'A shorter pause makes page loads come faster, which looks automated.', 'decrease'),
+    restart: 'mcp',
+    restartEvidence: 'src/linkedin/navGap.ts',
   }),
 
   // ---- Shared web browser (company sites, ATS pages)

@@ -44,7 +44,7 @@ describe('limits catalog drift against code defaults', () => {
     expect(at('QUIET_HOURS_START', 23).quietStartHour).toBe(23);
     expect(at('QUIET_HOURS_START', 24).quietStartHour).toBe(1);
     expect(at('COMPANY_CONTACT_LIMIT', 100000).companyContactLimit).toBe(100000);
-    expect(at('COMPANY_CONTACT_LIMIT', 100001).companyContactLimit).toBe(5);
+    expect(at('COMPANY_CONTACT_LIMIT', 100001).companyContactLimit).toBe(2);
     expect(spec('QUIET_HOURS_START').max).toBe(23);
     expect(spec('COMPANY_CONTACT_LIMIT').max).toBe(100000);
     expect(spec('COOLDOWN_IGNORED_DAYS').max).toBe(3650);
@@ -54,7 +54,7 @@ describe('limits catalog drift against code defaults', () => {
     expect(spec('MATCH_THRESHOLD').default).toBe(60);
     expect(spec('SEND_LIMIT_PER_RUN').default).toBe(1);
     expect(spec('MAX_APPLIES_PER_DAY').default).toBe(5);
-    expect(spec('MAX_LINKEDIN_SEARCHES_PER_DAY').default).toBe(20);
+    expect(spec('MAX_LINKEDIN_SEARCHES_PER_DAY').default).toBe(10);
     expect(spec('HUNTER_MONTHLY_CAP').default).toBe(50);
   });
 });

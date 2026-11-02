@@ -7,6 +7,7 @@ import { skip } from './doctor.js';
 import { parseEnv } from './envFile.js';
 import { isDryRun, LEGACY_DRY_RUN_KEYS } from '../safety/dryRun.js';
 import { loadDripConfig } from '../scheduler/mailDrip.js';
+import { loadActiveHours } from '../linkedin/activeHours.js';
 import { DEFAULT_LABEL, SERVICE_NAME } from '../scheduler/units.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -105,6 +106,17 @@ export function schedulerChecks(): Check[] {
         return c.problems.length === 0
           ? pass(`window ${Math.floor(c.windowStartMin / 60)}:${String(c.windowStartMin % 60).padStart(2, '0')}-${Math.floor(c.windowEndMin / 60)}:${String(c.windowEndMin % 60).padStart(2, '0')} IST, batch ${c.minBatch}-${c.maxBatch}, gap ${c.minGapMin}-${c.maxGapMin} min, pause ${c.pauseMinSec}-${c.pauseMaxSec} s, daily cap ${c.maxPerDay || 'none'}`)
           : fail(`the mail drip lane sends nothing until fixed: ${c.problems.join('; ')}`, 'fix the EMAIL_SEND_WINDOW_*, EMAIL_DRIP_* and EMAIL_MAX_PER_DAY values in .env');
+      },
+    },
+    {
+      id: 'linkedin-active-hours',
+      title: 'LinkedIn active hours (LINKEDIN_ACTIVE_HOURS) are valid',
+      async run(ctx) {
+        const h = loadActiveHours(mergedEnv(ctx));
+        const hm = (m: number): string => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+        return h.problem === null
+          ? pass(`LinkedIn work only ${hm(h.startMin)}-${hm(h.endMin)} IST`)
+          : warn(h.problem, 'write LINKEDIN_ACTIVE_HOURS as HH:MM-HH:MM (IST, start before end) in .env, e.g. 09:30-20:30');
       },
     },
     {
