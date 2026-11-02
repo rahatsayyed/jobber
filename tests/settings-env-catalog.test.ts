@@ -9,6 +9,7 @@ import { installNoRealEnv } from './helpers/noRealEnv.js';
 import { ENV_CATALOG, INTERNAL_NAMES } from '../src/settings/envCatalog.js';
 import { fromLimit, limitWeakens } from '../src/settings/fromLimits.js';
 import { loadDripConfig } from '../src/scheduler/mailDrip.js';
+import { loadLinkedinDripConfig } from '../src/scheduler/linkedinDrip.js';
 import { isSecret, type EnvSpec } from '../src/settings/types.js';
 import { validateEnvValue, weakens } from '../src/settings/valueCheck.js';
 import { LIMITS, type LimitSpec } from '../src/setup/limitsCatalog.js';
@@ -330,6 +331,7 @@ describe('blankMeansDefault (real loaders)', () => {
     'CADENCE_GAPS_DAYS',
   ];
   const DRIP_KEYS = ['EMAIL_MAX_PER_DAY', 'EMAIL_DRIP_MIN_BATCH', 'EMAIL_DRIP_MAX_BATCH', 'EMAIL_DRIP_MIN_GAP_MIN', 'EMAIL_DRIP_MAX_GAP_MIN', 'EMAIL_DRIP_INTRA_PAUSE_MIN_SEC', 'EMAIL_DRIP_INTRA_PAUSE_MAX_SEC'];
+  const LI_DRIP_KEYS = ['LINKEDIN_DRIP', 'LINKEDIN_DRIP_MIN_GAP_MIN', 'LINKEDIN_DRIP_MAX_GAP_MIN', 'LINKEDIN_INBOX_MIN_GAP_MIN'];
   const LAYOUT_KEYS = ENV_CATALOG.filter((s) => s.key.startsWith('LAYOUT_')).map((s) => s.key);
   const HOST_KEYS: Array<[string, string]> = [[TOP_LEVEL_KEY, 'greenhouse'], ...APPLY_HOST_PLATFORM_IDS.map((id): [string, string] => [hostCapKey(id), id])];
 
@@ -339,6 +341,7 @@ describe('blankMeansDefault (real loaders)', () => {
     ...LAYOUT_KEYS.map((k): [string, Loader] => [k, layout]),
     ...HOST_KEYS.map(([k, id]): [string, Loader] => [k, hostCap(id)]),
     ...DRIP_KEYS.map((k): [string, Loader] => [k, (e) => loadDripConfig(e)]),
+    ...LI_DRIP_KEYS.map((k): [string, Loader] => [k, (e) => loadLinkedinDripConfig(e)]),
   ];
 
   it('each covered loader reads the key and treats blank like unset', () => {

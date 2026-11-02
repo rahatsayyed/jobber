@@ -14,6 +14,8 @@ export const CONTACTS_ENV_KEYS: readonly string[] = [
   'LINKEDIN_PEOPLE_SEARCH_SOURCES',
   // LinkedIn pacing read by the linkedin MCP server (active hours gate and the per-navigation pause); also no wake env_keys change.
   'LINKEDIN_ACTIVE_HOURS', 'LINKEDIN_NAV_GAP_MIN_SEC', 'LINKEDIN_NAV_GAP_MAX_SEC',
+  // Whether first DMs may carry the tailored resume (read by the arm tool in the linkedin MCP server).
+  'LINKEDIN_DM_ATTACH_RESUME',
   // The same search layer gates the browser dork by these; without them the linkedin MCP used the defaults.
   'DORK_ENABLED', 'DORK_BLOCK_COOLDOWN_HOURS',
 ];

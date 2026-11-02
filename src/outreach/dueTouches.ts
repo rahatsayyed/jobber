@@ -108,7 +108,7 @@ export function dueTouchesFor(
 
   const touchStmt = db.prepare(
     `SELECT kind, sent_at FROM touches
-      WHERE person_id = ? AND status = 'sent' AND sent_at IS NOT NULL AND (? IS NULL OR sent_at >= ?)
+      WHERE person_id = ? AND status = 'sent' AND kind != 'reply' AND sent_at IS NOT NULL AND (? IS NULL OR sent_at >= ?)
       ORDER BY sent_at ASC, id ASC`,
   );
 

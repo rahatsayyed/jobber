@@ -29,6 +29,7 @@ import { parseSchedulerArgs } from '../src/scheduler/args.js';
 import { ingestManualRequests } from '../src/manual/ingest.js';
 import { finalizeManualRequests } from '../src/manual/report.js';
 import { telegramNotifier } from '../src/platform/notify.js';
+import { linkedinDripEnabled, linkedinDripStatus, renderLinkedinDripLines } from '../src/scheduler/linkedinDrip.js';
 import { escalationDigestTick } from '../src/scheduler/escalationDigest.js';
 
 const projectRoot = resolve(process.cwd());
@@ -60,6 +61,8 @@ function status(env: NodeJS.ProcessEnv): void {
   console.log(`next wake: ${getState(db, 'next_wake_at') ?? 'not set'}`);
   console.log(`usage backoff until: ${getState(db, 'usage_backoff_until') ?? 'none'}`);
   console.log(`next mail drip not before: ${getState(db, 'mail_drip_next_at') ?? 'not set'}`);
+  console.log(`next linkedin drip not before: ${getState(db, 'linkedin_drip_next_at') ?? 'not set'}`);
+  for (const l of renderLinkedinDripLines(linkedinDripStatus(db, env, { now: new Date(), tuning: loadTuning(env) }), new Date())) console.log(l);
   console.log(`kill: ${ctl.killed ? `ON (${safe(ctl.killReason)})` : 'off'}`);
   for (const [p, r] of Object.entries(ctl.halted)) if (r) console.log(`halted ${p}: ${safe(r)}`);
   let open = 0;
@@ -102,6 +105,7 @@ function dryRunPlan(env: NodeJS.ProcessEnv): void {
     knobs: loadPlanKnobs(env),
     discoverSearches: discoverNames(),
     codePassEnabled: true,
+    linkedinDrip: linkedinDripEnabled(env),
   });
   console.log(JSON.stringify(decision, null, 2));
   db.close();
@@ -143,6 +147,8 @@ async function main(): Promise<void> {
     codePass: () => runCodePass({ db, now, projectRoot }),
     // The slow email lane beside the wakes (src/scheduler/mailDrip.ts); only the daemon runs it, never --once or --now.
     mailDrip: args.mode === 'daemon',
+    // The slow LinkedIn lane (src/scheduler/linkedinDrip.ts); daemon only. LINKEDIN_DRIP=false turns it off and wakes plan LinkedIn again.
+    linkedinDrip: args.mode === 'daemon',
     // New escalations go to the owner's Telegram as a batched digest (at most one per 15 minutes); the daemon only.
     escalationDigest: args.mode === 'daemon' ? escalationDigestTick(db, env, quietFromConfig(cfg), now) : undefined,
     manualIngest: (runId) => ingestManualRequests(db, { runId, now }),

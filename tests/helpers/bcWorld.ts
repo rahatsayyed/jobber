@@ -12,6 +12,7 @@ import { profileKeyOf } from '../../src/linkedin/urls.js';
 import { DEFAULT_STYLE_CONFIG } from '../../src/safety/styleGate.js';
 import type { ScreenVerdict } from '../../src/safety/screen.js';
 import type { BcPage } from '../../src/browserctl/driver.js';
+import type { ResolveDeps } from '../../src/linkedin/attachment.js';
 import { fakeBcPage, type FakeBc } from './fakeBc.js';
 
 export const URL_ = 'https://www.linkedin.com/in/jane-example/';
@@ -42,6 +43,8 @@ export function world(o: {
   /** Wrap the fake page (e.g. the locator dialog layer) before the engine uses it; World.page stays the fake. */
   wrapPage?: (p: FakeBc) => BcPage;
   navGap?: { before(): Promise<void> };
+  /** Attachment seams: repo root for the renderer/automation check, PDF re-render, resume.json name. */
+  attach?: ResolveDeps;
 }): World {
   const dir = mkdtempSync(path.join(tmpdir(), 'bc-'));
   const env = { ...(o.env ?? {}) } as NodeJS.ProcessEnv;
@@ -61,10 +64,12 @@ export function world(o: {
     screenshotEnabled: o.screenshot === true, paceMs: () => 0, settleMs: 0, confirmTimeoutMs: 50, diagDir: path.join(dir, 'diag'),
     ...(o.layoutFeed ? { layoutFeed: o.layoutFeed as never } : {}),
     ...(o.navGap ? { navGap: o.navGap } : {}),
+    ...(o.attach?.root ? { attachRoot: o.attach.root } : {}),
   });
   const armDeps: ArmDeps = {
     engine, intents, db, now: () => NOW, env, cfg, screen: screen as never, stopFile,
     factCheck: (text) => ({ verdict: 'pass', normalized_text: text }), styleCfg: DEFAULT_STYLE_CONFIG,
+    ...(o.attach ? { attach: o.attach } : {}),
   };
   return {
     db, page, engine, intents, clock, stopFile, env, armDeps,

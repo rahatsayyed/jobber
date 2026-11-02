@@ -381,6 +381,11 @@ automatically) and the owner is notified to check Gmail Sent first. The drip run
 (`EMAIL_MAX_PER_DAY`, or 100000 when unset) as the limit of the shared `send_email` counter. Dry runs
 follow the master flag: the run records and sends nothing.
 
+**The LinkedIn drip lane** (`src/scheduler/linkedinDrip.ts`, daemon only, lock `linkedin`, profile and trigger `linkedin_drip`, `LINKEDIN_DRIP` default true): one LinkedIn
+action per tick, `LINKEDIN_DRIP_MIN_GAP_MIN` to `_MAX_GAP_MIN` (8 to 20) apart, inside `LINKEDIN_ACTIVE_HOURS`, chosen in code: inbox, owner-approved reply (`npm run replies`,
+kind `reply`, optional resume via `linkedin_attach_file`), accept check, DM, invite; an unanswered inbound pauses that person. While on, wakes plan no LinkedIn inbox,
+accept check, follow-up or new outreach. Details: `docs/reference/scheduler.md` and `connecting.md`.
+
 ### The pipeline stage
 
 The wake session calls directly only `db.sweep_deadlines`, `db.list_unscored_jobs`,

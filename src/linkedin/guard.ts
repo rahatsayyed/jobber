@@ -18,7 +18,7 @@ import { effectiveDryRun, type LinkedinConfig } from './config.js';
 
 type Db = BetterSqlite3.Database;
 
-export type Kind = 'connect' | 'role_ask' | 'rapport' | 'referral_ask' | 'followup' | 'feedback';
+export type Kind = 'connect' | 'role_ask' | 'rapport' | 'referral_ask' | 'followup' | 'feedback' | 'reply';
 export type FactVerdict = 'pass' | 'warn' | 'block';
 export type FactCheck = (
   text: string,
@@ -75,18 +75,30 @@ export function preSendGuard(i: GuardInput): GuardResult {
   if (!person) return refuse('unknown_recipient', 'recipient is not in people');
   if (!person.name || !person.name.trim()) return refuse('recipient_name_unknown', 'recipient name is unknown');
 
-  if (
-    person.paused_reason !== null ||
-    ['replied_negative', 'closed', 'cooldown'].includes(person.stage) ||
-    companyPaused(i.db, 'linkedin', person.company_key)
-  ) {
-    return refuse('contact_paused', 'contact or company is paused');
-  }
+  if (i.kind === 'reply') {
+    // An owner-approved answer to a message THIS person sent us. They are paused for every outbound because they replied
+    // (paused_reason 'replied'); that one pause, and the company pause it caused, do not stop the approved reply. Any other pause,
+    // a closed, cooled-down or negative contact still does. The employer gate is for strangers and does not apply.
+    if (
+      (person.paused_reason !== null && person.paused_reason !== 'replied') ||
+      ['replied_negative', 'closed', 'cooldown'].includes(person.stage)
+    ) {
+      return refuse('contact_paused', 'contact is paused');
+    }
+  } else {
+    if (
+      person.paused_reason !== null ||
+      ['replied_negative', 'closed', 'cooldown'].includes(person.stage) ||
+      companyPaused(i.db, 'linkedin', person.company_key)
+    ) {
+      return refuse('contact_paused', 'contact or company is paused');
+    }
 
-  // People quality (finding 20): the person must show as working at the company. Runs in dry runs
-  // too, and before any touch is reserved or ceiling consumed.
-  const employer = employerGate(person);
-  if (!employer.ok) return refuse(employer.code, employer.reason);
+    // People quality (finding 20): the person must show as working at the company. Runs in dry runs
+    // too, and before any touch is reserved or ceiling consumed.
+    const employer = employerGate(person);
+    if (!employer.ok) return refuse(employer.code, employer.reason);
+  }
 
   if (i.plain) {
     const dry = effectiveDryRun(i.cfg, i.callDryRun);

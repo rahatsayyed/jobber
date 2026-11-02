@@ -8,14 +8,17 @@ import { profileKeyOf } from '../linkedin/urls.js';
 import { naukriJobIdOfUrl, threadRefOfUrl } from '../naukri/page.js';
 import { threadRefOfUrl as wellfoundThreadRefOfUrl, wellfoundJobIdOfUrl } from '../wellfound/page.js';
 import { recordDryRun } from '../safety/dryRun.js';
-import { commitAction, effectiveDialogKind, profileHeadingName, stopOnNoteQuota } from './commit.js';
+import { readFileSync } from 'node:fs';
+import { checkFile } from '../linkedin/attachment.js';
+import { namesPlausiblyMatch } from '../linkedin/verify.js';
+import { commitAction, effectiveDialogKind, fileChipShown, personMessageDialog, profileHeadingName, stopOnNoteQuota } from './commit.js';
 import { noteQuotaModal } from './sendSignals.js';
 import { dialogWithoutControls, writeCommitDiag } from './diag.js';
 import { applyCounted, commitNaukri, observeApplyConfirmation } from './commitNaukri.js';
 import { commitWellfound, observeWellfoundApplyConfirmation, wellfoundApplyCounted } from './commitWellfound.js';
 import { BC_KEYS, type BcKey, type BcPage } from './driver.js';
 import { killReason, refused, type EngineDeps, type EngineResult } from './engineTypes.js';
-import { checkType, classify, classifyKey, classifyPoint, connectPlacementRefusal, guardInputOf, isConnectControlName, normName, type ActionClass, type CommitClass } from './guard.js';
+import { ATTACH_CONTROL_RE, checkType, classify, classifyKey, classifyPoint, connectPlacementRefusal, guardInputOf, isConnectControlName, normName, type ActionClass, type CommitClass } from './guard.js';
 import { LINKEDIN_POLICY } from './policy.js';
 import { RefStore } from './refs.js';
 import { renderTree, type LiveNode, type RawTree } from './snapshot.js';
@@ -42,6 +45,11 @@ export interface Engine {
   waitFor(o: { ms?: number; text?: string }): Promise<EngineResult>;
   screenshot(): Promise<EngineResult>;
   clickAt(x: number, y: number): Promise<EngineResult>;
+  /**
+   * LinkedIn only, no argument: put the armed attachment (resolved by code at arm time) into the armed person's open message window. Works only
+   * while an intent armed with an attachment is held and the browser is on that profile with exactly one message window naming that person.
+   */
+  attachFile(): Promise<EngineResult>;
   /** The tree of the latest successful read (arm tools use it; never given to the model raw). */
   lastTree(): RawTree | null;
   /** The session page, or null. */
@@ -410,8 +418,66 @@ export function createEngine(deps: EngineDeps): Engine {
     return res;
   }
 
+  /** linkedin_attach_file: see Engine.attachFile. Every check fails closed; the file is re-validated here, right before it is read. */
+  async function doAttach(): Promise<EngineResult> {
+    if (P.platform !== 'linkedin') return refused('wrong_platform', 'attachments exist only on LinkedIn');
+    const g = await gate();
+    if (!g.ok) return g.res;
+    const armed = deps.intents.peek('linkedin');
+    if (!armed || armed.class !== 'commit_message_send') return refused('no_armed_intent', 'arm a message with an attachment first (linkedin_arm_send)');
+    const att = armed.attachment;
+    if (!att) return refused('no_attachment_armed', 'the armed message carries no file');
+    const person = armed.personId === undefined ? undefined
+      : (deps.db.prepare('SELECT name, profile_key FROM people WHERE id = ?').get(armed.personId) as { name: string | null; profile_key: string } | undefined);
+    if (!person || !person.name || !armed.profileKey || person.profile_key !== armed.profileKey) return refused('unknown_recipient', 'armed recipient is not a known person');
+    if (armed.dry || deps.cfg.dryRun) {
+      // Dry run: record what would be attached; nothing is clicked, chosen or uploaded.
+      try { recordDryRun(deps.db, { runId: null, action: 'linkedin_attach_file', platform: 'linkedin', personId: armed.personId ?? null, payload: { name: att.name, bytes: att.bytes } }, now(), deps.env); } catch { /* best effort */ }
+      return { ok: true, status: 'dry_run', code: 'dry_run', reason: 'dry run: nothing was attached' };
+    }
+    if (att.attached) return { ok: true, code: 'attached', reason: 'the file is already in the message window' };
+    if (profileKeyOf(g.page.url()) !== armed.profileKey) return refused('profile_url_mismatch', 'browser is not on the armed profile');
+    let t: RawTree;
+    try { t = await g.page.snapshot(); } catch { return refused('no_snapshot', 'could not read the page'); }
+    const dlg = personMessageDialog(t, person.name);
+    if (dlg === 'none') return refused('dialog_not_open', 'open the Message window of the armed person first');
+    if (dlg === 'ambiguous') return refused('ambiguous_dialog', 'more than one open message window names this person; close the extra ones');
+    const ctl = t.nodes.filter((x) => x.dialog === dlg.n && (x.role === 'button' || x.role === 'link') && ATTACH_CONTROL_RE.test(normName(x.name)));
+    if (ctl.length !== 1) return refused('attach_control_missing', ctl.length === 0 ? 'the message window shows no attach-a-file control' : 'more than one attach control in the window');
+    // "Attach a file to your conversation with <name>": the name, when the label carries one, must be the armed person.
+    const named = /^attach (?:a )?(?:file|files)(?: to your conversation with (.+))?$/.exec(normName(ctl[0].name));
+    if (named?.[1] && !namesPlausiblyMatch(person.name, named[1])) return refused('attach_control_mismatch', 'the attach control names a different person');
+    // Re-validate the file right before reading it: still inside renderer/automation, a .pdf, a regular file, at most 2 MB.
+    const chk = checkFile(att.path, deps.attachRoot);
+    if (!chk.ok) return refused(chk.code, chk.reason);
+    let buffer: Buffer;
+    try { buffer = readFileSync(chk.real); } catch { return refused('attachment_missing', 'resume file could not be read'); }
+    if (!g.page.attachFile) return refused('attach_unsupported', 'this page adapter cannot answer a file chooser');
+    const k = killReason(deps);
+    if (k) return { ok: false, code: k.startsWith('kill switch') ? 'killed' : 'halted', reason: k };
+    await pace(g.page);
+    try {
+      await g.page.attachFile(ctl[0].n, { name: att.name, mimeType: 'application/pdf', buffer });
+    } catch {
+      return { ok: false, status: 'failed', code: 'attach_failed', reason: 'no file chooser opened or the file could not be set; nothing was sent' };
+    }
+    // The chip must show in THIS person's window before the Send may be clicked.
+    let shown = false;
+    for (let i = 0; i < 20 && !shown; i++) {
+      await g.page.waitMs(500).catch(() => undefined);
+      const after = await g.page.snapshot().catch(() => null);
+      const d = after ? personMessageDialog(after, person.name) : 'none';
+      shown = !!after && d !== 'none' && d !== 'ambiguous' && fileChipShown(after, d.n, att.name);
+    }
+    if (!shown) return { ok: false, status: 'failed', code: 'attachment_not_shown', reason: 'the file did not show in the message window; nothing was sent' };
+    att.attached = true;
+    refs.invalidate();
+    return finish(g.page, 'attached');
+  }
+
   return {
     refs,
+    attachFile: () => serial(() => doAttach()),
     lastTree: () => tree,
     page: () => deps.getPage(),
     open: (url, opts) => serial(() => doOpen(url, opts?.keepRefs === true)),

@@ -39,6 +39,7 @@
     "rapport": 90,
     "referral_ask": 110,
     "followup": 70,
-    "feedback": 60
+    "feedback": 60,
+    "reply": 90
   }
 }

@@ -8,6 +8,7 @@
 // Applies only when the walker saw fewer dialogs with controls than the locators saw dialogs (the walker wins when it sees them).
 import type { BcPage } from './driver.js';
 import type { PageDiag } from './diag.js';
+import { answerFileChooser } from './fileChooser.js';
 import { LOCATOR_BASE, MAX_NAME, MAX_TEXT, MAX_VALUE, type BcRole, type LiveNode, type RawNode, type RawTree } from './snapshot.js';
 
 export { LOCATOR_BASE };
@@ -406,5 +407,7 @@ export function withLocatorDialogs(base: BcPage, lp: () => LdPage, opts: { fillP
     },
   };
   if (base.robustClick) wrapped.robustClick = async (n) => (layer.has(n) ? layer.click(n) : base.robustClick!(n));
+  // The attach control of a message window read through the locator layer: same chooser answer, clicked through the layer.
+  if (base.attachFile) wrapped.attachFile = async (n, f) => (layer.has(n) ? answerFileChooser(lp(), () => layer.click(n), f) : base.attachFile!(n, f));
   return wrapped;
 }

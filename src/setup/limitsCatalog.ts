@@ -55,6 +55,15 @@ export const LIMITS: LimitSpec[] = [
   { key: 'EMAIL_DRIP_INTRA_PAUSE_MAX_SEC', group: 'spacing', default: 40, min: 0, max: 3600, unit: 'seconds',
     what: 'Longest random pause between two emails inside one drip tick. Must not be below the minimum.',
     raiseNote: 'Back-to-back sends look like a flood to the mail provider.' },
+  { key: 'LINKEDIN_DRIP_MIN_GAP_MIN', group: 'spacing', default: 8, min: 1, max: 1440, unit: 'minutes',
+    what: 'Shortest random wait between two LinkedIn drip actions (the LinkedIn drip lane does exactly ONE action per tick: an inbox read, a reply, an accept check, a DM or an invite).',
+    raiseNote: 'A shorter gap makes LinkedIn activity burstier, which is what drew the LinkedIn warning.' },
+  { key: 'LINKEDIN_DRIP_MAX_GAP_MIN', group: 'spacing', default: 20, min: 1, max: 1440, unit: 'minutes',
+    what: 'Longest random wait between two LinkedIn drip actions. Must not be below the minimum.',
+    raiseNote: 'A shorter gap makes LinkedIn activity burstier, which is what drew the LinkedIn warning.' },
+  { key: 'LINKEDIN_INBOX_MIN_GAP_MIN', group: 'spacing', default: 60, min: 5, max: 1440, unit: 'minutes',
+    what: 'The LinkedIn messaging inbox is read at most this often by the LinkedIn drip lane (the inbox read comes first when it is due, so replies are seen before anything is sent).',
+    raiseNote: 'Reading the inbox more often adds LinkedIn page loads.' },
   { key: 'MAX_APPLIES_PER_DAY', group: 'daily-caps', default: 5, min: 0, max: 100000, unit: 'per day',
     what: 'Applications submitted per day across LinkedIn Easy Apply, external ATS, Naukri and Wellfound.',
     raiseNote: 'High volume on the burner account can trigger LinkedIn restrictions.' },
@@ -180,9 +189,10 @@ const PAIRS: ReadonlyArray<readonly [string, string]> = [
   ['EMAIL_DRIP_MIN_BATCH', 'EMAIL_DRIP_MAX_BATCH'],
   ['EMAIL_DRIP_MIN_GAP_MIN', 'EMAIL_DRIP_MAX_GAP_MIN'],
   ['EMAIL_DRIP_INTRA_PAUSE_MIN_SEC', 'EMAIL_DRIP_INTRA_PAUSE_MAX_SEC'],
+  ['LINKEDIN_DRIP_MIN_GAP_MIN', 'LINKEDIN_DRIP_MAX_GAP_MIN'],
 ];
 
-// The mail drip lane stops (bad_config) when a min is above its max, so say it out loud.
+// The mail and LinkedIn drip lanes stop (bad_config) when a min is above its max, so say it out loud.
 export function validatePairs(values: Record<string, string>): string[] {
   const out: string[] = [];
   for (const [lo, hi] of PAIRS) {
@@ -192,7 +202,7 @@ export function validatePairs(values: Record<string, string>): string[] {
     const x = Number(a);
     const y = Number(b);
     if (Number.isFinite(x) && Number.isFinite(y) && x > y) {
-      out.push(`${lo} (${x}) is above ${hi} (${y}); the mail drip lane would stop (bad_config) until fixed`);
+      out.push(`${lo} (${x}) is above ${hi} (${y}); the drip lane that reads them would stop (bad_config) until fixed`);
     }
   }
   return out;

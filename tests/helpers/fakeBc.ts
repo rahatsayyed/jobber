@@ -17,6 +17,8 @@ export interface FakeBc extends BcPage {
   /** Hook run after a goto, click, key press or fill (simulate the page reacting). */
   onAct?: (what: string) => void;
   currentUrl: string;
+  /** Files handed to the chooser through attachFile (name, type, size only). */
+  attachFiles: { n: number; name: string; mimeType: string; bytes: number }[];
 }
 
 export function fakeBcPage(html: string, url = 'https://example.test/page'): FakeBc {
@@ -50,6 +52,8 @@ export function fakeBcPage(html: string, url = 'https://example.test/page'): Fak
     screenshot: async () => { log.push('screenshot'); return Buffer.from('png'); },
     waitForResponse: async () => { if (!self.responseOk) throw new Error('timeout'); return {}; },
     waitMs: async () => undefined,
+    attachFiles: [],
+    attachFile: async (n, f) => { log.push(`attach ${n} ${f.name}`); self.attachFiles.push({ n, name: f.name, mimeType: f.mimeType, bytes: f.buffer.length }); self.onAct?.(`attach ${n}`); },
   };
   return self;
 }

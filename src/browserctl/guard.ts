@@ -108,7 +108,9 @@ function sameFullName(a: string, b: string): boolean {
   const holds = (p: string[], q: string[]) => q.includes(p[0]!) && q.includes(p[p.length - 1]!);
   return holds(x, y) || holds(y, x);
 }
-const SEND_CONNECT_RE = /^send (?:an? )?(?:invitation|invite|without a note)\b/;
+/** The message window's attach control: "Attach a file to your conversation with <name>" (also "Attach a file"). */
+export const ATTACH_CONTROL_RE = /^attach (?:a )?(?:file|files|image|photo|document)\b/;
+const SEND_CONNECT_RE =/^send (?:an? )?(?:invitation|invite|without a note)\b/;
 const SEND_RE = new RegExp(`^(?:send|${EXTRA_LABELS.send.join('|')})\\b`);
 const NAUKRI_APPLY_RE = /^(?:apply|apply now|easy apply)$/;
 export const NAUKRI_OFFSITE_RE =/^apply on (?:the )?company(?:'s)? (?:site|website)\b/;
@@ -161,6 +163,8 @@ export function classify(input: GuardInput): ActionClass {
   if (input.role === 'link' && input.href && DANGEROUS_HREF_RE.test(input.href)) return 'irreversible_other';
 
   if (platform === 'linkedin') {
+    // The attach-a-file control is code-owned (linkedin_attach_file clicks it and feeds the chooser itself): the model never clicks it.
+    if (ATTACH_CONTROL_RE.test(name)) return 'irreversible_other';
     if (ACCEPT_RE.test(name)) return 'commit_accept_invite';
     if (CONNECT_RE.test(name) || SEND_CONNECT_RE.test(name)) return 'commit_connect_send';
     if (SEND_RE.test(name)) {

@@ -28,6 +28,13 @@ export interface ArmedIntent {
   /** Armed in a dry run: the commit path records instead of clicking. */
   dry?: boolean;
   /**
+   * LinkedIn message with a file: resolved by CODE at arm time (src/linkedin/attachment.ts), never supplied by the model. `attached` is set by
+   * linkedin_attach_file once the chip showed in the right person's dialog; the Send click is refused until then.
+   */
+  attachment?: { path: string; name: string; bytes: number; attached: boolean };
+  /** Kind `reply`: the owner-approved reply_drafts row this intent sends. */
+  replyDraftId?: number;
+  /**
    * LinkedIn: set by the engine's own Connect click that opened the invite dialog (never by the model): the profile key
    * of the page it was clicked on and the person name its top card showed just before the click. It stands in for the
    * recipient name that the live invite dialog does not show. Cleared by any navigation of the engine.

@@ -192,11 +192,12 @@ export function nextQueueContacts(
   db: Db,
   cfg: Pick<OutreachConfig, 'companyContactLimit'>,
   platform: Platform,
-  opts: { limit?: number; excludeCompanyKeys?: string[]; now?: Date } = {},
+  /** readOnly: do not clear stale `sending` touches first (status screens open the database read-only). */
+  opts: { limit?: number; excludeCompanyKeys?: string[]; now?: Date; readOnly?: boolean } = {},
 ): QueueContact[] {
   if (platform !== 'linkedin') return [];
   const now = opts.now ?? new Date();
-  markStaleSending(db, now);
+  if (!opts.readOnly) markStaleSending(db, now);
   const exclude = new Set((opts.excludeCompanyKeys ?? []).map((k) => normalizeCompany(k)));
   const rows = db
     .prepare(
