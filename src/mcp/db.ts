@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { ATS_REGISTRY } from '../apply/registry.js';
-import { atsCoverageSchema, enqueueOutreachClassifiedResult,getCalibrationRows, listJobs, listUnscoredJobs, listSentEmails, listQueuedOutreach, listQueuedOutreachCompact, QUEUE_COMPACT_MAX_LIMIT, listExcludedQueuedOutreach, markExcluded, openDb, recordEmailSent, recordOutcomeChecked, releaseEmailSend, setEmailThread, sweepDeadlines, unexcludeJob, updateOutreachStatus } from '../db.js';
+import { atsCoverageSchema, claimColdForSend, enqueueOutreachClassifiedResult,getCalibrationRows, listJobs, listUnscoredJobs, listSentEmails, listQueuedOutreach, listQueuedOutreachCompact, QUEUE_COMPACT_MAX_LIMIT, listExcludedQueuedOutreach, markExcluded, openDb, recordEmailSent, recordOutcomeChecked, releaseEmailSend, setEmailThread, sweepDeadlines, unexcludeJob, updateOutreachStatus } from '../db.js';
 import { dbPath } from '../dbPath.js';
 import { handleSaveMatchResults, matchResultsInputShape } from '../matchTool.js';
 import { REPLY_WINDOW_DAYS } from '../replies.js';
@@ -497,6 +497,11 @@ server.registerTool('list_approved_followups', {
   const stuck = listStuckSending(db);
   return { content: [{ type: 'text', text: JSON.stringify({ followups: listApprovedFollowups(db), stuck_sending: stuck.length, stuck_ids: stuck.map((s) => s.id) }) }] };
 });
+
+server.registerTool('claim_cold_for_send', {
+  description: 'Call RIGHT BEFORE db.check_and_increment and gmail.send_email for one queued cold email (interactive path only; in DRIP MODE the scheduler already claimed the row). Atomically moves the row queued/empty -> sending. Returns {claimed}. If claimed is false (already claimed, sent or failed, or the job is excluded) do NOT send it.',
+  inputSchema: { id: z.number().int() },
+}, async ({ id }) => ({ content: [{ type: 'text', text: JSON.stringify({ claimed: claimColdForSend(db, id) }) }] }));
 
 server.registerTool('claim_followup_for_send', {
   description: 'Call RIGHT BEFORE gmail.send_email for one approved follow-up: atomically moves it approved -> sending. Returns {claimed}. If claimed is false (already claimed or sent, skipped, cancelled by an outcome, or the job is now blocked by a reply/bounce) do NOT send it.',

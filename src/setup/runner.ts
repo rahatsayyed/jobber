@@ -34,6 +34,8 @@ export interface SetupContext {
   envPath: string;
   /** Plan 8F: agent (terse prompts) or terminal (coaching text); unset behaves as terminal. */
   mode?: SetupMode;
+  /** Set by the final step: labels of the open items that block going live. Non-empty makes runSetup exit 3. */
+  notReady?: string[];
 }
 
 export interface SetupStep {
@@ -165,5 +167,6 @@ export async function runSetup(
   }
 
   io.say(`${done} done, ${skipped} skipped, ${failed} failed`);
-  return failed === 0 ? 0 : 1;
+  if (failed > 0) return 1;
+  return ctx.notReady !== undefined && ctx.notReady.length > 0 ? 3 : 0;
 }

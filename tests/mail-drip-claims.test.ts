@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { openDb, releaseEmailSend } from '../src/db.js';
+import { claimColdForSend, openDb, releaseEmailSend } from '../src/db.js';
 import { pickDripItem, STATE_TRIED } from '../src/scheduler/mailDrip.js';
 import { setState } from '../src/scheduler/runLog.js';
 import { parseMaxAppliesPerDay } from '../src/lib/maxApplies.js';
@@ -31,6 +31,22 @@ describe('mail drip claims and picker', () => {
     expect(pickDripItem(db, NOW, { JOBBER_DRY_RUN: '0' })).toMatchObject({ item: null });
     const later = new Date(NOW.getTime() + 3 * 3600_000);
     expect(pickDripItem(db, later, { JOBBER_DRY_RUN: '0' })).toMatchObject({ item: { id } });
+  });
+  it('claimColdForSend claims a queued or empty row once, refuses sending, sent and excluded rows', () => {
+    for (const st of ['queued', null] as const) {
+      const { db, id } = seed(st);
+      expect(claimColdForSend(db, id)).toBe(true);
+      expect(claimColdForSend(db, id)).toBe(false);
+      expect((db.prepare('SELECT email_status s FROM outreach_queue WHERE id = ?').get(id) as { s: string }).s).toBe('sending');
+    }
+    for (const st of ['sending', 'sent', 'failed']) {
+      const { db, id } = seed(st);
+      expect(claimColdForSend(db, id)).toBe(false);
+    }
+    const ex = seed('queued');
+    ex.db.prepare("UPDATE jobs SET excluded_reason = 'x' WHERE id = 'j1'").run();
+    expect(claimColdForSend(ex.db, ex.id)).toBe(false);
+    expect(claimColdForSend(ex.db, 9999)).toBe(false);
   });
   it('releaseEmailSend frees a claimed sending row and gives the slot back', () => {
     const { db } = seed('sending');

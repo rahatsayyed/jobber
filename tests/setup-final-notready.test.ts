@@ -72,4 +72,25 @@ describe('Not ready for live', () => {
       expect(await out({ [id]: { status: 'skip', detail: 'x' } })).not.toContain('Not ready for live');
     }
   });
+  it('final records the open labels on the context and runSetup exits 3', async () => {
+    const { runSetup } = await import('../src/setup/runner.js');
+    const mk = (over: typeof fake) => {
+      fake = { ...ALL_PASS, ...over };
+      return {
+        io: scriptedIO([]),
+        root: 'proj',
+        env: {},
+        fs: { exists: () => false, read: () => '', chmod: () => undefined },
+        doctor: { root: 'proj', env: {}, fs: { exists: () => false, read: () => '', mode: () => null, list: () => [] } },
+        run: async () => ({ stdout: '', stderr: '', code: 0 }),
+        state: emptyState(),
+        envPath: 'proj/.env',
+      } as unknown as SetupContext;
+    };
+    const bad = mk({ 'resume-valid': { status: 'fail', detail: 'x' } });
+    expect(await runSetup([finalStep], bad, { checks: [] })).toBe(3);
+    expect(bad.notReady).toEqual(['Resume']);
+    const good = mk({});
+    expect(await runSetup([finalStep], good, { checks: [] })).toBe(0);
+  });
 });

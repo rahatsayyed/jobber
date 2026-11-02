@@ -393,6 +393,19 @@ export function recordEmailSent(db: BetterSqlite3.Database, queueId: number, mes
 }
 
 /**
+ * Atomic claim of one cold-email queue row for the interactive path (the drip lane claims in code before its run).
+ * One UPDATE moves email_status NULL or 'queued' -> 'sending' for a row whose job is not excluded; true only when
+ * exactly one row changed, so a second caller (or a row already sending, sent or failed) gets false and must not send.
+ */
+export function claimColdForSend(db: BetterSqlite3.Database, queueId: number): boolean {
+  return db.prepare(
+    `UPDATE outreach_queue SET email_status = 'sending', updated_at = datetime('now')
+      WHERE id = ? AND (email_status IS NULL OR email_status = 'queued')
+        AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.id = outreach_queue.job_id AND j.excluded_reason IS NOT NULL)`,
+  ).run(queueId).changes === 1;
+}
+
+/**
  * Undo a send that never left the machine (the tool call was denied before sending, for example by the PreToolUse hook):
  * every `failed` row of the job that has no sent time and no message id, and was marked failed TODAY, becomes sendable again
  * (email_status NULL), and ONE `send_email` slot of today is given back (never below zero). Bounded so the model cannot use it

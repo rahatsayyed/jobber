@@ -100,6 +100,7 @@ export const finalStep: SetupStep = {
       if (n.open) return n.open(r.result);
       return r.result.status === 'fail' || r.result.status === 'warn';
     });
+    ctx.notReady = notReady.map((n) => n.label);
     if (notReady.length > 0) {
       io.say('NOT READY TO GO LIVE: fix these first.');
       io.say('Not ready for live:');
