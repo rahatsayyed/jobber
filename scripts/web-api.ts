@@ -24,6 +24,7 @@ import { openReadOnlyDb } from '../src/dash/readDb.js';
 import { dbPath } from '../src/dbPath.js';
 import { enqueueManualRequest } from '../src/manual/webRequest.js';
 import { withQuestionWriter } from '../src/web/questionRoutes.js';
+import { withManualApplyWriter } from '../src/web/manualApplyRoutes.js';
 import { getBaseResume } from '../src/resume.js';
 import { reopenEscalations, resolveEscalations, snoozeEscalations, withEscalationWriter } from '../src/outreach/escalations.js';
 
@@ -207,6 +208,10 @@ export async function main(): Promise<number> {
       questions: {
         write: (fn) => withQuestionWriter(dbPath(), fn),
         resume: () => { try { return getBaseResume() as Record<string, unknown>; } catch { return null; } },
+      },
+      manualApply: {
+        write: (fn) => withManualApplyWriter(dbPath(), fn),
+        resumeName: () => { try { const n = (getBaseResume() as { name?: unknown }).name; return typeof n === 'string' ? n : null; } catch { return null; } },
       },
       escalations: {
         resolve: (ids, now, note) => withEscalationWriter(dbPath(), (w) => resolveEscalations(w, ids, now, note)),

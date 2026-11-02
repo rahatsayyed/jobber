@@ -39,6 +39,7 @@ import { createSettingsRoutes, type SettingsDeps } from './settingsRoutes.js';
 import { createApplyRoutes, type ApplyDeps } from './applyRoutes.js';
 import { createEscalationRoutes, type EscalationDeps } from './escalationRoutes.js';
 import { createQuestionRoutes, type QuestionDeps } from './questionRoutes.js';
+import { createManualApplyRoutes, type ManualApplyDeps } from './manualApplyRoutes.js';
 import { createTerminalRoutes } from './terminalRoutes.js';
 import { applySecurityHeaders, HttpError, json, readJson, securityHeaders, type Ctx } from './router.js';
 
@@ -68,6 +69,7 @@ export interface WebDeps {
   apply?: ApplyDeps; // /apply request box write; absent: confirm answers a refusal and nothing is written
   terminal?: { sessions: string[]; inputEnabled: boolean; killed: () => boolean }; // Sessions page live terminal; absent: view only, no kill check
   questions?: QuestionDeps; // Inbox 'Needs your answer' actions; absent: the three actions answer a write failure and nothing is written
+  manualApply?: ManualApplyDeps; // Inbox 'Apply by hand': done/skip writes; absent: both answer a write failure and nothing is written
   escalations?: EscalationDeps; // Inbox actions (mark handled, snooze); absent: both answer a write failure and nothing is written
 }
 
@@ -338,7 +340,7 @@ export function createWebServer(deps: WebDeps): http.Server {
   });
 
   add('GET', '/api/status', false, (c) => {
-    const snap = buildSnapshot(deps.data, deps.cfg, now());
+    const snap = buildSnapshot(deps.data, deps.cfg, now(), deps.env ?? process.env);
     c.res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     c.res.end(redact(JSON.stringify(snap)));
   });
@@ -574,7 +576,11 @@ export function createWebServer(deps: WebDeps): http.Server {
   const noWriter = (): never => {
     throw new Error('no escalation writer configured');
   };
-  for (const r of createEscalationRoutes(deps.escalations ?? { resolve: noWriter, snooze: noWriter }, { auth: deps.auth, data: deps.data, now })) {
+  for (const r of createEscalationRoutes(deps.escalations ?? { resolve: noWriter, snooze: noWriter }, { auth: deps.auth, data: deps.data, now, processEnv: deps.env ?? process.env })) {
+    add(r.method, r.pattern, false, r.fn);
+  }
+
+  for (const r of createManualApplyRoutes(deps.manualApply ?? { write: noWriter }, { auth: deps.auth, data: deps.data, now, processEnv: deps.env ?? process.env })) {
     add(r.method, r.pattern, false, r.fn);
   }
 
@@ -612,7 +618,7 @@ export function createWebServer(deps: WebDeps): http.Server {
     json(c.res, 200, d);
   });
   add('GET', '/api/config', false, (c) => {
-    const snapshot = buildSnapshot(deps.data, deps.cfg, now());
+    const snapshot = buildSnapshot(deps.data, deps.cfg, now(), deps.env ?? process.env);
     const view = buildConfigView({
       root: deps.root ?? process.cwd(),
       env: deps.env ?? process.env,

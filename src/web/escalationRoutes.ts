@@ -8,6 +8,7 @@ import {
   countEscalations, countOpenCards, GROUP_ORDER, listEscalations, NOTE_MAX, type EscGroup, type EscStatus,
 } from '../outreach/escalations.js';
 import { questionCounts } from '../apply/questionInbox.js';
+import { buildManualQueue } from '../manual/manualApply.js';
 import { json, readJson, type Ctx } from './router.js';
 
 export interface EscalationDeps {
@@ -35,7 +36,7 @@ function idsOf(body: unknown): number[] | null {
 
 export function createEscalationRoutes(
   deps: EscalationDeps,
-  env: { auth: AuthDb; data: BetterSqlite3.Database; now: () => Date },
+  env: { auth: AuthDb; data: BetterSqlite3.Database; now: () => Date; processEnv?: NodeJS.ProcessEnv },
 ): EscalationRoute[] {
   const { auth, data, now } = env;
   const act = async (c: Ctx, kind: 'resolve' | 'snooze' | 'reopen'): Promise<void> => {
@@ -83,8 +84,10 @@ export function createEscalationRoutes(
     { method: 'GET', pattern: '/api/escalations/count', fn: (c) => {
         const cards = countOpenCards(data, now());
         const q = questionCounts(data);
-        // `badge` is what the Inbox tab shows: the cards plus the jobs that wait for an answer.
-        json(c.res, 200, { ...countEscalations(data, now()), cards, questions: q.questions, questionJobs: q.jobs, badge: cards + q.jobs });
+        let manual = 0;
+        try { manual = buildManualQueue(data, env.processEnv ?? process.env).count; } catch { manual = 0; }
+        // `badge` is what the Inbox tab shows: the cards, the jobs that wait for an answer and the jobs the owner applies to by hand.
+        json(c.res, 200, { ...countEscalations(data, now()), cards, questions: q.questions, questionJobs: q.jobs, manualApply: manual, badge: cards + q.jobs + manual });
       },
     },
     { method: 'POST', pattern: '/api/escalations/resolve', fn: (c) => act(c, 'resolve') },

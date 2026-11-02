@@ -10,6 +10,7 @@ import { Badge, DebouncedSearch, DetailDrawer, FilterGroup, KV, LoadingLines, Pa
 import { statusLabel } from "@/lib/view-models";
 import { usePanels } from "@/components/dashboard/panel-context";
 import { NeedsAnswer } from "@/components/dashboard/needs-answer";
+import { ManualApply } from "@/components/dashboard/manual-apply";
 
 type Payload = { items: InboxItem[]; counts: { open: number; snoozed: number; resolved: number } };
 const PAGE = 40;
@@ -156,6 +157,7 @@ export function InboxView() {
   </Toolbar>}>
     <p className="muted">Everything the agent could not or must not do alone. Nothing here is sent to any platform; you answer on the platform yourself and then mark the item handled.</p>
     <NeedsAnswer csrf={csrf} />
+    <ManualApply csrf={csrf} />
     <FilterGroup activeCount={(filters.type ? 1 : 0) + (filters.platform ? 1 : 0) + (filters.status !== DEFAULT_FILTERS.status ? 1 : 0)}>
     <div className="inbox-filters">
       <Chips label="Type" value={filters.type} onChange={(v) => set({ type: v })}

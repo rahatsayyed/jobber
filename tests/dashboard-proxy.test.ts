@@ -28,6 +28,19 @@ describe('Next dashboard API proxy', () => {
     expect(headers?.get('origin')).toBe('http://127.0.0.1:8788');
   });
 
+  it('passes a PDF download through with its content type and attachment name', async () => {
+    process.env.JOBBER_API_ORIGIN = 'http://127.0.0.1:8788';
+    global.fetch = vi.fn(async () => new Response('%PDF-1.4', {
+      status: 200,
+      headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="Rahat-Sayyed-Resume.pdf"', 'X-Secret': 'no' },
+    })) as typeof fetch;
+    const response = await proxyDashboardRequest(new Request('http://127.0.0.1:8787/api/manual-apply/3/resume'), ['api', 'manual-apply', '3', 'resume']);
+    expect(response.headers.get('content-type')).toBe('application/pdf');
+    expect(response.headers.get('content-disposition')).toBe('attachment; filename="Rahat-Sayyed-Resume.pdf"');
+    expect(response.headers.get('x-secret')).toBeNull();
+    expect(await response.text()).toBe('%PDF-1.4');
+  });
+
   it('forwards the HTTPS signal only when the public listener received HTTPS', async () => {
     process.env.JOBBER_API_ORIGIN = 'http://127.0.0.1:8788';
     let headers: Headers | undefined;

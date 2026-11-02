@@ -37,6 +37,17 @@ export interface ManualApplyItem {
   reason: ManualReason;
   since: string;
 }
+// Plain words for a reason code (the dashboard chip).
+export const MANUAL_REASON_LABELS: Record<ManualReason, string> = {
+  easy_apply_off: 'Easy Apply is off',
+  company_site_form: 'Company site form',
+  listing_page: 'Careers listing page',
+  easy_apply_failed: 'Easy Apply could not finish',
+};
+export const manualReasonLabel = (r: ManualReason): string => MANUAL_REASON_LABELS[r] ?? 'Apply by hand';
+
+export const MANUAL_NOTE_MAX = 500;
+
 export interface ManualApplyView { count: number; easyApplyOff: number; items: ManualApplyItem[] }
 
 interface Row extends EasyApplyRow {
@@ -133,16 +144,23 @@ export async function withResumePdfs(db: Db, items: ManualApplyItem[], deps: Res
 
 export type MarkResult = { ok: true; job_id: string; title: string } | { ok: false; reason: string };
 
+// The optional owner note, cleaned and prefixed so it is never mistaken for a machine note like `external:...`. Null when empty.
+function ownerNote(note: string | null | undefined): string | null {
+  const c = clean(note, MANUAL_NOTE_MAX);
+  return c ? `owner: ${c}` : null;
+}
+
 function find(db: Db, id: number, env: NodeJS.ProcessEnv): ManualApplyItem | null {
   return buildManualQueue(db, env).items.find((i) => i.id === id) ?? null;
 }
 
 /** The owner applied by hand: every queue row of the job becomes submitted_by_owner and one applications row (method manual) counts it in the funnel. */
-export function markDone(db: Db, id: number, env: NodeJS.ProcessEnv = process.env, now: Date = new Date()): MarkResult {
+export function markDone(db: Db, id: number, env: NodeJS.ProcessEnv = process.env, now: Date = new Date(), note?: string | null): MarkResult {
   const it = find(db, id, env);
   if (!it) return { ok: false, reason: `#${id} is not on the manual apply list (npm run apply:manual -- list)` };
+  const owner = ownerNote(note);
   db.transaction(() => {
-    db.prepare("UPDATE outreach_queue SET apply_status = ?, updated_at = datetime('now') WHERE job_id = ? AND COALESCE(apply_status, '') NOT IN ('submitted', ?)").run(SUBMITTED_BY_OWNER, it.job_id, SUBMITTED_BY_OWNER);
+    db.prepare("UPDATE outreach_queue SET apply_status = ?, apply_note = COALESCE(?, apply_note), updated_at = datetime('now') WHERE job_id = ? AND COALESCE(apply_status, '') NOT IN ('submitted', ?)").run(SUBMITTED_BY_OWNER, owner, it.job_id, SUBMITTED_BY_OWNER);
     const has = db.prepare("SELECT 1 FROM applications WHERE job_id = ? AND status = 'submitted' LIMIT 1").get(it.job_id);
     if (!has) saveApplication(db, { job_id: it.job_id, platform: it.platform, method: 'manual', account: 'owner', status: 'submitted', reason: 'submitted_by_owner', applied_at: now.toISOString() });
   })();
@@ -150,9 +168,9 @@ export function markDone(db: Db, id: number, env: NodeJS.ProcessEnv = process.en
 }
 
 /** The owner does not want to apply: rows leave the list and are never picked again. */
-export function markSkip(db: Db, id: number, env: NodeJS.ProcessEnv = process.env): MarkResult {
+export function markSkip(db: Db, id: number, env: NodeJS.ProcessEnv = process.env, note?: string | null): MarkResult {
   const it = find(db, id, env);
   if (!it) return { ok: false, reason: `#${id} is not on the manual apply list (npm run apply:manual -- list)` };
-  db.prepare("UPDATE outreach_queue SET apply_status = ?, updated_at = datetime('now') WHERE job_id = ? AND COALESCE(apply_status, '') NOT IN ('submitted', 'submitted_by_owner')").run(SKIPPED_BY_OWNER, it.job_id);
+  db.prepare("UPDATE outreach_queue SET apply_status = ?, apply_note = COALESCE(?, apply_note), updated_at = datetime('now') WHERE job_id = ? AND COALESCE(apply_status, '') NOT IN ('submitted', 'submitted_by_owner')").run(SKIPPED_BY_OWNER, ownerNote(note), it.job_id);
   return { ok: true, job_id: it.job_id, title: it.title };
 }

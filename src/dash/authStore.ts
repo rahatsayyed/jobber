@@ -19,7 +19,8 @@ export type AuditKind =
   | 'settings_env_apply' | 'settings_file_apply' | 'settings_rollback' | 'settings_reject'
   | 'apply_prepare' | 'apply_request' | 'apply_reject'
   | 'escalation_resolve' | 'escalation_snooze' | 'escalation_reopen' | 'terminal_open' | 'terminal_input'
-  | 'apply_question_answer' | 'apply_question_agent' | 'apply_question_skip' | 'apply_question_reject';
+  | 'apply_question_answer' | 'apply_question_agent' | 'apply_question_skip' | 'apply_question_reject'
+  | 'manual_apply_done' | 'manual_apply_skip' | 'manual_apply_resume' | 'manual_apply_reject';
 
 const NOTE_MAX = 200;
 const ID_HINT_MAX = 12;

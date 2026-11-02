@@ -1,4 +1,4 @@
-const ALLOWED_HEADERS = ["content-type", "cache-control", "x-csrf-token"];
+const ALLOWED_HEADERS = ["content-type", "content-disposition", "cache-control", "x-csrf-token"];
 
 function dashboardOrigin(): URL | null {
   const value = process.env.JOBBER_API_ORIGIN;

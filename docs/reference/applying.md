@@ -197,3 +197,13 @@ while `APPLY_LINKEDIN_EASY` is not `true` (reason `easy_apply_off`), and any que
 so the funnel counts it and follow-ups see it as applied) and `skip <id>` (`skipped_by_owner`). It also shows as `manualApply {count, easyApplyOff,
 items[]}` in the status snapshot JSON, as a line in `status working`, `/escalations` and the Telegram digest. Turning `APPLY_LINKEDIN_EASY` on
 moves the Easy Apply rows from this list to the LinkedIn drip lane (see "LinkedIn Easy Apply" in `connecting.md`); a row the lane gives up on comes back here.
+
+The same queue is in the dashboard Inbox as "Apply by hand" (`src/web/manualApplyRoutes.ts`; the Inbox badge counts it, `GET /api/escalations/count`
+returns `manualApply` and a `badge` that includes it). `GET /api/manual-apply` returns `{count, easyApplyOff, easyApplyEnabled, items[]}`; each item has
+`id`, `job_id`, `title`, `company`, `platform`, `open_url`, `resume_pdf` (only the generic name `Rahat-Sayyed-Resume.pdf`, never a disk path, or null),
+`resume_download` (`/api/manual-apply/<id>/resume`, or null), `ats_note`, `reason`, `reason_label` and `since`. `POST /api/manual-apply/done` and `/skip`
+take `{ids (1 to 100 queue row ids), note? (at most 500 characters)}` and call the same `markDone` / `markSkip` as the CLI (CSRF and same-origin checks as
+for every dashboard write; the audit log stores the action and ids only; a note is kept as `owner: <note>` in `outreach_queue.apply_note`). The download
+takes only the row id: the file is what `resolveJobIdResume` returns (a `.pdf` inside `renderer/automation`, real path checked, at most 2 MB, starts
+with `%PDF`), sent as `application/pdf` with `Content-Disposition: attachment`. The web process never re-renders a missing PDF (the CLI does that), so
+a missing file gives 404 and no download button.
