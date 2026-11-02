@@ -40,8 +40,8 @@ function UntrustedText({ label, text }: { label: string; text: string }) {
   </div>;
 }
 
-function InboxDetail({ item, busy, onClose, onResolve, onReopen, onOpenPanel }: {
-  item: InboxItem; busy: boolean; onClose: () => void; onResolve: (note: string) => void; onReopen: () => void; onOpenPanel: (kind: "person" | "job", id: string) => void;
+function InboxDetail({ item, busy, csrf, onClose, onResolve, onReopen, onOpenPanel }: {
+  item: InboxItem; busy: boolean; csrf: string | null; onClose: () => void; onResolve: (note: string) => void; onReopen: () => void; onOpenPanel: (kind: "person" | "job", id: string) => void;
 }) {
   const [note, setNote] = useState("");
   const d = describeItem(item);
@@ -84,6 +84,8 @@ function InboxDetail({ item, busy, onClose, onResolve, onReopen, onOpenPanel }: 
       ["Status", handled ? <Badge key="s" tone="good">handled {readableTime(item.resolved_at)}</Badge> : <Badge key="s">open</Badge>],
       ["Note", item.resolvedNote], ["Reason", statusLabel(parseReason(item.reason).base)],
     ]} />
+    <h4>Tell the agent</h4>
+    <InstructionBox csrf={csrf} escalationId={item.id} showAll />
     <h4>{handled ? "Reopen" : "Mark handled"}</h4>
     <p className="muted">This button sends nothing to {P === "Other" ? "any platform" : P}; it only changes the state here. Where the card says you need to answer, you do that on the platform yourself.</p>
     {handled ? <button type="button" className="button" disabled={busy} onClick={onReopen}>Reopen</button> : <div className="note-form">
@@ -309,7 +311,7 @@ export function InboxView() {
     <ManualApply csrf={csrf} />
     {section("other", sections.other, plain(sections.other), "Text held back by the injection screen, and anything else that does not fit above.")}
 
-    {open ? <InboxDetail item={open} busy={busy || !csrf} onClose={() => setOpen(null)} onOpenPanel={openPanel}
+    {open ? <InboxDetail item={open} busy={busy || !csrf} csrf={csrf} onClose={() => setOpen(null)} onOpenPanel={openPanel}
       onResolve={(note) => void run("resolve", [open], note)} onReopen={() => void run("reopen", [open])} /> : null}
   </Panel>;
 }
