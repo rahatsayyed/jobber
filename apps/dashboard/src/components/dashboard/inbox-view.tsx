@@ -9,6 +9,7 @@ import {
 import { Badge, DebouncedSearch, DetailDrawer, FilterGroup, KV, LoadingLines, Panel, Toolbar } from "@/components/dashboard/list-kit";
 import { statusLabel } from "@/lib/view-models";
 import { usePanels } from "@/components/dashboard/panel-context";
+import { NeedsAnswer } from "@/components/dashboard/needs-answer";
 
 type Payload = { items: InboxItem[]; counts: { open: number; snoozed: number; resolved: number } };
 const PAGE = 40;
@@ -154,6 +155,7 @@ export function InboxView() {
     <DebouncedSearch value={filters.q} onChange={setQ} placeholder="Search person, company, job or text" label="Search the inbox" />
   </Toolbar>}>
     <p className="muted">Everything the agent could not or must not do alone. Nothing here is sent to any platform; you answer on the platform yourself and then mark the item handled.</p>
+    <NeedsAnswer csrf={csrf} />
     <FilterGroup activeCount={(filters.type ? 1 : 0) + (filters.platform ? 1 : 0) + (filters.status !== DEFAULT_FILTERS.status ? 1 : 0)}>
     <div className="inbox-filters">
       <Chips label="Type" value={filters.type} onChange={(v) => set({ type: v })}

@@ -1,0 +1,13 @@
+/* Inbox: Needs your answer (one card per job, every missing question as a field). Uses the existing tokens only. */
+.nq{display:grid;gap:12px;margin:4px 0 22px}.nq-heading{margin:0;font-size:15px;font-weight:600;color:var(--ink)}.nq-count-badge{color:var(--warning);font-weight:600}
+.nq-card{display:grid;gap:12px;min-width:0;border:1px solid color-mix(in srgb,var(--warning) 40%,var(--line));border-radius:var(--radius);padding:14px;background:var(--surface)}
+.nq-head{display:grid;gap:6px;min-width:0}.nq-title{margin:0;font-size:15px;font-weight:600;color:var(--ink);overflow-wrap:anywhere}.nq-company{color:var(--ink-muted);font-weight:500}.nq-links{font-size:13px;overflow-wrap:anywhere}.nq-extra{font-size:12px;overflow-wrap:anywhere}
+.nq-q{display:grid;gap:8px;min-width:0;margin:0;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--canvas)}.nq-q:disabled{opacity:.7}
+.nq-label{padding:0 4px;font-size:13px;color:var(--ink);max-width:100%}.nq-label-text{font-weight:600;overflow-wrap:anywhere}.nq-meta{color:var(--ink-subtle);font-size:11px}
+.nq-choice{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px}.nq-answer{display:grid;gap:8px}
+.nq-input{width:100%;min-width:0;border:1px solid var(--line-strong);border-radius:7px;padding:8px 10px;background:var(--surface);color:var(--ink);font-size:13px;font-family:inherit}.nq-text{resize:vertical;line-height:1.5}
+.nq-count{font-size:11px;color:var(--ink-subtle);text-align:right}.nq-count.warn{color:var(--warning)}
+.nq-suggest{margin:0;font-size:12.5px;color:var(--ink-muted);overflow-wrap:anywhere}.nq-wait{margin:0;font-size:12.5px}
+.nq-comment{display:grid;gap:6px}.nq-comment label{font-size:12px;color:var(--ink-muted)}
+.nq-error{margin:0;color:var(--danger);font-size:12.5px}.nq-ok{margin:0;color:var(--success);font-size:12.5px}
+@media (max-width:760px){.nq-card{padding:12px}.nq-input{font-size:16px}.nq-q{padding:10px}.nq-label{font-size:14px}.nq-suggest,.nq-error,.nq-ok,.nq-wait{font-size:14px}.nq-card .inbox-actions .button{flex:1 1 140px}}

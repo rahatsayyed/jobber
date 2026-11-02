@@ -37,8 +37,11 @@ export function itemBlock(i: EscItem, now: Date, detailMax = 140): string[] {
   // A paused application: the exact questions, each with the command that answers it (--always keeps the answer for every later form).
   for (const q of i.questions.slice(0, 8)) {
     const opts = q.options.length ? ` [${q.options.slice(0, 6).map((o) => cleanUntrusted(o, 30)).join(' | ')}]` : '';
-    out.push(`    question #${q.id} (${q.kind}${q.jobIds.length > 1 ? `, ${q.jobIds.length} jobs` : ''}): "${cleanUntrusted(q.label, 140)}"${opts}`);
-    out.push(`      needs your answer: npm run answers -- answer ${q.id} "<text>" [--always]`);
+    const lim = q.maxLength ? ` max ${q.maxLength} chars` : '';
+    out.push(`    question #${q.id} (${q.kind}${q.jobIds.length > 1 ? `, ${q.jobIds.length} jobs` : ''}): "${cleanUntrusted(q.label, 140)}"${opts}${lim}`);
+    if (q.jobTitle) out.push(`      job: ${cleanUntrusted(q.jobTitle, 100)}${q.applyUrl ? ` | ${q.applyUrl}` : ''}`);
+    out.push(`      answer in the dashboard Inbox tab, or: npm run answers -- answer ${q.id} "<text>" [--always] [--comment "..."]`);
+    if (q.agentCommand) out.push(`      or let the agent write it: ${q.agentCommand}`);
   }
   if (i.questions.length > 8) out.push(`    ... and ${i.questions.length - 8} more: npm run answers -- list`);
   if (i.assistCommand) out.push(`    run: ${i.assistCommand}`);
