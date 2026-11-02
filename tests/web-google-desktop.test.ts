@@ -120,23 +120,23 @@ describe('google_desktop server flow', () => {
     expect(r.sess).toBe('');
     expect(r.cb.headers.location).toBe('/#/denied');
   });
-  it('root shape: plain GET / serves the shell', async () => {
+  // The legacy static shell is gone (Next dashboard owns the UI), so a plain GET / is a 404 here.
+  it('root shape: plain GET / is not served by this server', async () => {
     h = await makeHarness({ authMode: 'google_desktop', googleRedirectShape: 'root' });
     const r = await h.call('GET', '/');
-    expect(r.status).toBe(200);
-    expect(r.headers['content-type']).toMatch(/text\/html/);
+    expect(r.status).toBe(404);
+    expect(r.headers.location).toBeUndefined();
   });
   it('callback shape does not route GET / with code and state', async () => {
     h = await makeHarness({ authMode: 'google_desktop', googleRedirectShape: 'callback' });
     const r = await h.call('GET', '/?code=x&state=y');
-    expect(r.status).toBe(200);
-    expect(r.headers['content-type']).toMatch(/text\/html/);
+    expect(r.status).toBe(404);
     expect(r.headers.location).toBeUndefined();
   });
   it('the shim is absent in oidc mode', async () => {
     h = await makeHarness({ authMode: 'oidc', googleRedirectShape: 'root' });
     const r = await h.call('GET', '/?code=x&state=y');
-    expect(r.status).toBe(200);
+    expect(r.status).toBe(404);
     expect(r.headers.location).toBeUndefined();
   });
 });

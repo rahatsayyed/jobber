@@ -229,11 +229,10 @@ const dashboardLogin: Stage = {
       let m: unknown;
       try { m = JSON.parse(await mode.text()); } catch { return fail('/api/auth/mode is not JSON', fix); }
       if ((m as { mode?: unknown } | null)?.mode !== 'token') return fail('/api/auth/mode is not token mode', fix);
-      const root = await get(`${srv.url}/`);
-      if (root.status !== 200) return fail(`GET / returned ${root.status}`, fix);
+      // No GET / check: the Next dashboard serves the UI, this API server has no static root.
       const st = await get(`${srv.url}/api/status`);
       if (st.status !== 401) return fail(`/api/status without session returned ${st.status}, expected 401`, fix);
-      if (srv.token === undefined) return pass('/ 200, auth mode token, /api/status 401 without a session');
+      if (srv.token === undefined) return pass('auth mode token, /api/status 401 without a session');
       const token = srv.token;
       const post = (t: string) => get(`${srv.url}/auth/token`, {
         method: 'POST',
@@ -249,7 +248,7 @@ const dashboardLogin: Stage = {
       if (!cookie.includes('=')) return fail('token login set no session cookie', fix);
       const sess = await get(`${srv.url}/api/session`, { headers: { cookie } });
       if (sess.status !== 200) return fail(`/api/session with the session cookie returned ${sess.status}, expected 200`, fix);
-      return pass('/ 200, token mode, wrong token 401, token login 200 with cookie, /api/session 200');
+      return pass('token mode, wrong token 401, token login 200 with cookie, /api/session 200');
     } catch (e) {
       const m = firstLine(e);
       return fail(srv.token ? m.split(srv.token).join('<token>') : m, fix);

@@ -31,7 +31,7 @@ const row = (id: number) => h!.data.prepare('SELECT resolved_at, resolved_note F
 describe('Inbox query additions', () => {
   it('returns resolvedNote and jobId fields (null when unknown) and counts open cards', async () => {
     await setup();
-    const a = add('layout_drift');
+    const a = add('dialog_controls_missing');
     add('linkedin_reply_needed', '2-abc_1');
     add('linkedin_reply_needed', '2-abc_1');
     resolveEscalations(h!.data, [a], new Date(START), 'done by hand');
@@ -50,7 +50,7 @@ describe('Inbox mutate routes', () => {
   it('mark handled stores a cleaned note, reopen clears it, the count route reports cards', async () => {
     const s = await setup();
     const a = add('linkedin_reply_needed', '2-abc_1');
-    const b = add('layout_drift');
+    const b = add('dialog_controls_missing');
     let r = await s.post('/api/escalations/resolve', { ids: [a], note: 'replied <b>by hand</b>' });
     expect(r.status).toBe(200);
     expect(JSON.parse(r.body)).toMatchObject({ ok: true, changed: 1 });
@@ -65,14 +65,14 @@ describe('Inbox mutate routes', () => {
 
   it('bulk resolve changes every id and a second call changes nothing', async () => {
     const s = await setup();
-    const ids = [add('layout_drift'), add('layout_changed'), add('custom_note_limit_reached')];
+    const ids = [add('dialog_controls_missing'), add('modal_refs_missing'), add('unresolvable_point')];
     expect(JSON.parse((await s.post('/api/escalations/resolve', { ids })).body)).toMatchObject({ changed: 3 });
     expect(JSON.parse((await s.post('/api/escalations/resolve', { ids })).body)).toMatchObject({ changed: 0 });
   });
 
   it('validates input', async () => {
     const s = await setup();
-    const a = add('layout_drift');
+    const a = add('dialog_controls_missing');
     for (const body of [{ ids: [] }, { ids: ['1'] }, {}, { ids: [a], note: 5 }, { ids: [a], note: 'x'.repeat(501) }]) {
       expect((await s.post('/api/escalations/resolve', body)).status).toBe(400);
     }
@@ -82,7 +82,7 @@ describe('Inbox mutate routes', () => {
 
   it('refuses without a session, without CSRF and from a foreign origin', async () => {
     const s = await setup();
-    const a = add('layout_drift');
+    const a = add('dialog_controls_missing');
     const body = JSON.stringify({ ids: [a] });
     const hdr = { 'content-type': 'application/json' };
     for (const path of ['/api/escalations/resolve', '/api/escalations/reopen']) {
@@ -95,7 +95,7 @@ describe('Inbox mutate routes', () => {
 
   it('audits the kind and ids only, never the note', async () => {
     const s = await setup();
-    const a = add('layout_drift');
+    const a = add('dialog_controls_missing');
     await s.post('/api/escalations/resolve', { ids: [a], note: 'secret owner note' });
     await s.post('/api/escalations/reopen', { ids: [a] });
     const rows = h!.auth.prepare("SELECT kind, note FROM audit_log WHERE kind LIKE 'escalation_%'").all() as { kind: string; note: string | null }[];

@@ -190,7 +190,8 @@ describe('realStartWeb', () => {
       const mode = await fetch(`${srv.url}/api/auth/mode`);
       expect(mode.status).toBe(200);
       expect(await mode.json()).toEqual({ mode: 'token' });
-      expect((await fetch(`${srv.url}/`)).status).toBe(200);
+      // The legacy static root is gone (Next dashboard owns the UI); the API answers 401 without a session.
+      expect((await fetch(`${srv.url}/api/status`)).status).toBe(401);
     } finally {
       await srv.close();
     }
