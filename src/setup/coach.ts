@@ -31,7 +31,8 @@ export const COACH_TEXT: Record<string, string[]> = {
   ],
   'apikeys.google_pse': [
     'Google Programmable Search: make your own search engine and turn on Search the entire web.',
-    'Copy its Search engine ID (cx) into GOOGLE_PSE_CX, and use the Custom Search JSON API key. Free tier: 100 queries a day.',
+    'Copy its Search engine ID (cx) into GOOGLE_PSE_CX, and use the Custom Search JSON API key.',
+    'Free tier: 100 queries a day.',
   ],
   'apikeys.tavily': [
     'Tavily is a search API used for contact finding and LinkedIn people search, under TAVILY_DAILY_BUDGET.',

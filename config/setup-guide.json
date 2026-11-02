@@ -126,7 +126,7 @@
     },
     {
       "id": "apikeys",
-      "title": "Optional API keys (Serper and Hunter for contact finding)",
+      "title": "Optional API keys (Google PSE, Tavily, Serper and Hunter for contact finding)",
       "owner_command": "npm run setup -- --step apikeys",
       "doctor_checks": [
         "api-keys"

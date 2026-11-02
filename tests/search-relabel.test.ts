@@ -8,7 +8,7 @@ import { apiKeysChecks } from '../src/platform/checksApiKeys.js';
 import { LIMITS, specFor, validateLimit } from '../src/setup/limitsCatalog.js';
 import { openDb } from '../src/db.js';
 
-const TITLE = 'Optional API keys (Serper and Hunter for contact finding)';
+const TITLE = 'Optional API keys (Google PSE, Tavily, Serper and Hunter for contact finding)';
 
 describe('contact finding relabel', () => {
   it('.env.example groups Serper and Hunter under a Contact finding heading', () => {
@@ -49,15 +49,15 @@ describe('contact finding relabel', () => {
     expect(step.skip).toContain('Serper off: fewer verified contacts');
     expect(step.keys.find((k: { name: string }) => k.name === 'SERPER_API_KEY').purpose).toContain('contact finding');
     const skip = SKIP_SPECS.find((s) => s.id === 'apikeys')!;
-    expect(skip.lose.join(' ')).toContain('Serper and Hunter: contact finding');
+    expect(skip.lose.join(' ')).toContain('Google PSE, Tavily, Serper and Hunter: contact finding');
   });
 
   it('coach text and doctor api-keys label say contact finding', async () => {
     expect(COACH_TEXT['apikeys.serper'].join(' ')).toContain('contact finding');
     expect(COACH_TEXT['apikeys.hunter'].join(' ')).toContain('contact finding');
-    const ctx = { root: '/x', env: { SERPER_API_KEY: 'c', HUNTER_API_KEY: 'd' }, fs: { exists: () => false, read: () => '' } } as never;
+    const ctx = { root: '/x', env: { SERPER_API_KEY: 'c', HUNTER_API_KEY: 'd', GOOGLE_PSE_API_KEY: 'e', GOOGLE_PSE_CX: 'f', TAVILY_API_KEY: 'g' }, fs: { exists: () => false, read: () => '' } } as never;
     const r = await apiKeysChecks[0].run(ctx);
-    expect(r.detail).toBe('Serper and Hunter (contact finding) keys are set');
+    expect(r.detail).toBe('Google PSE, Tavily, Serper and Hunter (contact finding) keys are set');
   });
 });
 
