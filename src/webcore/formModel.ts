@@ -92,6 +92,8 @@ export function classifyControl(label: string): ControlKind {
   if (/^(back|previous)\b/i.test(l)) return 'back';
   if (/^save( draft| for later)?$/i.test(l)) return 'save';
   if (/^apply\b/i.test(l) && !/\bwith\b/i.test(l)) return 'apply';
+  // A reveal control that opens the form or modal of the same job page (never a submit).
+  if (/^(i['’]?m|i am) interested\b|^interested\b|^(start|begin) (your )?application\b/i.test(l)) return 'apply';
   return 'other';
 }
 

@@ -26,7 +26,10 @@ export async function handleNext(input: NextInputT, deps: ApplierDeps): Promise<
   const result = await inPage(deps, async ({ page, job, model }) => {
     const c = model.controls.find((x) => x.id === input.control);
     if (!c) return refuse('unknown_control', 'no such control on this page');
-    if (c.kind !== 'next' && c.kind !== 'back' && c.kind !== 'save') return refuse('control_not_allowed', 'only next, back and save are allowed here');
+    if (c.kind !== 'next' && c.kind !== 'back' && c.kind !== 'save' && c.kind !== 'apply') return refuse('control_not_allowed', 'only next, back, save and an Apply control that opens the form are allowed here');
+    // An Apply control opens the form or modal of THIS job page. On a listing of many roles it would
+    // open an arbitrary one: use apply_list_roles and apply_open_role there.
+    if (c.kind === 'apply' && model.stepKind === 'listing') return refuse('listing_page', 'this page lists many roles; use apply_list_roles then apply_open_role');
     if (job.steps >= maxSteps(env)) return refuse('max_steps', 'APPLY_MAX_STEPS reached');
 
     const dry = dryRunResult(deps, 'apply_next', { job_id: job.jobId, control: c.id, kind: c.kind });
