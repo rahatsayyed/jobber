@@ -13,10 +13,14 @@ import { ENGINES, type EngineDef } from '../scout/serp.js';
 import { createBrowserDorkProvider } from './dork.js';
 import type { SearchProvider } from './index.js';
 
-// People lookups use the owner-chosen engine order: Google, then DuckDuckGo HTML, then Bing. The scout engine
-// already puts a blocked engine (CAPTCHA, unusual traffic) on a DORK_BLOCK_COOLDOWN_HOURS cooldown, never
-// solves or waits it out, and moves to the next engine.
-export const PEOPLE_ENGINES: readonly EngineDef[] = ENGINES;
+// People lookups need the real profile URL of each hit. Measured live (2026-11-02): Bing returns its results as
+// /ck/a?u=a1<base64url> links that unwrapResultUrl decodes; Google now wraps every result in an opaque, encrypted
+// /goto?url= token (the target URL is not in the page at all) and walls us after a few queries; DuckDuckGo shows a
+// bot check. So Bing goes first, then DuckDuckGo, and Google stays last (it may still show direct links to some
+// users). The scout engine puts a blocked engine (CAPTCHA, unusual traffic) on a DORK_BLOCK_COOLDOWN_HOURS
+// cooldown, never solves or waits it out, and moves to the next engine.
+const byId = (id: EngineDef['id']): EngineDef => ENGINES.find((e) => e.id === id)!;
+export const PEOPLE_ENGINES: readonly EngineDef[] = [byId('bing'), byId('duckduckgo'), byId('google')];
 
 export type ContactsDorkDeps = { db: BetterSqlite3.Database; runtime?: WebRuntime; engines?: readonly EngineDef[] } & Omit<WebRuntimeDeps, 'db'>;
 

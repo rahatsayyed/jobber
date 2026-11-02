@@ -27,6 +27,12 @@ export function unwrapResultUrl(href: string): string | null {
     const t = u.searchParams.get('uddg');
     return t ? unwrapResultUrl(t) : null;
   }
+  // Bing wraps every result as bing.com/ck/a?...&u=a1<base64url of the real URL>; "a1" is a fixed prefix.
+  if (/(^|\.)bing\.com$/.test(host) && u.pathname === '/ck/a') {
+    const t = u.searchParams.get('u');
+    if (!t || !t.startsWith('a1')) return null;
+    try { return unwrapResultUrl(Buffer.from(t.slice(2), 'base64url').toString('utf8')); } catch { return null; }
+  }
   if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
   if (u.username || u.password) return null;
   if (ENGINE_HOST.test(host)) return null;

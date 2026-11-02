@@ -45,6 +45,14 @@ describe('SERP parsing', () => {
     expect(unwrapResultUrl('javascript:alert(1)')).toBeNull();
     expect(unwrapResultUrl('https://u:p@acme.io/x')).toBeNull();
   });
+  it('unwraps Bing /ck/a result links (u=a1 + base64url) and refuses a malformed or engine-bound one', () => {
+    const enc = (s: string): string => 'a1' + Buffer.from(s).toString('base64url');
+    expect(unwrapResultUrl(`https://www.bing.com/ck/a?!&&p=abc&ptn=3&u=${enc('https://in.linkedin.com/in/harsha-singh')}&ntb=1`)).toBe('https://in.linkedin.com/in/harsha-singh');
+    expect(unwrapResultUrl('https://www.bing.com/ck/a?!&&p=abc&u=zzzz')).toBeNull();
+    expect(unwrapResultUrl('https://www.bing.com/ck/a?!&&p=abc')).toBeNull();
+    expect(unwrapResultUrl(`https://www.bing.com/ck/a?u=${enc('https://www.bing.com/search?q=x')}`)).toBeNull();
+    expect(unwrapResultUrl(`https://www.bing.com/ck/a?u=${enc('javascript:alert(1)')}`)).toBeNull();
+  });
 });
 
 describe('dork engine', () => {
