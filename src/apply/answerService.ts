@@ -26,7 +26,7 @@ export type SubmitResult =
   | { ok: true; outcome: AnswerOutcome; always: boolean }
   | { ok: false; code: 'not_found' | 'not_open' | 'refused'; reason: string };
 
-function allowedFrom(resume: Record<string, unknown>): { urls: string[]; emails: string[] } {
+export function allowedFrom(resume: Record<string, unknown>): { urls: string[]; emails: string[] } {
   const urls: string[] = [];
   const emails: string[] = [];
   const web = (resume.website as { url?: unknown } | undefined)?.url;

@@ -13,7 +13,7 @@ import { formatState } from '../webcore/state.js';
 import type { FormModel } from '../webcore/formModel.js';
 import { telegramNotifier } from '../platform/notify.js';
 import { pingAssist, type AssistNotifier } from './assistPing.js';
-import { pauseJobNeedsAnswer, recordQuestion, storedAnswer } from '../apply/questions.js';
+import { openQuestionsForJob, pauseJobNeedsAnswer, recordQuestion, reopenAgentQuestionsForJob, storedAnswer } from '../apply/questions.js';
 import { hostOfUrl, noteBlock, readPage } from '../webcore/login.js';
 import { fileNotifier, type Notice } from '../scheduler/notify.js';
 import { resolveRunId } from '../layout/runtime.js';
@@ -22,7 +22,7 @@ import { envOf, failedResult, nowOf, refuse, type ApplierDeps, type ApplyResult 
 
 export const ESCALATE_REASONS = [
   'captcha', 'mfa', 'phone_verification', 'email_verification', 'account_needed', 'question', 'consent',
-  'marketing_checkbox', 'host_unknown', 'drift', 'blocked', 'cover_letter', 'login_failed', 'other',
+  'marketing_checkbox', 'host_unknown', 'drift', 'blocked', 'cover_letter', 'login_failed', 'other', 'no_relevant_role',
 ] as const;
 export type EscalateReason = (typeof ESCALATE_REASONS)[number];
 /** Reasons that mean the site itself stopped us: recorded against the host (cooldown, bot_wall halt). */
@@ -135,6 +135,8 @@ async function escalate(input: EscalateInputT, deps: ApplierDeps, x: EscalateExt
   if (input.reason === 'question') {
     // Nothing reliable answers these: each required unanswered question gets (or refreshes) one apply_questions row, and the job pauses.
     if (pageModel && host) await recordPageQuestions(deps, input.job_id, host, pageModel);
+    // Questions left to the agent that nobody drafted go back to the owner: the job is escalated, so it must not wait for a draft.
+    if (openQuestionsForJob(db, input.job_id).length === 0) reopenAgentQuestionsForJob(db, input.job_id);
     const n = pauseJobNeedsAnswer(db, input.job_id);
     status = 'needs_answer';
     addEscalation(db, {
@@ -164,7 +166,10 @@ async function escalate(input: EscalateInputT, deps: ApplierDeps, x: EscalateExt
     sendNotice({ level: 'warn', title: `apply needs the owner: ${input.reason}`, detail: `job=${input.job_id} host=${host || 'unknown'}`, runId: runId ?? undefined }, deps, x);
   }
   if (status === 'needs_owner') {
-    db.prepare("UPDATE outreach_queue SET apply_status = 'needs_owner', updated_at = datetime('now') WHERE job_id = ?").run(input.job_id);
+    // `no_relevant_role`: a careers listing with no role that fits the resume. The note puts the row on the manual apply queue with that
+    // reason (src/manual/manualApply.ts); the listing URL is the row's own apply url.
+    db.prepare("UPDATE outreach_queue SET apply_status = 'needs_owner', apply_note = CASE WHEN ? THEN 'no_relevant_role' ELSE apply_note END, updated_at = datetime('now') WHERE job_id = ?")
+      .run(input.reason === 'no_relevant_role' ? 1 : 0, input.job_id);
   }
 
   if (BLOCK_REASONS.has(input.reason)) {

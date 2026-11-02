@@ -79,7 +79,9 @@ refuses if one is checked. A required privacy-notice or terms box is checked whe
 `APPLY_ACCEPT_LEGAL_REQUIRED=true` (default); attestation and third-party data-sharing boxes always wait
 for the owner. `apply_escalate` hands one job to the owner with a reason from the closed list: `captcha`,
 `mfa`, `phone_verification`, `email_verification`, `account_needed`, `question`, `consent`,
-`marketing_checkbox`, `host_unknown`, `drift`, `blocked`, `cover_letter`, `login_failed`, `other`. CAPTCHA,
+`marketing_checkbox`, `host_unknown`, `drift`, `blocked`, `cover_letter`, `login_failed`, `other`,
+`no_relevant_role` (a careers listing with no role that fits: parks the job `needs_owner`, `apply_note`
+`no_relevant_role`, and the manual apply queue shows it with that reason and the listing URL). CAPTCHA,
 MFA, phone verification and bot walls are never solved or waited out; `captcha`, `mfa`,
 `phone_verification` and `blocked` are recorded against the host: two blocks within 7 days put the host
 on cooldown for `APPLY_HOST_COOLDOWN_DAYS`, and a streak of three bot walls over at least two run ids
@@ -126,16 +128,54 @@ left blank. Owner commands:
   `manual_review`.
 - `npm run answers -- agent <id> [--comment "..."]`: leave a free-text motivational question (why this
   company or role, interests, about you, cover-letter style) to the agent: status `agent_handle`. Factual
-  questions (salary, CTC, notice, location, work authorization, links, ids, consent) are refused. This only
-  stores the choice: the question stays unanswered, the applier never guesses it and the job stays paused
-  (`apply_note` says it waits for the agent) until the drafting task exists. `answer` and `skip` also take
-  `--comment`; the comment (`apply_questions.owner_comment`) is guidance for that later task and is read back
-  with `ownerGuidanceFor(label, host)` (`src/apply/questions.ts`). `list` shows every job with its link and ALL
+  questions (salary, CTC, notice, location, work authorization, links, ids, consent) are refused. This stores
+  the choice and releases the job once no owner question is open; the next apply run drafts the answer with
+  `apply_draft_answer` (below), and a draft that fails twice hands the question back to the owner (status
+  `open`). `answer` and `skip` also take `--comment`; the comment (`apply_questions.owner_comment`) is guidance
+  for the drafting and is returned by `apply_draft_answer` (`ownerGuidanceFor(label, host)`, `src/apply/questions.ts`). `list` shows every job with its link and ALL
   its missing questions. The same choices are in the dashboard Inbox tab ("Needs your answer", one card per
   job; API `/api/apply-questions`, `src/web/questionRoutes.ts`; gates in `src/apply/answerService.ts`).
 
 `/escalations`, `npm run status -- working|json` and the Telegram digest say "needs your answer" and
-show each question with the command. `drift` stays for a page whose structure cannot be read.
+show each question with the command. `drift` stays for a page whose structure cannot be read (a careers
+listing is no longer drift, see below).
+
+**Drafted answers to open-ended questions (`apply_draft_answer`).** Owner decision 2026-11-02: an
+open-ended question (why this company or role, tell us about yourself, a cover letter text box) is
+answered by the `apply-operator`, not sent to the owner, when the answer passes the gates. Only
+`agentHandleAllowed(label, kind)` questions qualify (free text, motivational or descriptive wording, nothing
+factual); salary, CTC, notice, location, work authorization, links, ids, consent and demographics are never
+drafted. A `needs_answer` result carries `draftable: true` for such a question. The tool
+(`src/applier/tools/draft.ts`) takes `question_id` (an open or `agent_handle` row of the open job's host that
+is a visible free-text field of the open page) or a `field` id, and optional `text`. Without `text` it returns
+the context: the limits (40 to 1200 characters, the field's maxlength if smaller), the owner's guidance for
+the question, the job title, company and description (after the injection screen; a flagged description sends
+the question to the owner), compact resume facts and the style limits. With `text` it runs: the length rule,
+the style gate (kind `answer`, 160 words in `config/ai-tells.json`), the fact gate with the job's own title,
+company and description as context (no invented experience), and `gateOutbound` with the form page text and the
+job description as the copy check and the resume strings as own texts (no link or address that is not in the
+resume). On pass the row becomes `answered` (scope `once`, `answer_source` `drafted`; a row shared by several
+jobs is split so a company-specific text never leaks to another job) and `apply_fill` types it from the row
+like an owner answer: the model never names a value to type. On failure the reason codes come back and the
+operator may redraft ONCE; the second failure (or a flagged description, a too-short field) reopens the question
+for the owner (`open`, `needs_answer`). Dry run runs the gates, records the action and stores nothing.
+
+**Careers listing pages (`apply_list_roles`, `apply_open_role`).** A company careers page that only lists
+roles used to end as `manual_review`. Now the operator reads it: `apply_list_roles` returns
+`[{role_id, title, location, kind}]` from same-host anchors of the page (at most 60, text cleaned and screened;
+`kind` `role` for a job-like path or id, `maybe` for a link whose title only looks like a role). The operator
+picks at most 3 roles whose titles clearly fit (full stack developer / react, India or remote) and calls
+`apply_open_role({role_id})` for each, one at a time. Code (`src/applier/tools/roles.ts`,
+`src/apply/careersRoles.ts`) maps the id to the link it read, re-checks the title (resume headline, skills and a
+built-in full stack / React / frontend family; interns, managers and other fields are out) and the location
+(India, a target region or remote, restrictions respected), refuses a repeat of the same company and title
+(`externalApplyDuplicate`, `repeatContactOf`, 90 days) and at most 3 roles per listing ever, then creates the
+role as a job of its own (`role:<listing job>:<hash>`, source `careers_listing`, queue row cloned from the
+listing's prepared resume) and opens it through `handleOpen`, so the veto, hard stop, class, per-host cap
+(`APPLY_MAX_PER_HOST`), attempt and daily caps and the host gap all apply, and each role spends one attempt. The
+listing row is marked `listing_expanded`. A role link on another host is never listed or opened. With no
+fitting role the operator calls `apply_escalate` reason `no_relevant_role`: the job is `needs_owner`
+(`apply_note` `no_relevant_role`) and `npm run apply:manual -- list` shows it with the listing URL.
 
 **`needs_human` and `npm run apply:assist -- <job_id>`.** A login wall, sign-up, CAPTCHA, MFA or phone
 check is still never solved or waited out by the agent. `apply_escalate` with `captcha`, `mfa`,
@@ -191,7 +231,7 @@ Easy Apply. Hold mode is unchanged: with `APPLY_SUBMIT_MODE` not `submit` these 
 **Manual apply queue.** `src/manual/manualApply.ts` lists what the owner must apply to by hand: LinkedIn job pages that are Easy Apply jobs
 while `APPLY_LINKEDIN_EASY` is not `true` (reason `easy_apply_off`), and any queue row the machine gave up on (`apply_status` `needs_owner` or
 `manual_review`, not `needs_answer` or `needs_human`, which have `npm run answers` and `npm run apply:assist`) that has a usable https address
-(reasons `easy_apply_failed`, `company_site_form`, `listing_page`). Each entry: `id` (queue row), `job_id`, `title`, `company`, `platform`,
+(reasons `easy_apply_failed`, `company_site_form`, `listing_page`, `no_relevant_role`). Each entry: `id` (queue row), `job_id`, `title`, `company`, `platform`,
 `open_url` (validated with `validateManualUrl`), `resume_pdf` (the tailored PDF, re-rendered on demand by the attachment resolver), `ats_note`,
 `reason`, `since`. `npm run apply:manual -- list`, `done <id>` (apply_status `submitted_by_owner`, one `applications` row with method `manual`,
 so the funnel counts it and follow-ups see it as applied) and `skip <id>` (`skipped_by_owner`). It also shows as `manualApply {count, easyApplyOff,

@@ -20,7 +20,7 @@ export const SKIPPED_BY_OWNER = 'skipped_by_owner';
 export const MANUAL_STATUSES = ['needs_owner', 'manual_review'] as const;
 export const MANUAL_ITEMS_CAP = 30;
 
-export type ManualReason = 'easy_apply_off' | 'company_site_form' | 'listing_page' | 'easy_apply_failed';
+export type ManualReason = 'easy_apply_off' | 'company_site_form' | 'listing_page' | 'easy_apply_failed' | 'no_relevant_role';
 
 export interface ManualApplyItem {
   /** outreach_queue row id (the one `apply:manual done|skip` takes). */
@@ -55,6 +55,8 @@ const clean = (v: string | null | undefined, max: number): string => String(v ??
 function reasonOf(r: Row, linkedinPage: boolean, url: string): ManualReason {
   if (linkedinPage) return r.apply_status === 'needs_owner' || r.apply_status === 'manual_review' ? 'easy_apply_failed' : 'easy_apply_off';
   const p = r.apply_platform ?? '';
+  // A careers listing the apply-operator read and found no role for the resume on (apply_escalate reason no_relevant_role).
+  if ((r.apply_note ?? '') === 'no_relevant_role') return 'no_relevant_role';
   if ((r.apply_note ?? '').startsWith('external:')) return 'company_site_form';
   if (p === 'none' || p === '' || p === 'naukri' || p === 'wellfound' || hostMatches(url, 'naukri.com') || hostMatches(url, 'wellfound.com')) return 'listing_page';
   return 'company_site_form';

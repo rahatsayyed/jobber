@@ -39,6 +39,8 @@ export interface QuestionRow {
   answered_at: string | null;
   /** The owner's note: guidance for `agent_handle`, the reason for `skipped`, context for an answer. */
   owner_comment: string | null;
+  /** Who wrote the stored answer: `drafted` (the apply-operator, behind the gates) or null (the owner). */
+  answer_source: string | null;
   /** Every job that met this question (the row's own job first). */
   job_ids: string[];
 }
@@ -70,6 +72,7 @@ export function migrateApplyQuestions(db: Db): void {
   `);
   const cols = new Set((db.prepare('PRAGMA table_info(apply_questions)').all() as { name: string }[]).map((c) => c.name));
   if (!cols.has('owner_comment')) db.exec('ALTER TABLE apply_questions ADD COLUMN owner_comment TEXT');
+  if (!cols.has('answer_source')) db.exec('ALTER TABLE apply_questions ADD COLUMN answer_source TEXT');
 }
 
 export const COMMENT_MAX = 1000;
@@ -108,7 +111,7 @@ const hostKey = (h: string): string => String(h ?? '').toLowerCase().slice(0, 25
 
 interface Raw {
   id: number; job_id: string; host: string; label: string; norm_label: string; kind: string; options: string | null; max_length: number | null;
-  status: string; answer: string | null; answer_scope: string | null; created_at: string; answered_at: string | null; owner_comment?: string | null;
+  status: string; answer: string | null; answer_scope: string | null; created_at: string; answered_at: string | null; owner_comment?: string | null; answer_source?: string | null;
 }
 
 function toRow(db: Db, r: Raw): QuestionRow {
@@ -116,7 +119,7 @@ function toRow(db: Db, r: Raw): QuestionRow {
   try { const p = JSON.parse(r.options ?? '[]'); if (Array.isArray(p)) options = p.filter((x): x is string => typeof x === 'string'); } catch { /* none */ }
   const jobs = (db.prepare('SELECT job_id FROM apply_question_jobs WHERE question_id = ? ORDER BY rowid').all(r.id) as { job_id: string }[]).map((x) => x.job_id);
   return {
-    ...r, owner_comment: r.owner_comment ?? null, kind: (QUESTION_KINDS as readonly string[]).includes(r.kind) ? (r.kind as QuestionKind) : 'text', options,
+    ...r, owner_comment: r.owner_comment ?? null, answer_source: r.answer_source ?? null, kind: (QUESTION_KINDS as readonly string[]).includes(r.kind) ? (r.kind as QuestionKind) : 'text', options,
     status: r.status as QuestionStatus, answer_scope: (r.answer_scope as AnswerScope | null), job_ids: jobs.length ? jobs : [r.job_id],
   };
 }
@@ -218,8 +221,9 @@ export function storedAnswer(db: Db, jobId: string, host: string, label: string)
 function releaseJobs(db: Db, jobIds: string[]): string[] {
   const out: string[] = [];
   for (const jobId of new Set(jobIds)) {
-    if (openQuestionsForJob(db, jobId).length || agentQuestionsForJob(db, jobId).length) {
-      // Open questions, or questions waiting for the agent to draft: the job stays paused (the applier never guesses).
+    if (openQuestionsForJob(db, jobId).length) {
+      // Questions still waiting for the owner keep the job paused (the applier never guesses). Questions left to the agent
+      // (`agent_handle`) do not: the next apply run drafts them behind the gates, or hands them back to the owner.
       refreshCount(db, jobId);
       continue;
     }
@@ -273,7 +277,7 @@ export interface AnswerOutcome { answered: number[]; released: string[] }
  * normalized label (any host), because the answer book reuses it for every later form. Jobs with nothing left open become retryable.
  * The caller has already run the shape, output and fact gates and (for `always`) written the answer book.
  */
-export function markAnswered(db: Db, id: number, value: string, scope: AnswerScope, now: Date, comment?: string | null): AnswerOutcome {
+export function markAnswered(db: Db, id: number, value: string, scope: AnswerScope, now: Date, comment?: string | null, source?: 'drafted' | null): AnswerOutcome {
   const q = getQuestion(db, id);
   if (!q) throw new Error('no such question');
   if (q.status !== 'open' && q.status !== 'agent_handle') throw new Error(`question ${id} is already ${q.status}`);
@@ -286,7 +290,7 @@ export function markAnswered(db: Db, id: number, value: string, scope: AnswerSco
     for (const tid of targets) {
       const t = getQuestion(db, tid)!;
       jobs.push(...t.job_ids);
-      db.prepare("UPDATE apply_questions SET status = 'answered', answer = ?, answer_scope = ?, answered_at = ?, owner_comment = COALESCE(?, owner_comment) WHERE id = ?").run(value, scope, now.toISOString(), note, tid);
+      db.prepare("UPDATE apply_questions SET status = 'answered', answer = ?, answer_scope = ?, answered_at = ?, owner_comment = COALESCE(?, owner_comment), answer_source = ? WHERE id = ?").run(value, scope, now.toISOString(), note, source ?? null, tid);
     }
     return { answered: targets, released: releaseJobs(db, jobs) };
   });
@@ -321,9 +325,57 @@ export function markAgentHandle(db: Db, id: number, now: Date, comment?: string 
   const note = cleanComment(comment);
   db.transaction(() => {
     db.prepare("UPDATE apply_questions SET status = 'agent_handle', answered_at = ?, owner_comment = COALESCE(?, owner_comment) WHERE id = ?").run(now.toISOString(), note, id);
-    for (const j of q.job_ids) refreshCount(db, j);
+    // A job whose only open questions are now left to the agent goes back to the apply queue: the next run drafts the answers.
+    releaseJobs(db, q.job_ids);
   })();
   return { jobs: q.job_ids };
+}
+
+/**
+ * Stores a DRAFTED answer for ONE job (scope `once`). A drafted answer is company-specific, so a row shared with other jobs is split:
+ * this job gets its own answered row and is unlinked from the shared one, which stays as it was for the other jobs (they draft their own).
+ */
+export function markAnsweredForJob(db: Db, id: number, jobId: string, value: string, now: Date, source: 'drafted' = 'drafted'): AnswerOutcome {
+  const q = getQuestion(db, id);
+  if (!q) throw new Error('no such question');
+  if (q.status !== 'open' && q.status !== 'agent_handle') throw new Error(`question ${id} is already ${q.status}`);
+  const others = q.job_ids.filter((j) => j !== jobId);
+  if (others.length === 0) return markAnswered(db, id, value, 'once', now, null, source);
+  return db.transaction((): AnswerOutcome => {
+    const res = db.prepare(
+      `INSERT INTO apply_questions (job_id, host, label, norm_label, kind, options, max_length, status, answer, answer_scope, created_at, answered_at, owner_comment, answer_source)
+       VALUES (?,?,?,?,?,?,?,'answered',?,'once',?,?,?,?)`,
+    ).run(jobId, q.host, q.label, q.norm_label, q.kind, JSON.stringify(q.options), q.max_length, value, q.created_at, now.toISOString(), q.owner_comment, source);
+    const nid = Number(res.lastInsertRowid);
+    db.prepare('INSERT OR IGNORE INTO apply_question_jobs (question_id, job_id) VALUES (?, ?)').run(nid, jobId);
+    db.prepare('DELETE FROM apply_question_jobs WHERE question_id = ? AND job_id = ?').run(id, jobId);
+    if (q.job_id === jobId) db.prepare('UPDATE apply_questions SET job_id = ? WHERE id = ?').run(others[0], id);
+    return { answered: [nid], released: releaseJobs(db, [jobId]) };
+  })();
+}
+
+/**
+ * The agent could not draft an acceptable answer (twice) or the question is not one it may draft: it goes back to the owner (`open`, the
+ * owner's comment kept) and its jobs stay paused as needs_answer. Idempotent; an answered or skipped row is untouched.
+ */
+export function reopenForOwner(db: Db, id: number): boolean {
+  const q = getQuestion(db, id);
+  if (!q || (q.status !== 'agent_handle' && q.status !== 'open')) return false;
+  db.transaction(() => {
+    if (q.status === 'agent_handle') db.prepare("UPDATE apply_questions SET status = 'open', answered_at = NULL WHERE id = ?").run(id);
+    for (const j of q.job_ids) {
+      db.prepare("UPDATE outreach_queue SET apply_status = ?, apply_note = ?, updated_at = datetime('now') WHERE job_id = ? AND COALESCE(apply_status, '') IN ('', 'queued', ?, 'needs_owner')")
+        .run(NEEDS_ANSWER, needsAnswerNote(openQuestionsForJob(db, j).length), j, NEEDS_ANSWER);
+    }
+  })();
+  return true;
+}
+
+/** Hands every question of a job that was left to the agent back to the owner (the operator escalated the job for its questions). */
+export function reopenAgentQuestionsForJob(db: Db, jobId: string): number {
+  const rows = agentQuestionsForJob(db, jobId);
+  for (const q of rows) reopenForOwner(db, q.id);
+  return rows.length;
 }
 
 /** Saves a comment on a question without changing its status. */

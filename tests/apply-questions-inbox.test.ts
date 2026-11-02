@@ -53,15 +53,15 @@ describe('agent_handle rules', () => {
     expect(agentHandleAllowed('Why do you want to work here?', 'select')).toBe(false);
   });
 
-  it('stores agent_handle, keeps the question unanswered, keeps the job paused and never reopens it', () => {
+  it('stores agent_handle, keeps the question unanswered, releases the job for the agent to draft and never reopens it', () => {
     const db = openDb(':memory:');
     seed(db, 'j1');
     const id = ask(db, 'j1', WHY);
     markAgentHandle(db, id, NOW, 'mention my open source work');
     expect(getQuestion(db, id)).toMatchObject({ status: 'agent_handle', owner_comment: 'mention my open source work', answer: null });
     expect(storedAnswer(db, 'j1', HOST, WHY)).toBeNull();
-    expect(status(db, 'j1')).toBe('needs_answer');
-    expect((db.prepare('SELECT apply_note AS n FROM outreach_queue WHERE job_id = ?').get('j1') as { n: string }).n).toBe('1 question waiting for the agent to draft');
+    // Owner decision 2026-11-02: a question left to the agent does not hold the job; the next apply run drafts it (apply_draft_answer).
+    expect(status(db, 'j1')).toBeNull();
     // the applier meeting the question again gets the same row back, not a new open one
     expect(recordQuestion(db, { jobId: 'j1', host: HOST, label: WHY, kind: 'text' }, NOW)).toMatchObject({ id, created: false, status: 'agent_handle' });
     expect(openQuestionsForJob(db, 'j1')).toHaveLength(0);
@@ -81,8 +81,9 @@ describe('agent_handle rules', () => {
     const a = ask(db, 'j1', WHY);
     const b = ask(db, 'j1', 'Notice period');
     markAgentHandle(db, a, NOW);
+    expect(status(db, 'j1')).toBe('needs_answer'); // the owner question 'Notice period' still holds the job
     markAnswered(db, b, '30 days', 'once', NOW);
-    expect(status(db, 'j1')).toBe('needs_answer'); // the agent one still waits
+    expect(status(db, 'j1')).toBeNull(); // the agent one does not hold it
     markAnswered(db, a, 'Because I like the product', 'once', NOW, 'wrote it myself');
     expect(status(db, 'j1')).toBeNull();
     expect(getQuestion(db, a)).toMatchObject({ status: 'answered', owner_comment: 'wrote it myself' });

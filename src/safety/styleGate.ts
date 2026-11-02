@@ -50,7 +50,7 @@ export const DEFAULT_STYLE_CONFIG: StyleConfig = {
   forbid_en_dash: true,
   max_exclamations: 1,
   forbid_markdown: true,
-  max_words: { connect: 55, role_ask: 110, rapport: 90, referral_ask: 110, followup: 70, feedback: 60, reply: 90 },
+  max_words: { connect: 55, role_ask: 110, rapport: 90, referral_ask: 110, followup: 70, feedback: 60, reply: 90, answer: 160 },
 };
 
 function validLimit(n: unknown): n is number {
