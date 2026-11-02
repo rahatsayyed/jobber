@@ -14,6 +14,8 @@ import {
 type Db = BetterSqlite3.Database;
 
 const PENDING_WINDOW_HOURS = 168;
+/** A job whose last page read failed or was incomplete is not picked again for this long. */
+export const JD_RETRY_COOLDOWN_MIN = 15;
 
 /** SQLite `datetime('now')` text for a Date (UTC, no zone). */
 const sqlTime = (d: Date): string => d.toISOString().slice(0, 19).replace('T', ' ');
@@ -124,14 +126,16 @@ export interface JdCandidate { id: string; source: string; url: string; title: s
  */
 export function listJdCandidates(db: Db, platform: 'naukri' | 'linkedin' | 'any', now: Date, limit = 50): JdCandidate[] {
   const windowStart = sqlTime(new Date(now.getTime() - PENDING_WINDOW_HOURS * 3600_000));
+  const cooldownStart = sqlTime(new Date(now.getTime() - JD_RETRY_COOLDOWN_MIN * 60_000));
   const rows = db.prepare(
     `SELECT id, source, url, title, description, status, COALESCE(priority, 0) AS priority FROM jobs
       WHERE source IN (${sourcesSql(platform)}) AND excluded_reason IS NULL AND (status IS NULL OR status = ?)
         AND COALESCE(jd_fetch_attempts, 0) < ? AND url IS NOT NULL AND url <> ''
-        AND (COALESCE(priority, 0) > 0 OR created_at >= ? OR COALESCE(jd_note, '') = ?)
+        AND (COALESCE(priority, 0) > 0 OR created_at >= ? OR COALESCE(jd_note, '') = ? OR status = ?)
+        AND (jd_fetch_at IS NULL OR jd_fetch_at <= ?)
         AND NOT ${jobActedSql('jobs')}
       ORDER BY COALESCE(priority, 0) DESC, COALESCE(promoted, 0) DESC, created_at DESC, rowid DESC`,
-  ).all(JOB_STATUS_JD_PENDING, JD_FETCH_MAX_ATTEMPTS, windowStart, JD_NOTE_REPREP) as Array<JdCandidate & { description: string | null }>;
+  ).all(JOB_STATUS_JD_PENDING, JD_FETCH_MAX_ATTEMPTS, windowStart, JD_NOTE_REPREP, JOB_STATUS_JD_PENDING, cooldownStart) as Array<JdCandidate & { description: string | null }>;
   const out: JdCandidate[] = [];
   for (const r of rows) {
     if (!needsJdFetch(r.source, r.description)) continue;
