@@ -157,9 +157,41 @@ export interface EscItem {
   resolvedNote: string | null;
   /** The job the person was last contacted about (for the panel link), when known. */
   jobId: string | null;
+  /** apply:needs_answer cards: the open questions of that host, with the exact command to answer each. Empty for every other card. */
+  questions: OpenQuestionView[];
+  /** apply:needs_human cards: the exact command that opens the job's page for the owner, else null. */
+  assistCommand: string | null;
+}
+
+/** One open apply_questions row as the dashboard and Telegram show it. All text is cleaned. */
+export interface OpenQuestionView {
+  id: number; label: string; kind: string; options: string[]; host: string; jobIds: string[];
+  answerCommand: string;
 }
 
 export interface EscCounts { open: number; snoozed: number; resolved: number }
+
+const QUESTION_ROWS_MAX = 25;
+
+/** Open questions (all hosts when `host` is empty) with the command that answers each. Read-only; works on the dashboard's handle. */
+export function openQuestionViews(db: Db, host?: string): OpenQuestionView[] {
+  if (!hasTable(db, 'apply_questions')) return [];
+  const rows = (host
+    ? db.prepare("SELECT id, host, label, kind, options FROM apply_questions WHERE status = 'open' AND host = ? ORDER BY id LIMIT ?").all(host.toLowerCase(), QUESTION_ROWS_MAX)
+    : db.prepare("SELECT id, host, label, kind, options FROM apply_questions WHERE status = 'open' ORDER BY id LIMIT ?").all(QUESTION_ROWS_MAX)) as
+    { id: number; host: string; label: string; kind: string; options: string | null }[];
+  return rows.map((r) => {
+    let options: string[] = [];
+    try { const p = JSON.parse(r.options ?? '[]'); if (Array.isArray(p)) options = p.filter((x): x is string => typeof x === 'string').map((x) => cleanText(x, 80)); } catch { /* none */ }
+    const jobIds = hasTable(db, 'apply_question_jobs')
+      ? (db.prepare('SELECT job_id FROM apply_question_jobs WHERE question_id = ? ORDER BY rowid LIMIT 20').all(r.id) as { job_id: string }[]).map((x) => cleanText(x.job_id, 200))
+      : [];
+    return {
+      id: r.id, label: cleanText(r.label, 300), kind: r.kind, options, host: cleanText(r.host, 200), jobIds,
+      answerCommand: `npm run answers -- answer ${r.id} "<your answer>"`,
+    };
+  });
+}
 
 interface Raw {
   id: number; platform: string | null; person_id: number | null; thread_ref: string | null; reason: string; detail: string | null;
@@ -269,8 +301,24 @@ export function listEscalations(
       created_at: r.created_at, first_at: r.created_at, threadRef: r.thread_ref, threadUrl: linkedinThreadUrl(r.platform, r.thread_ref),
       personId: r.pid, personName: r.pname === null ? null : cleanText(r.pname, 200), personCompany: r.pcompany === null ? null : cleanText(r.pcompany, 200),
       jobTitle: r.job_title === null ? null : `${cleanText(r.job_title, 200)}${r.job_company ? ` at ${cleanText(r.job_company, 100)}` : ''}`,
-      resolved_at: r.resolved_at, snoozed_until: r.snoozed_until,
+      resolved_at: r.resolved_at, snoozed_until: r.snoozed_until, questions: [], assistCommand: null,
     });
+  }
+  // Apply cards that wait for a person get plain wording and the exact command (built here from stored rows, never from the model).
+  for (const it of merged.values()) {
+    if (it.platform !== 'apply') continue;
+    if (/^apply:needs_answer/.test(it.reason)) {
+      const host = (it.threadRef ?? '').replace(/^answers:/, '');
+      it.questions = hasTable(db, 'apply_questions') ? openQuestionViews(db, host) : [];
+      it.label = 'Needs your answer';
+      it.todo = 'The application is paused. Answer each question once with the command shown; --always keeps it for every later form.';
+      it.askKind = 'question';
+    } else if (/^apply:needs_human/.test(it.reason)) {
+      const m = /npm run apply:assist -- (\S+)/.exec(it.detail ?? '');
+      it.assistCommand = m ? `npm run apply:assist -- ${m[1].replace(/[^\w.:@-]/g, '')}` : null;
+      it.label = 'Needs you: log in or human check';
+      it.todo = 'A login, CAPTCHA or MFA step on this site needs a person. Run the command: it opens the page in Chrome for you, then the job retries.';
+    }
   }
   // Within a group: newest activity first.
   const items = [...merged.values()]

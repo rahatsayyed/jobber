@@ -10,7 +10,7 @@ export const CONTROL_ID = /^c\d{1,3}$/;
 
 const FIXED_ANSWER_KEYS = [
   'years_experience', 'authorized_to_work', 'requires_sponsorship', 'willing_to_relocate',
-  'notice_period_days', 'expected_salary', 'phone', 'linkedin_profile_url',
+  'notice_period_days', 'expected_salary', 'phone', 'linkedin_profile_url', 'current_location', 'skills',
 ];
 // A custom key names an entry that must already exist in the answer book; code checks it.
 const ANSWER_KEY = new RegExp(`^(?:${FIXED_ANSWER_KEYS.join('|')}|custom:.{1,200})$`);

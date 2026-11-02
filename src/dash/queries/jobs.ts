@@ -32,6 +32,8 @@ export interface JobRow {
 /** One outreach_queue row of a job. Rows are unique per job and LinkedIn contact, so several rows of one job can carry the same email. */
 export interface QueueRow {
   id: number; status: string; email_status: string | null; connect_status: string | null; apply_status: string | null; ats_coverage: number | null;
+  /** `jd_incomplete` when ats_coverage is null because the stored job description was a snippet or cut off (show "JD incomplete", not 0%). */
+  ats_note: string | null;
   apply_platform: string | null; apply_tier: string | null; apply_note: string | null;
   /** The row holds an email draft / a LinkedIn connect request. */
   has_email: boolean; has_connect: boolean;
@@ -61,7 +63,7 @@ export interface JobDetail extends JobRow {
 const LIMITS: Record<string, number> = {
   id: 200, title: 300, company: 200, source: 64, confidence: 32, excluded_reason: 500, posted_at: 64, deadline: 64, created_at: 64,
   url: 1000, apply_url: 1000, platform: 64, method: 64, status: 64, reason: 500, applied_at: 64, email_status: 32, connect_status: 32,
-  apply_status: 32, outcome: 64, note: 1000, apply_platform: 64, apply_tier: 32, apply_note: 300, email_sent_at: 64, updated_at: 64, email_key: 320,
+  apply_status: 32, ats_note: 32, outcome: 64, note: 1000, apply_platform: 64, apply_tier: 32, apply_note: 300, email_sent_at: 64, updated_at: 64, email_key: 320,
 };
 
 const sqlList = (xs: readonly string[]): string => xs.map((x) => `'${x}'`).join(', ');
@@ -196,7 +198,7 @@ export function jobDetail(db: Db, id: string, threshold = 60): JobDetail | null 
   const { url, apply_url, strengths, gaps, requirements, ...base } = r;
   const row = toRow(base, ex, db, threshold);
   const queue = tableExists(db, 'outreach_queue')
-    ? markEmailRepeats((db.prepare(`SELECT id, status, email_status, connect_status, apply_status, ats_coverage, apply_platform, apply_tier, apply_note,
+    ? markEmailRepeats((db.prepare(`SELECT id, status, email_status, connect_status, apply_status, ats_coverage, ats_note, apply_platform, apply_tier, apply_note,
         (email_to IS NOT NULL OR email_subject IS NOT NULL) AS has_email, (connect_profile_url IS NOT NULL OR connect_note IS NOT NULL) AS has_connect,
         email_sent_at, updated_at, created_at, lower(trim(email_to)) AS email_key
         FROM outreach_queue WHERE job_id = ? ORDER BY id DESC LIMIT 50`)

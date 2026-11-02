@@ -78,7 +78,7 @@ describe('apply_fill', () => {
     // the book has no entry for this question: whatever ref the model names, nothing is typed
     for (const ref of [A('years_experience'), A('custom:No such answer')]) {
       const r = await fill(x, 'f8', ref);
-      expect(r).toMatchObject({ status: 'needs_owner' });
+      expect(r).toMatchObject({ status: 'needs_answer' });
       expect((r as { question?: string }).question).toContain('Why do you want to work here?');
     }
     const y = await (async () => { await x.close(); h = null; return opened({ start: 'wd-step2-questions.html' }); })();
@@ -91,7 +91,7 @@ describe('apply_fill', () => {
     const x = await opened({ start: 'wd-step2-questions.html' });
     x.deps.answers = { ...x.deps.answers, has: () => false };
     const r = await fill(x, 'f2', A('years_experience'));
-    expect(r).toMatchObject({ status: 'needs_owner', code: 'missing_answer' });
+    expect(r).toMatchObject({ status: 'needs_answer', code: 'missing_answer' });
     expect((r as { question?: string }).question).toContain('years of React experience');
     expect(x.site.fills).toEqual([]);
   });
@@ -178,7 +178,7 @@ describe('apply_choose', () => {
     // a ref for another topic
     expect(await handleChoose({ field: 'f1', option: 'Yes', ref: A('willing_to_relocate') }, x.deps)).toMatchObject({ status: 'refused', code: 'role_ref_mismatch' });
     // no ref at all for a question
-    expect(await handleChoose({ field: 'f1', option: 'Yes' }, x.deps)).toMatchObject({ status: 'needs_owner' });
+    expect(await handleChoose({ field: 'f1', option: 'Yes' }, x.deps)).toMatchObject({ status: 'needs_answer' });
   });
 
   it('pre-checked marketing box is unchecked and verified', async () => {

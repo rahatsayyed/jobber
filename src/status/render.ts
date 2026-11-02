@@ -69,6 +69,8 @@ export function renderWorking(s: Snapshot): string {
   lines.push(
     `discovered ${f.discovered} -> matched ${f.matched} -> contacted ${f.contacted} -> replied ${f.replied} -> interview ${f.interview} -> offer ${f.offer}`,
   );
+  if (s.openQuestions.count > 0) lines.push(`needs your answer: ${s.openQuestions.count} question(s) pause applications (npm run answers -- list)`);
+  for (const h of s.needsHuman.hosts) lines.push(`needs you: ${h.jobs} job(s) wait at ${h.host} for a login or human check (${h.command})`);
   lines.push(...degradedLine(s));
   return lines.join('\n');
 }

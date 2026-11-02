@@ -108,11 +108,11 @@ it is written to the notify file (`.jobber/notify.jsonl`).
 
 | Reason | Meaning |
 |---|---|
-| `captcha`, `mfa`, `phone_verification` | never solved or waited out; recorded against the host |
+| `captcha`, `mfa`, `phone_verification` | never solved or waited out; recorded against the host; the job parks as `needs_human` (see `apply:assist` below) |
 | `blocked` | the site blocked the browser; recorded against the host |
 | `email_verification` | a verification mail is needed (owner assist) |
 | `account_needed` | the site needs an account and creation is off or capped |
-| `question` | a screening question the answer book cannot answer (`needs_owner`) |
+| `question` | a screening question nothing reliable can answer: the job parks as `needs_answer`, see below |
 | `consent` | an attestation or data-sharing box, or a required box while `APPLY_ACCEPT_LEGAL_REQUIRED` is `false` |
 | `marketing_checkbox` | a marketing box was checked; submit is refused |
 | `cover_letter` | the form asks for a cover letter |
@@ -128,10 +128,28 @@ sets the `apply` halt; only you clear it (`npm run jobber:control -- clear-halt 
 
 ### Answering a question you were asked
 
-When the report carries a `needs_owner` item with the exact question text: decide a truthful answer
-from your real background (never a guess), add it under `custom` in `user-data/easy-apply-answers.json`
-keyed by the question as written (matching ignores case, whitespace and a trailing `*`), and
-re-queue or wait for the next wake. The file is read again on each use, so no restart is needed.
+The applier never guesses. A question it cannot answer from your answer book or your resume pauses the job
+as `needs_answer` (not a failure). `/escalations` and the dashboard Inbox say "needs your answer" and list
+each question with an id:
+
+```
+npm run answers -- list
+npm run answers -- answer 12 "Bangalore"            # this job only
+npm run answers -- answer 12 "Bangalore" --always   # every later form with the same question
+npm run answers -- skip 12                          # never answer; the job ends manual_review
+```
+
+The answer goes back through the output gate and the fact gate, must fit the field (maxlength, or one of
+the listed options), and puts the job back in the queue for the next apply stage.
+
+### A login, CAPTCHA or MFA step (`needs_human`)
+
+The agent never solves these. The job is parked as `needs_human`, you get one Telegram message per site per
+6 hours with the command, and one card in the Inbox. Run `npm run apply:assist -- <job_id>`: Chrome opens
+that page in the project profile, you log in or finish the check yourself, press Enter, and every job
+waiting on that site is retried. `npm run browser:open -- <https url>` opens any page in the same profile
+(clear a Google, DuckDuckGo or Bing consent/CAPTCHA page once); `npm run browser:history` shows what the
+profile visited. The login is stored in the profile and in `secrets/site-sessions/`, never your typing.
 
 ## Recipes and drift
 

@@ -15,6 +15,8 @@ import { UNVERIFIED_ADDRESS, isVerifiedAddress } from './lib/verifiedAddress.js'
 import { migrateOutreachTables } from './outreach/schema.js';
 import { migrateSchedulerTables } from './scheduler/runLog.js';
 import { buildEmailParts, loadEmailLinks, stripMarkers, type EmailLink } from './emailHtml.js';
+import { applyJdNote } from './atsJd.js';
+import { migrateApplyQuestions } from './apply/questions.js';
 
 /** enqueue_outreach.ats_coverage: an integer percentage, or null when the final render had no keywords (tailor contract). */
 export const atsCoverageSchema = z.number().int().min(0).max(100).nullable().optional();
@@ -324,6 +326,8 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   for (const [col, type] of [['ats_coverage', 'INTEGER'], ['ats_gaps', 'TEXT'], ['fact_warnings', 'TEXT'], ['review_applied', 'INTEGER'], ['review_rejected', 'INTEGER']] as const) {
     if (!outreachQueueColumnNames.has(col)) db.exec(`ALTER TABLE outreach_queue ADD COLUMN ${col} ${type}`);
   }
+  // `jd_incomplete` when the stored job description was a snippet or cut off: ats_coverage is then NULL (see src/atsJd.ts).
+  if (!outreachQueueColumnNames.has('ats_note')) db.exec('ALTER TABLE outreach_queue ADD COLUMN ats_note TEXT');
   for (const col of ['email_sent_at', 'email_message_id', 'email_thread_id', 'apply_tier', 'email_html', 'email_released_day']) {
     if (!outreachQueueColumnNames.has(col)) db.exec(`ALTER TABLE outreach_queue ADD COLUMN ${col} TEXT`);
   }
@@ -341,6 +345,7 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   backfillJobKeys(db);
   migrateOutreachTables(db);
   migrateSchedulerTables(db);
+  migrateApplyQuestions(db);
   return db;
 }
 
@@ -842,6 +847,8 @@ export function enqueueOutreach(
     resume_json?: string | null;
     ats_coverage?: number | null;
     ats_gaps?: string[] | null;
+    /** Set by code from the stored job description (`jd_incomplete`); a model-supplied value is ignored. */
+    ats_note?: string | null;
     fact_warnings?: string[] | null;
     review_applied?: number | null;
     review_rejected?: number | null;
@@ -861,7 +868,10 @@ export function enqueueOutreachResult(
   item = { ...item, email_body: parts ? parts.plain : item.email_body, email_subject: item.email_subject ? stripMarkers(item.email_subject) : item.email_subject };
   // Discover-only sources (see src/lib/discoverOnly.ts) never get an apply attempt, whatever the preparer asked for: 'none' keeps
   // the sender away from the shared daily apply counter while email and connect outreach on the same row still run.
-  const source = (db.prepare('SELECT source FROM jobs WHERE id = ?').get(item.job_id) as { source: string | null } | undefined)?.source;
+  const jobRow = db.prepare('SELECT source, description FROM jobs WHERE id = ?').get(item.job_id) as { source: string | null; description: string | null } | undefined;
+  const source = jobRow?.source;
+  // A snippet-only or cut-off description cannot be scored: store NULL plus the note instead of a low number (decided here, not by the model).
+  const ats = applyJdNote(item.ats_coverage, jobRow?.description);
   const applyPlatform = isApplyBlockedSource(source) ? 'none' : item.apply_platform;
   // Generated-provider jobs (source gen:*) are matched and listed, but their outreach rows wait for the owner (plan 8G D7): held_review
   // until `npm run providers -- approve <id>` releases them. list_queued_outreach returns only status 'queued', so a held row is never sent.
@@ -871,8 +881,8 @@ export function enqueueOutreachResult(
       job_id, resume_pdf_path, email_subject, email_body, email_to,
       connect_note, connect_profile_url, connect_category, connect_company,
       apply_platform, apply_tier, apply_url, resume_json,
-      ats_coverage, ats_gaps, fact_warnings, review_applied, review_rejected, status, email_html
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ats_coverage, ats_gaps, fact_warnings, review_applied, review_rejected, status, email_html, ats_note
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     item.job_id,
     item.resume_pdf_path,
@@ -887,13 +897,14 @@ export function enqueueOutreachResult(
     applyPlatform === 'none' ? 'never' : (item.apply_tier ?? 'never'),
     item.apply_url,
     item.resume_json ?? null,
-    item.ats_coverage ?? null,
+    ats.coverage,
     item.ats_gaps ? JSON.stringify(item.ats_gaps) : null,
     item.fact_warnings ? JSON.stringify(item.fact_warnings) : null,
     item.review_applied ?? null,
     item.review_rejected ?? null,
     held ? 'held_review' : 'queued',
-    parts ? parts.html : null
+    parts ? parts.html : null,
+    ats.note
   );
   if (result.changes === 0) {
     const existing = db.prepare("SELECT id FROM outreach_queue WHERE job_id = ? AND COALESCE(connect_profile_url, '') = COALESCE(?, '') ORDER BY id LIMIT 1")

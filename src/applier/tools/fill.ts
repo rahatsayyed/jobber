@@ -5,7 +5,7 @@ import { fillGuarded } from '../../webcore/login.js';
 import type { AnswerRef } from '../../apply/answers.js';
 import { checkRoleRef, FieldIdSchema, RefSchema } from '../refs.js';
 import {
-  dryRunResult, findField, inPage, noteFilled, refuse, resolveQuestion, type ApplierDeps, type ApplyResult,
+  dryRunResult, findField, inPage, needsAnswer, noteFilled, refuse, resolveQuestion, type ApplierDeps, type ApplyResult,
 } from './common.js';
 import { questionText } from './state.js';
 
@@ -32,13 +32,13 @@ export async function handleFill(input: FillInputT, deps: ApplierDeps): Promise<
       value = r.value;
     } else {
       if (f.role === 'unknown' || f.role === 'cover_letter') {
-        return { status: 'needs_owner', code: 'unknown_field_role', question: await questionText(f.label, deps) };
+        return needsAnswer(deps, job, f, 'unknown_field_role', (l) => questionText(l, deps));
       }
       if (checkRoleRef(f.role, ref) === 'mismatch') return refuse('role_ref_mismatch', 'that reference does not belong to this field');
-      if (!deps.answers.has(ref)) return { status: 'needs_owner', code: 'missing_answer', question: await questionText(f.label, deps) };
+      if (!deps.answers.has(ref)) return needsAnswer(deps, job, f, 'missing_answer', (l) => questionText(l, deps));
       value = deps.answers.resolve(ref, { jobLocation: job.location });
       if (value === null || value === undefined || value === '') {
-        return { status: 'needs_owner', code: 'missing_answer', question: await questionText(f.label, deps) };
+        return needsAnswer(deps, job, f, 'missing_answer', (l) => questionText(l, deps));
       }
     }
     if (typeof value === 'boolean') return refuse('type_mismatch', 'a yes/no answer belongs to a choice field');

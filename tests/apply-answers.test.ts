@@ -131,7 +131,7 @@ describe('answer book', () => {
 describe('QUESTION_PATTERNS port matches the legacy table', () => {
   it('has the same patterns and keys', () => {
     expect(QUESTION_PATTERNS.map((p) => p.key)).toEqual([
-      'years_experience', 'authorized_to_work', 'requires_sponsorship', 'willing_to_relocate',
+      'years_experience', 'current_location', 'skills', 'years_experience', 'authorized_to_work', 'requires_sponsorship', 'willing_to_relocate',
       'notice_period_days', 'expected_salary', 'expected_salary', 'phone', 'linkedin_profile_url',
     ]);
   });

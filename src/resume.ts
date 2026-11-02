@@ -11,6 +11,7 @@ import { resumeStatements } from './proseClaims.js';
 import { classifyKeywords, coveragePct, type KeywordResult, type KeywordSpec } from './atsKeywords.js';
 import { pickBulletToCut, removeBullet } from './trimResume.js';
 import { normalizeForAts } from './atsText.js';
+import { applyJdNote } from './atsJd.js';
 import { missingUserDataMessage, userDataPath } from './lib/userData.js';
 import { htmlToPdf } from './pdfRender.js';
 
@@ -35,6 +36,8 @@ export interface RenderResult {
   facts: FactReport;
   ats: KeywordResult[] | null;
   atsCoverage: number | null;
+  /** `jd_incomplete` when the job description was a snippet or cut off (coverage is then null), else null. */
+  atsNote: string | null;
   trimmed: string[];
   fillRatio: number | null;
 }
@@ -92,8 +95,15 @@ export async function renderResumeChecked(resumeJson: any, opts: RenderOptions =
     }
     throw e;
   }
-  const ats = keywords.length ? classifyKeywords(keywords, proseText(current), proseText(base), skillsList(base)) : null;
-  return { pdfPath: pdf, resume: current, facts, ats, atsCoverage: ats ? coveragePct(ats) : null, trimmed: cuts.map((c) => c.text), fillRatio: layout.fillRatio };
+  // Skills are read from the FINAL resume (what the ATS parses); a term only in the base skills list that the render dropped is not credited.
+  const ats = keywords.length ? classifyKeywords(keywords, proseText(current), proseText(base), skillsList(current)) : null;
+  // A snippet-only or cut-off description (Naukri and LinkedIn list pages) cannot be scored: NULL plus a note, never a low number.
+  const outcome = applyJdNote(ats ? coveragePct(ats) : null, opts.jobDescription);
+  const incomplete = opts.jobDescription !== undefined && outcome.note !== null;
+  return {
+    pdfPath: pdf, resume: current, facts, ats, atsCoverage: incomplete ? null : (ats ? coveragePct(ats) : null),
+    atsNote: incomplete ? outcome.note : null, trimmed: cuts.map((c) => c.text), fillRatio: layout.fillRatio,
+  };
 }
 
 /** Back-compatible: returns only the PDF path. */

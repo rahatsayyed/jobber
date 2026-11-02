@@ -10,7 +10,7 @@ import type { LiPage } from '../../webcore/launch.js';
 import type { FormField } from '../../webcore/formModel.js';
 import { DECLINE_RE, FieldIdSchema, matchOption, normOpt, RefSchema, yesNoOption } from '../refs.js';
 import {
-  dryRunResult, envOf, failedResult, findField, inPage, refuse, resolveQuestion, type ApplierDeps, type ApplyResult, type OpenJob,
+  dryRunResult, envOf, failedResult, findField, inPage, needsAnswer, refuse, resolveQuestion, type ApplierDeps, type ApplyResult, type OpenJob,
 } from './common.js';
 import { questionText } from './state.js';
 
@@ -74,12 +74,12 @@ export async function handleChoose(input: ChooseInputT, deps: ApplierDeps): Prom
       const r = await resolveQuestion(f, ref, deps, job, (l) => questionText(l, deps));
       if (!r.ok) return r.result;
       const derived = typeof r.value === 'boolean' ? yesNoOption(r.value, options) : matchOption(options, String(r.value));
-      if (!derived) return { status: 'needs_owner', code: 'option_not_listed', question: await questionText(f.label, deps) };
+      if (!derived) return needsAnswer(deps, job, f, 'option_not_listed', (l) => questionText(l, deps));
       chosen = matchOption(options, input.option);
       if (!chosen) return refuse('option_not_listed', 'that option is not on the page');
       if (normOpt(chosen) !== normOpt(derived)) return refuse('option_mismatch', 'that option is not the one the answer book gives');
     } else {
-      return { status: 'needs_owner', code: 'unknown_field_role', question: await questionText(f.label, deps) };
+      return needsAnswer(deps, job, f, 'unknown_field_role', (l) => questionText(l, deps));
     }
 
     const dry = dryRunResult(deps, 'apply_choose', { job_id: job.jobId, field: f.id, role: f.role });

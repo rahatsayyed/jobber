@@ -79,7 +79,7 @@ describe('apply_submit', () => {
     await handleOpen({ job_id: 'job-1' }, h.deps);
     await handleFill({ field: 'f1', ref: { kind: 'profile', field: 'name.full' } }, h.deps);
     const r = await handleSubmit({}, h.deps);
-    expect(r).toMatchObject({ status: 'needs_owner', code: 'missing_required' });
+    expect(r).toMatchObject({ status: 'needs_answer', code: 'missing_required' });
     expect((r as { fields?: string[] }).fields).toEqual(['f2', 'f4']);
     expect(clicks(h)).toBe(0);
     expect(easy(h)).toBe(0);

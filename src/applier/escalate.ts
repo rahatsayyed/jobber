@@ -10,6 +10,10 @@ import { screenUntrusted } from '../safety/screen.js';
 import { isDryRun } from '../safety/dryRun.js';
 import { checkStyle, loadStyleConfigSafe, type StyleConfig } from '../safety/styleGate.js';
 import { formatState } from '../webcore/state.js';
+import type { FormModel } from '../webcore/formModel.js';
+import { telegramNotifier } from '../platform/notify.js';
+import { pingAssist, type AssistNotifier } from './assistPing.js';
+import { pauseJobNeedsAnswer, recordQuestion, storedAnswer } from '../apply/questions.js';
 import { hostOfUrl, noteBlock, readPage } from '../webcore/login.js';
 import { fileNotifier, type Notice } from '../scheduler/notify.js';
 import { resolveRunId } from '../layout/runtime.js';
@@ -35,10 +39,39 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 export const DEFAULT_NOTIFY_PATH = path.join(ROOT, '.jobber', 'notify.jsonl');
 const DETAIL_CAP = 700;
 
+/** Reasons only a person at a keyboard can clear on a generic site: the job pauses as `needs_human` and `npm run apply:assist -- <job_id>` helps. */
+export const ASSIST_REASONS: ReadonlySet<string> = new Set(['captcha', 'mfa', 'phone_verification', 'email_verification', 'account_needed', 'login_failed']);
+
+/** escalations.thread_ref allows [A-Za-z0-9_:./-] up to 120 characters: one open card per kind and host. */
+export const threadRefFor = (kind: 'answers' | 'assist', host: string): string => `${kind}:${String(host || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '_')}`.slice(0, 120);
+
+/** One open apply_questions row per required, still-empty question on the open page that no book or derived value can answer. */
+async function recordPageQuestions(deps: ApplierDeps, jobId: string, host: string, model: FormModel): Promise<void> {
+  const now = nowOf(deps);
+  for (const f of model.fields) {
+    if (f.hidden || !f.required || f.filled) continue;
+    if (f.type === 'file' || f.type === 'password' || f.type === 'checkbox' || f.type === 'hidden') continue;
+    if (!['question', 'unknown', 'location', 'phone', 'linkedin_url'].includes(f.role) && f.type !== 'select' && f.type !== 'radio') continue;
+    if (f.role === 'eeo' || f.role === 'consent' || f.role === 'marketing' || f.role === 'otp') continue;
+    const s = deps.answers.suggest(f.label);
+    if (s.cls === 'consent' || s.cls === 'legal_attestation') continue;
+    if (s.ref && deps.answers.has(s.ref)) continue;
+    if (storedAnswer(deps.db, jobId, host, f.label) !== null) continue;
+    try {
+      recordQuestion(deps.db, {
+        jobId, host, label: f.label, maxLength: f.maxLength, options: f.options,
+        kind: f.type === 'select' ? 'select' : f.type === 'radio' ? 'radio' : 'text',
+      }, now);
+    } catch { console.error('[applier] question not recorded'); }
+  }
+}
+
 export interface EscalateExtras {
   /** Notification sink; default appends to .jobber/notify.jsonl (and JOBBER_NOTIFY_CMD is NOT run here). */
   notify?: (n: Notice) => void | Promise<void>;
   styleCfg?: StyleConfig;
+  /** Telegram sender for the needs_human ping (default: the code-composed Telegram sender; tests pass a fake). */
+  telegram?: AssistNotifier;
   runId?: string | null;
 }
 
@@ -81,13 +114,14 @@ async function escalate(input: EscalateInputT, deps: ApplierDeps, x: EscalateExt
     if (checkStyle(note, 'feedback', cfg).ok) lines.push(`note: ${note}`);
     else noteDropped = true;
   }
+  let pageModel: FormModel | null = null;
   if (cur) {
     try {
-      const model = await deps.runtime.serial(async () => {
+      pageModel = await deps.runtime.serial(async () => {
         const page = deps.runtime.page();
         return page ? (await readPage(page)).model : null;
       });
-      if (model) lines.push(formatState(model));
+      if (pageModel) lines.push(formatState(pageModel));
     } catch { /* the header alone is enough */ }
   }
   const composed = lines.join('\n');
@@ -97,9 +131,41 @@ async function escalate(input: EscalateInputT, deps: ApplierDeps, x: EscalateExt
     : v.text.slice(0, DETAIL_CAP) + (v.unscreened ? '\nclassifier=unscreened' : '');
 
   const runId = x.runId === undefined ? resolveRunId(env) : x.runId;
-  addEscalation(db, { runId, platform: 'apply', reason: `apply:${input.reason}`, detail }, now);
-  sendNotice({ level: 'warn', title: `apply needs the owner: ${input.reason}`, detail: `job=${input.job_id} host=${host || 'unknown'}`, runId: runId ?? undefined }, deps, x);
-  db.prepare("UPDATE outreach_queue SET apply_status = 'needs_owner', updated_at = datetime('now') WHERE job_id = ?").run(input.job_id);
+  let status: 'needs_owner' | 'needs_answer' | 'needs_human' = 'needs_owner';
+  if (input.reason === 'question') {
+    // Nothing reliable answers these: each required unanswered question gets (or refreshes) one apply_questions row, and the job pauses.
+    if (pageModel && host) await recordPageQuestions(deps, input.job_id, host, pageModel);
+    const n = pauseJobNeedsAnswer(db, input.job_id);
+    status = 'needs_answer';
+    addEscalation(db, {
+      runId, platform: 'apply', reason: 'apply:needs_answer', threadRef: threadRefFor('answers', host),
+      detail: `needs your answer: ${n} question${n === 1 ? '' : 's'} for job ${input.job_id} on ${host || 'unknown host'}; run: npm run answers -- list`,
+    }, now);
+    sendNotice({ level: 'warn', title: `apply needs your answer: ${n} question${n === 1 ? '' : 's'}`, detail: `job=${input.job_id} host=${host || 'unknown'} run: npm run answers -- list`, runId: runId ?? undefined }, deps, x);
+  } else if (ASSIST_REASONS.has(input.reason) && host) {
+    // A login wall, sign-up, CAPTCHA or MFA: only a person can pass it. One escalation per HOST (open ones merge), however many jobs wait.
+    status = 'needs_human';
+    db.prepare("UPDATE outreach_queue SET apply_status = 'needs_human', apply_note = ?, updated_at = datetime('now') WHERE job_id = ?").run(`assist:${input.reason}`, input.job_id);
+    addEscalation(db, {
+      runId, platform: 'apply', reason: 'apply:needs_human', threadRef: threadRefFor('assist', host),
+      detail: `needs you on ${host} (${input.reason}): run npm run apply:assist -- ${input.job_id}`,
+    }, now);
+    sendNotice({ level: 'warn', title: `apply needs a human on ${host}: ${input.reason}`, detail: `job=${input.job_id} run: npm run apply:assist -- ${input.job_id}`, runId: runId ?? undefined }, deps, x);
+    // One Telegram ping per host per 6 hours, composed in code. Never blocks the park; the screenshot is taken only if the sender can send it.
+    try {
+      await pingAssist(db, {
+        host, jobId: input.job_id, reason: input.reason, now, env,
+        notifier: x.telegram ?? telegramNotifier(env),
+        screenshot: async () => (cur ? await deps.runtime.serial(async () => (await deps.runtime.page()?.screenshot({ type: 'png' })) ?? null) : null),
+      });
+    } catch { console.error('[applier] assist ping failed'); }
+  } else {
+    addEscalation(db, { runId, platform: 'apply', reason: `apply:${input.reason}`, detail }, now);
+    sendNotice({ level: 'warn', title: `apply needs the owner: ${input.reason}`, detail: `job=${input.job_id} host=${host || 'unknown'}`, runId: runId ?? undefined }, deps, x);
+  }
+  if (status === 'needs_owner') {
+    db.prepare("UPDATE outreach_queue SET apply_status = 'needs_owner', updated_at = datetime('now') WHERE job_id = ?").run(input.job_id);
+  }
 
   if (BLOCK_REASONS.has(input.reason)) {
     if (host) noteBlock(host);
@@ -114,7 +180,7 @@ async function escalate(input: EscalateInputT, deps: ApplierDeps, x: EscalateExt
     try { await deps.runtime.close(); } catch { console.error('[applier] close failed'); }
   }
   return {
-    status: 'needs_owner', code: 'escalated',
+    status, code: 'escalated',
     reason: noteDropped ? 'the owner was notified; the note was dropped by the style gate' : 'the owner was notified; nothing more is done for this job in this run',
     ...(host ? { host } : {}),
   };

@@ -84,6 +84,8 @@ export interface LiContext {
   newPage(): Promise<LiPage>;
   storageState(opts?: { path?: string }): Promise<unknown>;
   waitForEvent(name: 'page', opts?: { timeout?: number }): Promise<LiPage>;
+  /** Optional: used once to import old per-host session cookies into the persistent web profile (patchright contexts have it). */
+  addCookies?(cookies: unknown[]): Promise<void>;
 }
 export interface LiBrowser { newContext(opts: Record<string, unknown>): Promise<LiContext>; close(): Promise<void> }
 export interface LiLauncher { launch(opts: Record<string, unknown>): Promise<LiBrowser> }

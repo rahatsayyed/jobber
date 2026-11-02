@@ -1,5 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { userDataPath } from '../lib/userData.js';
+import { deriveFromResume } from './derive.js';
 
 // Answer book for the browser apply flow. The matching logic is COPIED from
 // the removed scripted Easy Apply (deleted in Task 23). Values are only
@@ -17,6 +18,9 @@ export interface EasyApplyAnswers {
   expected_salary: string;
   phone: string;
   linkedin_profile_url: string;
+  /** Optional. When absent they are derived from the resume (src/apply/derive.ts) or left unanswered. */
+  current_location?: string;
+  skills?: string;
   custom?: Record<string, AnswerValue>;
 }
 
@@ -36,6 +40,10 @@ export interface AnswerBook {
 
 /** Keyword/regex patterns matched (in order) against a screening question's text. */
 export const QUESTION_PATTERNS: Array<{ pattern: RegExp; key: keyof EasyApplyAnswers }> = [
+  { pattern: /\byears? of exp\b|\byrs? of exp\b|\btotal (exp|experience)\b/i, key: 'years_experience' },
+  // Current residence only. "Native", "preferred" and "interested" locations are NOT the current location and stay with the owner.
+  { pattern: /\b(current|present)\b.{0,12}\b(location|city)\b|\bcurrent(ly)? (based|located)\b|\bwhere .{0,20}(are you|do you).{0,12}(based|located|live|reside)\b/i, key: 'current_location' },
+  { pattern: /\bskill ?sets?\b|\b(key|technical|primary|core) skills\b/i, key: 'skills' },
   { pattern: /years?\b.{0,20}\bexperience/i, key: 'years_experience' },
   { pattern: /authoriz(e|ed|ation)\b.{0,25}\bwork/i, key: 'authorized_to_work' },
   { pattern: /sponsorship/i, key: 'requires_sponsorship' },
@@ -79,6 +87,8 @@ export const ANSWER_TOPIC_DESCRIPTIONS: Record<Exclude<keyof EasyApplyAnswers, '
   expected_salary: "The candidate's expected salary or CTC",
   phone: "The candidate's phone number",
   linkedin_profile_url: "The candidate's LinkedIn profile URL",
+  current_location: 'Where the candidate lives now (city), from the answer file or the resume',
+  skills: "The candidate's skills list, from the answer file or the resume",
 };
 
 export interface KnownAnswerTopic {
@@ -163,10 +173,26 @@ export function loadAnswerBook(deps: { answersPath?: string; profilePath?: strin
     location: str(profileRaw?.location),
   };
 
+  // Values the resume supports on its own; the owner's answer file always wins. Nothing is estimated (src/apply/derive.ts).
+  const derived = deriveFromResume(profileRaw);
+  const fixedValue = (key: string): unknown => {
+    const v = (answers as Record<string, unknown>)[key];
+    if (v !== undefined && v !== null && v !== '') return v;
+    if (key === 'years_experience' || key === 'current_location' || key === 'skills') return (derived as unknown as Record<string, unknown>)[key] ?? undefined;
+    return undefined;
+  };
+
+  // Exact key first; then a key that is the same question after normalization (case, spaces, trailing star). Never anything fuzzier.
   const customValue = (key: string): AnswerValue | undefined => {
     const c = answers.custom;
-    if (!c || !Object.prototype.hasOwnProperty.call(c, key)) return undefined;
-    return c[key] === '' ? undefined : c[key];
+    if (!c) return undefined;
+    let hit: string | undefined = Object.prototype.hasOwnProperty.call(c, key) ? key : undefined;
+    if (hit === undefined) {
+      const n = normalizeQuestion(key).slice(0, 200);
+      hit = Object.keys(c).find((k) => normalizeQuestion(k).slice(0, 200) === n);
+    }
+    if (hit === undefined) return undefined;
+    return c[hit] === '' ? undefined : c[hit];
   };
 
   function resolve(ref: AnswerRef, ctx: { jobLocation?: string }): AnswerValue | null {
@@ -176,7 +202,7 @@ export function loadAnswerBook(deps: { answersPath?: string; profilePath?: strin
     if (key.startsWith('custom:')) return customValue(key.slice(7)) ?? null;
     if (!FIXED_KEYS.has(key)) return null;
     if (key === 'requires_sponsorship') return resolveSponsorship(answers.requires_sponsorship, ctx.jobLocation);
-    const v = (answers as Record<string, unknown>)[key];
+    const v = fixedValue(key);
     return v === undefined || v === null || v === '' ? null : (v as AnswerValue);
   }
 
@@ -186,7 +212,7 @@ export function loadAnswerBook(deps: { answersPath?: string; profilePath?: strin
       if (ref.kind !== 'answer') return false;
       const key = ref.key as string;
       if (key.startsWith('custom:')) return customValue(key.slice(7)) !== undefined;
-      return FIXED_KEYS.has(key) && (answers as Record<string, unknown>)[key] != null && (answers as Record<string, unknown>)[key] !== '';
+      return FIXED_KEYS.has(key) && (key === 'requires_sponsorship' ? (answers as Record<string, unknown>)[key] != null : fixedValue(key) != null);
     },
     resolve,
     suggest(question) {
@@ -209,4 +235,25 @@ export function loadAnswerBook(deps: { answersPath?: string; profilePath?: strin
       return { ref: null, cls: 'unknown' };
     },
   };
+}
+
+/**
+ * Owner CLI only (`npm run answers -- answer <id> "<text>" --always`): stores one answer in the `custom` map keyed by the NORMALIZED
+ * label, so the exact-match rule finds it on every later form. An existing key for the same normalized question is replaced.
+ * Atomic write, file mode kept. The agent never calls this.
+ */
+export function saveCustomAnswer(label: string, value: AnswerValue, answersPath: string = userDataPath('easy-apply-answers.json')): void {
+  const key = normalizeQuestion(label).slice(0, 200);
+  if (!key) throw new Error('empty question label');
+  const raw = readJson(answersPath);
+  if (!raw) throw new Error('user-data/easy-apply-answers.json is missing or not valid JSON; run npm run user-data -- init first');
+  const custom = { ...((raw.custom as Record<string, AnswerValue> | undefined) ?? {}) };
+  for (const k of Object.keys(custom)) if (normalizeQuestion(k).slice(0, 200) === key) delete custom[k];
+  custom[key] = value;
+  const next = { ...raw, custom };
+  const tmp = `${answersPath}.tmp-${process.pid}`;
+  const mode = statSync(answersPath).mode & 0o777;
+  writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode });
+  chmodSync(tmp, mode);
+  renameSync(tmp, answersPath);
 }

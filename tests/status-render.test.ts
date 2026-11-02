@@ -27,6 +27,8 @@ const base: Snapshot = {
   ],
   funnel: { discovered: 50, matched: 10, contacted: 5, replied: 2, interview: 1, offer: 0 },
   lastSend: { kind: 'email', at: '2026-10-14T10:00:00.000Z' },
+  openQuestions: { count: 0, items: [] },
+  needsHuman: { count: 0, hosts: [] },
   degraded: [],
 };
 

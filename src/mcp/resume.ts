@@ -46,7 +46,7 @@ server.registerTool(
     return {
       content: [{
         type: 'text',
-        text: JSON.stringify({ pdf_path: r.pdfPath, resume_json: r.resume, facts: r.facts, ats: r.ats, ats_coverage: r.atsCoverage, trimmed: r.trimmed, fill_ratio: r.fillRatio }),
+        text: JSON.stringify({ pdf_path: r.pdfPath, resume_json: r.resume, facts: r.facts, ats: r.ats, ats_coverage: r.atsCoverage, ats_note: r.atsNote, trimmed: r.trimmed, fill_ratio: r.fillRatio }),
       }],
     };
   }
