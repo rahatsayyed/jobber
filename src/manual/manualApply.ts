@@ -43,6 +43,7 @@ export const MANUAL_REASON_LABELS: Record<ManualReason, string> = {
   company_site_form: 'Company site form',
   listing_page: 'Careers listing page',
   easy_apply_failed: 'Easy Apply could not finish',
+  no_relevant_role: 'No relevant role on this careers page',
 };
 export const manualReasonLabel = (r: ManualReason): string => MANUAL_REASON_LABELS[r] ?? 'Apply by hand';
 

@@ -88,7 +88,7 @@ describe('web_wired', () => {
     copyFromRepo(root, REAL);
     const p = join(root, '.claude/settings.json');
     const fs = realFs();
-    writeFileSync(p, fs.read(p).replace('apply_(open|autofill|fill|choose|upload|next|submit|propose_recipe)', 'apply_(open|autofill|fill)'));
+    writeFileSync(p, fs.read(p).replace('apply_(open|autofill|fill|choose|upload|next|submit|draft_answer|open_role|propose_recipe)', 'apply_(open|autofill|fill)'));
     const r = await run('web_wired', on(root));
     expect(r.status).toBe('fail');
     expect(r.detail).toMatch(/outside the kill switch/);
