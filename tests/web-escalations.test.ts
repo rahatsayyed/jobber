@@ -56,7 +56,7 @@ describe('dashboard Inbox API', () => {
 
   it('lists grouped items with a count and the linkedin thread url only for linkedin', async () => {
     const s = await setup();
-    add('layout_drift');
+    add('dialog_controls_missing');
     add('linkedin_reply_needed', 'Recruiter inquiry', 'linkedin', '2-abc_100');
     add('naukri_reply_needed', 'Recruiter inquiry', 'naukri', 'nk-thread-1');
     const r = JSON.parse((await s.get('/api/escalations')).body) as { items: { group: string; threadUrl: string | null; platform: string }[]; counts: { open: number } };
@@ -99,8 +99,8 @@ describe('dashboard Inbox API', () => {
 
   it('marks handled and snoozes whole merged groups, validates input, and audits', async () => {
     const s = await setup();
-    const a = add('layout_drift');
-    const b = add('layout_drift');
+    const a = add('dialog_controls_missing');
+    const b = add('dialog_controls_missing');
     const c = add('linkedin_reply_needed', 'Recruiter inquiry');
     let r = await s.post('/api/escalations/resolve', { ids: [c] });
     expect(r.status).toBe(200);

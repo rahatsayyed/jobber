@@ -50,13 +50,13 @@ describe('listEscalations', () => {
   it('orders groups human, platform, noise; newest first; joins the person; dedups identical rows', () => {
     const db = setup();
     const p = person(db, 'Sam Recruiter', 'Globex');
-    addEscalation(db, { runId: null, platform: 'linkedin', reason: 'layout_drift' }, at(0));
+    addEscalation(db, { runId: null, platform: 'linkedin', reason: 'dialog_controls_missing' }, at(0));
     addEscalation(db, { runId: null, platform: 'linkedin', reason: '[blocked: injection_suspected]', detail: 'x' }, at(1));
     const a = addEscalation(db, { runId: null, platform: 'linkedin', personId: p, threadRef: '2-abc_100', reason: 'linkedin_reply_needed', detail: 'asks salary' }, at(2));
     // A repeat for the same open thread updates the row instead of adding one.
     const b = addEscalation(db, { runId: null, platform: 'linkedin', personId: p, threadRef: '2-abc_100', reason: 'linkedin_reply_needed', detail: 'asks salary' }, at(3));
     expect(b).toBe(a);
-    addEscalation(db, { runId: null, platform: 'linkedin', reason: 'layout_drift' }, at(4));
+    addEscalation(db, { runId: null, platform: 'linkedin', reason: 'dialog_controls_missing' }, at(4));
     const r = listEscalations(db, { now: at(10) });
     expect(r.items.map((i) => i.group)).toEqual(['human', 'platform', 'noise']);
     const human = r.items[0];
@@ -95,7 +95,7 @@ describe('listEscalations', () => {
   it('filters by platform, group and status; resolve and snooze move rows between statuses', () => {
     const db = setup();
     const a = addEscalation(db, { runId: null, platform: 'linkedin', reason: 'linkedin_reply_needed' }, at(0));
-    const b = addEscalation(db, { runId: null, platform: 'naukri', reason: 'layout_drift' }, at(1));
+    const b = addEscalation(db, { runId: null, platform: 'naukri', reason: 'dialog_controls_missing' }, at(1));
     const c = addEscalation(db, { runId: null, platform: 'apply', reason: 'apply:captcha' }, at(2));
     const now = at(10);
     expect(listEscalations(db, { now, platform: 'naukri' }).items.map((i) => i.id)).toEqual([b]);

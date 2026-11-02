@@ -79,8 +79,8 @@ describe('addEscalation details', () => {
     db.prepare('UPDATE escalations SET resolved_at = ? WHERE id = ?').run(at(7).toISOString(), a);
     expect(addEscalation(db, { runId: null, platform: 'linkedin', threadRef: '2-t_3', reason: 'linkedin_reply_needed' }, at(8))).not.toBe(a);
     // rows without a thread are never merged by the writer
-    const x = addEscalation(db, { runId: null, platform: 'linkedin', reason: 'layout_drift' }, at(9));
-    expect(addEscalation(db, { runId: null, platform: 'linkedin', reason: 'layout_drift' }, at(10))).not.toBe(x);
+    const x = addEscalation(db, { runId: null, platform: 'linkedin', reason: 'dialog_controls_missing' }, at(9));
+    expect(addEscalation(db, { runId: null, platform: 'linkedin', reason: 'dialog_controls_missing' }, at(10))).not.toBe(x);
   });
 
   it('a new message wakes a snoozed conversation, the same message does not', () => {
