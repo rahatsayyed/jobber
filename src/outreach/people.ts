@@ -112,8 +112,8 @@ export interface Candidate {
 
 const MIN_MIX: Record<'recruiter' | 'hiring_manager' | 'peer', number> = {
   recruiter: 1,
-  hiring_manager: 1,
-  peer: 2,
+  hiring_manager: 0,
+  peer: 1,
 };
 
 export function selectContacts(

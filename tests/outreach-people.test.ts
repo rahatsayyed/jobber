@@ -93,8 +93,7 @@ describe('selectContacts', () => {
     const cats = out.map((x) => x.category);
     expect(out).toHaveLength(5);
     expect(cats).toContain('recruiter');
-    expect(cats).toContain('hiring_manager');
-    expect(cats.filter((x) => x === 'peer').length).toBeGreaterThanOrEqual(2);
+    expect(cats.filter((x) => x === 'peer').length).toBeGreaterThanOrEqual(1);
     const flags = out.map((x) => x.connected);
     expect(flags).toEqual([...flags].sort((a, b) => Number(b) - Number(a)));
   });
@@ -120,9 +119,14 @@ describe('selectContacts', () => {
     ];
     const cats = selectContacts(pool, none, 5, 0).map((x) => x.category);
     expect(cats.filter((x) => x === 'recruiter').length).toBeGreaterThanOrEqual(1);
-    expect(cats.filter((x) => x === 'hiring_manager').length).toBe(1);
-    expect(cats.filter((x) => x === 'peer').length).toBeGreaterThanOrEqual(2);
+    expect(cats.filter((x) => x === 'peer').length).toBeGreaterThanOrEqual(1);
     expect(cats).toHaveLength(5);
+  });
+
+  it('day one at a small limit is one recruiter and one peer (a hiring manager is not forced)', () => {
+    const pool = [c(1, 'hiring_manager'), c(2, 'recruiter'), c(3, 'peer'), c(4, 'peer'), c(5, 'recruiter')];
+    const cats = selectContacts(pool, none, 2, 0).map((x) => x.category).sort();
+    expect(cats).toEqual(['peer', 'recruiter']);
   });
 
   it('counts people already active toward the mix and the limit', () => {
