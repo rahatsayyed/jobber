@@ -37,6 +37,8 @@ export interface EngineDeps {
   afterBlock?: () => Promise<void>;
   /** Pause before each action in ms (default 300 to 900). */
   paceMs?: () => number;
+  /** Random pause before each page navigation after the first of the process (LinkedIn only; absent: none). */
+  navGap?: { before(): Promise<void> };
   settleMs?: number;
   /** Post-navigation stability poll for open() (defaults: OPEN_SETTLE_POLL_MS, OPEN_SETTLE_MAX_MS). */
   openSettle?: { pollMs: number; maxMs: number };

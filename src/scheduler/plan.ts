@@ -18,8 +18,10 @@ export type TaskKind =
   | 'manual'
   // manual_url: one owner-submitted job page for a platform operator (LinkedIn, Naukri, Wellfound); the operator's typed `<platform>_manual_job` tool reads and saves it.
   | 'manual_url'
-  // accept_check: LinkedIn only; the operator calls the typed `linkedin_check_accepted` tool (no argument) once per quota unit.
-  | 'accept_check';
+  // accept_check: LinkedIn only; the operator calls the typed `linkedin_check_accepted` tool (no argument) once per quota unit (the per-profile fallback).
+  | 'accept_check'
+  // accept_recent: LinkedIn only; ONE call of `linkedin_check_accepted_recent` (no argument) reads the recent-connections page, at most once per 24 hours.
+  | 'accept_recent';
 /** Who executes a wake stage that is not a platform operator. `code` is run by the scheduler itself before the claude run starts. */
 export type StageOperator = 'code' | 'source-operator' | 'pipeline' | 'mail-operator' | 'apply-operator';
 export interface Stage { operator: StageOperator; kind: TaskKind; quota: number }
@@ -50,6 +52,8 @@ export interface PlanKnobs {
 /** Most items one Agent call of a sending step may handle (a constant, no env key): a longer quota is split into separate sequential calls, each a fresh subagent context. */
 export const CHUNK_SIZE = 5;
 export const INBOX_QUOTA = 5;
+/** LinkedIn's messaging page is opened at most this often (minutes), a floor under INBOX_EVERY_MIN. */
+export const LINKEDIN_INBOX_MIN_GAP_MIN = 60;
 export const NAUKRI_DETAIL_QUOTA = 5;
 export const WELLFOUND_DETAIL_QUOTA = 5;
 export const WELLFOUND_DISCOVER_EVERY_HOURS_DEFAULT = 6;
@@ -95,6 +99,8 @@ export function planWake(i: {
   discoverSearches?: DiscoverSearches;
   // The scheduler can run the code pass over the script providers (the driver has a `codePass`); without it no discover_scripts stage is planned.
   codePassEnabled?: boolean;
+  /** False when `now` is outside LINKEDIN_ACTIVE_HOURS: no LinkedIn task is planned at all (inbox included). Absent: active. */
+  linkedinActive?: boolean;
 }): WakeDecision {
   const { control, ceilings, due, knobs } = i;
   if (control.killed) return { kind: 'skip', reason: 'killed', detail: control.killReason ?? undefined };
@@ -108,6 +114,8 @@ export function planWake(i: {
   if (inQuietHours(i.now, i.quiet)) return { kind: 'skip', reason: 'quiet_hours' };
 
   const allowed = new Set<Platform>(control.allowed);
+  // Outside the LinkedIn active hours LinkedIn is treated like a halted platform for planning: nothing is planned for it.
+  if (i.linkedinActive === false) allowed.delete('linkedin');
   const ok = (k: LimitKey): boolean => ceilings[k].ok;
   const plats = (pairs: [DuePlatform, LimitKey[]][]): DuePlatform[] =>
     pairs.filter(([p, keys]) => allowed.has(p) && keys.some(ok)).map(([p]) => p);
@@ -132,13 +140,22 @@ export function planWake(i: {
 
   // LinkedIn accept check: reads profiles of sent invites and marks accepted ones, so the followups task can message them.
   // Reads only, spends no ceiling; the quota is already bounded in code (ACCEPT_CHECK_MAX_PER_WAKE) by countDue.
+  // The main detection is ONE read of the recent-connections page (accept_recent, at most once per 24 hours, decided in due.ts);
+  // accept_check (a few profile pages, each profile at most once per 72 hours) is only the fallback for older invites.
+  if (allowed.has('linkedin') && due.acceptRecentDue === true) byPlatform.linkedin.push({ kind: 'accept_recent', quota: 1 });
   const acceptDue = due.acceptCheckDue ?? 0;
   if (allowed.has('linkedin') && acceptDue > 0) {
     byPlatform.linkedin.push({ kind: 'accept_check', quota: Math.min(acceptDue, ACCEPT_CHECK_MAX_PER_WAKE) });
   }
 
-  const inboxDue = due.inboxLastCheckedMinAgo === null || due.inboxLastCheckedMinAgo >= knobs.inboxEveryMin;
-  if (inboxDue) for (const p of control.allowed) if (p !== 'wellfound' || wellfoundOn) byPlatform[p].push({ kind: 'inbox', quota: INBOX_QUOTA });
+  const inboxAge = due.inboxLastCheckedMinAgo;
+  const inboxDue = inboxAge === null || inboxAge >= knobs.inboxEveryMin;
+  // LinkedIn's messaging page is opened at most every LINKEDIN_INBOX_MIN_GAP_MIN minutes whatever INBOX_EVERY_MIN says.
+  const linkedinInboxDue = inboxAge === null || inboxAge >= Math.max(knobs.inboxEveryMin, LINKEDIN_INBOX_MIN_GAP_MIN);
+  for (const p of control.allowed) {
+    if (p === 'linkedin' ? !allowed.has('linkedin') || !linkedinInboxDue : !inboxDue) continue;
+    if (p !== 'wellfound' || wellfoundOn) byPlatform[p].push({ kind: 'inbox', quota: INBOX_QUOTA });
+  }
 
   const withWork = (ps: DuePlatform[], by: Record<DuePlatform, number>): DuePlatform[] => ps.filter((p) => by[p] > 0);
   const followPlats = withWork(
@@ -177,7 +194,7 @@ export function planWake(i: {
   }
   // Newly accepted people become due for their first message in this same wake: the accept check pulls in a LinkedIn followups task
   // even when none was due at plan time (the operator reads its real queue and reports done 0 when empty).
-  if (byPlatform.linkedin.some((t) => t.kind === 'accept_check') && !byPlatform.linkedin.some((t) => t.kind === 'followups') && ok('linkedin_message')) {
+  if (byPlatform.linkedin.some((t) => t.kind === 'accept_check' || t.kind === 'accept_recent') && !byPlatform.linkedin.some((t) => t.kind === 'followups') && ok('linkedin_message')) {
     const q = Math.min(roomLeft('linkedin_message'), CHUNK_SIZE);
     if (q > 0) byPlatform.linkedin.push({ kind: 'followups', quota: q });
   }
@@ -251,7 +268,7 @@ export function planWake(i: {
 
   if (tasks.length > 0 || stages.length > 0) return { kind: 'run', tasks, ...(stages.length > 0 ? { stages } : {}) };
 
-  const allowedTotal = (by: Record<DuePlatform, number>): number => control.allowed.reduce((n, p) => n + (p === 'wellfound' ? 0 : by[p]), 0);
+  const allowedTotal = (by: Record<DuePlatform, number>): number => control.allowed.filter((p) => allowed.has(p)).reduce((n, p) => n + (p === 'wellfound' ? 0 : by[p]), 0);
   const workExists =
     allowedTotal(due.followupsDueByPlatform) > 0 ||
     allowedTotal(due.newOutreachReadyByPlatform) > 0 ||
@@ -284,12 +301,13 @@ export function stepOrder(d: Extract<WakeDecision, { kind: 'run' }>): Step[] {
   stage('discover_agent');
   for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'manual_url') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });
   for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'discover') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota, searches: t.searches });
-  // accept_check reads profiles only and must run before the followups steps so a newly accepted person can be messaged in the same wake.
+  // accept_recent (one page) and accept_check (a few profiles) read only and must run before the followups steps so a newly accepted person can be messaged in the same wake.
+  for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'accept_recent') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });
   for (const a of d.tasks) for (const t of a.tasks) if (t.kind === 'accept_check') out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota });
   stage('pipeline');
   stage('mail');
   for (const a of d.tasks) for (const t of a.tasks) {
-    if (t.kind === 'discover' || t.kind === 'manual_url' || t.kind === 'accept_check') continue;
+    if (t.kind === 'discover' || t.kind === 'manual_url' || t.kind === 'accept_check' || t.kind === 'accept_recent') continue;
     const sending = t.kind === 'followups' || t.kind === 'new_outreach';
     out.push({ operator: a.operator, platform: a.platform, kind: t.kind, quota: t.quota, ...(sending ? { chunks: chunkQuota(t.quota) } : {}) });
   }

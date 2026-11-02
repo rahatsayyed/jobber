@@ -49,9 +49,9 @@ describe('scheduler doctor checks', () => {
     expect((await bad({ EMAIL_SEND_WINDOW_START: 'nine' }))['mail-drip-config'].status).toBe('fail');
   });
 
-  it('has the eight kebab-case ids', () => {
+  it('has the nine kebab-case ids', () => {
     expect(schedulerChecks().map((c) => c.id)).toEqual([
-      'scheduler-tmux', 'scheduler-lock-dir', 'scheduler-stop-file', 'scheduler-dry-run', 'mail-drip-config', 'dry-run-legacy-keys', 'scheduler-units', 'agents-worker-tools',
+      'scheduler-tmux', 'scheduler-lock-dir', 'scheduler-stop-file', 'scheduler-dry-run', 'mail-drip-config', 'linkedin-active-hours', 'dry-run-legacy-keys', 'scheduler-units', 'agents-worker-tools',
     ]);
   });
 

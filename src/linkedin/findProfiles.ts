@@ -1,7 +1,7 @@
 // Typed, read-only people discovery. Never clicks, types or sends. Layered (LINKEDIN_PEOPLE_SEARCH_SOURCES,
-// default engine,serper,linkedin): a no-login search-engine query first, then Serper, and only then
-// LinkedIn's own logged-in people-search page (the only layer that touches LinkedIn, under
-// MAX_LINKEDIN_SEARCHES_PER_DAY). The only write is the people rows (and their contact_state) for
+// default engine,serper): a no-login search-engine query first, then Serper, and, only when the owner adds
+// `linkedin` to the list, LinkedIn's own logged-in people-search page (the only layer that touches LinkedIn, under
+// MAX_LINKEDIN_SEARCHES_PER_DAY and the LinkedIn active hours). The only write is the people rows (and their contact_state) for
 // code-verified candidates, also in dry runs (decision D4). Search-engine and Serper text is untrusted,
 // exactly like page text: same field gate, same classifier screen, same employer check.
 import { haltReason } from '../outreach/limits.js';
@@ -10,6 +10,7 @@ import { upsertPerson } from '../outreach/people.js';
 import { gateField, MAX_FIELD_CHARS } from './state.js';
 import { classifyUrl, isBlockedPath, isLinkedInUrl, isProfileUrl, profileKeyOf } from './urls.js';
 import { layoutClassOf } from './layoutGuard.js';
+import { linkedinActiveNow, OUTSIDE_ACTIVE_HOURS_CODE } from './activeHours.js';
 import { classifyCategory, headlineMatchesCompany } from './employer.js';
 import type { ToolDeps } from './toolDeps.js';
 import { searchWithBudget, type SearchResult } from '../search/index.js';
@@ -32,6 +33,12 @@ export interface FindProfilesResult {
   layout?: string;
   /** Which layer produced the candidates (telemetry): the search engine, Serper or the LinkedIn people-search page. */
   source?: 'search_engine' | 'serper' | 'linkedin';
+}
+
+/** Same rule as the MCP wrapper: under the test runner the window applies only when the env names LINKEDIN_ACTIVE_HOURS. */
+function activeHoursOk(deps: ToolDeps): boolean {
+  if (process.env.VITEST !== undefined && deps.env.LINKEDIN_ACTIVE_HOURS === undefined) return true;
+  return linkedinActiveNow(deps.env, deps.now());
 }
 
 const CATEGORIES: readonly string[] = ['recruiter', 'hiring_manager', 'peer'];
@@ -137,7 +144,8 @@ export async function findProfiles(a: FindProfilesArgs, deps: ToolDeps): Promise
       continue;
     }
 
-    // LinkedIn's own logged-in people-search page: the last resort, under maxSearchesPerDay.
+    // LinkedIn's own logged-in people-search page: the last resort, under maxSearchesPerDay and the active hours.
+    if (!activeHoursOk(deps)) { lastFail = fail(OUTSIDE_ACTIVE_HOURS_CODE); continue; }
     const keywords = `${company} ${hint || 'recruiter hiring manager talent acquisition'}`;
     const url = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(keywords)}`;
     if (!checkAndIncrement(deps.db, 'linkedin_search', deps.cfg.maxSearchesPerDay)) { limited = true; continue; }

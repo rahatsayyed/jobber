@@ -13,6 +13,7 @@ import { manualRequestsPending } from '../manual/requests.js';
 import { BudgetTracker, loadBudget, type StopReason } from './budget.js';
 import { readControl, statExists, type ControlDeps, type ControlState } from './control.js';
 import { countDue } from './due.js';
+import { linkedinActiveNow } from '../linkedin/activeHours.js';
 import type { LaunchHandle, Launcher } from './launch.js';
 import { sourcesNotice } from '../status/sources.js';
 import type { Notice, Notifier } from './notify.js';
@@ -291,6 +292,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
         knobs: loadPlanKnobs(d.env),
         discoverSearches: d.discoverSearches,
         codePassEnabled: !!d.codePass,
+        linkedinActive: linkedinActiveNow(d.env, now),
       });
     } catch (e) {
       await say(d, { level: 'warn', title: 'scheduler plan failed, not launching', detail: safeMsg(e), runId });

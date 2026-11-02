@@ -1,6 +1,7 @@
 // src/status/render.ts
 import type { Snapshot } from './snapshot.js';
 import type { LimitKey } from '../outreach/limits.js';
+import { inActiveHours, loadActiveHours } from '../linkedin/activeHours.js';
 
 export interface WindowInfo {
   name: string;
@@ -49,8 +50,14 @@ function haltLines(s: Snapshot): string[] {
   return s.halts.map((h) => `HALT ${h.platform}: ${h.reason} (since ${formatIst(h.setAt)})`);
 }
 
-export function renderLimits(s: Snapshot): string {
+export function renderLimits(s: Snapshot, opts: { env?: NodeJS.ProcessEnv; now?: Date } = {}): string {
   const lines: string[] = [];
+  if (opts.env) {
+    const h = loadActiveHours(opts.env);
+    const hm = (m: number): string => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    const now = opts.now ?? new Date();
+    lines.push(`linkedin active hours ${hm(h.startMin)}-${hm(h.endMin)} IST (${inActiveHours(now, h) ? 'open now' : 'closed now, no LinkedIn work'})${h.problem ? ` WARNING: ${h.problem}` : ''}`);
+  }
   for (const key of Object.keys(PERIOD) as LimitKey[]) {
     const c = s.ceilings[key];
     lines.push(`${key} ${c.used}/${c.limit} per ${PERIOD[key]}${c.ok ? '' : ' FULL'}`);

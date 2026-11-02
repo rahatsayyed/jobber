@@ -18,7 +18,7 @@ safety layers"), and the ceiling is consumed right before the Send click.
 The only connect caps are the daily rolling ceilings (24 hours, like the other daily caps) in `src/outreach/limits.ts`: `linkedin_invite`
 (`LINKEDIN_MAX_INVITES_PER_DAY`) and `linkedin_message` (`LINKEDIN_MAX_MESSAGES_PER_DAY`), plus the
 per-company limits and halts there. `MAX_LINKEDIN_SEARCHES_PER_DAY` (daily counter for real LinkedIn people-search pages opened by
-`linkedin_find_profiles`, 0 to 100000; it now counts only the last layer, see below), `LINKEDIN_MAX_PROFILE_VIEWS_PER_DAY` (ceiling `linkedin_profile_view`, default 80: every `/in/` navigation by `linkedin_open` or `linkedin_check_accepted`; a refused open returns `rate_limited` / `profile_view_limit` and the accept check stops its loop) and `LINKEDIN_MAX_DISCOVER_PER_DAY` (named job and post
+`linkedin_find_profiles`, 0 to 100000; it now counts only the last layer, see below), `LINKEDIN_MAX_PROFILE_VIEWS_PER_DAY` (ceiling `linkedin_profile_view`, default 40: every `/in/` navigation by `linkedin_open` or `linkedin_check_accepted`; a refused open returns `rate_limited` / `profile_view_limit` and the accept check stops its loop) and `LINKEDIN_MAX_DISCOVER_PER_DAY` (named job and post
 searches) also exist. On a `rate_limited` result the operator stops the task and reports it; there is
 no one to ask during a wake, so a cap is never raised from inside a wake. The old `connect` MCP and
 its hybrid Claude fallback are gone; the browser applier's own LinkedIn Easy Apply route is covered
@@ -173,10 +173,17 @@ separate `linkedin_message` ceiling for messages (limit values live in the catal
 confirmed send is recorded in `connections` (`status: "messaged"` for a DM).
 
 **Accept check.** A sent invite alone never proves acceptance, and nothing used to move a `connections` row
-from `sent` to `connected`, so `followups` stayed at 0. The `accept_check` task (planned for LinkedIn when an eligible
-invite exists, before the `followups` step; quota at most 8 per wake) makes the `linkedin-operator` call the typed
-`linkedin_check_accepted` tool with no argument. Code picks the next `connections` row with status `sent` (sent at most
-21 days ago, not checked in the last 20 hours, never-checked first; `connections.accept_checked_at`), opens the profile
+from `sent` to `connected`, so `followups` stayed at 0. The `accept_recent` task (planned for LinkedIn at most once per 24 hours while a sent invite is open, before the `followups` step) makes the
+`linkedin-operator` call the typed `linkedin_check_accepted_recent` tool with no argument: code opens LinkedIn's own recent-connections
+list (`https://www.linkedin.com/mynetwork/invite-connect/connections/`, newest first) ONCE, scrolls it at most twice, reads the visible
+entries (name, headline, profile link; page text goes through `gateField`) and flips to `connected` every `sent` row whose normalized
+profile URL matches an entry (`markConnectionAccepted`, which also activates the contact). It matches by profile URL only, never by name;
+an unreadable page, a login redirect, an unexpected URL or fewer than 3 parsed entries change nothing and return `unclear`
+(`src/linkedin/acceptRecent.ts`). Live-unverified: the real page structure (it relies on the shared snapshot reading `[role=listitem]`
+cards with an `/in/` link; LinkedIn may link opaque member ids instead of vanity slugs, which then simply never match).
+The per-profile `accept_check` task is only the FALLBACK: quota at most 3 per wake, it makes the `linkedin-operator` call the typed
+`linkedin_check_accepted` tool with no argument. Code picks the next `connections` row with status `sent` (sent 3 to 14
+days ago, not checked in the last 72 hours, never-checked first; `connections.accept_checked_at`), opens the profile
 (3 to 8 seconds random pause between profiles), and reads the header with `connectionState`: only a 1st-degree profile
 with a Message button and no Connect button sets the row (and every `sent` row of the same normalized URL) to
 `connected`, which `dueTouchesFor` (`loadConnectedKeys`) already treats as acceptance, so the next `followups` task sends
@@ -192,8 +199,8 @@ A `linkedin-jobs` job whose Apply is not Easy Apply is classed `linkedin` (reaso
 ### Layered people discovery (`linkedin_find_profiles`)
 
 LinkedIn warned the owner about high-volume data access, so the logged-in people-search page is the LAST
-resort. `LINKEDIN_PEOPLE_SEARCH_SOURCES` (default `engine,serper,linkedin`, order = priority, unknown
-names ignored, `linkedin` alone restores the old behaviour) sets the layers: (1) `engine`: a no-login
+resort. `LINKEDIN_PEOPLE_SEARCH_SOURCES` (default `engine,serper`, order = priority, unknown
+names ignored, add `linkedin` to opt in to the people-search page) sets the layers: (1) `engine`: a no-login
 dork `site:linkedin.com/in "<company>" (<role terms>)` (category aware) through the search layer's
 browser-dork provider (Google, then DuckDuckGo, then Bing; a block page puts that engine on cooldown, is
 never solved or waited out, and falls through; no daily cap); (2) `serper` (key and

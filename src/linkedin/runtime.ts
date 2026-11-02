@@ -9,6 +9,7 @@ import { detectBlock, type BlockKind } from './state.js';
 import { isBlockedPath, isLinkedInUrl } from './urls.js';
 import { haltPlatform, haltReason } from '../outreach/limits.js';
 import type { LayoutObserver } from '../layout/runtime.js';
+import type { NavGap } from './navGap.js';
 import type { LiBrowser, LiContext, LiLauncher, LiPage, RawSnapshot } from './types.js';
 
 type Db = BetterSqlite3.Database;
@@ -20,6 +21,8 @@ export interface RuntimeDeps {
   layout?: LayoutObserver;
   /** True while a tool call is in flight: the idle timer then re-arms instead of closing the session. */
   isBusy?: () => boolean;
+  /** Random pause before each navigation after the first of the process (shared with the engine). */
+  navGap?: NavGap;
 }
 export interface ActionResult { ok: boolean; code: string; reason?: string; state?: string }
 export interface Runtime {
@@ -152,6 +155,7 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
       session = { browser, context, page, lock: lock.handle, idle: null };
       process.once('beforeExit', onExit);
       touch();
+      await deps.navGap?.before();
       await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' });
       await settle(page);
       let snap = await rawSnapshot();

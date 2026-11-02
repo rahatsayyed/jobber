@@ -18,11 +18,11 @@ const DAY = 24 * 3600 * 1000;
 describe('loadOutreachConfig', () => {
   it('uses the documented defaults', () => {
     const c = loadOutreachConfig({});
-    expect(c.linkedinMaxInvitesPerDay).toBe(40);
-    expect(c.linkedinMaxMessagesPerDay).toBe(100);
+    expect(c.linkedinMaxInvitesPerDay).toBe(25);
+    expect(c.linkedinMaxMessagesPerDay).toBe(25);
     expect(c.naukriMaxAppliesPerDay).toBe(30);
     expect(c.naukriMaxMessagesPerDay).toBe(40);
-    expect(c.companyContactLimit).toBe(5);
+    expect(c.companyContactLimit).toBe(2);
     expect(c.speculativeCompanyLimit).toBe(2);
     expect(c.quietStartHour).toBe(1);
     expect(c.quietEndHour).toBe(7);

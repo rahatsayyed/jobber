@@ -19,8 +19,8 @@ export interface OutreachConfig {
 }
 
 const DEFAULTS: OutreachConfig = {
-  linkedinMaxInvitesPerDay: 40,
-  linkedinMaxMessagesPerDay: 100,
+  linkedinMaxInvitesPerDay: 25,
+  linkedinMaxMessagesPerDay: 25,
   naukriMaxAppliesPerDay: 30,
   naukriMaxMessagesPerDay: 40,
   wellfoundMaxAppliesPerDay: 20,
@@ -28,10 +28,10 @@ const DEFAULTS: OutreachConfig = {
   wellfoundMaxDiscoverPerDay: 12,
   applyMaxAttemptsPerDay: 30,
   siteMaxAccountsPerDay: 2,
-  linkedinMaxDiscoverPerDay: 12,
+  linkedinMaxDiscoverPerDay: 6,
   applyMaxExternalResolvesPerDay: 30,
-  linkedinMaxProfileViewsPerDay: 80,
-  companyContactLimit: 5,
+  linkedinMaxProfileViewsPerDay: 40,
+  companyContactLimit: 2,
   speculativeCompanyLimit: 2,
   quietStartHour: 1,
   quietEndHour: 7,

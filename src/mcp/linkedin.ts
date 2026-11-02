@@ -38,6 +38,9 @@ import { IntentStore } from '../browserctl/intent.js';
 import { treeToRawSnapshot } from '../browserctl/layoutAdapter.js';
 import { killReason } from '../browserctl/engineTypes.js';
 import { checkNextAccepted, type AcceptDeps } from '../linkedin/acceptCheck.js';
+import { checkAcceptedRecent, type RecentDeps } from '../linkedin/acceptRecent.js';
+import { linkedinActiveNow, OUTSIDE_ACTIVE_HOURS_CODE, loadActiveHours } from '../linkedin/activeHours.js';
+import { createNavGap, type NavGap } from '../linkedin/navGap.js';
 
 /**
  * `linkedin` MCP server: a locked headless LinkedIn session driven by the browserctl engine.
@@ -56,7 +59,7 @@ export const TOOL_NAMES = [
   'linkedin_scroll', 'linkedin_wait_for', 'linkedin_screenshot', 'linkedin_click_at', 'linkedin_arm_send',
   'linkedin_close', 'linkedin_limits', 'linkedin_layout',
   'linkedin_find_profiles', 'linkedin_search_jobs', 'linkedin_search_posts', 'linkedin_manual_job', 'linkedin_resolve_external',
-  'linkedin_check_accepted',
+  'linkedin_check_accepted', 'linkedin_check_accepted_recent',
 ] as const;
 type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -94,6 +97,8 @@ export const schemas = {
   linkedin_manual_job: {},
   // Takes nothing: code picks the next 'sent' invite whose acceptance is due for a check.
   linkedin_check_accepted: {},
+  // Takes nothing: code opens LinkedIn's recent-connections page once (at most every 24 hours).
+  linkedin_check_accepted_recent: {},
   // A job id only: the page must already be open; code finds the company site behind a non-Easy Apply.
   linkedin_resolve_external: { job_id: z.string().regex(/^[\w.:@-]{1,200}$/) },
 } as const;
@@ -128,6 +133,10 @@ export interface HandlerDeps {
   serper?: SearchProvider;
   /** Accept check test seams: no real pause between profiles, fixed randomness. */
   acceptTuning?: Pick<AcceptDeps, 'sleep' | 'random'>;
+  /** Recent-connections check test seams: no real pause between scrolls, fixed randomness. */
+  recentTuning?: Pick<RecentDeps, 'sleep' | 'random'>;
+  /** Test seam: replaces the per-navigation pause (default: LINKEDIN_NAV_GAP_MIN_SEC / MAX_SEC). */
+  navGap?: NavGap;
 }
 
 export type Handler = (args: any) => Promise<unknown>;
@@ -179,8 +188,10 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
   const acceptState = { tried: new Set<string>(), checked: 0 };
   const getDb = () => (db ??= openDb(dbPath()));
   const inflightRef: { fn: () => boolean } = { fn: () => false };
+  // One pacing sequence for both navigation paths (runtime open and engine open).
+  const navGap = deps.navGap ?? createNavGap({ env });
   const getRt = () => (rt ??= createRuntime({
-    db: getDb(), env, idleMs: cfg.idleMs, settleMs: cfg.settleMs, isBusy: () => inflightRef.fn(),
+    db: getDb(), env, idleMs: cfg.idleMs, settleMs: cfg.settleMs, isBusy: () => inflightRef.fn(), navGap,
     layout: createLayoutObserver({ platform: 'linkedin', cfg: layoutCfg, now, runId: resolveRunId(env), db: getDb() }),
   }));
   let styleNoteShown = false;
@@ -248,6 +259,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
     engine = createEngine({
       db: getDb(), now, env, cfg, getPage, intents, screen,
       screenshotEnabled: env.LINKEDIN_SCREENSHOT !== 'false',
+      navGap,
       layoutFeed: (tree) => { getRt().layout?.observe(treeToRawSnapshot(tree), null); },
       afterBlock: async () => { await getRt().discard(); },
       ...(deps.paceMs ? { paceMs: deps.paceMs } : {}),
@@ -386,6 +398,31 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
         },
       ));
     }),
+    // Opens LinkedIn's recent-connections page ONCE (at most every 24 hours, in code) and marks the sent invites whose profile URL it lists as connected; clicks and sends nothing.
+    linkedin_check_accepted_recent: safe(async () => {
+      const td = toolDeps();
+      return json(await checkAcceptedRecent(
+        {
+          open: async (u) => {
+            const r = await td.rt.open(u);
+            if (!r.ok) return { ok: false, code: r.code };
+            return /\/(?:login|authwall|checkpoint|uas\/login)/.test(r.snapshot.url) ? { ok: false, code: 'login_required' } : { ok: true, snapshot: r.snapshot };
+          },
+          scroll: async () => {
+            const p = td.rt.page();
+            if (!p) return null;
+            try { await p.evaluate('window.scrollBy(0, Math.round(window.innerHeight * 0.8))'); } catch { return null; }
+            await p.waitForTimeout(td.cfg.settleMs).catch(() => undefined);
+            return td.rt.snapshot();
+          },
+        },
+        {
+          db: td.db, env: td.env, now: td.now,
+          killed: () => killReason({ db: td.db, env: td.env, policy: LINKEDIN_POLICY }),
+          ...(deps.recentTuning ?? {}),
+        },
+      ));
+    }),
     // Finds the company site behind a non-Easy Apply in code (main account session only, never the burner); the URL is never returned.
     linkedin_resolve_external: safe(async ({ job_id }) => json(await resolveExternalApply({
       engine: getEngine(), db: getDb(), now, env, cfg: loadOutreachConfig(env), policy: LINKEDIN_POLICY, screen,
@@ -397,6 +434,14 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
   // message; without this the arm's post-open checks interleave with the click and the session's idle
   // timer can fire under them. Read-only status tools stay outside the queue.
   const UNQUEUED = new Set<ToolName>(['linkedin_limits', 'linkedin_layout']);
+  // LINKEDIN_ACTIVE_HOURS: outside the window every tool that works with LinkedIn refuses (a rate-limited-style result, nothing
+  // is opened). Status tools and close stay available; find_profiles checks the window itself, only for the LinkedIn layer.
+  // Under the test runner the window applies only when the env names LINKEDIN_ACTIVE_HOURS, so tests do not depend on the clock.
+  const HOURS_EXEMPT = new Set<ToolName>(['linkedin_limits', 'linkedin_layout', 'linkedin_close', 'linkedin_find_profiles']);
+  const outsideHours = (): boolean => {
+    if (process.env.VITEST !== undefined && env.LINKEDIN_ACTIVE_HOURS === undefined) return false;
+    return !linkedinActiveNow(env, now());
+  };
   let tail: Promise<unknown> = Promise.resolve();
   let inflight = 0;
   inflightRef.fn = () => inflight > 0;
@@ -404,6 +449,14 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
     if (UNQUEUED.has(name)) continue;
     const inner = handlers[name];
     handlers[name] = (args) => {
+      if (!HOURS_EXEMPT.has(name) && outsideHours()) {
+        const w = loadActiveHours(env);
+        const hm = (m: number): string => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+        return Promise.resolve(json({
+          ok: false, status: 'rate_limited', code: OUTSIDE_ACTIVE_HOURS_CODE,
+          reason: `outside the LinkedIn active hours (${hm(w.startMin)}-${hm(w.endMin)} IST); stop LinkedIn work and report outside_active_hours`,
+        }));
+      }
       inflight += 1;
       const run = tail.then(() => inner(args), () => inner(args));
       tail = run.then(() => undefined, () => undefined);
@@ -436,7 +489,8 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   linkedin_search_jobs: 'TYPED, read-only toward LinkedIn: runs ONE named jobs search from config/linkedin-discovery.json (pass only its name), saves new jobs in code and returns counts and new job ids, never page text. Shares the daily search ceiling plus the discover ceiling. Dry run saves nothing. ' + UNTRUSTED,
   linkedin_resolve_external: 'For a LinkedIn job whose Apply is NOT Easy Apply: after linkedin_open of that job page, code reads the Apply link (or clicks it once and reads the company page address from the popup, closing it at once, nothing typed or read there), validates and classifies it and routes the job to the generic applier (then call apply_open with the same job_id). You supply only the job_id; the address is never returned. Honours dry run, halts and the kill switch; one daily ceiling and at most 5 per run. Returns {status: resolved|manual_review|refused|rate_limited|dry_run|halted|failed, code, platform?, tier?}. Main account session only. ' + UNTRUSTED,
   linkedin_manual_job: 'TYPED, read-only toward LinkedIn: takes no arguments. Code picks the next queued owner-submitted LinkedIn job page (the URL comes from SQLite), loads it in this session, reads and screens the posting and saves it as a priority job in code. Returns {status: ok|dry_run|halted|failed, code, task_id, job_ids, remaining}; never page text. Never sends or applies. ' + UNTRUSTED,
-  linkedin_check_accepted: 'TYPED, read-only toward LinkedIn: takes no arguments. Code picks the next sent invite whose acceptance is due for a check (the profile URL comes from SQLite), opens that profile, reads its header and, only for a first-degree profile with a Message button and no Connect button, marks the invite accepted in code (which makes the person due for the follow-up cadence). Pending or Connect-again changes nothing. Pauses 3 to 8 s between profiles, at most 8 per run. Returns {status: accepted|pending|not_accepted|unclear|none|dry_run|halted|rate_limited|failed, code, remaining}; never page text. Clicks and sends nothing. ' + UNTRUSTED,
+  linkedin_check_accepted: 'TYPED, read-only toward LinkedIn: takes no arguments. Code picks the next sent invite whose acceptance is due for a check (the profile URL comes from SQLite), opens that profile, reads its header and, only for a first-degree profile with a Message button and no Connect button, marks the invite accepted in code (which makes the person due for the follow-up cadence). Pending or Connect-again changes nothing. Fallback only (invites older than 3 days that the connections page did not show): pauses 3 to 8 s between profiles, at most 3 per run, each profile at most once per 72 hours. Returns {status: accepted|pending|not_accepted|unclear|none|dry_run|halted|rate_limited|failed, code, remaining}; never page text. Clicks and sends nothing. ' + UNTRUSTED,
+  linkedin_check_accepted_recent: 'TYPED, read-only toward LinkedIn: takes no arguments. Code opens LinkedIn\'s own recent-connections list ONCE (sorted newest first, scrolled at most twice), reads the visible entries and marks as accepted every sent invite whose profile URL appears in it (which makes the person due for the follow-up cadence). Matches by profile URL only, never by name; fewer than 3 readable entries, a login redirect or an unexpected page changes nothing (unclear). At most one page load per 24 hours. Returns {status: ok|unclear|none|dry_run|halted|rate_limited|failed, code, entries, marked}; never page text. Clicks and sends nothing. ' + UNTRUSTED,
   linkedin_search_posts: 'TYPED, read-only toward LinkedIn: runs ONE named hiring-post search from config/linkedin-discovery.json (pass only its name), saves hiring posts as jobs in code and returns counts and new job ids, never page text. Shares the daily search ceiling plus the discover ceiling. Dry run saves nothing. ' + UNTRUSTED,
 };
 

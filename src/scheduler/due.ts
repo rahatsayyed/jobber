@@ -3,7 +3,8 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { MATCH_FAIL_LIMIT } from '../db.js';
 import { planPipelineWork } from '../pipelineWork.js';
 import { followupMode, listApprovedFollowups, listFollowupCandidates } from '../followups.js';
-import { countAcceptCandidates } from '../linkedin/acceptCheck.js';
+import { countAcceptCandidates, hasOpenInvites } from '../linkedin/acceptCheck.js';
+import { ACCEPT_RECENT_EVERY_HOURS, hoursSinceRecentCheck } from '../linkedin/acceptRecent.js';
 import { manualPlatformTasks, manualRequestsPending } from '../manual/requests.js';
 import { dueTouchesFor } from '../outreach/dueTouches.js';
 import { normalizeProfileKey } from '../outreach/people.js';
@@ -45,6 +46,8 @@ export interface DueCounts {
   appliesLeftToday?: number;
   /** LinkedIn invites ('sent' connections) whose acceptance is due for a check this wake: at most ACCEPT_CHECK_MAX_PER_WAKE, undefined: not tracked. */
   acceptCheckDue?: number;
+  /** True when the recent-connections page should be read this wake: open invites exist and it was not read in the last 24 hours. Absent: not tracked. */
+  acceptRecentDue?: boolean;
   /** Owner-submitted manual requests not yet ingested (status pending): a wake is planned for them even when nothing else is due. */
   manualRequestsPending?: number;
   /** Owner-submitted job pages per platform operator: queued manual_url source tasks plus pending requests whose URL classifies to that platform. */
@@ -186,6 +189,14 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
     applyQueued,
     appliesLeftToday,
     acceptCheckDue: countAcceptCandidates(db, now),
+    acceptRecentDue: ((): boolean => {
+      try {
+        const age = hoursSinceRecentCheck(db, now);
+        return (age === null || age >= ACCEPT_RECENT_EVERY_HOURS) && hasOpenInvites(db, now);
+      } catch {
+        return false;
+      }
+    })(),
     manualRequestsPending: manualRequestsPending(db),
     manualPlatformTasks: manualPlatformTasks(db),
   };

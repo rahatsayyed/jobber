@@ -42,7 +42,7 @@ function setup(site: FakeSite, env: NodeJS.ProcessEnv = {}, cfgOver: Record<stri
   });
   runtimes.push(rt);
   const deps: ToolDeps = {
-    rt, db, now: () => new Date('2026-10-14T10:00:00Z'), cfg: { ...loadLinkedinConfig(env), ...cfgOver }, env,
+    rt, db, now: () => new Date('2026-10-14T10:00:00Z'), cfg: { ...loadLinkedinConfig(env), peopleSearchSources: ['linkedin' as const], ...cfgOver }, env,
     factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
     screen: async (t) => ({ blocked: false, unscreened: false, text: t, flags: [], code: 'ok' as const }),
   };
@@ -98,10 +98,10 @@ describe('findProfiles', () => {
     expect(screen).not.toHaveBeenCalled();
   });
 
-  it('MAX_LINKEDIN_SEARCHES_PER_DAY clamp matches the catalog max (100000), default 20', () => {
+  it('MAX_LINKEDIN_SEARCHES_PER_DAY clamp matches the catalog max (100000), default 10', () => {
     expect(loadLinkedinConfig({ MAX_LINKEDIN_SEARCHES_PER_DAY: '100000' }).maxSearchesPerDay).toBe(100000);
-    expect(loadLinkedinConfig({ MAX_LINKEDIN_SEARCHES_PER_DAY: '100001' }).maxSearchesPerDay).toBe(20);
-    expect(loadLinkedinConfig({}).maxSearchesPerDay).toBe(20);
+    expect(loadLinkedinConfig({ MAX_LINKEDIN_SEARCHES_PER_DAY: '100001' }).maxSearchesPerDay).toBe(10);
+    expect(loadLinkedinConfig({}).maxSearchesPerDay).toBe(10);
   });
 
   it('halted platform -> halted, runtime never launched', async () => {
@@ -145,7 +145,7 @@ describe('findProfiles', () => {
     });
     runtimes.push(rt);
     const handlers = buildHandlers({
-      db, rt, env: LIVE, now: () => new Date('2026-10-14T10:00:00Z'),
+      db, rt, env: { ...LIVE, LINKEDIN_PEOPLE_SEARCH_SOURCES: 'linkedin' }, now: () => new Date('2026-10-14T10:00:00Z'),
       factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
       sessionPath: path.join(dir, 'state.json'), classifier: () => Promise.reject(new Error('x')),
     });
@@ -164,7 +164,7 @@ describe('findProfiles', () => {
     runtimes.push(rt);
     const classifier: ClassifierPort = { classify: vi.fn(async () => ({ malicious: false, score: 0, truncated: false })) };
     const handlers = buildHandlers({
-      db, rt, env: { JOBBER_DRY_RUN: 'true' }, now: () => new Date('2026-10-14T10:00:00Z'),
+      db, rt, env: { JOBBER_DRY_RUN: 'true', LINKEDIN_PEOPLE_SEARCH_SOURCES: 'linkedin' }, now: () => new Date('2026-10-14T10:00:00Z'),
       factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
       sessionPath: path.join(dir, 'state.json'), classifier,
     });
@@ -185,7 +185,7 @@ describe('linkedin_find_profiles MCP', () => {
     expect(s.safeParse({ company: 'Acme', category: 'peer' }).success).toBe(true);
     const db = openDb(':memory:');
     const handlers = buildHandlers({
-      db, env: {}, rt: { open: async () => { throw new Error('boom net::ERR'); } } as unknown as Runtime,
+      db, env: { LINKEDIN_PEOPLE_SEARCH_SOURCES: 'linkedin' }, rt: { open: async () => { throw new Error('boom net::ERR'); } } as unknown as Runtime,
       factCheck: (t) => ({ verdict: 'pass', normalized_text: t }), styleCfg: DEFAULT_STYLE_CONFIG,
     });
     const r = JSON.parse((await handlers.linkedin_find_profiles({ company: 'Acme', category: 'peer' })) as string);

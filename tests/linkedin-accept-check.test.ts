@@ -26,7 +26,7 @@ const DRY = { JOBBER_DRY_RUN: 'true' } as NodeJS.ProcessEnv;
 const url = (slug: string): string => `https://www.linkedin.com/in/${slug}/`;
 
 type Db = ReturnType<typeof openDb>;
-const sent = (db: Db, slug: string, agoDays = 2, checked: string | null = null, profileUrl = url(slug)): void => {
+const sent = (db: Db, slug: string, agoDays = 5, checked: string | null = null, profileUrl = url(slug)): void => {
   db.prepare("INSERT INTO connections (profile_url, status, sent_at, accept_checked_at) VALUES (?, 'sent', ?, ?)").run(profileUrl, iso(agoDays), checked);
 };
 const statusOf = (db: Db, slug: string): string[] =>
@@ -85,9 +85,9 @@ describe('connections setter and candidates', () => {
     expect(statusOf(db, 'b')).toEqual(['sent']);
     expect((db.prepare("SELECT COUNT(*) AS n FROM connections WHERE status = 'connected'").get() as { n: number }).n).toBe(2);
   });
-  it('picks never-checked first, then oldest check; honours the 20 h recheck gap and the 21 day window', () => {
+  it('picks never-checked first, then oldest check; honours the 72 h recheck gap and the 14 day window', () => {
     const db = openDb(':memory:');
-    sent(db, 'old-check', 5, iso(3));
+    sent(db, 'old-check', 5, iso(4));
     sent(db, 'fresh-check', 5, new Date(NOW.getTime() - 3 * 3600 * 1000).toISOString());
     sent(db, 'never', 4);
     sent(db, 'older-check', 5, iso(6));
@@ -97,7 +97,7 @@ describe('connections setter and candidates', () => {
     ]);
     expect(countAcceptCandidates(db, NOW)).toBe(3);
   });
-  it('skips a profile that already has a messaged or connected row and caps the count at 8', () => {
+  it('skips a profile that already has a messaged or connected row and caps the count at 3', () => {
     const db = openDb(':memory:');
     sent(db, 'x');
     db.prepare("INSERT INTO connections (profile_url, status, sent_at) VALUES (?, 'connected', ?)").run(url('x'), iso(1));
@@ -120,7 +120,7 @@ describe('checkNextAccepted', () => {
       pen: profile({ degree: '2nd', pending: true, actions: ['Pending'], hasMessageButton: false }),
       again: profile({ degree: '3rd', actions: ['Connect'], hasMessageButton: false }),
     });
-    sent(w.db, 'acc', 4); sent(w.db, 'pen', 3); sent(w.db, 'again', 2);
+    sent(w.db, 'acc', 6); sent(w.db, 'pen', 5); sent(w.db, 'again', 4);
     const r1 = await checkNextAccepted(w.io, w.deps);
     const r2 = await checkNextAccepted(w.io, w.deps);
     const r3 = await checkNextAccepted(w.io, w.deps);
@@ -129,11 +129,12 @@ describe('checkNextAccepted', () => {
     expect(statusOf(w.db, 'acc')).toEqual(['connected']);
     expect(statusOf(w.db, 'pen')).toEqual(['sent']);
     expect(statusOf(w.db, 'again')).toEqual(['sent']);
-    expect((await checkNextAccepted(w.io, w.deps)).status).toBe('none');
+    // three profiles is the per-wake fallback cap
+    expect((await checkNextAccepted(w.io, w.deps)).status).toBe('rate_limited');
     // paced 3 to 8 s between profiles, none before the first
     expect(w.sleeps).toHaveLength(2);
     for (const s of w.sleeps) { expect(s).toBeGreaterThanOrEqual(3000); expect(s).toBeLessThanOrEqual(8000); }
-    // a second pass in the same period re-checks nothing (20 h gap)
+    // a second pass in the same period re-checks nothing (72 h gap)
     expect(listAcceptCandidates(w.db, NOW)).toEqual([]);
   });
   it('a failed open changes nothing but is not picked again in the same wake', async () => {
@@ -172,14 +173,14 @@ describe('checkNextAccepted', () => {
     expect((await checkNextAccepted(w2.io, { ...w2.deps, killed: () => 'kill switch: STOP file' })).status).toBe('halted');
     expect(w.opened.concat(w2.opened)).toEqual([]);
   });
-  it('stops at 8 checks per wake', async () => {
+  it('stops at 3 checks per wake', async () => {
     const pages: Record<string, RawProfile> = {};
     for (let i = 0; i < 10; i++) pages[`p${i}`] = profile({ degree: '2nd', pending: true, actions: ['Pending'], hasMessageButton: false });
     const w = world(LIVE, pages);
     for (let i = 0; i < 10; i++) sent(w.db, `p${i}`);
-    for (let i = 0; i < 8; i++) expect((await checkNextAccepted(w.io, w.deps)).status).toBe('pending');
+    for (let i = 0; i < 3; i++) expect((await checkNextAccepted(w.io, w.deps)).status).toBe('pending');
     expect((await checkNextAccepted(w.io, w.deps)).status).toBe('rate_limited');
-    expect(w.opened).toHaveLength(8);
+    expect(w.opened).toHaveLength(3);
   });
 });
 
@@ -218,10 +219,10 @@ const ceil = (bad: LimitKey[] = []): Record<LimitKey, CeilingStatus> =>
   ) as Record<LimitKey, CeilingStatus>;
 
 describe('planner', () => {
-  it('countDue reports the eligible invites (at most 8)', () => {
+  it('countDue reports the eligible invites (at most 3)', () => {
     const db = openDb(':memory:');
     for (let i = 0; i < 11; i++) sent(db, `p${i}`);
-    expect(countDue(db, NOW, TUNING_DEFAULTS, {}).acceptCheckDue).toBe(8);
+    expect(countDue(db, NOW, TUNING_DEFAULTS, {}).acceptCheckDue).toBe(3);
   });
   it('plans a LinkedIn accept_check before the followups step and pulls followups in; nothing else is due', () => {
     const db = openDb(':memory:');
@@ -243,7 +244,7 @@ describe('planner', () => {
     const halted: ControlState = { ...ctl(), allowed: ['naukri'], halted: { linkedin: 'x', naukri: null, wellfound: null } };
     const d1 = planWake({ now: NOW, quiet, control: halted, ceilings: ceil(), due, knobs });
     expect(JSON.stringify(d1)).not.toContain('accept_check');
-    const d2 = planWake({ now: NOW, quiet, control: ctl(), ceilings: ceil(), due: { ...due, acceptCheckDue: 0 }, knobs });
+    const d2 = planWake({ now: NOW, quiet, control: ctl(), ceilings: ceil(), due: { ...due, acceptCheckDue: 0, acceptRecentDue: false }, knobs });
     expect(d2).toMatchObject({ kind: 'skip', reason: 'nothing_due' });
   });
 });
