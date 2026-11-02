@@ -123,11 +123,19 @@ export function sourcesChecks(deps: SourcesCheckDeps = {}): Check[] {
         const cooling = !!st.dork.cooldownUntil && Date.parse(st.dork.cooldownUntil) > now.getTime();
         const dorkOk = st.dork.enabled && !cooling;
         const serperOk = st.serper.keySet && st.serper.today < st.serper.dailyBudget && st.serper.month < st.serper.monthlyBudget;
+        const pse = st.google_pse;
+        const tav = st.tavily;
+        const pseOk = !!pse && pse.keySet && pse.today < pse.dailyBudget;
+        const tavOk = !!tav && tav.keySet && tav.today < tav.dailyBudget;
+        const extra =
+          `; Google PSE ${pse ? `${pse.keySet ? 'present' : 'absent'}, ${pse.today}/${pse.dailyBudget} today` : 'n/a'}` +
+          `; Tavily ${tav ? `${tav.keySet ? 'present' : 'absent'}, ${tav.today}/${tav.dailyBudget} today` : 'n/a'}`;
         const detail =
           `dork ${st.dork.enabled ? 'enabled' : 'disabled'}${st.dork.cooldownUntil ? `, blocked until ${st.dork.cooldownUntil}` : ''}, ${st.dork.today} today (no daily cap);` +
-          `Serper key ${st.serper.keySet ? 'present' : 'absent'}, ${st.serper.today}/${st.serper.dailyBudget} today, ${st.serper.month}/${st.serper.monthlyBudget} this month`;
+          `Serper key ${st.serper.keySet ? 'present' : 'absent'}, ${st.serper.today}/${st.serper.dailyBudget} today, ${st.serper.month}/${st.serper.monthlyBudget} this month` +
+          extra;
         const emailOn = (env.SEND_LIMIT_PER_RUN ?? '1').trim() !== '0';
-        if (!dorkOk && !serperOk && emailOn) return fail(`${detail}; both providers unavailable while the email channel is on`, 'set SERPER_API_KEY, or enable DORK_ENABLED and wait out the cooldown');
+        if (!dorkOk && !serperOk && !pseOk && !tavOk && emailOn) return fail(`${detail}; both providers unavailable while the email channel is on`, 'set SERPER_API_KEY, or enable DORK_ENABLED and wait out the cooldown');
         const over = (a: number, b: number) => b > 0 && a / b > 0.8;
         const hot = st.serper.keySet && (over(st.serper.today, st.serper.dailyBudget) || over(st.serper.month, st.serper.monthlyBudget));
         if (hot) return warn(`${detail}; Serper over 80% of a budget`, 'raise SERPER_DAILY_BUDGET or SERPER_MONTHLY_BUDGET, or wait');
