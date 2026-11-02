@@ -104,6 +104,8 @@ export function buildRunnerArgv(p: {
   if (p.profile !== undefined && !PROFILE_RE.test(p.profile)) throw new Error('invalid profile');
   for (const [k, v] of Object.entries(p.env ?? {})) {
     if (!ENV_KEY_RE.test(k)) throw new Error(`invalid env key: ${JSON.stringify(k)}`);
+    // JOBBER_RUN_LANE is the one JOBBER_ key a lane may set, and only to a known lane name (the LinkedIn drip marks its run with it).
+    if (k === 'JOBBER_RUN_LANE' && v === 'linkedin_drip') continue;
     if (k.startsWith('JOBBER_') || k.startsWith('SCHEDULER_') || RESERVED_ENV.has(k)) {
       throw new Error(`reserved env key: ${k}`);
     }
