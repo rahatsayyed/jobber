@@ -35,6 +35,7 @@
         "mcp__outreach__record_inbound",
         "mcp__outreach__escalate",
         "mcp__outreach__save_reply_draft",
+        "mcp__outreach__complete_instruction",
         "mcp__outreach__list_open_escalations",
         "mcp__linkedin__linkedin_open",
         "mcp__linkedin__linkedin_snapshot",
