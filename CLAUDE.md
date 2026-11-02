@@ -46,7 +46,7 @@ the next queued page and takes its URL from SQLite).
   send tool is `linkedin_arm_send` (kinds `connect_note`, `connect_plain` (no note, used while the monthly note quota is used up), `role_ask`, `rapport`, `referral_ask`,
   `followup`, `feedback`, `accept`): it runs the code gates and arms one intent, and the following
   type and click calls commit it (see "Connecting"). Data tools: `linkedin_find_profiles` (people
-  search for a company and role hint, layered by `LINKEDIN_PEOPLE_SEARCH_SOURCES` (search engine, then Serper, then the LinkedIn people-search page last; result field `source`), used by `contact-finder`; it registers every returned profile in
+  search for a company and role hint, layered by `LINKEDIN_PEOPLE_SEARCH_SOURCES` (default `engine,google_pse,tavily,serper`: browser Google dork, Google Programmable Search, Tavily, Serper, with the LinkedIn people-search page opt-in and last; result field `source`), used by `contact-finder`; it registers every returned profile in
   the `people` table, also in dry runs, so the arm tool accepts them as known recipients),
   `linkedin_search_jobs` and `linkedin_search_posts` (named searches from
   `config/linkedin-discovery.json`), `linkedin_manual_job` (reads the next queued owner-submitted

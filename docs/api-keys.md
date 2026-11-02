@@ -16,6 +16,8 @@ spaces.
 
 | Credential | Needed for a first dry run | Without it |
 |---|---|---|
+| `GOOGLE_PSE_API_KEY`, `GOOGLE_PSE_CX` | No | One fewer people-search source (the browser dork still runs first) |
+| `TAVILY_API_KEY` | No | One fewer people-search source |
 | `SERPER_API_KEY` | No | Fewer verified contacts (the cache and the browser dork still run first) |
 | `HUNTER_API_KEY`, `HUNTER_ENABLED` | No | Last-resort email lookup stays off |
 | Gmail OAuth file | No for a dry run; yes for real email | No cold email, follow-ups or reply watching |
@@ -59,6 +61,28 @@ npm run doctor
 
 Expected: the `api-keys` check passes when all are set, otherwise it warns and names the
 unset variables (never values).
+
+## Google Programmable Search (google_pse)
+
+- What it is: Google's Custom Search JSON API (free tier: 100 queries a day). Nothing is shipped with
+  the repo: you create your own search engine and key.
+- Variables: `GOOGLE_PSE_API_KEY`, `GOOGLE_PSE_CX` (both needed), optional `GOOGLE_PSE_DAILY_BUDGET`
+  (default 90, kept under the free 100).
+- How to create it:
+  1. Open https://programmablesearchengine.google.com/controlpanel/create and create a search engine.
+  2. Turn on "Search the entire web".
+  3. Copy the Search engine ID (the `cx` value) into `GOOGLE_PSE_CX`.
+  4. Open the Google Custom Search JSON API page, enable it for a project and create an API key; put it
+     in `GOOGLE_PSE_API_KEY`.
+  5. Google may limit the JSON API for new projects, so verify with a test query (the wizard step runs one).
+- Used by: `linkedin_find_profiles` and the contact search, after the browser dork.
+- Without it: the next source in `LINKEDIN_PEOPLE_SEARCH_SOURCES` is used. Nothing errors.
+
+## Tavily (tavily)
+
+- Variable: `TAVILY_API_KEY`, optional `TAVILY_DAILY_BUDGET` (default 30). Get a key at tavily.com
+  (check the site for the free tier).
+- Used by: the same people-search and contact search, after `google_pse`. Without it: skipped.
 
 ## Serper
 

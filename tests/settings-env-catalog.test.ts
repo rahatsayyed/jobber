@@ -215,7 +215,7 @@ describe('rules (D22) over the whole catalog', () => {
     }
   });
   it('secrets: tier is never unless it is an API key for a fixed vendor host', () => {
-    const VENDOR = ['GMAIL_APP_PASSWORD', 'HUNTER_API_KEY', 'SERPER_API_KEY'];
+    const VENDOR = ['GMAIL_APP_PASSWORD', 'GOOGLE_PSE_API_KEY', 'HUNTER_API_KEY', 'SERPER_API_KEY', 'TAVILY_API_KEY'];
     for (const s of ENV_CATALOG.filter(isSecret)) {
       if (!VENDOR.includes(s.key)) expect(s.tier, s.key).toBe('never');
     }
@@ -236,8 +236,8 @@ describe('secrets', () => {
   });
   it('the secret keys are exactly this list (credentialed url and command keys included)', () => {
     expect(ENV_CATALOG.filter(isSecret).map((s) => s.key).sort()).toEqual([
-      'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'GMAIL_APP_PASSWORD', 'HUNTER_API_KEY',
-      'JOBBER_NOTIFY_CMD', 'SERPER_API_KEY', 'TELEGRAM_BOT_TOKEN', 'WEB_OIDC_CLIENT_SECRET',
+      'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'GMAIL_APP_PASSWORD', 'GOOGLE_PSE_API_KEY', 'HUNTER_API_KEY',
+      'JOBBER_NOTIFY_CMD', 'SERPER_API_KEY', 'TAVILY_API_KEY', 'TELEGRAM_BOT_TOKEN', 'WEB_OIDC_CLIENT_SECRET',
     ]);
   });
   it('CLASSIFIER_MODEL is not a secret', () => {
