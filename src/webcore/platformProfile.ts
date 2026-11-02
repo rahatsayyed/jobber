@@ -1,6 +1,8 @@
-// Persistent Chrome profile of ONE platform session (LinkedIn main, Naukri, Wellfound): secrets/browser-profile-<name>/. The platform
-// runtimes open it HEADLESS so extensions the owner installed there (a password manager) load in unattended runs too. The platform state file (secrets/<x>-state.json) stays the fallback and the source for
-// the session checks: it is imported into the profile once, and refreshed from the context when a persistent run ends.
+// Browser context of ONE platform session (LinkedIn main, Naukri, Wellfound). First choice: a tab in the shared browser host
+// (src/webcore/hostClient.ts), the ONE profile secrets/browser-profile/ that every platform and the web group use. When the host is
+// off or cannot be reached: the old per-platform profile secrets/browser-profile-<name>/ (headless, extensions allowed) when it
+// exists, else a fresh browser plus the state file. The platform state file (secrets/<x>-state.json) stays the fallback and the
+// source for the session checks: it is imported into a profile once, and refreshed from the context when a profile run ends.
 // Never logs or returns a cookie value. Launches only through src/webcore/launch.ts.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -9,6 +11,7 @@ import { HEADLESS_CONTEXT_OPTIONS, launchPersistentChrome, launchRealChrome, per
 import { loginProfileDir } from './loginBrowser.js';
 import { cleanCookies, prepareProfileDir } from './profile.js';
 import { acquireLock, writeStateAtomic, type LockHandle } from '../linkedin/session.js';
+import { resolveHost, type HostAttach } from './hostClient.js';
 
 const SECRETS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'secrets');
 
@@ -48,8 +51,8 @@ export const platformLockPath = (name: PlatformProfileName, root: string = SECRE
  * One-time import of the platform state file's cookies into the persistent profile (marker file in the profile, like
  * importLegacySessions). localStorage origins are NOT imported (the platforms authenticate by cookie). Never throws.
  */
-export async function importStateOnce(ctx: LiContext, profileDir: string, statePath: string): Promise<{ imported: boolean; cookies: number }> {
-  const marker = path.join(profileDir, STATE_IMPORT_MARKER);
+export async function importStateOnce(ctx: LiContext, profileDir: string, statePath: string, markerName: string = STATE_IMPORT_MARKER): Promise<{ imported: boolean; cookies: number }> {
+  const marker = path.join(profileDir, markerName);
   if (existsSync(marker) || typeof ctx.addCookies !== 'function' || !existsSync(statePath)) return { imported: false, cookies: 0 };
   try {
     const state = JSON.parse(readFileSync(statePath, 'utf8')) as { cookies?: unknown };
@@ -76,8 +79,8 @@ export async function refreshStateFile(ctx: LiContext, statePath: string, name: 
 }
 
 export type PlatformContextResult =
-  | { ok: true; browser: LiBrowser; context: LiContext; persistent: boolean; lock: LockHandle | null }
-  | { ok: false; code: 'chrome_unavailable' | 'failed' };
+  | { ok: true; browser: LiBrowser; context: LiContext; persistent: boolean; lock: LockHandle | null; /** A tab in the shared host. */ shared?: boolean }
+  | { ok: false; code: 'chrome_unavailable' | 'failed' | 'session_locked' | 'halted'; reason?: string };
 
 export interface PlatformContextOpts {
   name: PlatformProfileName;
@@ -92,6 +95,9 @@ export interface PlatformContextOpts {
    * launch below runs instead.
    */
   profileLockPath?: string;
+  /** Shared browser host: injected (tests), null (off), or undefined (on by default with the real launcher, see resolveHost). */
+  host?: HostAttach | null;
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -101,6 +107,24 @@ export interface PlatformContextOpts {
  */
 export async function openPlatformContext(opts: PlatformContextOpts): Promise<PlatformContextResult> {
   const dir = opts.profileDir === undefined ? platformProfileDir(opts.name) : opts.profileDir;
+  // A null profile directory (tests, an explicit state file) keeps the shared host out too.
+  const host = dir === null ? null : resolveHost(opts.host, opts.env ?? process.env, opts.launcher);
+  if (host) {
+    let lock: LockHandle | null = null;
+    let lockHeld = false;
+    if (opts.profileLockPath) {
+      const l = acquireLock(opts.profileLockPath);
+      if (l.ok) lock = l.handle; else lockHeld = true;
+    }
+    if (!lockHeld) {
+      const r = await host({ contextOptions: opts.contextOptions ?? HEADLESS_CONTEXT_OPTIONS });
+      if (r.ok) return { ok: true, browser: r.browser, context: r.context, persistent: true, lock, shared: true };
+      lock?.release();
+      if (r.code === 'halted') return { ok: false, code: 'halted', reason: r.reason };
+      if (r.code === 'busy_headed' || r.code === 'busy') return { ok: false, code: 'session_locked', reason: r.reason };
+      // disabled or unavailable: the old path below.
+    }
+  }
   if (dir && existsSync(dir) && persistentSupported(opts.launcher) && prepareProfileDirSafe(dir)) {
     let lock: LockHandle | null = null;
     let locked = false;

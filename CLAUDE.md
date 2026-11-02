@@ -90,6 +90,16 @@ the next queued page and takes its URL from SQLite).
   launcher (`launchRealChrome` in `src/linkedin/browser.ts`, re-exported for the web code by
   `src/webcore/launch.ts`); the lint test `tests/browser-launch-lint.test.ts` keeps other code, the
   `renderer/` scripts included, from importing a browser library. There is no `playwright` dependency.
+- ONE shared browser (`BROWSER_HOST`, default on): a long-lived host process (`scripts/browser-host.ts`,
+  `src/webcore/hostServer.ts`) owns the ONE persistent profile `secrets/browser-profile/` for LinkedIn, Naukri,
+  Wellfound, scout, applier, the sources runner and the contacts scraping and dork; every MCP process attaches over
+  CDP (loopback, port picked by Chrome, endpoint only in the 0600 pidfile `secrets/browser-host.json`) and opens its
+  OWN tab; closing a client closes only its tab. The host starts on first use, exits after `BROWSER_HOST_IDLE_MIN`
+  (10) minutes with no client, exits on the kill switch and refuses new tabs during an `all` halt. Owner window
+  commands (`browser:open`, `apply:assist`, the login commands) switch the same profile to headed and back. Platform
+  locks stay; if the attach fails each runtime falls back to its own browser as before. Extensions are allowed.
+  The resume PDF render and the session checks keep their own throwaway browser. `npm run browser:host -- status|stop`.
+  Details: `docs/reference/platform-and-sessions.md`.
 
 The old batch-hunt pieces are gone (the `discoverer` and `sender` agents, the `discover` MCP, the
 scripted per-platform apply tools and their router, the headless-CLI ATS bootstrap and hybrid
@@ -541,7 +551,7 @@ Acceptance of a sent invite is detected in code: the `accept_recent` task calls 
 
 ## Owner help commands (apply)
 
-The applier never guesses an answer: an unanswerable required question parks the job as `needs_answer` (`apply_questions`; owner: `npm run answers -- list|answer <id> "<text>" [--always] [--comment ".."]|agent <id>|skip <id>`, or the dashboard Inbox "Needs your answer" cards; `agent_handle` = owner left a free-text question to the agent, still unanswered and never guessed), and a login wall, CAPTCHA or MFA parks it as `needs_human` (`npm run apply:assist -- <job_id>`, one Telegram ping per host per 6 h). Web tasks share one persistent profile `secrets/browser-profile/` (`npm run browser:open -- <url>`, `browser:history`); ATS coverage is NULL with `ats_note='jd_incomplete'` for snippet-only postings. Details: `docs/reference/applying.md`, `docs/reference/resume-tailoring.md`.
+The applier never guesses an answer: an unanswerable required question parks the job as `needs_answer` (`apply_questions`; owner: `npm run answers -- list|answer <id> "<text>" [--always] [--comment ".."]|agent <id>|skip <id>`, or the dashboard Inbox "Needs your answer" cards; `agent_handle` = owner left a free-text question to the agent, still unanswered and never guessed), and a login wall, CAPTCHA or MFA parks it as `needs_human` (`npm run apply:assist -- <job_id>`, one Telegram ping per host per 6 h). Every platform and web task shares one persistent profile `secrets/browser-profile/` through the shared browser host (`npm run browser:open -- <url>`, `browser:history`, `browser:host -- status`); ATS coverage is NULL with `ats_note='jd_incomplete'` for snippet-only postings. Details: `docs/reference/applying.md`, `docs/reference/resume-tailoring.md`.
 
 ## Owner docs
 

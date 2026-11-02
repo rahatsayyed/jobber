@@ -1,4 +1,5 @@
-// The ONE persistent Chrome profile of the web runtime (scout, applier, search dork, apply:assist, browser:open): secrets/browser-profile/.
+// The ONE persistent Chrome profile, secrets/browser-profile/: the shared browser host (src/webcore/hostServer.ts) opens it for LinkedIn,
+// Naukri, Wellfound and the web group (scout, applier, sources runner, search dork, apply:assist, browser:open), headless or headed.
 // It keeps cookies and Chrome's own history (Default/History) between runs. This file prepares the directory (mode 0700, no symlink,
 // Chrome's password manager switched off: passwords live only in secrets/site-accounts.json) and imports the old per-host session
 // files once. It never launches a browser (src/linkedin/browser.ts does) and never logs a cookie value.

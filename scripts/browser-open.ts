@@ -1,11 +1,13 @@
-// Owner CLI: open a page HEADED in one of the project's persistent Chrome profiles.
+// Owner CLI: open a page HEADED on the project's browser profile.
 //   npm run browser:open -- [--profile <web|linkedin-main|naukri|wellfound>] [<https url>]
-// --profile web (the default) is the web profile that scout, applier, search and apply:assist use: clear a consent or CAPTCHA page on
-// Google, DuckDuckGo, Bing or a job site once by hand; the cookies then stay in the profile for the headless tasks.
-// --profile linkedin-main | naukri | wellfound opens that platform's own profile (secrets/browser-profile-<name>/): use it to install
-// or configure a browser extension (Bitwarden) once from the Chrome Web Store (the default page). Installed extensions load in the
-// unattended headless runs of that platform too.
-// Press Enter in the terminal when done. Nothing you type is read, and no password is stored. It refuses while the profile's lock is held.
+// With the shared browser host (the default) every --profile is the ONE shared profile secrets/browser-profile/: the host switches to
+// a window on it and back to headless afterwards, so cookies and history stay in sync with the headless tasks. --profile web (the
+// default) is for other sites: clear a consent or CAPTCHA page on Google, DuckDuckGo, Bing or a job site once by hand. --profile
+// linkedin-main | naukri | wellfound also takes that platform's lock (a running task of that platform refuses it) and refreshes its
+// state file; use it to install or configure a browser extension once from the Chrome Web Store (the default page). Extensions are
+// allowed in general and load in the unattended headless runs too. Without the host (BROWSER_HOST=false) the old per-platform
+// profiles secrets/browser-profile-<name>/ are used.
+// Press Enter in the terminal when done. Nothing you type is read, and no password is stored. It refuses while the browser is busy.
 import { createInterface } from 'node:readline';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,7 +57,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<{ code: n
     const r = await runHeadedProfile(u.href, { name, io: wrapped, launcher: deps.launcher, root: deps.root });
     if (!r.ok) return { code: 1, lines: [...out, `not opened: ${r.reason}`] };
     const ids = extensionIds((p) => readdirSync(p), r.profileDir);
-    return { code: 0, lines: [...out, `closed the ${name} profile (${ids.length} extension${ids.length === 1 ? '' : 's'} installed)`] };
+    return { code: 0, lines: [...out, `closed the ${r.shared ? `shared profile (${name})` : `${name} profile`} (${ids.length} extension${ids.length === 1 ? '' : 's'} installed)`] };
   }
   if (OWN_SESSION_HOSTS.test(u.hostname)) return { code: 1, lines: ['LinkedIn, Naukri and Wellfound have their own login commands; the web profile is for the other sites (use --profile linkedin-main, naukri or wellfound to open their own profile)'] };
   const r = await runHeaded(u.href, { io: wrapped, launcher: deps.launcher, lockPath: deps.lockPath, sessionDir: deps.sessionDir, profileDir: deps.profileDir });

@@ -14,6 +14,8 @@ export function launchViolations(src: string): string[] {
   // Built from two pieces so this scanner does not match its own rule (the lint test scans src/).
   const persistent = 'launchPersistent' + 'Context';
   if (new RegExp(`\\b${persistent}\\b`).test(src)) out.push(persistent);
+  // Attaching to a running Chrome over CDP is launching too: only the home file does it (for src/webcore/hostClient.ts).
+  if (/\.connectOverCDP\s*\(/.test(src)) out.push('connectOverCDP');
   const imp = /import\s+(type\s+)?\{([^}]*)\}\s*from\s*['"](playwright|patchright|playwright-core)['"]/g;
   for (const m of src.matchAll(imp)) {
     if (m[1]) continue;

@@ -54,7 +54,7 @@ export async function launchPersistentChrome(opts: { userDataDir: string; headed
     return await launcher.launchPersistentContext(opts.userDataDir, {
       channel: LINKEDIN_LAUNCH_OPTIONS.channel,
       headless: !opts.headed,
-      // Extensions installed in the profile (a password manager) must load, also under --headless=new.
+      // Extensions are allowed: whatever the owner installed in the profile loads, also under --headless=new.
       ignoreDefaultArgs: ['--disable-extensions'],
       args: [...(opts.headed ? [] : LINKEDIN_LAUNCH_OPTIONS.args), ...PERSISTENT_PROFILE_ARGS],
       ...HEADLESS_CONTEXT_OPTIONS,
@@ -63,4 +63,47 @@ export async function launchPersistentChrome(opts: { userDataDir: string; headed
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(`chrome_unavailable: ${msg.replace(/\s+/g, ' ').slice(0, 120)}`);
   }
+}
+
+// ---- Shared browser host (src/webcore/hostServer.ts owns it, src/webcore/hostClient.ts attaches) ----
+// ONE long-lived Chrome on secrets/browser-profile/ for every platform and the web group. The host process launches it with a
+// DevTools port that Chrome picks itself (port 0, loopback only; Chrome writes the port into <profile>/DevToolsActivePort, which is
+// inside the 0700 profile directory); the MCP processes connect over CDP and open their own tab. The endpoint is never logged.
+export const HOST_DEBUG_ARGS = ['--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1'] as const;
+
+/** A page of the host's context, as the host sees it (only what the host needs: count and close). */
+export interface HostPage { close(): Promise<void>; isClosed(): boolean }
+/** The host's persistent context: pages, page and close events. */
+export type HostContext = LiPersistentContext & {
+  pages(): HostPage[];
+  on(event: 'page', fn: (p: HostPage) => void): unknown;
+  on(event: 'close', fn: () => void): unknown;
+};
+
+/** The host process only: the shared profile with extensions allowed (headless or headed) and the loopback DevTools port. */
+export async function launchHostChrome(opts: { userDataDir: string; headed?: boolean; launcher?: LiLauncher }): Promise<HostContext> {
+  const launcher = (opts.launcher ?? patchrightChromium) as unknown as PersistentCapable;
+  if (typeof launcher.launchPersistentContext !== 'function') throw new Error('persistent_unsupported');
+  try {
+    return (await launcher.launchPersistentContext(opts.userDataDir, {
+      channel: LINKEDIN_LAUNCH_OPTIONS.channel,
+      headless: !opts.headed,
+      ignoreDefaultArgs: ['--disable-extensions'],
+      args: [...(opts.headed ? [] : LINKEDIN_LAUNCH_OPTIONS.args), ...PERSISTENT_PROFILE_ARGS, ...HOST_DEBUG_ARGS],
+      ...HEADLESS_CONTEXT_OPTIONS,
+    })) as unknown as HostContext;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`chrome_unavailable: ${msg.replace(/\s+/g, ' ').slice(0, 120)}`);
+  }
+}
+
+/** A CDP connection to the host's Chrome. close() only disconnects this client (it never closes the browser). */
+export interface CdpBrowser { contexts(): LiContext[]; close(): Promise<void> }
+export type CdpConnector = { connectOverCDP(endpoint: string, opts?: Record<string, unknown>): Promise<CdpBrowser> };
+
+export async function connectChromeOverCDP(wsEndpoint: string, opts: { connector?: CdpConnector; timeoutMs?: number } = {}): Promise<CdpBrowser> {
+  if (!/^ws:\/\/127\.0\.0\.1:\d{2,5}\/devtools\/browser\/[A-Za-z0-9-]+$/.test(wsEndpoint)) throw new Error('cdp_endpoint_refused');
+  const connector = opts.connector ?? (patchrightChromium as unknown as CdpConnector);
+  return connector.connectOverCDP(wsEndpoint, { timeout: opts.timeoutMs ?? 15000 });
 }
