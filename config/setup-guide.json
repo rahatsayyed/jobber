@@ -34,6 +34,19 @@
       }
     },
     {
+      "id": "userdata",
+      "title": "Create user-data from templates",
+      "owner_command": "npm run setup -- --step userdata",
+      "doctor_checks": [
+        "fact-gate-present"
+      ],
+      "keys": [],
+      "explain": "Copies the template files (fact-gate.json with empty allow-lists, account.json, languages.json and more) from user-data.example/ into user-data/. Existing files are never overwritten.",
+      "fixes": {
+        "fact-gate-present": "Run npm run setup -- --step userdata, or npm run user-data -- init."
+      }
+    },
+    {
       "id": "claude",
       "title": "Claude Code login",
       "owner_command": "npm run setup -- --step claude",
@@ -118,7 +131,7 @@
           "entered_in": "owner edits .env"
         }
       ],
-      "explain": "Cold emails go out through your own Gmail using a Google OAuth client you create. The consent screen is a browser page only you can approve. The client file and the token live in secrets/ and never leave your machine.",
+      "explain": "Cold emails go out through your own Gmail using a Google OAuth client you create. The consent screen is a browser page only you can approve. The client file and the token live in secrets/ and never leave your machine. Warning: an External app in Testing mode gets tokens that Google expires after 7 days, so you must authorise again about weekly (see docs/gmail-mcp-setup.md, Testing mode); the doctor warns when the credentials file is older than 6 days.",
       "fixes": {
         "gmail-oauth": "Follow docs/gmail-mcp-setup.md to create the OAuth client and approve consent, then run the wizard step again."
       },

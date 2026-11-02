@@ -141,6 +141,7 @@ const script = (opts: { confirmLangs?: boolean; sponsorship?: boolean } = {}): S
   { ask: '' },
   { confirm: false },
   { confirm: opts.confirmLangs ?? false },
+  { choose: 'free' },
 ];
 
 describe('profileStep keeps existing values on blank answers', () => {
@@ -159,6 +160,7 @@ describe('profileStep keeps existing values on blank answers', () => {
     { ask: '' }, // expected salary text
     { confirm: false }, // add a language
     { confirm: false }, // confirm the language list
+    { choose: '' }, // LinkedIn plan
   ];
 
   it('leaves a valid profile.json byte-identical', async () => {

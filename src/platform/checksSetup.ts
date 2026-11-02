@@ -273,6 +273,20 @@ export const setupToolingChecks: Check[] = [
     },
   },
   {
+    id: 'fact-gate-present',
+    title: 'fact-gate.json present',
+    async run(ctx) {
+      const f = join(userDataDir(ctx.env, ctx.root), 'fact-gate.json');
+      if (!ctx.fs.exists(f)) {
+        return warn(
+          'user-data/fact-gate.json is missing: the fact gate allow-lists and phrase checks do not run',
+          'npm run setup -- --step userdata (or: npm run user-data -- init)',
+        );
+      }
+      return pass('fact-gate.json present');
+    },
+  },
+  {
     id: 'resume-valid',
     title: 'user resume is filled in',
     async run(ctx) {
@@ -378,6 +392,8 @@ function resolvePath(ctx: DoctorContext, key: string, fallback: string): string 
   return isAbsolute(v) ? v : join(ctx.root, v);
 }
 
+const GMAIL_TOKEN_WARN_DAYS = 6;
+
 const SESSIONS = [
   { label: 'LinkedIn main', file: 'linkedin-main-state.json', cookie: 'li_at', exact: true, cmd: 'npm run linkedin:login' },
   { label: 'Naukri', file: 'naukri-state.json', cookie: 'nauk', exact: false, cmd: 'npm run naukri:login' },
@@ -422,9 +438,26 @@ export const setupAccountChecks: Check[] = [
       if (!ctx.fs.exists(keys)) {
         return fail('OAuth client keys file is missing', `put your Google OAuth client JSON there: ${relative(ctx.root, keys) || keys}`);
       }
+      const loose: string[] = [];
+      for (const f of [keys, creds]) {
+        const m = ctx.fs.exists(f) ? ctx.fs.mode(f) : null;
+        if (m !== null && (m & 0o077) !== 0) loose.push(`${relative(ctx.root, f) || f}: mode ${(m & 0o777).toString(8)}`);
+      }
+      if (loose.length) return fail(`Gmail secret file too open (${loose.join('; ')}), expected 600`, 'chmod 600 on the files listed');
       const c = readJson(ctx, creds);
       if (!c.ok || !isObj(c.value) || !('refresh_token' in c.value)) {
         return warn('credentials file is missing or has no refresh token', 'run the auth command for the gmail server');
+      }
+      // External apps in Testing status: Google expires the refresh token after 7 days.
+      const mt = ctx.fs.mtimeMs ? ctx.fs.mtimeMs(creds) : null;
+      if (mt !== null) {
+        const ageDays = ((ctx.now ? ctx.now() : new Date()).getTime() - mt) / 86400000;
+        if (ageDays > GMAIL_TOKEN_WARN_DAYS) {
+          return warn(
+            `Gmail credentials are ${Math.floor(ageDays)} days old; Google expires tokens of External apps in Testing mode after 7 days`,
+            'run the gmail auth again (npm run setup -- --step gmail); see docs/gmail-mcp-setup.md, Testing mode',
+          );
+        }
       }
       return pass('client keys present, credentials hold a refresh token');
     },
@@ -460,6 +493,10 @@ export const setupAccountChecks: Check[] = [
           const n = typeof c.name === 'string' ? c.name : '';
           return s.exact ? n === s.cookie : n.includes(s.cookie);
         });
+        if (auth.length === 0) {
+          bad.push(`${s.label}: no auth cookie (login was not completed)`);
+          continue;
+        }
         const expired =
           auth.length > 0 && auth.every((c) => typeof c.expires === 'number' && c.expires > 0 && c.expires < nowSec);
         if (expired) {

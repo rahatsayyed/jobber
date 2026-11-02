@@ -114,8 +114,8 @@ describe('terminal-mode coaching text', () => {
     const script: ScriptItem[] = [{ confirm: false }, { confirm: false }];
     const a = mk('agent', script);
     const t = mk('terminal', script);
-    expect(await sessionsStep.run(a.ctx)).toBe('done');
-    expect(await sessionsStep.run(t.ctx)).toBe('done');
+    expect(await sessionsStep.run(a.ctx)).toBe('pending');
+    expect(await sessionsStep.run(t.ctx)).toBe('pending');
     const want = coachLines([
       'sessions.why',
       'sessions.window',

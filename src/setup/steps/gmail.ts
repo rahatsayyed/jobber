@@ -18,6 +18,9 @@ function resolvePath(ctx: SetupContext, envText: string, key: string, fallback: 
   return path.isAbsolute(v) ? v : path.join(ctx.root, v);
 }
 
+export const GMAIL_TESTING_WARNING =
+  'Warning: an External app in Testing mode gets refresh tokens that Google expires after 7 days. Plan to authorise again weekly (npm run setup -- --step gmail), or publish the app. See docs/gmail-mcp-setup.md, Testing mode.';
+
 export const gmailStep: SetupStep = {
   id: 'gmail',
   title: 'Gmail OAuth',
@@ -77,6 +80,7 @@ export const gmailStep: SetupStep = {
         ],
       },
     ];
+    io.say(GMAIL_TESTING_WARNING);
     for (const g of groups) {
       if ((await confirmDone(ctx, { ...g, allowSkip: true })) === 'skip') {
         io.say('Gmail setup not confirmed; run this step again with npm run setup -- --step gmail');

@@ -129,7 +129,7 @@ describe('gmailStep', () => {
 describe('sessionsStep', () => {
   it('captures both accounts with exact argv, chmods 600, restates the safety rule', async () => {
     const t = setup([{ confirm: true }, { confirm: true }]);
-    expect(await sessionsStep.run(t.ctx)).toBe('done');
+    expect(await sessionsStep.run(t.ctx)).toBe('pending');
     expect(t.spawns.map((s) => [s.cmd, ...s.args])).toEqual([
       ['npx', 'tsx', 'scripts/linkedin-login.ts'],
       ['npx', 'tsx', 'scripts/naukri-login.ts'],
@@ -161,16 +161,16 @@ describe('sessionsStep', () => {
       ],
       { 'proj/secrets/linkedin-main-state.json': GOOD_STATE },
     );
-    expect(await sessionsStep.run(t.ctx)).toBe('done');
+    expect(await sessionsStep.run(t.ctx)).toBe('pending');
     expect(t.spawns).toEqual([]);
     expect(t.ctx.state.answers).toEqual({ session_naukri: 'skipped' });
     expect(t.reads.some((p) => SECRET_RE.test(p))).toBe(false);
     t.sio.assertDone();
   });
 
-  it('declining one account still returns done and captures the rest', async () => {
+  it('declining one account returns pending (a session is still missing) and captures the rest', async () => {
     const t = setup([{ confirm: false }, { confirm: true }]);
-    expect(await sessionsStep.run(t.ctx)).toBe('done');
+    expect(await sessionsStep.run(t.ctx)).toBe('pending');
     expect(t.ctx.state.answers.session_linkedin_main).toBe('skipped');
     expect(t.spawns).toHaveLength(1);
     expect(t.spawns[0].args).toEqual(['tsx', 'scripts/naukri-login.ts']);

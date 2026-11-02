@@ -620,6 +620,16 @@ const hand: EnvSpec[] = [
     restart: 'dashboard',
     restartEvidence: 'src/web/env.ts',
   }),
+  e('WEB_INTERNAL_PORT', 'dashboard', 'dashboard', 'int', {
+    blankMeansDefault: true,
+    default: 'WEB_PORT + 1',
+    min: 1024,
+    max: 65535,
+    about: 'Loopback port of the dashboard API process. Must differ from WEB_PORT.',
+    ...never(R_DASH),
+    restart: 'dashboard',
+    restartEvidence: 'scripts/web.ts',
+  }),
   e('WEB_TMUX_SESSION', 'dashboard', 'dashboard chat', 'string', {
     blankMeansDefault: true,
     default: 'ccgram',

@@ -14,9 +14,11 @@ import { profileStep } from './profile.js';
 import { resumeStep } from './resume.js';
 import { sessionsStep } from './sessions.js';
 import { telegramStep } from './telegram.js';
+import { userdataStep } from './userdata.js';
 
 export const ALL_STEPS: SetupStep[] = [
   prereqsStep,
+  userdataStep,
   claudeStep,
   telegramStep,
   gmailStep,

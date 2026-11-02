@@ -81,6 +81,12 @@ export const sessionsStep: SetupStep = {
       delete ctx.state.answers[answerKey];
       io.say(`${a.label}: saved. Verify it with ${a.check}`);
     }
+    // A session that is still missing (declined, or the login exited without saving) is not done.
+    const stillMissing = ACCOUNTS.filter((a) => !ctx.fs.exists(path.join(dir, a.file)));
+    if (stillMissing.length > 0) {
+      io.say(`Still missing: ${stillMissing.map((a) => a.label).join(', ')}. Run: npm run setup -- --step sessions`);
+      return 'pending';
+    }
     return 'done';
   },
 };

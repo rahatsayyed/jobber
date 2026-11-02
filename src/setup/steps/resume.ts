@@ -71,7 +71,7 @@ export type ClaudeSpawn = (
   cmd: string,
   args: string[],
   opts: ClaudeSpawnOpts,
-) => Promise<{ stdout: string; code: number }>;
+) => Promise<{ stdout: string; code: number; stderr?: string }>;
 
 export const CLAUDE_TIMEOUT_MS = 120_000;
 export const CLAUDE_MAX_BYTES = 1_000_000;
@@ -96,8 +96,12 @@ export function claudeArgs(prompt: string): string[] {
 /** Argument array, stdin input, hard timeout, bounded output. */
 export const defaultClaudeSpawn: ClaudeSpawn = (cmd, args, opts) =>
   new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, stdio: ['pipe', 'pipe', 'ignore'] });
+    const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
+    let errText = '';
+    child.stderr.on('data', (d: Buffer) => {
+      if (errText.length < 2000) errText += d.toString('utf8');
+    });
     let size = 0;
     let over = false;
     const timer = setTimeout(() => child.kill('SIGKILL'), opts.timeoutMs);
@@ -115,7 +119,7 @@ export const defaultClaudeSpawn: ClaudeSpawn = (cmd, args, opts) =>
     child.on('close', (code) => {
       clearTimeout(timer);
       if (over) reject(new Error('output too large'));
-      else resolve({ stdout: out, code: code ?? 1 });
+      else resolve({ stdout: out, code: code ?? 1, stderr: errText });
     });
     child.stdin.on('error', () => undefined);
     child.stdin.end(opts.input);
@@ -158,7 +162,12 @@ function defaultDeps(ctx: SetupContext, spawnClaude: ClaudeSpawn): ConvertDeps {
         timeoutMs: CLAUDE_TIMEOUT_MS,
         maxBytes: CLAUDE_MAX_BYTES,
       });
-      if (r.code !== 0) throw new Error('claude exited non-zero');
+      if (r.code !== 0) {
+        const hint = (r.stderr ?? '').split('\n').map((l) => l.trim()).find((l) => l) ?? '';
+        throw new Error(
+          `claude exited non-zero${hint ? ` (${hint.slice(0, 160)})` : ''}; your own Claude hooks may block this call`,
+        );
+      }
       return r.stdout;
     },
   };
