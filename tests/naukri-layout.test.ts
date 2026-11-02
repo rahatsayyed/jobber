@@ -71,16 +71,18 @@ afterEach(async () => {
 });
 
 describe('drift side effects are wired to the server db', () => {
-  it('escalates into the db the server uses after repeated drift, and never halts', async () => {
+  it('records drift as telemetry (no Inbox escalation) after repeated drift, and never halts', async () => {
     const h = harness({ v: 'v1' });
     const { d } = setup({}, h);
     await naukriOpen({ url: THREAD_URL }, d); // promotes (N=1, runs=1); the thread kind needs chat.input
     h.mode.v = 'v3';
     for (let i = 0; i < 3; i++) await naukriSnapshot(d);
+    // Owner-Inbox policy (src/outreach/escalationPolicy.ts): layout drift is telemetry, so no escalation row is stored.
+    // The drift itself is still recorded in the layout file (streak 3 reached the escalate threshold).
     const rows = d.db.prepare('SELECT platform, reason, detail FROM escalations').all();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ platform: 'naukri', reason: 'layout_drift' });
-    expect(rows[0].detail).toMatch(/^kind=thread streak=3 missing=/);
+    expect(rows).toHaveLength(0);
+    const layout = JSON.parse(readFileSync(path.join(d.layoutCfg.dir, 'naukri.json'), 'utf8'));
+    expect(layout.kinds.thread.drift_streak).toBe(3);
     expect(d.db.prepare('SELECT COUNT(*) AS n FROM halt_flags').get()).toMatchObject({ n: 0 });
   });
 
