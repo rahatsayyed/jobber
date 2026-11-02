@@ -98,6 +98,7 @@ the next queued page and takes its URL from SQLite).
   (10) minutes with no client, exits on the kill switch and refuses new tabs during an `all` halt. Owner window
   commands (`browser:open`, `apply:assist`, the login commands) switch the same profile to headed and back. Platform
   locks stay; if the attach fails each runtime falls back to its own browser as before. Extensions are allowed.
+  On every host attach for a platform the cookies of `secrets/<platform>-state.json` that the live profile lacks are added (never overwriting live ones). The login commands, `browser:open <platform url>` and the `*:check` commands all use this same profile; a check prints `profile tested: ...`.
   The resume PDF render and the session checks keep their own throwaway browser. `npm run browser:host -- status|stop`.
   Details: `docs/reference/platform-and-sessions.md`.
 
