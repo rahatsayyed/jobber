@@ -42,12 +42,20 @@ const OVERRIDE_PHRASES: RegExp[] = [
   /\b(reveal|print|repeat|show) (your|the) (system )?prompt\b/i,
 ];
 
+// Strong nouns: always a secret. Weak nouns (cookies, passwords) also appear in ordinary web UI
+// text ("Show password", "we'll email you a link to reset your password", "share cookies with
+// partners"), so they only count with the strongest verbs and not next to UI/reset words.
 const SECRET_NOUNS =
-  '(\\.env|env(?:ironment)? (?:file|variables?|vars?)|api[-_ ]?keys?|secrets?|passwords?|credentials?|(?:access|auth|api|session) tokens?|private keys?|ssh keys?|cookies?|storage[-_ ]?state)';
+  '(\\.env|env(?:ironment)? (?:file|variables?|vars?)|api[-_ ]?keys?|secrets?|credentials?|(?:access|auth|api|session) tokens?|private keys?|ssh keys?|storage[-_ ]?state)';
+const WEAK_NOUNS = '(passwords?|cookies?)';
 
 const EXFIL_PHRASES: RegExp[] = [
   new RegExp(
     `\\b(send|email|mail|post|upload|share|forward|exfiltrate|leak|reveal|print|output|show)\\b[^.\\n]{0,60}\\b${SECRET_NOUNS}`,
+    'i',
+  ),
+  new RegExp(
+    `\\b(send|exfiltrate|leak)\\b(?:(?!reset|forgot|link|show|hide|toggle|partners?|policy|consent|settings?)[^.\\n]){0,60}\\b${WEAK_NOUNS}`,
     'i',
   ),
   /\b(cat|read|open|print|type)\b[^.\n]{0,30}(\.env\b|~\/|\/etc\/|\bsecrets\/)/i,
