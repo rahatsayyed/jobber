@@ -4,7 +4,8 @@
 // dry-run gated there). Failure text is fixed and code-authored, never browser error text.
 import type BetterSqlite3 from 'better-sqlite3';
 import { existsSync } from 'node:fs';
-import { launchRealChrome, HEADLESS_CONTEXT_OPTIONS, type LiBrowser, type LiContext, type LiLauncher, type LiPage } from './launch.js';
+import { launchRealChrome, launchPersistentChrome, persistentSupported, HEADLESS_CONTEXT_OPTIONS, type LiBrowser, type LiContext, type LiLauncher, type LiPage } from './launch.js';
+import { DEFAULT_PROFILE_DIR, importLegacySessions, prepareProfileDir } from './profile.js';
 import { loadWebConfig, type WebConfig } from './config.js';
 import { acquireLock, checkSiteSessionDir, checkSiteSessionFile, siteSessionPath, DEFAULT_SITE_SESSION_DIR, DEFAULT_WEB_LOCK_PATH, type LockHandle } from './session.js';
 import { haltReason } from '../outreach/limits.js';
@@ -18,6 +19,8 @@ export interface WebRuntimeDeps {
   env?: NodeJS.ProcessEnv;
   lockPath?: string;
   sessionDir?: string;
+  /** The persistent Chrome profile (default secrets/browser-profile); null turns it off (per-host session files only). */
+  profileDir?: string | null;
   config?: Partial<WebConfig>;
   /** Test seam for the per-host gap wait. */
   sleep?: (ms: number) => Promise<void>;
@@ -86,6 +89,7 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
   const idleMs = deps.idleMs ?? cfg.idleMs;
   const lockPath = deps.lockPath ?? DEFAULT_WEB_LOCK_PATH;
   const sessionDir = deps.sessionDir ?? DEFAULT_SITE_SESSION_DIR;
+  const profileDir = deps.profileDir === undefined ? DEFAULT_PROFILE_DIR : deps.profileDir;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const random = deps.random ?? Math.random;
   let session: Session | null = null;
@@ -178,16 +182,35 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
     }
     const lock = acquireLock(lockPath);
     if (!lock.ok) return fail('session_locked', lock.reason);
-    let browser: LiBrowser;
-    try {
-      browser = await launchRealChrome({ launcher: deps.launcher });
-    } catch (e) {
-      lock.handle.release();
-      logErr('launch', e);
-      return fail('chrome_unavailable', 'could not launch Chrome');
+    // The ONE persistent profile (cookies and Chrome's own history stay between runs). When it cannot be used (no support in the
+    // launcher, directory refused, Chrome could not open it) the old path below runs: fresh browser plus the per-host session file.
+    let browser: LiBrowser | null = null;
+    let context: LiContext | null = null;
+    if (profileDir && persistentSupported(deps.launcher)) {
+      const prep = prepareProfileDir(profileDir);
+      if (prep.ok) {
+        try {
+          const pc = await launchPersistentChrome({ userDataDir: profileDir, launcher: deps.launcher });
+          browser = { newContext: async () => pc, close: () => pc.close() };
+          context = pc;
+          await importLegacySessions(pc, profileDir, sessionDir);
+        } catch (e) {
+          browser = null; context = null;
+          if (!(e instanceof Error && e.message === 'persistent_unsupported')) logErr('profile', e);
+        }
+      } else logErr('profile', new Error(prep.reason ?? 'profile refused'));
+    }
+    if (!browser) {
+      try {
+        browser = await launchRealChrome({ launcher: deps.launcher });
+      } catch (e) {
+        lock.handle.release();
+        logErr('launch', e);
+        return fail('chrome_unavailable', 'could not launch Chrome');
+      }
     }
     try {
-      const context = await browser.newContext({ ...HEADLESS_CONTEXT_OPTIONS, ...(storageState ? { storageState } : {}) });
+      context ??= await browser.newContext({ ...HEADLESS_CONTEXT_OPTIONS, ...(storageState ? { storageState } : {}) });
       const page = await context.newPage();
       session = { browser, context, page, lock: lock.handle, idle: null, allowedHosts: opts.allowedHosts };
       process.once('beforeExit', onExit);

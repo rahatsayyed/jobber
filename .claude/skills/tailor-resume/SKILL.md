@@ -159,4 +159,4 @@ Use the `resume_json` returned by the LAST successful render as your output (it 
 
 Output ONLY this JSON object (no fences, no commentary):
 
-{"resume_json": {...}, "pdf_path": "<string>", "jd_keywords": [{"term": "<string>", "priority": "required"}], "gaps": ["<string>"], "flags": ["<string>"], "ats_coverage": <number or null>, "fact_warnings": ["<string>"], "missing_required": ["<string>"]}
+{"resume_json": {...}, "pdf_path": "<string>", "jd_keywords": [{"term": "<string>", "priority": "required"}], "gaps": ["<string>"], "flags": ["<string>"], "ats_coverage": <number or null>, "ats_note": <"jd_incomplete" or null>, "fact_warnings": ["<string>"], "missing_required": ["<string>"]}

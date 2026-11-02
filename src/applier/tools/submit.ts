@@ -9,10 +9,10 @@ import { hostAllowed } from '../../webcore/runtime.js';
 import { loadWebConfig } from '../../webcore/config.js';
 import { detectConfirmation } from '../confirm.js';
 import {
-  blockedResult, consumeSubmitCounters, dryRunResult, envOf, inPage, layoutDriftRefusal, nowOf, preflight, recordApplication, refuse,
+  blockedResult, consumeSubmitCounters, dryRunResult, envOf, inPage, layoutDriftRefusal, needsAnswer, nowOf, preflight, recordApplication, refuse,
   type ApplierDeps, type ApplyResult,
 } from './common.js';
-import { screenedState } from './state.js';
+import { questionText, screenedState } from './state.js';
 
 export const SubmitInput = z.object({}).strict();
 
@@ -55,7 +55,13 @@ export async function handleSubmit(_input: z.infer<typeof SubmitInput>, deps: Ap
       const missing = m.fields
         .filter((f) => !f.hidden && f.required && f.consentClass !== 'marketing' && (f.type === 'checkbox' ? !f.checked : !f.filled))
         .map((f) => f.id);
-      if (missing.length > 0) return { status: 'needs_owner', code: 'missing_required', fields: missing };
+      if (missing.length > 0) {
+        // Required fields nothing filled: each text, select or radio one becomes an open question the owner can answer.
+        for (const f of m.fields.filter((x) => missing.includes(x.id) && x.type !== 'checkbox')) {
+          await needsAnswer(deps, j, f, 'missing_required', (l) => questionText(l, deps));
+        }
+        return { status: 'needs_answer', code: 'missing_required', fields: missing };
+      }
       const subs = m.controls.filter((c) => c.kind === 'submit');
       if (subs.length === 0) return refuse('no_submit_control', 'no submit control on this page');
       if (subs.length > 1) return refuse('ambiguous_submit', 'more than one submit control on this page');

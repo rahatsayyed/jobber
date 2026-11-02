@@ -14,6 +14,7 @@ const item = {
 describe('outreach_queue quality columns', () => {
   it('stores ats coverage, gaps, fact warnings and review counts', () => {
     const db = openDb(':memory:');
+    db.prepare('INSERT INTO jobs (id, source, title, company, description) VALUES (?,?,?,?,?)').run('j1', 'greenhouse', 'T', 'C', 'Full posting text. '.repeat(40));
     const id = enqueueOutreach(db, { ...item, ats_coverage: 62, ats_gaps: ['Kubernetes'], fact_warnings: ['posting-echo:ui judgment @summary[1]'], review_applied: 3, review_rejected: 1 });
     const row = db.prepare('SELECT * FROM outreach_queue WHERE id = ?').get(id) as any;
     expect(row.ats_coverage).toBe(62);

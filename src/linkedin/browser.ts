@@ -1,7 +1,7 @@
 // The ONLY place in src/linkedin/* and scripts/linkedin-*.ts that launches a browser: real
 // installed Google Chrome through patchright (the Naukri headless recipe), never bundled Chromium.
 import { chromium as patchrightChromium } from 'patchright';
-import type { LiBrowser, LiLauncher } from './types.js';
+import type { LiBrowser, LiContext, LiLauncher } from './types.js';
 
 /** Akamai blocks the `HeadlessChrome` UA token; a real Chrome UA with en-IN/Asia/Kolkata passes. */
 export const HEADLESS_USER_AGENT =
@@ -26,6 +26,36 @@ export async function launchRealChrome(opts: { headed?: boolean; launcher?: LiLa
         ? { ...LINKEDIN_HEADED_LAUNCH_OPTIONS }
         : { channel: LINKEDIN_LAUNCH_OPTIONS.channel, headless: true, args: [...LINKEDIN_LAUNCH_OPTIONS.args] },
     );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`chrome_unavailable: ${msg.replace(/\s+/g, ' ').slice(0, 120)}`);
+  }
+}
+
+// ---- Persistent profile (web runtime only: scout, applier, search dork, apply:assist, browser:open) ----
+// ONE real Chrome profile directory holds the cookies and the browser's own history of everything the web runtime does. The platform
+// sessions (LinkedIn main and burner, Naukri, Wellfound) never use it. This is the only file allowed to start a persistent context.
+export type LiPersistentContext = LiContext & { close(): Promise<void> };
+type PersistentCapable = { launchPersistentContext?: (dir: string, opts: Record<string, unknown>) => Promise<LiPersistentContext> };
+
+/** Chrome switches that keep its own password manager quiet: passwords live only in secrets/site-accounts.json. */
+export const PERSISTENT_PROFILE_ARGS = ['--disable-save-password-bubble', '--password-store=basic', '--disable-features=PasswordLeakDetection,PasswordManagerOnboarding'] as const;
+
+/** True when this launcher (default: patchright's) can open a persistent profile. Fakes in tests usually cannot. */
+export function persistentSupported(launcher?: LiLauncher): boolean {
+  return typeof ((launcher ?? patchrightChromium) as unknown as PersistentCapable).launchPersistentContext === 'function';
+}
+
+export async function launchPersistentChrome(opts: { userDataDir: string; headed?: boolean; launcher?: LiLauncher }): Promise<LiPersistentContext> {
+  const launcher = (opts.launcher ?? patchrightChromium) as unknown as PersistentCapable;
+  if (typeof launcher.launchPersistentContext !== 'function') throw new Error('persistent_unsupported');
+  try {
+    return await launcher.launchPersistentContext(opts.userDataDir, {
+      channel: LINKEDIN_LAUNCH_OPTIONS.channel,
+      headless: !opts.headed,
+      args: [...(opts.headed ? [] : LINKEDIN_LAUNCH_OPTIONS.args), ...PERSISTENT_PROFILE_ARGS],
+      ...HEADLESS_CONTEXT_OPTIONS,
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(`chrome_unavailable: ${msg.replace(/\s+/g, ' ').slice(0, 120)}`);

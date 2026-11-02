@@ -20,6 +20,7 @@ import type { ConfirmSignals } from '../confirm.js';
 import { sameRef } from '../refs.js';
 import { resolveHostCap } from '../../webcore/hostCaps.js';
 import { checkAndIncrement } from '../../lib/rateLimit.js';
+import { recordQuestion, storedAnswer, type QuestionKind } from '../../apply/questions.js';
 
 export type Db = BetterSqlite3.Database;
 
@@ -27,7 +28,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const DEFAULT_STOP_FILE = path.join(ROOT, '.jobber', 'STOP');
 
 export type ApplyStatus =
-  | 'ok' | 'refused' | 'needs_owner' | 'blocked' | 'dry_run' | 'held'
+  | 'ok' | 'refused' | 'needs_owner' | 'needs_answer' | 'needs_human' | 'blocked' | 'dry_run' | 'held'
   | 'rate_limited' | 'submitted' | 'unconfirmed' | 'failed';
 
 export interface ApplyResult {
@@ -36,8 +37,10 @@ export interface ApplyResult {
   reason?: string;
   /** Screened compact page state (never present when the screen blocked). */
   state?: string;
-  /** needs_owner: the question text, screened. */
+  /** needs_owner / needs_answer: the question text, screened. */
   question?: string;
+  /** needs_answer: the apply_questions row the owner answers (`npm run answers -- answer <id> "<text>"`). */
+  question_id?: number;
   platform?: string;
   host?: string;
   /** missing_required: field ids only. */
@@ -194,17 +197,56 @@ export async function resolveQuestion(
   f: FormField, ref: AnswerRef | undefined, deps: ApplierDeps, job: OpenJob,
   questionText: (label: string) => Promise<string>,
 ): Promise<Resolved> {
-  const owner = async (code: string): Promise<Resolved> => ({
-    ok: false, result: { status: 'needs_owner', code, question: await questionText(f.label) },
-  });
+  const ask = async (code: string): Promise<Resolved> => ({ ok: false, result: await needsAnswer(deps, job, f, code, questionText) });
   const s = deps.answers.suggest(f.label);
-  if (!s.ref) return owner(s.cls);
-  if (!ref) return owner('ref_required');
-  if (!sameRef(ref, s.ref)) return { ok: false, result: refuse('role_ref_mismatch', 'that answer does not belong to this question') };
-  if (!deps.answers.has(s.ref)) return owner('missing_answer');
-  const v = deps.answers.resolve(s.ref, { jobLocation: job.location });
-  if (v === null || v === undefined || v === '') return owner('missing_answer');
-  return { ok: true, value: v };
+  // Consent and attestation boxes are never answered from any book: they wait for the owner by hand.
+  if (s.cls === 'consent' || s.cls === 'legal_attestation') {
+    return { ok: false, result: { status: 'needs_owner', code: s.cls, question: await questionText(f.label) } };
+  }
+  const checkLen = (v: AnswerValue): Resolved => {
+    if (typeof v !== 'boolean' && f.maxLength && String(v).length > f.maxLength) {
+      return { ok: false, result: refuse('answer_too_long', `the stored answer is longer than the field allows (${f.maxLength}); shorten it with npm run answers`) };
+    }
+    return { ok: true, value: v };
+  };
+  // 1. The answer book (answer file, profile, values derived from the resume): its own suggestion decides which ref answers this field.
+  if (s.ref && deps.answers.has(s.ref)) {
+    if (!ref) return ask('ref_required');
+    if (!sameRef(ref, s.ref)) return { ok: false, result: refuse('role_ref_mismatch', 'that answer does not belong to this question') };
+    const v = deps.answers.resolve(s.ref, { jobLocation: job.location });
+    if (v !== null && v !== undefined && v !== '') return checkLen(v);
+  }
+  // 2. An answer the owner gave for this very question (`once` for this job, `always` for this host and label). Code picks it from the
+  //    field's own label; the model's ref only has to be an answer ref. Nothing is matched loosely.
+  const stored = storedAnswer(deps.db, job.jobId, job.host, f.label);
+  if (stored !== null) {
+    if (!ref || ref.kind !== 'answer') return ask('ref_required');
+    return checkLen(stored);
+  }
+  // 3. Nothing reliable: the job pauses as needs_answer. Never guess.
+  return ask(s.ref ? 'missing_answer' : s.cls);
+}
+
+const kindOf = (f: FormField): QuestionKind => (f.type === 'select' ? 'select' : f.type === 'radio' ? 'radio' : f.type === 'checkbox' ? 'checkbox' : 'text');
+
+/**
+ * The result for a question nothing reliable can answer. A REQUIRED field gets one apply_questions row (deduped by normalized label and host)
+ * and the status `needs_answer`; an optional field is simply left blank (`optional_unanswered`); a question the owner skipped ends the job.
+ */
+export async function needsAnswer(
+  deps: ApplierDeps, job: OpenJob, f: FormField, code: string, questionText: (label: string) => Promise<string>,
+): Promise<ApplyResult> {
+  if (!f.required) return refuse('optional_unanswered', 'an optional question without a reliable answer is left blank');
+  const question = await questionText(f.label);
+  let id: number | undefined;
+  try {
+    const r = recordQuestion(deps.db, {
+      jobId: job.jobId, host: job.host, label: f.label, kind: kindOf(f), options: f.options, maxLength: f.maxLength,
+    }, nowOf(deps));
+    id = r.id;
+    if (r.status === 'skipped') return refuse('question_skipped', 'the owner chose not to answer this question');
+  } catch { console.error('[applier] question not recorded'); }
+  return { status: 'needs_answer', code, question, ...(id !== undefined ? { question_id: id } : {}) };
 }
 
 /** MAX_APPLIES_PER_DAY, same parsing the legacy tools used (integer, default 5). */

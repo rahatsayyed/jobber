@@ -34,6 +34,14 @@ export function itemBlock(i: EscItem, now: Date, detailMax = 140): string[] {
   // The raw flagged text (rawText) is never shown here.
   if (i.excerpt) out.push(`    "${cleanUntrusted(i.excerpt, detailMax)}"`);
   else if (i.detail) out.push(`    ${cleanUntrusted(i.detail, detailMax)}`);
+  // A paused application: the exact questions, each with the command that answers it (--always keeps the answer for every later form).
+  for (const q of i.questions.slice(0, 8)) {
+    const opts = q.options.length ? ` [${q.options.slice(0, 6).map((o) => cleanUntrusted(o, 30)).join(' | ')}]` : '';
+    out.push(`    question #${q.id} (${q.kind}${q.jobIds.length > 1 ? `, ${q.jobIds.length} jobs` : ''}): "${cleanUntrusted(q.label, 140)}"${opts}`);
+    out.push(`      needs your answer: npm run answers -- answer ${q.id} "<text>" [--always]`);
+  }
+  if (i.questions.length > 8) out.push(`    ... and ${i.questions.length - 8} more: npm run answers -- list`);
+  if (i.assistCommand) out.push(`    run: ${i.assistCommand}`);
   if (i.count > 1) out.push(`    ids ${[...i.ids].sort((a, b) => a - b).join(',')}`);
   return out;
 }
@@ -43,6 +51,8 @@ export function renderEscalations(items: EscItem[], counts: EscCounts, now: Date
     return `No open escalations.${counts.snoozed ? ` (${counts.snoozed} snoozed)` : ''}`;
   }
   const lines = [`Escalations: ${counts.open} open${counts.snoozed ? `, ${counts.snoozed} snoozed (hidden)` : ''}. Answer on the platform itself; mark them handled in the dashboard Inbox tab.`];
+  const nq = items.reduce((n, i) => n + i.questions.length, 0);
+  if (nq > 0) lines.push(`${nq} question${nq === 1 ? '' : 's'} need your answer (applications are paused until you answer): npm run answers -- list`);
   let shown = 0;
   for (const g of GROUP_ORDER) {
     const inGroup = items.filter((i) => i.group === g);

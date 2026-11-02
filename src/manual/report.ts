@@ -54,7 +54,7 @@ interface JobRow {
 }
 interface QueueRow {
   email_to: string | null; email_status: string | null; email_sent_at: string | null; connect_profile_url: string | null;
-  connect_category: string | null; connect_status: string | null; apply_platform: string | null; apply_tier: string | null; apply_status: string | null; status: string | null;
+  connect_category: string | null; connect_status: string | null; apply_platform: string | null; apply_tier: string | null; apply_status: string | null; apply_note?: string | null; status: string | null;
 }
 
 /** A job is settled once the pipeline is done with it: vetoed, scored, or given up on after repeated rejected match saves. */
@@ -91,7 +91,7 @@ function jobLines(db: Db, r: ManualRequest, jobId: string, threshold: number): s
   if (g) out.push(`  gap: ${cleanUntrusted(g, 140)}`);
   const flags = flagsOf(j.gate_flags).slice(0, 2);
   if (flags.length) out.push(`  flags: ${flags.map((f) => cleanUntrusted(f, 90)).join('; ')}`);
-  const q = db.prepare('SELECT email_to, email_status, email_sent_at, connect_profile_url, connect_category, connect_status, apply_platform, apply_tier, apply_status, status FROM outreach_queue WHERE job_id = ? ORDER BY id').all(j.id) as QueueRow[];
+  const q = db.prepare('SELECT email_to, email_status, email_sent_at, connect_profile_url, connect_category, connect_status, apply_platform, apply_tier, apply_status, apply_note, status FROM outreach_queue WHERE job_id = ? ORDER BY id').all(j.id) as QueueRow[];
   if (q.length === 0) {
     out.push(j.score < threshold && !r.force
       ? `  below threshold ${threshold}: not contacted (resubmit with --force to prepare it anyway)`
@@ -113,6 +113,8 @@ function jobLines(db: Db, r: ManualRequest, jobId: string, threshold: number): s
   if (ap) {
     const st = ap.apply_status ?? 'queued';
     out.push(`  apply: ${cleanUntrusted(st, 30)} (${cleanUntrusted(ap.apply_platform, 20)})`);
+    if (st === 'needs_answer') out.push(`  needs your answer: ${cleanUntrusted(ap.apply_note ?? '', 60) || 'questions'} (npm run answers -- list)`);
+    if (st === 'needs_human') out.push(`  needs you: log in or pass a human check (npm run apply:assist -- ${cleanUntrusted(j.id, 100)})`);
     if (['needs_owner', 'manual_review', 'unconfirmed', 'escalated'].includes(st)) {
       let e: { reason: string; detail: string | null } | undefined;
       try {

@@ -17,10 +17,10 @@ describe('classifyKeywords', () => {
       { term: 'Node.js', priority: 'preferred', status: 'skills_only' },
     ]);
   });
-  it('a skills-list-only term is never covered and never missing_have_it (P10)', () => {
+  it('a skills-list-only term is never covered in prose and never missing_have_it (P10), but the final resume shows it', () => {
     const r = classifyKeywords([{ term: 'Node.js', priority: 'required' }], 'Built React apps.', 'Built React apps.', 'React, Node.js');
     expect(r).toEqual([{ term: 'Node.js', priority: 'required', status: 'skills_only' }]);
-    expect(coveragePct(r)).toBe(0);
+    expect(coveragePct(r)).toBe(100);
     // with the skills text omitted the term is a plain gap
     expect(classifyKeywords([{ term: 'Node.js', priority: 'required' }], 'Built React apps.', 'Built React apps.')[0].status).toBe('gap');
   });

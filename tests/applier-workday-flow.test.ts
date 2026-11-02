@@ -118,9 +118,9 @@ describe('verification flow on the Workday-like fixture site', () => {
     expect(x.escalations.some(([k]) => k === 'verification')).toBe(true);
     const esc = await handleEscalate({ job_id: 'job-1', reason: 'email_verification' }, x.deps, { notify: () => undefined, runId: null });
     results.push(esc);
-    expect(esc).toMatchObject({ status: 'needs_owner', code: 'escalated' });
-    expect(x.db.prepare("SELECT reason FROM escalations WHERE reason = 'apply:email_verification'").all()).toHaveLength(1);
-    expect(x.db.prepare("SELECT apply_status FROM outreach_queue WHERE job_id = 'job-1'").get()).toEqual({ apply_status: 'needs_owner' });
+    expect(esc).toMatchObject({ status: 'needs_human', code: 'escalated' });
+    expect(x.db.prepare("SELECT reason FROM escalations WHERE reason = 'apply:needs_human'").all()).toHaveLength(1);
+    expect(x.db.prepare("SELECT apply_status FROM outreach_queue WHERE job_id = 'job-1'").get()).toEqual({ apply_status: 'needs_human' });
     // no link was opened and nothing was submitted
     expect(x.site.events.filter((e) => e === 'goto')).toHaveLength(1); // the apply_open navigation only
     expect(x.db.prepare('SELECT COUNT(*) AS n FROM applications').get()).toEqual({ n: 0 });

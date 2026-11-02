@@ -26,11 +26,12 @@ describe('apply_escalate', () => {
       notices.length = 0;
       const hh = await opened();
       const r = await esc(hh, reason);
-      expect(r, reason).toMatchObject({ status: 'needs_owner', code: 'escalated' });
+      const want = reason === 'question' ? 'needs_answer' : ['captcha', 'mfa', 'phone_verification', 'email_verification', 'account_needed', 'login_failed'].includes(reason) ? 'needs_human' : 'needs_owner';
+      expect(r, reason).toMatchObject({ status: want, code: 'escalated' });
       expect(count(hh.db, "SELECT COUNT(*) AS n FROM escalations WHERE platform = 'apply'"), reason).toBe(1);
-      expect(listOpenEscalations(hh.db, 5)[0].reason).toBe(`apply:${reason}`);
+      expect(listOpenEscalations(hh.db, 5)[0].reason).toBe(reason === 'question' ? 'apply:needs_answer' : want === 'needs_human' ? 'apply:needs_human' : `apply:${reason}`);
       expect(notices.length, reason).toBe(1);
-      expect(hh.db.prepare('SELECT apply_status FROM outreach_queue WHERE job_id = ?').get('job-1')).toEqual({ apply_status: 'needs_owner' });
+      expect(hh.db.prepare('SELECT apply_status FROM outreach_queue WHERE job_id = ?').get('job-1')).toEqual({ apply_status: want });
       // the same call again writes nothing
       expect(await esc(hh, reason)).toMatchObject({ status: 'needs_owner', code: 'already_escalated' });
       expect(count(hh.db, "SELECT COUNT(*) AS n FROM escalations WHERE platform = 'apply'")).toBe(1);
@@ -47,7 +48,7 @@ describe('apply_escalate', () => {
   it('captcha fixture ends needs_owner with nothing typed after', async () => {
     const hh = await opened();
     const r = await esc(hh, 'captcha');
-    expect(r).toMatchObject({ status: 'needs_owner', code: 'escalated' });
+    expect(r).toMatchObject({ status: 'needs_human', code: 'escalated' });
     expect(hh.deps.state.cur).toBeNull();
     // nothing can be typed any more, and the job is not opened again in this run
     const f = await handleFill({ field: 'f1', ref: { kind: 'profile', field: 'name.first' } }, hh.deps);
@@ -62,20 +63,20 @@ describe('apply_escalate', () => {
     const hh = await opened({ start: 'captcha-wall.html' });
     expect(hh.deps.state.cur).toBeNull();
     const r = await esc(hh, 'captcha');
-    expect(r).toMatchObject({ status: 'needs_owner', code: 'escalated' });
+    expect(r).toMatchObject({ status: 'needs_human', code: 'escalated' });
     expect(hh.site.fills.length).toBe(0);
   });
 
   it('the note passes the style gate or is dropped; the escalation is still written', async () => {
     const hh = await opened();
-    const r = await esc(hh, 'question', 'needs a salary figure — ask the owner');
+    const r = await esc(hh, 'other', 'needs a salary figure — ask the owner');
     expect(r).toMatchObject({ status: 'needs_owner', code: 'escalated' });
     expect(r.reason).toContain('dropped');
     const row = listOpenEscalations(hh.db, 5)[0];
     expect(row.detail).not.toContain('salary');
     await hh.close(); h = null;
     const h2 = await opened();
-    await esc(h2, 'question', 'needs a salary figure');
+    await esc(h2, 'other', 'needs a salary figure');
     expect(listOpenEscalations(h2.db, 5)[0].detail).toContain('note: needs a salary figure');
   });
 

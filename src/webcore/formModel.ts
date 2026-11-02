@@ -22,6 +22,8 @@ export interface RawField {
   options?: string[];
   hidden: boolean;
   autocomplete?: string;
+  /** The input's maxlength attribute, 0 or absent when none. */
+  maxlength?: number;
 }
 export interface RawControl { label: string; tag?: string }
 export interface RawFormSnapshot {
@@ -37,6 +39,8 @@ export interface RawFormSnapshot {
 export interface FormField {
   id: string; role: FieldRole; label: string; type: string; required: boolean; filled: boolean;
   checked?: boolean; options?: string[]; hidden: boolean; consentClass?: CheckboxClass;
+  /** The field's maxlength when the page sets one. */
+  maxLength?: number;
 }
 export interface FormControl { id: string; kind: ControlKind; label: string }
 export interface FormModel {
@@ -55,7 +59,7 @@ export const FORM_SNAPSHOT_SCRIPT = `(() => {
     if (type === 'submit' || type === 'button' || type === 'image' || type === 'reset') continue;
     if (type === 'radio') { const k = e.name || e.id; if (seen.has(k)) continue; seen.add(k); }
     e.setAttribute('data-jf', String(fields.length));
-    const f = { type, name: e.name || '', id: e.id || '', label: labelOf(e), required: e.required || e.getAttribute('aria-required') === 'true', filled: type === 'checkbox' || type === 'radio' ? false : (type === 'file' ? !!(e.files && e.files.length) : !!e.value), hidden: type === 'hidden' || !vis(e), autocomplete: e.getAttribute('autocomplete') || '' };
+    const f = { type, name: e.name || '', id: e.id || '', label: labelOf(e), required: e.required || e.getAttribute('aria-required') === 'true', filled: type === 'checkbox' || type === 'radio' ? false : (type === 'file' ? !!(e.files && e.files.length) : !!e.value), hidden: type === 'hidden' || !vis(e), autocomplete: e.getAttribute('autocomplete') || '', maxlength: (e.maxLength > 0 && e.maxLength < 100000) ? e.maxLength : 0 };
     if (type === 'checkbox') f.checked = e.checked;
     if (type === 'select') f.options = Array.from(e.options).map((o) => o.textContent.trim()).slice(0, 30);
     if (type === 'radio') { const g = Array.from(document.querySelectorAll('input[type=radio]')).filter((r) => r.name === e.name); f.options = g.map((r) => labelOf(r)).slice(0, 30); f.filled = g.some((r) => r.checked); }
@@ -125,6 +129,7 @@ export function extractFormModel(raw: RawFormSnapshot): FormModel {
     if (f.checked !== undefined) out.checked = !!f.checked;
     if (f.type === 'checkbox') out.consentClass = classifyCheckbox(f.label ?? '', !!f.required);
     if (f.options) out.options = f.options.slice(0, 30);
+    if (f.maxlength && f.maxlength > 0) out.maxLength = f.maxlength;
     return out;
   });
   const controls: FormControl[] = (raw.controls ?? []).map((c, i) => ({ id: `c${i + 1}`, kind: classifyControl(c.label), label: c.label }));

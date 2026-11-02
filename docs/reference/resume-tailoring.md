@@ -34,8 +34,18 @@ What the code enforces around that skill (resume MCP: `get_base_resume`, `render
   is truncated, not rejected).
 - Every rendered PDF now has ASCII dashes and quotes, ` - ` between dates and `: ` after the
   skills label (typography normalization plus a template edit; reversible with `git revert`).
-- Node.js, and any other item that is only in the Skills list, is `skills_only`: it never counts
-  toward ATS coverage, and `tailor-resume` never writes it into a bullet or the summary. If the
+- **ATS coverage (`outreach_queue.ats_coverage`, `ats_note`).** It is the share of the posting's keywords
+  the FINAL resume shows to an ATS: in the prose, as a synonym in the prose, or in the resume's skills list
+  (`src/atsKeywords.ts` `coveragePct`). A term only in a bullet the tailoring dropped, and a real gap, are
+  not credited, and nothing is ever claimed that the resume does not have (the fact gate is unchanged).
+  Generic boilerplate (communication, team, experience, degree words, ...) is dropped from the keyword list
+  before scoring. When the stored job description is a snippet (under 300 characters) or ends in a
+  truncation marker (`...`, "read more"), as most Naukri and LinkedIn list rows do, the coverage is stored
+  NULL with `ats_note = 'jd_incomplete'` (decided in code in `enqueue_outreach` and `render_resume`), and
+  the dashboard should show "JD incomplete", not a number. `npx tsx scripts/fix-ats-incomplete.ts [--dry]`
+  marks the old rows once (idempotent).
+- Node.js, and any other item that is only in the Skills list, is `skills_only`: it counts as shown on the
+  page for ATS coverage, but `tailor-resume` never writes it into a bullet or the summary. If the
   user has real Node.js work to claim, they add it to `user-data/resume.json` (the agent never edits
   that file); the gate and classifier pick it up on the next render. Open user decision.
 - `user-data/fact-gate.json`: `allow_facts` / `allow_metrics` are the escape hatch for facts the

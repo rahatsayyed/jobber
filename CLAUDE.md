@@ -530,6 +530,10 @@ Browser apply through the `applier` MCP and the `apply-operator`: what can be ap
 LinkedIn connects and messages by the `linkedin-operator`: the arm-then-commit flow, caps (daily, rolling 24 hours), the profile page rules (a Connect is legal only in the profile's own top card or its More menu; `connect_state`; invite dialog; send confirmation; plain invites and the monthly note quota), what is and is not live-verified, hiring posts and poster outreach, the failure ladder and the manual `/connect` steps. Details: `docs/reference/connecting.md` (read it before working in this area).
 Acceptance of a sent invite is detected in code: the `accept_recent` task calls `linkedin_check_accepted_recent` once a day (one recent-connections page; LinkedIn work only inside `LINKEDIN_ACTIVE_HOURS`, 09:30-20:30 IST) and `accept_check` (`linkedin_check_accepted`, 3 older profiles per wake) is the fallback; both set `connections.status='connected'`, which makes the person due for `followups` (see the same document).
 
+## Owner help commands (apply)
+
+The applier never guesses an answer: an unanswerable required question parks the job as `needs_answer` (`apply_questions`; owner: `npm run answers -- list|answer <id> "<text>" [--always]|skip <id>`), and a login wall, CAPTCHA or MFA parks it as `needs_human` (`npm run apply:assist -- <job_id>`, one Telegram ping per host per 6 h). Web tasks share one persistent profile `secrets/browser-profile/` (`npm run browser:open -- <url>`, `browser:history`); ATS coverage is NULL with `ats_note='jd_incomplete'` for snippet-only postings. Details: `docs/reference/applying.md`, `docs/reference/resume-tailoring.md`.
+
 ## Owner docs
 
 Owner-facing pages are listed in `docs/index.md`: `docs/00-start-here.md`, `docs/operations.md`,

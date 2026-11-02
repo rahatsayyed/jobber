@@ -43,7 +43,7 @@ export function synonymsOf(spec: KeywordSpec): string[] {
  * skills_only = the base lists it only as a skill (never claim it as work); gap = nowhere.
  */
 export function classifyKeywords(keywords: KeywordSpec[], tailoredText: string, baseText: string, skillsText = ''): KeywordResult[] {
-  return keywords.filter((k) => k && typeof k.term === 'string' && k.term.trim()).map((k) => {
+  return keywords.filter((k) => k && typeof k.term === 'string' && k.term.trim() && !isGenericKeyword(k.term)).map((k) => {
     const priority = k.priority === 'required' ? 'required' : 'preferred';
     if (termMatches(tailoredText, k.term)) return { term: k.term, priority, status: 'covered' };
     const syn = synonymsOf(k).find((s) => termMatches(tailoredText, s));
@@ -54,6 +54,39 @@ export function classifyKeywords(keywords: KeywordSpec[], tailoredText: string, 
   });
 }
 
+/** Statuses the FINAL resume itself shows to an ATS: the term in the prose, a synonym of it in the prose, or the term in the skills list. */
+export const CREDITED_STATUSES: ReadonlySet<KeywordStatus> = new Set<KeywordStatus>(['covered', 'synonym_only', 'skills_only']);
+
+/**
+ * Share of keywords the final resume shows (prose, a synonym in the prose, or its skills list: an ATS parses all of them). A term the
+ * base has only in a bullet the tailoring dropped (`missing_have_it`) and a real gap are NOT credited. Nothing here makes a claim:
+ * a skills-list-only term stays out of the prose (the fact gate), it is only counted as present on the page.
+ */
 export function coveragePct(results: KeywordResult[]): number | null {
+  return results.length ? Math.round((100 * results.filter((r) => CREDITED_STATUSES.has(r.status)).length) / results.length) : null;
+}
+
+/** Strict share: only terms the tailored prose itself contains (the old metric), kept for comparison. */
+export function proseCoveragePct(results: KeywordResult[]): number | null {
   return results.length ? Math.round((100 * results.filter((r) => r.status === 'covered').length) / results.length) : null;
+}
+
+// Words in almost every posting that say nothing about fit. Matched against the whole folded term, never a substring.
+const GENERIC_TERMS = new Set([
+  'experience', 'experienced', 'years', 'year', 'team', 'teams', 'teamwork', 'team player', 'communication', 'communication skills',
+  'written communication', 'verbal communication', 'collaboration', 'collaborative', 'cross functional', 'cross functional collaboration',
+  'cross functional teams', 'problem solving', 'problem solver', 'analytical', 'analytical skills', 'strong', 'ability', 'skills', 'skill',
+  'knowledge', 'work', 'working', 'role', 'position', 'job', 'candidate', 'company', 'opportunity', 'environment', 'fast paced', 'fast paced environment',
+  'passion', 'passionate', 'motivated', 'self motivated', 'detail oriented', 'attention to detail', 'good', 'great', 'excellent', 'best practices',
+  'responsibilities', 'requirements', 'qualifications', 'preferred', 'required', 'plus', 'bonus', 'development', 'software', 'software development',
+  'engineering', 'engineer', 'developer', 'technology', 'technologies', 'solutions', 'products', 'product', 'projects', 'project', 'business',
+  'fresher', 'freshers', 'immediate joiner', 'immediate joiners', 'full time', 'part time', 'remote', 'onsite', 'hybrid', 'leadership', 'ownership',
+  'time management', 'critical thinking', 'adaptability', 'flexibility', 'quick learner', 'fast learner', 'bachelor', 'degree', 'bachelors degree',
+  'computer science', 'b tech', 'btech', 'be', 'bca', 'mca', 'proficiency', 'proficient', 'hands on', 'hands on experience', 'understanding',
+]);
+
+/** True for boilerplate that is not a skill or tool (soft skills, contract words, degree words), compared on the folded whole term. */
+export function isGenericKeyword(term: string): boolean {
+  const t = foldKw(term).replace(/[/+#]/g, ' ').replace(/\s+/g, ' ').trim();
+  return t === '' || GENERIC_TERMS.has(t);
 }

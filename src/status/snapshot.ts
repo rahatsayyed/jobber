@@ -3,6 +3,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { funnelStats } from '../funnel.js';
 import type { OutreachConfig } from '../outreach/config.js';
 import { ceilings, type CeilingStatus, type LimitKey } from '../outreach/limits.js';
+import { openQuestionViews, type OpenQuestionView } from '../outreach/escalations.js';
 
 export interface Snapshot {
   generatedAt: string;
@@ -12,6 +13,10 @@ export interface Snapshot {
   queue: { status: string; count: number }[];
   funnel: { discovered: number; matched: number; contacted: number; replied: number; interview: number; offer: number };
   lastSend: { kind: string; at: string } | null;
+  /** Applications paused for an owner answer: the open apply_questions (capped list) and the total count. */
+  openQuestions: { count: number; items: OpenQuestionView[] };
+  /** Applications paused for a human step (login, CAPTCHA, MFA): job count per host; the command is `npm run apply:assist -- <job_id>`. */
+  needsHuman: { count: number; hosts: { host: string; jobs: number; example_job_id: string; command: string }[] };
   // Sections not readable because a table is missing; their values are fallbacks, not facts.
   degraded: string[];
 }
@@ -117,6 +122,25 @@ export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, n
     queue,
     funnel,
     lastSend: candidates[0] ?? null,
+    openQuestions: section('openQuestions', () => ({
+      count: (db.prepare("SELECT COUNT(*) AS n FROM apply_questions WHERE status = 'open'").get() as { n: number }).n,
+      items: openQuestionViews(db),
+    }), { count: 0, items: [] }),
+    needsHuman: section('needsHuman', () => {
+      const rows = db.prepare(
+        `SELECT j.id AS job_id, COALESCE(NULLIF(j.external_apply_url, ''), j.apply_url) AS url FROM outreach_queue q JOIN jobs j ON j.id = q.job_id
+         WHERE q.apply_status = 'needs_human' ORDER BY q.id`,
+      ).all() as { job_id: string; url: string | null }[];
+      const byHost = new Map<string, { host: string; jobs: number; example_job_id: string; command: string }>();
+      for (const r of rows) {
+        let host = '';
+        try { host = new URL(r.url ?? '').hostname.toLowerCase(); } catch { host = 'unknown'; }
+        const e = byHost.get(host);
+        if (e) e.jobs += 1;
+        else byHost.set(host, { host, jobs: 1, example_job_id: r.job_id, command: `npm run apply:assist -- ${r.job_id}` });
+      }
+      return { count: rows.length, hosts: [...byHost.values()] };
+    }, { count: 0, hosts: [] }),
     degraded,
   };
 }
