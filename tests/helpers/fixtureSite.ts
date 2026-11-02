@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { parseHtml, findAll, textOf, visibleText, type HtmlNode } from '../../src/linkedin/htmlVisible.js';
-import type { RawField, RawFormSnapshot } from '../../src/webcore/formModel.js';
+import type { RawField, RawFormSnapshot, RawLink } from '../../src/webcore/formModel.js';
 
 const DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'web');
 
@@ -44,11 +44,23 @@ export function snapshotFromHtml(html: string, url = 'https://jobs.example.test/
   }
   const controls = all((n) => (n.tag === 'button' || n.tag === 'a') && !n.hidden)
     .map((n) => ({ tag: n.tag, label: squash(textOf(n)) })).filter((c) => c.label);
+  // Anchors with an href, resolved against the page URL like a.href; the context is the text of the closest card (li/article/tr) or parent.
+  const parents = new Map<HtmlNode, HtmlNode>();
+  for (const p of all(() => true)) for (const c of p.children) parents.set(c, p);
+  const links: RawLink[] = [];
+  for (const a of all((n) => n.tag === 'a' && !n.hidden && !!n.attrs['href'])) {
+    let href = '';
+    try { href = new URL(a.attrs['href'], url).href; } catch { continue; }
+    let card = parents.get(a);
+    while (card && !['li', 'article', 'tr'].includes(card.tag)) card = parents.get(card);
+    const label = squash(textOf(a));
+    if (label) links.push({ label, href, context: squash(card ? textOf(card) : label).slice(0, 240), blank: a.attrs['target'] === '_blank' });
+  }
   const titleNode = all((n) => n.tag === 'title')[0];
   const captchaWidget = all((n) => !n.hidden && /\b(g-recaptcha|h-captcha|cf-turnstile)\b/.test(n.attrs['class'] ?? '')).length > 0;
   return {
     url, title: titleNode ? squash(titleNode.children.map((c) => c.text ?? '').join('')) : '',
-    text: visibleText(root), fields, controls, notices: [], captchaWidget,
+    text: visibleText(root), fields, controls, notices: [], captchaWidget, links,
   };
 }
 

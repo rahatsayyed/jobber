@@ -15,12 +15,13 @@ import { addEscalation } from '../../outreach/service.js';
 import { FIXED_FAIL, HostChanged, haltedWeb, hostOfUrl, noteBlock, readPage } from '../../webcore/login.js';
 import { isDryRun, recordDryRun } from '../../safety/dryRun.js';
 import type { ClassifierPort } from '../../safety/inputGate.js';
+import type { StyleConfig } from '../../safety/styleGate.js';
 import type { AnswerBook, AnswerRef, AnswerValue } from '../../apply/answers.js';
 import type { ConfirmSignals } from '../confirm.js';
 import { sameRef } from '../refs.js';
 import { resolveHostCap } from '../../webcore/hostCaps.js';
 import { checkAndIncrement } from '../../lib/rateLimit.js';
-import { recordQuestion, storedAnswer, type QuestionKind } from '../../apply/questions.js';
+import { agentHandleAllowed, recordQuestion, storedAnswer, type QuestionKind } from '../../apply/questions.js';
 
 export type Db = BetterSqlite3.Database;
 
@@ -51,6 +52,26 @@ export interface ApplyResult {
   unresolved?: string[];
   /** apply_recipe: a small status record (ids, counts and flags only). */
   info?: Record<string, string | number | boolean | null>;
+  /** needs_answer: true when the question is a free-text motivational one the operator may draft with apply_draft_answer (code decides). */
+  draftable?: boolean;
+  /** apply_draft_answer: the question, limits, owner guidance, screened job text and resume facts to draft from; or the gate reason codes of a refused draft. */
+  context?: Record<string, unknown>;
+  reasons?: string[];
+  /** apply_list_roles: the role links of the open careers page (cleaned, screened, same host only). */
+  roles?: Array<{ role_id: string; title: string; location: string; kind: 'role' | 'maybe' }>;
+  /** apply_open_role: the job and queue row created for the role that was opened. */
+  job_id?: string;
+  queue_id?: number;
+}
+
+/** A careers listing page read by apply_list_roles: the roles that apply_open_role may open, bound to the listing job. */
+export interface RoleSession {
+  parentJobId: string;
+  /** The hosts the listing job may use; a role link on any other host is never listed or opened. */
+  allowedHosts: string[];
+  items: Array<{ role_id: string; title: string; location: string; href: string; kind: 'role' | 'maybe' }>;
+  /** role_ids already opened from this listing in this run. */
+  opened: Set<string>;
 }
 
 export interface OpenJob {
@@ -71,8 +92,12 @@ export interface ApplierSessionState {
   lastOpen: Map<string, number>;
   /** Job ids escalated to the owner in this run: never opened again, never retried (task 20). */
   escalated: Set<string>;
+  /** apply_draft_answer attempts per question id in this run (one draft and one redraft, then the question goes to the owner). */
+  draftAttempts?: Map<number, number>;
+  /** The last careers listing read by apply_list_roles. */
+  roles?: RoleSession | null;
 }
-export const createApplierState = (): ApplierSessionState => ({ cur: null, lastOpen: new Map(), escalated: new Set() });
+export const createApplierState = (): ApplierSessionState => ({ cur: null, lastOpen: new Map(), escalated: new Set(), draftAttempts: new Map(), roles: null });
 
 export interface ApplierDeps {
   db: Db;
@@ -92,6 +117,8 @@ export interface ApplierDeps {
   recipes?: RecipeService;
   /** Layout memory for ats_<id> pages (task 19). Observes every page read; enforces drift when LAYOUT_ENFORCE=enforce. */
   layoutGuard?: AtsLayoutGuard;
+  /** Test seams for apply_draft_answer: the style config (default config/ai-tells.json) and the base resume (default user-data/resume.json). */
+  draft?: { styleCfg?: StyleConfig; baseResume?: () => Record<string, unknown> };
   state: ApplierSessionState;
 }
 
@@ -239,14 +266,16 @@ export async function needsAnswer(
   if (!f.required) return refuse('optional_unanswered', 'an optional question without a reliable answer is left blank');
   const question = await questionText(f.label);
   let id: number | undefined;
+  let draftable = false;
   try {
     const r = recordQuestion(deps.db, {
       jobId: job.jobId, host: job.host, label: f.label, kind: kindOf(f), options: f.options, maxLength: f.maxLength,
     }, nowOf(deps));
     id = r.id;
     if (r.status === 'skipped') return refuse('question_skipped', 'the owner chose not to answer this question');
+    draftable = r.status === 'agent_handle' || agentHandleAllowed(f.label, kindOf(f));
   } catch { console.error('[applier] question not recorded'); }
-  return { status: 'needs_answer', code, question, ...(id !== undefined ? { question_id: id } : {}) };
+  return { status: 'needs_answer', code, question, ...(id !== undefined ? { question_id: id } : {}), ...(draftable ? { draftable: true } : {}) };
 }
 
 /** MAX_APPLIES_PER_DAY, same parsing the legacy tools used (integer, default 5). */

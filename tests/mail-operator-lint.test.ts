@@ -58,7 +58,7 @@ const WAKE_ALLOW = [
   // apply-operator (8G-2 task 21): the applier tools, and Naukri click/type for naukri rows
   'mcp__applier__apply_open', 'mcp__applier__apply_state', 'mcp__applier__apply_autofill', 'mcp__applier__apply_fill', 'mcp__applier__apply_choose',
   'mcp__applier__apply_upload', 'mcp__applier__apply_next', 'mcp__applier__apply_submit', 'mcp__applier__apply_escalate', 'mcp__applier__apply_recipe',
-  'mcp__applier__apply_propose_recipe', 'mcp__applier__apply_limits', 'mcp__applier__apply_close', 'mcp__applier__site_login',
+  'mcp__applier__apply_propose_recipe', 'mcp__applier__apply_draft_answer', 'mcp__applier__apply_list_roles', 'mcp__applier__apply_open_role', 'mcp__applier__apply_limits', 'mcp__applier__apply_close', 'mcp__applier__site_login',
   'mcp__applier__site_signup', 'mcp__applier__site_open_link', 'mcp__naukri__naukri_click', 'mcp__naukri__naukri_type',
   // wellfound (the operator, the apply operator and the arm tools; same shape as the naukri block)
   'mcp__wellfound__wellfound_open', 'mcp__wellfound__wellfound_snapshot', 'mcp__wellfound__wellfound_close', 'mcp__wellfound__wellfound_screenshot',

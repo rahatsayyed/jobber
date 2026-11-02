@@ -26,6 +26,8 @@ export interface RawField {
   maxlength?: number;
 }
 export interface RawControl { label: string; tag?: string }
+/** A visible anchor of the page (absolute href, its text and the text of its card). Only the careers listing tools read these; the form model ignores them. */
+export interface RawLink { label: string; href: string; context?: string; blank?: boolean }
 export interface RawFormSnapshot {
   url: string;
   title: string;
@@ -34,6 +36,7 @@ export interface RawFormSnapshot {
   controls: RawControl[];
   notices: string[];
   captchaWidget?: boolean;
+  links?: RawLink[];
 }
 
 export interface FormField {
@@ -68,9 +71,11 @@ export const FORM_SNAPSHOT_SCRIPT = `(() => {
   const cel = Array.from(document.querySelectorAll('button,input[type=submit],a[href],[role=button]')).filter(vis).map((e) => ({ e, tag: e.tagName.toLowerCase(), label: (e.textContent || e.value || e.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim().slice(0, 120) })).filter((c) => c.label).slice(0, 60);
   cel.forEach((c, i) => c.e.setAttribute('data-jc', String(i)));
   const controls = cel.map((c) => ({ tag: c.tag, label: c.label }));
+  const lel = Array.from(document.querySelectorAll('a[href]')).filter(vis).map((e) => ({ e, href: e.href, label: (e.textContent || e.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim().slice(0, 160), context: ((e.closest('li,article,tr,[class*=job],[class*=position],[class*=opening]') || e.parentElement || e).textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 240), blank: e.target === '_blank' })).filter((l) => l.label && /^https?:/i.test(l.href)).slice(0, 150);
+  const links = lel.map((l) => ({ label: l.label, href: l.href, context: l.context, blank: l.blank }));
   const notices = Array.from(document.querySelectorAll('[role=alert],.error,.errors,[aria-invalid=true]')).filter(vis).map((e) => (e.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 200)).filter(Boolean).slice(0, 10);
   const captchaWidget = !!document.querySelector('.g-recaptcha,.h-captcha,.cf-turnstile,iframe[src*=recaptcha],iframe[src*=hcaptcha],iframe[src*=turnstile]');
-  return { url: location.href, title: document.title, text: (document.body ? document.body.innerText : '').slice(0, 20000), fields, controls, notices, captchaWidget };
+  return { url: location.href, title: document.title, text: (document.body ? document.body.innerText : '').slice(0, 20000), fields, controls, notices, captchaWidget, links };
 })()`;
 
 const STEP_RE = /step\s+(\d+)\s+of\s+(\d+)/i;

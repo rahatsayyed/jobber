@@ -14,7 +14,7 @@ afterEach(async () => { await h?.close(); h = null; });
 const COMMITTED = [
   'apply_open', 'apply_state', 'apply_autofill', 'apply_fill', 'apply_choose', 'apply_upload', 'apply_next',
   'apply_submit', 'apply_escalate', 'apply_recipe', 'apply_propose_recipe', 'apply_limits', 'apply_close',
-  'apply_screenshot', 'site_login', 'site_signup', 'site_open_link',
+  'apply_screenshot', 'site_login', 'site_signup', 'site_open_link', 'apply_draft_answer', 'apply_list_roles', 'apply_open_role',
 ];
 const sets = JSON.parse(fs.readFileSync('config/permission-sets.json', 'utf8')) as RawSets;
 const full = (t: string) => `mcp__applier__${t}`;

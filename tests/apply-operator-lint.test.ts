@@ -7,7 +7,7 @@ import { TOOL_NAMES } from '../src/mcp/applier.js';
 const EXPECTED = [
   'mcp__db__list_queued_outreach',
   'mcp__db__update_outreach_status',
-  ...['open', 'state', 'autofill', 'fill', 'choose', 'upload', 'next', 'submit', 'escalate', 'recipe', 'propose_recipe', 'limits', 'close']
+  ...['open', 'state', 'autofill', 'fill', 'choose', 'upload', 'next', 'submit', 'escalate', 'recipe', 'propose_recipe', 'draft_answer', 'list_roles', 'open_role', 'limits', 'close']
     .map((t) => `mcp__applier__apply_${t}`),
   'mcp__applier__site_login',
   'mcp__applier__site_signup',
