@@ -219,8 +219,8 @@ export function buildServer(deps: OutreachDeps = {}): McpServer {
   server.registerTool(
     'complete_instruction',
     {
-      description: 'Record the outcome of ONE owner instruction listed in the wake prompt (OWNER INSTRUCTIONS). status done when it was acted on, rejected when it would break a Safety rule, cap or gate. note is one short line (max 500 chars).',
-      inputSchema: { id: z.number().int().positive(), status: z.enum(['done', 'rejected']), note: z.string().max(500).optional() },
+      description: 'Record the outcome of ONE owner instruction listed in the wake prompt (OWNER INSTRUCTIONS). status done when everything asked was done or queued; rejected only when it asks for something the rules forbid (name the rule); blocked when a login problem, halt, ceiling, quiet hours or closed window stops it (name the platform and why): blocked keeps it open for the next wake. Each call appends a timestamped line to its note history. note is one short line (max 500 chars).',
+      inputSchema: { id: z.number().int().positive(), status: z.enum(['done', 'rejected', 'blocked']), note: z.string().max(500).optional() },
     },
     async (a) => safe(async () => completeInstruction(getDb(deps), a.id, a.status, a.note ?? null, nowOf(deps))),
   );

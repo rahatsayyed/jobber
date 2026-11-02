@@ -39,7 +39,7 @@ describe('owner instructions module', () => {
     expect(completeInstruction(db, got[1].id, 'rejected', 'breaks a cap')).toEqual({ ok: true });
     expect(pendingInstructionCount(db)).toBe(0);
     expect(escalationsWithAgent(db)).toEqual([]);
-    expect(listInstructions(db, { status: 'done' })[0].result_note).toBe('handled it');
+    expect(listInstructions(db, { status: 'done' })[0].result_note).toContain('] handled it');
   });
 
   it('pending count is 0 when the table does not exist', () => {
@@ -52,6 +52,42 @@ describe('wake prompt section', () => {
   it('has no section without instructions', () => {
     expect(buildWakePrompt(base)).not.toContain('OWNER INSTRUCTIONS');
   });
+  it('blocked keeps the instruction open and appends a history; done appends too', () => {
+    const db = mem();
+    addInstruction(db, { text: 'apply and message a dev' });
+    const [i] = claimPending(db);
+    expect(completeInstruction(db, i.id, 'blocked', 'LinkedIn halted: session_expired', new Date('2026-11-02T19:05:00Z'))).toEqual({ ok: true });
+    expect(completeInstruction(db, i.id, 'blocked', 'Naukri login_failed', new Date('2026-11-02T19:10:00Z'))).toEqual({ ok: true });
+    let row = listInstructions(db)[0];
+    expect(row.status).toBe('in_progress');
+    expect(row.result_note).toBe('[2026-11-02 19:05] blocked: LinkedIn halted: session_expired\n[2026-11-02 19:10] blocked: Naukri login_failed');
+    expect(pendingInstructionCount(db)).toBe(1);
+    expect(completeInstruction(db, i.id, 'done', 'queued 1 apply', new Date('2026-11-03T09:00:00Z'))).toEqual({ ok: true });
+    row = listInstructions(db)[0];
+    expect(row.status).toBe('done');
+    expect(row.result_note).toContain('blocked: LinkedIn halted');
+    expect(row.result_note!.endsWith('[2026-11-03 09:00] queued 1 apply')).toBe(true);
+  });
+
+  it('keeps the newest history under the cap', () => {
+    const db = mem();
+    addInstruction(db, { text: 'x' });
+    const [i] = claimPending(db);
+    for (let n = 0; n < 40; n++) completeInstruction(db, i.id, 'blocked', `reason ${n} ${'y'.repeat(60)}`);
+    const note = listInstructions(db)[0].result_note!;
+    expect(note.length).toBeLessThanOrEqual(1500);
+    expect(note).toContain('reason 39');
+    expect(note).not.toContain('reason 0 ');
+  });
+
+  it('prompt tells blocked vs rejected vs done', () => {
+    const db = mem();
+    addInstruction(db, { text: 'y' });
+    const p = instructionPromptLines(claimPending(db)).join('\n');
+    expect(p).toContain('"blocked"');
+    expect(p).toContain('NOT a reason to reject');
+  });
+
   it('lists instructions with the limits and the tool name', () => {
     const db = mem();
     addInstruction(db, { text: 'stop contacting recruiters at Y', job_id: 3 });

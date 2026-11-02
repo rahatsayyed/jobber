@@ -59,11 +59,21 @@ const STATUS_LABEL: Record<OwnerInstruction["status"], string> = {
   pending: "Waiting for next wake", in_progress: "Agent is working", done: "Done", rejected: "Not done",
 };
 
+// An open instruction with a note was blocked (login, halt, ceiling...): the chip shows the last reason.
+function chipLabel(item: OwnerInstruction): string {
+  if (item.status === "in_progress" && item.result_note) {
+    const last = item.result_note.split("\n").pop() ?? "";
+    const m = /blocked: (.*)$/.exec(last);
+    return m ? `Waiting: ${m[1].slice(0, 60)}` : "Waiting: blocked";
+  }
+  return STATUS_LABEL[item.status];
+}
+
 function Sent({ item }: { item: OwnerInstruction }) {
   return <div className={`ib-sent ib-${item.status}`}>
-    <span className="ib-chip"><i aria-hidden="true" />With agent · {STATUS_LABEL[item.status]}</span>
+    <span className="ib-chip"><i aria-hidden="true" />With agent · {chipLabel(item)}</span>
     <blockquote className="ib-quote">{item.text}</blockquote>
-    {item.result_note ? <p className="ib-note"><b>Agent:</b> {item.result_note}</p> : null}
+    {item.result_note ? <p className="ib-note" style={{ whiteSpace: "pre-line" }}><b>Agent:</b> {item.result_note}</p> : null}
   </div>;
 }
 

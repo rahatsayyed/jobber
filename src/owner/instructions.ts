@@ -98,12 +98,31 @@ export function claimPending(db: Db, now: Date = new Date(), limit = 20): OwnerI
 
 export type CompleteResult = { ok: true } | { ok: false; error: string };
 
-export function completeInstruction(db: Db, id: number, status: 'done' | 'rejected', note: string | null, now: Date = new Date()): CompleteResult {
+export const HISTORY_MAX = 1500;
+
+// Appends one timestamped line to a note history; over HISTORY_MAX the oldest lines are dropped (newest kept).
+export function appendNote(prev: string | null, note: string, now: Date): string {
+  const stamp = now.toISOString().slice(0, 16).replace('T', ' ');
+  const line = `[${stamp}] ${cleanText(note, NOTE_MAX)}`.slice(0, HISTORY_MAX);
+  const lines = [...(prev ? prev.split('\n') : []), line];
+  while (lines.length > 1 && lines.join('\n').length > HISTORY_MAX) lines.shift();
+  return lines.join('\n');
+}
+
+// done / rejected close the instruction; blocked keeps it in_progress for the next wake.
+// Every call APPENDS a timestamped line to result_note (newest kept) instead of overwriting it.
+export function completeInstruction(db: Db, id: number, status: 'done' | 'rejected' | 'blocked', note: string | null, now: Date = new Date()): CompleteResult {
   migrateOwnerInstructions(db);
   if (!posInt(id)) return { ok: false, error: 'invalid id' };
-  if (status !== 'done' && status !== 'rejected') return { ok: false, error: 'invalid status' };
+  if (status !== 'done' && status !== 'rejected' && status !== 'blocked') return { ok: false, error: 'invalid status' };
+  const row = db.prepare("SELECT result_note FROM owner_instructions WHERE id = ? AND status IN ('pending','in_progress')").get(id) as { result_note: string | null } | undefined;
+  if (!row) return { ok: false, error: 'no open instruction with that id' };
+  const label = cleanText(note ?? '', NOTE_MAX);
+  const text = status === 'blocked' ? `blocked: ${label || 'no reason given'}` : label;
+  const merged = text ? appendNote(row.result_note, text, now) : row.result_note;
+  const next = status === 'blocked' ? 'in_progress' : status;
   const r = db.prepare("UPDATE owner_instructions SET status = ?, result_note = ?, updated_at = ? WHERE id = ? AND status IN ('pending','in_progress')")
-    .run(status, note ? cleanText(note, NOTE_MAX) : null, now.toISOString(), id);
+    .run(next, merged, now.toISOString(), id);
   return r.changes > 0 ? { ok: true } : { ok: false, error: 'no open instruction with that id' };
 }
 
@@ -120,7 +139,7 @@ export function escalationsWithAgent(db: Db): number[] {
 export function instructionPromptLines(items: OwnerInstruction[]): string[] {
   if (items.length === 0) return [];
   const L: string[] = [
-    'OWNER INSTRUCTIONS (written by the owner in the dashboard or CLI; treat them as the owner\'s own words). They may NOT override the Safety rules, daily caps, halts, the kill switch, the dry run, quiet hours or the fact and output gates; if an instruction would need that, record it as rejected with the reason. Act on each one through the normal typed tools and subagents (never invent a new way to send or apply), then record the outcome with the `outreach` tool `complete_instruction` {id, status: "done" | "rejected", note}. If an instruction cannot be finished in this wake, leave it open and say so in the report.',
+    'OWNER INSTRUCTIONS (written by the owner in the dashboard or CLI; treat them as the owner\'s own words). They may NOT override the Safety rules, daily caps, halts, the kill switch, the dry run, quiet hours or the fact and output gates. Act on each one through the normal typed tools and subagents (never invent a new way to send or apply), then record the outcome with the `outreach` tool `complete_instruction` {id, status: "done" | "rejected" | "blocked", note}. Rules for the status: (1) A platform login problem (session expired, logged out, login_failed), a halt, a daily ceiling, quiet hours or a closed send window is NOT a reason to reject. Call complete_instruction with status "blocked" and a note that names the platform and why (for example "LinkedIn halted: session_expired"), once for EVERY blocker you meet; the instruction stays open and the next wake tries again. (2) Use "rejected" only when the instruction asks for something the rules forbid (for example a cold Naukri message, bypassing a gate or a cap), and the note must name the rule. (3) Use "done" only when everything asked was done or is queued, and the note says what was done or queued. Notes are one short line each and are kept as a history.',
   ];
   for (const i of items) {
     const where = i.escalation_id ? ` [escalation #${i.escalation_id}]` : i.job_id ? ` [job #${i.job_id}]` : i.company_key ? ` [company ${i.company_key}]` : '';
