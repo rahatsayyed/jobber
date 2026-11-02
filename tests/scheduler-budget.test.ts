@@ -147,8 +147,16 @@ describe('usage limit detection scope', () => {
     a.feed(JSON.stringify({ type: 'result', is_error: true }) + '\n', t0);
     expect(a.check(t0)).toBe('usage_limit');
     const b = fresh();
-    b.feed(JSON.stringify({ type: 'result', is_error: false, result: 'rate limit exceeded' }) + '\n', t0);
+    b.feed(JSON.stringify({ type: 'result', is_error: true, result: 'rate limit exceeded' }) + '\n', t0);
     expect(b.check(t0)).toBe('usage_limit');
+  });
+  it('a successful result that says "invite limit reached" is not a usage limit', () => {
+    const a = fresh();
+    a.feed(JSON.stringify({ type: 'result', is_error: false, result: 'linkedin invite limit reached; rate limit exceeded for naukri' }) + '\n', t0);
+    expect(a.check(t0)).toBeNull();
+    const b = fresh();
+    b.feed(JSON.stringify({ type: 'result', subtype: 'error_max_turns', is_error: true }) + '\n', t0);
+    expect(b.check(t0)).toBeNull();
   });
   it('does not treat an interrupted run (error_during_execution) as a usage limit', () => {
     const a = fresh();

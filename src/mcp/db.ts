@@ -51,7 +51,7 @@ server.registerTool(
       offset: z.number().int().min(0).max(100000).optional().default(0),
     },
   },
-  async ({ limit, match_threshold, kind, offset }) => ({ content: [{ type: 'text', text: JSON.stringify(listUnscoredJobs(db, { limit, matchThreshold: match_threshold, kind, offset })) }] })
+  async ({ limit, match_threshold, kind, offset }) => ({ content: [{ type: 'text', text: JSON.stringify(listUnscoredJobs(db, { limit, matchThreshold: match_threshold, kind, offset, oncePerRun: true })) }] })
 );
 
 server.registerTool(

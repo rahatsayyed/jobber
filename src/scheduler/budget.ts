@@ -28,7 +28,7 @@ export function loadBudget(env: NodeJS.ProcessEnv = process.env): Budget {
 export type StopReason = 'wall_clock' | 'tokens' | 'usage_limit';
 
 const MAX_BUFFER = 1_000_000;
-const LIMIT_RE = /(usage|rate) limit (reached|exceeded)|limit reached|hit your limit/i;
+const LIMIT_RE = /(usage|rate) limit (reached|exceeded)|(plan|session) limit reached|hit your limit/i;
 const NETWORK_RE = /can't reach|ENOTFOUND|ECONN|ETIMEDOUT|EAI_AGAIN|internet|DNS/i;
 
 export class BudgetTracker {
@@ -94,11 +94,13 @@ export class BudgetTracker {
     };
     // Never scan assistant or user (tool_result) messages: tool output may say limit reached.
     if (o.type === 'result' || o.type === 'system') {
-      for (const f of [o.result, o.error]) if (typeof f === 'string' && LIMIT_RE.test(f)) this.usageLimit = true;
+      // A successful result is the model's own summary (it may say "invite limit reached"): scan it only for an error result.
+      const fields = o.type === 'result' && o.is_error !== true ? [o.error] : [o.result, o.error];
+      for (const f of fields) if (typeof f === 'string' && LIMIT_RE.test(f)) this.usageLimit = true;
     }
     if (o.type === 'system' && o.subtype === 'api_retry' && (o as { error_status?: unknown }).error_status !== 429) this.networkRetries++;
     // An interrupted run or a network outage also ends in an is_error result; only a bare is_error or a limit text is a limit.
-    if (o.type === 'result' && o.is_error === true && o.subtype !== 'error_during_execution') {
+    if (o.type === 'result' && o.is_error === true && o.subtype !== 'error_during_execution' && o.subtype !== 'error_max_turns') {
       const text = typeof o.result === 'string' ? o.result : '';
       if (this.networkRetries === 0 && !NETWORK_RE.test(text)) this.usageLimit = true;
     }

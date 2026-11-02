@@ -319,6 +319,9 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
     started = true;
     wakeStartIso = startAt.toISOString();
     // Stage 0 (manual requests) and stage 1 run in code, before the model session: failures are noticed but never stop the wake.
+    // Ingest and the code pass can outlast the lock TTL (120 s): keep the lock fresh while they run.
+    const lockBeat = setInterval(() => { try { lock.heartbeat(); } catch { /* ignore */ } }, 30_000);
+    lockBeat.unref?.();
     if (decision.stages?.some((s) => s.kind === 'manual') && d.manualIngest) {
       try {
         await d.manualIngest(runId);
@@ -339,6 +342,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
         await say(d, { level: 'warn', title: 'scheduler code pass failed', detail: codePassNote, runId });
       }
     }
+    clearInterval(lockBeat);
     const order = decision.stages?.length ? stepOrder(decision) : undefined;
     const steps: Step[] = order ?? legacySteps(decision.tasks);
     const pipelineInput = order ? {

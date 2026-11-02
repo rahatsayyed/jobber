@@ -1,7 +1,7 @@
 // The owner's update for a manual request: composed by code from the db (never by the model), plain text, every posting-derived
 // field escaped as untrusted. Email goes out later through the mail stage, so it says "queued", never "sent", unless the db says sent.
 import type BetterSqlite3 from 'better-sqlite3';
-import { MATCH_FAIL_LIMIT } from '../db.js';
+import { MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT } from '../db.js';
 import { JOB_STATUS_JD_PENDING, JOB_STATUS_REPEAT_CONTACT, repeatContactOf } from '../pipelineWork.js';
 import { finishManualRequest, jobIdsOf, listManualRequests, type ManualRequest } from './requests.js';
 
@@ -165,6 +165,8 @@ export interface FinalizeDeps {
   send: (text: string) => Promise<unknown>;
   now: () => Date;
   matchThreshold?: number;
+  /** False when a platform's operator is not planned right now (halted, outside active hours, no session): its open task then keeps waiting. */
+  platformActive?: (platform: string) => boolean;
 }
 export interface FinalizeResult { reported: number[]; waiting: number[] }
 
@@ -182,21 +184,31 @@ export async function finalizeManualRequests(db: Db, runStatus: string, d: Final
     let unsettled = 0;
     for (const id of ids) {
       const j = db.prepare('SELECT score, excluded_reason, match_fails, status FROM jobs WHERE id = ?').get(id) as JobRow | undefined;
-      if (j && !jobSettled(j)) unsettled++;
+      if (j && !jobSettled(j)) { unsettled++; continue; }
+      if (j && j.score !== null && !j.excluded_reason && (r.force || j.score >= (d.matchThreshold ?? 60))) {
+        // Scored but the wake stopped before prepare: not settled while the job has no queue row and prep offers remain.
+        const x = db.prepare('SELECT priority, prep_offers, status FROM jobs WHERE id = ?').get(id) as { priority: number | null; prep_offers: number | null; status: string | null } | undefined;
+        const hasQueue = (db.prepare('SELECT COUNT(*) AS n FROM outreach_queue WHERE job_id = ?').get(id) as { n: number }).n > 0;
+        if (x && (x.priority ?? 0) > 0 && (x.prep_offers ?? 0) < PREP_OFFER_LIMIT && x.status !== JOB_STATUS_REPEAT_CONTACT && !hasQueue) unsettled++;
+      }
     }
-    if (open.length > 0 && runStatus !== 'ok' && !stale) { out.waiting.push(r.id); continue; }
+    const inactiveOpen = d.platformActive
+      ? (db.prepare("SELECT platform FROM source_tasks WHERE request_id = ? AND state IN ('queued', 'running')").all(r.id) as { platform: string }[]).some((t) => t.platform !== 'manual' && !d.platformActive!(t.platform))
+      : false;
+    if (open.length > 0 && (runStatus !== 'ok' || inactiveOpen) && !stale) { out.waiting.push(r.id); continue; }
     if (unsettled > 0 && !stale) { out.waiting.push(r.id); continue; }
     const extra: string[] = [];
-    if (open.length > 0) {
-      db.prepare("UPDATE source_tasks SET state = 'failed', updated_at = ? WHERE request_id = ? AND state IN ('queued', 'running')").run(d.now().toISOString(), r.id);
-      extra.push('The page reader did not finish this page.');
-    }
+    if (open.length > 0) extra.push('The page reader did not finish this page.');
     if (unsettled > 0) extra.push(`${unsettled} job(s) were still unscored after 24 hours.`);
     const fresh = db.prepare('SELECT * FROM manual_requests WHERE id = ?').get(r.id) as ManualRequest;
     const messages = composeManualReport(db, fresh, { matchThreshold: d.matchThreshold, extra });
+    let delivered = true;
     for (const m of messages) {
-      try { await d.send(m); } catch { /* the report stays in the database */ }
+      try { await d.send(m); } catch { delivered = false; break; }
     }
+    // Finish only after the report went out; otherwise the request stays running and a later wake retries (the 24 hour cutoff ends it).
+    if (!delivered && !stale) { out.waiting.push(r.id); continue; }
+    if (open.length > 0) db.prepare("UPDATE source_tasks SET state = 'failed', updated_at = ? WHERE request_id = ? AND state IN ('queued', 'running')").run(d.now().toISOString(), r.id);
     finishManualRequest(db, r.id, ids.length === 0 ? 'failed' : 'done', messages.join('\n---\n'), d.now());
     out.reported.push(r.id);
   }

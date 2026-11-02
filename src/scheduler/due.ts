@@ -1,7 +1,8 @@
 // src/scheduler/due.ts
 import type BetterSqlite3 from 'better-sqlite3';
-import { MATCH_FAIL_LIMIT } from '../db.js';
-import { planPipelineWork } from '../pipelineWork.js';
+import { MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT } from '../db.js';
+import { planPipelineWork, QUEUE_NOT_REPREP_SQL } from '../pipelineWork.js';
+import { inSendWindow, loadDripConfig } from './mailDrip.js';
 import { followupMode, listApprovedFollowups, listFollowupCandidates } from '../followups.js';
 import { countAcceptCandidates, hasOpenInvites } from '../linkedin/acceptCheck.js';
 import { ACCEPT_RECENT_EVERY_HOURS, hoursSinceRecentCheck } from '../linkedin/acceptRecent.js';
@@ -37,6 +38,8 @@ export interface DueCounts {
   unmatchedJobs?: number;
   /** Matched jobs (stored score >= MATCH_THRESHOLD) with no outreach row and prep offers left: P1's `matched` list, never prepared yet. */
   matchedAwaitingPrepare?: number;
+  /** Owner-submitted (priority > 0) jobs still to do: unscored, or scored without a queue row with prep offers left; not excluded. */
+  priorityWaiting?: number;
   /** Queued outreach rows with an email not yet sent. */
   emailQueued?: number;
   /** Email follow-ups the mail-operator may act on: approved rows, plus (autonomous mode only) drafted rows and candidates. */
@@ -160,8 +163,17 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
   } catch {
     // counts are advisory
   }
+  const priorityWaiting = n(
+    `SELECT COUNT(*) AS n FROM jobs
+      WHERE priority > 0 AND excluded_reason IS NULL AND match_fails < ${MATCH_FAIL_LIMIT}
+        AND (status IS NULL OR status NOT IN ('repeat_contact', 'jd_pending'))
+        AND (score IS NULL OR (prep_offers < ${PREP_OFFER_LIMIT + 1} AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id AND ${QUEUE_NOT_REPREP_SQL})))`,
+  );
   let emailFollowupsReady = 0;
   try {
+    // Email follow-ups pull the pipeline in only while the mail lane could send them (inside its send window, sane config).
+    const cfg = loadDripConfig(env);
+    if (cfg.problems.length > 0 || !inSendWindow(now, cfg)) throw new Error('outside the mail send window');
     emailFollowupsReady = listApprovedFollowups(db).length;
     if (followupMode(env) === 'autonomous') {
       emailFollowupsReady += n("SELECT COUNT(*) AS n FROM followups WHERE status = 'drafted'");
@@ -189,6 +201,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
           AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = q.job_id AND j.excluded_reason IS NULL AND COALESCE(j.status, '') <> 'jd_pending')`,
     ),
     emailFollowupsReady,
+    priorityWaiting,
     applyQueued,
     appliesLeftToday,
     acceptCheckDue: countAcceptCandidates(db, now),
