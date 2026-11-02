@@ -34,6 +34,8 @@ export function itemBlock(i: EscItem, now: Date, detailMax = 140): string[] {
   // The raw flagged text (rawText) is never shown here.
   if (i.excerpt) out.push(`    "${cleanUntrusted(i.excerpt, detailMax)}"`);
   else if (i.detail) out.push(`    ${cleanUntrusted(i.detail, detailMax)}`);
+  // A reply card says who acts: nobody, the agent (its own reply is drafted or sent) or you. The line is built in code (src/outreach/escalations.ts).
+  if (i.group === 'human' && i.platform !== 'apply' && i.todo) out.push(`    next: ${i.todo}`);
   // A paused application: the exact questions, each with the command that answers it (--always keeps the answer for every later form).
   for (const q of i.questions.slice(0, 8)) {
     const opts = q.options.length ? ` [${q.options.slice(0, 6).map((o) => cleanUntrusted(o, 30)).join(' | ')}]` : '';
@@ -53,7 +55,7 @@ export function renderEscalations(items: EscItem[], counts: EscCounts, now: Date
   if (!items.length) {
     return [`No open escalations.${counts.snoozed ? ` (${counts.snoozed} snoozed)` : ''}`, ...extraLines].join('\n');
   }
-  const lines = [`Escalations: ${counts.open} open${counts.snoozed ? `, ${counts.snoozed} snoozed (hidden)` : ''}. Answer on the platform itself; mark them handled in the dashboard Inbox tab.`];
+  const lines = [`Escalations: ${counts.open} open${counts.snoozed ? `, ${counts.snoozed} snoozed (hidden)` : ''}. The agent replies by itself to safe asks (see the "next:" line); where a card asks you, answer on the platform itself. Mark items handled in the dashboard Inbox tab.`];
   const nq = items.reduce((n, i) => n + i.questions.length, 0);
   if (nq > 0) lines.push(`${nq} question${nq === 1 ? '' : 's'} need your answer (applications are paused until you answer): npm run answers -- list`);
   let shown = 0;

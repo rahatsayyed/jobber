@@ -8,6 +8,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { cleanText } from '../dash/clean.js';
 import { normalizeQuestion } from './answers.js';
 import { deriveFromResume } from './derive.js';
+import { resolveApplyEscalationsForJob } from '../outreach/applyEscalations.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -228,7 +229,7 @@ function releaseJobs(db: Db, jobIds: string[]): string[] {
       continue;
     }
     const c = db.prepare("UPDATE outreach_queue SET apply_status = NULL, apply_note = NULL, updated_at = datetime('now') WHERE job_id = ? AND apply_status = ?").run(jobId, NEEDS_ANSWER).changes;
-    if (c > 0) out.push(jobId);
+    if (c > 0) { out.push(jobId); resolveApplyEscalationsForJob(db, jobId); }
   }
   return out;
 }
@@ -309,6 +310,8 @@ export function markSkipped(db: Db, id: number, now: Date, comment?: string | nu
       db.prepare("UPDATE outreach_queue SET apply_status = 'manual_review', apply_note = 'question_skipped', updated_at = datetime('now') WHERE job_id = ? AND apply_status = ?").run(j, NEEDS_ANSWER);
     }
   })();
+  // The question card of the host is over when nothing of that host is still open.
+  for (const j of q.job_ids) resolveApplyEscalationsForJob(db, j);
   return { jobs: q.job_ids };
 }
 

@@ -19,6 +19,7 @@ import { applyJdNote } from './atsJd.js';
 import { migrateApplyQuestions } from './apply/questions.js';
 
 /** enqueue_outreach.ats_coverage: an integer percentage, or null when the final render had no keywords (tailor contract). */
+import { resolveApplyEscalationsForJob } from './outreach/applyEscalations.js';
 export const atsCoverageSchema = z.number().int().min(0).max(100).nullable().optional();
 
 export function openDb(path: string = dbPath()): BetterSqlite3.Database {
@@ -778,7 +779,7 @@ export function setExternalApply(
   url: string,
   cls: { platform: string; tier: string; reason?: string },
 ): number {
-  return db.transaction((): number => {
+  const changed = db.transaction((): number => {
     db.prepare('UPDATE jobs SET external_apply_url = ? WHERE id = ?').run(url, jobId);
     const pending = "job_id = ? AND COALESCE(apply_status, '') IN ('', 'manual_review')";
     if (cls.platform === 'none') {
@@ -794,6 +795,8 @@ export function setExternalApply(
 export function setExternalManualReview(db: BetterSqlite3.Database, jobId: string, code: string): number {
   const safe = String(code).replace(/[^\w.-]/g, '').slice(0, 60) || 'unknown';
   return db.prepare("UPDATE outreach_queue SET apply_status = 'manual_review', apply_note = ?, updated_at = datetime('now') WHERE job_id = ? AND COALESCE(apply_status, '') IN ('', 'manual_review')")
+  if (changed > 0 && cls.platform !== 'none') resolveApplyEscalationsForJob(db, jobId);
+  return changed;
     .run(`external:${safe}`, jobId).changes;
 }
 
@@ -1033,6 +1036,11 @@ export function skipPendingFollowups(db: BetterSqlite3.Database, jobId: string):
 }
 
 // Records the outcome even for an unknown job_id, but flags it so a typo'd id is visible.
+  // A job that left the failing apply states no longer needs its open apply escalations (the Inbox would show a card for a finished job).
+  if (field === 'apply_status') {
+    const row = db.prepare('SELECT job_id FROM outreach_queue WHERE id = ?').get(id) as { job_id: string } | undefined;
+    if (row) resolveApplyEscalationsForJob(db, row.job_id);
+  }
 export function recordOutcomeChecked(
   db: BetterSqlite3.Database,
   jobId: string,

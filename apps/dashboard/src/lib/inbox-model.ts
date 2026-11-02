@@ -15,7 +15,19 @@ export type InboxItem = {
   resolved_at: string | null; snoozed_until: string | null; senderName: string | null; senderHeadline: string | null;
   excerpt: string | null; messageAt: string | null; askKind: string; label: string; todo: string; updates: number;
   rawText: string | null; resolvedNote: string | null;
+  /** Who acts on a reply card (server): nobody, the agent (a reply is drafted or sent) or the owner. Absent on an old server. */
+  todoKind?: "info" | "agent" | "owner";
+  replyDraft?: { status: string; attachResume: boolean } | null;
+  /** apply:* cards: the job the card is about (server). Absent or with empty fields for an old row. */
+  applyJob?: ApplyJob | null;
 };
+export type ApplyJob = { jobId: string | null; title: string | null; company: string | null; host: string | null; url: string | null; questions: string[] };
+
+/** A job text for an apply card: "Title at Company", else null. */
+export function applyJobText(j: ApplyJob | null | undefined): string | null {
+  if (!j || !j.title) return null;
+  return `${j.title}${j.company ? ` at ${j.company}` : ""}`;
+}
 
 export const TYPE_ORDER: InboxType[] = ["reply", "recruiter", "platform", "apply", "flagged", "other"];
 export const TYPE_LABELS: Record<InboxType, string> = {
@@ -132,6 +144,14 @@ const APPLY_PHRASE: Record<string, [string, string, Tone]> = {
   other: ["it stopped for a reason the agent could not handle", "Open the job page and finish or skip it yourself, then mark handled.", "act"],
 };
 
+/** A short reason for a group of apply cards of one site ("3 jobs, page structure changed"). */
+export const APPLY_SHORT: Record<string, string> = {
+  captcha: "a CAPTCHA blocks it", mfa: "a login code is needed", phone_verification: "phone verification is needed", email_verification: "email verification is needed",
+  account_needed: "an account is needed", question: "the form asks a question", consent: "a consent is needed", marketing_checkbox: "a marketing checkbox",
+  host_unknown: "the site is not on the list", drift: "page structure changed", blocked: "the site blocked the agent", cover_letter: "a cover letter is needed",
+  login_failed: "login failed", other: "it stopped for another reason", no_relevant_role: "no relevant role",
+};
+
 const LOGIN_CMD: Record<string, string> = { linkedin: "npm run linkedin:login", naukri: "npm run naukri:login", wellfound: "npm run wellfound:login" };
 
 function humanizeCode(s: string): string {
@@ -185,7 +205,8 @@ export function describeItem(i: InboxItem): Described {
   const pk = platformKey(i);
   const P = PLATFORM_LABELS[pk];
   const p = parseReason(i.reason);
-  const job = i.jobTitle ? ` about ${i.jobTitle}` : "";
+  const applyText = applyJobText(i.applyJob);
+  const job = i.jobTitle ? ` about ${i.jobTitle}` : applyText ? ` about ${applyText}` : "";
   const subject = who(i);
   if (type === "flagged") {
     return {
@@ -202,11 +223,17 @@ export function describeItem(i: InboxItem): Described {
   }
   if (type === "reply" || type === "recruiter") {
     const w = subject ?? (type === "recruiter" ? "A recruiter" : "Someone");
-    if (i.askKind === "salary") return { type, tone: "act", summary: `${w} asked about your pay on ${P}${job}`, action: `Reply on ${P} yourself. The agent never answers salary questions.` };
-    if (i.askKind === "interview_slot") return { type, tone: "act", summary: `${w} wants to set up an interview on ${P}${job}`, action: `Reply on ${P} yourself with your availability. The agent never books interview times.` };
-    if (i.askKind === "recruiter_inquiry") return { type, tone: "act", summary: `${w} sent a recruiter inquiry on ${P}${job}`, action: `Read it on ${P}. If you are interested, reply yourself. The agent never answers recruiters.` };
-    if (i.askKind === "question") return { type, tone: "act", summary: `${w} asked you a question on ${P}${job}`, action: `Read the question on ${P} and answer it yourself. The agent never answers questions for you.` };
-    return { type, tone: "act", summary: `${w} replied to you on ${P}${job}`, action: `Open the conversation on ${P} and reply yourself. The agent never replies to people.` };
+    // The line comes from the server (it knows the reply draft state). An old server sends none: fall back to the plain owner line.
+    const line = (fallback: string): Pick<Described, "action" | "tone"> => ({
+      action: i.todo || fallback,
+      tone: i.todoKind === "info" || i.todoKind === "agent" ? "none" : "act",
+    });
+    const yourself = `Open the conversation on ${P} and answer yourself`;
+    if (i.askKind === "salary") return { type, summary: `${w} asked about your pay on ${P}${job}`, ...line(`${yourself}: it asks about salary.`) };
+    if (i.askKind === "interview_slot") return { type, summary: `${w} wants to set up an interview on ${P}${job}`, ...line(`${yourself}: it asks about interview time.`) };
+    if (i.askKind === "recruiter_inquiry") return { type, summary: `${w} sent a recruiter inquiry on ${P}${job}`, ...line(`${yourself} if you want to.`) };
+    if (i.askKind === "question") return { type, summary: `${w} asked you a question on ${P}${job}`, ...line(`${yourself} if you want to.`) };
+    return { type, summary: `${w} replied to you on ${P}${job}`, ...line(`${yourself} if you want to.`) };
   }
   if (type === "other") {
     return { type, tone: "check", summary: `${P} needs a look: ${humanizeCode(p.base || i.label)}`, action: `Open ${P}, read what happened and decide. When you have looked, mark handled.` };
@@ -255,7 +282,8 @@ export const DEFAULT_FILTERS: Filters = { type: "", platform: "", status: "open"
 
 function haystack(i: InboxItem): string {
   const d = describeItem(i);
-  return [d.summary, d.action, i.senderName, i.personName, i.personCompany, i.jobTitle, i.platform, i.reason, i.excerpt, i.detail].filter(Boolean).join("\n").toLowerCase();
+  return [d.summary, d.action, i.senderName, i.personName, i.personCompany, i.jobTitle, i.platform, i.reason, i.excerpt, i.detail, i.applyJob?.title, i.applyJob?.company, i.applyJob?.host]
+    .filter(Boolean).join("\n").toLowerCase();
 }
 
 type Skip = "type" | "platform" | "status";

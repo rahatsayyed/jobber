@@ -86,6 +86,36 @@ export function savedMessage(kind: "done" | "skip", results: unknown): string {
   return failed > 0 ? `${base} ${failed} could not be saved (already handled, or no longer waiting).` : base;
 }
 
+/** The page size of the "Apply by hand" list: ten rows first, then ten more per press. */
+export const MANUAL_PAGE = 10;
+
+export type ReasonFacet = { reason: string; label: string; count: number };
+
+/** One chip per reason in the list, biggest first (ties by label), each with its count. */
+export function reasonFacets(items: Pick<ManualItem, "reason" | "reason_label">[]): ReasonFacet[] {
+  const by = new Map<string, ReasonFacet>();
+  for (const i of items) {
+    const f = by.get(i.reason) ?? { reason: i.reason, label: i.reason_label || i.reason, count: 0 };
+    f.count += 1;
+    by.set(i.reason, f);
+  }
+  return [...by.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+/** The rows of one reason (empty reason: all rows). */
+export function filterByReason<T extends Pick<ManualItem, "reason">>(items: T[], reason: string): T[] {
+  return reason ? items.filter((i) => i.reason === reason) : items;
+}
+
+/** The first `shown` rows, the rows left and the text of the footer ("10 of 78 shown"). */
+export function pageRows<T>(items: T[], shown: number): { visible: T[]; rest: number; text: string } {
+  const visible = items.slice(0, Math.max(0, shown));
+  return { visible, rest: Math.max(0, items.length - visible.length), text: `${visible.length} of ${items.length} shown` };
+}
+
+/** The label of the "show more" button: at most MANUAL_PAGE more. */
+export const showMoreLabel = (rest: number): string => `Show ${Math.min(MANUAL_PAGE, rest)} more`;
+
 /** Age text for the "since" stamp: "3d ago", "5h ago". Empty when unknown. */
 export function sinceText(iso: string, now: Date): string {
   const t = Date.parse(iso);

@@ -15,6 +15,7 @@ import { dbPath } from '../src/dbPath.js';
 import { runHeaded, hostOf, type HeadedDeps, type HeadedIo } from '../src/webcore/headed.js';
 import { threadRefFor } from '../src/applier/escalate.js';
 import { setState } from '../src/scheduler/runLog.js';
+import { resolveApplyEscalationsForJobs } from '../src/outreach/applyEscalations.js';
 
 export interface CliDeps {
   db?: BetterSqlite3.Database;
@@ -76,10 +77,12 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<{ code: n
     if (!r.ok) return { code: 1, lines: [...out, `not saved: ${r.reason}`] };
 
     const now = (deps.now ?? (() => new Date()))();
+    const requeued = new Set<string>([jobId]);
     db.transaction(() => {
       // Every job parked on this host can use the session now; the apply stage retries them within the usual caps and gates.
-      const parked = db.prepare("SELECT q.id AS qid, COALESCE(NULLIF(j.external_apply_url, ''), j.apply_url) AS url FROM outreach_queue q JOIN jobs j ON j.id = q.job_id WHERE q.apply_status = 'needs_human'").all() as { qid: number; url: string | null }[];
+      const parked = db.prepare("SELECT q.id AS qid, q.job_id AS jid, COALESCE(NULLIF(j.external_apply_url, ''), j.apply_url) AS url FROM outreach_queue q JOIN jobs j ON j.id = q.job_id WHERE q.apply_status = 'needs_human'").all() as { qid: number; jid: string; url: string | null }[];
       for (const p of parked) {
+        if (hostOf(p.url ?? '') === host) requeued.add(p.jid);
         if (hostOf(p.url ?? '') === host) db.prepare("UPDATE outreach_queue SET apply_status = NULL, apply_note = NULL, updated_at = datetime('now') WHERE id = ?").run(p.qid);
       }
       db.prepare("UPDATE outreach_queue SET apply_status = NULL, apply_note = NULL, updated_at = datetime('now') WHERE job_id = ? AND apply_status IN ('needs_human', 'needs_owner')").run(jobId);
@@ -87,6 +90,8 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<{ code: n
       db.prepare("UPDATE escalations SET resolved_at = ? WHERE platform = 'apply' AND thread_ref = ? AND resolved_at IS NULL").run(now.toISOString(), threadRefFor('assist', host));
       setState(db, `assist_ping:${host}`, '1970-01-01T00:00:00.000Z', now); // a later wall on this host may ping again
     })();
+    // The requeued jobs are no longer failing: close their open apply escalations (note "job moved on").
+    resolveApplyEscalationsForJobs(db, requeued, now);
     return { code: 0, lines: [...out, `saved the session for ${host} (${r.cookies} cookies${r.profile ? ', in the browser profile' : ', in the per-host session file'}); job ${jobId} and any other job waiting on ${host} will be retried by the next apply stage`] };
   } finally {
     if (!deps.db) db.close();

@@ -12,6 +12,7 @@ import type { Verdict } from '../../layout/types.js';
 import type { RecipeService } from '../recipes/learn.js';
 import type { AtsLayoutGuard } from '../recipes/layoutGuard.js';
 import { addEscalation } from '../../outreach/service.js';
+import { resolveApplyEscalationsForJob } from '../../outreach/applyEscalations.js';
 import { FIXED_FAIL, HostChanged, haltedWeb, hostOfUrl, noteBlock, readPage } from '../../webcore/login.js';
 import { isDryRun, recordDryRun } from '../../safety/dryRun.js';
 import type { ClassifierPort } from '../../safety/inputGate.js';
@@ -312,4 +313,5 @@ export function recordApplication(db: Db, job: OpenJob, status: 'submitted' | 'm
   db.prepare('INSERT INTO applications (job_id, platform, method, account, status, reason, applied_at) VALUES (?,?,?,?,?,?,?)')
     .run(job.jobId, job.platform, 'browser', null, status, reason, status === 'submitted' ? now.toISOString() : null);
   db.prepare("UPDATE outreach_queue SET apply_status = ?, updated_at = datetime('now') WHERE job_id = ?").run(status, job.jobId);
+  if (status === 'submitted') resolveApplyEscalationsForJob(db, job.jobId, now);
 }

@@ -39,6 +39,14 @@ describe('apply_escalate', () => {
     }
   });
 
+  it('a needs_owner escalation carries the job id so the Inbox can show and close the card', async () => {
+    const hh = await opened();
+    await esc(hh, 'drift');
+    const row = hh.db.prepare("SELECT detail FROM escalations WHERE reason = 'apply:drift'").get() as { detail: string };
+    expect(row.detail.split('\n')[0]).toMatch(/^reason=drift platform=\S+ host=\S+ job=job-1$/);
+    await hh.close(); h = null;
+  });
+
   it('only the closed reasons and a 100 char note are accepted', () => {
     expect(EscalateInput.safeParse({ job_id: 'job-1', reason: 'because' }).success).toBe(false);
     expect(EscalateInput.safeParse({ job_id: 'job-1', reason: 'other', detail: 'x'.repeat(101) }).success).toBe(false);

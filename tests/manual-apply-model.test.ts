@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  actionBody, bulkLabel, easyApplyBanner, errorsFrom, NOTE_LIMIT, noteProblem, pruneSelection, reasonTone, safeDownload, safeOpenUrl, savedMessage,
-  sinceText, toggleAll, toggleId,
+  actionBody, bulkLabel, easyApplyBanner, errorsFrom, filterByReason, MANUAL_PAGE, NOTE_LIMIT, noteProblem, pageRows, pruneSelection, reasonFacets, reasonTone,
+  safeDownload, safeOpenUrl, savedMessage, showMoreLabel, sinceText, toggleAll, toggleId,
 } from '../apps/dashboard/src/lib/manual-apply-model.js';
 
 describe('manual apply model (dashboard Apply by hand)', () => {
@@ -58,5 +58,31 @@ describe('manual apply model (dashboard Apply by hand)', () => {
     expect(sinceText('2026-11-02T09:00:00.000Z', now)).toBe('3h ago');
     expect(sinceText('2026-10-30T12:00:00.000Z', now)).toBe('3d ago');
     expect(sinceText('garbage', now)).toBe('');
+  });
+});
+
+describe('manual apply list paging and reason filter', () => {
+  const rows = (n: number, reason = 'company_site_form', label = 'Company site form') => Array.from({ length: n }, (_, i) => ({ id: i + 1, reason, reason_label: label }));
+
+  it('shows ten rows first with a count and a "Show 10 more" button', () => {
+    const all = rows(78);
+    const first = pageRows(all, MANUAL_PAGE);
+    expect(first.visible).toHaveLength(10);
+    expect(first.rest).toBe(68);
+    expect(first.text).toBe('10 of 78 shown');
+    expect(showMoreLabel(first.rest)).toBe('Show 10 more');
+    expect(showMoreLabel(4)).toBe('Show 4 more');
+    expect(pageRows(all, 80).rest).toBe(0);
+  });
+
+  it('builds one chip per reason, biggest first, and filters by it', () => {
+    const all = [...rows(2, 'easy_apply_off', 'Easy Apply is off'), ...rows(5), ...rows(1, 'listing_page', 'Careers listing page')];
+    expect(reasonFacets(all)).toEqual([
+      { reason: 'company_site_form', label: 'Company site form', count: 5 },
+      { reason: 'easy_apply_off', label: 'Easy Apply is off', count: 2 },
+      { reason: 'listing_page', label: 'Careers listing page', count: 1 },
+    ]);
+    expect(filterByReason(all, 'easy_apply_off')).toHaveLength(2);
+    expect(filterByReason(all, '')).toHaveLength(8);
   });
 });

@@ -5,8 +5,8 @@ import "@/app/manual-apply.css";
 import { api } from "@/lib/dashboard-api";
 import { Badge, LoadingLines } from "@/components/dashboard/list-kit";
 import {
-  actionBody, bulkLabel, easyApplyBanner, errorsFrom, ManualItem, ManualPayload, NOTE_LIMIT, noteProblem, pruneSelection, reasonTone, safeDownload, safeOpenUrl,
-  savedMessage, sinceText, toggleAll, toggleId,
+  actionBody, bulkLabel, easyApplyBanner, errorsFrom, filterByReason, MANUAL_PAGE, ManualItem, ManualPayload, NOTE_LIMIT, noteProblem, pageRows, pruneSelection,
+  reasonFacets, reasonTone, safeDownload, safeOpenUrl, savedMessage, showMoreLabel, sinceText, toggleAll, toggleId,
 } from "@/lib/manual-apply-model";
 
 type Reply = { ok?: boolean; error?: string; results?: unknown };
@@ -61,6 +61,15 @@ export function ManualApply({ csrf }: { csrf: string | null }) {
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<number, string>>({});
   const [banner, setBanner] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
+  // The group starts collapsed (78 rows make the page very tall); the summary row's link opens it.
+  const [expanded, setExpanded] = useState(false);
+  const [reason, setReason] = useState("");
+  const [shown, setShown] = useState(MANUAL_PAGE);
+  useEffect(() => {
+    const open = (e: Event) => { if ((e as CustomEvent<string>).detail === "manual") setExpanded(true); };
+    window.addEventListener("inbox-open-section", open);
+    return () => window.removeEventListener("inbox-open-section", open);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -99,19 +108,29 @@ export function ManualApply({ csrf }: { csrf: string | null }) {
     await load();
   };
 
-  const items = data?.items ?? [];
+  const all = data?.items ?? [];
+  const facets = reasonFacets(all);
+  const items = filterByReason(all, reason);
+  const page = pageRows(items, shown);
   const banners = data ? easyApplyBanner(data) : null;
-  const allOn = items.length > 0 && items.every((i) => selected.includes(i.id));
+  const allOn = page.visible.length > 0 && page.visible.every((i) => selected.includes(i.id));
+  const pickReason = (r: string) => { setReason(r); setShown(MANUAL_PAGE); };
 
-  return <section className="ma" aria-labelledby="ma-heading">
-    <h2 id="ma-heading" className="ma-heading">Apply by hand{data ? <span className="ma-count-badge"> {data.count}</span> : null}</h2>
+  return <section className="ma" id="inbox-manual" aria-labelledby="ma-heading">
+    <h2 id="ma-heading" className="ma-heading"><button type="button" className="ma-toggle" aria-expanded={expanded} aria-controls="ma-body" onClick={() => setExpanded((v) => !v)}>
+      <span aria-hidden="true">{expanded ? "▾" : "▸"}</span> Apply by hand{data ? <span className="ma-count-badge"> {data.count}</span> : null}</button></h2>
+    {data && !data.count && !error ? <p className="muted ma-empty-line">Nothing waits for you to apply by hand.</p> : null}
+    <div id="ma-body" className="ma-body" hidden={!expanded}>
     <p className="muted">The agent cannot finish these. Open the job, apply yourself, then press I applied so it counts and no follow-up goes out for a job you already did.</p>
     {banners ? <p className="ma-banner">{banners}</p> : null}
     {!data && !error ? <div className="object-list"><LoadingLines /></div> : null}
     {error ? <div className="notice danger"><strong>Could not load the list.</strong><br />{error} <button type="button" className="button" onClick={() => void load()}>Try again</button></div> : null}
-    {data && !items.length && !error ? <div className="empty-state"><h3>Nothing waits for you to apply by hand</h3>Jobs the agent cannot finish show up here with a link and your tailored resume.</div> : null}
+    {facets.length > 1 ? <div className="chip-row" role="group" aria-label="Filter by reason">
+      <button type="button" className="chip" aria-pressed={reason === ""} onClick={() => pickReason("")}>All <b>{all.length}</b></button>
+      {facets.map((f) => <button key={f.reason} type="button" className="chip" aria-pressed={reason === f.reason} onClick={() => pickReason(f.reason)}>{f.label} <b>{f.count}</b></button>)}
+    </div> : null}
     {items.length ? <div className="ma-bar">
-      <label className="check"><input type="checkbox" checked={allOn} disabled={busy} onChange={() => setSelected(toggleAll(selected, items))} /> Select all ({items.length})</label>
+      <label className="check"><input type="checkbox" checked={allOn} disabled={busy} onChange={() => setSelected(toggleAll(selected, page.visible))} /> Select all shown ({page.visible.length})</label>
       <label className="ma-label" htmlFor="ma-note">Note (optional, kept with the jobs you mark)</label>
       <textarea id="ma-note" className="ma-input" rows={2} maxLength={NOTE_LIMIT} value={note} disabled={busy}
         onChange={(e) => { setNote(e.target.value); setBanner(null); }} placeholder="For example: applied on their site, used the downloaded resume" />
@@ -122,8 +141,10 @@ export function ManualApply({ csrf }: { csrf: string | null }) {
     </div> : null}
     <div aria-live="polite">{banner ? <p className={banner.tone === "ok" ? "ma-ok" : "ma-error"}>{banner.text}</p> : null}</div>
     {items.length ? <ul className="ma-list">
-      {items.map((item) => <Row key={item.id} item={item} selected={selected.includes(item.id)} busy={busy} csrf={csrf} error={errors[item.id]}
+      {page.visible.map((item) => <Row key={item.id} item={item} selected={selected.includes(item.id)} busy={busy} csrf={csrf} error={errors[item.id]}
         onToggle={() => setSelected((s) => toggleId(s, item.id))} onAct={(kind, id) => void act(kind, [id])} />)}
     </ul> : null}
+    {page.rest > 0 ? <div className="list-foot"><span>{page.text}</span><button className="button" type="button" onClick={() => setShown((n) => n + MANUAL_PAGE)}>{showMoreLabel(page.rest)}</button></div> : null}
+    </div>
   </section>;
 }

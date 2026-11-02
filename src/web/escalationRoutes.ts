@@ -77,12 +77,14 @@ export function createEscalationRoutes(
         if (!STATUSES.includes(status)) return json(c.res, 400, { error: 'invalid status' });
         if (platform !== undefined && !PLATFORM_RE.test(platform)) return json(c.res, 400, { error: 'invalid platform' });
         if (group !== undefined && !(GROUP_ORDER as string[]).includes(group)) return json(c.res, 400, { error: 'invalid group' });
-        json(c.res, 200, listEscalations(data, { now: now(), status, platform, group: group as EscGroup | undefined }));
+        // An apply card whose job is already shown in "Apply by hand" or "Needs your answer" is not a separate card (the rows stay in the database).
+        json(c.res, 200, listEscalations(data, { now: now(), status, platform, group: group as EscGroup | undefined, dedupeApply: { env: env.processEnv ?? process.env } }));
       },
     },
     // `cards` is what the Inbox list shows as open (one card per conversation); open/snoozed/resolved stay raw row counts.
     { method: 'GET', pattern: '/api/escalations/count', fn: (c) => {
-        const cards = countOpenCards(data, now());
+        // Each job once: apply cards of a job that is already in "Apply by hand" or "Needs your answer" are not counted as cards.
+        const cards = countOpenCards(data, now(), env.processEnv ?? process.env);
         const q = questionCounts(data);
         let manual = 0;
         try { manual = buildManualQueue(data, env.processEnv ?? process.env).count; } catch { manual = 0; }

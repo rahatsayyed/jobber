@@ -61,14 +61,28 @@ describe('describeItem', () => {
     const d = describeItem(item({ group: 'human', askKind: 'salary', senderName: 'Sam Lee', personCompany: 'Acme', reason: 'linkedin_reply_needed', jobTitle: 'React Dev at Acme' }));
     expect(d.type).toBe('reply');
     expect(d.summary).toBe('Sam Lee at Acme asked about your pay on LinkedIn about React Dev at Acme');
-    expect(d.action).toContain('Reply on LinkedIn yourself');
-    expect(d.action).toContain('never answers salary');
+    expect(d.action).toBe('Open the conversation on LinkedIn and answer yourself: it asks about salary.');
     expect(d.tone).toBe('act');
+  });
+  it('uses the line the server sent for a reply card and takes the tone from who acts', () => {
+    const base = { group: 'human', askKind: 'reply', reason: 'documents' } as const;
+    const agent = describeItem(item({ ...base, todo: 'The agent will send a reply with your resume.', todoKind: 'agent' }));
+    expect(agent.action).toBe('The agent will send a reply with your resume.');
+    expect(agent.tone).toBe('none');
+    const info = describeItem(item({ ...base, todo: 'No action needed unless you want to answer yourself. The agent has read it.', todoKind: 'info' }));
+    expect(info.tone).toBe('none');
+    const owner = describeItem(item({ ...base, todo: 'Open the conversation on LinkedIn and answer yourself: it asks about links.', todoKind: 'owner' }));
+    expect(owner.tone).toBe('act');
+    for (const d of [agent, info, owner]) expect(d.action).not.toMatch(/never replies/i);
+  });
+  it('names the job of an apply card from the job the server carried', () => {
+    const d = describeItem(item({ platform: 'apply', group: 'platform', reason: 'apply:drift', applyJob: { jobId: '9', title: 'React Dev', company: 'Acme', host: 'acme.io', url: null, questions: [] } }));
+    expect(d.summary).toBe('An application about React Dev at Acme stopped: the apply form changed shape');
   });
   it('covers the other ask kinds', () => {
     const base = { group: 'human', platform: 'naukri', senderName: 'Pat' } as const;
     expect(describeItem(item({ ...base, askKind: 'recruiter_inquiry' })).summary).toBe('Pat sent a recruiter inquiry on Naukri');
-    expect(describeItem(item({ ...base, askKind: 'interview_slot' })).action).toContain('availability');
+    expect(describeItem(item({ ...base, askKind: 'interview_slot' })).action).toContain('interview time');
     expect(describeItem(item({ ...base, askKind: 'question' })).summary).toContain('asked you a question');
     expect(describeItem(item({ ...base, askKind: 'reply' })).summary).toContain('replied to you');
     expect(describeItem(item({ group: 'human', askKind: 'reply' })).summary).toMatch(/^Someone replied/);

@@ -106,7 +106,8 @@ async function escalate(input: EscalateInputT, deps: ApplierDeps, x: EscalateExt
   const platform = cur?.platform ?? 'unknown';
 
   // Detail: code-built header, the compact form model of the open page (if this job is open), the note.
-  const lines = [`reason=${input.reason} platform=${platform} host=${host || 'unknown'}`];
+  // `job=<id>` lets the Inbox show which job a card is about and close the card when the job moves on (src/outreach/applyEscalations.ts).
+  const lines = [`reason=${input.reason} platform=${platform} host=${host || 'unknown'} job=${input.job_id}`];
   let noteDropped = false;
   const note = (input.detail ?? '').trim();
   if (note) {

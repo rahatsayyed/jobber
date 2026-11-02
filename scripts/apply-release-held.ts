@@ -9,6 +9,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { dbPath } from '../src/dbPath.js';
 import { APPLY_HOST_PLATFORM_IDS } from '../src/webcore/hostCaps.js';
+import { resolveApplyEscalationsForJobs } from '../src/outreach/applyEscalations.js';
 
 export interface CliDeps { db?: BetterSqlite3.Database }
 
@@ -23,7 +24,9 @@ export function run(argv: string[], deps: CliDeps = {}): { code: number; lines: 
     const lines: string[] = [];
     if (process.env.APPLY_SUBMIT_MODE !== 'submit') lines.push('note: APPLY_SUBMIT_MODE is not "submit" in this shell, so a released row would be held again until it is set for the scheduler.');
     if (dry) return { code: 0, lines: [...lines, `dry: ${n} held row(s) would be released`] };
+    const jobIds = (db.prepare(`SELECT job_id FROM outreach_queue WHERE ${where}`).all(...APPLY_HOST_PLATFORM_IDS) as { job_id: string }[]).map((r) => r.job_id);
     const c = db.prepare(`UPDATE outreach_queue SET apply_status = NULL, updated_at = datetime('now') WHERE ${where}`).run(...APPLY_HOST_PLATFORM_IDS).changes;
+    resolveApplyEscalationsForJobs(db, jobIds);
     return { code: 0, lines: [...lines, `released ${c} held row(s); the next wake's apply stage picks them up`] };
   } finally {
     if (!deps.db) db.close();

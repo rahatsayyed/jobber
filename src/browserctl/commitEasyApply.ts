@@ -12,6 +12,7 @@
 // Anything unexpected closes the modal and marks the queue row needs_owner with a closed reason code (easyApply.parkNeedsOwner).
 import { getExcludedReason, getFirstHardStop, saveApplication } from '../db.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
+import { resolveApplyEscalationsForJob } from '../outreach/applyEscalations.js';
 import { loadOutreachConfig } from '../outreach/config.js';
 import { tryConsume } from '../outreach/limits.js';
 import { recordDryRun } from '../safety/dryRun.js';
@@ -207,6 +208,7 @@ export async function commitEasyApply(i: EasyApplyCommitInput): Promise<EngineRe
     try {
       saveApplication(db, { job_id: jobId, platform: 'linkedin', method: 'easy_apply', account: 'linkedin-main', status, reason, applied_at: status === 'submitted' ? now().toISOString() : null });
       db.prepare("UPDATE outreach_queue SET apply_status = ?, apply_note = ?, updated_at = datetime('now') WHERE job_id = ?").run(status, status === 'submitted' ? null : `easy_apply:${reason ?? 'unconfirmed'}`, jobId);
+      if (status === 'submitted') resolveApplyEscalationsForJob(db, jobId, now());
     } catch { /* the counters stay spent; the log line below still tells the owner */ }
   };
   const finishUp = async (): Promise<void> => {

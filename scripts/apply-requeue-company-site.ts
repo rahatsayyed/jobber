@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import type BetterSqlite3 from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { dbPath } from '../src/dbPath.js';
+import { resolveApplyEscalationsForJobs } from '../src/outreach/applyEscalations.js';
 
 export interface CliDeps { db?: BetterSqlite3.Database }
 
@@ -20,7 +21,9 @@ export function run(argv: string[], deps: CliDeps = {}): { code: number; lines: 
   try {
     const n = (db.prepare(`SELECT COUNT(*) AS n FROM outreach_queue WHERE ${WHERE}`).get() as { n: number }).n;
     if (dry) return { code: 0, lines: [`dry: ${n} Naukri manual_review row(s) without a note would go back to pending`] };
+    const jobIds = (db.prepare(`SELECT job_id FROM outreach_queue WHERE ${WHERE}`).all() as { job_id: string }[]).map((r) => r.job_id);
     const c = db.prepare(`UPDATE outreach_queue SET apply_status = NULL, updated_at = datetime('now') WHERE ${WHERE}`).run().changes;
+    resolveApplyEscalationsForJobs(db, jobIds);
     return { code: 0, lines: [`requeued ${c} row(s); the next wake's apply stage resolves them again`] };
   } finally {
     if (!deps.db) db.close();

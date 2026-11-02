@@ -40,6 +40,7 @@
     "apply:request": "tsx scripts/apply-request.ts",
     "apply:release-held": "tsx scripts/apply-release-held.ts",
     "apply:requeue-company-site": "tsx scripts/apply-requeue-company-site.ts",
+    "apply:resolve-stale-escalations": "tsx scripts/apply-resolve-stale-escalations.ts",
     "apply:assist": "tsx scripts/apply-assist.ts",
     "apply:manual": "tsx scripts/apply-manual.ts",
     "answers": "tsx scripts/answers.ts",

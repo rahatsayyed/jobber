@@ -155,12 +155,15 @@ export function NeedsAnswer({ csrf }: { csrf: string | null }) {
     return () => window.removeEventListener("inbox-reload", refresh);
   }, [load]);
 
-  return <section className="nq" aria-labelledby="nq-heading">
+  // Nothing waiting: one quiet line instead of a heading, an intro and an empty box.
+  if (data && !data.jobs.length && !error) {
+    return <section className="nq nq-empty" id="inbox-needs-answer" aria-label="Needs your answer"><p className="muted nq-empty-line"><b>Needs your answer 0</b> · no application is waiting for an answer.</p></section>;
+  }
+  return <section className="nq" id="inbox-needs-answer" aria-labelledby="nq-heading">
     <h2 id="nq-heading" className="nq-heading">Needs your answer{data ? <span className="nq-count-badge"> {data.counts.questions}</span> : null}</h2>
     <p className="muted">These applications are paused because a form asked something your answer book does not cover. Answer here, or let the agent write a free-text one.</p>
     {!data && !error ? <div className="object-list"><LoadingLines /></div> : null}
     {error ? <div className="notice danger"><strong>Could not load the questions.</strong><br />{error} <button type="button" className="button" onClick={() => void load()}>Try again</button></div> : null}
-    {data && !data.jobs.length && !error ? <div className="empty-state"><h3>No application is waiting for an answer</h3>When a form asks something new, it shows up here with the job.</div> : null}
     {data?.jobs.map((job) => <JobCard key={job.job_id} job={job} csrf={csrf} onSaved={() => void load()} />)}
   </section>;
 }

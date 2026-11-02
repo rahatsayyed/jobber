@@ -7,6 +7,9 @@ import BetterSqlite3 from 'better-sqlite3';
 import { cleanText } from '../dash/clean.js';
 import { migrateSchedulerTables } from '../scheduler/runLog.js';
 import { agentHandleAllowed, QUESTION_KINDS, type QuestionKind } from '../apply/questions.js';
+import { jobIdOfEscalation, parseApplyDetail } from './applyEscalations.js';
+import { buildManualQueue } from '../manual/manualApply.js';
+import { validateManualUrl } from '../manual/url.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -31,7 +34,7 @@ export const NOTE_MAX = 500;
 const NOISE_RE = /^\s*\[(blocked|unscreened)\b|injection[_ ]suspect/i;
 // Reason words that mean the tool or the page broke (checked before the human words, so "reply form drift" stays a tool problem).
 const PROBLEM_RE = /drift|limit|quota|dialog|menu|refs?\b|unclickable|unreadable|unreachable|mismatch|halt|cannot|not found|failed|streak|missing|not_actionable|no_button|exhausted|in_progress|refused/i;
-const HUMAN_RE = /reply[_ ]needed|inquiry|recruiter|referral|salary|compensation|interview|slot|inbound|question|asks?\b|wants to|needs[_ ]owner/i;
+const HUMAN_RE = /reply[_ ]needed|inquiry|recruiter|referral|salary|compensation|interview|slot|inbound|question|asks?\b|wants to|needs[_ ]owner|documents|personal[_ ]data|references|link[_ ]or[_ ]phone/i;
 const THREAD_URL_RE = /^[A-Za-z0-9_=-]{1,120}$/;
 
 export interface Classified { group: EscGroup; flag: string | null }
@@ -100,21 +103,76 @@ export function reasonLabel(group: EscGroup, askKind: AskKind): string {
   return ASK_LABELS[askKind];
 }
 
-/** One plain line on what the owner should do (or that nothing is needed). Closed text built in code; the raw reason only selects the line. */
-export function whatToDo(group: EscGroup, askKind: AskKind, platform: string | null, reason: string): string {
+/** Who acts on a reply card: nobody (information or thanks), the agent (a reply is drafted or sent by code) or the owner. */
+export type TodoKind = 'info' | 'agent' | 'owner';
+/** The state of the agent's own reply for a conversation (reply_drafts, read-only here). */
+export interface ReplyDraftState { status: string; attachResume: boolean }
+export interface TodoContext { excerpt?: string | null; detail?: string | null; draft?: ReplyDraftState | null }
+
+// What the agent never answers: pay, interview times, personal data (phone, address, ids ...) and links. These stay with the owner.
+const PERSONAL_RE = /\b(phone|mobile|whatsapp|contact number|address|date of birth|dob|passport|aadhaar|aadhar|pan card|ssn|national id|personal (data|details|information))\b/i;
+const LINK_RE = /\b(links?|urls?|portfolio|github|website|linkedin profile|profile link)\b/i;
+const DOCS_RE = /\b(resume|resumé|cv|curriculum vitae)\b/i;
+// Words of a message that asks for something. A message without a question mark or any of these is information or thanks.
+const REQUEST_RE = /\?|\b(please|can you|could you|would you|will you|send|share|let me know|tell me|kindly|interested|available|availability|when|what|how|do you|are you)\b/i;
+
+/** The owner-only topic named by the closed reason code the operator stored (salary, interview_time, personal_data, link_or_phone, references), or null. */
+export function reasonTopic(reason: string): 'salary' | 'interview time' | 'personal data' | 'links' | null {
   const r = String(reason ?? '');
-  if (group === 'noise') return 'The text looked like it was aimed at an AI, so it is hidden by default. Open the thread yourself if it matters.';
-  if (group === 'human') {
-    if (platform === 'apply') return 'An application needs you (captcha, login or a question). Finish it by hand or ignore it.';
-    if (askKind === 'salary') return 'Asks about pay. Answer yourself on the platform; the agent never answers this.';
-    if (askKind === 'interview_slot') return 'Wants a time. Reply with your availability yourself on the platform.';
-    return 'Open the thread, read it and reply yourself. The agent never answers this.';
+  if (/salary|compensation/i.test(r)) return 'salary';
+  if (/interview[_ ]?(time|slot)/i.test(r)) return 'interview time';
+  if (/personal[_ ]data|references/i.test(r)) return 'personal data';
+  if (/link[_ ]or[_ ]phone/i.test(r)) return 'links';
+  return null;
+}
+
+/** The owner-only topic of a message, or null. Salary and interview ask kinds come from deriveAskKind; the rest is read from the message text. */
+export function ownerOnlyTopic(askKind: AskKind, text: string): 'salary' | 'interview time' | 'personal data' | 'links' | null {
+  if (askKind === 'salary' || SALARY_RE.test(text)) return 'salary';
+  if (askKind === 'interview_slot') return 'interview time';
+  if (PERSONAL_RE.test(text)) return 'personal data';
+  if (LINK_RE.test(text) && REQUEST_RE.test(text)) return 'links';
+  return null;
+}
+
+function draftTodo(d: ReplyDraftState, P: string): { text: string; kind: TodoKind } {
+  const withCv = d.attachResume ? ' with your resume' : '';
+  switch (d.status) {
+    case 'sent': return { text: `Sent: the agent replied${withCv}. No action needed.`, kind: 'agent' };
+    case 'approved': return { text: `The agent will send a reply${withCv}.`, kind: 'agent' };
+    case 'drafted': return { text: `The agent drafted a reply${withCv} and will send it soon.`, kind: 'agent' };
+    case 'failed': return { text: `The agent's reply could not be sent. Open the conversation on ${P} and answer yourself.`, kind: 'owner' };
+    default: return { text: `The agent decided not to reply. Open the conversation on ${P} and answer yourself if you want to.`, kind: 'owner' };
   }
-  if (/note[_ ]?(limit|quota)|quota[_ ]exhausted/i.test(r)) return 'LinkedIn note quota used: invites now go without a note; nothing to do.';
-  if (/layout/i.test(r)) return 'The page layout changed and the agent skipped that step. Nothing to do unless it keeps coming back.';
-  if (/mismatch|employer/i.test(r)) return 'The person did not match the record, so they were skipped. Nothing to do.';
-  if (/dialog|menu|refs?\b|unclickable|unreadable|not_actionable|no_button|click/i.test(r)) return 'LinkedIn showed a screen the agent could not use. Nothing was sent; nothing to do.';
-  return 'A tool had a problem and skipped the step. Usually nothing to do; run /health if it keeps coming back.';
+}
+
+/** The plain line on what the owner should do (or that nothing is needed) and who acts. Closed text built in code; message text only selects the line. */
+export function todoFor(group: EscGroup, askKind: AskKind, platform: string | null, reason: string, ctx: TodoContext = {}): { text: string; kind: TodoKind } {
+  const r = String(reason ?? '');
+  if (group === 'noise') return { text: 'The text looked like it was aimed at an AI, so it is hidden by default. Open the thread yourself if it matters.', kind: 'owner' };
+  if (group === 'human') {
+    if (platform === 'apply') return { text: 'An application needs you (captcha, login or a question). Finish it by hand or ignore it.', kind: 'owner' };
+    const P = platform ? platform[0].toUpperCase() + platform.slice(1) : 'the platform';
+    const text = `${ctx.excerpt ?? ''}\n${ctx.detail ?? ''}`;
+    const topic = reasonTopic(r) ?? ownerOnlyTopic(askKind, text);
+    if (topic) return { text: `Open the conversation on ${P} and answer yourself: it asks about ${topic}.`, kind: 'owner' };
+    if (ctx.draft) return draftTodo(ctx.draft, P);
+    if (/documents/i.test(r) || (DOCS_RE.test(text) && REQUEST_RE.test(text))) return { text: 'The agent will send a reply with your resume.', kind: 'agent' };
+    if (ctx.excerpt && (askKind === 'reply' || askKind === 'other') && !REQUEST_RE.test(ctx.excerpt)) {
+      return { text: 'No action needed unless you want to answer yourself. The agent has read it.', kind: 'info' };
+    }
+    return { text: `Open the conversation on ${P} and answer yourself if you want to. The agent has not drafted a reply.`, kind: 'owner' };
+  }
+  if (/note[_ ]?(limit|quota)|quota[_ ]exhausted/i.test(r)) return { text: 'LinkedIn note quota used: invites now go without a note; nothing to do.', kind: 'info' };
+  if (/layout/i.test(r)) return { text: 'The page layout changed and the agent skipped that step. Nothing to do unless it keeps coming back.', kind: 'info' };
+  if (/mismatch|employer/i.test(r)) return { text: 'The person did not match the record, so they were skipped. Nothing to do.', kind: 'info' };
+  if (/dialog|menu|refs?\b|unclickable|unreadable|not_actionable|no_button|click/i.test(r)) return { text: 'LinkedIn showed a screen the agent could not use. Nothing was sent; nothing to do.', kind: 'info' };
+  return { text: 'A tool had a problem and skipped the step. Usually nothing to do; run /health if it keeps coming back.', kind: 'info' };
+}
+
+/** The same line as a plain string (Telegram, /escalations, the digest). */
+export function whatToDo(group: EscGroup, askKind: AskKind, platform: string | null, reason: string, ctx: TodoContext = {}): string {
+  return todoFor(group, askKind, platform, reason, ctx).text;
 }
 
 export interface EscItem {
@@ -148,6 +206,12 @@ export interface EscItem {
   /** Plain-words reason and what-to-do line, built in code. */
   label: string;
   todo: string;
+  /** Who acts on the card: nobody (info), the agent (a reply is drafted or sent by code) or the owner. */
+  todoKind: TodoKind;
+  /** The agent's own reply for this conversation (reply_drafts, read-only), when one exists. */
+  replyDraft: ReplyDraftState | null;
+  /** apply:* cards: the job the card is about (title, company, host, safe https link, question labels). Null for every other card. */
+  applyJob: ApplyJobView | null;
   /** Total times the conversation was reported (sum over merged rows). */
   updates: number;
   /** Newest activity (last update or creation). */
@@ -162,6 +226,15 @@ export interface EscItem {
   questions: OpenQuestionView[];
   /** apply:needs_human cards: the exact command that opens the job's page for the owner, else null. */
   assistCommand: string | null;
+}
+
+/** The job an apply:* card is about. Every field but `host` can be null for an old row that stored no job (then only the host is shown). */
+export interface ApplyJobView {
+  jobId: string | null; title: string | null; company: string | null; host: string | null;
+  /** An https link to the job or apply page, validated like the manual apply open_url; else null. */
+  url: string | null;
+  /** Labels of the questions this job waits on (apply:question cards). */
+  questions: string[];
 }
 
 /** One open apply_questions row as the dashboard and Telegram show it. All text is cleaned. */
@@ -248,10 +321,10 @@ export function countEscalations(db: Db, now: Date): EscCounts {
 
 export function listEscalations(
   db: Db,
-  opts: { now: Date; status?: EscStatus; platform?: string; group?: EscGroup; limit?: number },
-): { items: EscItem[]; counts: EscCounts } {
+  opts: { now: Date; status?: EscStatus; platform?: string; group?: EscGroup; limit?: number; dedupeApply?: { env: NodeJS.ProcessEnv } },
+): { items: EscItem[]; counts: EscCounts; hiddenDuplicates: number } {
   const counts = countEscalations(db, opts.now);
-  if (!hasTable(db, 'escalations')) return { items: [], counts };
+  if (!hasTable(db, 'escalations')) return { items: [], counts, hiddenDuplicates: 0 };
   const status = opts.status ?? 'open';
   const snz = hasSnooze(db) ? 'e.snoozed_until' : 'NULL';
   const inbound = hasTable(db, 'inbound_messages')
@@ -314,7 +387,7 @@ export function listEscalations(
       : deriveAskKind({ klass: r.klass, reason, detail, excerpt });
     merged.set(key, {
       senderName: sender, senderHeadline: headline, excerpt, messageAt: r.message_at, askKind,
-      label: reasonLabel(c.group, askKind), todo: whatToDo(c.group, askKind, r.platform, reason),
+      label: reasonLabel(c.group, askKind), todo: '', todoKind: 'owner', replyDraft: null, applyJob: null,
       updates: seen, last_at: r.updated_at ?? r.created_at, rawText: raw,
       resolvedNote: r.resolved_note ? cleanText(r.resolved_note, NOTE_MAX) : null, jobId: r.job_id === null || r.job_id === undefined ? null : String(r.job_id),
       id: r.id, ids: [r.id], count: 1, platform: r.platform, reason, detail, group: c.group, flag: c.flag,
@@ -323,6 +396,22 @@ export function listEscalations(
       jobTitle: r.job_title === null ? null : `${cleanText(r.job_title, 200)}${r.job_company ? ` at ${cleanText(r.job_company, 100)}` : ''}`,
       resolved_at: r.resolved_at, snoozed_until: r.snoozed_until, questions: [], assistCommand: null,
     });
+  }
+  // The agent's own reply for a conversation (reply_drafts, read-only) decides the line of a reply card.
+  const draftStmt = hasTable(db, 'reply_drafts') ? db.prepare('SELECT status, attach_resume FROM reply_drafts WHERE escalation_id = ? ORDER BY id DESC LIMIT 1') : null;
+  for (const it of merged.values()) {
+    if (draftStmt && it.group === 'human' && it.platform !== 'apply') {
+      for (const id of it.ids) {
+        const d = draftStmt.get(id) as { status: string; attach_resume: number } | undefined;
+        if (d) { it.replyDraft = { status: d.status, attachResume: d.attach_resume === 1 }; break; }
+      }
+    }
+    const t = todoFor(it.group, it.askKind, it.platform, it.reason, { excerpt: it.excerpt, detail: it.detail, draft: it.replyDraft });
+    it.todo = t.text; it.todoKind = t.kind;
+  }
+  // Apply cards carry the job they are about (title, company, host, safe link, question labels).
+  for (const it of merged.values()) {
+    if (it.platform === 'apply') it.applyJob = applyJobView(db, it);
   }
   // Apply cards that wait for a person get plain wording and the exact command (built here from stored rows, never from the model).
   for (const it of merged.values()) {
@@ -340,11 +429,70 @@ export function listEscalations(
       it.todo = 'A login, CAPTCHA or MFA step on this site needs a person. Run the command: it opens the page in Chrome for you, then the job retries.';
     }
   }
+  // Display-side dedupe (nothing is deleted): an open apply card whose job is already shown in "Apply by hand" or "Needs your answer" is not a
+  // separate card, and the "needs your answer" host cards are that group itself.
+  let hidden = 0;
+  const covered = opts.dedupeApply ? coveredApplyJobs(db, opts.dedupeApply.env) : null;
+  const shown = [...merged.values()].filter((i) => {
+    if (!covered || i.platform !== 'apply' || i.resolved_at) return true;
+    const drop = /^apply:needs_answer/.test(i.reason) || (i.applyJob?.jobId != null && covered.has(i.applyJob.jobId));
+    if (drop) hidden += 1;
+    return !drop;
+  });
   // Within a group: newest activity first.
-  const items = [...merged.values()]
+  const items = shown
     .filter((i) => !opts.group || i.group === opts.group)
     .sort((a, b) => GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group) || (a.last_at < b.last_at ? 1 : a.last_at > b.last_at ? -1 : 0) || b.id - a.id);
-  return { items: opts.limit ? items.slice(0, opts.limit) : items, counts };
+  return { items: opts.limit ? items.slice(0, opts.limit) : items, counts, hiddenDuplicates: hidden };
+}
+
+/** Job ids already shown elsewhere in the Inbox: the Apply by hand list and the jobs that wait for an answer. Empty on an old database. */
+export function coveredApplyJobs(db: Db, env: NodeJS.ProcessEnv): Set<string> {
+  const out = new Set<string>();
+  try { for (const i of buildManualQueue(db, env).items) out.add(i.job_id); } catch { /* an old database: nothing covered by hand */ }
+  try {
+    if (hasTable(db, 'outreach_queue')) for (const r of db.prepare("SELECT DISTINCT job_id FROM outreach_queue WHERE apply_status = 'needs_answer'").all() as { job_id: string }[]) out.add(String(r.job_id));
+    if (hasTable(db, 'apply_questions') && hasTable(db, 'apply_question_jobs')) {
+      for (const r of db.prepare("SELECT DISTINCT j.job_id AS job_id FROM apply_questions q JOIN apply_question_jobs j ON j.question_id = q.id WHERE q.status IN ('open', 'agent_handle')").all() as { job_id: string }[]) out.add(String(r.job_id));
+    }
+  } catch { /* none */ }
+  return out;
+}
+
+/** Title, company, host, a safe https link and the open question labels of the job an apply card is about. Old rows without a job id match by url, else show the host only. */
+function applyJobView(db: Db, it: EscItem): ApplyJobView {
+  const p = parseApplyDetail(it.detail, it.threadRef);
+  const refHost = /^(?:answers|assist):(.+)$/.exec(it.threadRef ?? '')?.[1] ?? null;
+  const view: ApplyJobView = { jobId: null, title: null, company: null, host: cleanHost(p.host ?? refHost), url: null, questions: [] };
+  let jobId: string | null = null;
+  try { jobId = jobIdOfEscalation(db, it.detail, it.threadRef); } catch { jobId = null; }
+  if (!jobId) return view;
+  view.jobId = cleanText(jobId, 200);
+  try {
+    if (hasTable(db, 'jobs')) {
+      const hasExt = (db.prepare('PRAGMA table_info(jobs)').all() as { name: string }[]).some((c) => c.name === 'external_apply_url');
+      const j = db.prepare(`SELECT title, company, apply_url, url${hasExt ? ', external_apply_url' : ''} FROM jobs WHERE id = ?`).get(jobId) as
+        { title: string | null; company: string | null; apply_url: string | null; url: string | null; external_apply_url?: string | null } | undefined;
+      if (j) {
+        view.title = j.title ? cleanText(j.title, 160) : null;
+        view.company = j.company ? cleanText(j.company, 100) : null;
+        for (const cand of [j.external_apply_url, j.apply_url, j.url]) {
+          const v = validateManualUrl(String(cand ?? '').trim());
+          if (v.ok) { view.url = v.url; if (!view.host) view.host = cleanHost(new URL(v.url).hostname); break; }
+        }
+      }
+    }
+    if (/^apply:(question|needs_answer)/.test(it.reason) && hasTable(db, 'apply_questions') && hasTable(db, 'apply_question_jobs')) {
+      view.questions = (db.prepare("SELECT q.label AS label FROM apply_questions q JOIN apply_question_jobs j ON j.question_id = q.id WHERE j.job_id = ? AND q.status IN ('open', 'agent_handle') ORDER BY q.id LIMIT 10").all(jobId) as { label: string }[])
+        .map((r) => cleanText(r.label, 200));
+    }
+  } catch { /* the job fields stay empty */ }
+  return view;
+}
+
+function cleanHost(h: string | null): string | null {
+  const t = cleanText(h ?? '', 120).toLowerCase().replace(/^www\./, '');
+  return t && t !== 'unknown' ? t : null;
 }
 
 function cleanIds(ids: number[]): number[] {
@@ -381,8 +529,9 @@ export function reopenEscalations(db: Db, ids: number[]): number {
 }
 
 /** How many cards the open list shows (rows of one conversation merge into one card); this is what the sidebar badge counts. */
-export function countOpenCards(db: Db, now: Date): number {
-  return listEscalations(db, { now, status: 'open' }).items.length;
+export function countOpenCards(db: Db, now: Date, env?: NodeJS.ProcessEnv): number {
+  // With `env` the badge counts each job once: apply cards of a job shown in "Apply by hand" or "Needs your answer" are not cards.
+  return listEscalations(db, { now, status: 'open', ...(env ? { dedupeApply: { env } } : {}) }).items.length;
 }
 
 /** Hides open escalations until `until`. A resolved row is never snoozed. */

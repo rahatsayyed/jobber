@@ -1,0 +1,15 @@
+/* Inbox layout: the sticky summary row, the group headings and the host groups of apply problems. Existing tokens only. */
+.inbox-summary-row{position:sticky;top:0;z-index:6;display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px;padding:8px 0;background:var(--canvas);border-bottom:1px solid var(--line)}
+.inbox-summary-row a,.inbox-summary-row span.is-empty{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink-muted);font-size:12px;text-decoration:none}
+.inbox-summary-row a:hover{border-color:var(--line-strong);background:var(--surface-hover)}.inbox-summary-row b{color:var(--ink);font-weight:600}.inbox-summary-row span.is-empty{opacity:.6}
+.inbox-summary-row .has-count b{color:var(--warning)}
+.inbox-section{margin:6px 0 22px;scroll-margin-top:64px}.inbox-section-title{margin:0 0 6px;font-size:15px;font-weight:600;color:var(--ink)}.inbox-section-count{color:var(--warning);font-weight:600}
+.inbox-sub{margin:0 0 8px;font-size:12px;color:var(--ink-subtle)}
+.nq-empty,.ma{scroll-margin-top:64px}.nq-empty-line,.ma-empty-line{margin:0;font-size:13px}.nq.nq-empty{margin:4px 0 14px}
+.ma-toggle{display:inline-flex;align-items:center;gap:8px;margin:0;padding:0;border:0;background:none;color:inherit;font:inherit;font-weight:600;cursor:pointer;min-height:30px}
+.ma-body{display:grid;gap:12px}.ma-body[hidden]{display:none}
+.inbox-host-group{border-left:3px solid color-mix(in srgb,var(--warning) 60%,var(--line));padding-left:10px}
+.inbox-host-list{display:grid;gap:0;margin:6px 0 0;border-top:1px solid var(--line)}
+.inbox-job-line{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12.5px;color:var(--ink-muted);overflow-wrap:anywhere}.inbox-job-line strong{color:var(--ink);font-weight:600}
+.inbox-qlist{margin:2px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink-muted);overflow-wrap:anywhere}
+@media (max-width:760px){.inbox-summary-row{top:calc(56px + env(safe-area-inset-top));gap:6px}.inbox-summary-row a,.inbox-summary-row span.is-empty{min-height:44px;font-size:14px;padding:0 12px}.inbox-section{scroll-margin-top:120px}.nq-empty,.ma{scroll-margin-top:120px}.inbox-job-line,.inbox-qlist{font-size:14px}.ma-toggle{min-height:44px}}

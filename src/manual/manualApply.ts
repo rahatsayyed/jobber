@@ -11,6 +11,7 @@ import { hostMatches } from '../lib/hostClass.js';
 import { PROJECT_ROOT } from '../layout/config.js';
 import { lexicallyAllowed, resolveJobIdResume, type ResolveDeps } from '../linkedin/attachment.js';
 import { validateManualUrl } from './url.js';
+import { resolveApplyEscalationsForJob } from '../outreach/applyEscalations.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -67,8 +68,9 @@ const toIso = (s: string | null): string => {
 
 const clean = (v: string | null | undefined, max: number): string => String(v ?? '').replace(/[\u0000-\u001f\u007f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
-function reasonOf(r: Row, linkedinPage: boolean, url: string): ManualReason {
-  if (linkedinPage) return r.apply_status === 'needs_owner' || r.apply_status === 'manual_review' ? 'easy_apply_failed' : 'easy_apply_off';
+function reasonOf(r: Row, linkedinPage: boolean, url: string, env: NodeJS.ProcessEnv): ManualReason {
+  // The failed-lane reason only means something while the lane is on; while LinkedIn Easy Apply is off the banner says "off", so the chip says it too.
+  if (linkedinPage) return env.APPLY_LINKEDIN_EASY === 'true' && (r.apply_status === 'needs_owner' || r.apply_status === 'manual_review') ? 'easy_apply_failed' : 'easy_apply_off';
   const p = r.apply_platform ?? '';
   // A careers listing the apply-operator read and found no role for the resume on (apply_escalate reason no_relevant_role).
   if ((r.apply_note ?? '') === 'no_relevant_role') return 'no_relevant_role';
@@ -113,7 +115,7 @@ export function buildManualQueue(db: Db, env: NodeJS.ProcessEnv = process.env, o
     const v = validateManualUrl(candidate);
     if (!v.ok) continue;
     seen.add(r.job_id);
-    const reason = reasonOf(row, linkedinPage, v.url);
+    const reason = reasonOf(row, linkedinPage, v.url, env);
     if (reason === 'easy_apply_off') easyApplyOff += 1;
     let pdf: string | null = null;
     if (r.resume_pdf_path && lexicallyAllowed(r.resume_pdf_path, root)) pdf = path.resolve(root, r.resume_pdf_path);
@@ -172,6 +174,7 @@ export function markDone(db: Db, id: number, env: NodeJS.ProcessEnv = process.en
     const has = db.prepare("SELECT 1 FROM applications WHERE job_id = ? AND status = 'submitted' LIMIT 1").get(it.job_id);
     if (!has) saveApplication(db, { job_id: it.job_id, platform: it.platform, method: 'manual', account: 'owner', status: 'submitted', reason: 'submitted_by_owner', applied_at: now.toISOString() });
   })();
+  resolveApplyEscalationsForJob(db, it.job_id, now);
   return { ok: true, job_id: it.job_id, title: it.title };
 }
 
@@ -180,5 +183,6 @@ export function markSkip(db: Db, id: number, env: NodeJS.ProcessEnv = process.en
   const it = find(db, id, env);
   if (!it) return { ok: false, reason: `#${id} is not on the manual apply list (npm run apply:manual -- list)` };
   db.prepare("UPDATE outreach_queue SET apply_status = ?, apply_note = COALESCE(?, apply_note), updated_at = datetime('now') WHERE job_id = ? AND COALESCE(apply_status, '') NOT IN ('submitted', 'submitted_by_owner')").run(SKIPPED_BY_OWNER, ownerNote(note), it.job_id);
+  resolveApplyEscalationsForJob(db, it.job_id);
   return { ok: true, job_id: it.job_id, title: it.title };
 }
