@@ -101,10 +101,13 @@ export function saveReplyDraft(db: Db, a: { escalationId: number; text: string }
   if (!g.ok) return refuse('output_gate_text', `output gate: ${g.reasons.join(', ')}`);
 
   const attach = wanted === 'documents' ? 1 : 0;
+  // Owner decision (2026-11-02): a draft that passed every gate above needs no approval step. Salary, interview slot, personal data,
+  // link or phone asks never get here (OWNER_ONLY_ASKS) and stay with the owner. `npm run replies -- skip <id>` still cancels a draft.
+  const at = d.now.toISOString();
   const r = db.prepare(
-    `INSERT INTO reply_drafts (escalation_id, person_id, thread_ref, kind, body, attach_resume, status, created_at)
-     VALUES (?, ?, ?, 'reply', ?, ?, 'drafted', ?)`,
-  ).run(esc.id, person.id, esc.thread_ref, body, attach, d.now.toISOString());
+    `INSERT INTO reply_drafts (escalation_id, person_id, thread_ref, kind, body, attach_resume, status, created_at, approved_at)
+     VALUES (?, ?, ?, 'reply', ?, ?, 'approved', ?, ?)`,
+  ).run(esc.id, person.id, esc.thread_ref, body, attach, at, at);
   return { ok: true, id: Number(r.lastInsertRowid), attach_resume: attach === 1 };
 }
 

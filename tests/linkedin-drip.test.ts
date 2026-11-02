@@ -535,6 +535,7 @@ describe('status lines for npm run status', () => {
     saveReplyDraft(s.db, { escalationId: esc, text: 'Thanks, happy to talk.' }, {
       now: s.now(), env: {}, styleCfg: DEFAULT_STYLE_CONFIG, cfg: { allowedUrls: [], allowedEmails: [] }, factCheck: (t) => ({ verdict: 'pass', normalized_text: t }),
     });
+    s.db.prepare("UPDATE reply_drafts SET status = 'drafted', approved_at = NULL").run(); // saved drafts are auto-approved; show the waiting line
     const before = renderLinkedinDripLines(linkedinDripStatus(s.db, {}, { now: s.now(), tuning: s.d.tuning }), s.now()).join('\n');
     expect(before).toMatch(/linkedin drip lane: on, next tick: due when the gates allow/);
     expect(before).toMatch(/last action: none yet/);

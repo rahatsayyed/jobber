@@ -20,8 +20,8 @@ safety layers"), and the ceiling is consumed right before the Send click.
 `LINKEDIN_ACTIVE_HOURS`; wakes no longer do them. The `linkedin-operator` works exactly one named "Drip item" per run (DRIP MODE in its agent file).
 *Replies.* The inbox read still only records and escalates, but for an escalation with reason `documents` (a request for the resume or CV) or
 `linkedin_reply_needed` with a plain ask it also stores ONE short draft in `reply_drafts` (`outreach.save_reply_draft`: style, fact and output gates; never for
-salary or interview-slot asks; `documents` sets `attach_resume`). A draft is NEVER sent unless the owner approved it: `npm run replies -- list`,
-`approve <id>`, `skip <id>` (these only change the status; the drafts are also listed by `/escalations`). A newer message in the thread makes a draft stale
+salary or interview-slot asks; `documents` sets `attach_resume`). A draft that passes every gate is approved on save (owner decision 2026-11-02: no approval step for these safe replies); owner-only asks
+never get a draft. `npm run replies -- list`, `skip <id>` cancels a draft before it goes out (`approve <id>` re-queues a failed one; the drafts are also listed by `/escalations`). A newer message in the thread makes a draft stale
 (not approvable, not sent). An approved draft is sent by the lane as arm kind `reply` (`linkedin_arm_send({kind: "reply", profile_url, reply_draft_id})`; the
 text is the stored one, returned by the arm tool): the recipient was paused as `replied`, and that one pause (and the employer gate) does not stop the
 approved reply, any other pause does. A reply is cadence-neutral: no cycle starts or advances (`finishTouch` does not activate the contact, `dueTouchesFor`

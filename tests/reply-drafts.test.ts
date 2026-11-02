@@ -40,7 +40,9 @@ describe('saveReplyDraft', () => {
     const r1 = saveReplyDraft(w.db, { escalationId: e1, text: TEXT }, deps());
     expect(r1).toMatchObject({ ok: true, attach_resume: true });
     const d = getReplyDraft(w.db, (r1 as { id: number }).id)!;
-    expect(d).toMatchObject({ status: 'drafted', kind: 'reply', attach_resume: 1, person_id: w.person, thread_ref: '2-abc', escalation_id: e1 });
+    // Owner decision: a draft that passed every gate is approved on save, no approval step.
+    expect(d).toMatchObject({ status: 'approved', kind: 'reply', attach_resume: 1, person_id: w.person, thread_ref: '2-abc', escalation_id: e1 });
+    expect(d.approved_at).toBe(NOW.toISOString());
     expect(d.body).toBe(TEXT);
     const e2 = w.escalate('linkedin_reply_needed', '2-def');
     expect(saveReplyDraft(w.db, { escalationId: e2, text: 'Thanks Jane, happy to talk about the role.' }, deps())).toMatchObject({ ok: true, attach_resume: false });
@@ -90,6 +92,8 @@ describe('approval and the send hand-off', () => {
     const w = world();
     const e = w.escalate('documents');
     const id = (saveReplyDraft(w.db, { escalationId: e, text: TEXT }, deps()) as { id: number }).id;
+    // A saved draft is auto-approved; these tests exercise the manual approve/skip path, so put it back to drafted.
+    w.db.prepare("UPDATE reply_drafts SET status = 'drafted', approved_at = NULL WHERE id = ?").run(id);
     return { ...w, e, id };
   };
 
@@ -156,6 +160,7 @@ describe('npm run replies (runRepliesCli)', () => {
     const w = world();
     const e = w.escalate('documents');
     const id = (saveReplyDraft(w.db, { escalationId: e, text: TEXT }, deps()) as { id: number }).id;
+    w.db.prepare("UPDATE reply_drafts SET status = 'drafted', approved_at = NULL WHERE id = ?").run(id);
     const list = runRepliesCli(w.db, ['list'], NOW);
     expect(list.code).toBe(0);
     expect(list.lines.join('\n')).toMatch(new RegExp(`#${id} DRAFTED to Jane Example \\(Acme\\)`));

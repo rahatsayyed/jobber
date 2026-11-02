@@ -30,7 +30,7 @@ export function renderReplyDraftLines(db: Db): string[] {
     return [];
   }
   if (!rows.length) return [];
-  const out = ['', `== Reply drafts (${rows.length}) ==`, 'Nothing is sent before you approve: npm run replies -- approve <id> (or skip <id>).'];
+  const out = ['', `== Reply drafts (${rows.length}) ==`, 'Safe replies go out by themselves at the lane\'s next free turn; cancel one with: npm run replies -- skip <id>.'];
   for (const d of rows) out.push(...draftBlock(d));
   return out;
 }
