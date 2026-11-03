@@ -857,6 +857,12 @@ const hand: EnvSpec[] = [
     ...never(R_SESSION),
   }),
 
+  e('TELEGRAM_WINDOW_INPUT', 'telegram', 'Telegram bridge', 'bool', {
+    default: 'false',
+    about: "Let the owner type into tmux windows from the Telegram live window views (input buttons, and typed text in a window topic). Only the exact value true turns it on; anything else is view only. The bridge and manager windows never accept input. Typing runs under the window's own session, so keep that window on the read_only permission set.",
+    ...never('Types into a running agent session: only the owner, by hand in .env, can change it.'),
+  }),
+
   // ---- Layout memory (plan 8B)
   e('LAYOUT_ENFORCE', 'layout', 'layout memory', 'enum', {
     default: 'warn',
