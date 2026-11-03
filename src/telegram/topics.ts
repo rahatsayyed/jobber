@@ -43,7 +43,8 @@ export function writeTopicState(root: string, st: TopicState): void {
   chmodSync(p, 0o600);
 }
 
-const isNotForum = (d: string | undefined): boolean => /not a forum|forum.*(disabled|not enabled)/i.test(d ?? '');
+const isNotForum = (d: string | undefined): boolean =>
+  /not a forum|forum.*(disabled|not enabled)|topics?.*(disabled|not enabled)|threaded mode/i.test(d ?? '');
 
 export function isThreadGoneError(description: string | undefined): boolean {
   return /thread not found|TOPIC_ID_INVALID|TOPIC_DELETED|topic.*(deleted|closed)/i.test(description ?? '');

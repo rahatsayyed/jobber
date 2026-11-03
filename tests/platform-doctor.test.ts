@@ -70,7 +70,7 @@ describe('stack checks', () => {
   it('passes a correct setup', async () => {
     const r = await byId(ctxWith(goodFiles(), { session: true }));
     for (const [id, result] of Object.entries(r)) expect(result.status, id).not.toBe('fail');
-    expect(r['telegram-bridge'].status).toBe('warn'); // no TELEGRAM_CHAT_ID in the good env: topics cannot be used
+    expect(r['telegram-bridge'].status).toBe('pass'); // no TELEGRAM_CHAT_ID in the good env: private chat topics
     expect(r['permission-set'].detail).toContain('read_only');
   });
 
@@ -94,10 +94,10 @@ describe('stack checks', () => {
       expect(r['telegram-bridge'].fix).toContain('npm run up');
     });
 
-    it('warns that Topics cannot be used when TELEGRAM_CHAT_ID is unset or malformed', async () => {
+    it('passes with a Threaded Mode hint when TELEGRAM_CHAT_ID is unset, warns when it is malformed', async () => {
       const none = await byId(ctxWith(goodFiles(), { session: true }));
-      expect(none['telegram-bridge'].status).toBe('warn');
-      expect(none['telegram-bridge'].detail).toContain('Topics');
+      expect(none['telegram-bridge'].status).toBe('pass');
+      expect(none['telegram-bridge'].detail).toContain('Threaded Mode');
       const bad = await byId(ctxWith(withEnv(GOOD_ENV + 'TELEGRAM_CHAT_ID=my-group\n'), { session: true }));
       expect(bad['telegram-bridge'].status).toBe('warn');
       expect(bad['telegram-bridge'].detail).toContain('topics cannot be used');

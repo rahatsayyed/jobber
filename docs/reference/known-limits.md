@@ -79,7 +79,7 @@
 - Plan 8F setup text is unverified until the owner live checks: BotFather's Threaded Mode / Topics
   label and path, Mini App versus `/mybots` (unverified until owner live check L1); whether `getMe`
   returns the topics field the step reads (`has_topics_enabled`, one constant in
-  `src/setup/steps/telegram.ts`; absence never fails; unverified until L1); whether the custom bridge creates its topics in your forum group (bot admin with `can_manage_topics`, `TELEGRAM_CHAT_ID`; unverified until the owner live check); the
+  `src/setup/steps/telegram.ts`; absence never fails; unverified until L1); whether the custom bridge creates its topics in the private chat (Threaded Mode) or in the optional forum group (`TELEGRAM_CHAT_ID`, bot admin with `can_manage_topics`); unverified until the owner live check; the
   Serper and Hunter verification endpoints, their credit cost and limits (unverified until
   L7; a rejection offers keep-anyway); hidden `askSecret` input in a real terminal (unverified
   until L1); that a skipped Telegram is safe for every consumer of `TELEGRAM_BOT_TOKEN`

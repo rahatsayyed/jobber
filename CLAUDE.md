@@ -179,7 +179,7 @@ This agent is primarily operated through the **Telegram channel**. Two routes ex
 custom grammY bridge in `src/telegram/` (`npm run telegram:bridge`, tmux window `bridge` of the session
 `Jobber`; the route `npm run setup` configures, see "Platform and sessions" below), and
 the older single session started with `--channels plugin:telegram@claude-plugins-official`.
-The bridge uses Telegram forum topics (`alerts`, `wakes`, `drips`, `inbox`, `assist`, `chat`; ids in
+The bridge uses topics in the bot's own private chat (BotFather Threaded Mode; `TELEGRAM_CHAT_ID` is an optional forum group override) (`alerts`, `wakes`, `drips`, `inbox`, `assist`, `chat`; ids in
 `.jobber/telegram-topics.json`), is owner-only by the numeric `ALLOWED_USERS`, and formats replies
 with its own markdown to Telegram HTML formatter (`src/telegram/format.ts`, always escapes). Code-sent
 notifications route by topic through `src/platform/notify.ts` (escalation digest and manual-request

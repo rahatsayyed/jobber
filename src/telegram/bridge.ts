@@ -102,9 +102,10 @@ export async function runBridge(env: NodeJS.ProcessEnv, root: string = PROJECT_R
     console.error('[telegram-bridge] ALLOWED_USERS has no numeric user id: nobody could command the bridge');
     return 1;
   }
-  if (cfg.grouped && cfg.chatId) {
+  if (cfg.chatId) {
+    // Works for the bot's own private-chat topics (BotFather "Threaded Mode") and for a forum group alike.
     const st = await ensureTopics(fetchApi(cfg.token), root, cfg.chatId);
-    console.log(`[telegram-bridge] topics: ${st.forum ? Object.keys(st.topics).join(', ') || 'none created' : 'chat is not a forum, no topics'}`);
+    console.log(`[telegram-bridge] topics: ${st.forum ? Object.keys(st.topics).join(', ') || 'none created' : 'chat has no topics enabled, sending without topics'}`);
   }
   const bot = createBridgeBot(cfg, { env, root });
   const stop = (): void => { void bot.stop(); };

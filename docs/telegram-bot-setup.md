@@ -2,9 +2,9 @@
 
 Jobber is operated mostly from Telegram. The bridge is our own grammY bot in `src/telegram/`
 (`npm run telegram:bridge`), running in the tmux window `bridge` of the one session `Jobber`. It uses
-Telegram forum topics: one topic per kind of message (`alerts`, `wakes`, `drips`, `inbox`, `assist`,
+topics in the bot's own private chat with you: one topic per kind of message (`alerts`, `wakes`, `drips`, `inbox`, `assist`,
 `chat`). The ids of the topics are kept in `.jobber/telegram-topics.json`. This runbook covers creating
-the bot, wiring `.env`, enabling Topics in your group, starting the bridge and fixing the usual
+the bot, wiring `.env`, enabling Threaded Mode (topics in the private chat), starting the bridge and fixing the usual
 problems. (ccgram, the old bridge, was removed on 2026-11-03; see the migration note in
 `docs/reference/platform-and-sessions.md`.)
 
@@ -16,7 +16,7 @@ differs from the one written here. Anything not confirmed by this repository is 
 - A Telegram account on the phone or desktop app.
 - tmux installed (`npm run setup` step `prereqs` checks this).
 - The repo `.env` (created by the wizard, or copied from `.env.example`, mode 600).
-- A Telegram group of your own with Topics turned on (step 3).
+- Threaded Mode switched on for the bot in BotFather (step 3). A group is optional.
 
 The quickest route is `npm run setup -- --mode terminal --step telegram` (or `npm run setup -- --step
 telegram` once terminal mode is stored; `npm run setup -- --status` shows the mode). The terminal
@@ -43,7 +43,8 @@ understand what the wizard does.
 ```
 TELEGRAM_BOT_TOKEN=<token from BotFather>
 ALLOWED_USERS=<your numeric id>
-TELEGRAM_CHAT_ID=<forum group id, see step 3>
+# optional, only for a forum group instead of the private chat (see step 3):
+# TELEGRAM_CHAT_ID=<forum group id>
 ```
 
 `ALLOWED_USERS` is a comma-separated list of numeric IDs with no spaces, for example
@@ -55,20 +56,25 @@ everyone else. `TELEGRAM_CHAT_ID` is optional (see step 3).
 
 Open your bot in Telegram and press Start once; a bot cannot message you before you have started it.
 
-## 3. Enable Topics in your group and make the bot an admin
+## 3. Turn on topics for the bot (Threaded Mode)
 
-1. Create a Telegram group (or use one you already have) and add your bot to it.
-2. Open the group settings and turn on Topics (the group becomes a forum).
-3. Make the bot an administrator and give it the right "Manage topics" (`can_manage_topics`). The
-   bridge creates its topics itself (`alerts`, `wakes`, `drips`, `inbox`, `assist`, `chat`) and stores
-   their ids in `.jobber/telegram-topics.json`; without that right it cannot create them.
-4. Set `TELEGRAM_CHAT_ID` in `.env` to the numeric id of the group (a negative number that starts with
-   `-100`; for example forward a message from the group to @userinfobot, or read it from the bot's
-   `getUpdates`). If you leave it empty, the bridge works from the private chat with the bot and
-   sends everything there without topics.
+Default path: the topics live in the bot's own private chat with you. No group is needed.
 
-If the bridge cannot create a topic it says so in the `bridge` window and falls back to the group's
-General topic. Group Privacy only matters for plain group messages that are not commands; the
+1. Open @BotFather, pick your bot, Bot Settings, and switch Threaded Mode (topics in private chat) on.
+   The label may be Topics or Threads (unverified; follow what BotFather shows).
+2. Open your bot in Telegram and send it one message (or press Start). The bridge creates its topics
+   itself (`alerts`, `wakes`, `drips`, `inbox`, `assist`, `chat`) in the private chat with the first id of
+   `ALLOWED_USERS` and stores their ids in `.jobber/telegram-topics.json`.
+3. Leave `TELEGRAM_CHAT_ID` empty. If Threaded Mode is off, the bridge sends everything to the private
+   chat without topics.
+
+Optional: a forum group instead. Create a group, turn on Topics (it becomes a forum), add the bot as an
+administrator with the right "Manage topics" (`can_manage_topics`), and set `TELEGRAM_CHAT_ID` in `.env`
+to the numeric id of the group (a negative number that starts with `-100`; for example forward a message
+from the group to @userinfobot).
+
+If the bridge cannot create a topic it says so in the `bridge` window and falls back to sending without a topic
+(the General topic in a group). Group Privacy only matters for plain group messages that are not commands; the
 bridge needs to read the free `chat` topic, so turn Group Privacy off in `/mybots`, your bot, Bot
 Settings (re-add the bot to the group if it does not take effect).
 
@@ -136,7 +142,7 @@ paste the token into it.
 | Bridge says token missing or malformed | Empty value, whitespace in the token, or non-numeric IDs | Fix `.env`; IDs are digits separated by commas only |
 | Wizard: "Telegram rejected that token" | Typo, revoked token, or no network | Copy the token again from BotFather (or `/token`), check network |
 | Test message not received | You never pressed Start on the bot, or the ID is wrong | Open the bot, press Start, retry; verify the numeric ID |
-| No topics appear | Topics not enabled in the group, bot is not admin, or it lacks `can_manage_topics`, or `TELEGRAM_CHAT_ID` is wrong | Redo step 3; check the `bridge` window for the error |
+| No topics appear | Threaded Mode is off for the bot in BotFather (private chat), or, with a group, Topics are off, the bot is not admin or lacks `can_manage_topics`, or `TELEGRAM_CHAT_ID` is wrong | Redo step 3; check the `bridge` window for the error |
 | Bot works in a group but ignores plain messages | Group Privacy is on | BotFather, `/mybots`, bot, Bot Settings, Group Privacy off (re-add the bot to the group if it does not take effect) |
 | `/followups` or `/connect` does nothing | Not wired in the bridge yet | Use the `followups` or `hunt` window of the `Jobber` session |
 | Token shown in a screenshot or log | Leak | Rotate with `/revoke`, see Security notes |

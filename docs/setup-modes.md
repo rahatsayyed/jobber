@@ -183,7 +183,7 @@ wizard text as a best guess until you have checked it yourself.
 - The BotFather Threaded Mode / Topics label and path, and Mini App versus `/mybots`: unverified.
 - The `getMe` field the telegram step reads for topics (`has_topics_enabled`): unverified; its
   absence never fails the step.
-- Whether the bridge's topic creation works in your forum group (`TELEGRAM_CHAT_ID`, bot admin with
+- Whether the bridge's topic creation works in the private chat (BotFather Threaded Mode) or in your optional forum group (`TELEGRAM_CHAT_ID`, bot admin with
   `can_manage_topics`): unverified until the owner live check.
 - The Serper and Hunter verification endpoints, credit cost and limits: unverified. A
   rejected key offers keep-anyway.

@@ -103,17 +103,36 @@ describe('sendToTopic and notifier routing', () => {
     expect(st.topics.alerts).not.toBe(st.topics.inbox);
   });
 
-  it('private chat: no thread id, no topic calls', async () => {
+  it("private chat with the bot's own topics: creates the topic in the private chat and sends into it", async () => {
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
     const f = (async (url: string, init: RequestInit) => {
       calls.push({ url: String(url), body: JSON.parse(String(init.body)) as Record<string, unknown> });
+      const isCreate = String(url).includes('createForumTopic');
+      return new Response(JSON.stringify({ ok: true, result: isCreate ? { message_thread_id: 7 } : {} }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await telegramNotifier({ TELEGRAM_BOT_TOKEN: TOKEN, ALLOWED_USERS: '42' } as NodeJS.ProcessEnv, f, root).send('x', { topic: 'wakes' });
+    const create = calls.find((c) => c.url.includes('createForumTopic'))!;
+    expect(create.body).toMatchObject({ chat_id: '42', name: 'wakes' });
+    const send = calls.find((c) => c.url.includes('sendMessage'))!;
+    expect(send.body).toMatchObject({ chat_id: '42', message_thread_id: 7 });
+  });
+
+  it('private chat without topics enabled: sends without a thread id and does not retry creating', async () => {
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const f = (async (url: string, init: RequestInit) => {
+      calls.push({ url: String(url), body: JSON.parse(String(init.body)) as Record<string, unknown> });
+      if (String(url).includes('createForumTopic')) {
+        return new Response('{"ok":false,"error_code":400,"description":"Bad Request: the chat is not a forum"}', { status: 400 });
+      }
       return new Response('{"ok":true,"result":{}}', { status: 200 });
     }) as unknown as typeof fetch;
-    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
-    await telegramNotifier({ TELEGRAM_BOT_TOKEN: TOKEN, ALLOWED_USERS: '42' } as NodeJS.ProcessEnv, f, root).send('x', { topic: 'wakes' });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toContain('sendMessage');
-    expect(calls[0]!.body.message_thread_id).toBeUndefined();
-    expect(calls[0]!.body.chat_id).toBe('42');
+    const n = telegramNotifier({ TELEGRAM_BOT_TOKEN: TOKEN, ALLOWED_USERS: '42' } as NodeJS.ProcessEnv, f, root);
+    await n.send('x', { topic: 'wakes' });
+    await n.send('y', { topic: 'alerts' });
+    const sends = calls.filter((c) => c.url.includes('sendMessage'));
+    expect(sends).toHaveLength(2);
+    expect(sends.every((c) => c.body.message_thread_id === undefined && c.body.chat_id === '42')).toBe(true);
+    expect(calls.filter((c) => c.url.includes('createForumTopic'))).toHaveLength(1);
   });
 
   it('falls back to plain text when Telegram rejects the HTML', async () => {

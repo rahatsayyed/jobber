@@ -133,6 +133,7 @@ describe('telegram walkthrough', () => {
     expect(out).toContain('password');
     expect(out).toContain('verified badge');
     expect(out).not.toContain('can_manage_topics'); // no forum group chosen: the group coaching is not printed
+    expect(out).toContain('own topics in your private chat'); // default path explained before the optional group question
     expect(out).toContain('@userinfobot');
     expect(out).toContain('send /health to your bot');
     expect(t.fs.files.get('proj/.env')).toContain(`TELEGRAM_BOT_TOKEN=${TOKEN}`);

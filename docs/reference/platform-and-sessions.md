@@ -14,9 +14,10 @@ section is the reference for what exists.
   `RUN_WINDOW_KEEP_MIN` minutes; default 0). `npm start` (`npm run up`) creates `bridge`, `scheduler` and `web`;
   `scripts/claude-session.sh` starts the named Claude windows. `tmux attach -t Jobber` shows all of them.
 - **Telegram bridge** (`src/telegram/`, `npm run telegram:bridge`, window `bridge`): a custom grammY bot that
-  replaced ccgram (see the migration note below). Forum topics `alerts`, `wakes`, `drips`, `inbox`, `assist`
-  and `chat` (ids in `.jobber/telegram-topics.json`), set up with `TELEGRAM_CHAT_ID` (forum group id, optional;
-  the bot needs admin with `can_manage_topics`). Owner-only by the numeric `ALLOWED_USERS`. The
+  replaced ccgram (see the migration note below). Topics `alerts`, `wakes`, `drips`, `inbox`, `assist`
+  and `chat` (ids in `.jobber/telegram-topics.json`) in the bot's own private chat with the first `ALLOWED_USERS`
+  id (BotFather Threaded Mode must be on); `TELEGRAM_CHAT_ID` is an optional override for a forum group
+  (the bot then needs admin with `can_manage_topics`). Owner-only by the numeric `ALLOWED_USERS`. The
   markdown to Telegram HTML formatter is in code (`src/telegram/format.ts`) and always escapes. Code-sent
   notifications route by topic through `src/platform/notify.ts` (the escalation digest and manual-request
   reports to `inbox`, the `apply:assist` ping to `assist`). Typed commands run in code: `/limits`, `/working`,
@@ -30,7 +31,7 @@ section is the reference for what exists.
   `.ccgram/` state folder is dropped. The old sessions `ccgram`, `ccgram-daemon`, `jobber-stack` and `jobber-runs`
   no longer exist; everything is in `Jobber`. After pulling this change, stop any old session
   (`tmux kill-session -t ccgram-daemon`, and the same for `ccgram`, `jobber-stack`, `jobber-runs` if present),
-  add `TELEGRAM_CHAT_ID` to `.env` if you want topics, and run `npm start`. Old `.env` lines such as
+  turn on Threaded Mode for the bot in BotFather if you want topics (`TELEGRAM_CHAT_ID` only for a group), and run `npm start`. Old `.env` lines such as
   `STACK_TMUX_SESSION=jobber-stack` should be removed so the default `Jobber` applies.
 - **Permission sets** (`config/permission-sets.json`): `read_only` (default, no sends),
   `outreach_send` (read_only plus fetch, queue, send email, LinkedIn arm and action tools, Naukri and

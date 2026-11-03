@@ -847,7 +847,7 @@ const hand: EnvSpec[] = [
   }),
   e('TELEGRAM_CHAT_ID', 'telegram', 'Telegram bridge', 'string', {
     maxLen: 32,
-    about: 'Id of the Telegram forum supergroup (a negative number such as -1001234567890) where the bridge creates the topics alerts, wakes, drips, inbox, assist and chat. Blank: messages go to the first ALLOWED_USERS private chat and there are no topics.',
+    about: "Optional override. Blank (the default): the bridge creates its topics (alerts, wakes, drips, inbox, assist, chat) in the bot's own private chat with the first ALLOWED_USERS id; that needs Threaded Mode enabled for the bot in BotFather. Set it to the id of a forum supergroup (a negative number such as -1001234567890, bot admin with can_manage_topics) to use that group instead.",
     ...never('Decides where agent messages and escalations are delivered: a wrong value sends them to another chat. Edit .env by hand.'),
   }),
   e('MANAGER_TMUX_SESSION', 'telegram', 'Telegram bridge', 'string', {

@@ -338,13 +338,13 @@ export const stackChecks: Check[] = [
       }
       const chat = (merged.TELEGRAM_CHAT_ID ?? '').trim();
       if (chat !== '' && !/^-?[0-9]{1,20}$/.test(chat)) {
-        return warn('TELEGRAM_CHAT_ID is not a numeric chat id, topics cannot be used', 'set the forum group id, or clear it');
+        return warn('TELEGRAM_CHAT_ID is not a numeric chat id, topics cannot be used', 'set the forum group id (-100...), or clear it to use the private chat topics');
       }
       const up = (await listWindows(ctx.run, session)).some((w) => w.name === 'bridge');
       if (!up) return warn('bridge window is not running', 'npm run up');
       return chat === ''
-        ? warn('bridge running, but TELEGRAM_CHAT_ID is not set, so Topics cannot be used (private chat only)', 'optional: set TELEGRAM_CHAT_ID to a forum group id')
-        : pass(`bridge running in ${session}, ${ids.length} allowed user(s), topics group set`);
+        ? pass(`bridge running in ${session}, ${ids.length} allowed user(s), topics in the private chat (topics need Threaded Mode enabled for the bot in BotFather)`)
+        : pass(`bridge running in ${session}, ${ids.length} allowed user(s), topics in the group ${chat} (the bot needs admin with can_manage_topics there)`);
     },
   },
   {

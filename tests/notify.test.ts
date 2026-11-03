@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { telegramNotifier, consoleNotifier } from '../src/platform/notify.js';
 
 const TOKEN = '123456:SECRET-token_abc';
@@ -7,10 +10,13 @@ const env = { TELEGRAM_BOT_TOKEN: TOKEN, ALLOWED_USERS: '42, 99' } as NodeJS.Pro
 describe('telegramNotifier', () => {
   it('posts to the first allowed user as HTML', async () => {
     const f = vi.fn(async () => new Response('{"ok":true}', { status: 200 }));
-    const r = await telegramNotifier(env, f as unknown as typeof fetch).send('hello');
+    // A temp root keeps the topic state file out of the real project .jobber/.
+    const root = mkdtempSync(join(tmpdir(), 'notify-test-'));
+    const r = await telegramNotifier(env, f as unknown as typeof fetch, root).send('hello');
     expect(r.ok).toBe(true);
     expect(r.detail).not.toContain(TOKEN);
-    const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
+    // The first call may be a topic create; the message itself is the last call.
+    const [url, init] = f.mock.calls[f.mock.calls.length - 1] as unknown as [string, RequestInit];
     expect(url).toContain(TOKEN);
     expect(url).toContain('sendMessage');
     const body = String(init.body);

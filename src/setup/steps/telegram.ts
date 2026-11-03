@@ -119,7 +119,7 @@ export const telegramStep: SetupStep = {
       if (!token) throw new Error('Telegram rejected that token');
     }
 
-    // Optional forum group: each window (hunt, followups, manager) then gets its own Topic.
+    // Default: the bot's own topics in the private chat (BotFather Threaded Mode). A forum group is an optional override.
     const existingGroup = envFileValue(envText, 'TELEGRAM_CHAT_ID').trim();
     let group = '';
     if (
@@ -128,7 +128,10 @@ export const telegramStep: SetupStep = {
     ) {
       group = existingGroup;
     } else if (
-      await io.confirm('Use a forum group so each window gets its own Topic? (optional; without it the bot uses your private chat)', false)
+      (io.say(
+        'By default the bot uses its own topics in your private chat: open @BotFather, pick the bot, Bot Settings, Threaded Mode (topics in private chat), switch it on, then message the bot once.',
+      ),
+      await io.confirm('Use a forum group instead of the private chat topics? (optional; press Enter to use the private chat)', false))
     ) {
       const lines = coachOn(ctx)
         ? [

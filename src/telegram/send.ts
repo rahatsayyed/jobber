@@ -76,7 +76,6 @@ export async function sendToTopic(topic: TopicName, markdown: string, opts: Send
     const chatId = cfg.chatId;
     let threadId: number | undefined;
     const resolve = async (force: boolean): Promise<number | undefined> => {
-      if (!cfg.grouped) return undefined;
       let st = readTopicState(root);
       if (force && st && st.chat_id === chatId) {
         delete st.topics[topic];
