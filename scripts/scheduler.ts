@@ -142,6 +142,8 @@ async function main(): Promise<void> {
     projectRoot,
     launcher: tmuxLauncher(defaultRun, undefined, runWindowKeepMin(env)),
     notifier,
+    // Code-sent notices to the wakes, alerts and drips topics (zero LLM); a missing Telegram setup just returns not ok.
+    tg: async (topic, text) => { await telegramNotifier(env).send(text, { topic }); },
     newRunId: () => randomBytes(8).toString('hex'),
     session: env.SCHEDULER_TMUX_SESSION || undefined,
     discoverSearches: discoverNames(),

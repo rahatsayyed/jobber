@@ -11,6 +11,7 @@ import { patternStats } from '../patterns.js';
 import type { ChatRunner } from './chat.js';
 import { childEnv, type SpawnFn } from './spawn.js';
 import { readTopicState, type TopicName } from './topics.js';
+import { DripController, type Button, type DripIo } from './drip.js';
 
 export const STATUS_SCRIPT_COMMANDS = ['limits', 'working', 'health', 'sources', 'escalations'] as const;
 /** Commands that only read: they still answer while the kill switch is on. */
@@ -88,6 +89,18 @@ export interface BridgeDeps {
   reply(markdown: string): Promise<void>;
   typing(): Promise<void>;
   sendDocument(absPath: string, caption: string): Promise<void>;
+  /** /drip: the shared controller (confirm tokens live in it), the sender's user id and a sender with inline buttons. */
+  drip?: DripController;
+  fromId?: number;
+  sendButtons?(markdown: string, rows: Button[][]): Promise<void>;
+}
+
+/** The /drip view of the bridge deps. Without a button sender the text is sent plain. */
+export function dripIo(deps: BridgeDeps): DripIo {
+  return {
+    env: deps.env, openDb: deps.openDb, now: () => new Date(), killed: deps.killed, reply: deps.reply,
+    sendButtons: deps.sendButtons ?? ((md) => deps.reply(md)),
+  };
 }
 
 export const codeBlock = (s: string): string => `\`\`\`\n${s.replace(/```/g, "'''").slice(-3500)}\n\`\`\``;
@@ -100,6 +113,7 @@ const HELP = [
   '- /include <job_id>',
   '- /calibrate /patterns /report',
   '- /runhunt',
+  '- /drip (status) | /drip mail now | /drip linkedin now',
   '- /instruction add|list|done|reject',
   'Free chat: write in the chat topic.',
 ].join('\n');
@@ -158,8 +172,10 @@ export async function handleOwnerMessage(msg: OwnerMessage, deps: BridgeDeps): P
 
 async function handleCommand(name: string, rest: string, deps: BridgeDeps): Promise<void> {
   if (name === 'help' || name === 'start') return deps.reply(HELP);
-  const known = [...READ_ONLY_COMMANDS, 'apply', 'outcome', 'include', 'runhunt', 'instruction'];
+  const known = [...READ_ONLY_COMMANDS, 'apply', 'outcome', 'include', 'runhunt', 'instruction', 'drip'];
   if (!known.includes(name)) return deps.reply(`Unknown command /${name}. Try /help.`);
+  // /drip answers its status while the kill switch is on and refuses a "now" request itself.
+  if (name === 'drip') return (deps.drip ?? new DripController()).command(rest, dripIo(deps), deps.fromId);
   const k = deps.killed();
   if (k.stopped && !READ_ONLY_COMMANDS.includes(name)) {
     return deps.reply(`Kill switch is on (${k.reason}). Only read-only commands answer: /status /limits /working /health /sources /escalations /calibrate /patterns /report.`);

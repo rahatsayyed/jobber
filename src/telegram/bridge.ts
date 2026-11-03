@@ -10,7 +10,9 @@ import { fetchApi, scrub, type ApiResult, type TelegramApi } from './api.js';
 import { createChatRunner, type ChatRunner } from './chat.js';
 import { handleOwnerMessage, type BridgeDeps } from './commands.js';
 import { isOwnerId, loadTelegramConfig, PROJECT_ROOT, type TelegramConfig } from './config.js';
-import { chunksFor, postChunks } from './send.js';
+import { DripController, type Button, type DripIo } from './drip.js';
+import { htmlToPlain, chunksFor, postChunks } from './send.js';
+import { isParseError, markdownToHtmlChunks } from './format.js';
 import { runProcess, type SpawnFn } from './spawn.js';
 import { ensureTopics } from './topics.js';
 
@@ -58,6 +60,55 @@ export function createBridgeBot(cfg: TelegramConfig, opts: BridgeOptions): Bot {
     await next();
   });
 
+  const drip = new DripController();
+  // Inline-button sender for /drip: HTML from format.ts (escaped), plain text when Telegram rejects the markup.
+  const buttonSender = (api: TelegramApi, chatId: string, threadId: number | undefined) =>
+    async (markdown: string, rows: Button[][]): Promise<void> => {
+      const html = markdownToHtmlChunks(markdown)[0] ?? '';
+      const base = {
+        chat_id: chatId,
+        ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
+        reply_markup: { inline_keyboard: rows.map((r) => r.map((b) => ({ text: b.text, callback_data: b.data }))) },
+        link_preview_options: { is_disabled: true },
+      };
+      let r = await api.call('sendMessage', { ...base, text: html, parse_mode: 'HTML' });
+      if (!r.ok && isParseError(r.description)) r = await api.call('sendMessage', { ...base, text: htmlToPlain(html) });
+      if (!r.ok) console.error(`[telegram-bridge] button message failed: ${r.description ?? 'error'}`);
+    };
+
+  // /drip buttons. Only `dr:` data is taken here; any other callback data falls through to other handlers.
+  bot.callbackQuery(/^dr:/, async (ctx) => {
+    if (!isOwnerId(cfg, ctx.from?.id)) return; // silently ignored (the owner filter above already dropped it)
+    try {
+      await ctx.answerCallbackQuery(); // at once, so the button stops spinning
+    } catch {
+      // the query may be too old; the action below still runs once
+    }
+    const data = ctx.callbackQuery.data ?? '';
+    const msg = ctx.callbackQuery.message;
+    if (!msg) return;
+    const threadId = 'message_thread_id' in msg && typeof msg.message_thread_id === 'number' && 'is_topic_message' in msg && msg.is_topic_message ? msg.message_thread_id : undefined;
+    const api = grammyApi(ctx.api, cfg.token);
+    const chatId = String(msg.chat.id);
+    const send = buttonSender(api, chatId, threadId);
+    const io: DripIo = {
+      env: opts.env,
+      openDb: opts.openDb ?? (() => openDb(dbPath())),
+      now: () => new Date(),
+      killed: opts.killed ?? (() => stopActive(root, opts.env)),
+      reply: async (markdown) => {
+        const r = await postChunks(api, { chatId, threadId }, chunksFor(markdown, false));
+        if (!r.ok) console.error(`[telegram-bridge] reply failed: ${r.detail}`);
+      },
+      sendButtons: send,
+    };
+    try {
+      await drip.callback(data, io, ctx.from?.id);
+    } catch {
+      await io.reply('Something went wrong while handling that button.').catch(() => undefined);
+    }
+  });
+
   bot.on('message:text', async (ctx) => {
     const m = ctx.message;
     const threadId = m.is_topic_message ? m.message_thread_id : undefined;
@@ -73,6 +124,9 @@ export function createBridgeBot(cfg: TelegramConfig, opts: BridgeOptions): Bot {
         const r = await postChunks(api, { chatId: String(m.chat.id), threadId, replyTo: m.message_id }, chunksFor(markdown, false));
         if (!r.ok) console.error(`[telegram-bridge] reply failed: ${r.detail}`);
       },
+      drip,
+      fromId: ctx.from?.id,
+      sendButtons: buttonSender(api, String(m.chat.id), threadId),
       typing: async () => {
         await ctx.api.sendChatAction(m.chat.id, 'typing', threadId !== undefined ? { message_thread_id: threadId } : undefined);
       },

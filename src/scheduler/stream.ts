@@ -16,7 +16,11 @@ const MAX_LINE = 4_000_000;
 const MAX_REPORT_TEXT = 200_000;
 
 export interface TaskInfo { id: string; subagent: string; description: string; status: string | null; backgrounded: boolean }
-export interface WakeReport { run_id: string; operators: Array<{ operator: string; platform?: string; kinds: string[] }> }
+export interface WakeCounts { done: number; skipped: number; escalated: number; stopped: number }
+/** `counts` are sums over every task of the final JSON line. */
+export interface WakeReport { run_id: string; operators: Array<{ operator: string; platform?: string; kinds: string[] }>; counts: WakeCounts }
+
+const countOf = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) && x > 0 ? Math.min(Math.floor(x), 100000) : x === true ? 1 : 0);
 
 const clean = (v: unknown, max: number): string =>
   typeof v === 'string' ? v.replace(/[^\x20-\x7e]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '';
@@ -110,14 +114,24 @@ export class StreamInspector {
         const v = JSON.parse(s) as { run_id?: unknown; operators?: unknown };
         if (typeof v.run_id !== 'string' || !runIds.includes(v.run_id) || !Array.isArray(v.operators)) continue;
         const operators: WakeReport['operators'] = [];
+        const counts: WakeCounts = { done: 0, skipped: 0, escalated: 0, stopped: 0 };
         for (const op of v.operators as Array<Record<string, unknown>>) {
           if (!op || typeof op.operator !== 'string') continue;
           const kinds = Array.isArray(op.tasks)
             ? (op.tasks as Array<Record<string, unknown>>).map((t) => (t && typeof t.kind === 'string' ? t.kind : '')).filter(Boolean)
             : [];
           operators.push({ operator: op.operator, platform: typeof op.platform === 'string' ? op.platform : undefined, kinds });
+          if (Array.isArray(op.tasks)) {
+            for (const t of op.tasks as Array<Record<string, unknown>>) {
+              if (!t) continue;
+              counts.done += countOf(t.done);
+              counts.skipped += countOf(t.skipped);
+              counts.escalated += countOf(t.escalated);
+              counts.stopped += countOf(t.stopped);
+            }
+          }
         }
-        found = { run_id: v.run_id, operators };
+        found = { run_id: v.run_id, operators, counts };
       } catch {
         // not the report line
       }

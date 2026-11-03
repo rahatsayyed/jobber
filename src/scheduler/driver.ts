@@ -23,7 +23,8 @@ import { loadPlanKnobs, planWake, stepOrder, type Assignment, type DiscoverSearc
 import { targetRegionsLine, type CodePassResult } from './pipeline.js';
 import { jdReportLine } from '../jdStore.js';
 import { buildContinuationPrompt, buildWakePrompt } from './prompt.js';
-import { describeStep, MAX_CONTINUATIONS, StreamInspector, unprovenSteps } from './stream.js';
+import { describeStep, MAX_CONTINUATIONS, StreamInspector, unprovenSteps, type WakeCounts } from './stream.js';
+import { notifyTg, wakeNotice, type TgPost } from './dripNotice.js';
 import { dripLoop } from './mailDrip.js';
 import { linkedinDripEnabled, linkedinDripLoop } from './linkedinDrip.js';
 import { finishRun, getState, markOrphans, setRunLogPath, setRunSession, setState, startRun, type RunStatus } from './runLog.js';
@@ -44,6 +45,8 @@ export interface DriverDeps {
   projectRoot: string;
   launcher: Launcher;
   notifier: Notifier;
+  /** Code-sent Telegram notices (topics wakes, alerts, drips). Absent: none. Never throws and never blocks long (src/scheduler/dripNotice.ts). */
+  tg?: TgPost;
   newRunId: () => string;
   lockDeps?: LockDeps;
   control?: Pick<ControlDeps, 'exists' | 'read'>;
@@ -290,6 +293,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
   let skippedResult: WakeResult | null = null;
   let wakeStartIso = '';
   let codePassNote: string | undefined;
+  let reportCounts = null as WakeCounts | null;
 
   try {
     // (4) plan
@@ -489,6 +493,12 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
     let resumeId: string | undefined;
     for (;;) {
       const insp = await runSession(activeRunId, curPrompt, resumeId);
+      try {
+        const rep = insp.report(chainIds);
+        if (rep) reportCounts = rep.counts;
+      } catch {
+        // counts are a convenience for the Telegram notice
+      }
       if (status === 'ok' && verify) {
         const proof = unprovenSteps(steps, insp, chainIds, settled);
         for (const i of proof.proven) settled.add(i);
@@ -638,7 +648,50 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       detail: stopReason ?? undefined, runId,
     });
   }
+  if (started && d.tg) await wakeFinishedNotice(d, { runId, trigger, status, stopReason, startAt: wakeStartIso, counts: reportCounts, dry });
   return { runId, status, reason: stopReason ?? undefined, nextWakeAt };
+}
+
+function countSince(d: DriverDeps, sql: string, sinceIso: string): number | null {
+  try {
+    const row = d.db.prepare(sql).get(sinceIso) as { n: number } | undefined;
+    return typeof row?.n === 'number' ? row.n : null;
+  } catch {
+    return null;
+  }
+}
+
+/** One Telegram message for a wake that ran (zero LLM). Never throws. */
+async function wakeFinishedNotice(
+  d: DriverDeps,
+  w: { runId: string; trigger: string; status: string; stopReason: string | null; startAt: string; counts: WakeCounts | null; dry: boolean },
+): Promise<void> {
+  try {
+    const sec = w.startAt ? Math.max(0, Math.round((d.now().getTime() - Date.parse(w.startAt)) / 1000)) : null;
+    const n = wakeNotice({
+      runId: w.runId, trigger: w.trigger, status: w.status, reason: w.stopReason, durationSec: sec, counts: w.counts, dry: w.dry,
+      newJobs: w.startAt ? countSince(d, 'SELECT COUNT(*) AS n FROM jobs WHERE datetime(created_at) >= datetime(?)', w.startAt) : null,
+      queued: w.startAt ? countSince(d, 'SELECT COUNT(*) AS n FROM outreach_queue WHERE datetime(created_at) >= datetime(?)', w.startAt) : null,
+    });
+    try { setState(d.db, 'wake_skip_notified', '', d.now()); } catch { /* ignore */ }
+    if (n) await notifyTg(d, n.topic, n.text);
+  } catch {
+    // a notice never breaks a wake
+  }
+}
+
+/** A skipped wake is told once per reason (killed, halted, ceilings_exhausted); quiet_hours and nothing_due stay silent. */
+async function wakeSkippedNotice(d: DriverDeps, r: WakeResult, trigger: string): Promise<void> {
+  try {
+    const n = wakeNotice({ runId: r.runId, trigger, status: 'skipped', reason: r.reason, dry: wakeIsDry(d.env) });
+    if (!n) return;
+    const code = (r.reason ?? '').split(':')[0] ?? '';
+    if (getState(d.db, 'wake_skip_notified') === code) return;
+    setState(d.db, 'wake_skip_notified', code, d.now());
+    await notifyTg(d, n.topic, n.text);
+  } catch {
+    // a notice never breaks a wake
+  }
 }
 
 export async function wakeOnce(
@@ -646,6 +699,7 @@ export async function wakeOnce(
   opts: { force?: boolean; abort?: () => boolean } = {},
 ): Promise<WakeResult> {
   const r = await inner(d, opts);
+  if (r.status === 'skipped' && d.tg) await wakeSkippedNotice(d, r, opts.force ? 'forced' : 'scheduled');
   const killedResult = r.status === 'killed' || (r.status === 'skipped' && r.reason === 'killed');
   if (d.afterWake && !killedResult) {
     try {
