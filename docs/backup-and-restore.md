@@ -97,9 +97,11 @@ Warnings for `--apply`:
 - It moves existing files aside and rolls back on failure, but it cannot stop a Claude session
   that holds the database open from writing into the restored file. Stop all sessions and the
   scheduler first.
-- A backup contains `config/ccgram.pin.json` and `.claude/settings.local.json` (plus the
-  managed settings file), so `--apply` writes the pin and the permission set from the backup
-  (the old files are moved aside). Review both after a restore.
+- A backup contains `.claude/settings.local.json` (plus the managed settings file), so `--apply`
+  writes the permission set from the backup (the old files are moved aside). Review it after a
+  restore. Older backups may still hold `config/ccgram.pin.json` and a `.ccgram/` state folder; ccgram
+  was removed on 2026-11-03, so ignore them. The Telegram topic ids (`.jobber/telegram-topics.json`) are
+  recreated by the bridge if missing.
 - Restoring a stale database can make already-sent outreach look unsent, which risks duplicate
   sends. After any restore run `/checkreplies` and compare the Gmail Sent folder with
   `outreach_queue` before the next wake.
@@ -128,7 +130,7 @@ Behaviour to know:
 - Untracked files in the checkout count as a dirty tree, so the update is skipped. Clean or
   ignore them.
 - Changes touching reserved paths (`AUTO_UPDATE_REVIEW_PATHS`, by default `.claude/settings.json`,
-  `.claude/hooks/`, `config/ccgram.pin.json`, `scripts/ccgram/`) force a manual
+  `.claude/hooks/`, `.githooks/`, `scripts/claude-session.sh`) force a manual
   review: the update is not applied.
 - Any failed step (merge, install, migrate-copy, doctor, tests, permissions fingerprint) rolls the code back to the previous
   commit. The database is not rolled back: migrations are additive so old code runs on a migrated

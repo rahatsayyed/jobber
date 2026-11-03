@@ -12,7 +12,7 @@ Jobber is an autonomous job-hunting agent. A scheduler wake fetches new job post
 
 ## Prerequisites
 
-Git and a shell. `bash scripts/bootstrap.sh` installs what is missing after asking (macOS with Homebrew first, with an Ubuntu variant): Node 20+ (`brew install node` on macOS, where Homebrew must already be installed or it stops with the URL; on Ubuntu `apt` with sudo after a prompt when the apt package is new enough, otherwise nvm or NodeSource instructions and nothing runs), then root and Next.js dashboard dependencies plus a production dashboard build, tmux, uv, the pinned ccgram, git and build tools, and the Claude Code CLI only when the npm global prefix is writable (otherwise it prints instructions). Google Chrome is a brew cask on macOS and owner instructions on Ubuntu; the classifier model is downloaded only after consent, and age and rclone are reported only. You still log in to `claude` yourself.
+Git and a shell. `bash scripts/bootstrap.sh` installs what is missing after asking (macOS with Homebrew first, with an Ubuntu variant): Node 20+ (`brew install node` on macOS, where Homebrew must already be installed or it stops with the URL; on Ubuntu `apt` with sudo after a prompt when the apt package is new enough, otherwise nvm or NodeSource instructions and nothing runs), then root and Next.js dashboard dependencies plus a production dashboard build, tmux, uv, git and build tools, and the Claude Code CLI only when the npm global prefix is writable (otherwise it prints instructions). Google Chrome is a brew cask on macOS and owner instructions on Ubuntu; the classifier model is downloaded only after consent, and age and rclone are reported only. You still log in to `claude` yourself.
 
 ---
 
@@ -45,17 +45,17 @@ Setup is resumable and safe to rerun: a step whose checks already pass skips its
 
 In this order:
 
-- `prereqs`: checks Node, tmux, Chrome (every browser and the resume PDF render run on the installed Google Chrome), the patchright package and the pinned ccgram version, and prints a fix for anything missing.
+- `prereqs`: checks Node, tmux, Chrome (every browser and the resume PDF render run on the installed Google Chrome), the patchright package, and prints a fix for anything missing.
 - `userdata`: copies the template files from `user-data.example/` into `user-data/` (for example `fact-gate.json` and `account.json`) and never overwrites a file that already exists.
 - `claude`: checks that the Claude Code CLI is installed and logged in, and tells you how to log in if it is not.
-- `telegram`: walks you through creating a bot with @BotFather, tells you to enable Topics and turn Group Privacy off, stores the bot token in `.env` (never echoed), asks you to confirm Threaded Mode (topics) is on, records your numeric Telegram ID in `ALLOWED_USERS` (a comma-separated list of numeric IDs; each extra ID needs an explicit extra confirmation), and sends a test message. Skippable (RECOMMENDED): without it there is no phone control, no Telegram alerts and no approved email follow-ups, and `npm run up` starts no bridge or ccgram windows.
+- `telegram`: walks you through creating a bot with @BotFather, tells you to enable Topics and turn Group Privacy off, stores the bot token in `.env` (never echoed), asks you to confirm Threaded Mode (topics) is on, records your numeric Telegram ID in `ALLOWED_USERS` (a comma-separated list of numeric IDs; each extra ID needs an explicit extra confirmation), and sends a test message. Skippable (RECOMMENDED): without it there is no phone control, no Telegram alerts and no approved email follow-ups, and `npm run up` starts no bridge.
 - `gmail`: guides you through creating a Desktop OAuth client in your own Google Cloud project, then runs the consent screen so the send token stays on this machine. Skippable (NEEDED FOR EMAIL OUTREACH): without it there is no cold email, no email follow-ups and no reply watching; LinkedIn and Naukri outreach still run.
 - `apikeys`: optional keys, each skippable: Serper and Hunter (contact finding only, not job sources); Hunter stays off unless you confirm. Skipping it leaves the matching feature off (OPTIONAL). See [docs/api-keys.md](docs/api-keys.md).
 - `sessions`: opens real Chrome so you log in once to the main LinkedIn account (people search, connection requests and messages) and Naukri (`npm run linkedin:login`, `npm run naukri:login`; each prints a short instruction, you log in, then press Enter); the saved sessions live in `secrets/`. The optional Wellfound session is not part of the wizard: run `npm run wellfound:login` yourself (it saves `secrets/wellfound-state.json`); until it exists no Wellfound task is planned.
 - `resume`: has a model transcribe your resume text into `user-data/resume.json`, rejects any number that is not in your source text, and writes nothing until you confirm.
 - `profile`: asks for roles, locations, remote preference, salary floors and targets, notice period and work authorization, and writes `user-data/profile.json`, the application answers file and the language list.
 - `limits`: shows every daily cap, quiet hour and spacing value with its default and an explanation, and writes the ones you choose to `.env`.
-- `access`: asks which permission set sessions may use (default `read_only`), applies it and installs the ccgram hooks into `.claude/settings.local.json`.
+- `access`: asks which permission set sessions may use (default `read_only`), applies it into `.claude/settings.local.json`.
 - `classifier`: downloads the prompt-injection classifier model (about 750 MB) only after you consent, then verifies its files. The default model is English-only; see [classifier models](docs/classifier-models.md) for licences, limitations and how to switch. The smoke test is skipped while the files are only pinned by a weaker hash. Live LinkedIn and Naukri reads and sends are refused (fail closed) until a model is downloaded (pinned and fitted, which the default already is) and `CLASSIFIER_MODEL` is set; dry runs continue unscreened.
 - `dashboard`: sets up dashboard sign-in. The default is a one-time access token (`npm run dashboard -- token`, shown once, only its hash is stored); Google desktop and OIDC with one allowed Google account are options. The sign-in part is skipped only if `scripts/dashboard.ts` is missing (it is present in this repository). Skippable (RECOMMENDED): without it there is no browser status page, `npm run up` starts no `web` window, and `/limits`, `/working`, `/health` and `npm run status` still work.
 - `final`: runs the doctor once more, lists anything still open and prints the next steps.
@@ -110,7 +110,7 @@ npm run down                    # stop them again
 - `npm start` starts all of this in order (bridge, named windows, scheduler, dashboard; `npm start -- --status` is read-only) and `npm stop` stops it (`--keep-bridge` leaves the bridge running). The commands above and `./run-hunt.sh` remain the building blocks and the manual route.
 - The Telegram topic bound to the manager session lists, reads, starts and stops the named windows in `config/manager-windows.json` (`hunt` and `followups`). The `manager` window and the bridge are protected and cannot be stopped from Telegram. The manager never types into another window and never runs outreach itself. See [the manager skill](.claude/skills/manager/SKILL.md).
 - `./run-hunt.sh` is a shim that runs one wake now: it execs `npm run scheduler -- --once --now` (it ignores arguments). The wake is planned and limited exactly like a scheduled one (kill switch, halts, quiet hours, caps and the dry-run flags apply) and the scheduler launches the restricted launcher `scripts/run-claude.sh` with profile `outreach_wake` in `config/run-profiles.json`; permission checks are never skipped. For unattended runs use the scheduler (`npm run scheduler -- --daemon`, units from `npm run scheduler:units`).
-- The older route, a single `claude --channels plugin:telegram@claude-plugins-official` session, is documented in `CLAUDE.md`; the ccgram route above is the one setup configures.
+- The older route, a single `claude --channels plugin:telegram@claude-plugins-official` session, is documented in `CLAUDE.md`; the custom grammY bridge (`npm run telegram:bridge`, forum topics) is the one setup configures.
 - To route Claude Code through another Anthropic-compatible provider (for example the Claude Code Router), see [model auth setup](docs/model-auth-setup.md). If a `.env.ccr` file exists, the launcher reads it. It is optional.
 
 ---
@@ -182,7 +182,7 @@ SEND_LIMIT_PER_RUN=1      # daily email limit for the followups command; the mai
 
 ## Deploying to a VPS
 
-Provision any small Ubuntu host, install Node 20+, git, tmux, Chrome, the Claude Code CLI and ccgram, then:
+Provision any small Ubuntu host, install Node 20+, git, tmux, Chrome, the Claude Code CLI, then:
 
 ```bash
 git clone <your-repo-url> ~/jobber

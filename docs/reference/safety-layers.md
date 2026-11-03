@@ -148,7 +148,7 @@ web tool, and a subagent type without a definition file (`general-purpose`, `Exp
 
 **Denied by the guard (everything else is allowed):**
 
-- Read or write of `.env` and `.env.*` (not `.env.example`), `secrets/`, `user-data/`, `.ccgram/`, `models/`,
+- Read or write of `.env` and `.env.*` (not `.env.example`), `secrets/`, `user-data/`, `models/`,
   `~/.ssh`, `~/.aws`, `~/.gnupg`; any path outside the project directory; symlinks are resolved, matching is case
   insensitive, shell globs that can expand to these names are refused.
 - Write, edit, delete, move or redirect into `.jobber/STOP`, `.claude/hooks/`, `.claude/settings*.json`,

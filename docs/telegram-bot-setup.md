@@ -1,9 +1,12 @@
 # Telegram bot setup (runbook)
 
-Jobber is operated mostly from Telegram. The bridge is [ccgram](https://pypi.org/project/ccgram/),
-pinned to the exact version in `config/ccgram.pin.json`, which relays messages between your bot and
-Claude Code sessions running in tmux. This runbook covers creating the bot, wiring `.env`, enabling
-topics, starting the bridge and fixing the usual problems.
+Jobber is operated mostly from Telegram. The bridge is our own grammY bot in `src/telegram/`
+(`npm run telegram:bridge`), running in the tmux window `bridge` of the one session `Jobber`. It uses
+Telegram forum topics: one topic per kind of message (`alerts`, `wakes`, `drips`, `inbox`, `assist`,
+`chat`). The ids of the topics are kept in `.jobber/telegram-topics.json`. This runbook covers creating
+the bot, wiring `.env`, enabling Topics in your group, starting the bridge and fixing the usual
+problems. (ccgram, the old bridge, was removed on 2026-11-03; see the migration note in
+`docs/reference/platform-and-sessions.md`.)
 
 BotFather's menus and button labels change over time. Follow the label currently on screen where it
 differs from the one written here. Anything not confirmed by this repository is marked "unverified".
@@ -11,21 +14,18 @@ differs from the one written here. Anything not confirmed by this repository is 
 ## What you need
 
 - A Telegram account on the phone or desktop app.
-- tmux and the pinned ccgram version installed (`npm run setup` step `prereqs` checks this).
+- tmux installed (`npm run setup` step `prereqs` checks this).
 - The repo `.env` (created by the wizard, or copied from `.env.example`, mode 600).
+- A Telegram group of your own with Topics turned on (step 3).
 
 The quickest route is `npm run setup -- --mode terminal --step telegram` (or `npm run setup -- --step
 telegram` once terminal mode is stored; `npm run setup -- --status` shows the mode). The terminal
-walkthrough takes you through the steps below one at a time: it asks you to confirm "done?" after
-BotFather and again after Threaded Mode (answer no and it re-prints a short recap of the route,
-then asks again, up to three rounds), takes the
-token as hidden input (never echoed, never printed), validates it with Telegram's `getMe`, asks for
-your numeric ID, writes `.env`, and sends a test message you confirm arrived. Threaded Mode is an
-explicit confirm in the wizard, not an assumption; the optional `getMe` topics check only adds a
-re-ask and its absence never fails the step. Telegram is RECOMMENDED but skippable: skip it and
-`npm run doctor` shows the Telegram checks as skipped, and `npm run up` starts no bridge or ccgram
-windows; add it later with the same `--step telegram` command. The manual steps follow for when you
-want to do it by hand or understand what the wizard does.
+walkthrough takes you through the steps below one at a time, takes the token as hidden input (never
+echoed, never printed), validates it with Telegram's `getMe`, asks for your numeric ID, writes `.env`,
+and sends a test message you confirm arrived. Telegram is RECOMMENDED but skippable: skip it and
+`npm run doctor` shows the Telegram checks as skipped, and `npm run up` starts no bridge; add it later
+with the same `--step telegram` command. The manual steps follow for when you want to do it by hand or
+understand what the wizard does.
 
 ## 1. Create the bot with BotFather
 
@@ -37,103 +37,92 @@ want to do it by hand or understand what the wizard does.
 
 1. Get your numeric Telegram user ID: message [@userinfobot](https://t.me/userinfobot) and send any
    text; it replies with your ID. (The wizard also offers to read it from your new bot's updates,
-   but only while the bridge is not running, because reading updates would steal them from ccgram.)
+   but only while the bridge is not running, because reading updates would steal them from the bridge.)
 2. Edit `.env` (mode 600; do not paste these values into chat):
 
 ```
 TELEGRAM_BOT_TOKEN=<token from BotFather>
 ALLOWED_USERS=<your numeric id>
+TELEGRAM_CHAT_ID=<forum group id, see step 3>
 ```
 
 `ALLOWED_USERS` is a comma-separated list of numeric IDs with no spaces, for example
-`111111111,222222222`. `run.sh` refuses to start the bridge if the token contains whitespace or
-`ALLOWED_USERS` is not digits and commas.
+`111111111,222222222`. The bridge is owner-only: it answers only these numeric IDs and ignores
+everyone else. `TELEGRAM_CHAT_ID` is optional (see step 3).
 
-3. `npm run doctor` checks `ccgram-env` (token shape, IDs numeric, `.env` mode 600) and `telegram-api`
-   (the token works, shows the bot username).
+3. `npm run doctor` checks `telegram-api` (the token works, shows the bot username) and
+   `telegram-bridge` (the bridge is configured and its window is running).
 
 Open your bot in Telegram and press Start once; a bot cannot message you before you have started it.
 
-## 3. Enable topics (threaded mode)
+## 3. Enable Topics in your group and make the bot an admin
 
-ccgram maps one Claude session (tmux window) to one Telegram topic, so the bot's chat needs topics.
-Jobber's windows are `manager`, `hunt` and `followups` (`config/manager-windows.json`; `manager` and
-the bridge are protected and cannot be stopped from Telegram).
+1. Create a Telegram group (or use one you already have) and add your bot to it.
+2. Open the group settings and turn on Topics (the group becomes a forum).
+3. Make the bot an administrator and give it the right "Manage topics" (`can_manage_topics`). The
+   bridge creates its topics itself (`alerts`, `wakes`, `drips`, `inbox`, `assist`, `chat`) and stores
+   their ids in `.jobber/telegram-topics.json`; without that right it cannot create them.
+4. Set `TELEGRAM_CHAT_ID` in `.env` to the numeric id of the group (a negative number that starts with
+   `-100`; for example forward a message from the group to @userinfobot, or read it from the bot's
+   `getUpdates`). If you leave it empty, the bridge works from the private chat with the bot and
+   sends everything there without topics.
 
-Route A, in BotFather's Mini App (the current UI for newer bot settings):
-
-1. Open @BotFather and press its Open button (or open BotFather's profile and open its app).
-2. Select your bot, then Bot Settings.
-3. Enable "Threaded Mode" (the toggle may be labelled Topics or Threads in your client version).
-
-Route B, the classic chat route (use it if the Mini App route is missing in your client):
-
-1. Send `/mybots` to @BotFather, select your bot, Bot Settings.
-2. Enable Topics if the option is listed, and for group use turn Group Privacy off.
-
-The repo's wizard text (`src/setup/steps/telegram.ts`) tells you to enable Topics and turn Group
-Privacy off in `/mybots`, your bot, Bot Settings. Whether the exact menu entry is called Topics,
-Threaded Mode or Threads in your client, and which of the two routes exposes it, is unverified from
-this repo: use the label BotFather currently shows. Group Privacy matters only if you add the bot to
-a group; a one-to-one chat with topics does not need it.
-
-Check upstream ccgram documentation for exactly which chat layout it expects (private chat with
-topics, or a forum supergroup): unverified here.
+If the bridge cannot create a topic it says so in the `bridge` window and falls back to the group's
+General topic. Group Privacy only matters for plain group messages that are not commands; the
+bridge needs to read the free `chat` topic, so turn Group Privacy off in `/mybots`, your bot, Bot
+Settings (re-add the bot to the group if it does not take effect).
 
 ## 4. Start the bridge
 
 ```bash
-bash scripts/ccgram/start.sh
+npm run telegram:bridge
 ```
 
-What it does, from the script: checks `.env` exists, runs the version check against
-`config/ccgram.pin.json` (refuses on mismatch or when ccgram is missing), sets `.env` to mode 600 and
-`.ccgram/` to mode 700, and starts `run.sh` in a detached tmux session `ccgram-daemon`. `run.sh`
-passes ccgram only `TELEGRAM_BOT_TOKEN` and `ALLOWED_USERS` (a stripped environment), and ccgram
-starts Claude windows through `scripts/ccgram/claude-session.sh`, which loads the rest of `.env` for
-the MCP servers (not the two Telegram keys) and refuses any permission-skipping flag.
+Or just run `npm start` (`npm run up`), which starts the `bridge`, `scheduler` and `web` windows in the
+one tmux session `Jobber` (env `STACK_TMUX_SESSION`, default `Jobber`). The bridge reads
+`TELEGRAM_BOT_TOKEN`, `ALLOWED_USERS` and `TELEGRAM_CHAT_ID` from `.env`. The named Claude windows
+(`hunt`, `followups`, `manager`) are started by `scripts/claude-session.sh`, which loads the rest of
+`.env` for the MCP servers (not the Telegram keys) and refuses any permission-skipping flag.
 
-Stop it with `bash scripts/ccgram/stop.sh`. Windows it created keep running.
+Look at it with `tmux attach -t Jobber` and pick the `bridge` window (detach with Ctrl-b d). Do not
+paste the token into it.
 
-Look at it with `tmux attach -t ccgram-daemon` (detach with Ctrl-b d). Do not paste the token into it.
+## 5. What you can do from Telegram
 
-## 5. Bind topics to windows
-
-Send your bot a message. How ccgram creates and binds topics (when a topic appears per window, and
-how you attach an existing tmux window to a topic) is ccgram's own behavior and is not documented
-in this repo: check upstream (`ccgram --help` and its README for the pinned version 4.16.0).
-
-What this repo defines: the named windows `hunt` and `followups` and the protected `manager` window,
-and the `manager` skill (`.claude/skills/manager/SKILL.md`), which from the manager topic lists,
-reads, starts and stops those windows. Bind the manager topic to the manager session and use it to
-start `hunt` and `followups`.
+- Typed commands, handled in code (no model): `/limits`, `/working`, `/health`, `/sources`,
+  `/escalations`, `/apply <url>`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`,
+  `/include`, `/calibrate`, `/patterns`.
+- Not wired in the bridge yet: `/followups`, `/checkreplies`, `/applyall`, `/connect`. Use the `hunt`
+  and `followups` windows of the `Jobber` session for those (`tmux attach -t Jobber`).
+- Free text in the `chat` topic runs `claude -p --output-format json --resume <id>` under the
+  `read_only` permission set. It never runs with skip-permissions.
+- Code-sent notifications go to a topic by kind (`src/platform/notify.ts`): the escalation digest and
+  the manual-request reports go to `inbox`, the `apply:assist` ping goes to `assist`, wake and drip
+  summaries go to `wakes` and `drips`, and problems go to `alerts`.
 
 ## 6. Register the command menu and branding
 
 - Slash command list for `/setcommands`: see [telegram-slash-commands.md](telegram-slash-commands.md).
   Paste that list; do not copy a second version into other docs.
 - Name, About text and Description for the bot profile: see [telegram-branding.md](telegram-branding.md).
-  Note that the greeting ccgram sends after `/start` is hard-coded in ccgram and not changed by those
-  BotFather fields (documented there).
 
 ## 7. Smoke test
 
-1. `npm run doctor`: `telegram-api`, `ccgram-env`, `single-credentials-file` and `ccgram-dir-mode`
-   pass.
-2. In Telegram, send `/health` (bare) in the manager topic. It runs `npx tsx scripts/status.ts health`
-   and returns its output. `/limits` and `/working` are the other two bare status commands.
+1. `npm run doctor`: `telegram-api`, `telegram-bridge` and `single-credentials-file` pass.
+2. In Telegram, send `/health` (bare) in any topic. It runs `npx tsx scripts/status.ts health` and
+   returns its output. `/limits` and `/working` are the other bare status commands.
 
 ## Security notes
 
 - `ALLOWED_USERS` is the allowlist. Every ID in it can drive Claude on this machine, within the
   permission set (`read_only` by default). Add a second ID only for someone you would give a shell.
-  Messages from other IDs are ignored by ccgram (behavior of ccgram: unverified here).
+  Messages from other IDs are ignored.
 - The token lives only in `.env` (mode 600, git-ignored). The wizard hides the input and never prints
-  it; `run.sh` and `claude-session.sh` keep it out of the Claude process environment. There must be
-  no second `.ccgram/.env` (the doctor `single-credentials-file` check fails if there is).
+  it; `scripts/claude-session.sh` keeps it out of the Claude process environment. There must be no
+  second credentials file (the doctor `single-credentials-file` check fails if there is).
 - If the token leaks, rotate it: message @BotFather, `/revoke`, pick the bot, then update
-  `TELEGRAM_BOT_TOKEN` in `.env` and restart with `stop.sh` then `start.sh`. The old token stops
-  working at once. Also use this if you ever pasted the token anywhere public.
+  `TELEGRAM_BOT_TOKEN` in `.env` and restart the `bridge` window. The old token stops working at once.
+  Also use this if you ever pasted the token anywhere public.
 - Telegram messages are not end-to-end encrypted for bots. Keep resumes, emails and tokens out of
   chat; Jobber's reports are counts and titles.
 - The older route (`claude --channels plugin:telegram@claude-plugins-official`) is separate and not
@@ -143,15 +132,14 @@ start `hunt` and `followups`.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Bot never answers | Bridge not running, or `ALLOWED_USERS` does not contain your ID | `tmux ls` should list `ccgram-daemon`; `bash scripts/ccgram/start.sh`; confirm your ID with @userinfobot and fix `.env`, then restart the bridge |
-| `start.sh`: "ccgram version mismatch" or "not installed" | Installed ccgram differs from `config/ccgram.pin.json` | Install exactly the pinned version (see `install_spec` in the pin file); do not use ccgram's own upgrade command (owner decision recorded in `CLAUDE.md`) |
-| `start.sh`: "TELEGRAM_BOT_TOKEN and ALLOWED_USERS must both be set" or "malformed" | Empty value, whitespace in the token, or non-numeric IDs | Fix `.env`; IDs are digits separated by commas only |
+| Bot never answers | Bridge not running, or `ALLOWED_USERS` does not contain your ID | `tmux attach -t Jobber` and check the `bridge` window; `npm run telegram:bridge`; confirm your ID with @userinfobot and fix `.env`, then restart the bridge |
+| Bridge says token missing or malformed | Empty value, whitespace in the token, or non-numeric IDs | Fix `.env`; IDs are digits separated by commas only |
 | Wizard: "Telegram rejected that token" | Typo, revoked token, or no network | Copy the token again from BotFather (or `/token`), check network |
 | Test message not received | You never pressed Start on the bot, or the ID is wrong | Open the bot, press Start, retry; verify the numeric ID |
-| No topics appear | Topics/Threaded Mode not enabled for the bot, or the client is old | Re-check step 3 with the current BotFather labels; update the Telegram app; check upstream ccgram for the required chat layout (unverified here) |
-| Topics exist but a window does not respond | The Claude window is not running | Ask the manager topic for status or start it; `tmux ls` shows `ccgram` windows |
+| No topics appear | Topics not enabled in the group, bot is not admin, or it lacks `can_manage_topics`, or `TELEGRAM_CHAT_ID` is wrong | Redo step 3; check the `bridge` window for the error |
 | Bot works in a group but ignores plain messages | Group Privacy is on | BotFather, `/mybots`, bot, Bot Settings, Group Privacy off (re-add the bot to the group if it does not take effect) |
+| `/followups` or `/connect` does nothing | Not wired in the bridge yet | Use the `followups` or `hunt` window of the `Jobber` session |
 | Token shown in a screenshot or log | Leak | Rotate with `/revoke`, see Security notes |
-| Doctor `ccgram-env` fails "`.env` is readable by others" | File mode too open | `chmod 600 .env` |
+| Doctor says `.env` is readable by others | File mode too open | `chmod 600 .env` |
 
 The guided session can walk you through this: `npm run setup`.

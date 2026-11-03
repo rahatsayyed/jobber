@@ -100,7 +100,7 @@ Recommended path: stay on `warn`; `enforce` now matters only for the data tools 
 
 Steps marked `[owner]` need you watching a real session.
 
-1. [owner] Fully quit and restart Claude Code and the ccgram windows (new agents and MCP tool names load only on restart).
+1. [owner] Fully quit and restart Claude Code and the named windows of the `Jobber` session (new agents and MCP tool names load only on restart).
 2. Confirm the store is git-ignored with `git check-ignore .jobber/layout/linkedin.json`.
 3. Keep the dry-run flags on and `LAYOUT_ENFORCE=warn`. Do not flip a dry-run flag for this.
 4. [owner] Trigger two scheduler wakes while logged in, so two distinct run ids exist: covering a LinkedIn profile and a search page, and for Naukri a search and a thread page. Promotion needs at least two run ids.

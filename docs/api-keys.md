@@ -135,8 +135,10 @@ unset variables (never values).
 
 ## Telegram
 
-- What it is: a bot token plus your numeric user id, for the ccgram bridge.
-- Variables: `TELEGRAM_BOT_TOKEN`, `ALLOWED_USERS` (comma-separated numeric ids).
+- What it is: a bot token plus your numeric user id, for the Telegram bridge (`npm run telegram:bridge`).
+- Variables: `TELEGRAM_BOT_TOKEN`, `ALLOWED_USERS` (comma-separated numeric ids), and optionally
+  `TELEGRAM_CHAT_ID` (the forum group id; the bot needs admin with `can_manage_topics`, see
+  [Telegram bot setup](telegram-bot-setup.md)).
 - Without it: no phone control and no alerts. Anything the agent asks you over Telegram, such
   as approving a draft in legacy follow-up mode, has no channel. How follow-ups are approved
   in each mode is in `CLAUDE.md`, section "Safety" and the `/followups` command row.

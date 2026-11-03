@@ -7,7 +7,7 @@
   with fakes and invented fixture pages. The terms of use of the search engine the browser dork uses
   are unreviewed.
 - Nothing in the platform and outreach work (plans 6A to 7D and the browserctl rebuild) has run against real
-  Naukri, Wellfound, Google OIDC sign-in, a downloaded classifier model, real tmux/ccgram wiring, a real
+  Naukri, Wellfound, Google OIDC sign-in, a downloaded classifier model, real tmux and Telegram bridge wiring, a real
   backup (`age`, `rclone`) or a real update; it is covered by unit tests with fakes. The one exception is the LinkedIn
   connect path, which is partly live-verified (next bullet). The `linkedin` tools have a canary seed script
   (`npm run linkedin:seed`) for the first supervised send; check that it still matches the arm-then-commit flow before
@@ -74,14 +74,12 @@
   single-instance scheduler and SIGINT behaviour (U9, until L8). Check upstream, no live check:
   the Claude Code CLI install method and flags (U1), Homebrew and apt package names (U5),
   Linux Node, uv and Chrome installer URLs (U6); L1 and L2
-  exercise the install paths only loosely. How ccgram binds the `manager` window (U8) is owner
-  decision O5 in plan 8E. The `better-sqlite3` native build toolchain (U12) is surfaced by the
+  exercise the install paths only loosely. The `manager` window now lives in the session `Jobber` (ccgram was removed 2026-11-03). The `better-sqlite3` native build toolchain (U12) is surfaced by the
   `build-tools` item and `npm ci` output. The dry-run dashboard stage runs the token login for real (plan 8C merged; it skips only on a 404 auth mode route). No browser download is needed (U13 is closed): every browser runs on the installed Google Chrome.
 - Plan 8F setup text is unverified until the owner live checks: BotFather's Threaded Mode / Topics
   label and path, Mini App versus `/mybots` (unverified until owner live check L1); whether `getMe`
   returns the topics field the step reads (`has_topics_enabled`, one constant in
-  `src/setup/steps/telegram.ts`; absence never fails; unverified until L1); whether ccgram needs
-  topics in a private chat or a forum supergroup (unverified until L1 and upstream docs); the
+  `src/setup/steps/telegram.ts`; absence never fails; unverified until L1); whether the custom bridge creates its topics in your forum group (bot admin with `can_manage_topics`, `TELEGRAM_CHAT_ID`; unverified until the owner live check); the
   Serper and Hunter verification endpoints, their credit cost and limits (unverified until
   L7; a rejection offers keep-anyway); hidden `askSecret` input in a real terminal (unverified
   until L1); that a skipped Telegram is safe for every consumer of `TELEGRAM_BOT_TOKEN`

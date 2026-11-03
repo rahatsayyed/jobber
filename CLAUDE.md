@@ -176,8 +176,15 @@ change for day-to-day tuning.
 ## Communication
 
 This agent is primarily operated through the **Telegram channel**. Two routes exist: the
-ccgram bridge (the route `npm run setup` configures, see "Platform and sessions" below), and
+custom grammY bridge in `src/telegram/` (`npm run telegram:bridge`, tmux window `bridge` of the session
+`Jobber`; the route `npm run setup` configures, see "Platform and sessions" below), and
 the older single session started with `--channels plugin:telegram@claude-plugins-official`.
+The bridge uses Telegram forum topics (`alerts`, `wakes`, `drips`, `inbox`, `assist`, `chat`; ids in
+`.jobber/telegram-topics.json`), is owner-only by the numeric `ALLOWED_USERS`, and formats replies
+with its own markdown to Telegram HTML formatter (`src/telegram/format.ts`, always escapes). Code-sent
+notifications route by topic through `src/platform/notify.ts` (escalation digest and manual-request
+reports go to `inbox`, the `apply:assist` ping to `assist`). The free `chat` topic runs
+`claude -p --output-format json --resume <id>` under `read_only`, never skip-permissions.
 Whenever you are running with a Telegram channel active (either route):
 
 **Every command → Telegram response:**
@@ -251,10 +258,8 @@ Message-ID is exposed, so recipient-side threading is not guaranteed).
    ```
    runhunt - Run one wake now: discover, match, contacts, send, apply
    status - Funnel, rates and benchmarks
-   followups - Draft and send email follow-ups, resolve stale
    apply - Priority run on a job URL or careers page, or status of job #N
-   applyall - Apply queue and caps for today's matched jobs
-   connect - Draft + send a LinkedIn connect request or message
+   instruction - Give the agent a standing instruction
    include - Un-exclude a vetoed job (manual override)
    outcome - Record a job outcome (replied/interview/offer/rejected...)
    calibrate - Check whether match scores predict interviews
@@ -267,6 +272,12 @@ Message-ID is exposed, so recipient-side threading is not guaranteed).
    sources - Per-source status table
    escalations - Open escalations that need you
    ```
+
+The custom bridge types these commands in code: `/limits`, `/working`, `/health`, `/sources`, `/escalations`,
+`/apply`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`, `/include`, `/calibrate` and `/patterns`.
+NOT wired in the bridge yet: `/followups`, `/checkreplies`, `/applyall` and `/connect`; run them in the
+`hunt` and `followups` windows of the `Jobber` session (`tmux attach -t Jobber`), so they are left out of
+the BotFather list above.
 
 As Phase 2/3 get implemented, update BotFather's command list and this table — do not leave
 commands silently stale. `/limits`, `/working` and `/health` are also project commands in
@@ -565,7 +576,7 @@ wake-report, preferences-detail); `docs/reference/CLAUDE-full.md` is the unsplit
 
 ## Platform and sessions
 
-tmux sessions, ccgram, permission sets, the npm scripts, the dashboard and its Apply tab, bring-up commands, setup modes, the one credentials file and auto-update and backup. Details: `docs/reference/platform-and-sessions.md` (read it before working in this area).
+the one tmux session `Jobber`, the Telegram bridge, permission sets, the npm scripts, the dashboard and its Apply tab, bring-up commands, setup modes, the one credentials file and auto-update and backup. Details: `docs/reference/platform-and-sessions.md` (read it before working in this area).
 
 ## Layout memory and platform operators
 

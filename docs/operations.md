@@ -112,7 +112,7 @@ npm start
 
 `npm start` is the same as `npm run up`, and `npm stop` is the same as `npm run down`. Extra flags go after `--`, for example `npm start -- --status`.
 
-Order: kill-switch check, doctor gate, then bridge, windows, scheduler and dashboard. The scheduler and the dashboard run in the tmux session `jobber-stack` (`STACK_TMUX_SESSION`); the scheduler daemon is also what runs the mail drip lane and the early wake for a priority request. Exit codes:
+Order: kill-switch check, doctor gate, then bridge, windows, scheduler and dashboard. The scheduler and the dashboard run in the one tmux session `Jobber` (`STACK_TMUX_SESSION`, windows `scheduler` and `web`; the Telegram bridge is the window `bridge`, and run windows are `wake-<runId>`, `drip-mail-<runId>` and `drip-linkedin-<runId>`, kept for `RUN_WINDOW_KEEP_MIN` minutes after a run, default 0); the scheduler daemon is also what runs the mail drip lane and the early wake for a priority request. Exit codes:
 
 | Code | Meaning |
 |---|---|
@@ -131,7 +131,7 @@ npm stop -- --keep-bridge
 npm stop -- --force --yes
 ```
 
-Stops the windows and scheduler this stack started. A scheduler that belongs to a launchd or systemd unit is not stopped here; the command prints the unload or disable line to run yourself. Without `--force` a scheduler finishing a wake is left to finish: re-run `npm run down`. It asks before stopping the `hunt` and `followups` windows; without a terminal they are left running unless you pass `--yes`. It does not touch the scheduler's wake session (`jobber-runs`; the STOP file is what kills a wake window), and it does not stop a hunt you started from a shell with `./run-hunt.sh`. Exit codes: 0 ok, 1 a stop failed, 2 usage error (unknown flag).
+Stops the windows and scheduler this stack started. A scheduler that belongs to a launchd or systemd unit is not stopped here; the command prints the unload or disable line to run yourself. Without `--force` a scheduler finishing a wake is left to finish: re-run `npm run down`. It asks before stopping the `hunt` and `followups` windows; without a terminal they are left running unless you pass `--yes`. It does not touch the scheduler's wake session (the `wake-<runId>` window of the `Jobber` session; the STOP file is what kills a wake window), and it does not stop a hunt you started from a shell with `./run-hunt.sh`. Exit codes: 0 ok, 1 a stop failed, 2 usage error (unknown flag).
 
 ## The mail drip lane (how email goes out)
 
@@ -201,7 +201,7 @@ Output lines: `queue <status>: <count>` per outreach queue status (or `queue: em
 npm run status -- health
 ```
 
-Output lines: one `window <name>: <command>` per tmux window in the session named by `WEB_TMUX_SESSION` (default `ccgram`), or `tmux: no windows`; the halt lines; `degraded:`; then a reminder to run `npm run doctor`.
+Output lines: one `window <name>: <command>` per tmux window in the session named by `WEB_TMUX_SESSION` (default `Jobber`), or `tmux: no windows`; the halt lines; `degraded:`; then a reminder to run `npm run doctor`.
 
 ```bash
 npm run status -- escalations
@@ -344,7 +344,7 @@ Every cold email and email follow-up is sent as multipart/alternative. The plain
 | `npm run up` exits 1, "doctor has failures" | A doctor check failed | The `fail <id>` lines printed | Apply each fix line, re-run `npm run doctor` |
 | doctor `sqlite-migrations`: missing tables | Database exists but was never migrated | `npm run doctor` | Start any db-backed tool or MCP server (`openDb` in `src/db.ts` creates and migrates the tables), or run `npm run dry-run`. Do not follow the doctor's fix line `npm run status -- json`: status opens the database read-only and never migrates (code finding: the fix text in `src/platform/checksSetup.ts` is wrong) |
 | doctor `claude-login` fails | Not logged in to Claude | `npm run doctor` | `claude auth login` |
-| Telegram silent | Bridge not running or skipped in setup | `npm run up -- --status` | `npm run up`, or `npm run setup -- --step telegram` |
+| Telegram silent | Bridge not running (window `bridge` of session `Jobber`) or skipped in setup | `npm run up -- --status`, `npm run doctor` (`telegram-bridge`) | `npm run up`, or `npm run setup -- --step telegram` |
 | Apply result `held` | `APPLY_SUBMIT_MODE` is `hold` (the shipped default): the form was prepared and not submitted | The apply report; `docs/apply.md` | Set `APPLY_SUBMIT_MODE=submit` only after the supervised checks |
 | Apply refused with `host_cooldown`, `host_cap` or `attempt_cap` | Blocks on that host, or a per-host or daily apply cap is spent | `npm run status -- limits`, `docs/apply.md` | Wait; raise a cap only on purpose (`APPLY_MAX_PER_HOST`, `APPLY_MAX_ATTEMPTS_PER_DAY`) |
 | A source shows an error or `flaky` | A provider failed or its shape drifted; a fallback task was queued | `npm run status -- sources` | See `docs/sources-and-platforms.md`; fix the slug or leave the fallback to the next wake |

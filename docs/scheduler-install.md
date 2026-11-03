@@ -197,7 +197,9 @@ above, not this flag.
 
 - Service output: `.jobber/logs/scheduler.log`.
 - Wake runs: the wake windows live in the tmux session named by `SCHEDULER_TMUX_SESSION`
-  (`.env.example` default `jobber-runs`). `tmux attach -t <session>` to watch one.
+  (default `Jobber`, the one session for everything; the windows are `wake-<runId>`,
+  `drip-mail-<runId>` and `drip-linkedin-<runId>`, kept for `RUN_WINDOW_KEEP_MIN` minutes after a run,
+  default 0). `tmux attach -t Jobber` to watch one.
 - Run history and status: `npm run scheduler -- --status`.
 - Notifications and escalations: `.jobber/notify.jsonl` and the `escalations` table.
 

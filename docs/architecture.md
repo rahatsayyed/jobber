@@ -15,7 +15,7 @@ Mermaid version (renders on GitHub and most editors):
 ```mermaid
 flowchart LR
   subgraph OWNER["Owner surfaces"]
-    TG["Telegram via ccgram bridge"]
+    TG["Telegram via grammY bridge (src/telegram)"]
     DASH["Dashboard: src/web, src/dash"]
     CLI["Terminal: npm scripts"]
   end
@@ -83,7 +83,7 @@ ASCII twin (same content, readable in a terminal):
 ```
  OWNER                ONE WAKE (npm run scheduler; /runhunt and run-hunt.sh run one now)
  -----                ---------------------------------------------------------------
- Telegram (ccgram) -> plan: kill switch, halts, quiet hours, ceilings, run lock
+ Telegram (bridge) -> plan: kill switch, halts, quiet hours, ceilings, run lock
  Terminal scripts  -> 1 code pass over the script providers (no model) --> job sources
  Dashboard (web)      2 source-operator (owner pages, fallback pages, custom sites)
    |                  3 platform operators: owner pages (manual_url), then discover (linkedin, naukri, wellfound)

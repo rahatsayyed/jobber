@@ -26,13 +26,11 @@ Jobber finds roles, tailors resumes and handles outreach within strict limits. B
 ```setcommands
 runhunt - Run one wake now: discover, match, contacts, send, apply
 status - Funnel, rates and benchmarks
-followups - Draft follow-ups for approval, resolve stale
 apply - Priority run on a job URL or careers page, or status of job #N
-connect - Draft + send a LinkedIn connect request
+instruction - Give the agent a standing instruction
 include - Un-exclude a vetoed job (manual override)
 outcome - Record a job outcome (replied/interview/offer/rejected...)
 calibrate - Check whether match scores predict interviews
-checkreplies - Detect replies in Gmail and record outcomes
 patterns - What kind of jobs reply
 report - Offline HTML funnel
 limits - Today's send, apply and connect limits
@@ -45,8 +43,5 @@ health - Platform and pipeline health
 - Telegram renders URLs as tappable links in the about and description fields,
   but does not support HTML or Markdown hyperlinks there, so the visible text is
   the URL itself.
-- The greeting message ccgram sends after `/start` is hard-coded in ccgram
-  (`handlers/dashboard_command.py`, `private_start_greeting`, an inline string
-  that names "ccgram"); no env var or config file was found that changes it, and
-  the BotFather fields above do not affect it. Options, not chosen here: accept
-  it as is, or patch ccgram in a private fork (owner's call).
+- The greeting after `/start` now comes from our own bridge (`src/telegram/`), so it can be changed
+  in code. The old ccgram greeting (hard-coded in ccgram) is gone with ccgram.

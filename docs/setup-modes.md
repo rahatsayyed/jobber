@@ -16,7 +16,7 @@ npm run dry-run
 npm start
 ```
 
-1. `bootstrap` installs what is missing (Node, dependencies, tmux, browser binaries, ccgram, the
+1. `bootstrap` installs what is missing (Node, dependencies, tmux, browser binaries, the
    Claude CLI, the classifier model) after asking. It prints a table and exits.
 2. `setup` is the guided wizard. It writes `.env`, `user-data/` and `secrets/` files, and records
    progress so you can stop and resume.
@@ -119,7 +119,7 @@ for you in any step. Writes to `.env` go through the comment-preserving writer.
 
 | # | Step id | What it covers | Writes | Owner-only part | Skippable |
 |---|---|---|---|---|---|
-| 1 | `prereqs` | Checks Node, tmux, Chrome, browser binaries and the ccgram version; points to `bash scripts/bootstrap.sh` for installs | nothing | sudo or package installs | no |
+| 1 | `prereqs` | Checks Node, tmux, Chrome, and browser binaries; points to `bash scripts/bootstrap.sh` for installs | nothing | sudo or package installs | no |
 | 2 | `claude` | Claude Code installed and logged in | nothing | the `claude` login | no |
 | 3 | `telegram` | Bot token from BotFather, Threaded Mode, chat id, a test message | `.env` (`TELEGRAM_BOT_TOKEN` and the allowed-user key) | creating the bot, pasting the token | yes, id `telegram` |
 | 4 | `gmail` | Google Cloud project, consent screen, OAuth client file, authorisation | Creates the directory of `GMAIL_OAUTH_PATH` (mode 700) and chmods the keys file 600 if present; the auth helper writes the credentials file at `GMAIL_CREDENTIALS_PATH` (chmod 600). It never writes the OAuth keys file: you download it to `GMAIL_OAUTH_PATH` yourself | Downloading the OAuth keys file, OAuth consent in a browser | yes, id `gmail` |
@@ -128,7 +128,7 @@ for you in any step. Writes to `.env` go through the comment-preserving writer.
 | 7 | `resume` | Converts your resume file to `user-data/resume.json` | `user-data/resume.json` | supplying your resume | can stop with the step skipped |
 | 8 | `profile` | Job questions and the answers file | `user-data/profile.json`, the Easy Apply answers file | answering about yourself | no |
 | 9 | `limits` | Limits and spacing, from the single catalog `src/setup/limitsCatalog.ts` | `.env` | choosing values | no |
-| 10 | `access` | Permission set and project hooks; never skip-permissions | `.claude/settings.local.json` (permission set and ccgram hooks, in the same file); appends missing rules to `.gitignore` after confirmation | choosing the set, confirming the `.gitignore` additions | hooks part can be declined |
+| 10 | `access` | Permission set and project hooks; never skip-permissions | `.claude/settings.local.json` (the permission set); appends missing rules to `.gitignore` after confirmation | choosing the set, confirming the `.gitignore` additions | hooks part can be declined |
 | 11 | `classifier` | Prompt-injection classifier: choose a profile, download, pin, fit | `.env` (the classifier model key), `models/` | choosing the profile, large download | step can end skipped; live reads and sends stay refused until it is ready |
 | 12 | `dashboard` | Local web settings, then the access token (or Google sign-in) | `.env` (`WEB_AUTH_MODE`, `WEB_PORT`, `WEB_TMUX_SESSION`, `WEB_TMUX_WINDOW`, and `DASHBOARD_ALLOWED_EMAIL` for the Google option); the token is created by `scripts/dashboard.ts` | opening the sign-in link once | yes, id `dashboard` |
 | 13 | `final` | Full doctor run, optional `chmod 600` of the database, list of what is still open and the next commands | file mode only | running the printed next commands | always runs |
@@ -162,13 +162,13 @@ is recorded, a skip recorded earlier is cleared, and the doctor, `npm run up` an
 
 | Skip id | Label | What you lose |
 |---|---|---|
-| `telegram` | RECOMMENDED | No phone control, no Telegram alerts, and email follow-ups cannot be approved, so none are sent. `up` starts neither the bridge nor the ccgram windows. |
+| `telegram` | RECOMMENDED | No phone control, no Telegram alerts, and email follow-ups cannot be approved, so none are sent. `up` starts neither the bridge nor the named Claude windows. |
 | `dashboard` | RECOMMENDED | No status page in a browser. `/limits`, `/working`, `/health` and `npm run status` still work. `up` starts no web window. |
 | `gmail` | NEEDED FOR EMAIL OUTREACH | No cold email, no email follow-ups and no reply watching. LinkedIn and Naukri outreach still run. |
 | `apikeys` | OPTIONAL | Fewer verified contacts without Serper, no last-resort email lookup without Hunter. |
 
 The doctor rule: a fail or warn of that feature's allowlisted checks (`telegram-api`,
-`ccgram-env`, `daemon`; `web`, `dashboard-login`; `gmail-oauth`; `api-keys`) is shown as `skip`
+`telegram-bridge`, `daemon`; `web`, `dashboard-login`; `gmail-oauth`; `api-keys`) is shown as `skip`
 with the fix `npm run setup -- --step <id>`, and the doctor text output ends with a
 `Skipped by choice: ...` line (not present in `--json`). If the feature is configured anyway
 (for example a token added by hand), the record is ignored and the normal result shows. Safety
@@ -183,8 +183,8 @@ wizard text as a best guess until you have checked it yourself.
 - The BotFather Threaded Mode / Topics label and path, and Mini App versus `/mybots`: unverified.
 - The `getMe` field the telegram step reads for topics (`has_topics_enabled`): unverified; its
   absence never fails the step.
-- Whether ccgram needs topics in a private chat or a forum supergroup: check upstream (ccgram
-  docs).
+- Whether the bridge's topic creation works in your forum group (`TELEGRAM_CHAT_ID`, bot admin with
+  `can_manage_topics`): unverified until the owner live check.
 - The Serper and Hunter verification endpoints, credit cost and limits: unverified. A
   rejected key offers keep-anyway.
 - Hidden secret input in a real terminal: unverified.
@@ -218,7 +218,7 @@ npm` (Debian-like, only when apt offers a new enough Node) or `npm ci`. It then 
 | `--help` | Print usage. |
 
 Items (ids from `src/bootstrap/catalog.ts`): `git`, `build-tools`, `node`, `npm-deps`,
-`renderer-deps`, `chrome`, `tmux`, `uv`, `ccgram`, `claude-cli`,
+`renderer-deps`, `chrome`, `tmux`, `uv`, `claude-cli`,
 `classifier-model`, plus the optional `age` and `rclone`. The classifier model profile is read
 from `config/classifier-models.json` (`BOOTSTRAP_MODEL_PROFILE` in `.env` can override; process
 env wins).
@@ -278,7 +278,7 @@ npm stop
 `npm run up` and `npm run down` are equivalent.
 
 `up` order: print the mode banner, check the kill switch, run the doctor, then start the bridge,
-the ccgram windows, the scheduler and the dashboard, each only if not already running. It is
+the named Claude windows, the scheduler and the dashboard, each only if not already running. It is
 idempotent. `--status` is read-only and starts nothing.
 
 The banner is printed at the top and again at the bottom:

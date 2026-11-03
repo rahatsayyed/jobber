@@ -9,7 +9,7 @@ be done by you (a login, a key, a flag flip). No agent flips a dry-run flag, cle
 sets a permission set for you.
 
 Nothing in the platform and outreach work has run against real LinkedIn, Naukri, a downloaded
-classifier model, real tmux/ccgram wiring or a real backup. Every live-facing item below is
+classifier model, real tmux and Telegram bridge wiring or a real backup. Every live-facing item below is
 `unverified` until you run it; the rollout is how you verify it. See "Known limits and not yet
 live-verified" in `CLAUDE.md`.
 
@@ -107,7 +107,7 @@ Real sessions for reads; sends stay dry.
   `classifier_wired` ok. Until then live reads fail closed by design.
 - `[owner]` LinkedIn main session saved (`npm run linkedin:login`) and Naukri session saved
   (see `docs/linkedin-sessions-setup.md`, `docs/naukri-session-setup.md`).
-- `[owner]` Claude Code and the ccgram windows fully restarted after any code change.
+- `[owner]` Claude Code and the `hunt`, `followups` and `manager` windows (and the `bridge`) of the `Jobber` session fully restarted after any code change.
 
 **Flags (names only)**
 - The dry flag stays on: `JOBBER_DRY_RUN=true`.

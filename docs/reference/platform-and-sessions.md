@@ -5,18 +5,33 @@
 README.md is the owner quick start (`npm install`, `npm run setup`, `npm run doctor`); this
 section is the reference for what exists.
 
-- **tmux sessions**: `ccgram-daemon` holds the Telegram bridge; `ccgram` holds the named Claude
-  windows from `config/manager-windows.json` (`hunt`, an interactive read-only session whose `/runhunt` runs one wake
-  and whose `/apply <url>` queues a priority request, and `followups`; `manager` and the bridge are
-  protected); the one session `Jobber` (`JOBBER_TMUX_SESSION`, the default of `STACK_TMUX_SESSION`,
-  `SCHEDULER_TMUX_SESSION` and `WEB_TMUX_SESSION`) holds the scheduler daemon (`scheduler`) and the dashboard (`web`)
-  windows that `npm start` (`npm run up`) creates, plus the run windows: `wake-<runId>`, `drip-mail-<runId>` and
-  `drip-linkedin-<runId>` (closed when the run ends, or after `RUN_WINDOW_KEEP_MIN` minutes). The ccgram
-  sessions above still exist until the ccgram removal piece. The dashboard terminal lists only `Jobber` plus the names in
-  `WEB_TERMINAL_SESSIONS`. Start/stop the bridge with `bash scripts/ccgram/start.sh` / `stop.sh`.
-- **ccgram** is pinned to an exact version in `config/ccgram.pin.json` (4.16.0); the start script
-  refuses any other version. Its own upgrade command is never to be used (owner decision,
-  2026-10-14). The bridge gets only `TELEGRAM_BOT_TOKEN` and `ALLOWED_USERS` from `.env`.
+- **tmux sessions**: ONE session, `Jobber` (`JOBBER_TMUX_SESSION`, the default of `STACK_TMUX_SESSION`,
+  `SCHEDULER_TMUX_SESSION` and `WEB_TMUX_SESSION`), holds everything. Windows: `bridge` (the Telegram bridge),
+  `scheduler` (the daemon), `web` (the dashboard), the named Claude windows from `config/manager-windows.json`
+  (`hunt`, an interactive read-only session whose `/runhunt` runs one wake and whose `/apply <url>` queues a
+  priority request, `followups`, and `manager`; `manager` and the bridge are protected), and the run windows
+  `wake-<runId>`, `drip-mail-<runId>` and `drip-linkedin-<runId>` (closed when the run ends, or after
+  `RUN_WINDOW_KEEP_MIN` minutes; default 0). `npm start` (`npm run up`) creates `bridge`, `scheduler` and `web`;
+  `scripts/claude-session.sh` starts the named Claude windows. `tmux attach -t Jobber` shows all of them.
+- **Telegram bridge** (`src/telegram/`, `npm run telegram:bridge`, window `bridge`): a custom grammY bot that
+  replaced ccgram (see the migration note below). Forum topics `alerts`, `wakes`, `drips`, `inbox`, `assist`
+  and `chat` (ids in `.jobber/telegram-topics.json`), set up with `TELEGRAM_CHAT_ID` (forum group id, optional;
+  the bot needs admin with `can_manage_topics`). Owner-only by the numeric `ALLOWED_USERS`. The
+  markdown to Telegram HTML formatter is in code (`src/telegram/format.ts`) and always escapes. Code-sent
+  notifications route by topic through `src/platform/notify.ts` (the escalation digest and manual-request
+  reports to `inbox`, the `apply:assist` ping to `assist`). Typed commands run in code: `/limits`, `/working`,
+  `/health`, `/sources`, `/escalations`, `/apply`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`,
+  `/include`, `/calibrate`, `/patterns`. NOT wired yet: `/followups`, `/checkreplies`, `/applyall`, `/connect`
+  (use the `hunt` and `followups` windows). The free `chat` topic runs `claude -p --output-format json
+  --resume <id>` under `read_only`, never skip-permissions. The doctor check `telegram-bridge` covers it.
+  Setup runbook: `docs/telegram-bot-setup.md`.
+- **Migration note (ccgram removed 2026-11-03)**: the pinned ccgram bridge, its pin file `config/ccgram.pin.json`,
+  `scripts/ccgram/`, the `ccgram-hooks` hooks installer and the `ccgram-*` doctor checks are gone, and the
+  `.ccgram/` state folder is dropped. The old sessions `ccgram`, `ccgram-daemon`, `jobber-stack` and `jobber-runs`
+  no longer exist; everything is in `Jobber`. After pulling this change, stop any old session
+  (`tmux kill-session -t ccgram-daemon`, and the same for `ccgram`, `jobber-stack`, `jobber-runs` if present),
+  add `TELEGRAM_CHAT_ID` to `.env` if you want topics, and run `npm start`. Old `.env` lines such as
+  `STACK_TMUX_SESSION=jobber-stack` should be removed so the default `Jobber` applies.
 - **Permission sets** (`config/permission-sets.json`): `read_only` (default, no sends),
   `outreach_send` (read_only plus fetch, queue, send email, LinkedIn arm and action tools, Naukri and
   Wellfound arm and action tools, the three `manual_job` tools, `db.update_job_company`, the poster-profile
@@ -26,9 +41,7 @@ section is the reference for what exists.
   `wellfound_screenshot`, `wellfound_layout`); the owner adds `Bash(npm run apply:request:*)` for the `hunt`
   window when `/apply <url>` should run there. `npm run permissions -- read_only|outreach_send|full|--status`
   applies one to the git-ignored `.claude/settings.local.json` (a sibling
-  `settings.local.managed.json` records what was written). `npm run ccgram-hooks --
-  install|status|remove` merges ccgram's hooks into the same project-scoped file, never a global
-  one. No session ever runs with skip-permissions.
+  `settings.local.managed.json` records what was written). No session ever runs with skip-permissions.
 - **Wake profile (full session)**: the scheduled wake (`outreach_wake`, in `config/run-profiles.json`) runs like a
   regular session: all built-in tools (`Read`, `Grep`, `Glob`, `Bash`, `Edit`, `Write`, `NotebookEdit`, `WebFetch`,
   `WebSearch`, `TodoWrite`, `BashOutput`, `KillShell`, `Skill`, `Agent`, `Task`) and every tool of every
@@ -51,7 +64,7 @@ section is the reference for what exists.
   (regenerates `.env.example` from the settings catalog; `-- --check` exits 1 on drift), `mail:release -- <job_id> [--reset]`
   (makes a failed email row sendable again),
   `classifier:fit`, `classifier:bench`, `report`, `render` (resume HTML and PDF by hand), `build`, `test`, `eval:gen|metrics|judge`,
-  `permissions`, `ccgram-hooks`, `site:account -- add|list|remove|status` (owner-managed site credentials), `providers -- list|show|validate|approve|reject` (generated job-source providers), `settings -- list|get KEY|check|backups|diff ID` (read-only), `layout`, and `mcp:<name>` (job-fetch, resume, contacts, email, db, gates,
+  `permissions`, `site:account -- add|list|remove|status` (owner-managed site credentials), `providers -- list|show|validate|approve|reject` (generated job-source providers), `settings -- list|get KEY|check|backups|diff ID` (read-only), `layout`, and `mcp:<name>` (job-fetch, resume, contacts, email, db, gates,
   applier, outreach) to start one stdio server by hand (there are no scripts for the linkedin, naukri, wellfound and scout servers: `.mcp.json` starts them). `linkedin:login`, `naukri:login` and `wellfound:login` take no flag. The dashboard (`scripts/web.ts` serving `src/web/server.ts`, sign-in in
   `src/dash/oidc.ts`) listens on loopback by default (`WEB_BIND`, `WEB_ALLOW_REMOTE_BIND`) and
   keeps its chat box off (`WEB_CHAT_ENABLED=false`). `WEB_AUTH_MODE` is `token` (default: a
@@ -78,7 +91,7 @@ section is the reference for what exists.
   sources it into a shell. `user-data/` (mode 700) and `secrets/` hold personal data and
   sessions and are never read by the agent beyond the tools that need them. There is no
   pre-commit guard any more (the `.githooks/pre-commit` file was removed in c8c302a); the only protection against committing these paths is `.gitignore`
-  (`.env`, `.env.*` except `.env.example`, `secrets/`, `user-data/`, `.ccgram/`, `data.sqlite`,
+  (`.env`, `.env.*` except `.env.example`, `secrets/`, `user-data/`, `data.sqlite`,
   `.claude/settings.local.json`, `models/`, `.jobber/`), so check `git status` before you commit.
 - **Auto-update and backup** (both off by default, `AUTO_UPDATE`, `BACKUP_ENABLED`): see
   `docs/backup-and-restore.md`. Updates are fast-forward only, signed commits by default,
@@ -100,14 +113,14 @@ guide). `--mode agent|terminal` sets and stores it, `--no-guide` is per run and 
 OUTREACH), `apikeys` (OPTIONAL). A skip is recorded as `steps.<id>.status: skipped` in the same
 state file; it never writes `.env`, a dry-run flag, a permission set or a halt. The doctor rule:
 the doctor wrapper (`withSkips`) turns a fail or warn of that feature's allowlisted checks
-(`telegram-api`, `ccgram-env`, `daemon`; `web`, `dashboard-login`; `gmail-oauth`; `api-keys`) into
+(`telegram-api`, `telegram-bridge`, `daemon`; `web`, `dashboard-login`; `gmail-oauth`; `api-keys`) into
 `skip` with the fix `npm run setup -- --step <id>`, and prints `Skipped by choice: ...` as the last
 line of the text output (not in `--json`). Configured wins: when the feature is configured anyway
 (for example a `TELEGRAM_BOT_TOKEN` added by hand) the record is ignored and the normal result
 shows. Safety checks (classifier, permission set, hooks, limits, kill switch, halts) are not in
 the allowlist and are never skipped. `npm run up` and `npm run dry-run` use the same definition:
 with Telegram skipped `up` prints `bridge: skipped (setup)` and `windows: skipped (setup)` and
-starts neither the bridge nor the ccgram windows; with the dashboard skipped it prints `web:
+starts neither the bridge nor the named Claude windows; with the dashboard skipped it prints `web:
 skipped (setup)` and starts no `web` window; it ends with a `STACK: skipped by choice` line, and
 the dry-run `dashboard-login` stage is skipped for a skipped dashboard.
 
@@ -152,4 +165,4 @@ platform itself. The `read_only` permission set lists the four status commands (
 
 **Extensions.** Extensions are allowed in general: the host starts Chrome without `--disable-extensions` (`ignoreDefaultArgs`) in both modes, and whatever is installed in the profile loads. Branded Chrome 137 and later ignores `--load-extension`, so nothing is loaded from the command line: install an extension once from the Chrome Web Store with `npm run browser:open` (default page the Chrome Web Store home; any `--profile` opens the one shared profile while the host is on), press Enter when done. Limits: an extension that needs a visible window (a popup you click, a toolbar prompt) does not work headless; only what Chrome's new headless mode supports works, and none of it is verified live. Extensions in the old per-platform profiles are not moved: install them again in the shared profile. Extensions get no tool input from the model and no tool navigates to a model-supplied URL. `npm run doctor` has a `Browser profiles and extensions` line (which profiles exist and how many extension ids each holds) and a `Shared browser host` line (pid, mode, attached clients, tabs, or a stale pidfile).
 
-**Dashboard live terminal (Sessions page).** The Sessions page shows the Jobber tmux windows live. Only sessions in an allowlist are listed or streamed: the `WEB_TMUX_SESSION` value, `ccgram`, `ccgram-daemon` and `STACK_TMUX_SESSION` (default `jobber-stack`); any other tmux session is invisible and refused by the server (`src/web/terminalRoutes.ts`). It is not a pty: the API polls `tmux capture-pane -p -e` about twice a second and sends a frame only when the screen changed, over a Server-Sent Events stream that the Next proxy passes through; xterm.js repaints each frame. The routes use the normal signed session cookie, Host check and rate limit; the stream is read only. It stops on the kill switch (`.jobber/STOP`, `JOBBER_KILL=1`) and pane text goes through the secret redaction first. Terminal content and typed keys are never logged; the audit log records only the session and window name. Typing is allowed by the server unless `WEB_TERMINAL_INPUT=false` (owner decision; restart the dashboard after a change), but the page starts with its Input switch Off on every load: turning it On shows the red "Input enabled" badge, focuses the terminal and enables a Send-keys row (Enter, Ctrl+C, Esc, Tab, Up, Down, handy on a phone). Keys go to a CSRF and Origin checked POST that runs `tmux send-keys` (printable text literal, special keys by name); the kill switch refuses input and the audit log records only `terminal_open` and `terminal_input` with the session and window, never the keys. The permission-set rule of the chat box applies: whatever is typed runs under that window's own session, so keep the window on `read_only`. The page needs tmux on the dashboard host and says so when tmux is missing, no session is running or a window closes.
+**Dashboard live terminal (Sessions page).** The Sessions page shows the Jobber tmux windows live. Only sessions in an allowlist are listed or streamed: `Jobber` plus the names in `WEB_TERMINAL_SESSIONS` (an optional comma list of extra sessions; the old `ccgram`, `ccgram-daemon` and `jobber-stack` names are no longer allowed); any other tmux session is invisible and refused by the server (`src/web/terminalRoutes.ts`). It is not a pty: the API polls `tmux capture-pane -p -e` about twice a second and sends a frame only when the screen changed, over a Server-Sent Events stream that the Next proxy passes through; xterm.js repaints each frame. The routes use the normal signed session cookie, Host check and rate limit; the stream is read only. It stops on the kill switch (`.jobber/STOP`, `JOBBER_KILL=1`) and pane text goes through the secret redaction first. Terminal content and typed keys are never logged; the audit log records only the session and window name. Typing is allowed by the server unless `WEB_TERMINAL_INPUT=false` (owner decision; restart the dashboard after a change), but the page starts with its Input switch Off on every load: turning it On shows the red "Input enabled" badge, focuses the terminal and enables a Send-keys row (Enter, Ctrl+C, Esc, Tab, Up, Down, handy on a phone). Keys go to a CSRF and Origin checked POST that runs `tmux send-keys` (printable text literal, special keys by name); the kill switch refuses input and the audit log records only `terminal_open` and `terminal_input` with the session and window, never the keys. The permission-set rule of the chat box applies: whatever is typed runs under that window's own session, so keep the window on `read_only`. The page needs tmux on the dashboard host and says so when tmux is missing, no session is running or a window closes.
