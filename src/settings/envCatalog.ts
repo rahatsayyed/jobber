@@ -821,6 +821,17 @@ const hand: EnvSpec[] = [
     about: 'Comma-separated numeric Telegram user ids allowed to talk to the bot. Required together with the bot token.',
     ...never('Decides who may command the bridge: widening it hands control to someone else.'),
   }),
+  e('TELEGRAM_CHAT_ID', 'telegram', 'Telegram bridge', 'string', {
+    maxLen: 32,
+    about: 'Id of the Telegram forum supergroup (a negative number such as -1001234567890) where the bridge creates the topics alerts, wakes, drips, inbox, assist and chat. Blank: messages go to the first ALLOWED_USERS private chat and there are no topics.',
+    ...never('Decides where agent messages and escalations are delivered: a wrong value sends them to another chat. Edit .env by hand.'),
+  }),
+  e('TELEGRAM_BRIDGE', 'telegram', 'Telegram bridge', 'enum', {
+    default: 'ccgram',
+    allowed: ['ccgram', 'custom'],
+    about: 'Which Telegram bridge `npm run up` starts. ccgram (the default for now) starts the old bridge; custom starts the grammY bridge (`npm run telegram:bridge`) in window bridge of the stack session instead.',
+    ...never(R_SESSION),
+  }),
   e('CCGRAM_DAEMON_SESSION', 'telegram', 'Telegram bridge', 'string', {
     default: 'ccgram-daemon',
     maxLen: 64,

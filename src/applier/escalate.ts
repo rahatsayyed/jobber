@@ -37,6 +37,12 @@ export type EscalateInputT = z.infer<typeof EscalateInput>;
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const DEFAULT_NOTIFY_PATH = path.join(ROOT, '.jobber', 'notify.jsonl');
+
+/** The apply:assist ping goes to the `assist` Telegram topic. */
+function assistTelegram(env: NodeJS.ProcessEnv): AssistNotifier {
+  const tg = telegramNotifier(env);
+  return { send: (text) => tg.send(text, { topic: 'assist' }) };
+}
 const DETAIL_CAP = 700;
 
 /** Reasons only a person at a keyboard can clear on a generic site: the job pauses as `needs_human` and `npm run apply:assist -- <job_id>` helps. */
@@ -158,7 +164,7 @@ async function escalate(input: EscalateInputT, deps: ApplierDeps, x: EscalateExt
     try {
       await pingAssist(db, {
         host, jobId: input.job_id, reason: input.reason, now, env,
-        notifier: x.telegram ?? telegramNotifier(env),
+        notifier: x.telegram ?? assistTelegram(env),
         screenshot: async () => (cur ? await deps.runtime.serial(async () => (await deps.runtime.page()?.screenshot({ type: 'png' })) ?? null) : null),
       });
     } catch { console.error('[applier] assist ping failed'); }

@@ -159,7 +159,7 @@ async function main(): Promise<void> {
         now,
         matchThreshold: Number.isInteger(Number(env.MATCH_THRESHOLD)) && env.MATCH_THRESHOLD ? Number(env.MATCH_THRESHOLD) : 60,
         send: async (text) => {
-          const sent = await tg.send(text);
+          const sent = await tg.send(text, { topic: 'inbox' });
           // The text is always kept in the request row; the notify file gets only a title so a missing Telegram setup is visible.
           if (!sent.ok) {
             await notifier.notify({ level: 'warn', title: 'manual request report not delivered to Telegram', detail: sent.detail });

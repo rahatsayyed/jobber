@@ -1,0 +1,218 @@
+// src/telegram/commands.ts
+// Typed owner commands, in code (no model). Each command builds an argv array for a child process (never a shell)
+// or reads the database directly. Every owner message gets an answer. Output of the child processes can contain
+// third-party text, so it is always sent as a code block through format.ts (escaped).
+import path from 'node:path';
+import type BetterSqlite3 from 'better-sqlite3';
+import { calibrate } from '../calibrate.js';
+import { getCalibrationRows, recordOutcomeChecked, unexcludeJob, type Outcome } from '../db.js';
+import { funnelStats } from '../funnel.js';
+import { patternStats } from '../patterns.js';
+import type { ChatRunner } from './chat.js';
+import { childEnv, type SpawnFn } from './spawn.js';
+import { readTopicState, type TopicName } from './topics.js';
+
+export const STATUS_SCRIPT_COMMANDS = ['limits', 'working', 'health', 'sources', 'escalations'] as const;
+/** Commands that only read: they still answer while the kill switch is on. */
+export const READ_ONLY_COMMANDS: readonly string[] = [...STATUS_SCRIPT_COMMANDS, 'status', 'calibrate', 'patterns', 'report', 'help', 'start'];
+const OUTCOMES: readonly Outcome[] = ['replied', 'interview', 'offer', 'hired', 'rejected', 'no_response'];
+
+export interface Argv {
+  cmd: string;
+  args: string[];
+  timeoutMs: number;
+}
+
+export function parseCommand(text: string): { name: string; rest: string } | null {
+  const m = /^\/([A-Za-z_]{1,32})(?:@[A-Za-z0-9_]{3,64})?(?:\s+([\s\S]*))?$/.exec(text.trim());
+  if (!m) return null;
+  return { name: (m[1] ?? '').toLowerCase(), rest: (m[2] ?? '').trim() };
+}
+
+const MAX_URL = 500;
+
+/** `/apply <url> [--force]` -> argv. The URL is ONE argv item. Code (src/manual/url.ts) validates it again. */
+export function applyArgv(rest: string): Argv | { error: string } {
+  const toks = rest.split(/\s+/).filter(Boolean);
+  const force = toks.filter((t) => t === '--force').length > 0;
+  const others = toks.filter((t) => t !== '--force');
+  if (others.length !== 1) return { error: 'usage: /apply <https url> [--force]' };
+  const url = others[0] ?? '';
+  if (!/^https:\/\/[^\s]+$/i.test(url) || url.length > MAX_URL) return { error: 'the url must start with https:// and be at most 500 characters' };
+  return { cmd: 'npm', args: ['run', 'apply:request', '--', url, ...(force ? ['--force'] : [])], timeoutMs: 60_000 };
+}
+
+/** `/instruction add <text> | list [--all] | done <id> [note] | reject <id> [note]` -> argv for `npm run instructions`. */
+export function instructionArgv(rest: string): Argv | { error: string } {
+  const usage = 'usage: /instruction add <text> [--job N] [--company key] | list [--all] | done <id> <note> | reject <id> [note]';
+  const toks = rest.split(/\s+/).filter(Boolean);
+  const sub = toks[0];
+  if (sub === 'add') {
+    if (toks.length < 2) return { error: usage };
+    return { cmd: 'npm', args: ['run', 'instructions', '--', ...toks], timeoutMs: 30_000 };
+  }
+  if (sub === 'list') return { cmd: 'npm', args: ['run', 'instructions', '--', 'list', ...(toks.includes('--all') ? ['--all'] : [])], timeoutMs: 30_000 };
+  if ((sub === 'done' || sub === 'reject') && /^\d{1,9}$/.test(toks[1] ?? '')) {
+    return { cmd: 'npm', args: ['run', 'instructions', '--', sub, toks[1] ?? '', ...(toks.length > 2 ? [toks.slice(2).join(' ')] : [])], timeoutMs: 30_000 };
+  }
+  return { error: usage };
+}
+
+/** argv for the commands that run a child process; null for commands handled in-process. */
+export function commandArgv(name: string, rest: string): Argv | { error: string } | null {
+  if ((STATUS_SCRIPT_COMMANDS as readonly string[]).includes(name)) {
+    return { cmd: 'npx', args: ['tsx', 'scripts/status.ts', name], timeoutMs: 60_000 };
+  }
+  if (name === 'apply') return applyArgv(rest);
+  if (name === 'instruction') return instructionArgv(rest);
+  if (name === 'runhunt') return { cmd: 'npm', args: ['run', 'scheduler', '--', '--once', '--now'], timeoutMs: 45 * 60_000 };
+  if (name === 'report') return { cmd: 'npm', args: ['run', 'report'], timeoutMs: 60_000 };
+  return null;
+}
+
+export interface OwnerMessage {
+  text: string;
+  /** Thread id of the topic the message is in; undefined in a private chat or the General topic. */
+  threadId?: number;
+}
+
+export interface BridgeDeps {
+  root: string;
+  env: NodeJS.ProcessEnv;
+  spawn: SpawnFn;
+  chat: ChatRunner;
+  /** { stopped, reason } from the shared kill switch check. */
+  killed(): { stopped: boolean; reason: string };
+  openDb(): BetterSqlite3.Database;
+  /** Send markdown to the place the owner wrote from. */
+  reply(markdown: string): Promise<void>;
+  typing(): Promise<void>;
+  sendDocument(absPath: string, caption: string): Promise<void>;
+}
+
+export const codeBlock = (s: string): string => `\`\`\`\n${s.replace(/```/g, "'''").slice(-3500)}\n\`\`\``;
+
+const HELP = [
+  '**Jobber commands**',
+  '- /status /limits /working /health /sources /escalations',
+  '- /apply <https url> [--force]',
+  '- /outcome <job_id> <outcome> [note]',
+  '- /include <job_id>',
+  '- /calibrate /patterns /report',
+  '- /runhunt',
+  '- /instruction add|list|done|reject',
+  'Free chat: write in the chat topic.',
+].join('\n');
+
+function topicOfThread(root: string, threadId: number | undefined): TopicName | 'private' | 'general' | 'unknown' {
+  const st = readTopicState(root);
+  if (!st || !st.forum) return 'private';
+  if (threadId === undefined) return 'general';
+  for (const [name, id] of Object.entries(st.topics)) if (id === threadId) return name as TopicName;
+  return 'unknown';
+}
+
+async function withDb<T>(deps: BridgeDeps, fn: (db: BetterSqlite3.Database) => T): Promise<T> {
+  const db = deps.openDb();
+  try {
+    return fn(db);
+  } finally {
+    db.close();
+  }
+}
+
+const pct = (n: number | null): string => (n === null ? 'n/a' : `${Math.round(n * 1000) / 10}%`);
+
+async function runChild(deps: BridgeDeps, a: Argv): Promise<{ ok: boolean; out: string }> {
+  const r = await deps.spawn(a.cmd, a.args, { cwd: deps.root, env: childEnv(deps.env), timeoutMs: a.timeoutMs });
+  if (r.timedOut) return { ok: false, out: 'timed out' };
+  const out = (r.stdout.trim() || r.stderr.trim() || '(no output)');
+  return { ok: r.code === 0, out };
+}
+
+/** Handle one message of an owner. Every path ends in at least one reply. The caller has already checked the owner. */
+export async function handleOwnerMessage(msg: OwnerMessage, deps: BridgeDeps): Promise<void> {
+  const text = msg.text.trim();
+  if (!text) return;
+  await deps.typing().catch(() => undefined);
+  try {
+    const cmd = parseCommand(text);
+    if (cmd) return await handleCommand(cmd.name, cmd.rest, deps);
+    // Free text: only in the chat topic (or a private chat).
+    const where = topicOfThread(deps.root, msg.threadId);
+    if (where !== 'chat' && where !== 'private') {
+      await deps.reply('Free chat works only in the **chat** topic. Here, use a command (/help).');
+      return;
+    }
+    const k = deps.killed();
+    if (k.stopped) {
+      await deps.reply(`Kill switch is on (${k.reason}). Free chat is paused; read-only commands still work.`);
+      return;
+    }
+    const answer = await deps.chat.ask(where === 'chat' ? `topic:${msg.threadId}` : 'private', text);
+    await deps.reply(answer);
+  } catch {
+    await deps.reply('Something went wrong while handling that message.').catch(() => undefined);
+  }
+}
+
+async function handleCommand(name: string, rest: string, deps: BridgeDeps): Promise<void> {
+  if (name === 'help' || name === 'start') return deps.reply(HELP);
+  const known = [...READ_ONLY_COMMANDS, 'apply', 'outcome', 'include', 'runhunt', 'instruction'];
+  if (!known.includes(name)) return deps.reply(`Unknown command /${name}. Try /help.`);
+  const k = deps.killed();
+  if (k.stopped && !READ_ONLY_COMMANDS.includes(name)) {
+    return deps.reply(`Kill switch is on (${k.reason}). Only read-only commands answer: /status /limits /working /health /sources /escalations /calibrate /patterns /report.`);
+  }
+
+  const argv = commandArgv(name, rest);
+  if (argv && 'error' in argv) return deps.reply(argv.error);
+
+  if (name === 'report' && argv && !('error' in argv)) {
+    const r = await runChild(deps, argv);
+    const file = r.out.split('\n').map((l) => l.trim()).filter(Boolean).pop() ?? '';
+    if (!r.ok || !/^reports\/funnel-[0-9-]+\.html$/.test(file)) return deps.reply(`Report failed:\n${codeBlock(r.out)}`);
+    await deps.sendDocument(path.join(deps.root, file), 'Funnel report');
+    return;
+  }
+  if (name === 'runhunt' && argv && !('error' in argv)) {
+    await deps.reply('Wake started. I will post the result line when it ends.');
+    const r = await runChild(deps, argv);
+    const line = r.out.split('\n').map((l) => l.trim()).filter(Boolean).filter((l) => /^run\s/i.test(l)).pop() ?? r.out.split('\n').pop() ?? '';
+    return deps.reply(r.ok ? codeBlock(line) : `Wake failed:\n${codeBlock(r.out)}`);
+  }
+  if (argv) {
+    const r = await runChild(deps, argv);
+    return deps.reply(r.ok ? codeBlock(r.out) : `/${name} failed:\n${codeBlock(r.out)}`);
+  }
+
+  if (name === 'status') {
+    const f = await withDb(deps, (db) => funnelStats(db, Number(deps.env.MATCH_THRESHOLD) || 60));
+    return deps.reply([
+      '**Funnel**',
+      `discovered ${f.discovered} -> matched ${f.matched} -> contacted ${f.contacted} -> replied ${f.replied} -> interview ${f.interview} -> offer ${f.offer}`,
+      `reply ${pct(f.rates.reply)} (typical 3%, 2-13%), interview ${pct(f.rates.interview)}, rejection ${pct(f.rates.rejection)}`,
+      `median days to first response: ${f.first_response_days_median ?? 'n/a'}`,
+    ].join('\n'));
+  }
+  if (name === 'outcome') {
+    const [jobId, outcome, ...note] = rest.split(/\s+/).filter(Boolean);
+    if (!jobId || !outcome || !(OUTCOMES as readonly string[]).includes(outcome)) return deps.reply(`usage: /outcome <job_id> <${OUTCOMES.join('|')}> [note]`);
+    const r = await withDb(deps, (db) => recordOutcomeChecked(db, jobId, outcome as Outcome, note.join(' ') || undefined));
+    return deps.reply(`Outcome \`${outcome}\` recorded for job ${jobId}${r.warning ? ` (${r.warning})` : ''}.`);
+  }
+  if (name === 'include') {
+    const jobId = rest.replace(/^#/, '').trim();
+    if (!jobId || /\s/.test(jobId)) return deps.reply('usage: /include <job_id>');
+    const r = await withDb(deps, (db) => unexcludeJob(db, jobId));
+    return deps.reply(r.ok ? `Job ${jobId} is included again. Previous reason: ${r.previous_reason}` : `Not changed: ${r.error}`);
+  }
+  if (name === 'calibrate') {
+    const c = await withDb(deps, (db) => calibrate(getCalibrationRows(db)));
+    return deps.reply(codeBlock(JSON.stringify(c, null, 2)));
+  }
+  if (name === 'patterns') {
+    const p = await withDb(deps, (db) => patternStats(db));
+    return deps.reply(codeBlock(JSON.stringify(p, null, 2)));
+  }
+}

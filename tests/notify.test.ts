@@ -5,7 +5,7 @@ const TOKEN = '123456:SECRET-token_abc';
 const env = { TELEGRAM_BOT_TOKEN: TOKEN, ALLOWED_USERS: '42, 99' } as NodeJS.ProcessEnv;
 
 describe('telegramNotifier', () => {
-  it('posts to the first allowed user without parse_mode', async () => {
+  it('posts to the first allowed user as HTML', async () => {
     const f = vi.fn(async () => new Response('{"ok":true}', { status: 200 }));
     const r = await telegramNotifier(env, f as unknown as typeof fetch).send('hello');
     expect(r.ok).toBe(true);
@@ -14,7 +14,7 @@ describe('telegramNotifier', () => {
     expect(url).toContain(TOKEN);
     expect(url).toContain('sendMessage');
     const body = String(init.body);
-    expect(body).not.toContain('parse_mode');
+    expect(body).toContain('"parse_mode":"HTML"');
     expect(body).toContain('42');
     expect(body).toContain('hello');
   });
