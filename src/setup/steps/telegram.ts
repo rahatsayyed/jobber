@@ -129,7 +129,7 @@ export const telegramStep: SetupStep = {
       group = existingGroup;
     } else if (
       (io.say(
-        'By default the bot uses its own topics in your private chat: open @BotFather, pick the bot, Bot Settings, Threaded Mode (topics in private chat), switch it on, then message the bot once.',
+        'By default the bot uses its own topics in your private chat: open @BotFather > Mini App > select the bot > Bot Settings > Threads Setting > Threaded mode (turn it on), then message the bot once.',
       ),
       await io.confirm('Use a forum group instead of the private chat topics? (optional; press Enter to use the private chat)', false))
     ) {

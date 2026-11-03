@@ -60,8 +60,12 @@ Open your bot in Telegram and press Start once; a bot cannot message you before 
 
 Default path: the topics live in the bot's own private chat with you. No group is needed.
 
-1. Open @BotFather, pick your bot, Bot Settings, and switch Threaded Mode (topics in private chat) on.
-   The label may be Topics or Threads (unverified; follow what BotFather shows).
+1. Switch Threaded Mode on (steps confirmed by the owner on 2026-11-03, they worked for this bot):
+   1. Open @BotFather and tap the **Mini App** (open BotFather's mini app).
+   2. Select your bot.
+   3. Open **Bot Settings**.
+   4. Open **Threads Setting**.
+   5. Turn **Threaded mode** on.
 2. Open your bot in Telegram and send it one message (or press Start). The bridge creates its topics
    itself (`alerts`, `wakes`, `drips`, `inbox`, `assist`, `chat`) in the private chat with the first id of
    `ALLOWED_USERS` and stores their ids in `.jobber/telegram-topics.json`.

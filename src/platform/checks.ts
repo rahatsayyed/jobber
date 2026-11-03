@@ -276,9 +276,11 @@ export function restrictedChecks(deps: Partial<RestrictedDeps> = {}): Check[] {
         const hook = join(ctx.root, '.claude', 'hooks', 'tool-allowlist.cjs');
         if (!ctx.fs.exists(hook)) return fail('.claude/hooks/tool-allowlist.cjs is missing', 'restore it from git');
         const event = JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'true' } });
-        const r = await ctx.run('node', [hook, 'outreach_wake'], { cwd: ctx.root, input: event, env: { HOOK_NO_LOG: '1' } });
+        // outreach_wake is a full session (unrestricted_builtins) and allows Bash on purpose, so the probe uses
+        // mail_drip, a profile that stays restricted: the hook must still deny Bash there.
+        const r = await ctx.run('node', [hook, 'mail_drip'], { cwd: ctx.root, input: event, env: { HOOK_NO_LOG: '1' } });
         if (!/"deny"/.test(r.stdout)) {
-          return fail('the hook did not deny a Bash event under outreach_wake', 'check .claude/hooks/tool-allowlist.cjs and config/run-profiles.json');
+          return fail('the hook did not deny a Bash event under mail_drip', 'check .claude/hooks/tool-allowlist.cjs and config/run-profiles.json');
         }
         const v = await ctx.run('claude', ['--version']);
         const m = /(\d+)\.(\d+)\.(\d+)/.exec(v.stdout);
