@@ -33,6 +33,7 @@ import type { TouchKind } from '../outreach/cadence.js';
 import { BudgetTracker, loadBudget, loadStallSec, type Budget } from './budget.js';
 import { readControl, statExists, type ControlDeps } from './control.js';
 import type { DriverDeps } from './driver.js';
+import { JOBBER_TMUX_SESSION } from '../platform/tmux.js';
 import type { LaunchHandle } from './launch.js';
 import { finishRun, getState, setRunLogPath, setState, startRun, type RunStatus } from './runLog.js';
 
@@ -48,7 +49,9 @@ export const LI_STATE_LAST_AT = 'linkedin_drip_last_at';
 export const LI_STATE_LAST_ACTION = 'linkedin_drip_last_action';
 export const LI_STATE_INBOX_AT = 'linkedin_inbox_last_at';
 const LI_STATE_TRIED = 'linkedin_drip_tried';
-const DEFAULT_SESSION = 'jobber-wake';
+const DEFAULT_SESSION = JOBBER_TMUX_SESSION;
+/** Window name prefix of a LinkedIn drip run: `drip-linkedin-<runId>`. */
+export const LI_DRIP_WINDOW = 'drip-linkedin';
 /** An item a run already tried is not offered again for this long (a failed run must not become a loop every few minutes). */
 const TRIED_HOURS = 3;
 const TRIED_HOURS_ACCEPT = 6;
@@ -504,7 +507,7 @@ async function runOne(d: DriverDeps, lock: { heartbeat: () => void }, item: LiIt
     tracker = new BudgetTracker(budget, now, loadStallSec(d.env));
     handle = await d.launcher.start({
       runId, dryRun: dry, prompt: buildLinkedinDripPrompt({ runId, dryRun: dry, now, budget, item }), profile: LI_DRIP_PROFILE,
-      session: d.session ?? DEFAULT_SESSION, runDir: d.runDir, projectRoot: d.projectRoot,
+      session: d.session ?? DEFAULT_SESSION, windowName: `${LI_DRIP_WINDOW}-${runId}`, runDir: d.runDir, projectRoot: d.projectRoot,
       noClassifier: d.env.SCHEDULER_NO_CLASSIFIER === 'true' && dry,
       env: dripEnv(d.env),
     });
@@ -518,7 +521,7 @@ async function runOne(d: DriverDeps, lock: { heartbeat: () => void }, item: LiIt
       try {
         await d.launcher.kill(h);
       } catch {
-        try { setState(d.db, 'unkilled_window', JSON.stringify({ runId: h.runId, session: h.session }), d.now()); } catch { /* ignore */ }
+        try { setState(d.db, 'unkilled_window', JSON.stringify({ runId: h.runId, session: h.session, window: h.window }), d.now()); } catch { /* ignore */ }
       }
     };
     for (;;) {
@@ -570,7 +573,7 @@ async function runOne(d: DriverDeps, lock: { heartbeat: () => void }, item: LiIt
       try {
         await d.launcher.kill(handle);
       } catch {
-        try { setState(d.db, 'unkilled_window', JSON.stringify({ runId: handle.runId, session: handle.session }), d.now()); } catch { /* ignore */ }
+        try { setState(d.db, 'unkilled_window', JSON.stringify({ runId: handle.runId, session: handle.session, window: handle.window }), d.now()); } catch { /* ignore */ }
       }
     }
   }

@@ -497,11 +497,19 @@ const hand: EnvSpec[] = [
     restartEvidence: 'src/scheduler/driver.ts',
   }),
   e('SCHEDULER_TMUX_SESSION', 'scheduler', 'scheduler', 'string', {
-    default: 'jobber-runs',
+    default: 'Jobber',
     maxLen: 64,
     exampleActive: true,
-    about: 'tmux session that holds the wake windows. Letters, digits, underscore and hyphen.',
+    about: 'tmux session that holds the wake and drip run windows. Letters, digits, underscore and hyphen. Default Jobber, the one session for everything.',
     ...never(R_SESSION),
+  }),
+  e('RUN_WINDOW_KEEP_MIN', 'scheduler', 'scheduler', 'int', {
+    default: '0',
+    min: 0,
+    max: 120,
+    about: 'Minutes a finished run window (wake or drip run) stays open in the Jobber tmux session so you can read it. 0 closes it at once. A run that is still going is always killed at once.',
+    restart: 'scheduler',
+    restartEvidence: 'src/scheduler/launch.ts',
   }),
   e('EMAIL_SEND_WINDOW_START', 'scheduler', 'mail drip lane', 'string', {
     default: '09:30',
@@ -641,10 +649,10 @@ const hand: EnvSpec[] = [
   }),
   e('WEB_TMUX_SESSION', 'dashboard', 'dashboard chat', 'string', {
     blankMeansDefault: true,
-    default: 'ccgram',
+    default: 'Jobber',
     maxLen: 64,
     exampleActive: true,
-    about: 'tmux session the dashboard chat box targets. Used only when WEB_CHAT_ENABLED=true.',
+    about: 'tmux session the dashboard chat box targets (default Jobber, the one session for everything). Used only when WEB_CHAT_ENABLED=true.',
     ...never(R_SESSION),
     restart: 'dashboard',
     restartEvidence: 'src/web/env.ts',
@@ -810,6 +818,14 @@ const hand: EnvSpec[] = [
     restartEvidence: 'src/web/env.ts',
   }),
 
+  e('WEB_TERMINAL_SESSIONS', 'dashboard', 'dashboard terminal', 'string', {
+    default: '',
+    maxLen: 200,
+    about: 'Extra tmux session names (comma separated) the dashboard Sessions page may show, besides the Jobber session. Blank: only the Jobber session.',
+    ...never(R_SESSION),
+    restart: 'dashboard',
+    restartEvidence: 'src/web/terminalRoutes.ts',
+  }),
   e('WEB_TERMINAL_INPUT', 'dashboard', 'dashboard terminal', 'bool', {
     blankMeansDefault: true,
     default: 'true',
@@ -1031,9 +1047,9 @@ const hand: EnvSpec[] = [
     ...never(R_PATH),
   }),
   e('STACK_TMUX_SESSION', 'advanced', 'stack', 'string', {
-    default: 'jobber-stack',
+    default: 'Jobber',
     maxLen: 64,
-    about: 'tmux session holding the scheduler and web windows started by npm run up.',
+    about: 'tmux session holding the scheduler and web windows started by npm run up. Default Jobber, the one session for everything.',
     ...never(R_SESSION),
   }),
   e('STACK_DOWN_WAIT_SEC', 'advanced', 'stack', 'int', {

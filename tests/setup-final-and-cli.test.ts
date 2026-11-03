@@ -76,7 +76,7 @@ describe('dashboardStep', () => {
     expect(await dashboardStep.run(ctx)).toBe('pending');
     expect(sio.transcript.join('\n')).toContain('skipped until installed (plan 7C)');
     const env = fs.files.get('proj/.env') ?? '';
-    expect(env).toContain('WEB_TMUX_SESSION=ccgram');
+    expect(env).toContain('WEB_TMUX_SESSION=Jobber');
     expect(env).toContain('WEB_PORT=8787');
     expect(env).not.toMatch(/^WEB_TOKEN=.+/m);
     expect(env).toContain('# keep me');

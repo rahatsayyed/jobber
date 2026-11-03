@@ -157,6 +157,7 @@ describe('dripTick', () => {
       expect(g).toBeLessThanOrEqual(45_000 + 10_000); // pause plus the fake poll step
     }
     for (const p of hi.launcher.starts) expect(p.profile).toBe('mail_drip');
+    for (const p of hi.launcher.starts) expect([p.session, p.windowName]).toEqual(['Jobber', `drip-mail-${p.runId}`]);
   });
 
   it('spacing: the next tick waits 5 to 8 minutes after the batch, and the wait survives a restart', async () => {

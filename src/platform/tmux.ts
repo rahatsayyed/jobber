@@ -28,6 +28,9 @@ export const defaultRun: Run = (cmd, args, opts) =>
     }
   });
 
+// The one tmux session every Jobber process (scheduler, web, bridge, run windows) lives in. Each env key below defaults to it.
+export const JOBBER_TMUX_SESSION = 'Jobber';
+
 const NAME_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 
 export function assertName(name: string): void {

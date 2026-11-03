@@ -1,7 +1,8 @@
 // src/stack/plan.ts
 // Pure helpers for `up`: the explicit child environment and window argv. No I/O.
 export const CHILD_ENV_NAMES = ['HOME', 'PATH', 'TERM', 'LANG', 'TZ'] as const;
-export const DEFAULT_STACK_SESSION = 'jobber-stack';
+import { JOBBER_TMUX_SESSION } from '../platform/tmux.js';
+export const DEFAULT_STACK_SESSION = JOBBER_TMUX_SESSION;
 
 // `env -i NAME=value ... <cmd>`: only the five names, taken from the current process env.
 export function cleanEnvArgv(env: NodeJS.ProcessEnv, cmd: string[]): string[] {

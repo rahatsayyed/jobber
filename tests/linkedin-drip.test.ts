@@ -276,6 +276,8 @@ describe('tick gating: nothing happens unless every gate is open and there is wo
     expect(s.launcher.starts).toHaveLength(1);
     const plan = s.launcher.starts[0];
     expect(plan).toMatchObject({ profile: 'linkedin_drip', dryRun: false });
+    expect(plan.session).toBe('Jobber');
+    expect(plan.windowName).toBe(`drip-linkedin-${plan.runId}`);
     expect(plan.prompt.match(/Drip item:/g)).toHaveLength(1);
     expect(plan.prompt).toMatch(/DRIP MODE/);
     expect(plan.env).toBeDefined();

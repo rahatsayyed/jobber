@@ -19,7 +19,7 @@ describe('validateRunnerConfig defaults', () => {
     if (!r.ok) return;
     expect(r.config).toMatchObject({
       port: 8787, bind: '127.0.0.1', allowRemoteBind: false, allowedHosts: [], trustProxy: false,
-      authDb: '.dashboard/auth.sqlite', chatEnabled: false, session: 'ccgram', window: 'JobApplier',
+      authDb: '.dashboard/auth.sqlite', chatEnabled: false, session: 'Jobber', window: 'JobApplier',
       issuer: 'https://accounts.google.com', reauthPrompt: 'select_account', reauthMaxAgeSec: 300,
     });
   });

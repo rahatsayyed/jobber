@@ -17,7 +17,7 @@ import { daemonLoop, wakeOnce, type DriverDeps } from '../src/scheduler/driver.j
 import { runCodePass } from '../src/scheduler/pipeline.js';
 import { defaultDeps as controlDefaults, readControl } from '../src/scheduler/control.js';
 import { countDue } from '../src/scheduler/due.js';
-import { tmuxLauncher } from '../src/scheduler/launch.js';
+import { runWindowKeepMin, tmuxLauncher } from '../src/scheduler/launch.js';
 import { fileNotifier } from '../src/scheduler/notify.js';
 import { loadPlanKnobs, planWake, type DiscoverSearches } from '../src/scheduler/plan.js';
 import { loadDiscoveryConfig } from '../src/linkedin/discoveryConfig.js';
@@ -140,7 +140,7 @@ async function main(): Promise<void> {
     stopFile,
     runDir: join(root, 'runs'),
     projectRoot,
-    launcher: tmuxLauncher(defaultRun),
+    launcher: tmuxLauncher(defaultRun, undefined, runWindowKeepMin(env)),
     notifier,
     newRunId: () => randomBytes(8).toString('hex'),
     session: env.SCHEDULER_TMUX_SESSION || undefined,

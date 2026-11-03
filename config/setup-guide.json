@@ -523,8 +523,15 @@
         {
           "name": "SCHEDULER_TMUX_SESSION",
           "secret": false,
-          "purpose": "tmux session of the wake windows",
+          "purpose": "tmux session of the wake and drip run windows (default Jobber, the one session for everything)",
           "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "RUN_WINDOW_KEEP_MIN",
+          "secret": false,
+          "purpose": "minutes a finished run window stays open for reading (0 closes it at once)",
+          "where": "src/settings/envCatalog.ts",
           "entered_in": "owner edits .env"
         },
         {
@@ -804,7 +811,7 @@
         {
           "name": "WEB_TMUX_SESSION",
           "secret": false,
-          "purpose": "tmux session the dashboard chat box would target",
+          "purpose": "tmux session the dashboard chat box would target (default Jobber)",
           "where": "docs/dashboard-exposure.md",
           "entered_in": "owner edits .env"
         },

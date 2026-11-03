@@ -1,6 +1,6 @@
 // src/web/env.ts
 // Pure validation of the dashboard runner environment. No I/O, never echoes a secret value.
-import { assertName } from '../platform/tmux.js';
+import { assertName, JOBBER_TMUX_SESSION } from '../platform/tmux.js';
 import { normaliseEmail } from '../dash/account.js';
 import { redirectFor, type RedirectShape } from '../dash/desktopClient.js';
 
@@ -152,7 +152,7 @@ export function validateRunnerConfig(env: RunnerEnv, opts: { accountStored: bool
     else settingsBackupKeep = Number(rawKeep);
   }
 
-  const session = val(env, 'WEB_TMUX_SESSION') || 'ccgram';
+  const session = val(env, 'WEB_TMUX_SESSION') || JOBBER_TMUX_SESSION;
   const window = val(env, 'WEB_TMUX_WINDOW') || 'JobApplier';
   try { assertName(session); } catch { web('WEB_TMUX_SESSION is not a valid tmux name'); }
   try { assertName(window); } catch { web('WEB_TMUX_WINDOW is not a valid tmux name'); }
