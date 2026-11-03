@@ -16,6 +16,7 @@ export function cleanEnvArgv(env: NodeJS.ProcessEnv, cmd: string[]): string[] {
 
 export const SCHEDULER_CMD = ['npm', 'run', 'scheduler', '--', '--daemon'];
 export const WEB_CMD = ['npm', 'run', 'web'];
+export const BRIDGE_CMD = ['npm', 'run', 'telegram:bridge'];
 
 export interface UpPlan {
   session: string;

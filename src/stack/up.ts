@@ -14,7 +14,7 @@ import { nodeAtomicFs, type AtomicFs } from '../settings/atomic.js';
 import { clearForScopes } from '../settings/pendingRestart.js';
 import type { RestartScope } from '../settings/types.js';
 import { currentMode, fileFlags, shellDivergence } from './mode.js';
-import { cleanEnvArgv, DEFAULT_STACK_SESSION, SCHEDULER_CMD, WEB_CMD, type UpPlan } from './plan.js';
+import { cleanEnvArgv, DEFAULT_STACK_SESSION, BRIDGE_CMD, SCHEDULER_CMD, WEB_CMD, type UpPlan } from './plan.js';
 
 export { currentMode } from './mode.js';
 export type { UpPlan } from './plan.js';
@@ -70,6 +70,11 @@ function readFileEnv(deps: StackDeps): Record<string, string> {
 
 export function mergedEnv(deps: StackDeps): NodeJS.ProcessEnv {
   return { ...readFileEnv(deps), ...deps.env };
+}
+
+/** TELEGRAM_BRIDGE=custom starts the grammY bridge in window `bridge`; anything else keeps the old bridge for now. */
+export function customBridge(env: NodeJS.ProcessEnv): boolean {
+  return (env.TELEGRAM_BRIDGE ?? '').trim() === 'custom';
 }
 
 export function stackSession(env: NodeJS.ProcessEnv): string {
@@ -198,6 +203,19 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
       say('bridge: skipped (setup)');
     } else if ((env.TELEGRAM_BOT_TOKEN ?? '') === '') {
       say('bridge: skipped (TELEGRAM_BOT_TOKEN not set)');
+    } else if (customBridge(env)) {
+      // The grammY bridge (src/telegram/bridge.ts) runs in window `bridge` of the stack session, like scheduler and web.
+      if ((await windowNames(deps.run, session)).has('bridge')) say('bridge: already running');
+      else {
+        try {
+          await startStackWindow(deps, session, 'bridge', cleanEnvArgv(env, BRIDGE_CMD));
+          started.push('bridge');
+          say('bridge: started (custom, window bridge)');
+        } catch (e) {
+          warnings.push(`bridge: ${(e as Error).message}`);
+          startFailed = true;
+        }
+      }
     } else {
       const r = await deps.run('bash', ['scripts/ccgram/start.sh'], { cwd: deps.root });
       if (r.code !== 0) {
@@ -298,7 +316,8 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
     rows.push(['bridge', 'skipped (setup)', telegramFix]);
     rows.push(['windows', 'skipped (setup)', telegramFix]);
   } else {
-    rows.push(['bridge', bridgeUp ? 'running' : 'not running', `tmux attach -t ${daemonSession}`]);
+    if (customBridge(env)) rows.push(['bridge', stackNames.has('bridge') ? 'running (custom)' : 'not running', `tmux attach -t ${session}`]);
+    else rows.push(['bridge', bridgeUp ? 'running' : 'not running', `tmux attach -t ${daemonSession}`]);
     for (const n of ['hunt', 'followups', 'manager']) {
       rows.push([n, cNames.has(n) ? 'running' : 'not running', `tmux attach -t ${csess}`]);
     }

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { loadManagerConfig, sessionName, stopWindow } from '../platform/manager.js';
 import { assertName, hasSession } from '../platform/tmux.js';
 import { DEFAULT_LABEL, SERVICE_NAME } from '../scheduler/units.js';
-import { mergedEnv, stackSession, unitLoaded, windowNames, type StackDeps } from './up.js';
+import { customBridge, mergedEnv, stackSession, unitLoaded, windowNames, type StackDeps } from './up.js';
 
 export interface DownDeps extends StackDeps {
   isTTY: boolean;
@@ -100,6 +100,17 @@ export async function runDown(deps: DownDeps, opts: DownOpts): Promise<number> {
   }
 
   // 4. Bridge.
+  if (customBridge(env)) {
+    const bridgeNames = await windowNames(deps.run, session);
+    if (opts.keepBridge) say('bridge: kept (--keep-bridge)');
+    else if (!bridgeNames.has('bridge')) say('bridge: absent');
+    else {
+      const r = await deps.run('tmux', ['kill-window', '-t', `=${session}:=bridge`]);
+      say(r.code === 0 ? 'bridge: stopped' : 'bridge: stop failed');
+      if (r.code !== 0) code = 1;
+    }
+    return code;
+  }
   if (opts.keepBridge) say('bridge: kept (--keep-bridge)');
   else if (!(await hasSession(deps.run, daemon))) say('bridge: absent');
   else {

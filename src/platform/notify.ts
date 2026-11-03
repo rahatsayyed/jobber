@@ -1,28 +1,23 @@
-export interface Notifier {
-  send(text: string): Promise<{ ok: boolean; detail: string }>;
+import { sendToTopic } from '../telegram/send.js';
+import type { TopicName } from '../telegram/topics.js';
+
+export interface SendNotifyOpts {
+  /** Telegram forum topic. Text-only calls go to `alerts`. */
+  topic?: TopicName;
 }
 
-const TIMEOUT_MS = 10_000;
+export interface Notifier {
+  send(text: string, opts?: SendNotifyOpts): Promise<{ ok: boolean; detail: string }>;
+}
 
-export function telegramNotifier(env: NodeJS.ProcessEnv, fetchFn: typeof fetch = fetch): Notifier {
+/**
+ * Code-sent Telegram notifications: text is markdown, converted to HTML in code (everything escaped first) and
+ * posted to the topic's message_thread_id. Needs only the token; no bridge daemon and no model.
+ */
+export function telegramNotifier(env: NodeJS.ProcessEnv, fetchFn: typeof fetch = fetch, root?: string): Notifier {
   return {
-    async send(text) {
-      const token = (env.TELEGRAM_BOT_TOKEN ?? '').trim();
-      const chatId = (env.ALLOWED_USERS ?? '').split(',').map((s) => s.trim()).filter(Boolean)[0];
-      if (!token || !chatId) return { ok: false, detail: 'telegram not configured' };
-      try {
-        const res = await fetchFn(`https://api.telegram.org/bot${token}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text }),
-          signal: AbortSignal.timeout(TIMEOUT_MS),
-        });
-        if (!res.ok) return { ok: false, detail: `telegram http ${res.status}` };
-        return { ok: true, detail: 'sent' };
-      } catch (e) {
-        const name = e instanceof Error ? e.name : 'error';
-        return { ok: false, detail: `telegram request failed (${name})` };
-      }
+    async send(text, opts) {
+      return sendToTopic(opts?.topic ?? 'alerts', text, { env, fetchFn, root });
     },
   };
 }
