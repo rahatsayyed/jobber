@@ -22,11 +22,9 @@ function mk(over: Partial<MainDeps> & { present?: boolean } = {}): { deps: MainD
     fs: {
       exists: () => present,
       read: (p) =>
-        p.endsWith('ccgram.pin.json')
-          ? '{"version":"4.16.0"}'
-          : p.endsWith('classifier-models.json')
-            ? '{"default_profile":"reg-default"}'
-            : '{"engines":{"node":">=20"}}',
+        p.endsWith('classifier-models.json')
+          ? '{"default_profile":"reg-default"}'
+          : '{"engines":{"node":">=20"}}',
       list: () => [],
     },
     now: () => new Date(0),

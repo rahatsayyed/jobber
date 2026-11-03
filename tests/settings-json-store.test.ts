@@ -96,7 +96,7 @@ describe('read, list and path safety', () => {
   it('list summarizes every registry entry', () => {
     const { store } = setup();
     const l = store.list();
-    expect(l.length).toBe(18);
+    expect(l.length).toBe(17);
     expect(l.find((s) => s.id === 'portals')).toMatchObject({ exists: true, edit: true });
     expect(l.find((s) => s.id === 'ai-tells')).toMatchObject({ exists: false, edit: false });
   });

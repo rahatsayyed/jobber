@@ -205,7 +205,7 @@ Start with `npm run doctor` and `npm run status -- health`, then use the row tha
 | Setup or bring-up step fails | `npm run doctor` | `src/setup/steps/`, `scripts/stack.ts` | [setup-modes.md](setup-modes.md) |
 | Permissions look wrong | `npm run permissions -- --status` | `config/permission-sets.json` | [operations.md](operations.md) |
 | Backup or update did not run | `npm run backup -- --status`, `npm run auto-update -- --status` | `scripts/backup.ts`, `scripts/auto-update.ts` | [backup-and-restore.md](backup-and-restore.md) |
-| Telegram silent | `scripts/ccgram/start.sh` | `src/platform/notify.ts`, `docs/telegram-bot-setup.md` | [telegram-bot-setup.md](telegram-bot-setup.md) |
+| Telegram silent | `src/stack/up.ts` | `src/platform/notify.ts`, `docs/telegram-bot-setup.md` | [telegram-bot-setup.md](telegram-bot-setup.md) |
 
 ## Known limits
 

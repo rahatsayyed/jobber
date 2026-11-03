@@ -333,7 +333,7 @@ describe('data routes', () => {
     const { h: hh, cookie } = await authed();
     const hdr = { headers: { cookie } };
     const s = JSON.parse((await hh.call('GET', '/api/sessions', hdr)).body);
-    expect(s.sessions[0].session).toBe('ccgram');
+    expect(s.sessions[0].session).toBe('Jobber');
     expect(s.sessions[0].windows[0].window).toBe('JobApplier');
     hh.paneText.value = 'ok line\nWEB_OIDC_CLIENT_SECRET=abcd efgh\nkey sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789\nplanted-literal-9f3k end';
     const r = await hh.call('GET', '/api/pane?window=JobApplier', hdr);

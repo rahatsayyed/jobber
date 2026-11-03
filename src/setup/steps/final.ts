@@ -2,7 +2,7 @@
 // Step 11: full doctor run and the owner-only next commands. Always 'done'; warnings are listed,
 // and the runner's exit code reflects failed steps.
 import path from 'node:path';
-import { ccgramChecks, restrictedChecks } from '../../platform/checks.js';
+import { stackChecks, restrictedChecks } from '../../platform/checks.js';
 import { looseDbFiles, setupChecks } from '../../platform/checksSetup.js';
 import { formatReport, runChecks } from '../../platform/doctor.js';
 import { parseEnv } from '../../platform/envFile.js';
@@ -58,7 +58,7 @@ export const finalStep: SetupStep = {
         }
       }
     }
-    const results = await runChecks([...ccgramChecks, ...restrictedChecks(), ...setupChecks], ctx.doctor);
+    const results = await runChecks([...stackChecks, ...restrictedChecks(), ...setupChecks], ctx.doctor);
     io.say(formatReport(results));
 
     const open = results.filter((r) => r.result.status === 'warn' || r.result.status === 'skip');
@@ -111,7 +111,7 @@ export const finalStep: SetupStep = {
 
     const next: string[] = [];
     if (!skipped.includes('telegram')) {
-      next.push('bash scripts/ccgram/start.sh');
+      next.push('npm run up (starts the bridge in window bridge of the Jobber tmux session)');
       next.push('Send /health from Telegram');
     }
     if (!skipped.includes('dashboard')) next.push('npm run dashboard -- token (sign-in link for the status page)');

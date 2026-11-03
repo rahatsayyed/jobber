@@ -32,7 +32,7 @@ function fake(windows: string[] = [], capText = ''): { run: Run; calls: string[]
 
 describe('config and session', () => {
   it('loads the committed config', () => {
-    expect(cfg.session).toBe('ccgram');
+    expect(cfg.session).toBe('Jobber');
     expect(Object.keys(cfg.windows)).toEqual(['hunt', 'followups']);
   });
   it('rejects bad argv, flags and protected windows', () => {
@@ -45,7 +45,7 @@ describe('config and session', () => {
   it('session override is validated', () => {
     expect(sessionName(cfg, { MANAGER_TMUX_SESSION: 'other' })).toBe('other');
     expect(() => sessionName(cfg, { MANAGER_TMUX_SESSION: '-x;y' })).toThrow();
-    expect(sessionName(cfg, {})).toBe('ccgram');
+    expect(sessionName(cfg, {})).toBe('Jobber');
   });
 });
 
@@ -66,7 +66,7 @@ describe('start, stop, restart', () => {
     const { run, calls } = fake([]);
     expect(await startWindow(run, cfg, {}, 'hunt', '/proj')).toBe('started');
     const nw = calls.find((c) => c[0] === 'new-window')!;
-    expect(nw).toEqual(['new-window', '-d', '-t', '=ccgram:', '-n', 'hunt', '-c', '/proj', "'bash' 'scripts/ccgram/claude-session.sh'"]);
+    expect(nw).toEqual(['new-window', '-d', '-t', '=Jobber:', '-n', 'hunt', '-c', '/proj', "'bash' 'scripts/claude-session.sh'"]);
   });
   it('returns exists without starting', async () => {
     const { run, calls } = fake(['hunt']);
@@ -75,7 +75,7 @@ describe('start, stop, restart', () => {
   });
   it('refuses protected, unknown and invalid names before any process call', async () => {
     const { run, calls } = fake(['manager']);
-    for (const n of ['manager', 'ccgram-daemon', 'nope', '-x', 'a;b']) {
+    for (const n of ['manager', 'bridge', 'nope', '-x', 'a;b']) {
       await expect(startWindow(run, cfg, {}, n, '/p')).rejects.toThrow();
       await expect(stopWindow(run, cfg, {}, n)).rejects.toThrow();
       await expect(restartWindow(run, cfg, {}, n, '/p')).rejects.toThrow();
@@ -101,7 +101,7 @@ describe('start, stop, restart', () => {
   it('stops with kill-window, absent when missing', async () => {
     const a = fake(['hunt']);
     expect(await stopWindow(a.run, cfg, {}, 'hunt')).toBe('stopped');
-    expect(a.calls.find((c) => c[0] === 'kill-window')).toEqual(['kill-window', '-t', '=ccgram:=hunt']);
+    expect(a.calls.find((c) => c[0] === 'kill-window')).toEqual(['kill-window', '-t', '=Jobber:=hunt']);
     const b = fake([]);
     expect(await stopWindow(b.run, cfg, {}, 'hunt')).toBe('absent');
   });

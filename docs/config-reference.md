@@ -188,7 +188,6 @@ That snippet shows two keys of `config/ai-tells.json` only; the real file needs 
 
 | File | Why | How it changes |
 |---|---|---|
-| `config/ccgram.pin.json` `version` | The start script refuses any other ccgram version; ccgram's own upgrade command is never used | the version changes only by editing the pin after review (doctor check `upgrade-policy`); nothing in code writes the file. The one hand edit that is expected is setting `installed` to `true` after installing the pinned version, when doctor check `ccgram-pin-state` warns (see [Prerequisites](prerequisites.md)) |
 | `config/classifier-models.json` pins (`revision`, checksums) | A wrong pin makes the classifier unavailable, and live reads and sends then fail closed | `npm run models -- fetch` then `npm run models -- pin <profile>`; read by `loadRegistry` in `src/safety/classifierRegistry.ts`; check with `npm run doctor` checks `classifier_model` and `classifier_smoke` |
 | the retired learned ATS platforms file in `config/` (`learned-ats-platforms` with a `.json` extension; not written as a path here because the docs lint rejects a path that does not exist) | No longer written or read (the scripted bootstrap was removed in plan 8G-2 task 23); `scripts/migrate-learned-ats.ts` converts an old copy into applier recipes | `scripts/migrate-learned-ats.ts`. May not exist |
 | `.jobber/layout/` | Layout memory, machine-written, git-ignored | `npm run layout -- reset <platform>` (see `CLAUDE.md` "Layout memory") |

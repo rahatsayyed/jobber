@@ -17,7 +17,7 @@ let ROOT = '';
 
 beforeAll(() => {
   ROOT = realpathSync(mkdtempSync(join(tmpdir(), 'tamper-')));
-  for (const d of ['secrets', 'user-data', '.ccgram', 'models', '.claude/hooks', '.claude/agents', 'config/runner', 'src/safety', 'src', 'docs', 'tests', '.jobber/runs']) mkdirSync(join(ROOT, d), { recursive: true });
+  for (const d of ['secrets', 'user-data', 'models', '.claude/hooks', '.claude/agents', 'config/runner', 'src/safety', 'src', 'docs', 'tests', '.jobber/runs']) mkdirSync(join(ROOT, d), { recursive: true });
   for (const f of ['.env', '.env.example', 'secrets/a.json', 'config/run-profiles.json', 'config/permission-sets.json', '.mcp.json', '.claude/settings.json', '.claude/hooks/x.cjs', 'src/a.ts', 'tests/a.test.ts', 'docs/a.md', '.jobber/STOP', '.jobber/runs/r.log', 'data.sqlite']) writeFileSync(join(ROOT, f), 'x');
   symlinkSync(join(ROOT, 'secrets/a.json'), join(ROOT, 'src/link.json'));
 });
@@ -71,7 +71,6 @@ describe('Bash: denied', () => {
     ['grep -r KEY secrets'],
     ['ls user-data'],
     ['cat secrets/a.json'],
-    ['cat .ccgram/x'],
     ['head models/x.bin'],
     ['cat s*ets/a.json', /glob/],
     ['cat .e*'],
@@ -169,7 +168,6 @@ describe('file tools', () => {
     ['Read symlink into secrets', 'Read', { file_path: 'src/link.json' }, false],
     ['Read user-data', 'Read', { file_path: 'user-data/resume.json' }, false],
     ['Read models', 'Read', { file_path: 'models/x' }, false],
-    ['Read .ccgram', 'Read', { file_path: '.ccgram/x' }, false],
     ['Read outside', 'Read', { file_path: '/etc/hosts' }, false],
     ['Read traversal', 'Read', { file_path: 'src/../../x' }, false],
     ['Read ~/.ssh', 'Read', { file_path: '~/.ssh/id_rsa' }, false],

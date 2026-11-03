@@ -35,7 +35,7 @@ const nodeFs: SetupFs = {
   list: (p) => readdirSync(p),
 };
 
-function setup(script: ScriptItem[], files: Record<string, string> = {}, ccgram: string | null = null) {
+function setup(script: ScriptItem[], files: Record<string, string> = {}) {
   const root = mkdtempSync(path.join(tmpdir(), 'jobber-step-'));
   dirs.push(root);
   for (const [rel, text] of Object.entries(files)) {
@@ -43,16 +43,8 @@ function setup(script: ScriptItem[], files: Record<string, string> = {}, ccgram:
     mkdirSync(path.dirname(p), { recursive: true });
     writeFileSync(p, text);
   }
-  let exe = '';
-  if (ccgram !== null) {
-    exe = path.join(root, 'bin-ccgram');
-    writeFileSync(exe, ccgram);
-  }
   const sio = scriptedIO(script);
-  const run = (async (cmd: string) => {
-    if (cmd === 'which') return exe ? { stdout: exe + '\n', stderr: '', code: 0 } : { stdout: '', stderr: '', code: 1 };
-    return { stdout: '', stderr: '', code: 0 };
-  }) as unknown as SetupContext['run'];
+  const run = (async () => ({ stdout: '', stderr: '', code: 0 })) as unknown as SetupContext['run'];
   const doctor: DoctorContext = {
     root,
     env: {},
@@ -165,8 +157,7 @@ describe('limitsStep', () => {
 });
 
 const SETS = readFileSync(path.join(process.cwd(), 'config', 'permission-sets.json'), 'utf8');
-const BASE_GI = '.ccgram/\n.claude/settings.local.json\n.claude/settings.local.managed.json\n.env\nuser-data/\nsecrets/\n';
-const SHEBANG = '#!/opt/ccgram/bin/python3\nimport x\n';
+const BASE_GI = '.claude/settings.local.json\n.claude/settings.local.managed.json\n.env\nuser-data/\nsecrets/\n';
 const files = (extra: Record<string, string> = {}) => ({
   'config/permission-sets.json': SETS,
   '.gitignore': BASE_GI,
@@ -175,22 +166,22 @@ const files = (extra: Record<string, string> = {}) => ({
 const readSettings = (root: string) =>
   JSON.parse(readFileSync(path.join(root, '.claude', 'settings.local.json'), 'utf8')) as {
     permissions: { allow: string[] };
-    hooks: Record<string, { hooks: { command: string }[] }[]>;
+    hooks?: Record<string, { hooks: { command: string }[] }[]>;
   };
 
 describe('accessStep', () => {
-  it('applies read_only by default and installs hooks', async () => {
-    const t = setup([{ choose: 'read_only' }], files(), SHEBANG);
+  it('applies read_only by default and installs no hooks', async () => {
+    const t = setup([{ choose: 'read_only' }], files());
     expect(await accessStep.run(t.ctx)).toBe('done');
     const s = readSettings(t.root);
     expect(s.permissions.allow).toContain('mcp__db__get_funnel');
     expect(s.permissions.allow).not.toContain('mcp__db__enqueue_outreach');
-    expect(Object.keys(s.hooks)).toHaveLength(9);
+    expect(s.hooks).toBeUndefined();
     t.sio.assertDone();
   });
 
   it('full without typing the word full falls back to read_only', async () => {
-    const t = setup([{ choose: 'full' }, { ask: 'yes' }], files(), SHEBANG);
+    const t = setup([{ choose: 'full' }, { ask: 'yes' }], files());
     await accessStep.run(t.ctx);
     const allow = readSettings(t.root).permissions.allow;
     expect(allow).not.toContain('mcp__db__enqueue_outreach');
@@ -198,7 +189,7 @@ describe('accessStep', () => {
   });
 
   it('full typed exactly is applied', async () => {
-    const t = setup([{ choose: 'full' }, { ask: 'full' }], files(), SHEBANG);
+    const t = setup([{ choose: 'full' }, { ask: 'full' }], files());
     await accessStep.run(t.ctx);
     expect(JSON.parse(readFileSync(path.join(t.root, '.claude', 'settings.local.managed.json'), 'utf8')).set).toBe('full');
   });
@@ -208,78 +199,59 @@ describe('accessStep', () => {
       permissions: { allow: ['Bash(echo hi)'] },
       hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'block-outside-project.sh' }] }] },
     };
-    const t = setup([{ choose: 'read_only' }], files({ '.claude/settings.local.json': JSON.stringify(existing) }), SHEBANG);
+    const t = setup([{ choose: 'read_only' }], files({ '.claude/settings.local.json': JSON.stringify(existing) }));
     await accessStep.run(t.ctx);
     const s = readSettings(t.root);
-    expect(s.hooks.PreToolUse[0].hooks[0].command).toBe('block-outside-project.sh');
+    expect(s.hooks?.PreToolUse[0].hooks[0].command).toBe('block-outside-project.sh');
     expect(s.permissions.allow).toContain('Bash(echo hi)');
-    expect(s.hooks.Stop).toBeDefined();
+    expect(Object.keys(s.hooks ?? {})).toEqual(['PreToolUse']);
   });
 
   it('invalid settings JSON aborts with the writer message and no write', async () => {
     const bad = '{ not json';
-    const t = setup([{ choose: 'read_only' }], files({ '.claude/settings.local.json': bad }), SHEBANG);
+    const t = setup([{ choose: 'read_only' }], files({ '.claude/settings.local.json': bad }));
     await expect(accessStep.run(t.ctx)).rejects.toThrow(/not valid JSON/);
     expect(readFileSync(path.join(t.root, '.claude', 'settings.local.json'), 'utf8')).toBe(bad);
     expect(existsSync(path.join(t.root, '.claude', 'settings.local.managed.json'))).toBe(false);
-  });
-
-  it('unresolvable ccgram skips hooks, still applies the set', async () => {
-    const t = setup([{ choose: 'read_only' }], files(), null);
-    expect(await accessStep.run(t.ctx)).toBe('skipped');
-    const s = readSettings(t.root);
-    expect(s.hooks).toBeUndefined();
-    expect(t.sio.transcript.some((l) => l.includes('install the pinned ccgram first'))).toBe(true);
   });
 
   it('appends missing .gitignore rules after confirm, never rewriting existing lines', async () => {
     const t = setup(
       [{ choose: 'read_only' }, { confirm: true }, { confirm: true }],
       files({ '.gitignore': 'node_modules\n.env' }),
-      SHEBANG,
     );
     await accessStep.run(t.ctx);
     const gi = readFileSync(path.join(t.root, '.gitignore'), 'utf8');
     expect(gi.startsWith('node_modules\n.env\n')).toBe(true);
-    expect(gi).toContain('.ccgram/\n.claude/settings.local.json\n.claude/settings.local.managed.json\n');
+    expect(gi).toContain('.claude/settings.local.json\n.claude/settings.local.managed.json\n');
     expect(gi).toContain('user-data/\nsecrets/\n');
     expect(gi.match(/^\.env$/gm)).toHaveLength(1);
   });
 
   it('declining the append leaves .gitignore untouched', async () => {
-    const t = setup([{ choose: 'read_only' }, { confirm: false }, { confirm: false }], files({ '.gitignore': 'x\n' }), SHEBANG);
+    const t = setup([{ choose: 'read_only' }, { confirm: false }, { confirm: false }], files({ '.gitignore': 'x\n' }));
     await accessStep.run(t.ctx);
     expect(readFileSync(path.join(t.root, '.gitignore'), 'utf8')).toBe('x\n');
   });
 });
 
 describe('gitignore matches the doctor rule exactly', () => {
-  for (const variant of ['.ccgram', '/.ccgram/', '/.env', '.claude/settings.local.json/']) {
+  for (const variant of ['/.env', '.claude/settings.local.json/']) {
     it(`variant ${variant} gets the exact line appended and the real check passes`, async () => {
       const t = setup(
         [{ choose: 'read_only' }, { confirm: true }, { confirm: true }],
         files({ '.gitignore': variant + '\n' }),
-        SHEBANG,
-      );
+        );
       await accessStep.run(t.ctx);
       const [gi] = await runChecks(checksById(['gitignore']), t.doctor);
       expect(gi.result.status).toBe('pass');
       const lines = readFileSync(path.join(t.root, '.gitignore'), 'utf8').split('\n');
-      for (const rule of ['.ccgram/', '.claude/settings.local.json', '.claude/settings.local.managed.json', '.env']) {
+      for (const rule of ['.claude/settings.local.json', '.claude/settings.local.managed.json', '.env']) {
         expect(lines).toContain(rule);
       }
       expect(lines[0]).toBe(variant); // existing line untouched
     });
   }
-
-  it('a rejected which is treated as not found with the exact fix', async () => {
-    const t = setup([{ choose: 'read_only' }], files(), SHEBANG);
-    t.ctx.run = (async () => {
-      throw new Error('ENOENT');
-    }) as unknown as SetupContext['run'];
-    expect(await accessStep.run(t.ctx)).toBe('skipped');
-    expect(t.sio.transcript.some((l) => l.includes('install the pinned ccgram first'))).toBe(true);
-  });
 });
 
 describe('limitsStep pre-existing pair conflict', () => {
@@ -320,7 +292,7 @@ describe('terminal-mode coaching (plan 8F task 8)', () => {
   it('access: only terminal mode prints the read_only advice, prompts identical', async () => {
     const files = {
       'config/permission-sets.json': readFileSync(path.join(process.cwd(), 'config', 'permission-sets.json'), 'utf8'),
-      '.gitignore': '.ccgram/\n.claude/settings.local.json\n.claude/settings.local.managed.json\n.env\nuser-data/\nsecrets/\n',
+      '.gitignore': '.claude/settings.local.json\n.claude/settings.local.managed.json\n.env\nuser-data/\nsecrets/\n',
     };
     const a = setup([{ choose: 'read_only' }], files);
     const t = setup([{ choose: 'read_only' }], files);

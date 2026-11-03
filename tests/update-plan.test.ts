@@ -48,7 +48,7 @@ describe('planUpdate', () => {
     expect(planUpdate(facts({ upstreamLabel: 'v1.2.0', tagSignature: 'G' }), t).action).toBe('apply');
   });
   it('reserved paths force manual review, with the paths in the detail', () => {
-    for (const p of ['.claude/settings.json', '.claude/hooks/x.sh', '.githooks/pre-commit', 'config/ccgram.pin.json', 'scripts/ccgram/run.sh']) {
+    for (const p of ['.claude/settings.json', '.claude/hooks/x.sh', '.githooks/pre-commit', 'scripts/claude-session.sh']) {
       const r = planUpdate(facts({ changedPaths: ['src/a.ts', p] }), cfg);
       expect(r).toMatchObject({ action: 'skip', reason: 'reserved-paths' });
       expect((r as { detail: string }).detail).toContain(p);
@@ -65,14 +65,14 @@ describe('planUpdate', () => {
 
 describe('matchesReviewPath', () => {
   it('prefix entries end with a slash, exact otherwise, no partial-name matches', () => {
-    expect(matchesReviewPath('scripts/ccgram/run.sh', ['scripts/ccgram/'])).toBe(true);
-    expect(matchesReviewPath('scripts/ccgram-other.sh', ['scripts/ccgram/'])).toBe(false);
+    expect(matchesReviewPath('.githooks/pre-commit', ['.githooks/'])).toBe(true);
+    expect(matchesReviewPath('.githooks-other/x', ['.githooks/'])).toBe(false);
     expect(matchesReviewPath('.claude/settings.json', ['.claude/settings.json'])).toBe(true);
     expect(matchesReviewPath('.claude/settings.json.bak', ['.claude/settings.json'])).toBe(false);
   });
   it('is case-insensitive, NFC-normalized, and matches a bare directory name', () => {
     expect(matchesReviewPath('.CLAUDE/hooks/x.sh', ['.claude/hooks/'])).toBe(true);
-    expect(matchesReviewPath('Config/ccgram.pin.json', ['config/ccgram.pin.json'])).toBe(true);
+    expect(matchesReviewPath('Scripts/claude-session.sh', ['scripts/claude-session.sh'])).toBe(true);
     expect(matchesReviewPath('.githooks', ['.githooks/'])).toBe(true);
     expect(matchesReviewPath('café/x', ['café/'])).toBe(true);
   });

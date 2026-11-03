@@ -55,7 +55,7 @@ export const COACH_TEXT: Record<string, string[]> = {
   ],
   'telegram.next': ['Then send /health to your bot to confirm the bridge answers.'],
   'prereqs.intro': [
-    'Each check below is a tool Jobber needs: Node, tmux, Chrome, its browser files and the pinned ccgram.',
+    'Each check below is a tool Jobber needs: Node, tmux, Chrome, and its browser files.',
     'A failing check prints its exact fix. Run it in another terminal, then press Enter here.',
     'Or run bash scripts/bootstrap.sh, which offers to install what is missing.',
   ],

@@ -37,10 +37,6 @@ function fake(): Fake {
     calls.push([cmd, ...args]);
     if (cmd === 'launchctl') return { stdout: '', code: 0 };
     if (cmd === 'systemctl') return { stdout: 'inactive', code: 3 };
-    if (cmd === 'bash') {
-      sessions.set('ccgram-daemon', ['bridge']);
-      return { stdout: 'Started ccgram', code: 0 };
-    }
     if (cmd !== 'tmux') return { stdout: '', code: 0 };
     const t = args[args.indexOf('-t') + 1] ?? '';
     switch (args[0]) {
@@ -96,7 +92,7 @@ describe('up with skipped features', () => {
     const f = fake();
     const d = deps(f);
     expect(await runUp(d, { status: false })).toBe(0);
-    expect(created(f)).toEqual(['ccgram', 'hunt', 'followups', 'manager', 'scheduler', 'web']);
+    expect(created(f)).toEqual(['bridge', 'hunt', 'followups', 'manager', 'scheduler', 'web']);
     expect(d.out.join('\n')).not.toContain('(setup)');
     expect(d.out.join('\n')).not.toContain('STACK');
   });
@@ -106,7 +102,7 @@ describe('up with skipped features', () => {
     const f = fake();
     const d = deps(f);
     expect(await runUp(d, { status: false })).toBe(0);
-    expect(f.calls.some((c) => c[0] === 'bash')).toBe(false);
+    expect(created(f)).not.toContain('bridge');
     expect(created(f)).toEqual(['scheduler', 'web']);
     const t = d.out.join('\n');
     expect(t).toMatch(/bridge\s+skipped \(setup\)\s+npm run setup -- --step telegram/);
@@ -121,7 +117,7 @@ describe('up with skipped features', () => {
     const probes: string[] = [];
     const d = deps(f, probes);
     expect(await runUp(d, { status: false })).toBe(0);
-    expect(created(f)).toEqual(['ccgram', 'hunt', 'followups', 'manager', 'scheduler']);
+    expect(created(f)).toEqual(['bridge', 'hunt', 'followups', 'manager', 'scheduler']);
     expect(probes).toEqual([]);
     const t = d.out.join('\n');
     expect(t).toMatch(/web\s+skipped \(setup\)\s+npm run setup -- --step dashboard/);
@@ -145,8 +141,8 @@ describe('up with skipped features', () => {
     const f = fake();
     const d = deps(f);
     expect(await runUp(d, { status: false })).toBe(0);
-    expect(f.calls.some((c) => c[0] === 'bash')).toBe(true);
-    expect(created(f)).toEqual(['ccgram', 'hunt', 'followups', 'manager', 'scheduler', 'web']);
+    expect(created(f)).toContain('bridge');
+    expect(created(f)).toEqual(['bridge', 'hunt', 'followups', 'manager', 'scheduler', 'web']);
     expect(d.out.join('\n')).not.toContain('skipped (setup)');
   });
 
@@ -180,7 +176,6 @@ describe('up with skipped features', () => {
     const d = deps(f, probes);
     expect(await runUp(d, { status: true })).toBe(0);
     expect(created(f)).toEqual([]);
-    expect(f.calls.some((c) => c[0] === 'bash')).toBe(false);
     expect(probes).toEqual([]);
     const t = d.out.join('\n');
     expect(t).toMatch(/bridge\s+skipped \(setup\)/);

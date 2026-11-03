@@ -38,7 +38,6 @@ export const CONFIG_FILES = [
   'config/deal-breakers.json',
   'config/replies.json',
   'config/permission-sets.json',
-  'config/ccgram.pin.json',
 ];
 
 function summarize(v: unknown): Record<string, unknown> {

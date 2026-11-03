@@ -10,7 +10,7 @@ function ctx(missing: string[]): DoctorContext {
     run: async (cmd) => (missing.includes(cmd) ? { code: 127, stdout: '' } : { code: 0, stdout: cmd === 'node' ? 'v99.0.0' : `${cmd} 99.0.0` }),
     fs: {
       exists: (p) => !missing.includes(p.split('/').pop()!),
-      read: (p) => (p.endsWith('ccgram.pin.json') ? '{"version":"99.0.0"}' : '{"engines":{"node":">=20"}}'),
+      read: (p) => '{"engines":{"node":">=20"}}',
       mode: () => null,
       list: () => [],
     },

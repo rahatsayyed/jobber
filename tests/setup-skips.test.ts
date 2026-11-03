@@ -15,7 +15,7 @@ describe('skip catalog', () => {
   it('telegram', () => {
     const t = spec('telegram');
     expect(t.stepId).toBe('telegram');
-    expect(t.checkIds).toEqual(['telegram-api', 'ccgram-env', 'daemon']);
+    expect(t.checkIds).toEqual(['telegram-api', 'telegram-bridge']);
     expect(t.configured({}, fsNone, '/r')).toBe(false);
     expect(t.configured({ TELEGRAM_BOT_TOKEN: '' }, fsNone, '/r')).toBe(false);
     expect(t.configured({ TELEGRAM_BOT_TOKEN: '1:A' }, fsNone, '/r')).toBe(true);

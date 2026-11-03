@@ -16,7 +16,7 @@ const path = require('path');
 
 const GUARDED = new Set(['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'WebFetch', 'WebSearch']);
 // Top-level directories that are never read or written (lower case, compared case-insensitively: APFS is).
-const SECRET_DIRS = ['secrets', 'user-data', '.ccgram', 'models'];
+const SECRET_DIRS = ['secrets', 'user-data', 'models'];
 // Never written, deleted or moved (a descendant of one of these is protected too). Lower case, relative to the project.
 const PROTECTED = [
   '.jobber/stop',

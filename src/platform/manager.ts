@@ -2,7 +2,9 @@
 // Manager core: a fixed allowlist of named tmux windows that can be listed, read, started,
 // stopped and restarted. It never types into a pane and never touches the session itself.
 import { assertName, capture, listWindows, type Run } from './tmux.js';
-import { shellQuote } from './ccgramHooks.js';
+
+// ccgram removed 2026-11-03; .ccgram/ state is dropped. The named windows now live in session Jobber.
+const shellQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`;
 import { redactPane } from './redact.js';
 
 export interface ManagerConfig {
@@ -152,7 +154,7 @@ export async function ensureManagerWindow(
 ): Promise<'started' | 'exists'> {
   const session = sessionName(cfg, env);
   if ((await listWindows(run, session)).some((x) => x.name === 'manager')) return 'exists';
-  const command = buildCommand(['bash', 'scripts/ccgram/claude-session.sh']);
+  const command = buildCommand(['bash', 'scripts/claude-session.sh']);
   const r = await run('tmux', ['new-window', '-d', '-t', `=${session}:`, '-n', 'manager', '-c', root, command]);
   if (r.code !== 0) throw new Error('failed to start window manager');
   return 'started';

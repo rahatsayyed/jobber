@@ -63,7 +63,7 @@ function setup(opts: {
   const run = (async (cmd: string, args: string[]) => {
     runCalls.push([cmd, ...args]);
     if (opts.run) return { ...opts.run(cmd, args), stderr: '' };
-    // default: no ccgram-daemon session, everything else succeeds
+    // default: no bridge window (list-windows is empty), everything else succeeds
     const noSession = cmd === 'tmux' && args[0] === 'has-session';
     return { stdout: '', stderr: '', code: noSession ? 1 : 0 };
   }) as unknown as RunFn;
@@ -111,7 +111,7 @@ describe('telegramStep', () => {
         { choose: 'now' },
         { confirm: true }, // bot created
         { secret: TOKEN },
-        { confirm: true }, // threaded mode on
+        { confirm: false }, // forum group? no
         { confirm: false }, // read from getUpdates?
         { ask: '12345678' },
         { confirm: false }, // another person?
@@ -134,7 +134,7 @@ describe('telegramStep', () => {
       text: 'Jobber setup: test message',
     });
     expect(t.runCalls.every((c) => !c.join(' ').includes(TOKEN))).toBe(true);
-    expect(t.sio.transcript.some((l) => l.includes('scripts/ccgram/start.sh'))).toBe(true);
+    expect(t.sio.transcript.some((l) => l.includes('npm run up'))).toBe(true);
     t.sio.assertDone();
   });
 
@@ -145,7 +145,7 @@ describe('telegramStep', () => {
         { confirm: true },
         { secret: 'nope' },
         { secret: TOKEN },
-        { confirm: true },
+        { confirm: false },
         { confirm: false },
         { ask: '12345678' },
         { confirm: false },
@@ -171,7 +171,7 @@ describe('telegramStep', () => {
   it('keeps an existing working token and ids without rewriting .env', async () => {
     const env = `TELEGRAM_BOT_TOKEN=${TOKEN}\nALLOWED_USERS=12345678\n`;
     const t = setup({
-      script: [{ confirm: true }, { confirm: true }, { confirm: true }, { confirm: true }],
+      script: [{ confirm: true }, { confirm: false }, { confirm: true }, { confirm: true }],
       files: { 'proj/.env': env },
     });
     expect(await telegramStep.run(t.ctx)).toBe('done');
@@ -181,31 +181,31 @@ describe('telegramStep', () => {
     t.sio.assertDone();
   });
 
-  it('does not call getUpdates and does not offer it when the daemon session exists', async () => {
+  it('does not call getUpdates and does not offer it when the bridge window runs', async () => {
     const t = setup({
       script: [
         { choose: 'now' },
         { confirm: true },
         { secret: TOKEN },
-        { confirm: true },
+        { confirm: false },
         { ask: '12345678' },
         { confirm: false },
         { confirm: true },
       ],
-      run: (cmd, args) => ({ stdout: '', code: cmd === 'tmux' && args[0] === 'has-session' ? 0 : 1 }),
+      run: (cmd, args) => (cmd === 'tmux' && args[0] === 'list-windows' ? { stdout: '0|bridge|1|node', code: 0 } : { stdout: '', code: 1 }),
     });
     await telegramStep.run(t.ctx);
     expect(t.calls.some((c) => c.url.endsWith('/getUpdates'))).toBe(false);
     t.sio.assertDone();
   });
 
-  it('reads the ID from getUpdates when the daemon is down and the user agrees', async () => {
+  it('reads the ID from getUpdates when the bridge is down and the user agrees', async () => {
     const t = setup({
       script: [
         { choose: 'now' },
         { confirm: true },
         { secret: TOKEN },
-        { confirm: true },
+        { confirm: false },
         { confirm: true },
         { pause: true },
         { confirm: false },
@@ -225,7 +225,7 @@ describe('telegramStep', () => {
         { choose: 'now' },
         { confirm: true },
         { secret: TOKEN },
-        { confirm: true },
+        { confirm: false },
         { confirm: false },
         { ask: '12345678' },
         { confirm: true },
@@ -246,7 +246,7 @@ describe('telegramStep', () => {
         { choose: 'now' },
         { confirm: true },
         { secret: TOKEN },
-        { confirm: true },
+        { confirm: false },
         { confirm: false },
         { ask: '12345678' },
         { confirm: false },

@@ -13,12 +13,12 @@ import { parseEnv } from '../src/platform/envFile.js';
 import { buildCatalog } from '../src/bootstrap/catalog.js';
 import { buildState, mergeState, statePath, writeState, type BootstrapState } from '../src/bootstrap/state.js';
 import { exitCodeFor, renderTable, runBootstrap, type ExecDeps, type ExecOptions, type ItemResult } from '../src/bootstrap/exec.js';
-import type { CcgramPin, ItemId, Platform } from '../src/bootstrap/types.js';
+import type { ItemId, Platform } from '../src/bootstrap/types.js';
 import { defaultRun } from '../src/platform/tmux.js';
 import { defaultFetchDeps } from '../src/safety/modelFetch.js';
 import type { CliDeps } from './models.js';
 
-const IDS: ItemId[] = ['git', 'build-tools', 'node', 'npm-deps', 'renderer-deps', 'chrome', 'tmux', 'uv', 'ccgram', 'claude-cli', 'age', 'rclone', 'classifier-model'];
+const IDS: ItemId[] = ['git', 'build-tools', 'node', 'npm-deps', 'renderer-deps', 'chrome', 'tmux', 'uv', 'claude-cli', 'age', 'rclone', 'classifier-model'];
 
 export const USAGE = [
   'usage: npm run bootstrap -- [options]',
@@ -90,12 +90,10 @@ export async function main(argv: string[], deps: MainDeps): Promise<number> {
     for (const l of USAGE) deps.say(l);
     return 0;
   }
-  let pin: CcgramPin;
   let engines = '>=20';
   let modelProfile = 'unresolved';
   let modelError: string | null = null;
   try {
-    pin = JSON.parse(deps.fs.read(join(deps.root, 'config', 'ccgram.pin.json'))) as CcgramPin;
     engines = (JSON.parse(deps.fs.read(join(deps.root, 'package.json'))) as { engines?: { node?: string } }).engines?.node ?? engines;
   } catch (e) {
     deps.say(`cannot read config: ${String((e as Error).message).slice(0, 120)}`);
@@ -116,7 +114,6 @@ export async function main(argv: string[], deps: MainDeps): Promise<number> {
     }
   }
   const items = buildCatalog({
-    pin,
     engines,
     hasRenderer: deps.fs.exists(join(deps.root, 'renderer', 'package.json')),
     modelProfile,

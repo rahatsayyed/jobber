@@ -10,7 +10,7 @@ function fakeRun(windows: string, pane: string, calls: string[][] = []): Run {
   return async (_cmd, args) => {
     calls.push(args);
     if (args[0] === 'list-windows') {
-      return args[2] === '=ccgram' ? { stdout: windows, code: 0 } : { stdout: '', code: 1 };
+      return args[2] === '=Jobber' ? { stdout: windows, code: 0 } : { stdout: '', code: 1 };
     }
     if (args[0] === 'capture-pane') return { stdout: pane, code: 0 };
     return { stdout: '', code: 1 };
@@ -20,7 +20,7 @@ function fakeRun(windows: string, pane: string, calls: string[][] = []): Run {
 describe('sessionsPanel', () => {
   it('extracts the last non-empty line, cleaned', async () => {
     const run = fakeRun('0|Main|1|claude\n', 'first\nwork \u001b[0m done\u0007\n\n   \n');
-    const r = await sessionsPanel(run, ['ccgram']);
+    const r = await sessionsPanel(run, ['Jobber']);
     expect(r[0].up).toBe(true);
     expect(r[0].windows[0]).toMatchObject({ window: 'Main', index: 0, command: 'claude', active: true });
     expect(r[0].windows[0].lastLine).not.toMatch(/[\u0000-\u0008\u000B-\u001F]/);
@@ -28,23 +28,23 @@ describe('sessionsPanel', () => {
   });
   it('redacts secrets in pane output', async () => {
     const run = fakeRun('0|Main|1|claude\n', 'key sk-abcdefghijklmnopqrstuvwxyz0123456789\n');
-    const r = await sessionsPanel(run, ['ccgram']);
+    const r = await sessionsPanel(run, ['Jobber']);
     expect(r[0].windows[0].lastLine).not.toContain('sk-abcdefghijklmnop');
   });
   it('never passes a hostile window name to tmux', async () => {
     const calls: string[][] = [];
     const run = fakeRun('0|a;b|1|bash\n1|ok|0|bash\n', 'x', calls);
-    const r = await sessionsPanel(run, ['ccgram']);
+    const r = await sessionsPanel(run, ['Jobber']);
     expect(r[0].windows.map((w) => w.window)).toEqual(['ok']);
     expect(calls.flat().some((a) => a.includes('a;b'))).toBe(false);
   });
   it('reports a missing session as down', async () => {
-    const r = await sessionsPanel(fakeRun('', ''), ['ccgram-daemon']);
-    expect(r).toEqual([{ session: 'ccgram-daemon', up: false, windows: [] }]);
+    const r = await sessionsPanel(fakeRun('', ''), ['bridge-session']);
+    expect(r).toEqual([{ session: 'bridge-session', up: false, windows: [] }]);
   });
   it('captures 20 lines by default', async () => {
     const calls: string[][] = [];
-    await sessionsPanel(fakeRun('0|Main|1|claude\n', 'x', calls), ['ccgram']);
+    await sessionsPanel(fakeRun('0|Main|1|claude\n', 'x', calls), ['Jobber']);
     expect(calls.find((c) => c[0] === 'capture-pane')).toContain('-20');
   });
 });

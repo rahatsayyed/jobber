@@ -38,7 +38,7 @@ export interface ExecDeps extends BootstrapDeps {
   exec(cmd: string, args: string[], opts: { cwd?: string }): Promise<{ code: number; timedOut?: boolean }>;
 }
 
-const DEPENDS: Partial<Record<ItemId, ItemId>> = { ccgram: 'uv', 'npm-deps': 'node', 'renderer-deps': 'npm-deps' };
+const DEPENDS: Partial<Record<ItemId, ItemId>> = { 'npm-deps': 'node', 'renderer-deps': 'npm-deps' };
 
 /**
  * 1 when a required item is failed, needs the owner, or was skipped (declined, needs --yes, waiting on a

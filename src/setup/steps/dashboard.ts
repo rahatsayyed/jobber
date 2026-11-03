@@ -70,7 +70,7 @@ function localSettings(ctx: SetupContext): void {
       /* optional hint only */
     }
   }
-  io.say('Start the tmux layout yourself with: bash scripts/ccgram/start.sh');
+  io.say('Start the tmux layout yourself with: npm run up');
 }
 
 export const dashboardStep: SetupStep = {

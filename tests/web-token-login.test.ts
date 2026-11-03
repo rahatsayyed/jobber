@@ -175,7 +175,7 @@ describe('token login', () => {
 
 describe('no leak', () => {
   it('token and its hash appear in no log, audit row or API response', async () => {
-    h = await mk({ chat: { enabled: false, session: 'ccgram', window: 'JobApplier', send: async () => {} } });
+    h = await mk({ chat: { enabled: false, session: 'Jobber', window: 'JobApplier', send: async () => {} } });
     const spies = [
       vi.spyOn(console, 'error').mockImplementation(() => {}),
       vi.spyOn(console, 'log').mockImplementation(() => {}),

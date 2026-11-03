@@ -3,12 +3,12 @@
 // Read-only: never installs, downloads or fetches. Output lists item ids only.
 import { join } from 'node:path';
 import { buildCatalog } from '../bootstrap/catalog.js';
-import type { BootstrapDeps, CcgramPin, Detection, ItemId, Platform } from '../bootstrap/types.js';
+import type { BootstrapDeps, Detection, ItemId, Platform } from '../bootstrap/types.js';
 import { parseEnv } from './envFile.js';
 import { defaultFetchDeps } from '../safety/modelFetch.js';
 import type { Check, CheckResult, DoctorContext } from './doctor.js';
 
-const REQUIRED: ItemId[] = ['node', 'npm-deps', 'renderer-deps', 'tmux', 'uv', 'ccgram', 'claude-cli'];
+const REQUIRED: ItemId[] = ['node', 'npm-deps', 'renderer-deps', 'tmux', 'uv', 'claude-cli'];
 const OPTIONAL: ItemId[] = ['chrome', 'classifier-model'];
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
@@ -28,13 +28,11 @@ export function bootstrapChecks(
         if (platform === 'unsupported') {
           return { status: 'warn', detail: 'unsupported platform: bootstrap cannot install prerequisites here', fix: 'install the prerequisites by hand, see README.md' };
         }
-        let pin: CcgramPin;
         let engines = '>=20';
         try {
-          pin = JSON.parse(ctx.fs.read(join(ctx.root, 'config', 'ccgram.pin.json'))) as CcgramPin;
           engines = (JSON.parse(ctx.fs.read(join(ctx.root, 'package.json'))) as { engines?: { node?: string } }).engines?.node ?? engines;
         } catch {
-          return { status: 'fail', detail: 'cannot read config/ccgram.pin.json or package.json', fix: 'bash scripts/bootstrap.sh' };
+          return { status: 'fail', detail: 'cannot read package.json', fix: 'bash scripts/bootstrap.sh' };
         }
         const registryPath = join(ctx.root, 'config', 'classifier-models.json');
         let profile = 'unresolved';
@@ -57,7 +55,6 @@ export function bootstrapChecks(
           }
         }
         const items = buildCatalog({
-          pin,
           engines,
           hasRenderer: ctx.fs.exists(join(ctx.root, 'renderer', 'package.json')),
           modelProfile: profile,

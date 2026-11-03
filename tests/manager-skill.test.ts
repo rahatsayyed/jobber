@@ -33,7 +33,7 @@ describe('manager skill', () => {
   });
 
   it('body has the required strings and none of the forbidden', () => {
-    for (const s of ['telegram-format', 'untrusted', 'Never type', 'ccgram-daemon']) {
+    for (const s of ['telegram-format', 'untrusted', 'Never type', 'bridge']) {
       expect(body).toContain(s);
     }
     expect(body).not.toContain('send-keys');

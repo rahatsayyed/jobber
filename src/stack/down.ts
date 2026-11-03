@@ -4,9 +4,8 @@
 // scheduler that belongs to a launchd or systemd unit.
 import { join } from 'node:path';
 import { loadManagerConfig, sessionName, stopWindow } from '../platform/manager.js';
-import { assertName, hasSession } from '../platform/tmux.js';
 import { DEFAULT_LABEL, SERVICE_NAME } from '../scheduler/units.js';
-import { customBridge, mergedEnv, stackSession, unitLoaded, windowNames, type StackDeps } from './up.js';
+import { mergedEnv, stackSession, unitLoaded, windowNames, type StackDeps } from './up.js';
 
 export interface DownDeps extends StackDeps {
   isTTY: boolean;
@@ -30,8 +29,6 @@ export async function runDown(deps: DownDeps, opts: DownOpts): Promise<number> {
   const say = deps.say;
   const env = mergedEnv(deps);
   const session = stackSession(env);
-  const daemon = (env.CCGRAM_DAEMON_SESSION ?? '').trim() || 'ccgram-daemon';
-  assertName(daemon);
   let code = 0;
 
   // 1. Dashboard.
@@ -100,21 +97,11 @@ export async function runDown(deps: DownDeps, opts: DownOpts): Promise<number> {
   }
 
   // 4. Bridge.
-  if (customBridge(env)) {
-    const bridgeNames = await windowNames(deps.run, session);
-    if (opts.keepBridge) say('bridge: kept (--keep-bridge)');
-    else if (!bridgeNames.has('bridge')) say('bridge: absent');
-    else {
-      const r = await deps.run('tmux', ['kill-window', '-t', `=${session}:=bridge`]);
-      say(r.code === 0 ? 'bridge: stopped' : 'bridge: stop failed');
-      if (r.code !== 0) code = 1;
-    }
-    return code;
-  }
+  const bridgeNames = await windowNames(deps.run, session);
   if (opts.keepBridge) say('bridge: kept (--keep-bridge)');
-  else if (!(await hasSession(deps.run, daemon))) say('bridge: absent');
+  else if (!bridgeNames.has('bridge')) say('bridge: absent');
   else {
-    const r = await deps.run('bash', ['scripts/ccgram/stop.sh'], { cwd: deps.root });
+    const r = await deps.run('tmux', ['kill-window', '-t', `=${session}:=bridge`]);
     say(r.code === 0 ? 'bridge: stopped' : 'bridge: stop failed');
     if (r.code !== 0) code = 1;
   }

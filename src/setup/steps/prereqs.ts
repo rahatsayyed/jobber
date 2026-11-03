@@ -1,13 +1,13 @@
 // src/setup/steps/prereqs.ts
 // Step 1: prerequisites. Prints each failing check's fix verbatim; never runs an installer.
-import { ccgramChecks } from '../../platform/checks.js';
+import { stackChecks } from '../../platform/checks.js';
 import { setupChecks } from '../../platform/checksSetup.js';
 import type { Check, CheckOutcome } from '../../platform/doctor.js';
 import { runChecks } from '../../platform/doctor.js';
 import { say } from '../coach.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 
-const ALL_CHECKS: Check[] = [...ccgramChecks, ...setupChecks];
+const ALL_CHECKS: Check[] = [...stackChecks, ...setupChecks];
 const MAX_ROUNDS = 3;
 
 /** The known doctor checks with these ids, in the given order. */
@@ -32,7 +32,7 @@ export function printProblems(ctx: SetupContext, results: CheckOutcome[]): numbe
 export const prereqsStep: SetupStep = {
   id: 'prereqs',
   title: 'Prerequisites',
-  checkIds: ['node-version', 'tmux', 'chrome', 'browser-binaries', 'ccgram-version'],
+  checkIds: ['node-version', 'tmux', 'chrome', 'browser-binaries'],
   async run(ctx) {
     say(ctx, 'prereqs.intro');
     const checks = checksById(prereqsStep.checkIds);

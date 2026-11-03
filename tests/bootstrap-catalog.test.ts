@@ -2,9 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildCatalog } from '../src/bootstrap/catalog.js';
 import type { BootstrapDeps, Item, ItemId, Platform, Plan } from '../src/bootstrap/types.js';
-import { ccgramInstallHint } from '../src/platform/checks.js';
 
-const PIN = { version: '4.16.0' };
 const ROOT = '/proj';
 
 type Out = { code: number; stdout: string };
@@ -26,7 +24,7 @@ function deps(opts: { platform?: Platform; runs?: Record<string, Out>; files?: R
 }
 
 function catalog(hasRenderer = true): Map<ItemId, Item> {
-  const items = buildCatalog({ pin: PIN, engines: '>=20', hasRenderer, modelProfile: 'default' });
+  const items = buildCatalog({ engines: '>=20', hasRenderer, modelProfile: 'default' });
   return new Map(items.map((i) => [i.id, i]));
 }
 const item = (id: ItemId, hasRenderer = true): Item => {
@@ -102,18 +100,10 @@ describe('detect', () => {
     expect((await item('chrome').detect(deps())).present).toBe(false);
   });
 
-  it('ccgram: pinned, wrong version, absent', async () => {
-    expect((await item('ccgram').detect(deps({ runs: { 'ccgram --version': ok('ccgram 4.16.0\n') } }))).present).toBe(true);
-    const wrong = await item('ccgram').detect(deps({ runs: { 'ccgram --version': ok('ccgram 4.15.0') } }));
-    expect(wrong.present).toBe(false);
-    expect(wrong.version).toBe('4.15.0');
-    expect((await item('ccgram').detect(deps())).present).toBe(false);
-  });
-
   it('classifier-model reports absent by default and uses an injected hook', async () => {
     expect((await item('classifier-model').detect(deps())).detail).toBe('classifier model machinery not available');
     const it2 = buildCatalog({
-      pin: PIN, engines: '>=20', hasRenderer: true, modelProfile: 'p1',
+      engines: '>=20', hasRenderer: true, modelProfile: 'p1',
       detectClassifier: async (_d, profile) => ({ present: true, detail: `ok ${profile}` }),
     }).find((i) => i.id === 'classifier-model')!;
     expect(await it2.detect(deps())).toEqual({ present: true, detail: 'ok p1' });
@@ -145,10 +135,6 @@ describe('plan, macOS', () => {
   it('tmux and uv: brew', async () => {
     expect(actions(await planFor('tmux', deps()))[0].argv).toEqual(['brew', 'install', 'tmux']);
     expect(actions(await planFor('uv', deps()))[0].argv).toEqual(['brew', 'install', 'uv']);
-  });
-  it('ccgram: argv equals the doctor hint command', async () => {
-    const a = actions(await planFor('ccgram', deps()))[0];
-    expect(a.argv.join(' ')).toBe(ccgramInstallHint(PIN).replace(/"/g, ''));
   });
   it('claude-cli: owner message; npm action only when prefix is writable', async () => {
     const p = await planFor('claude-cli', deps());
@@ -203,9 +189,6 @@ describe('plan, Linux', () => {
     expect(p.kind).toBe('owner');
     expect(p.kind === 'owner' && p.url).toContain('astral.sh');
   });
-  it('ccgram matches the doctor hint on Linux too', async () => {
-    expect(actions(await planFor('ccgram', L()))[0].argv.join(' ')).toBe(ccgramInstallHint(PIN).replace(/"/g, ''));
-  });
   it('age and rclone report apt install', async () => {
     const p = await planFor('age', L());
     expect(p.kind === 'owner' && p.message).toContain('apt install age');
@@ -245,17 +228,11 @@ describe('invariants', () => {
 
   it('required flags and optional kinds', () => {
     const c = catalog();
-    for (const id of ['git', 'build-tools', 'node', 'npm-deps', 'renderer-deps', 'tmux', 'uv', 'ccgram', 'claude-cli'] as ItemId[]) {
+    for (const id of ['git', 'build-tools', 'node', 'npm-deps', 'renderer-deps', 'tmux', 'uv', 'claude-cli'] as ItemId[]) {
       expect(c.get(id)!.required, id).toBe(true);
     }
     expect(c.get('chrome')!.optionalKind).toBe('consent');
     expect(c.get('age')!.optionalKind).toBe('report_only');
     expect(c.get('rclone')!.optionalKind).toBe('report_only');
-  });
-});
-
-describe('ccgramInstallHint', () => {
-  it('prints the exact existing doctor hint', () => {
-    expect(ccgramInstallHint({ version: '1.2.3' })).toBe('uv tool install --python 3.14 "ccgram==1.2.3"');
   });
 });

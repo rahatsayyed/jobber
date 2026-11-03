@@ -83,8 +83,8 @@ export async function makeHarness(over: Partial<WebDeps> = {}, opts: { allow?: b
     data,
     cfg: loadOutreachConfig({} as NodeJS.ProcessEnv),
     run,
-    sessionsToShow: ['ccgram'],
-    chat: { enabled: false, session: 'ccgram', window: 'JobApplier', send: async () => {} },
+    sessionsToShow: ['Jobber'],
+    chat: { enabled: false, session: 'Jobber', window: 'JobApplier', send: async () => {} },
     now,
     ...over,
   };

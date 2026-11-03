@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { loadProfiles } from '../src/platform/runner.js';
-import { ccgramChecks, restrictedChecks } from '../src/platform/checks.js';
+import { stackChecks, restrictedChecks } from '../src/platform/checks.js';
 import { setupChecks } from '../src/platform/checksSetup.js';
 import { schedulerChecks } from '../src/platform/checksScheduler.js';
 import { updateBackupChecks } from '../src/platform/updateBackupChecks.js';
@@ -19,7 +19,7 @@ import { ALL_STEPS } from '../src/setup/steps/index.js';
 const ROOT = resolve(import.meta.dirname, '..');
 
 const ALL_CHECKS: Check[] = [
-  ...ccgramChecks,
+  ...stackChecks,
   ...restrictedChecks(),
   ...setupChecks,
   ...linkedinBrowserChecks(),
