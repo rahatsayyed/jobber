@@ -6,7 +6,7 @@ describe('loadUpdateConfig', () => {
     const c = loadUpdateConfig({});
     expect(c).toMatchObject({ enabled: false, remote: 'origin', branch: 'main', requireSigned: true, tagPattern: null, signersFile: null });
     expect(c.reviewPaths).toContain('.claude/settings.json');
-    expect(c.reviewPaths).toContain('config/ccgram.pin.json');
+    expect(c.reviewPaths).toContain('scripts/claude-session.sh');
   });
   it('enabled only for the exact string true', () => {
     for (const v of ['TRUE', '1', 'yes', ' true']) expect(loadUpdateConfig({ AUTO_UPDATE: v }).enabled).toBe(false);

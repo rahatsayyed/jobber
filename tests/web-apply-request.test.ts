@@ -105,7 +105,7 @@ describe('dashboard apply box', () => {
   });
 
   it('a chat token cannot be used to confirm an apply request', async () => {
-    const c = await setup({ chat: { enabled: true, session: 'ccgram', window: 'JobApplier', send: async () => {} } });
+    const c = await setup({ chat: { enabled: true, session: 'Jobber', window: 'JobApplier', send: async () => {} } });
     const t = JSON.parse((await c.post('/api/send/prepare', { text: 'hello' })).body) as { token: string };
     expect((await c.post('/api/apply/confirm', { url: GH, token: t.token })).status).toBe(409);
     expect(rows()).toHaveLength(0);

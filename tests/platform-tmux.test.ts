@@ -16,7 +16,7 @@ function fakeRun(responses: Record<string, { stdout?: string; code?: number }> =
 
 describe('assertName', () => {
   it('accepts normal names and rejects metacharacters and option-like values', () => {
-    expect(() => assertName('ccgram-daemon')).not.toThrow();
+    expect(() => assertName('bridge-session')).not.toThrow();
     expect(() => assertName('hunt_1')).not.toThrow();
     for (const bad of ['', '-t', 'a b', 'a;b', 'a$(x)', 'a:b', 'x'.repeat(65), 'a.b', '.', '..']) {
       expect(() => assertName(bad)).toThrow();
@@ -32,7 +32,7 @@ describe('tmux helper', () => {
 
   it('listWindows parses the format string', async () => {
     const { run, calls } = fakeRun({ 'list-windows': { stdout: '0|bot|1|python\n1|hunt|0|claude\n' } });
-    const windows = await listWindows(run, 'ccgram');
+    const windows = await listWindows(run, 'Jobber');
     expect(windows).toEqual([
       { index: 0, name: 'bot', active: true, command: 'python' },
       { index: 1, name: 'hunt', active: false, command: 'claude' },
@@ -55,8 +55,8 @@ describe('tmux helper', () => {
 
   it('capture uses exact-match targets and a valid line count', async () => {
     const { run, calls } = fakeRun({ 'capture-pane': { stdout: 'hello' } });
-    expect(await capture(run, 'ccgram', 'hunt', 500)).toBe('hello');
-    expect(calls[0].args).toEqual(['capture-pane', '-p', '-J', '-t', '=ccgram:=hunt', '-S', '-500']);
+    expect(await capture(run, 'Jobber', 'hunt', 500)).toBe('hello');
+    expect(calls[0].args).toEqual(['capture-pane', '-p', '-J', '-t', '=Jobber:=hunt', '-S', '-500']);
   });
 
   it('capture rejects invalid line counts without running', async () => {
@@ -69,11 +69,11 @@ describe('tmux helper', () => {
 
   it('uses exact-match session targets', async () => {
     const a = fakeRun();
-    await hasSession(a.run, 'ccgram');
-    expect(a.calls[0].args).toEqual(['has-session', '-t', '=ccgram']);
+    await hasSession(a.run, 'Jobber');
+    expect(a.calls[0].args).toEqual(['has-session', '-t', '=Jobber']);
     const b = fakeRun();
-    await listWindows(b.run, 'ccgram');
-    expect(b.calls[0].args.slice(0, 3)).toEqual(['list-windows', '-t', '=ccgram']);
+    await listWindows(b.run, 'Jobber');
+    expect(b.calls[0].args.slice(0, 3)).toEqual(['list-windows', '-t', '=Jobber']);
   });
 
   it('ensureSession throws when creation fails', async () => {
@@ -91,10 +91,10 @@ describe('tmux helper', () => {
 describe('sendText', () => {
   it('sends literal text then Enter with exact argv', async () => {
     const { run, calls } = fakeRun();
-    await sendText(run, 'ccgram', 'hunt', 'hello world');
+    await sendText(run, 'Jobber', 'hunt', 'hello world');
     expect(calls).toEqual([
-      { cmd: 'tmux', args: ['send-keys', '-t', '=ccgram:=hunt', '-l', '--', 'hello world'] },
-      { cmd: 'tmux', args: ['send-keys', '-t', '=ccgram:=hunt', 'Enter'] },
+      { cmd: 'tmux', args: ['send-keys', '-t', '=Jobber:=hunt', '-l', '--', 'hello world'] },
+      { cmd: 'tmux', args: ['send-keys', '-t', '=Jobber:=hunt', 'Enter'] },
     ]);
   });
 

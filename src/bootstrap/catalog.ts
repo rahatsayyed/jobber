@@ -1,10 +1,9 @@
 // src/bootstrap/catalog.ts
 // Pure catalog: what "present" means per item and what an install would run. Nothing executes here.
 import { join } from 'node:path';
-import { ccgramInstallArgv } from '../platform/checks.js';
 import type { CliDeps } from '../../scripts/models.js';
 import { createModelParts } from './model.js';
-import type { Action,BootstrapDeps, CcgramPin, Detection, Item, Plan } from './types.js';
+import type { Action,BootstrapDeps, Detection, Item, Plan } from './types.js';
 
 // Upstream URLs: check upstream before relying on them (plan U1, U5, U6).
 const UV_URL = 'https://astral.sh/uv/install.sh';
@@ -89,7 +88,6 @@ function brewOrApt(
 }
 
 export function buildCatalog(input: {
-  pin: CcgramPin;
   engines: string;
   hasRenderer: boolean;
   modelProfile: string;
@@ -259,27 +257,6 @@ export function buildCatalog(input: {
     }),
   };
 
-  const ccgram: Item = {
-    id: 'ccgram',
-    title: `ccgram ${input.pin.version}`,
-    required: true,
-    async detect(d) {
-      const r = await d.run('ccgram', ['--version']);
-      if (r.code !== 0) return { present: false, detail: 'ccgram not installed' };
-      const tokens = firstLine(r.stdout).split(/\s+/);
-      const v = tokens[tokens.length - 1] ?? '';
-      return v === input.pin.version
-        ? { present: true, version: v, detail: `pinned ${v}` }
-        : { present: false, version: v, detail: `installed ${v || 'unknown'} differs from pin ${input.pin.version}` };
-    },
-    plan(d, det) {
-      if (det.present) return done(det);
-      if (d.platform === 'unsupported') return unsupported('ccgram');
-      const argv = ccgramInstallArgv(input.pin);
-      return act({ id: 'ccgram:uv', summary: argv.join(' '), argv, needsSudo: false, network: true });
-    },
-  };
-
   const claude: Item = {
     id: 'claude-cli',
     title: 'Claude Code CLI',
@@ -343,7 +320,6 @@ export function buildCatalog(input: {
     chrome,
     tmux,
     uv,
-    ccgram,
     claude,
     reportOnly('age', 'age', ['--version']),
     reportOnly('rclone', 'rclone', ['version']),

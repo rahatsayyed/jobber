@@ -130,7 +130,7 @@ describe('chat', () => {
         editEnabled: true, remoteExposure: false, remoteSafetyAllowed: false, backupKeep: 10,
         startMode: { mode: 'DRY RUN', flags: {} }, secrets: [],
       },
-      chat: { enabled: true, session: 'ccgram', window: 'JobApplier', send: async (...a: unknown[]) => { calls.push(a); } },
+      chat: { enabled: true, session: 'Jobber', window: 'JobApplier', send: async (...a: unknown[]) => { calls.push(a); } },
     });
     const { cookie } = await h.login();
     const sess = JSON.parse((await h.call('GET', '/api/session', { headers: { cookie } })).body);

@@ -2,9 +2,8 @@
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Check, CheckResult, DoctorContext } from './doctor.js';
 import { parseEnv } from './envFile.js';
-import { hooksStatus, type HookSettings } from './ccgramHooks.js';
 import { detectSet, type LocalSettings, type RawSets } from './permissions.js';
-import { hasSession } from './tmux.js';
+import { assertName, JOBBER_TMUX_SESSION, listWindows } from './tmux.js';
 import { loadClassifier } from '../safety/classifierModel.js';
 import { loadRegistry, resolveProfile, type ClassifierProfile, type ClassifierRegistry } from '../safety/classifierRegistry.js';
 import { verifyProfile, type VerifyReport } from '../safety/modelFetch.js';
@@ -29,36 +28,6 @@ function readEnv(ctx: DoctorContext): Record<string, string> | null {
 
 function mergedEnv(ctx: DoctorContext): Record<string, string | undefined> {
   return { ...(readEnv(ctx) ?? {}), ...ctx.env }; // process env over .env, like the runner
-}
-
-type Pin = { ok: true; version: string; installed?: boolean } | { ok: false; problem: string };
-
-function readPin(ctx: DoctorContext): Pin {
-  const pinPath = join(ctx.root, 'config', 'ccgram.pin.json');
-  if (!ctx.fs.exists(pinPath)) return { ok: false, problem: 'config/ccgram.pin.json is missing' };
-  let pin: { version?: unknown; installed?: unknown };
-  try {
-    pin = JSON.parse(ctx.fs.read(pinPath));
-  } catch {
-    return { ok: false, problem: 'config/ccgram.pin.json is not valid JSON' };
-  }
-  if (typeof pin.version !== 'string' || !pin.version) return { ok: false, problem: 'pin file has no version' };
-  return { ok: true, version: pin.version, installed: typeof pin.installed === 'boolean' ? pin.installed : undefined };
-}
-
-/** argv for installing the pinned ccgram; the doctor hint and the bootstrap action share it. */
-export function ccgramInstallArgv(pin: { version: string }): string[] {
-  return ['uv', 'tool', 'install', '--python', '3.14', `ccgram==${pin.version}`];
-}
-
-/** The printed doctor hint for a missing or mismatched ccgram. */
-export function ccgramInstallHint(pin: { version: string }): string {
-  return `uv tool install --python 3.14 "ccgram==${pin.version}"`;
-}
-
-function lastToken(text: string): string {
-  const parts = (text.split('\n')[0] ?? '').trim().split(/\s+/);
-  return parts[parts.length - 1] ?? '';
 }
 
 function parseJson(text: string): { ok: true; value: unknown } | { ok: false } {
@@ -324,7 +293,7 @@ export function restrictedChecks(deps: Partial<RestrictedDeps> = {}): Check[] {
   ];
 }
 
-export const ccgramChecks: Check[] = [
+export const stackChecks: Check[] = [
   {
     id: 'tmux',
     title: 'tmux installed',
@@ -334,118 +303,48 @@ export const ccgramChecks: Check[] = [
     },
   },
   {
-    id: 'ccgram-version',
-    title: 'ccgram matches the pinned version',
+    id: 'no-skip-permissions',
+    title: 'no skip-permissions flag anywhere',
     async run(ctx) {
-      const pin = readPin(ctx);
-      if (!pin.ok) return fail(pin.problem, 'restore config/ccgram.pin.json from git');
-      const hint = ccgramInstallHint(pin);
-      const r = await ctx.run('ccgram', ['--version']);
-      if (r.code !== 0) return fail('ccgram is not installed', hint);
-      const installed = lastToken(r.stdout);
-      return installed === pin.version
-        ? pass(`pinned ${pin.version}`)
-        : fail(`installed ${installed || 'unknown'} differs from pin ${pin.version}`, hint);
+      const p = join(ctx.root, 'scripts', 'claude-session.sh');
+      const texts: string[] = [];
+      if (ctx.fs.exists(p)) texts.push(ctx.fs.read(p));
+      return texts.some((t) => SKIP_FLAG.test(t))
+        ? fail('a skip-permissions flag is configured', 'remove it from scripts/claude-session.sh')
+        : pass('none found');
     },
   },
   {
-    id: 'ccgram-pin-state',
-    title: 'ccgram pin file install state',
-    async run(ctx) {
-      const pin = readPin(ctx);
-      if (!pin.ok) return fail(pin.problem);
-      return pin.installed === false
-        ? warn('pin file says installed:false', 'after installing the pinned version, set installed:true in config/ccgram.pin.json')
-        : pass('pin file does not mark ccgram as uninstalled');
-    },
-  },
-  {
-    id: 'upgrade-policy',
-    title: 'ccgram upgrade policy',
-    async run() {
-      return pass(
-        'the version pin is the only defense: never use the ccgram upgrade command or any Telegram upgrade handler; upgrade by editing the pin after review',
-      );
-    },
-  },
-  {
-    id: 'ccgram-env',
-    title: 'bridge credentials in the project .env',
+    id: 'telegram-bridge',
+    title: 'Telegram bridge (window bridge in the stack session)',
     async run(ctx) {
       const env = readEnv(ctx);
       if (!env) return fail('.env is missing', 'copy .env.example to .env and fill it in');
       const mode = ctx.fs.mode(envPath(ctx));
       if (mode !== null && (mode & 0o077) !== 0) return fail('.env is readable by others', 'chmod 600 .env');
-      if (!env.TELEGRAM_BOT_TOKEN) return fail('TELEGRAM_BOT_TOKEN is not set in .env');
+      if (!env.TELEGRAM_BOT_TOKEN) return fail('TELEGRAM_BOT_TOKEN is not set in .env', 'npm run setup -- --step telegram');
       if (!TOKEN_SHAPE.test(env.TELEGRAM_BOT_TOKEN)) {
         return fail('TELEGRAM_BOT_TOKEN is not shaped like a bot token', 'paste the token from BotFather');
       }
       const ids = (env.ALLOWED_USERS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
       if (ids.length === 0) return fail('ALLOWED_USERS is empty', 'set your numeric Telegram user ID');
-      if (!ids.every((id) => /^\d+$/.test(id))) return fail('ALLOWED_USERS must be numeric IDs only');
-      return pass(`token present, ${ids.length} allowed user(s)`);
-    },
-  },
-  {
-    id: 'single-credentials-file',
-    title: 'credentials live only in the project .env',
-    async run(ctx) {
-      return ctx.fs.exists(join(ctx.root, '.ccgram', '.env'))
-        ? fail('.ccgram/.env exists', 'move its keys into the project .env and delete it')
-        : pass('no second .env');
-    },
-  },
-  {
-    id: 'ccgram-dir-mode',
-    title: '.ccgram state dir is private',
-    async run(ctx) {
-      const dir = join(ctx.root, '.ccgram');
-      if (!ctx.fs.exists(dir)) return pass('not created yet');
-      const mode = ctx.fs.mode(dir);
-      if (mode === null) return fail('mode could not be read', 'chmod 700 .ccgram');
-      return (mode & 0o777) !== 0o700
-        ? fail(`mode is ${(mode & 0o777).toString(8)}, expected 700`, 'chmod 700 .ccgram')
-        : pass('mode 700');
-    },
-  },
-  {
-    id: 'no-skip-permissions',
-    title: 'no skip-permissions flag anywhere',
-    async run(ctx) {
-      const env = readEnv(ctx) ?? {};
-      const dir = join(ctx.root, 'scripts', 'ccgram');
-      const names = ctx.fs.list ? ctx.fs.list(dir) : ['claude-session.sh'];
-      const texts = [env.CCGRAM_CLAUDE_COMMAND ?? '', ctx.env.CCGRAM_CLAUDE_COMMAND ?? ''];
-      for (const name of names) {
-        const p = join(dir, name);
-        if (ctx.fs.exists(p)) texts.push(ctx.fs.read(p));
+      if (!ids.every((id) => /^[0-9]+$/.test(id))) return fail('ALLOWED_USERS must be numeric IDs only');
+      const merged = mergedEnv(ctx);
+      const session = (merged.STACK_TMUX_SESSION ?? '').trim() || JOBBER_TMUX_SESSION;
+      try {
+        assertName(session);
+      } catch {
+        return fail('STACK_TMUX_SESSION is not a valid tmux session name', 'use letters, digits, _ and - only');
       }
-      return texts.some((t) => SKIP_FLAG.test(t))
-        ? fail('a skip-permissions flag is configured', 'remove it from CCGRAM_CLAUDE_COMMAND and scripts/ccgram')
-        : pass('none found');
-    },
-  },
-  {
-    id: 'optional-features-off',
-    title: 'voice, LLM, TTS and Mini App are off',
-    async run(ctx) {
-      const env = readEnv(ctx) ?? {};
-      const on = ['CCGRAM_WHISPER_PROVIDER', 'CCGRAM_LLM_PROVIDER', 'CCGRAM_TTS_PROVIDER', 'CCGRAM_MINIAPP_BASE_URL'].filter(
-        (k) => (env[k] ?? '').trim() !== '',
-      );
-      return on.length ? fail(`enabled: ${on.join(', ')}`, 'unset these in .env') : pass('all unset');
-    },
-  },
-  {
-    id: 'project-hooks',
-    title: 'ccgram hooks installed in the project',
-    async run(ctx) {
-      if (!ctx.fs.exists(settingsPath(ctx))) return warn('.claude/settings.local.json does not exist', 'run setup to install hooks');
-      const parsed = parseJson(ctx.fs.read(settingsPath(ctx)));
-      if (!parsed.ok) return fail('settings.local.json is invalid JSON', 'repair or remove .claude/settings.local.json');
-      const status = hooksStatus(parsed.value as HookSettings);
-      const missing = Object.entries(status).filter(([, ok]) => !ok).map(([e]) => e);
-      return missing.length ? warn(`missing events: ${missing.join(', ')}`, 'run setup to install hooks') : pass('all nine events');
+      const chat = (merged.TELEGRAM_CHAT_ID ?? '').trim();
+      if (chat !== '' && !/^-?[0-9]{1,20}$/.test(chat)) {
+        return warn('TELEGRAM_CHAT_ID is not a numeric chat id, topics cannot be used', 'set the forum group id, or clear it');
+      }
+      const up = (await listWindows(ctx.run, session)).some((w) => w.name === 'bridge');
+      if (!up) return warn('bridge window is not running', 'npm run up');
+      return chat === ''
+        ? warn('bridge running, but TELEGRAM_CHAT_ID is not set, so Topics cannot be used (private chat only)', 'optional: set TELEGRAM_CHAT_ID to a forum group id')
+        : pass(`bridge running in ${session}, ${ids.length} allowed user(s), topics group set`);
     },
   },
   {
@@ -471,25 +370,10 @@ export const ccgramChecks: Check[] = [
     async run(ctx) {
       const path = join(ctx.root, '.gitignore');
       const text = ctx.fs.exists(path) ? ctx.fs.read(path) : '';
-      const need = ['.ccgram/', '.claude/settings.local.json', '.claude/settings.local.managed.json', '.env'];
+      const need = ['.claude/settings.local.json', '.claude/settings.local.managed.json', '.env'];
       const lines = text.split('\n').map((l) => l.trim());
       const missing = need.filter((rule) => !lines.includes(rule));
       return missing.length ? fail(`missing rules: ${missing.join(', ')}`, 'add them to .gitignore') : pass('rules present');
-    },
-  },
-  {
-    id: 'daemon',
-    title: 'ccgram is running',
-    async run(ctx) {
-      // Scripts read this from the process environment only and treat empty as unset.
-      const raw = ctx.env.CCGRAM_DAEMON_SESSION;
-      const name = raw === undefined || raw === '' ? 'ccgram-daemon' : raw;
-      if (!/^[A-Za-z0-9_-]+$/.test(name) || name.startsWith('-')) {
-        return fail('CCGRAM_DAEMON_SESSION is not a valid tmux session name', 'use letters, digits, _ and - only');
-      }
-      return (await hasSession(ctx.run, name))
-        ? pass(`tmux session ${name} is up`)
-        : warn('not running', 'bash scripts/ccgram/start.sh');
     },
   },
   {

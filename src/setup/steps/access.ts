@@ -1,9 +1,8 @@
 // src/setup/steps/access.ts
-// Step 9: permission set, ccgram hooks, .gitignore rules. The permission set is the ceiling for
+// Step 9: permission set and .gitignore rules. The permission set is the ceiling for
 // every session; nothing here uses skip-permissions or bypassPermissions.
 import { statSync } from 'node:fs';
 import path from 'node:path';
-import { installHooksToFile, resolveCcgramPython } from '../../platform/ccgramHooks.js';
 import {
   applySetToFile,
   validateSets,
@@ -14,7 +13,6 @@ import { say } from '../coach.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 
 const REQUIRED_IGNORES = [
-  '.ccgram/',
   '.claude/settings.local.json',
   '.claude/settings.local.managed.json',
   '.env',
@@ -74,32 +72,6 @@ export const accessStep: SetupStep = {
     applySetToFile(settingsPath, sets, name);
     io.say(`Permission set applied: ${name}.`);
 
-    let hooksSkipped = false;
-    let exe = '';
-    try {
-      const which = await ctx.run('which', ['ccgram']);
-      exe = which.code === 0 ? which.stdout.trim() : '';
-    } catch {
-      exe = ''; // a rejected run (command missing) is the same as "not found"
-    }
-    const python = resolveCcgramPython({
-      which: () => (exe === '' ? null : exe),
-      readFirstLine: (p) => {
-        try {
-          return ctx.fs.read(p).split('\n', 1)[0] ?? '';
-        } catch {
-          return '';
-        }
-      },
-    });
-    if (python === null) {
-      io.say('Could not find the ccgram interpreter. Fix: install the pinned ccgram first, then rerun: npm run setup -- --step access');
-      hooksSkipped = true;
-    } else {
-      installHooksToFile(settingsPath, python);
-      io.say('ccgram hooks installed in .claude/settings.local.json.');
-    }
-
     const giPath = path.join(root, '.gitignore');
     const giText = ctx.fs.exists(giPath) ? ctx.fs.read(giPath) : '';
     const lines = giText.split('\n').map((l) => l.trim());
@@ -125,6 +97,6 @@ export const accessStep: SetupStep = {
     await append(OPTIONAL_IGNORES.filter((r) => !ignored(lines, r)), 'Also keep these private by appending them to .gitignore?');
 
     io.say('Sessions never use skip-permissions. The permission set is the ceiling for what they may do.');
-    return hooksSkipped ? 'skipped' : 'done';
+    return 'done';
   },
 };

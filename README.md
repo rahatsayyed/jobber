@@ -12,7 +12,7 @@ Jobber is an autonomous job-hunting agent. A scheduler wake fetches new job post
 
 ## Prerequisites
 
-Git and a shell. `bash scripts/bootstrap.sh` installs what is missing after asking (macOS with Homebrew first, with an Ubuntu variant): Node 20+ (`brew install node` on macOS, where Homebrew must already be installed or it stops with the URL; on Ubuntu `apt` with sudo after a prompt when the apt package is new enough, otherwise nvm or NodeSource instructions and nothing runs), then root and Next.js dashboard dependencies plus a production dashboard build, tmux, uv, the pinned ccgram, git and build tools, and the Claude Code CLI only when the npm global prefix is writable (otherwise it prints instructions). Google Chrome is a brew cask on macOS and owner instructions on Ubuntu; the classifier model is downloaded only after consent, and age and rclone are reported only. The exact ccgram version is pinned in `config/ccgram.pin.json`; the start script refuses to run on any other version. You still log in to `claude` yourself.
+Git and a shell. `bash scripts/bootstrap.sh` installs what is missing after asking (macOS with Homebrew first, with an Ubuntu variant): Node 20+ (`brew install node` on macOS, where Homebrew must already be installed or it stops with the URL; on Ubuntu `apt` with sudo after a prompt when the apt package is new enough, otherwise nvm or NodeSource instructions and nothing runs), then root and Next.js dashboard dependencies plus a production dashboard build, tmux, uv, the pinned ccgram, git and build tools, and the Claude Code CLI only when the npm global prefix is writable (otherwise it prints instructions). Google Chrome is a brew cask on macOS and owner instructions on Ubuntu; the classifier model is downloaded only after consent, and age and rclone are reported only. You still log in to `claude` yourself.
 
 ---
 
@@ -103,8 +103,8 @@ Change it with `npm run setup -- --step access`. No session ever runs with skip-
 ## Starting and stopping sessions
 
 ```bash
-bash scripts/ccgram/start.sh    # start the Telegram bridge (ccgram) in its own tmux session
-bash scripts/ccgram/stop.sh     # stop the bridge; Claude windows it created keep running
+npm run up                      # start the bridge, windows, scheduler and dashboard in the Jobber tmux session
+npm run down                    # stop them again
 ```
 
 - `npm start` starts all of this in order (bridge, named windows, scheduler, dashboard; `npm start -- --status` is read-only) and `npm stop` stops it (`--keep-bridge` leaves the bridge running). The commands above and `./run-hunt.sh` remain the building blocks and the manual route.
@@ -189,7 +189,7 @@ git clone <your-repo-url> ~/jobber
 cd ~/jobber
 npm install
 npm run setup        # run it in a real terminal (ssh -t or tmux)
-bash scripts/ccgram/start.sh
+npm run up
 ```
 
 Capture the LinkedIn and Naukri sessions on a machine with a display, or run the `sessions` step over a forwarded display; `secrets/` is never committed, so copy only what you need. For scheduled runs use the scheduler daemon (`npm run scheduler -- --daemon`), or for one forced wake per day add a crontab line such as:

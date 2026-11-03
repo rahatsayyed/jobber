@@ -64,7 +64,7 @@ function mkExec(root: string, said: string[], asks: string[]): ExecDeps {
 }
 const O = (o: Partial<ExecOptions> = {}): ExecOptions => ({ yes: false, allowSudo: false, checkOnly: false, planOnly: false, withOptional: false, skipModel: false, interactive: false, ...o });
 const item = (cli: CliDeps, profile: string) =>
-  buildCatalog({ pin: { version: '4.16.0' }, engines: '>=20', hasRenderer: false, modelProfile: profile, modelCli: cli }).filter((i) => i.id === 'classifier-model');
+  buildCatalog({ engines: '>=20', hasRenderer: false, modelProfile: profile, modelCli: cli }).filter((i) => i.id === 'classifier-model');
 
 describe('classifier-model item', () => {
   it('present and verified is ok with zero fetch calls and the owner note', async () => {

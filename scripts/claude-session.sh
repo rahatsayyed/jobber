@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Launch Claude Code for a window created by ccgram.
+# Launch Claude Code for a named window of the Jobber tmux session (hunt, followups, manager).
 # Loads the project env line by line (plain parsing, nothing in it is ever executed)
 # so MCP servers get their credentials, and never skips permissions.
 # The Telegram bridge keys are NOT exported into the Claude process.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd .. && pwd)"
 ENV_FILE="$ROOT/.env"
 
 if [ -f "$ENV_FILE" ]; then
@@ -22,7 +22,7 @@ if [ -f "$ENV_FILE" ]; then
     v="${line#*=}"
     case "$k" in
       TELEGRAM_BOT_TOKEN|ALLOWED_USERS) continue ;;
-      PATH|HOME|SHELL|IFS|ENV|BASH_ENV|BASH_*|LD_*|DYLD_*|CCGRAM_*|NODE_OPTIONS|PYTHON*|PS4|PROMPT_COMMAND) continue ;;
+      PATH|HOME|SHELL|IFS|ENV|BASH_ENV|BASH_*|LD_*|DYLD_*|NODE_OPTIONS|PYTHON*|PS4|PROMPT_COMMAND) continue ;;
       UID|EUID|PPID|BASHOPTS|SHELLOPTS) continue ;;
     esac
     if [[ "$v" =~ ^\"(.*)\"$ ]]; then
@@ -33,9 +33,6 @@ if [ -f "$ENV_FILE" ]; then
     export "$k=$v"
   done < "$ENV_FILE"
 fi
-# ccgram hooks (Claude children) resolve their state dir from CCGRAM_DIR. The value comes from
-# this script, never from .env (CCGRAM_* keys in .env are skipped above).
-export CCGRAM_DIR="$ROOT/.ccgram"
 # Choke point: refuse any request to skip or bypass permissions. Messages are fixed and never
 # echo argument or variable values.
 shopt -s nocasematch
@@ -60,4 +57,5 @@ while IFS= read -r name; do
   esac
 done < <(compgen -v CLAUDE_CODE_ || true)
 shopt -u nocasematch
+cd "$ROOT"
 exec claude "$@"

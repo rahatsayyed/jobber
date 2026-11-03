@@ -230,7 +230,7 @@ describe('stored line and status', () => {
     const res = (id: string, status: 'pass' | 'warn' | 'fail') => ({ id, title: id, result: { status, detail: id } });
     const got = configuredSteps({
       steps: [
-        { id: 'telegram', checkIds: ['telegram-api', 'ccgram-env'] },
+        { id: 'telegram', checkIds: ['telegram-api', 'telegram-bridge'] },
         { id: 'gmail', checkIds: ['gmail-oauth'] },
         { id: 'apikeys', checkIds: ['api-keys'] },
         { id: 'sessions', checkIds: ['sessions'] },

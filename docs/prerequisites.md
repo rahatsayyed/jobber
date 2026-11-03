@@ -2,7 +2,7 @@
 
 Audience: owner
 Last verified against: cc51247
-Source files: package.json, config/ccgram.pin.json, config/update-known-failures.json, scripts/ccgram/start.sh, scripts/ccgram/check-version.sh, scripts/bootstrap.sh, scripts/bootstrap.ts, src/bootstrap/catalog.ts, src/platform/checks.ts, src/platform/checksSetup.ts, src/setup/steps/prereqs.ts, src/scheduler/units.ts, src/backup/create.ts, docs/backup-and-restore.md
+Source files: package.json, config/update-known-failures.json, scripts/bootstrap.sh, scripts/bootstrap.ts, src/bootstrap/catalog.ts, src/platform/checks.ts, src/platform/checksSetup.ts, src/setup/steps/prereqs.ts, src/scheduler/units.ts, src/backup/create.ts, docs/backup-and-restore.md
 
 This page lists every tool Jobber needs on the machine, which feature it unlocks, how to verify it and what to do when it is missing. It is macOS first; Ubuntu (VPS) differences are marked. Windows is not covered.
 
@@ -50,7 +50,6 @@ Runs the full health check; each failing item prints a `fix:` line.
 | Claude login | subscription session used by headless runs | n/a | `claude auth status` | `claude auth login` |
 | tmux | holds ccgram, windows and scheduler runs | none checked | `tmux -V` | macOS `brew install tmux`; Ubuntu `apt-get install -y tmux` |
 | uv | installs the pinned ccgram | none checked | `uv --version` | macOS `brew install uv`. Ubuntu: official installer (check upstream: https://astral.sh/uv/install.sh); bootstrap can download it, show url, size and sha256, then ask again. |
-| ccgram | Telegram bridge | exactly the version in `config/ccgram.pin.json` | `ccgram --version` | see "ccgram" below |
 | Google Chrome | every browser (LinkedIn, Naukri, scout, applier) and the resume PDF render use `channel: 'chrome'` | none checked | macOS: `/Applications/Google Chrome.app` exists; else `google-chrome --version` | macOS: bootstrap runs `brew install --cask google-chrome`. Linux: download page (check upstream: https://www.google.com/chrome/). |
 | patchright | launches the installed Chrome for every browser tool | `patchright` dependency in `package.json`; doctor `browser-binaries` | `npx patchright --version` | `npm ci` installs the package. No browser download is needed: browsers run on the installed Google Chrome. |
 | age | encrypts backups | none checked | `age --version` | `brew install age` (Ubuntu `apt install age`) |
@@ -62,16 +61,6 @@ Runs the full health check; each failing item prints a `fix:` line.
 ### Claude Code CLI and login
 
 Doctor has two checks: `claude-cli` (the binary runs) and `claude-login` (`claude auth status`). Jobber has no separate API key; headless fallbacks and the scheduler use your Claude Code subscription session.
-
-### ccgram (pinned, never upgrade it)
-
-The exact version lives in `config/ccgram.pin.json`. Install exactly that version; the doctor and bootstrap print the command:
-
-```bash
-uv tool install --python <python version in the doctor hint> "ccgram==<version in config/ccgram.pin.json>"
-```
-
-Take the version from `config/ccgram.pin.json` and the exact command (including the Python version it passes to `uv`) from the doctor `ccgram-version` hint (`ccgramInstallHint` in `src/platform/checks.ts`). `scripts/ccgram/start.sh` runs `scripts/ccgram/check-version.sh` first, which exits non-zero if ccgram is missing or its `--version` output does not equal the pin, so the bridge refuses to start on a mismatch. Never run ccgram's own upgrade command (owner decision 2026-10-14, see CLAUDE.md "Platform and sessions"). After installing, set `installed` to `true` in the pin file when doctor's `ccgram-pin-state` warns.
 
 ### Google Chrome (the only browser)
 

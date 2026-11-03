@@ -29,10 +29,6 @@ function fake(opts: { sessions: Record<string, string[]>; exitOnCtrlC?: boolean;
     calls.push([cmd, ...args]);
     if (cmd === 'launchctl') return { stdout: opts.launchd ? '1\t0\tdev.jobber.scheduler\n' : '', code: 0 };
     if (cmd === 'systemctl') return { stdout: 'inactive', code: 3 };
-    if (cmd === 'bash') {
-      sessions.delete('ccgram-daemon');
-      return { stdout: 'Stopped', code: 0 };
-    }
     if (cmd !== 'tmux') return { stdout: '', code: 0 };
     const t = args[args.indexOf('-t') + 1] ?? '';
     const { s, w } = parse(t);
@@ -85,9 +81,7 @@ function mk(f: Fake, over: Partial<DownDeps> = {}, env: NodeJS.ProcessEnv = {}):
 }
 
 const full = (): Record<string, string[]> => ({
-  'Jobber': ['scheduler', 'web'],
-  ccgram: ['hunt', 'followups', 'manager'],
-  'ccgram-daemon': ['bridge'],
+  Jobber: ['bridge', 'scheduler', 'web', 'hunt', 'followups', 'manager'],
 });
 const OPTS: DownOpts = { keepBridge: false, force: false, yes: true };
 const kills = (f: Fake): string[] => f.calls.filter((c) => c[0] === 'tmux' && c[1] === 'kill-window').map((c) => c[c.length - 1]);
@@ -97,10 +91,10 @@ describe('down', () => {
     const f = fake({ sessions: full(), exitOnCtrlC: true });
     expect(await runDown(mk(f), OPTS)).toBe(0);
     const order = f.calls
-      .filter((c) => (c[0] === 'tmux' && (c[1] === 'kill-window' || c[1] === 'send-keys')) || c[0] === 'bash')
-      .map((c) => (c[0] === 'bash' ? 'bridge' : c[c.length - (c[1] === 'send-keys' ? 2 : 1)].replace(/^=.*:=?/, '')));
+      .filter((c) => c[0] === 'tmux' && (c[1] === 'kill-window' || c[1] === 'send-keys'))
+      .map((c) => c[c.length - (c[1] === 'send-keys' ? 2 : 1)].replace(/^=.*:=?/, ''));
     expect(order).toEqual(['web', 'scheduler', 'hunt', 'followups', 'bridge']);
-    expect(f.sessions.get('ccgram')).toEqual(['manager']);
+    expect(f.sessions.get('Jobber')).toEqual(['manager']);
     expect(f.calls.flat().some((a) => a.endsWith('manager') && a.includes(':') )).toBe(false);
   });
 
@@ -126,14 +120,14 @@ describe('down', () => {
     const f = fake({ sessions: full() });
     await runDown(mk(f), { ...OPTS, force: true });
     expect(kills(f)).toContain('=Jobber:=scheduler');
-    expect(f.sessions.get('Jobber')).toEqual([]);
+    expect(f.sessions.get('Jobber')).toEqual(['manager']);
   });
 
   it('--keep-bridge skips the bridge', async () => {
     const f = fake({ sessions: full(), exitOnCtrlC: true });
     await runDown(mk(f), { ...OPTS, keepBridge: true });
-    expect(f.calls.some((c) => c[0] === 'bash')).toBe(false);
-    expect(f.sessions.has('ccgram-daemon')).toBe(true);
+    expect(kills(f)).not.toContain('=Jobber:=bridge');
+    expect(f.sessions.get('Jobber')).toContain('bridge');
   });
 
   it('is idempotent: a second down records zero kills and reports absent', async () => {
@@ -143,7 +137,7 @@ describe('down', () => {
     const d = mk(f);
     expect(await runDown(d, OPTS)).toBe(0);
     expect(kills(f)).toEqual([]);
-    expect(f.calls.some((c) => c[1] === 'send-keys' || c[0] === 'bash')).toBe(false);
+    expect(f.calls.some((c) => c[1] === 'send-keys')).toBe(false);
     expect(d.out.filter((l) => l.endsWith('absent')).length).toBeGreaterThanOrEqual(5);
   });
 
@@ -151,7 +145,7 @@ describe('down', () => {
     const f = fake({ sessions: full(), exitOnCtrlC: true });
     const d = mk(f);
     await runDown(d, { ...OPTS, yes: false });
-    expect(f.sessions.get('ccgram')).toEqual(['hunt', 'followups', 'manager']);
+    expect(f.sessions.get('Jobber')).toEqual(['hunt', 'followups', 'manager']);
     expect(d.out.join('\n')).toContain('pass --yes');
   });
 
@@ -161,7 +155,7 @@ describe('down', () => {
     const d = mk(f, { isTTY: true, ask: async (q) => (asked.push(q), q.includes('hunt')) });
     await runDown(d, { ...OPTS, yes: false });
     expect(asked.length).toBe(2);
-    expect(f.sessions.get('ccgram')).toEqual(['followups', 'manager']);
+    expect(f.sessions.get('Jobber')).toEqual(['followups', 'manager']);
   });
 
   it('a scheduler owned by a launchd unit is never stopped; unload hint printed', async () => {
@@ -179,7 +173,7 @@ describe('down', () => {
     const allowed = new Set(['has-session', 'list-windows', 'send-keys', 'kill-window']);
     for (const c of f.calls) {
       if (c[0] === 'tmux') expect(allowed.has(c[1]), c.join(' ')).toBe(true);
-      else expect(['launchctl', 'systemctl', 'bash']).toContain(c[0]);
+      else expect(['launchctl', 'systemctl']).toContain(c[0]);
     }
     expect(existsSync(join(root, '.jobber', 'STOP'))).toBe(true);
   });

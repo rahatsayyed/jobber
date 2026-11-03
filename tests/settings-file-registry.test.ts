@@ -28,7 +28,7 @@ describe('allowlist', () => {
 
   it('contains exactly the D14 ids', () => {
     const edit = ['portals', 'target-regions', 'deal-breakers', 'replies', 'linkedin-discovery', 'languages', 'easy-apply-answers', 'profile', 'fact-gate'];
-    const viewOnly = ['permission-sets', 'run-profiles', 'worker-tools', 'classifier-models', 'manager-windows', 'platforms', 'ai-tells', 'ccgram-pin', 'update-known-failures'];
+    const viewOnly = ['permission-sets', 'run-profiles', 'worker-tools', 'classifier-models', 'manager-windows', 'platforms', 'ai-tells', 'update-known-failures'];
     expect(allEntries().map((e) => e.id).sort()).toEqual([...edit, ...viewOnly].sort());
     for (const id of edit) expect(resolveEntry(id)!.edit).toBe(true);
     for (const id of viewOnly) {

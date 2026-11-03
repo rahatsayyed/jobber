@@ -33,7 +33,7 @@ export const SECTION_BANNERS: Record<SectionId, SectionBanner> = {
   wellfound: { title: 'Wellfound' },
   scheduler: { title: 'Scheduler' },
   dashboard: { title: 'Dashboard (npm run web)' },
-  telegram: { title: 'Telegram (ccgram bridge)' },
+  telegram: { title: 'Telegram bridge' },
   layout: {
     title: 'Layout memory (plan 8B)',
     lines: ['All optional. The values shown are the defaults. Invalid values fall back to the default.'],

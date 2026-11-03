@@ -243,15 +243,15 @@ describe('executor other rules', () => {
     const e = newEnv();
     e.failCmd = 'inst';
     const items = [
-      item('uv', e, acts('uv')),
-      item('ccgram', e, acts('ccgram')),
+      item('npm-deps', e, acts('npm-deps')),
+      item('renderer-deps', e, acts('renderer-deps')),
       item('git', e, { kind: 'actions', actions: [{ ...act('git'), argv: ['other', 'git'] }] }),
     ];
     const r = await runBootstrap(items, mk(e), O({ yes: true }));
     expect(r[0]!.outcome).toBe('failed');
     expect(r[0]!.note).toContain('exit 1');
     expect(r[0]!.note).toContain('see output above');
-    expect(r[1]).toMatchObject({ outcome: 'skipped', note: 'waiting for uv' });
+    expect(r[1]).toMatchObject({ outcome: 'skipped', note: 'waiting for npm-deps' });
     expect(r[2]!.outcome).toBe('installed');
   });
   it('a thrown exec error carrying a credential marker is redacted', async () => {
@@ -290,7 +290,7 @@ describe('executor other rules', () => {
     expect(exitCodeFor(r)).toBe(1);
     expect(exitCodeFor(r, { planOnly: true })).toBe(0);
     const e2 = newEnv();
-    const w = await runBootstrap([item('uv', e2, acts('uv')), item('ccgram', e2, acts('ccgram'))], { ...mk(e2), exec: async () => ({ code: 1 }) }, O({ yes: true }));
+    const w = await runBootstrap([item('npm-deps', e2, acts('npm-deps')), item('renderer-deps', e2, acts('renderer-deps'))], { ...mk(e2), exec: async () => ({ code: 1 }) }, O({ yes: true }));
     expect(w[1]).toMatchObject({ outcome: 'skipped', reason: 'waiting' });
     const e3 = newEnv();
     const d = await runBootstrap([item('tmux', e3, acts('tmux'))], { ...mk(e3), ask: async () => false }, O());

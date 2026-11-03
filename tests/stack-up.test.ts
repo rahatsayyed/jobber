@@ -35,10 +35,6 @@ function fake(opts: { launchd?: boolean; preSessions?: Record<string, string[]> 
     calls.push([cmd, ...args]);
     if (cmd === 'launchctl') return { stdout: opts.launchd ? '1\t0\tdev.jobber.scheduler\n' : '', code: 0 };
     if (cmd === 'systemctl') return { stdout: 'inactive', code: 3 };
-    if (cmd === 'bash') {
-      sessions.set('ccgram-daemon', ['bridge']);
-      return { stdout: 'Started ccgram', code: 0 };
-    }
     if (cmd !== 'tmux') return { stdout: '', code: 0 };
     const t = args[args.indexOf('-t') + 1] ?? '';
     switch (args[0]) {
@@ -91,13 +87,12 @@ describe('up', () => {
     const d = deps(f);
     expect(await runUp(d, { status: false })).toBe(0);
     const order = f.calls
-      .filter((c) => c[0] === 'bash' || c[1] === 'new-window' || c[1] === 'new-session')
+      .filter((c) => c[1] === 'new-window' || c[1] === 'new-session')
       .map((c) => {
-        if (c[0] === 'bash') return 'bridge';
         const n = c.indexOf('-n');
         return n >= 0 ? c[n + 1] : c[c.indexOf('-s') + 1];
       });
-    expect(order).toEqual(['bridge', 'ccgram', 'hunt', 'followups', 'manager', 'scheduler', 'web']);
+    expect(order).toEqual(['bridge', 'hunt', 'followups', 'manager', 'scheduler', 'web']);
     f.calls.length = 0;
     expect(await runUp(deps(f), { status: false })).toBe(0);
     expect(starts(f).filter((c) => c[1] === 'new-window' || c[1] === 'new-session')).toEqual([]);
@@ -109,7 +104,6 @@ describe('up', () => {
     const d = deps(f);
     expect(await runUp(d, { status: false })).toBe(4);
     expect(starts(f)).toEqual([]);
-    expect(f.calls.some((c) => c[0] === 'bash')).toBe(false);
     expect(existsSync(join(root, '.jobber', 'STOP'))).toBe(true);
   });
 
@@ -200,7 +194,10 @@ describe('up', () => {
     const base = f.run;
     f.run = async (c, a, o) => {
       const r = await base(c, a, o);
-      if (c === 'tmux' && a[0] === 'new-session' && a.includes('scheduler')) f.sessions.get('Jobber')?.splice(0);
+      if (c === 'tmux' && a[0] === 'new-window' && a.includes('scheduler')) {
+        const w = f.sessions.get('Jobber') ?? [];
+        w.splice(w.indexOf('scheduler'), 1);
+      }
       return r;
     };
     const d = deps(f);
@@ -213,11 +210,11 @@ describe('up', () => {
   it('a bridge start failure exits 1 but still prints the table; --status stays 0', async () => {
     const f = fake();
     const base = f.run;
-    f.run = async (c, a, o) => (c === 'bash' ? { stdout: 'nope', code: 1 } : base(c, a, o));
+    f.run = async (c, a, o) => (c === 'tmux' && a[0] === 'new-session' && a.includes('bridge') ? { stdout: '', code: 1 } : base(c, a, o));
     const d = deps(f);
     expect(await runUp(d, { status: false })).toBe(1);
     const text = d.out.join('\n');
-    expect(text).toContain('warning: bridge: start.sh failed');
+    expect(text).toContain('warning: bridge: failed to create tmux session Jobber');
     expect(text).toContain('components:');
     const s = deps(f);
     expect(await runUp(s, { status: true })).toBe(0);
@@ -231,7 +228,6 @@ describe('up', () => {
     expect(await runUp(d, { status: true })).toBe(0);
     expect(doctor).toBe(0);
     expect(starts(f)).toEqual([]);
-    expect(f.calls.some((c) => c[0] === 'bash')).toBe(false);
   });
 
   it('shows the last verify result and never fails on a missing one', async () => {
@@ -260,6 +256,43 @@ describe('up', () => {
     await runUp(oidc, { status: true });
     expect(oidc.out.join('\n')).toContain('dashboard auth mode: oidc');
     expect(oidc.out.join('\n')).not.toContain('npm run dashboard -- token');
+  });
+
+  it('starts the bridge as window bridge of the Jobber session when Telegram is configured', async () => {
+    const f = fake();
+    const d = deps(f);
+    expect(await runUp(d, { status: false })).toBe(0);
+    const bridge = f.calls.find((c) => c[1] === 'new-session' && c.includes('bridge'))!;
+    expect(bridge.slice(bridge.indexOf('-s'), bridge.indexOf('-s') + 2)).toEqual(['-s', 'Jobber']);
+    expect(bridge.join(' ')).toContain('telegram:bridge');
+    expect(bridge.join(' ')).not.toContain(SECRET);
+    expect(f.sessions.get('Jobber')).toEqual(['bridge', 'hunt', 'followups', 'manager', 'scheduler', 'web']);
+    expect(d.out.some((l) => /^\s*bridge\s+running\s/.test(l))).toBe(true);
+    // a second run finds it and starts nothing
+    const again = deps(f);
+    await runUp(again, { status: false });
+    expect(again.out).toContain('bridge: already running');
+  });
+
+  it('does not start the bridge without a bot token or when Telegram was skipped in setup', async () => {
+    writeFileSync(join(root, '.env'), `SOME_API_KEY=${SECRET}\n`);
+    const f = fake();
+    const d = deps(f);
+    await runUp(d, { status: false });
+    expect(d.out).toContain('bridge: skipped (TELEGRAM_BOT_TOKEN not set)');
+    expect(f.sessions.get('Jobber')).not.toContain('bridge');
+  });
+
+  it('the named Claude windows land in the Jobber session, not in a second session', async () => {
+    const f = fake();
+    await runUp(deps(f), { status: false });
+    const wins = f.calls.filter((c) => c[1] === 'new-window' && ['hunt', 'followups', 'manager'].includes(c[c.indexOf('-n') + 1]));
+    expect(wins.map((c) => c[c.indexOf('-n') + 1])).toEqual(['hunt', 'followups', 'manager']);
+    for (const c of wins) {
+      expect(c[c.indexOf('-t') + 1]).toBe('=Jobber:');
+      expect(c.join(' ')).toContain('scripts/claude-session.sh');
+    }
+    expect([...f.sessions.keys()]).toEqual(['Jobber']);
   });
 
   it('a manager window failure is a warning, not a failure', async () => {

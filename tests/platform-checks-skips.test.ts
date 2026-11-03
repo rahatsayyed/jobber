@@ -32,20 +32,20 @@ const fake = (id: string, r: CheckResult): Check => ({ id, title: `T ${id}`, run
 
 describe('withSkips', () => {
   it('converts fail and warn of a skipped feature into skip with the fix', async () => {
-    const wrapped = withSkips([fake('telegram-api', { status: 'fail', detail: 'x' }), fake('daemon', { status: 'warn', detail: 'y' })]);
+    const wrapped = withSkips([fake('telegram-api', { status: 'fail', detail: 'x' }), fake('telegram-bridge', { status: 'warn', detail: 'y' })]);
     const out = await runChecks(wrapped, ctxWith({ state: skippedState('telegram') }));
     for (const o of out) {
       expect(o.result.status).toBe('skip');
       expect(o.result.detail).toMatch(/^skipped in setup \(Telegram, RECOMMENDED\)\. No phone control/);
       expect(o.result.fix).toBe('npm run setup -- --step telegram');
     }
-    expect(out.map((o) => o.id)).toEqual(['telegram-api', 'daemon']);
+    expect(out.map((o) => o.id)).toEqual(['telegram-api', 'telegram-bridge']);
     expect(out[0].title).toBe('T telegram-api');
   });
 
   it('keeps a pass and keeps a crash a crash', async () => {
     const boom: Check = { id: 'web', title: 'W', run: async () => { throw new Error('x'); } };
-    const out = await runChecks(withSkips([fake('ccgram-env', { status: 'pass', detail: 'ok' }), boom]), ctxWith({ state: skippedState('telegram', 'dashboard') }));
+    const out = await runChecks(withSkips([fake('telegram-bridge', { status: 'pass', detail: 'ok' }), boom]), ctxWith({ state: skippedState('telegram', 'dashboard') }));
     expect(out[0].result.status).toBe('pass');
     expect(out[1].result.status).toBe('fail');
   });

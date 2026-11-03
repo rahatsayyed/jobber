@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
-import { ccgramChecks, restrictedChecks } from '../src/platform/checks.js';
+import { stackChecks, restrictedChecks } from '../src/platform/checks.js';
 import { setupChecks } from '../src/platform/checksSetup.js';
 import type { DoctorContext } from '../src/platform/doctor.js';
 import { defaultRun } from '../src/platform/tmux.js';
@@ -135,7 +135,7 @@ if (args.status) {
   // The classifier smoke loads a 750 MB model: left out of a status read (classifier_model still has to pass).
   const light = ALL_STEPS.map((s) => ({ id: s.id, checkIds: s.checkIds.filter((c) => c !== 'classifier_smoke') }));
   const wanted = new Set(light.flatMap((s) => s.checkIds));
-  const all = [...ccgramChecks, ...restrictedChecks(), ...setupChecks, ...allDoctorChecks()];
+  const all = [...stackChecks, ...restrictedChecks(), ...setupChecks, ...allDoctorChecks()];
   const seen = new Set<string>();
   const checks = all.filter((c) => wanted.has(c.id) && !seen.has(c.id) && seen.add(c.id));
   let results: Awaited<ReturnType<typeof runChecks>> = [];
@@ -243,7 +243,7 @@ try {
   code = await runSetup(ALL_STEPS, ctx, {
     only: args.step,
     redo: args.redo,
-    checks: [...ccgramChecks, ...restrictedChecks(), ...setupChecks],
+    checks: [...stackChecks, ...restrictedChecks(), ...setupChecks],
   });
 } catch (e) {
   ctx.io.say(`setup stopped: ${(e as Error).message}`);

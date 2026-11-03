@@ -48,7 +48,7 @@ For the access step explain `read_only` and recommend keeping it.
 
 The owner may skip Telegram, the dashboard, Gmail and the optional API keys in the wizard. For these:
 
-- A `skip` doctor line for `telegram-api`, `ccgram-env`, `daemon`, `web`, `dashboard-login`,
+- A `skip` doctor line for `telegram-api`, `telegram-bridge`, `web`, `dashboard-login`,
   `gmail-oauth` or `api-keys` is expected and not a problem. Do not treat it as a failure.
 - Say what the owner loses, using the step's `skip` text in `config/setup-guide.json`.
 - Name how to turn it back on: `npm run setup -- --step <id>` (for example `npm run setup -- --step telegram`).

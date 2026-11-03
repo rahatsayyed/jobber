@@ -33,7 +33,6 @@
     "web:next": "npm --prefix apps/dashboard run dev",
     "web:next:build": "npm --prefix apps/dashboard run build",
     "permissions": "tsx scripts/permissions.ts",
-    "ccgram-hooks": "tsx scripts/ccgram-hooks.ts",
     "user-data": "tsx scripts/user-data.ts",
     "site:account": "tsx scripts/site-account.ts",
     "providers": "tsx scripts/providers.ts",

@@ -15,7 +15,7 @@ const sha = (s: string): string => createHash('sha256').update(s).digest('hex');
 async function setup(enabled = true) {
   const sent: string[] = [];
   h = await makeHarness({
-    chat: { enabled, session: 'ccgram', window: 'JobApplier', send: async (t) => { sent.push(t); } },
+    chat: { enabled, session: 'Jobber', window: 'JobApplier', send: async (t) => { sent.push(t); } },
   });
   const { cookie } = await h.login();
   const sess = JSON.parse((await h.call('GET', '/api/session', { headers: { cookie } })).body);

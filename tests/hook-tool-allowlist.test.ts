@@ -84,7 +84,6 @@ describe('send_email attachments (rendered resume PDF only)', () => {
       `${R}/secrets/gmail-credentials.json`,
       `${R}/user-data/resume.json`,
       `${R}/.env`,
-      `${R}/.ccgram/state.json`,
       `${R}/secrets/linkedin-main-state.json`,
       `${R}/renderer/automation/../../secrets/x.pdf`,
       `${R}/renderer/automation/abc/../../../secrets/resume.pdf`,

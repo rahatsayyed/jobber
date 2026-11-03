@@ -19,8 +19,7 @@
         "node-version",
         "tmux",
         "chrome",
-        "browser-binaries",
-        "ccgram-version"
+        "browser-binaries"
       ],
       "keys": [],
       "explain": "These are the programs Jobber runs on: Node.js, tmux, the Telegram bridge, and Chrome for the browser sessions. Missing ones are installed by the bootstrap script, which asks before it changes anything.",
@@ -29,8 +28,7 @@
         "node-version": "Install a newer Node.js, then run the bootstrap script again.",
         "tmux": "Install tmux (the bootstrap script offers this), then run the doctor again.",
         "chrome": "Install Google Chrome. It is needed for the LinkedIn and Naukri browser sessions.",
-        "browser-binaries": "Run npm ci to install the patchright package. Browsers run on the installed Google Chrome, so no browser download is needed.",
-        "ccgram-version": "Install the exact ccgram version pinned in config/ccgram.pin.json using the bootstrap script."
+        "browser-binaries": "Run npm ci to install the patchright package. Browsers run on the installed Google Chrome, so no browser download is needed."
       }
     },
     {
@@ -67,8 +65,7 @@
       "owner_command": "npm run setup -- --step telegram",
       "doctor_checks": [
         "telegram-api",
-        "ccgram-env",
-        "daemon"
+        "telegram-bridge"
       ],
       "keys": [
         {
@@ -86,13 +83,12 @@
           "entered_in": "wizard"
         }
       ],
-      "explain": "Telegram is how Jobber reports to you and takes commands. You create the bot yourself in BotFather and turn on threaded mode. The wizard stores the bot token and your user id.",
+      "explain": "Telegram is how Jobber reports to you and takes commands. You create the bot yourself in BotFather; an optional forum group (Topics on, bot admin with Manage Topics) gives each window its own thread. The wizard stores the bot token and your user id.",
       "fixes": {
         "telegram-api": "Create the bot with BotFather per docs/telegram-bot-setup.md and run the wizard step again.",
-        "ccgram-env": "Run the wizard telegram step so the token and allowed user id are stored.",
-        "daemon": "Start the bridge with bash scripts/ccgram/start.sh in your own terminal."
+        "telegram-bridge": "Run the wizard telegram step so the token and allowed user id are stored, then start the stack with npm run up (the bridge runs in window bridge of the Jobber tmux session)."
       },
-      "skip": "Skippable (RECOMMENDED). If skipped: no phone control, no Telegram alerts, and no approved email follow-ups. Doctor shows telegram-api, ccgram-env and daemon as skipped."
+      "skip": "Skippable (RECOMMENDED). If skipped: no phone control, no Telegram alerts, and no approved email follow-ups. Doctor shows telegram-api and telegram-bridge as skipped."
     },
     {
       "id": "gmail",
@@ -716,11 +712,10 @@
     },
     {
       "id": "access",
-      "title": "Permission set and hooks",
+      "title": "Permission set",
       "owner_command": "npm run setup -- --step access",
       "doctor_checks": [
         "permission-set",
-        "project-hooks",
         "gitignore"
       ],
       "keys": [
@@ -735,7 +730,6 @@
       "explain": "A permission set decides what a Claude session may do. read_only sends nothing and is the safe default; keep it unless you have a reason. Changing the set is your own command, never the guide.",
       "fixes": {
         "permission-set": "Check the current set with npm run permissions -- --status; keep read_only unless you decide otherwise in your own terminal.",
-        "project-hooks": "Restore .claude/settings.json from git; the safety hooks must be registered.",
         "gitignore": "Restore .gitignore from git so secrets and user data stay untracked."
       }
     },

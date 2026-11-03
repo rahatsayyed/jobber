@@ -137,7 +137,7 @@ describe('final summary', () => {
     expect(await finalStep.run(ctx)).toBe('done');
     const out = text(sio.transcript);
     expect(out).not.toContain('Skipped by choice');
-    expect(out).toContain('bash scripts/ccgram/start.sh');
+    expect(out).toContain('npm run up (starts the bridge in window bridge of the Jobber tmux session)');
     expect(out).toContain('/health');
     expect(out).toContain('npm run dashboard -- token');
     expect(out).toContain('npm run dry-run');
@@ -153,7 +153,7 @@ describe('final summary', () => {
     expect(out).toContain('npm run setup -- --step telegram');
     expect(out).toContain('npm run setup -- --step dashboard');
     const next = out.slice(out.indexOf('Next, yourself:'));
-    expect(next).not.toContain('bash scripts/ccgram/start.sh');
+    expect(next).not.toContain('npm run up (starts the bridge in window bridge of the Jobber tmux session)');
     expect(next).not.toContain('/health');
     expect(next).not.toContain('dashboard -- token');
     expect(next).toContain('npm run dry-run');

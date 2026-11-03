@@ -92,13 +92,13 @@ function mk(opts: {
   return { ctx, sio, fs, urls };
 }
 
-// Full happy path in order: choose now, botfather done, secret, topics done, getUpdates no,
+// Full happy path in order: choose now, botfather done, secret, forum group no, getUpdates no,
 // id, another no, arrived yes.
 const HAPPY: ScriptItem[] = [
   { choose: 'now' },
   { confirm: true },
   { secret: TOKEN },
-  { confirm: true },
+  { confirm: false },
   { confirm: false },
   { ask: '12345678' },
   { confirm: false },
@@ -119,7 +119,7 @@ describe('telegram walkthrough', () => {
 
   it('row 1: no skip offer when a token is already in .env', async () => {
     const t = mk({
-      script: [{ confirm: true }, { confirm: true }, { confirm: true }, { confirm: true }, { confirm: true }],
+      script: [{ confirm: true }, { confirm: false }, { confirm: true }, { confirm: true }, { confirm: true }],
       files: { 'proj/.env': `TELEGRAM_BOT_TOKEN=${TOKEN}\nALLOWED_USERS=12345678\n` },
     });
     await telegramStep.run(t.ctx);
@@ -132,7 +132,7 @@ describe('telegram walkthrough', () => {
     const out = t.sio.transcript.join('\n');
     expect(out).toContain('password');
     expect(out).toContain('verified badge');
-    expect(out).toContain('Mini App');
+    expect(out).not.toContain('can_manage_topics'); // no forum group chosen: the group coaching is not printed
     expect(out).toContain('@userinfobot');
     expect(out).toContain('send /health to your bot');
     expect(t.fs.files.get('proj/.env')).toContain(`TELEGRAM_BOT_TOKEN=${TOKEN}`);
@@ -163,7 +163,7 @@ describe('telegram walkthrough', () => {
   it('row 2: BotFather re-explains on no, and skips after 3 no', async () => {
     const t = mk({
       mode: 'terminal',
-      script: [{ choose: 'now' }, { confirm: false }, { confirm: false }, { confirm: true }, { secret: TOKEN }, { confirm: true }, { confirm: false }, { ask: '12345678' }, { confirm: false }, { confirm: true }],
+      script: [{ choose: 'now' }, { confirm: false }, { confirm: false }, { confirm: true }, { secret: TOKEN }, { confirm: false }, { confirm: false }, { ask: '12345678' }, { confirm: false }, { confirm: true }],
     });
     await telegramStep.run(t.ctx);
     expect(t.sio.transcript.join('\n')).toContain('long token with a colon');
@@ -183,38 +183,38 @@ describe('telegram walkthrough', () => {
     expect(t.fs.files.has('proj/.env')).toBe(false);
   });
 
-  it('row 4: topics flag false re-asks, then true continues', async () => {
+  it('row 4: a forum group is optional; saying yes explains Topics and the can_manage_topics right, then stores TELEGRAM_CHAT_ID', async () => {
     const t = mk({
       mode: 'terminal',
-      topics: [undefined, false, true], // first getMe is the token check
       script: [
         { choose: 'now' },
         { confirm: true },
         { secret: TOKEN },
-        { confirm: true },
-        { confirm: true },
-        { confirm: false },
+        { confirm: true }, // use a forum group
+        { ask: '-1001234567890' },
+        { confirm: false }, // getUpdates
         { ask: '12345678' },
         { confirm: false },
         { confirm: true },
       ],
     });
     await telegramStep.run(t.ctx);
-    expect(t.sio.transcript.join('\n')).toContain('topics are still off');
-    expect(t.ctx.state.answers.telegram_topics).toBeUndefined();
+    const out = t.sio.transcript.join('\n');
+    expect(out).toContain('Topics');
+    expect(out).toContain('can_manage_topics');
+    expect(t.fs.files.get('proj/.env')).toContain('TELEGRAM_CHAT_ID=-1001234567890');
     t.sio.assertDone();
   });
 
-  it('row 4: three no answers offer continue-without-topics and record unconfirmed', async () => {
+  it('row 4: a malformed group id is refused and re-asked', async () => {
     const t = mk({
-      mode: 'terminal',
       script: [
         { choose: 'now' },
         { confirm: true },
         { secret: TOKEN },
-        { confirm: false },
-        { confirm: false },
-        { confirm: false },
+        { confirm: true },
+        { ask: 'my-group' },
+        { ask: '-1009876543210' },
         { confirm: false },
         { ask: '12345678' },
         { confirm: false },
@@ -222,8 +222,23 @@ describe('telegram walkthrough', () => {
       ],
     });
     await telegramStep.run(t.ctx);
-    expect(t.sio.transcript.join('\n')).toContain('label may differ');
-    expect(t.ctx.state.answers.telegram_topics).toBe('unconfirmed');
+    expect(t.sio.transcript.some((l) => l.startsWith('invalid:'))).toBe(true);
+    expect(t.fs.files.get('proj/.env')).toContain('TELEGRAM_CHAT_ID=-1009876543210');
+  });
+
+  it('row 4: no group leaves TELEGRAM_CHAT_ID out of .env', async () => {
+    const t = mk({ script: HAPPY });
+    await telegramStep.run(t.ctx);
+    expect(t.fs.files.get('proj/.env')).not.toContain('TELEGRAM_CHAT_ID');
+  });
+
+  it('row 4: an existing valid group id can be kept without being asked again', async () => {
+    const t = mk({
+      script: [{ confirm: true }, { confirm: true }, { confirm: true }, { confirm: true }, { confirm: true }],
+      files: { 'proj/.env': `TELEGRAM_BOT_TOKEN=${TOKEN}\nALLOWED_USERS=12345678\nTELEGRAM_CHAT_ID=-1001234567890\n` },
+    });
+    await telegramStep.run(t.ctx);
+    expect(t.fs.files.get('proj/.env')).toContain('TELEGRAM_CHAT_ID=-1001234567890');
   });
 
   it('row 7: test message failing twice then arriving', async () => {

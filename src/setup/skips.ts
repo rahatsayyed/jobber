@@ -40,7 +40,7 @@ export const SKIP_SPECS: readonly SkipSpec[] = [
       'No phone control: you cannot start a hunt or ask for status from Telegram.',
       'No Telegram alerts, and email follow-ups cannot be approved, so none are sent.',
     ],
-    checkIds: ['telegram-api', 'ccgram-env', 'daemon'],
+    checkIds: ['telegram-api', 'telegram-bridge'],
     configured: (env) => set(env, 'TELEGRAM_BOT_TOKEN'),
   },
   {

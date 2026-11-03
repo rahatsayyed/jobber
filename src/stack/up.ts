@@ -72,11 +72,6 @@ export function mergedEnv(deps: StackDeps): NodeJS.ProcessEnv {
   return { ...readFileEnv(deps), ...deps.env };
 }
 
-/** TELEGRAM_BRIDGE=custom starts the grammY bridge in window `bridge`; anything else keeps the old bridge for now. */
-export function customBridge(env: NodeJS.ProcessEnv): boolean {
-  return (env.TELEGRAM_BRIDGE ?? '').trim() === 'custom';
-}
-
 export function stackSession(env: NodeJS.ProcessEnv): string {
   const s = (env.STACK_TMUX_SESSION ?? '').trim() || DEFAULT_STACK_SESSION;
   assertName(s);
@@ -167,7 +162,6 @@ async function startStackWindow(
 async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): Promise<number> {
   const say = deps.say;
   const session = stackSession(env);
-  const daemonSession = (env.CCGRAM_DAEMON_SESSION ?? '').trim() || 'ccgram-daemon';
   const rows: Array<[string, string, string]> = [];
   const warnings: string[] = [];
   const started: string[] = [];
@@ -203,25 +197,19 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
       say('bridge: skipped (setup)');
     } else if ((env.TELEGRAM_BOT_TOKEN ?? '') === '') {
       say('bridge: skipped (TELEGRAM_BOT_TOKEN not set)');
-    } else if (customBridge(env)) {
+    } else {
       // The grammY bridge (src/telegram/bridge.ts) runs in window `bridge` of the stack session, like scheduler and web.
       if ((await windowNames(deps.run, session)).has('bridge')) say('bridge: already running');
       else {
         try {
           await startStackWindow(deps, session, 'bridge', cleanEnvArgv(env, BRIDGE_CMD));
           started.push('bridge');
-          say('bridge: started (custom, window bridge)');
+          say('bridge: started (window bridge)');
         } catch (e) {
           warnings.push(`bridge: ${(e as Error).message}`);
           startFailed = true;
         }
       }
-    } else {
-      const r = await deps.run('bash', ['scripts/ccgram/start.sh'], { cwd: deps.root });
-      if (r.code !== 0) {
-        warnings.push('bridge: start.sh failed');
-        startFailed = true;
-      } else say(`bridge: ${r.stdout.trim().split('\n').pop() ?? 'ok'}`);
     }
 
     // Manager windows.
@@ -307,17 +295,15 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
       }
     }
   }
-  const bridgeUp = await hasSession(deps.run, daemonSession);
   const unitNow = await unitLoaded(deps.run);
-  const csess = cfg ? sessionName(cfg, env) : 'ccgram';
+  const csess = cfg ? sessionName(cfg, env) : session;
   const cNames = await windowNames(deps.run, csess);
   const telegramFix = 'npm run setup -- --step telegram';
   if (noTelegram) {
     rows.push(['bridge', 'skipped (setup)', telegramFix]);
     rows.push(['windows', 'skipped (setup)', telegramFix]);
   } else {
-    if (customBridge(env)) rows.push(['bridge', stackNames.has('bridge') ? 'running (custom)' : 'not running', `tmux attach -t ${session}`]);
-    else rows.push(['bridge', bridgeUp ? 'running' : 'not running', `tmux attach -t ${daemonSession}`]);
+    rows.push(['bridge', stackNames.has('bridge') ? 'running' : 'not running', `tmux attach -t ${session}`]);
     for (const n of ['hunt', 'followups', 'manager']) {
       rows.push([n, cNames.has(n) ? 'running' : 'not running', `tmux attach -t ${csess}`]);
     }

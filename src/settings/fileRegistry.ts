@@ -239,7 +239,6 @@ const ENTRIES: FileEntry[] = [
   view('manager-windows', 'config/manager-windows.json', 'Named session windows; edit it in the repository by hand.'),
   view('platforms', 'config/platforms.json', 'Plan 8G platform catalog; edit it in the repository by hand.'),
   view('ai-tells', 'config/ai-tells.json', 'Style gate word lists; edit it in the repository by hand.'),
-  view('ccgram-pin', 'config/ccgram.pin.json', 'Pinned bridge version (owner decision); never changed from the web.'),
   view('update-known-failures', 'config/update-known-failures.json', 'Mirrors the test baseline in CLAUDE.md; edit both together by hand.'),
 ];
 

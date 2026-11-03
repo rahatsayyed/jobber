@@ -155,7 +155,7 @@ describe('finalStep', () => {
     const { ctx, sio } = makeCtx([]);
     expect(await finalStep.run(ctx)).toBe('done');
     const out = sio.transcript.join('\n');
-    expect(out).toContain('bash scripts/ccgram/start.sh');
+    expect(out).toContain('npm run up (starts the bridge in window bridge of the Jobber tmux session)');
     expect(out).toContain('/health');
     expect(out).toContain('/runhunt');
     expect(out).not.toContain(CANARY);

@@ -14,8 +14,7 @@ export const DEFAULT_REVIEW_PATHS = [
   '.claude/settings.json',
   '.claude/hooks/',
   '.githooks/',
-  'config/ccgram.pin.json',
-  'scripts/ccgram/',
+  'scripts/claude-session.sh',
 ];
 
 const REMOTE_RE = /^[A-Za-z0-9_.-]{1,64}$/;

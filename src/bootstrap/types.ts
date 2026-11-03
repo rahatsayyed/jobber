@@ -11,17 +11,10 @@ export type ItemId =
   | 'chrome'
   | 'tmux'
   | 'uv'
-  | 'ccgram'
   | 'claude-cli'
   | 'age'
   | 'rclone'
   | 'classifier-model';
-
-/** Shape of config/ccgram.pin.json that the bootstrap needs. */
-export interface CcgramPin {
-  version: string;
-  installed?: boolean;
-}
 
 export interface Detection {
   present: boolean;

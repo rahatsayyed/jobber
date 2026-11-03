@@ -2,7 +2,7 @@
 // Step 3: Telegram bot token and allowed user ID(s). The token only travels from askSecret
 // to the Telegram URL path (via ctx.fetch) and into .env through the writer.
 import path from 'node:path';
-import { hasSession } from '../../platform/tmux.js';
+import { JOBBER_TMUX_SESSION, listWindows } from '../../platform/tmux.js';
 import { envFileValue, updateEnvText, writeEnvFile } from '../envWriter.js';
 import type { SetupContext, SetupStep } from '../runner.js';
 import { coachOn, confirmDone, offerSkip, say } from '../coach.js';
@@ -13,27 +13,28 @@ const ID_RE = /^\d{5,15}$/;
 const TEST_TEXT = 'Jobber setup: test message';
 const API = 'https://api.telegram.org/bot';
 
-// UNVERIFIED (plan 8F U2): the name of the getMe field that says topics (Threaded Mode) are on.
-// It could not be checked offline. Absence is trusted to the owner's "done"; it never fails.
-const TOPICS_FIELD = 'has_topics_enabled';
+// A forum supergroup id is a negative number, usually starting with -100.
+const GROUP_RE = /^-100\d{5,15}$/;
 
-async function getMe(
-  ctx: SetupContext,
-  token: string,
-): Promise<{ ok: boolean; topics: boolean | undefined }> {
+async function getMeOk(ctx: SetupContext, token: string): Promise<boolean> {
   try {
     const res = await ctx.fetch(`${API}${token}/getMe`);
-    if (!res.ok) return { ok: false, topics: undefined };
-    const body = (await res.json()) as { ok?: unknown; result?: Record<string, unknown> };
-    const flag = body.result?.[TOPICS_FIELD];
-    return { ok: body.ok === true, topics: typeof flag === 'boolean' ? flag : undefined };
+    if (!res.ok) return false;
+    const body = (await res.json()) as { ok?: unknown };
+    return body.ok === true;
   } catch {
-    return { ok: false, topics: undefined }; // the error text can carry the URL and so the token
+    return false; // the error text can carry the URL and so the token
   }
 }
 
-async function getMeOk(ctx: SetupContext, token: string): Promise<boolean> {
-  return (await getMe(ctx, token)).ok;
+// The bridge window consumes the bot updates, so reading them here would steal them.
+async function bridgeRunning(ctx: SetupContext): Promise<boolean> {
+  try {
+    const session = (ctx.env.STACK_TMUX_SESSION ?? '').trim() || JOBBER_TMUX_SESSION;
+    return (await listWindows(ctx.run, session)).some((w) => w.name === 'bridge');
+  } catch {
+    return false;
+  }
 }
 
 async function idFromUpdates(ctx: SetupContext, token: string): Promise<string> {
@@ -66,7 +67,7 @@ const idValidate = (v: string): string | null =>
 export const telegramStep: SetupStep = {
   id: 'telegram',
   title: 'Telegram bot',
-  checkIds: ['telegram-api', 'ccgram-env'],
+  checkIds: ['telegram-api', 'telegram-bridge'],
   async run(ctx) {
     const { io } = ctx;
     const envText = readEnvText(ctx);
@@ -118,40 +119,30 @@ export const telegramStep: SetupStep = {
       if (!token) throw new Error('Telegram rejected that token');
     }
 
-    const topicsRounds = 3;
-    for (let r = 0; r < topicsRounds; r++) {
-      const res = await confirmDone(ctx, {
-        id: 'telegram.topics',
-        action: 'Enable Threaded Mode for the bot',
-        explain: coachOn(ctx)
-          ? [
-              'The bridge needs topics (Threaded Mode) so each window gets its own thread.',
-              'Route A: in @BotFather press its Open button (Mini App), pick your bot, Bot Settings, switch Threaded Mode on.',
-              'Route B (older clients): send /mybots, pick your bot, Bot Settings, enable Topics.',
-              'Also turn Group Privacy off if you use a group.',
-            ]
-          : ['In @BotFather: your bot, Bot Settings, enable Threaded Mode (Topics).'],
-        again: [
-          'Route A: @BotFather, Open button (Mini App), your bot, Bot Settings, Threaded Mode.',
-          'Route B: /mybots, your bot, Bot Settings, Topics. The label may differ in your app version (Topics, Threads or Threaded Mode).',
-        ],
-        allowSkip: true,
-      });
-      if (res === 'skip') {
-        ctx.state.answers.telegram_topics = 'unconfirmed';
-        io.say('Continuing without topics. The bridge needs them for windows; enable them later.');
-        break;
-      }
-      const me = await getMe(ctx, token);
-      if (me.topics === false) {
-        if (r < topicsRounds - 1) {
-          io.say('Telegram reports topics are still off for this bot. Check again.');
-          continue;
-        }
-        ctx.state.answers.telegram_topics = 'unconfirmed';
-        io.say('Telegram still reports topics off. Continuing; enable them before starting the bridge.');
-      }
-      break;
+    // Optional forum group: each window (hunt, followups, manager) then gets its own Topic.
+    const existingGroup = envFileValue(envText, 'TELEGRAM_CHAT_ID').trim();
+    let group = '';
+    if (
+      GROUP_RE.test(existingGroup) &&
+      (await io.confirm(`Keep the forum group id ${existingGroup}?`, true))
+    ) {
+      group = existingGroup;
+    } else if (
+      await io.confirm('Use a forum group so each window gets its own Topic? (optional; without it the bot uses your private chat)', false)
+    ) {
+      const lines = coachOn(ctx)
+        ? [
+            '1. In Telegram create a group, open its settings and turn Topics on (this makes it a forum supergroup).',
+            '2. Add your bot to the group and make it an admin with the "Manage Topics" right (can_manage_topics).',
+            '3. Get the group id: forward a message from the group to @userinfobot, or open the group in Telegram Web and read the number after the # (prefix it with -100).',
+          ]
+        : ['Create a group with Topics on, add the bot as admin with Manage Topics (can_manage_topics), then enter the group id (-100...).'];
+      for (const l of lines) io.say(l);
+      group = (
+        await io.ask('Forum group id (starts with -100)', {
+          validate: (v) => (GROUP_RE.test(v.trim()) ? null : 'A forum group id looks like -1001234567890'),
+        })
+      ).trim();
     }
 
     const existingIds = envFileValue(envText, 'ALLOWED_USERS')
@@ -168,11 +159,11 @@ export const telegramStep: SetupStep = {
     } else {
       say(ctx, 'telegram.id');
       let id = '';
-      const daemonUp = await hasSession(ctx.run, 'ccgram-daemon');
+      const bridgeUp = await bridgeRunning(ctx);
       if (
-        !daemonUp &&
+        !bridgeUp &&
         (await io.confirm(
-          'Read your ID from your new bot instead? (send /start to it first; do not use this while ccgram runs, it would steal updates)',
+          'Read your ID from your new bot instead? (send /start to it first; do not use this while the bridge runs, it would steal updates)',
           false,
         ))
       ) {
@@ -196,6 +187,7 @@ export const telegramStep: SetupStep = {
     const upd = updateEnvText(envText, {
       TELEGRAM_BOT_TOKEN: token,
       ALLOWED_USERS: ids.join(','),
+      ...(group ? { TELEGRAM_CHAT_ID: group } : {}),
     });
     if (upd.changed.length > 0 || !ctx.fs.exists(ctx.envPath)) {
       writeEnvFile(ctx.envPath, upd.text, ctx.fs, ctx.now);
@@ -228,7 +220,7 @@ export const telegramStep: SetupStep = {
       }
       io.say('warning: the test message was not confirmed; check the bot and the ID before starting the bridge.');
     }
-    io.say('Next: bash scripts/ccgram/start.sh');
+    io.say('Next: npm run up (starts the bridge in window bridge of the Jobber tmux session)');
     say(ctx, 'telegram.next');
     return 'done';
   },
