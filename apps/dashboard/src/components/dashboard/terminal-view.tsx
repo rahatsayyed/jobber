@@ -141,7 +141,19 @@ function TerminalPane({ target, inputOn, csrf, hidden, onState, onInfo }: { targ
       media.addEventListener("change", retheme);
       connect();
     })();
+    /** A hidden browser tab must not keep the server polling tmux: close the stream while hidden, reopen when visible again. */
+    const onVisibility = () => {
+      if (disposed) return;
+      if (document.hidden) {
+        if (timer) { window.clearTimeout(timer); timer = undefined; }
+        es?.close(); es = null;
+      } else if (!es && term) {
+        attempt = 0; connect();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
       disposed = true; if (timer) window.clearTimeout(timer); if (flush) window.clearTimeout(flush);
       es?.close(); themeObs?.disconnect(); sizeObs?.disconnect(); media.removeEventListener("change", retheme); term?.dispose(); termRef.current = null;
     };
