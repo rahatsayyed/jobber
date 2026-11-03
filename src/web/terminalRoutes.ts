@@ -22,7 +22,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { audit, type AuthDb } from '../dash/authStore.js';
 import { cleanText } from '../dash/clean.js';
-import { assertName, listWindows, type Run } from '../platform/tmux.js';
+import { assertName, JOBBER_TMUX_SESSION, listWindows, type Run } from '../platform/tmux.js';
 import { HttpError, json, readJson, type Ctx } from './router.js';
 
 export interface TerminalDeps {
@@ -43,11 +43,16 @@ export interface TerminalDeps {
 
 export interface TerminalRoute { method: 'GET' | 'POST'; pattern: string; fn: (c: Ctx) => Promise<void> | void }
 
-/** Default session names shown in the terminal: the dashboard chat target, the ccgram pair and the stack session (docs/reference/platform-and-sessions.md). */
+/**
+ * Session names shown in the terminal: the one Jobber session (the dashboard chat target, STACK_TMUX_SESSION and
+ * SCHEDULER_TMUX_SESSION all default to it), plus any explicit extra names in WEB_TERMINAL_SESSIONS (comma separated).
+ * No other session is ever listed (docs/reference/platform-and-sessions.md).
+ */
 export function allowedTerminalSessions(env: Record<string, string | undefined>, chatSession: string): string[] {
-  const stack = (env.STACK_TMUX_SESSION ?? '').trim() || 'jobber-stack';
+  const stack = (env.STACK_TMUX_SESSION ?? '').trim() || JOBBER_TMUX_SESSION;
+  const extra = (env.WEB_TERMINAL_SESSIONS ?? '').split(',').map((s) => s.trim()).filter((s) => s !== '');
   const out: string[] = [];
-  for (const name of [chatSession, 'ccgram', 'ccgram-daemon', stack]) {
+  for (const name of [chatSession, stack, ...extra]) {
     try {
       assertName(name);
     } catch {

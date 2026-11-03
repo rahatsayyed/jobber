@@ -17,6 +17,7 @@ import { drawUniformMinMs, inQuietHours, quietFromConfig } from '../outreach/qui
 import { BudgetTracker, loadBudget, type Budget } from './budget.js';
 import { readControl, statExists, type ControlDeps } from './control.js';
 import type { DriverDeps } from './driver.js';
+import { JOBBER_TMUX_SESSION } from '../platform/tmux.js';
 import type { LaunchHandle } from './launch.js';
 import { finishRun, getState, setRunLogPath, setState, startRun, type RunStatus } from './runLog.js';
 
@@ -33,7 +34,9 @@ export const STATE_QUARANTINE = 'mail_drip_quarantine';
 export const STATE_TRIED = 'mail_drip_tried';
 // An item a run already handled is not offered again for this long (a run that ends ok without sending must not loop every tick).
 export const TRIED_HOURS = 3;
-const DEFAULT_SESSION = 'jobber-wake';
+const DEFAULT_SESSION = JOBBER_TMUX_SESSION;
+/** Window name prefix of a mail drip run: `drip-mail-<runId>`. */
+export const MAIL_DRIP_WINDOW = 'drip-mail';
 
 export interface DripConfig {
   windowStartMin: number; // minutes after local (IST) midnight
@@ -424,6 +427,7 @@ async function runOne(
     handle = await d.launcher.start({
       runId, dryRun: dry, prompt, profile: DRIP_PROFILE,
       session: d.session ?? DEFAULT_SESSION,
+      windowName: `${MAIL_DRIP_WINDOW}-${runId}`,
       runDir: d.runDir,
       projectRoot: d.projectRoot,
       noClassifier: d.env.SCHEDULER_NO_CLASSIFIER === 'true' && dry,
@@ -444,7 +448,7 @@ async function runOne(
         await d.launcher.kill(h);
       } catch {
         try {
-          setState(d.db, 'unkilled_window', JSON.stringify({ runId: h.runId, session: h.session }), d.now());
+          setState(d.db, 'unkilled_window', JSON.stringify({ runId: h.runId, session: h.session, window: h.window }), d.now());
         } catch {
           // ignore
         }
@@ -511,7 +515,7 @@ async function runOne(
         await d.launcher.kill(handle);
       } catch {
         try {
-          setState(d.db, 'unkilled_window', JSON.stringify({ runId: handle.runId, session: handle.session }), d.now());
+          setState(d.db, 'unkilled_window', JSON.stringify({ runId: handle.runId, session: handle.session, window: handle.window }), d.now());
         } catch {
           // ignore
         }

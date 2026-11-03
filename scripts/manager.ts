@@ -13,7 +13,7 @@ import {
   USAGE,
 } from '../src/platform/manager.js';
 import { redactPane } from '../src/platform/redact.js';
-import { assertName, defaultRun, listWindows } from '../src/platform/tmux.js';
+import { assertName, defaultRun, JOBBER_TMUX_SESSION, listWindows } from '../src/platform/tmux.js';
 
 const ROOT = resolve(import.meta.dirname, '..');
 
@@ -34,7 +34,7 @@ async function status(): Promise<string> {
     try {
       const snap = snapMod.buildSnapshot(db, loadOutreachConfig(), new Date());
       // WEB_TMUX_SESSION on purpose: the output must match scripts/status.ts health.
-      const session = process.env.WEB_TMUX_SESSION?.trim() || 'ccgram';
+      const session = process.env.WEB_TMUX_SESSION?.trim() || JOBBER_TMUX_SESSION;
       return renderMod.renderHealth(snap, await listWindows(defaultRun, session));
     } finally {
       db.close();

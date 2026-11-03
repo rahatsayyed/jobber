@@ -85,7 +85,7 @@ function mk(f: Fake, over: Partial<DownDeps> = {}, env: NodeJS.ProcessEnv = {}):
 }
 
 const full = (): Record<string, string[]> => ({
-  'jobber-stack': ['scheduler', 'web'],
+  'Jobber': ['scheduler', 'web'],
   ccgram: ['hunt', 'followups', 'manager'],
   'ccgram-daemon': ['bridge'],
 });
@@ -108,8 +108,8 @@ describe('down', () => {
     const f = fake({ sessions: full() });
     const d = mk(f, {}, { STACK_DOWN_WAIT_SEC: '7' });
     await runDown(d, OPTS);
-    expect(f.calls.some((c) => c[1] === 'send-keys' && c.includes('C-c') && c.includes('=jobber-stack:=scheduler'))).toBe(true);
-    expect(kills(f)).not.toContain('=jobber-stack:=scheduler');
+    expect(f.calls.some((c) => c[1] === 'send-keys' && c.includes('C-c') && c.includes('=Jobber:=scheduler'))).toBe(true);
+    expect(kills(f)).not.toContain('=Jobber:=scheduler');
     expect(d.slept).toBe(7);
     expect(d.out.join('\n')).toContain('scheduler is finishing a wake; run npm run down again, or npm run down -- --force');
   });
@@ -125,8 +125,8 @@ describe('down', () => {
   it('--force kills the scheduler window', async () => {
     const f = fake({ sessions: full() });
     await runDown(mk(f), { ...OPTS, force: true });
-    expect(kills(f)).toContain('=jobber-stack:=scheduler');
-    expect(f.sessions.get('jobber-stack')).toEqual([]);
+    expect(kills(f)).toContain('=Jobber:=scheduler');
+    expect(f.sessions.get('Jobber')).toEqual([]);
   });
 
   it('--keep-bridge skips the bridge', async () => {
@@ -168,7 +168,7 @@ describe('down', () => {
     const f = fake({ sessions: full(), launchd: true });
     const d = mk(f);
     await runDown(d, { ...OPTS, force: true });
-    expect(kills(f)).not.toContain('=jobber-stack:=scheduler');
+    expect(kills(f)).not.toContain('=Jobber:=scheduler');
     expect(f.calls.some((c) => c[1] === 'send-keys')).toBe(false);
     expect(d.out.join('\n')).toContain('launchctl unload');
   });

@@ -16,7 +16,7 @@ import { renderReplyDraftLines } from '../src/outreach/replyDraftsCli.js';
 import { linkedinDripStatus, renderLinkedinDripLines } from '../src/scheduler/linkedinDrip.js';
 import { loadTuning } from '../src/outreach/tuning.js';
 import { renderRunToolCounts, summarizeRunLog } from '../src/status/runs.js';
-import { defaultRun, listWindows } from '../src/platform/tmux.js';
+import { defaultRun, JOBBER_TMUX_SESSION, listWindows } from '../src/platform/tmux.js';
 
 const USAGE = 'usage: npm run status -- <limits|working|health|json|layout|sources|runs|escalations>';
 const cmd = process.argv[2];
@@ -85,7 +85,7 @@ async function main(): Promise<number> {
     else if (cmd === 'working') console.log([renderWorking(snap), ...dripLines()].join('\n'));
     else if (cmd === 'json') console.log(JSON.stringify(snap, null, 2));
     else {
-      const session = process.env.WEB_TMUX_SESSION?.trim() || 'ccgram';
+      const session = process.env.WEB_TMUX_SESSION?.trim() || JOBBER_TMUX_SESSION;
       const windows = await listWindows(defaultRun, session);
       console.log(renderHealth(snap, windows));
     }

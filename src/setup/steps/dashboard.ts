@@ -8,6 +8,7 @@ import type { SetupContext, SetupStep } from '../runner.js';
 import { offerSkip, say } from '../coach.js';
 import { SKIP_SPECS } from '../skips.js';
 import { parseEnv } from '../../platform/envFile.js';
+import { JOBBER_TMUX_SESSION } from '../../platform/tmux.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const CALLBACK_PATH = '/auth/callback';
@@ -47,7 +48,7 @@ function localSettings(ctx: SetupContext): void {
   const { io, root } = ctx;
   writeKeys(
     ctx,
-    { WEB_PORT: '8787', WEB_TMUX_SESSION: 'ccgram', WEB_TMUX_WINDOW: 'JobApplier' },
+    { WEB_PORT: '8787', WEB_TMUX_SESSION: JOBBER_TMUX_SESSION, WEB_TMUX_WINDOW: 'JobApplier' },
     true,
   );
   io.say('Local web settings are in .env (WEB_PORT, WEB_TMUX_SESSION, WEB_TMUX_WINDOW).');

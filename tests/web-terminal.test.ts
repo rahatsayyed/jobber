@@ -15,15 +15,26 @@ afterEach(async () => {
 });
 
 describe('terminal allowlist', () => {
-  it('lists the chat session, ccgram, ccgram-daemon and the stack session once each', () => {
-    expect(allowedTerminalSessions({}, 'ccgram')).toEqual(['ccgram', 'ccgram-daemon', 'jobber-stack']);
-    expect(allowedTerminalSessions({ STACK_TMUX_SESSION: 'mystack' }, 'work')).toEqual(['work', 'ccgram', 'ccgram-daemon', 'mystack']);
+  it('allows only the Jobber session by default, once', () => {
+    expect(allowedTerminalSessions({}, 'Jobber')).toEqual(['Jobber']);
+  });
+  it('no longer lists the ccgram sessions', () => {
+    const all = allowedTerminalSessions({}, 'Jobber');
+    expect(all).not.toContain('ccgram');
+    expect(all).not.toContain('ccgram-daemon');
+    expect(all).not.toContain('jobber-stack');
+  });
+  it('follows STACK_TMUX_SESSION and the chat session when they are overridden', () => {
+    expect(allowedTerminalSessions({ STACK_TMUX_SESSION: 'mystack' }, 'work')).toEqual(['work', 'mystack']);
+  });
+  it('adds only the names of WEB_TERMINAL_SESSIONS as an explicit override list', () => {
+    expect(allowedTerminalSessions({ WEB_TERMINAL_SESSIONS: ' extra , Jobber ,bad name' }, 'Jobber')).toEqual(['Jobber', 'extra']);
   });
   it('drops invalid names', () => {
-    expect(allowedTerminalSessions({ STACK_TMUX_SESSION: 'bad name;rm' }, 'ccgram')).toEqual(['ccgram', 'ccgram-daemon']);
+    expect(allowedTerminalSessions({ STACK_TMUX_SESSION: 'bad name;rm' }, 'Jobber')).toEqual(['Jobber']);
   });
   it('matches only allowlisted sessions and valid window names', () => {
-    const allow = ['ccgram', 'jobber-stack'];
+    const allow = ['ccgram', 'Jobber'];
     expect(matchTerminalTarget(allow, 'ccgram', 'hunt')).toEqual({ session: 'ccgram', window: 'hunt' });
     expect(matchTerminalTarget(allow, 'personal', 'hunt')).toBeNull();
     expect(matchTerminalTarget(allow, 'ccgram', '-x')).toBeNull();

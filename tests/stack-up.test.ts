@@ -200,7 +200,7 @@ describe('up', () => {
     const base = f.run;
     f.run = async (c, a, o) => {
       const r = await base(c, a, o);
-      if (c === 'tmux' && a[0] === 'new-session' && a.includes('scheduler')) f.sessions.get('jobber-stack')?.splice(0);
+      if (c === 'tmux' && a[0] === 'new-session' && a.includes('scheduler')) f.sessions.get('Jobber')?.splice(0);
       return r;
     };
     const d = deps(f);
@@ -326,8 +326,8 @@ describe('pending restart list', () => {
 
   it('clears only the scope of the component it started', async () => {
     const fs = seed();
-    const f = fake({ preSessions: { 'jobber-stack': ['scheduler'] } });
-    const d = deps(f, { pendingFs: fs }, { STACK_TMUX_SESSION: 'jobber-stack' });
+    const f = fake({ preSessions: { 'Jobber': ['scheduler'] } });
+    const d = deps(f, { pendingFs: fs }, { STACK_TMUX_SESSION: 'Jobber' });
     expect(await runUp(d, { status: false })).toBe(0);
     expect(left(fs)).toEqual(['MCP_X', 'SCH_X', 'STK_X']);
   });

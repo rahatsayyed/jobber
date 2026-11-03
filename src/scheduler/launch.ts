@@ -2,7 +2,7 @@
 // Starts a wake run in a detached tmux window via an sh wrapper around scripts/run-claude.ts.
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ensureSession, killWindow, newWindow, windowExists, type Run } from '../platform/tmux.js';
+import { assertName, ensureSession, killWindow, newWindow, windowExists, type Run } from '../platform/tmux.js';
 import { SESSION_ID_RE } from '../platform/runner.js';
 
 export interface LaunchHandle {
@@ -29,6 +29,8 @@ export interface LaunchPlan {
   env?: Record<string, string>;
   /** Continue this claude session (`claude --resume`): the driver's continuation of a wake that ended incomplete. Same profile and restrictions. */
   resumeSessionId?: string;
+  /** tmux window name for this run (valid tmux name). Default `wake-<runId>`. The drip lanes pass `drip-mail-<runId>` / `drip-linkedin-<runId>`. */
+  windowName?: string;
 }
 export interface Launcher {
   start(plan: LaunchPlan): Promise<LaunchHandle>;
@@ -135,12 +137,20 @@ export function buildRunnerArgv(p: {
   ];
 }
 
-export function tmuxLauncher(run: Run, fsOps: FsOps = defaultFsOps): Launcher {
+/** RUN_WINDOW_KEEP_MIN: minutes a window of a run that ended on its own stays open for reading. 0 (default) closes it at once. Clamped to 0..120. */
+export function runWindowKeepMin(env: NodeJS.ProcessEnv): number {
+  const raw = (env.RUN_WINDOW_KEEP_MIN ?? '').trim();
+  if (!/^\d{1,4}$/.test(raw)) return 0;
+  return Math.min(120, Number(raw));
+}
+
+export function tmuxLauncher(run: Run, fsOps: FsOps = defaultFsOps, keepMin = 0): Launcher {
   const offsets = new Map<string, number>(); // cache only; a fresh launcher starts at 0
   return {
     async start(plan) {
       if (!RUN_ID_RE.test(plan.runId)) throw new Error('invalid run id');
-      const window = `wake-${plan.runId}`;
+      const window = plan.windowName ?? `wake-${plan.runId}`;
+      assertName(window);
       const promptPath = join(plan.runDir, `${plan.runId}.prompt.txt`);
       const logPath = join(plan.runDir, `${plan.runId}.log`);
       const exitPath = join(plan.runDir, `${plan.runId}.exit`);
@@ -159,6 +169,8 @@ export function tmuxLauncher(run: Run, fsOps: FsOps = defaultFsOps): Launcher {
       fsOps.writeFile(promptPath, plan.prompt, 0o600);
       await ensureSession(run, plan.session, plan.projectRoot);
       await newWindow(run, plan.session, window, argv, plan.projectRoot);
+      // A finished pane stays visible (dead) until the delayed close in kill().
+      if (keepMin > 0) await run('tmux', ['set-option', '-w', '-t', `=${plan.session}:=${window}`, 'remain-on-exit', 'on']);
       offsets.set(plan.runId, 0);
       return { runId: plan.runId, session: plan.session, window, logPath, exitPath, promptPath };
     },
@@ -181,6 +193,14 @@ export function tmuxLauncher(run: Run, fsOps: FsOps = defaultFsOps): Launcher {
     },
 
     async kill(h) {
+      // A run that ended on its own (exit file written) may stay open for keepMin minutes: the close is delayed inside tmux, so no
+      // timer lives in this process. A run still going, or a handle without an exit file, is always killed at once.
+      if (keepMin > 0 && h.exitPath !== '' && fsOps.exists(h.exitPath)) {
+        assertName(h.session);
+        assertName(h.window);
+        const r = await run('tmux', ['run-shell', '-b', `sleep ${keepMin * 60}; tmux kill-window -t '=${h.session}:=${h.window}'`]);
+        if (r.code === 0) return;
+      }
       // A missing window is a silent no-op; a window that survives the kill call throws so the
       // driver can record it and refuse to double-launch.
       try {

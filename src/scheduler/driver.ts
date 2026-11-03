@@ -15,6 +15,7 @@ import { BudgetTracker, loadBudget, type StopReason } from './budget.js';
 import { readControl, statExists, type ControlDeps, type ControlState } from './control.js';
 import { countDue } from './due.js';
 import { linkedinActiveNow } from '../linkedin/activeHours.js';
+import { JOBBER_TMUX_SESSION } from '../platform/tmux.js';
 import type { LaunchHandle, Launcher } from './launch.js';
 import { sourcesNotice } from '../status/sources.js';
 import type { Notice, Notifier } from './notify.js';
@@ -47,7 +48,7 @@ export interface DriverDeps {
   lockDeps?: LockDeps;
   control?: Pick<ControlDeps, 'exists' | 'read'>;
   pollMs?: number; // default 5000
-  session?: string; // tmux session for wake windows, default 'jobber-wake'
+  session?: string; // tmux session for wake windows, default 'Jobber'
   /** Named LinkedIn discovery searches (config/linkedin-discovery.json); absent plans no discover task. */
   discoverSearches?: DiscoverSearches;
   /** The zero-LLM code pass over the script providers (runCodePass); absent means the stage is planned but not run. Never throws. */
@@ -79,7 +80,7 @@ export interface WakeResult {
 
 const DEFAULT_POLL_MS = 5000;
 const SLICE_MS = 30_000;
-const DEFAULT_SESSION = 'jobber-wake';
+const DEFAULT_SESSION = JOBBER_TMUX_SESSION;
 const PASS_KEYS = new Set([
   'TZ', 'QUIET_HOURS_START', 'QUIET_HOURS_END', 'COMPANY_CONTACT_LIMIT', 'SPECULATIVE_COMPANY_LIMIT',
 ]);
@@ -160,7 +161,7 @@ async function killChecked(d: DriverDeps, h: LaunchHandle, runId: string): Promi
     return true;
   } catch (e) {
     try {
-      setState(d.db, 'unkilled_window', JSON.stringify({ runId: h.runId, session: h.session }), d.now());
+      setState(d.db, 'unkilled_window', JSON.stringify({ runId: h.runId, session: h.session, window: h.window }), d.now());
     } catch {
       // ignore
     }
@@ -241,9 +242,9 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
   try {
     const raw = getState(d.db, 'unkilled_window');
     if (raw) {
-      const u = JSON.parse(raw) as { runId?: unknown; session?: unknown };
+      const u = JSON.parse(raw) as { runId?: unknown; session?: unknown; window?: unknown };
       if (typeof u.runId !== 'string' || typeof u.session !== 'string') throw new Error('bad unkilled_window state');
-      await d.launcher.kill(handleFor(u.runId, u.session));
+      await d.launcher.kill(handleFor(u.runId, u.session, typeof u.window === 'string' ? u.window : null));
       setState(d.db, 'unkilled_window', '', d.now());
     }
   } catch (e) {

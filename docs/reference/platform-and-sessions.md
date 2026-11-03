@@ -8,9 +8,12 @@ section is the reference for what exists.
 - **tmux sessions**: `ccgram-daemon` holds the Telegram bridge; `ccgram` holds the named Claude
   windows from `config/manager-windows.json` (`hunt`, an interactive read-only session whose `/runhunt` runs one wake
   and whose `/apply <url>` queues a priority request, and `followups`; `manager` and the bridge are
-  protected); `jobber-stack` (`STACK_TMUX_SESSION`) holds the scheduler daemon and the dashboard (`web`)
-  windows that `npm start` (`npm run up`) creates; the scheduler's wake runs live in the
-  `SCHEDULER_TMUX_SESSION` session (`jobber-runs`). Start/stop the bridge with `bash scripts/ccgram/start.sh` / `stop.sh`.
+  protected); the one session `Jobber` (`JOBBER_TMUX_SESSION`, the default of `STACK_TMUX_SESSION`,
+  `SCHEDULER_TMUX_SESSION` and `WEB_TMUX_SESSION`) holds the scheduler daemon (`scheduler`) and the dashboard (`web`)
+  windows that `npm start` (`npm run up`) creates, plus the run windows: `wake-<runId>`, `drip-mail-<runId>` and
+  `drip-linkedin-<runId>` (closed when the run ends, or after `RUN_WINDOW_KEEP_MIN` minutes). The ccgram
+  sessions above still exist until the ccgram removal piece. The dashboard terminal lists only `Jobber` plus the names in
+  `WEB_TERMINAL_SESSIONS`. Start/stop the bridge with `bash scripts/ccgram/start.sh` / `stop.sh`.
 - **ccgram** is pinned to an exact version in `config/ccgram.pin.json` (4.16.0); the start script
   refuses any other version. Its own upgrade command is never to be used (owner decision,
   2026-10-14). The bridge gets only `TELEGRAM_BOT_TOKEN` and `ALLOWED_USERS` from `.env`.
