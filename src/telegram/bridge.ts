@@ -13,6 +13,8 @@ import { isOwnerId, loadTelegramConfig, PROJECT_ROOT, type TelegramConfig } from
 import { chunksFor, postChunks } from './send.js';
 import { runProcess, type SpawnFn } from './spawn.js';
 import { ensureTopics } from './topics.js';
+import { createWindowViews, handleWindowsMessage } from './windows/bridge.js';
+import type { WindowViews } from './windows/manager.js';
 
 /** A TelegramApi over a grammY Api object. Errors become results; the token is scrubbed from every message. */
 export function grammyApi(api: Api, token: string): TelegramApi {
@@ -44,6 +46,8 @@ export interface BridgeOptions {
   openDb?: () => BetterSqlite3.Database;
   /** Test seam: a Bot built by the caller (for example with a fake api transformer). */
   bot?: Bot;
+  /** Test seam: the live window views (default: built from the environment). */
+  windowViews?: WindowViews;
 }
 
 export function createBridgeBot(cfg: TelegramConfig, opts: BridgeOptions): Bot {
@@ -58,10 +62,23 @@ export function createBridgeBot(cfg: TelegramConfig, opts: BridgeOptions): Bot {
     await next();
   });
 
+  // --- windows: live tmux window views (src/telegram/windows/). Buttons here; /windows and typed text in the message hook below.
+  const windowViews = opts.windowViews ?? createWindowViews({ cfg, env: opts.env, root, api: grammyApi(bot.api, cfg.token) });
+  bot.on('callback_query:data', async (ctx) => {
+    const q = ctx.callbackQuery;
+    await windowViews.handleCallback({
+      fromId: ctx.from?.id, callbackId: q.id, data: q.data, chatId: q.message?.chat.id,
+      threadId: q.message && 'is_topic_message' in q.message && q.message.is_topic_message ? q.message.message_thread_id : undefined,
+    });
+  });
+  // --- end windows
+
   bot.on('message:text', async (ctx) => {
     const m = ctx.message;
     const threadId = m.is_topic_message ? m.message_thread_id : undefined;
     const api = grammyApi(ctx.api, cfg.token);
+    // windows hook: /windows, /window <name> and typed text in a window topic
+    if (await handleWindowsMessage(windowViews, { text: m.text, chatId: m.chat.id, threadId, messageId: m.message_id, replyToMessageId: m.reply_to_message?.message_id })) return;
     const deps: BridgeDeps = {
       root,
       env: opts.env,

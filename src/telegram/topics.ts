@@ -13,6 +13,8 @@ export interface TopicState {
   /** false when the chat is not a forum: every send then goes without a thread id. */
   forum: boolean;
   topics: Partial<Record<TopicName, number>>;
+  /** Topics of long-lived tmux windows (window name -> thread id), created on demand by the windows feature. */
+  windows?: Record<string, number>;
 }
 
 export const topicsPath = (root: string): string => path.join(root, '.jobber', 'telegram-topics.json');
@@ -28,7 +30,14 @@ export function readTopicState(root: string): TopicState | null {
       const v = (j.topics as Record<string, unknown>)[n];
       if (typeof v === 'number' && Number.isSafeInteger(v) && v > 0) topics[n] = v;
     }
-    return { chat_id: j.chat_id, forum: j.forum, topics };
+    const windows: Record<string, number> = {};
+    const rawWin = (j as { windows?: unknown }).windows;
+    if (typeof rawWin === 'object' && rawWin !== null && !Array.isArray(rawWin)) {
+      for (const [k, v] of Object.entries(rawWin as Record<string, unknown>)) {
+        if (/^[A-Za-z0-9_.-]{1,64}$/.test(k) && typeof v === 'number' && Number.isSafeInteger(v) && v > 0) windows[k] = v;
+      }
+    }
+    return { chat_id: j.chat_id, forum: j.forum, topics, ...(Object.keys(windows).length > 0 ? { windows } : {}) };
   } catch {
     return null;
   }
