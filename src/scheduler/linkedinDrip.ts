@@ -36,6 +36,8 @@ import type { DriverDeps } from './driver.js';
 import { JOBBER_TMUX_SESSION } from '../platform/tmux.js';
 import type { LaunchHandle } from './launch.js';
 import { finishRun, getState, setRunLogPath, setState, startRun, type RunStatus } from './runLog.js';
+import { withDripRequest } from './dripRequest.js';
+import { formatDripFailure, formatLinkedinNotice, linkedinNoticeKind, notifyTg } from './dripNotice.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -459,8 +461,11 @@ function wakeUsesLinkedin(db: Db): boolean {
   }
 }
 
-/** The code gates a LinkedIn action must pass right now; null when it may go. */
-export function gate(d: DriverDeps, cfg: LinkedinDripConfig, now: Date): string | null {
+/**
+ * The code gates a LinkedIn action must pass right now; null when it may go. `bypassNext` (an owner /drip request) skips ONLY the stored random
+ * next-tick time; the minimum gap since the last action, the active hours, halts, the kill switch and the rest stay.
+ */
+export function gate(d: DriverDeps, cfg: LinkedinDripConfig, now: Date, bypassNext = false): string | null {
   try {
     const ctl = readControl(d.db, controlFor(d));
     if (ctl.killed) return 'killed';
@@ -475,7 +480,7 @@ export function gate(d: DriverDeps, cfg: LinkedinDripConfig, now: Date): string 
     const until = getState(d.db, 'usage_backoff_until');
     if (until && Date.parse(until) > now.getTime()) return 'usage_backoff';
     const next = getState(d.db, LI_STATE_NEXT_AT);
-    if (next && Date.parse(next) > now.getTime()) return 'spacing';
+    if (!bypassNext && next && Date.parse(next) > now.getTime()) return 'spacing';
     const last = getState(d.db, LI_STATE_LAST_AT);
     if (last && now.getTime() - Date.parse(last) < cfg.minGapMin * 60_000) return 'spacing';
     if (wakeUsesLinkedin(d.db)) return 'wake_running';
@@ -485,7 +490,7 @@ export function gate(d: DriverDeps, cfg: LinkedinDripConfig, now: Date): string 
   return null;
 }
 
-interface OneRun { runId: string; status: RunStatus }
+interface OneRun { runId: string; status: RunStatus; reason?: string | null }
 
 /** One tiny run: dispatches linkedin-operator for exactly one item and waits for it. Never throws. */
 async function runOne(d: DriverDeps, lock: { heartbeat: () => void }, item: LiItem, opts: { abort?: () => boolean }): Promise<OneRun> {
@@ -594,7 +599,23 @@ async function runOne(d: DriverDeps, lock: { heartbeat: () => void }, item: LiIt
       await d.notifier.notify({ level: 'warn', title: 'LinkedIn drip run did not end cleanly', detail: `${itemKey(item)}: ${stopReason ?? status}; check LinkedIn before the person is touched again`, runId });
     } catch { /* ignore */ }
   }
-  return { runId, status };
+  return { runId, status, reason: stopReason };
+}
+
+/** One Telegram line per LinkedIn action (zero LLM). A failed run goes to `alerts`; a dry run says so. Never throws. */
+async function linkedinRunNotice(d: DriverDeps, item: LiItem, run: OneRun): Promise<void> {
+  try {
+    if (!d.tg || !linkedinNoticeKind(item.kind)) return;
+    const name = 'name' in item ? item.name : null;
+    const company = 'company' in item ? item.company : null;
+    const jobTitle = item.kind === 'invite' ? item.job_title : item.kind === 'easy_apply' ? item.title : null;
+    const ok = run.status === 'ok';
+    const text = formatLinkedinNotice({ kind: item.kind, name: name ?? jobTitle, company, dry: isDryRun(d.env), ok, reason: run.reason ?? run.status });
+    if (ok) await notifyTg(d, 'drips', text);
+    else await notifyTg(d, 'alerts', formatDripFailure('linkedin', item.kind, run.reason ?? run.status));
+  } catch {
+    // a notice never breaks the lane
+  }
 }
 
 export interface LiDripResult { status: 'skipped' | 'ran'; reason?: string; item?: string; run?: OneRun; blocked?: string[] }
@@ -605,10 +626,15 @@ export interface LiDripResult { status: 'skipped' | 'ran'; reason?: string; item
  * LINKEDIN_DRIP_MIN_GAP_MIN..MAX_GAP_MIN.
  */
 export async function linkedinDripTick(d: DriverDeps, opts: { abort?: () => boolean } = {}): Promise<LiDripResult> {
+  // An owner `/drip linkedin now` request (src/scheduler/dripRequest.ts) is taken and cleared first; it only lifts the random next-tick wait.
+  return withDripRequest(d.db, 'linkedin', d.now, (bypass) => linkedinDripTickInner(d, opts, bypass));
+}
+
+async function linkedinDripTickInner(d: DriverDeps, opts: { abort?: () => boolean }, bypassNext: boolean): Promise<LiDripResult> {
   const cfg = loadLinkedinDripConfig(d.env);
   if (cfg.problems.length > 0) return { status: 'skipped', reason: 'bad_config' };
   if (!cfg.enabled) return { status: 'skipped', reason: 'disabled' };
-  const why = gate(d, cfg, d.now());
+  const why = gate(d, cfg, d.now(), bypassNext);
   if (why) return { status: 'skipped', reason: why };
   let pick: PickResult;
   try {
@@ -628,7 +654,7 @@ export async function linkedinDripTick(d: DriverDeps, opts: { abort?: () => bool
   try {
     // Re-check under the lock, then reserve the slot BEFORE launching: a crash or a failed launch never turns into a quick second tick.
     const start = d.now();
-    const again = gate(d, cfg, start);
+    const again = gate(d, cfg, start, bypassNext);
     if (again) return { status: 'skipped', reason: again };
     const gap = (): number => drawUniformMinMs(d.rng, cfg.minGapMin, cfg.maxGapMin);
     setState(d.db, LI_STATE_NEXT_AT, new Date(start.getTime() + gap()).toISOString(), start);
@@ -639,6 +665,7 @@ export async function linkedinDripTick(d: DriverDeps, opts: { abort?: () => bool
     if (item.kind === 'inbox') setState(d.db, LI_STATE_INBOX_AT, start.toISOString(), start);
     else markTried(d.db, key, start);
     const run = await runOne(d, lock, item, opts);
+    await linkedinRunNotice(d, item, run);
     const end = d.now();
     setState(d.db, LI_STATE_NEXT_AT, new Date(end.getTime() + gap()).toISOString(), end);
     setState(d.db, LI_STATE_LAST_ACTION, JSON.stringify({ at: start.toISOString(), kind: item.kind, key, run_id: run.runId, status: run.status }), end);

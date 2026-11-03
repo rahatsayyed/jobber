@@ -52,6 +52,13 @@ export function parseChatOutput(stdout: string): { text: string; sessionId: stri
   }
 }
 
+export const LOGIN_EXPIRED_MESSAGE = 'Claude login expired for the bridge. In a terminal run `claude`, then /login, then send your message again.';
+
+/** True when claude's result or stderr says the login or OAuth token is no longer valid. Only checked on a failed run. */
+export function isAuthFailure(text: string): boolean {
+  return /Failed to authenticate|OAuth[^\n]{0,40}(expired|revoked|invalid)|(login|session|token)[^\n]{0,20}expired|Please run \/login|authentication_error|invalid[^\n]{0,20}credentials/i.test(text.slice(0, 20000));
+}
+
 export interface ChatDeps {
   root: string;
   env: NodeJS.ProcessEnv;
@@ -76,6 +83,8 @@ export function createChatRunner(deps: ChatDeps): ChatRunner {
     if (out.sessionId) {
       try { writeChatSession(deps.root, key, out.sessionId); } catch { /* the next message starts a new session */ }
     }
+    // An expired login is told once, clearly, and never retried in a loop: the owner has to log in again.
+    if ((r.code !== 0 || out.isError) && isAuthFailure(`${out.text}\n${r.stderr}`)) return LOGIN_EXPIRED_MESSAGE;
     if (r.code !== 0 && !out.text) return `The chat run failed (exit ${r.code}).`;
     return out.text || '(empty answer)';
   };

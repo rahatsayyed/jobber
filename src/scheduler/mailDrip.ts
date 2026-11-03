@@ -20,6 +20,8 @@ import type { DriverDeps } from './driver.js';
 import { JOBBER_TMUX_SESSION } from '../platform/tmux.js';
 import type { LaunchHandle } from './launch.js';
 import { finishRun, getState, setRunLogPath, setState, startRun, type RunStatus } from './runLog.js';
+import { withDripRequest } from './dripRequest.js';
+import { formatDripFailure, formatMailNotice, formatQuarantineNotice, notifyTg } from './dripNotice.js';
 
 export const DRIP_PROFILE = 'mail_drip';
 export const DRIP_TRIGGER = 'mail_drip';
@@ -229,7 +231,7 @@ export function sentAddresses(db: DriverDeps['db']): Set<string> {
 }
 
 /** Newest real send (cold or follow-up) as a Date, or null. */
-function lastSendAt(db: DriverDeps['db']): Date | null {
+export function lastSendAt(db: DriverDeps['db']): Date | null {
   const a = db.prepare("SELECT MAX(email_sent_at) AS t FROM outreach_queue WHERE email_status = 'sent'").get() as { t: string | null };
   let b: { t: string | null } = { t: null };
   try {
@@ -244,7 +246,7 @@ function lastSendAt(db: DriverDeps['db']): Date | null {
   return ms.length ? new Date(Math.max(...ms)) : null;
 }
 
-function sentToday(db: DriverDeps['db']): number {
+export function sentToday(db: DriverDeps['db']): number {
   const r = db.prepare("SELECT count FROM daily_counters WHERE day = date('now') AND key = 'send_email'").get() as { count: number } | undefined;
   return r?.count ?? 0;
 }
@@ -364,8 +366,11 @@ function controlFor(d: DriverDeps): ControlDeps {
   };
 }
 
-/** The code gates a send must pass right now; null when it may go. `spacing` is false inside a batch (the batch pause governs there). */
-function gate(d: DriverDeps, cfg: DripConfig, now: Date, spacing: boolean): string | null {
+/**
+ * The code gates a send must pass right now; null when it may go. `spacing` is false inside a batch (the batch pause governs there).
+ * `bypassNext` (an owner /drip request) skips ONLY the stored random next-tick time; the minimum gap since the last real send stays.
+ */
+export function gate(d: DriverDeps, cfg: DripConfig, now: Date, spacing: boolean, bypassNext = false): string | null {
   try {
     if (readControl(d.db, controlFor(d)).killed) return 'killed';
   } catch {
@@ -380,7 +385,7 @@ function gate(d: DriverDeps, cfg: DripConfig, now: Date, spacing: boolean): stri
     if (until && Date.parse(until) > now.getTime()) return 'usage_backoff';
     if (spacing) {
       const next = getState(d.db, STATE_NEXT_AT);
-      if (next && Date.parse(next) > now.getTime()) return 'spacing';
+      if (!bypassNext && next && Date.parse(next) > now.getTime()) return 'spacing';
       const last = lastSendAt(d.db);
       if (last && now.getTime() - last.getTime() < cfg.minGapMin * 60000) return 'spacing';
     }
@@ -391,7 +396,7 @@ function gate(d: DriverDeps, cfg: DripConfig, now: Date, spacing: boolean): stri
   return null;
 }
 
-interface OneRun { runId: string; status: RunStatus }
+interface OneRun { runId: string; status: RunStatus; quarantined?: boolean; reason?: string | null }
 
 /** One tiny run: dispatches mail-operator for exactly one item and waits for it. Never throws. */
 async function runOne(
@@ -539,22 +544,49 @@ async function runOne(
   }
   // A run that did not end cleanly may have sent the email without recording it: that cold row is never picked again automatically.
   // Any launched run (ok or not) that leaves the cold row unrecorded (still 'sending' or queued) is quarantined: never re-sent, never retried.
+  let held = false;
   if (launched && item.kind === 'cold' && !dry) {
     try {
       const row = d.db.prepare('SELECT email_status FROM outreach_queue WHERE id = ?').get(item.id) as { email_status: string | null } | undefined;
       if (row && (!row.email_status || row.email_status === 'queued' || row.email_status === 'sending')) {
         quarantine(d.db, `cold:${item.id}`, d.now());
         quarantine(d.db, `job:${item.job_id}`, d.now());
+        held = true;
         await d.notifier.notify({
           level: 'warn', title: 'mail drip run ended without a recorded send, row held for the owner',
           detail: `row ${item.id} job ${item.job_id}: ${stopReason ?? status}; check Gmail Sent before releasing`, runId,
         });
+        await notifyTg(d, 'drips', formatQuarantineNotice(item.id, item.job_id, stopReason ?? status));
       }
     } catch {
       // ignore
     }
   }
-  return { runId, status };
+  return { runId, status, quarantined: held, reason: stopReason };
+}
+
+/** One Telegram line per real send (zero LLM). A no-op run says nothing. A failed run goes to `alerts` unless it was already told as a held row. Never throws. */
+async function mailRunNotice(d: DriverDeps, item: DripItem, r: OneRun): Promise<void> {
+  try {
+    if (!d.tg || r.quarantined) return;
+    const dry = isDryRun(d.env);
+    if (r.status !== 'ok') {
+      await notifyTg(d, 'alerts', formatDripFailure('mail', itemKey(item), r.reason ?? r.status));
+      return;
+    }
+    let sent = dry; // a dry run says "dry run" instead of claiming a send
+    if (!dry) {
+      const row = item.kind === 'cold'
+        ? d.db.prepare('SELECT email_status AS s FROM outreach_queue WHERE id = ?').get(item.id) as { s: string | null } | undefined
+        : d.db.prepare('SELECT status AS s FROM followups WHERE id = ?').get(item.id) as { s: string | null } | undefined;
+      sent = row?.s === 'sent';
+    }
+    if (!sent) return; // ok run that sent nothing: no notice
+    const job = d.db.prepare('SELECT company, title FROM jobs WHERE id = ?').get(item.job_id) as { company: string | null; title: string | null } | undefined;
+    await notifyTg(d, 'drips', formatMailNotice({ kind: item.kind, company: job?.company ?? null, title: job?.title ?? null, address: item.address, dry }));
+  } catch {
+    // a notice never breaks the lane
+  }
 }
 
 export interface DripResult {
@@ -571,9 +603,14 @@ export interface DripResult {
  * pushed out by a random EMAIL_DRIP_MIN_GAP_MIN..MAX_GAP_MIN, stored in scheduler_state.
  */
 export async function dripTick(d: DriverDeps, opts: { abort?: () => boolean } = {}): Promise<DripResult> {
+  // An owner `/drip mail now` request (src/scheduler/dripRequest.ts) is taken and cleared first; it only lifts the random next-tick wait.
+  return withDripRequest(d.db, 'mail', d.now, (bypass) => dripTickInner(d, opts, bypass));
+}
+
+async function dripTickInner(d: DriverDeps, opts: { abort?: () => boolean }, bypassNext: boolean): Promise<DripResult> {
   const cfg = loadDripConfig(d.env);
   if (cfg.problems.length > 0) return { status: 'skipped', reason: 'bad_config' };
-  const why = gate(d, cfg, d.now(), true);
+  const why = gate(d, cfg, d.now(), true, bypassNext);
   if (why) return { status: 'skipped', reason: why };
   let pick: PickResult;
   try {
@@ -594,7 +631,7 @@ export async function dripTick(d: DriverDeps, opts: { abort?: () => boolean } = 
   try {
     // Re-check under the lock, then reserve the slot BEFORE launching: a crash or a failed launch never turns into a quick second tick.
     const start = d.now();
-    const again = gate(d, cfg, start, true);
+    const again = gate(d, cfg, start, true, bypassNext);
     if (again) return { status: 'skipped', reason: again };
     const gap = (): number => drawUniformMinMs(d.rng, cfg.minGapMin, cfg.maxGapMin);
     setState(d.db, STATE_NEXT_AT, new Date(start.getTime() + gap()).toISOString(), start);
@@ -609,6 +646,7 @@ export async function dripTick(d: DriverDeps, opts: { abort?: () => boolean } = 
       tried.add(`addr:${item.address}`);
       const r = await runOne(d, lock, item, dailyLimit, { n, of: size }, opts);
       runs.push(r);
+      await mailRunNotice(d, item, r);
       try {
         markTried(d.db, itemKey(item), d.now());
       } catch {

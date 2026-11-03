@@ -155,3 +155,55 @@ describe('kill switch and free chat', () => {
     expect(readChatSessions(root)['topic:11']).toBe(SID);
   });
 });
+
+describe('callback routing (drip buttons vs window buttons)', () => {
+  function build() {
+    const cfg = loadTelegramConfig({ TELEGRAM_BOT_TOKEN: TOKEN, ALLOWED_USERS: '42' } as NodeJS.ProcessEnv)!;
+    const bot = new Bot(TOKEN, {
+      botInfo: { id: 1, is_bot: true, first_name: 'b', username: 'jobber_bot', can_join_groups: true, can_read_all_group_messages: false, supports_inline_queries: false, can_connect_to_business: false, has_main_web_app: false } as never,
+    });
+    const api: Array<{ method: string; payload: Record<string, unknown> }> = [];
+    bot.api.config.use(async (_prev, method, payload) => {
+      api.push({ method, payload: payload as Record<string, unknown> });
+      return { ok: true, result: {} } as never;
+    });
+    const windowCalls: string[] = [];
+    const windowViews = { handleCallback: async (a: { data?: string }) => { windowCalls.push(String(a.data)); } } as never;
+    createBridgeBot(cfg, {
+      env: { TELEGRAM_BOT_TOKEN: TOKEN } as NodeJS.ProcessEnv, root, bot, windowViews,
+      killed: () => ({ stopped: false, reason: '' }),
+    });
+    return { bot, api, windowCalls };
+  }
+  const cb = (fromId: number, data: string) => ({
+    update_id: 2,
+    callback_query: {
+      id: 'cq1', chat_instance: 'ci', data,
+      from: { id: fromId, is_bot: false, first_name: 'x' },
+      message: { message_id: 9, date: 1, chat: { id: 42, type: 'private' } },
+    },
+  });
+
+  it('a drip button (dr:) is handled by the drip handler and never reaches the window handler', async () => {
+    const { bot, api, windowCalls } = build();
+    await bot.handleUpdate(cb(42, 'dr:nonsense') as never);
+    expect(windowCalls).toEqual([]);
+    expect(api.filter((c) => c.method === 'answerCallbackQuery')).toHaveLength(1);
+  });
+
+  it('a window button (w|) reaches the window handler and not the drip handler', async () => {
+    const { bot, api, windowCalls } = build();
+    await bot.handleUpdate(cb(42, 'w|r|abc') as never);
+    expect(windowCalls).toEqual(['w|r|abc']);
+    // The fake window handler answers nothing, so the drip handler must not have answered either.
+    expect(api.filter((c) => c.method === 'answerCallbackQuery')).toHaveLength(0);
+  });
+
+  it('callbacks from a non-owner id reach neither handler', async () => {
+    const { bot, api, windowCalls } = build();
+    await bot.handleUpdate(cb(99, 'dr:status') as never);
+    await bot.handleUpdate(cb(99, 'w|r|abc') as never);
+    expect(windowCalls).toEqual([]);
+    expect(api).toHaveLength(0);
+  });
+});
