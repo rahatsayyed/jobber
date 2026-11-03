@@ -149,6 +149,11 @@ export function buildWakePrompt(i: {
     `Budget: at most ${i.budget.maxWallSec} seconds, about ${i.budget.maxTokensApprox} tokens.`,
   );
   lines.push(`Allowed platforms: ${i.allowed.join(', ') || 'none'}.`);
+  // Owner instructions come BEFORE the steps: a wake often runs out of wall time in its long early steps, and the owner is waiting on these.
+  if (i.instructions && i.instructions.length > 0) {
+    lines.push('FIRST, before step 1: handle the OWNER INSTRUCTIONS below (act on each, or record `blocked` / `done` / `rejected` with complete_instruction), then continue with the steps.');
+    lines.push(...instructionPromptLines(i.instructions));
+  }
   if (i.order && i.order.length > 0) lines.push(...orderLines(i.order, i.pipeline));
   else for (const t of i.tasks) {
     const tasks = t.tasks
@@ -167,7 +172,6 @@ export function buildWakePrompt(i: {
   lines.push(
     'Dispatch the operators sequentially in the order listed (linkedin before naukri), one Agent call each; do not do their work yourself.',
   );
-  if (i.instructions && i.instructions.length > 0) lines.push(...instructionPromptLines(i.instructions));
   lines.push(...DIAGNOSTIC_RULES);
   lines.push(...AWAIT_RULES);
   lines.push(
