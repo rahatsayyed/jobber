@@ -863,6 +863,13 @@ const hand: EnvSpec[] = [
     ...never('Types into a running agent session: only the owner, by hand in .env, can change it.'),
   }),
 
+  e('TELEGRAM_CHAT_FALLBACK', 'telegram', 'Telegram bridge', 'enum', {
+    default: 'off',
+    allowed: ['off', 'print'],
+    about: 'What the chat topic does when the long-running chat window is not running. off (the default): it answers that the window is not running. print: it falls back to a one-shot claude -p run per message under the project permission set.',
+    ...never('Starts a model run for every owner message when the chat window is missing: only the owner, by hand in .env, can change it.'),
+  }),
+
   // ---- Layout memory (plan 8B)
   e('LAYOUT_ENFORCE', 'layout', 'layout memory', 'enum', {
     default: 'warn',

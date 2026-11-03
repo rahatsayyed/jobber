@@ -344,6 +344,8 @@ export const stackChecks: Check[] = [
       }
       const up = (await listWindows(ctx.run, session)).some((w) => w.name === 'bridge');
       if (!up) return warn('bridge window is not running', 'npm run up');
+      const chatUp = (await listWindows(ctx.run, mergedEnv(ctx).MANAGER_TMUX_SESSION?.trim() || session)).some((w) => w.name === 'chat');
+      if (!chatUp) return warn('bridge is running but the chat window is not (the chat topic has nobody to talk to)', 'npm run up, or /chat restart in the chat topic');
       return chat === ''
         ? pass(`bridge running in ${session}, ${ids.length} allowed user(s), topics in the private chat (topics need Threaded Mode enabled for the bot in BotFather)`)
         : pass(`bridge running in ${session}, ${ids.length} allowed user(s), topics in the group ${chat} (the bot needs admin with can_manage_topics there)`);

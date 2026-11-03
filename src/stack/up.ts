@@ -8,6 +8,7 @@ import { parseEnv } from '../platform/envFile.js';
 import { ensureManagerWindow, loadManagerConfig, sessionName, startWindow } from '../platform/manager.js';
 import { assertName, hasSession, listWindows, newWindow, type Run } from '../platform/tmux.js';
 import { stopActive } from '../../scripts/killSwitch.js';
+import { ensureChatWindow } from '../telegram/chatwin/ensure.js';
 import { DEFAULT_LABEL, SERVICE_NAME } from '../scheduler/units.js';
 import { skippedForRoot, type SkippableId } from '../setup/skips.js';
 import { nodeAtomicFs, type AtomicFs } from '../settings/atomic.js';
@@ -232,6 +233,11 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
       } catch (e) {
         warnings.push(`window manager: ${(e as Error).message}`);
       }
+      try {
+        say(`window chat: ${await ensureChatWindow(deps.run, cfg, env, deps.root)}`);
+      } catch (e) {
+        warnings.push(`window chat: ${(e as Error).message}`);
+      }
     }
 
     // Scheduler.
@@ -304,7 +310,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
     rows.push(['windows', 'skipped (setup)', telegramFix]);
   } else {
     rows.push(['bridge', stackNames.has('bridge') ? 'running' : 'not running', `tmux attach -t ${session}`]);
-    for (const n of ['hunt', 'followups', 'manager']) {
+    for (const n of ['hunt', 'followups', 'manager', 'chat']) {
       rows.push([n, cNames.has(n) ? 'running' : 'not running', `tmux attach -t ${csess}`]);
     }
   }
