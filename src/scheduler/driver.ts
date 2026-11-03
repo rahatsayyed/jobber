@@ -8,10 +8,10 @@ import { isDryRun } from '../safety/dryRun.js';
 import type { OutreachConfig } from '../outreach/config.js';
 import type { Tuning } from '../outreach/tuning.js';
 import { ceilings } from '../outreach/limits.js';
-import { inQuietHours, nextWake, quietFromConfig, type Rng } from '../outreach/quiet.js';
+import { inQuietHours, nextWake, quietFromConfig, retryWake, type Rng } from '../outreach/quiet.js';
 import { claimPending, type OwnerInstruction } from '../owner/instructions.js';
 import { manualRequestsPending } from '../manual/requests.js';
-import { BudgetTracker, loadBudget, type StopReason } from './budget.js';
+import { BudgetTracker, budgetEnvWarnings, loadBudget, loadStallSec, type StopReason } from './budget.js';
 import { readControl, statExists, type ControlDeps, type ControlState } from './control.js';
 import { countDue } from './due.js';
 import { linkedinActiveNow } from '../linkedin/activeHours.js';
@@ -141,6 +141,7 @@ function controlDeps(d: DriverDeps): ControlDeps {
 
 function stopMap(r: StopReason): { status: RunStatus; reason: string } {
   if (r === 'usage_limit') return { status: 'usage_limit', reason: 'usage_limit' };
+  if (r === 'stalled') return { status: 'failed', reason: 'stalled' };
   return { status: 'budget_exceeded', reason: r };
 }
 
@@ -169,13 +170,17 @@ async function killChecked(d: DriverDeps, h: LaunchHandle, runId: string): Promi
   }
 }
 
+// Minutes until the next wake after a run was killed as stalled (a network blip), instead of the normal interval.
+const STALL_RETRY_MIN = 2;
+
 async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boolean }): Promise<WakeResult> {
   const quiet = quietFromConfig(d.cfg);
   const runId = d.newRunId();
   const dry = wakeIsDry(d.env);
   const trigger = opts.force ? 'forced' : 'scheduled';
+  let stallNote = null as string | null; // set when the last run was killed as stalled (network): retry soon
   const drawNext = (): string => {
-    const t = nextWake(d.now(), quiet).toISOString();
+    const t = (stallNote ? retryWake(d.now(), quiet, STALL_RETRY_MIN) : nextWake(d.now(), quiet)).toISOString();
     try {
       setState(d.db, 'next_wake_at', t, d.now());
     } catch {
@@ -369,7 +374,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       stopReason = null;
       exitCode = null;
       // The wall budget starts after the code pass: that time is not the model session's.
-      const t = new BudgetTracker(budget, d.now());
+      const t = new BudgetTracker(budget, d.now(), loadStallSec(d.env));
       tracker = t;
       const insp = new StreamInspector();
       launchTried = true;
@@ -412,6 +417,10 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
           status = m.status;
           stopReason = m.reason;
           exitCode = r.exitCode;
+          if (stop === 'stalled') {
+            stallNote = t.stallSummary(now);
+            await say(d, { level: 'warn', title: 'scheduler run stalled (network?), retrying soon', detail: stallNote, runId: id });
+          }
           if (stop === 'usage_limit') {
             const until = new Date(now.getTime() + backoffMin(d.env) * 60000).toISOString();
             try {
@@ -588,7 +597,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
         finishRun(d.db, activeRunId, {
           at: d.now(), status, stopReason, exitCode,
           toolCalls: snap?.toolCalls, tokensApprox: snap?.tokensApprox,
-          summary: snap ? redactPane(snap.lastLines.join('\n')).slice(0, 2000) : null,
+          summary: stallNote ?? (snap ? redactPane(snap.lastLines.join('\n')).slice(0, 2000) : null),
         });
       } catch {
         // ignore
@@ -670,6 +679,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     await say(d, { level: 'warn', title: 'another scheduler daemon is running, exiting' });
     return;
   }
+  for (const w of budgetEnvWarnings(d.env)) await say(d, { level: 'warn', title: `scheduler config: ${w}` });
   const quiet = quietFromConfig(d.cfg);
   const exists = d.control?.exists ?? statExists;
   const hb = (): void => dl.heartbeat();

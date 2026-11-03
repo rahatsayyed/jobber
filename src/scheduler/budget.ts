@@ -25,7 +25,28 @@ export function loadBudget(env: NodeJS.ProcessEnv = process.env): Budget {
   };
 }
 
-export type StopReason = 'wall_clock' | 'tokens' | 'usage_limit';
+export const STALL_DEFAULT_SEC = 600;
+
+// Seconds of log silence after which a run is killed as stalled (RUN_STALL_SEC, 60..3600, default 600).
+export function loadStallSec(env: NodeJS.ProcessEnv = process.env): number {
+  return intInRange(env.RUN_STALL_SEC, 60, 3600, STALL_DEFAULT_SEC);
+}
+
+// One warning line per budget env key that is set but invalid (outside its range), for the daemon start and the doctor.
+export function budgetEnvWarnings(env: NodeJS.ProcessEnv = process.env): string[] {
+  const out: string[] = [];
+  const check = (key: string, min: number, max: number, dflt: number): void => {
+    const raw = env[key];
+    if (raw === undefined || raw.trim() === '') return;
+    if (intInRange(raw, min, max, -1) === -1) out.push(`${key}=${raw.trim()} is outside ${min}..${max}, using ${dflt}`);
+  };
+  check('RUN_MAX_WALL_SEC', 30, 7200, BUDGET_DEFAULTS.maxWallSec);
+  check('RUN_MAX_TOKENS_APPROX', 1000, 2000000, BUDGET_DEFAULTS.maxTokensApprox);
+  check('RUN_STALL_SEC', 60, 3600, STALL_DEFAULT_SEC);
+  return out;
+}
+
+export type StopReason = 'wall_clock' | 'tokens' | 'usage_limit' | 'stalled';
 
 const MAX_BUFFER = 1_000_000;
 const LIMIT_RE = /(usage|rate) limit (reached|exceeded)|(plan|session) limit reached|hit your limit/i;
@@ -41,16 +62,22 @@ export class BudgetTracker {
   private overflow = false; // current partial line exceeded the cap and was dropped
   private lines: string[] = [];
   private lastNow: Date;
+  private lastByteAt: Date;
+  private lastEvent = 'none';
 
+  // stallSec 0 (default) means no stall check. A stall is a network event, never a usage limit.
   constructor(
     private readonly budget: Budget,
     private readonly startedAt: Date,
+    private readonly stallSec = 0,
   ) {
     this.lastNow = startedAt;
+    this.lastByteAt = startedAt;
   }
 
   feed(chunk: string, now: Date): void {
     this.lastNow = now;
+    if (chunk.length > 0) this.lastByteAt = now;
     this.chars += chunk.length;
     const parts = chunk.split('\n');
     for (let i = 0; i < parts.length; i++) {
@@ -89,6 +116,12 @@ export class BudgetTracker {
       if (LIMIT_RE.test(line)) this.usageLimit = true;
       return;
     }
+    const ev = obj as { type?: unknown; subtype?: unknown; attempt?: unknown; max_retries?: unknown };
+    if (typeof ev.type === 'string') {
+      this.lastEvent = ev.subtype === 'api_retry' && ev.attempt !== undefined
+        ? `api_retry attempt ${String(ev.attempt)} of ${String(ev.max_retries ?? '?')}`
+        : typeof ev.subtype === 'string' ? `${ev.type} ${ev.subtype}` : ev.type;
+    }
     const o = obj as {
       type?: unknown; subtype?: unknown; is_error?: unknown; result?: unknown; error?: unknown; message?: { content?: unknown };
     };
@@ -123,7 +156,17 @@ export class BudgetTracker {
     if (this.usageLimit) return 'usage_limit';
     if (this.wallSecAt(now) > this.budget.maxWallSec) return 'wall_clock';
     if (Math.ceil(this.chars / 4) > this.budget.maxTokensApprox) return 'tokens';
+    if (this.stallSec > 0 && this.silentSecAt(now) >= this.stallSec) return 'stalled';
     return null;
+  }
+
+  private silentSecAt(now: Date): number {
+    return Math.max(0, Math.floor((now.getTime() - this.lastByteAt.getTime()) / 1000));
+  }
+
+  // Summary for a stalled run, with the type of the last event read from the log.
+  stallSummary(now: Date): string {
+    return `no output for ${this.silentSecAt(now)} s (last event: ${this.lastEvent})`;
   }
 
   snapshot(): { toolCalls: number; tokensApprox: number; wallSec: number; lastLines: string[] } {

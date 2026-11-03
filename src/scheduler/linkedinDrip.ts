@@ -30,7 +30,7 @@ import { approvedReplyDrafts, draftIsStale, type DraftView } from '../outreach/r
 import { listDueTouches, nextPosterContacts, nextQueueContacts } from '../outreach/service.js';
 import { listJdCandidates } from '../jdStore.js';
 import type { TouchKind } from '../outreach/cadence.js';
-import { BudgetTracker, loadBudget, type Budget } from './budget.js';
+import { BudgetTracker, loadBudget, loadStallSec, type Budget } from './budget.js';
 import { readControl, statExists, type ControlDeps } from './control.js';
 import type { DriverDeps } from './driver.js';
 import type { LaunchHandle } from './launch.js';
@@ -494,13 +494,14 @@ async function runOne(d: DriverDeps, lock: { heartbeat: () => void }, item: LiIt
   let started = false;
   let handle: LaunchHandle | null = null;
   let tracker: BudgetTracker | null = null;
+  let stallNote: string | null = null;
   let launched = false;
   try {
     const now = d.now();
     const budget = loadBudget(d.env);
     startRun(d.db, { id: runId, at: now, trigger: LI_DRIP_TRIGGER, dryRun: dry, tasks: [{ operator: 'linkedin-operator', kind: item.kind, quota: 1, item: itemKey(item) }], status: 'running' });
     started = true;
-    tracker = new BudgetTracker(budget, now);
+    tracker = new BudgetTracker(budget, now, loadStallSec(d.env));
     handle = await d.launcher.start({
       runId, dryRun: dry, prompt: buildLinkedinDripPrompt({ runId, dryRun: dry, now, budget, item }), profile: LI_DRIP_PROFILE,
       session: d.session ?? DEFAULT_SESSION, runDir: d.runDir, projectRoot: d.projectRoot,
@@ -529,7 +530,8 @@ async function runOne(d: DriverDeps, lock: { heartbeat: () => void }, item: LiIt
       const stop = tracker.check(t);
       if (stop) {
         if (!r.exited) await kill();
-        status = stop === 'usage_limit' ? 'usage_limit' : 'budget_exceeded';
+        status = stop === 'usage_limit' ? 'usage_limit' : stop === 'stalled' ? 'failed' : 'budget_exceeded';
+        if (stop === 'stalled') stallNote = tracker.stallSummary(t);
         stopReason = stop;
         exitCode = r.exitCode;
         if (stop === 'usage_limit') {
@@ -579,7 +581,7 @@ async function runOne(d: DriverDeps, lock: { heartbeat: () => void }, item: LiIt
       finishRun(d.db, runId, {
         at: d.now(), status, stopReason, exitCode,
         toolCalls: snap?.toolCalls, tokensApprox: snap?.tokensApprox,
-        summary: snap ? redactPane(snap.lastLines.join('\n')).slice(0, 2000) : null,
+        summary: stallNote ?? (snap ? redactPane(snap.lastLines.join('\n')).slice(0, 2000) : null),
       });
     } catch { /* ignore */ }
   }

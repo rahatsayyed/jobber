@@ -529,6 +529,15 @@ const hand: EnvSpec[] = [
     restart: 'scheduler',
     restartEvidence: 'src/scheduler/budget.ts',
   }),
+  e('RUN_STALL_SEC', 'scheduler', 'scheduler', 'int', {
+    default: '600',
+    min: 60,
+    max: 3600,
+    about: 'Seconds without any new log output after which a run is killed as stalled (a network outage), so the next wake starts in about 2 minutes.',
+    ...tier('guarded', 'A longer window waits longer on a silent run before it is stopped.', 'increase'),
+    restart: 'scheduler',
+    restartEvidence: 'src/scheduler/budget.ts',
+  }),
   e('RUN_MAX_TOKENS_APPROX', 'scheduler', 'scheduler', 'int', {
     default: '1000000',
     min: 1000,

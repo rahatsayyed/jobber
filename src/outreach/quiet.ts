@@ -54,3 +54,9 @@ export function nextWake(now: Date, cfg: QuietConfig): Date {
   const t = new Date(now.getTime() + WAKE_INTERVAL_MIN * 60000);
   return inQuietHours(t, cfg) ? quietEnd(t, cfg) : t;
 }
+
+// A short retry after a network stall: `minutes` after `now`, moved to the end of quiet hours when it would land inside them.
+export function retryWake(now: Date, cfg: QuietConfig, minutes: number): Date {
+  const t = new Date(now.getTime() + minutes * 60000);
+  return inQuietHours(t, cfg) ? quietEnd(t, cfg) : t;
+}

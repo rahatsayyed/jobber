@@ -14,7 +14,7 @@ import {
   approveDraftedFollowups, followupCheckMaxAgeMin, followupMode, hasFreshCleanReplyCheck, listApprovedFollowups,
 } from '../followups.js';
 import { drawUniformMinMs, inQuietHours, quietFromConfig } from '../outreach/quiet.js';
-import { BudgetTracker, loadBudget, type Budget } from './budget.js';
+import { BudgetTracker, loadBudget, loadStallSec, type Budget } from './budget.js';
 import { readControl, statExists, type ControlDeps } from './control.js';
 import type { DriverDeps } from './driver.js';
 import type { LaunchHandle } from './launch.js';
@@ -402,6 +402,7 @@ async function runOne(
   let started = false;
   let handle: LaunchHandle | null = null;
   let tracker: BudgetTracker | null = null;
+  let stallNote: string | null = null;
   let launched = false;
   try {
     const now = d.now();
@@ -416,7 +417,7 @@ async function runOne(
       const claimed = d.db.prepare("UPDATE outreach_queue SET email_status = 'sending', updated_at = datetime('now') WHERE id = ? AND (email_status IS NULL OR email_status IN ('', 'queued', 'dry_run'))").run(item.id).changes;
       if (claimed === 0) throw new Error('claim_refused: row is no longer sendable');
     }
-    tracker = new BudgetTracker(budget, now);
+    tracker = new BudgetTracker(budget, now, loadStallSec(d.env));
     const prompt = buildDripPrompt({
       runId, dryRun: dry, now, budget, item, dailyLimit, batch,
       replyCheckClean: hasFreshCleanReplyCheck(d.db, now, followupCheckMaxAgeMin(d.env)),
@@ -463,7 +464,8 @@ async function runOne(
       const stop = tracker.check(t);
       if (stop) {
         if (!r.exited) await kill();
-        status = stop === 'usage_limit' ? 'usage_limit' : 'budget_exceeded';
+        status = stop === 'usage_limit' ? 'usage_limit' : stop === 'stalled' ? 'failed' : 'budget_exceeded';
+        if (stop === 'stalled') stallNote = tracker.stallSummary(t);
         stopReason = stop;
         exitCode = r.exitCode;
         if (stop === 'usage_limit') {
@@ -525,7 +527,7 @@ async function runOne(
       finishRun(d.db, runId, {
         at: d.now(), status, stopReason, exitCode,
         toolCalls: snap?.toolCalls, tokensApprox: snap?.tokensApprox,
-        summary: snap ? redactPane(snap.lastLines.join('\n')).slice(0, 2000) : null,
+        summary: stallNote ?? (snap ? redactPane(snap.lastLines.join('\n')).slice(0, 2000) : null),
       });
     } catch {
       // ignore

@@ -6,6 +6,7 @@ import type { Check, CheckResult, DoctorContext } from './doctor.js';
 import { skip } from './doctor.js';
 import { parseEnv } from './envFile.js';
 import { isDryRun, LEGACY_DRY_RUN_KEYS } from '../safety/dryRun.js';
+import { budgetEnvWarnings } from '../scheduler/budget.js';
 import { loadDripConfig } from '../scheduler/mailDrip.js';
 import { loadActiveHours } from '../linkedin/activeHours.js';
 import { loadLinkedinDripConfig } from '../scheduler/linkedinDrip.js';
@@ -107,6 +108,14 @@ export function schedulerChecks(): Check[] {
         return c.problems.length === 0
           ? pass(`window ${Math.floor(c.windowStartMin / 60)}:${String(c.windowStartMin % 60).padStart(2, '0')}-${Math.floor(c.windowEndMin / 60)}:${String(c.windowEndMin % 60).padStart(2, '0')} IST, batch ${c.minBatch}-${c.maxBatch}, gap ${c.minGapMin}-${c.maxGapMin} min, pause ${c.pauseMinSec}-${c.pauseMaxSec} s, daily cap ${c.maxPerDay || 'none'}`)
           : fail(`the mail drip lane sends nothing until fixed: ${c.problems.join('; ')}`, 'fix the EMAIL_SEND_WINDOW_*, EMAIL_DRIP_* and EMAIL_MAX_PER_DAY values in .env');
+      },
+    },
+    {
+      id: 'run-budget-config',
+      title: 'run budgets (RUN_MAX_WALL_SEC, RUN_MAX_TOKENS_APPROX, RUN_STALL_SEC) are inside their allowed range',
+      async run(ctx) {
+        const w = budgetEnvWarnings(mergedEnv(ctx));
+        return w.length === 0 ? pass('run budget values are valid or unset') : warn(w.join('; '), 'fix the value in .env, or remove the line to use the default');
       },
     },
     {
