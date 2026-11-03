@@ -46,6 +46,7 @@ export function parseArgs(argv: string[]): { profile: string; url: string | null
 }
 
 export async function run(argv: string[], deps: CliDeps = {}): Promise<{ code: number; lines: string[] }> {
+  if (argv[0] === 'stop') return { code: 2, lines: ['to stop the shared browser host use: npm run browser:host -- stop'] };
   const parsed = parseArgs(argv);
   if (!parsed) return { code: 2, lines: [USAGE] };
   if (parsed.profile !== 'web' && !isPlatformProfileName(parsed.profile)) return { code: 2, lines: [`unknown profile "${parsed.profile.slice(0, 40)}"; choose web, linkedin-main, naukri or wellfound`] };

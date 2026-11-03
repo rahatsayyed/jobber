@@ -17,7 +17,7 @@ import type { LiBrowser, LiContext, LiPage } from '../linkedin/types.js';
 import { acquireLock, type LockHandle } from '../linkedin/session.js';
 import { loadHostConfig } from './config.js';
 import {
-  DEFAULT_HOST_LEASE_DIR, DEFAULT_HOST_PIDFILE, DEFAULT_HOST_START_LOCK, hostLiveness, pidAlive, removeLease, writeLease, type HostMode,
+  DEFAULT_HOST_LEASE_DIR, DEFAULT_HOST_PIDFILE, DEFAULT_HOST_START_LOCK, DEFAULT_OWNER_WAIT_FILE, hostLiveness, ownerWaiting, pidAlive, removeLease, removeOwnerWait, writeLease, writeOwnerWait, type HostMode,
 } from './hostFile.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -33,7 +33,16 @@ export interface AttachOpts {
   headed?: boolean;
   /** Fingerprint options applied to each tab where the page allows it (viewport, user agent, locale, timezone). */
   contextOptions?: Record<string, unknown>;
+  // Owner commands only (with headed): when a running task has the host, write the owner-wait marker (new task attaches get `busy`),
+  // poll until the host has no clients, then take the window; give up after this many ms. Omitted: fail `busy` at once.
+  waitForTasksMs?: number;
+  // Progress line while waiting (default: stderr).
+  onWait?: (line: string) => void;
 }
+
+export const OWNER_WAIT_MS = 10 * 60 * 1000;
+export const TASK_BUSY_REASON = 'the shared browser is in use by a running task; try again in a few minutes';
+export const OWNER_FALLBACK_HINT = 'Manual fallback: stop the scheduler daemon (tmux session jobber-stack) or wait for the running wake to end, then run the command again.';
 export type HostAttach = (opts?: AttachOpts) => Promise<HostAttachResult>;
 
 export interface HostClientDeps {
@@ -41,6 +50,7 @@ export interface HostClientDeps {
   pidPath?: string;
   leaseDir?: string;
   startLockPath?: string;
+  ownerWaitPath?: string;
   stopFile?: string;
   connector?: CdpConnector;
   /** Starts the host process in the given mode (default: a detached `node --import tsx scripts/browser-host.ts run`). */
@@ -105,6 +115,7 @@ export function createHostClient(deps: HostClientDeps = {}): HostClient {
   const pidPath = deps.pidPath ?? DEFAULT_HOST_PIDFILE;
   const leaseDir = deps.leaseDir ?? DEFAULT_HOST_LEASE_DIR;
   const startLock = deps.startLockPath ?? DEFAULT_HOST_START_LOCK;
+  const ownerWaitPath = deps.ownerWaitPath ?? DEFAULT_OWNER_WAIT_FILE;
   const stopFile = deps.stopFile ?? STOP_FILE;
   const now = deps.now ?? Date.now;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -143,9 +154,37 @@ export function createHostClient(deps: HostClientDeps = {}): HostClient {
   }
 
   async function attach(opts: AttachOpts = {}): Promise<HostAttachResult> {
+    if (!(opts.headed && opts.waitForTasksMs)) return attachOnce(opts);
+    if (!loadHostConfig(env).enabled) return fail('disabled', 'the shared browser host is off (BROWSER_HOST=false)');
+    if (killed(stopFile, env)) return fail('halted', 'kill switch is on');
+    // The marker goes down BEFORE the first look at the host, so a task cannot start a new host in between.
+    try { writeOwnerWait(ownerWaitPath, process.pid, now()); } catch { /* best effort: the loop still polls */ }
+    const say = opts.onWait ?? ((line: string) => { process.stderr.write(`${line}\n`); });
+    const started = now();
+    let lastSaid = started;
+    try {
+      for (;;) {
+        const r = await attachOnce(opts);
+        if (r.ok || r.code !== 'busy' || r.reason !== TASK_BUSY_REASON) return r;
+        const waited = now() - started;
+        if (waited >= opts.waitForTasksMs!) return fail('busy', `the shared browser is still in use by a running task (gave up after ${Math.round(waited / 1000)}s). ${OWNER_FALLBACK_HINT}`);
+        if (now() - lastSaid >= 15000) { say(`waiting for the running task to finish... (${Math.round(waited / 1000)} s)`); lastSaid = now(); }
+        try { writeOwnerWait(ownerWaitPath, process.pid, now()); } catch { /* ignore */ }
+        await sleep(2000);
+      }
+    } finally {
+      removeOwnerWait(ownerWaitPath, process.pid);
+    }
+  }
+
+  async function attachOnce(opts: AttachOpts = {}): Promise<HostAttachResult> {
     if (!loadHostConfig(env).enabled) return fail('disabled', 'the shared browser host is off (BROWSER_HOST=false)');
     if (killed(stopFile, env)) return fail('halted', 'kill switch is on');
     const want: HostMode = opts.headed ? 'headed' : 'headless';
+    if (want === 'headless') {
+      const w = ownerWaiting(ownerWaitPath, { now, isAlive });
+      if (w !== null && w !== process.pid) return fail('busy', 'the owner is waiting for the shared browser window; try again shortly');
+    }
     const lock = await waitLock(startLock, lockWaitMs, sleep, now);
     if (!lock) return fail('unavailable', 'the shared browser host is starting elsewhere');
     let lease: string | null = null;
@@ -162,9 +201,9 @@ export function createHostClient(deps: HostClientDeps = {}): HostClient {
       if (l.kind === 'live' && l.info.mode !== want) {
         if (want === 'headless') return fail('busy_headed', 'the owner has the shared browser open in a window; try again when that command is done');
         // The owner wants a window: a headless host with no clients hands over (exits); one with clients is busy.
-        if ((l.info.clients ?? 0) > 0) return fail('busy', 'the shared browser is in use by a running task; try again in a few minutes');
+        if ((l.info.clients ?? 0) > 0) return fail('busy', TASK_BUSY_REASON);
         try { signal(l.info.pid, 'SIGUSR1'); } catch { /* gone */ }
-        if (!(await waitExit(l.info.pid))) return fail('busy', 'the shared browser is in use by a running task; try again in a few minutes');
+        if (!(await waitExit(l.info.pid))) return fail('busy', TASK_BUSY_REASON);
         l = { kind: 'none' };
       } else if (l.kind === 'live' && want === 'headed') {
         return fail('busy', 'another owner command has the shared browser window open');

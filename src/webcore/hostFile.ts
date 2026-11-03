@@ -10,6 +10,9 @@ const SECRETS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..',
 export const DEFAULT_HOST_PIDFILE = path.join(SECRETS, 'browser-host.json');
 export const DEFAULT_HOST_LEASE_DIR = path.join(SECRETS, 'browser-host-clients');
 export const DEFAULT_HOST_START_LOCK = path.join(SECRETS, 'browser-host.start.lock');
+export const DEFAULT_OWNER_WAIT_FILE = path.join(SECRETS, 'browser-host-owner-wait.json');
+// An owner-wait marker older than this is ignored (the owner command died without cleanup).
+export const OWNER_WAIT_TTL_MS = 15 * 60 * 1000;
 /** A heartbeat older than this means the host is gone or hung: the pidfile is treated as stale. */
 export const HOST_STALE_MS = 2 * 60 * 1000;
 
@@ -155,4 +158,33 @@ export function hostStatus(p: string = DEFAULT_HOST_PIDFILE, deps: LivenessDeps 
     running: true,
     line: `shared browser host: pid ${i.pid}, ${i.mode}, ${i.state}, ${i.clients ?? 0} client${i.clients === 1 ? '' : 's'} attached, ${i.tabs ?? 0} tab${i.tabs === 1 ? '' : 's'}, up ${age} min`,
   };
+}
+
+// ---- Owner-wait marker ----
+// An owner command that wants a window writes this (0600, pid + time) BEFORE it first looks at the host. While it is fresh and its
+// pid is alive, NEW task attaches get `busy` (the runtimes fall back to their own browser), so the running tasks drain and the owner
+// command wins the race instead of losing it to the next task. It expires after OWNER_WAIT_TTL_MS and is removed when the command ends.
+
+export function writeOwnerWait(p: string = DEFAULT_OWNER_WAIT_FILE, pid: number = process.pid, at: number = Date.now()): void {
+  mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
+  writeFileSync(p, JSON.stringify({ pid, at }), { mode: 0o600 });
+}
+
+export function removeOwnerWait(p: string = DEFAULT_OWNER_WAIT_FILE, pid: number = process.pid): void {
+  try {
+    const j = JSON.parse(readFileSync(p, 'utf8')) as { pid?: number };
+    if (j.pid === pid) unlinkSync(p);
+  } catch { /* gone or not ours */ }
+}
+
+// The pid of a fresh owner-wait marker with a live pid, else null (a stale or dead-pid marker is removed).
+export function ownerWaiting(p: string = DEFAULT_OWNER_WAIT_FILE, deps: { now?: () => number; isAlive?: (pid: number) => boolean } = {}): number | null {
+  const now = deps.now ?? Date.now;
+  const isAlive = deps.isAlive ?? pidAlive;
+  let j: { pid?: unknown; at?: unknown };
+  try { j = JSON.parse(readFileSync(p, 'utf8')) as { pid?: unknown; at?: unknown }; } catch { return null; }
+  const pid = typeof j.pid === 'number' ? j.pid : 0;
+  const at = typeof j.at === 'number' ? j.at : 0;
+  if (!pid || now() - at > OWNER_WAIT_TTL_MS || !isAlive(pid)) { try { unlinkSync(p); } catch { /* raced */ } return null; }
+  return pid;
 }

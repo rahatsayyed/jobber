@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchPersistentChrome, launchRealChrome, persistentSupported, type LiBrowser, type LiLauncher } from './launch.js';
 import { prepareProfileDir } from './profile.js';
-import { resolveHost, type HostAttach } from './hostClient.js';
+import { resolveHost, OWNER_WAIT_MS, type HostAttach } from './hostClient.js';
 
 const SECRETS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'secrets');
 
@@ -32,7 +32,7 @@ export async function closeLoginBrowser(browser: { close(): Promise<void> }): Pr
 export async function launchLoginBrowser(opts: { name: string; launcher?: LiLauncher; root?: string; host?: HostAttach | null }): Promise<LiBrowser> {
   const shared = resolveHost(opts.host, process.env, opts.launcher);
   if (shared) {
-    const r = await shared({ headed: true });
+    const r = await shared({ headed: true, waitForTasksMs: OWNER_WAIT_MS });
     if (r.ok) { lastLoginProfile = 'the shared browser profile (secrets/browser-profile/)'; return r.browser; }
     if (r.code === 'busy' || r.code === 'busy_headed') throw new Error(`session_locked: ${r.reason}`);
     if (r.code === 'halted') throw new Error('halted: the kill switch is on');

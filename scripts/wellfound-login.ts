@@ -23,13 +23,17 @@ export interface WellfoundLoginDeps {
   outPath?: string;
 }
 
-// Cookie NAME check only (values are never read). The auth cookie name is UNVERIFIED (no live login has run):
-// the rule accepts a cookie whose name starts with `_wellfound` or `_angellist`, and the doctor `sessions` check uses the same rule.
+// Cookie NAME and DOMAIN check only (values are never read). The real login cookie name is UNVERIFIED, so the rule is tolerant: a
+// cookie on a wellfound.com or angel.co domain whose name looks like a session or auth cookie (session, auth, token, remember,
+// _wellfound, _angellist). The doctor `sessions` check uses the same rule.
 export function hasWellfoundAuthCookie(state: unknown): boolean {
   const cookies = (state as { cookies?: unknown } | null)?.cookies;
   return Array.isArray(cookies) && cookies.some((c) => {
-    const n = (c as { name?: unknown } | null)?.name;
-    return typeof n === 'string' && /^_?(wellfound|angellist)/i.test(n);
+    const o = c as { name?: unknown; domain?: unknown } | null;
+    if (typeof o?.name !== 'string') return false;
+    const d = typeof o.domain === 'string' ? o.domain.toLowerCase() : '';
+    const onSite = d === '' ? /^_?(wellfound|angellist)/i.test(o.name) : /(wellfound\.com|angel\.co)$/.test(d);
+    return onSite && /session|auth|token|remember|^_?(wellfound|angellist)/i.test(o.name);
   });
 }
 

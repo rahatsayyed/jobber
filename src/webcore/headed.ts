@@ -5,7 +5,7 @@
 import { existsSync } from 'node:fs';
 import { HEADLESS_CONTEXT_OPTIONS, launchPersistentChrome, launchRealChrome, persistentSupported, type LiBrowser, type LiContext, type LiLauncher } from './launch.js';
 import { DEFAULT_PROFILE_DIR, importLegacySessions, prepareProfileDir } from './profile.js';
-import { resolveHost, type HostAttach } from './hostClient.js';
+import { resolveHost, OWNER_WAIT_MS, type HostAttach } from './hostClient.js';
 import { acquireLock, checkSiteSessionDir, checkSiteSessionFile, DEFAULT_SITE_SESSION_DIR, DEFAULT_WEB_LOCK_PATH, saveSiteStateAtomic, siteSessionPath } from './session.js';
 
 export interface HeadedIo { ask(question: string): Promise<string>; log(line: string): void }
@@ -58,7 +58,7 @@ export async function runHeaded(url: string, deps: HeadedDeps): Promise<HeadedRe
   // stopped again when the window is done, and the next task starts it headless.
   const shared = profileDir ? resolveHost(deps.host, process.env, deps.launcher) : null;
   if (shared) {
-    const r = await shared({ headed: true, contextOptions: HEADLESS_CONTEXT_OPTIONS });
+    const r = await shared({ headed: true, waitForTasksMs: OWNER_WAIT_MS, contextOptions: HEADLESS_CONTEXT_OPTIONS });
     if (r.ok) {
       try { return await interact(url, host, r.context, true, deps, sessionDir); } catch { return { ok: false, code: 'failed', reason: 'the browser session failed' }; } finally { await r.browser.close().catch(() => undefined); }
     }

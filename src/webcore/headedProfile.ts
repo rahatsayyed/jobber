@@ -8,7 +8,7 @@ import { launchPersistentChrome, persistentSupported, HEADLESS_CONTEXT_OPTIONS, 
 import { importStateOnce, platformLockPath, platformProfileDir, platformStatePath, refreshStateFile, PLATFORM_PROFILES, type PlatformProfileName } from './platformProfile.js';
 import { DEFAULT_PROFILE_DIR, prepareProfileDir } from './profile.js';
 import { acquireLock } from '../linkedin/session.js';
-import { resolveHost, type HostAttach } from './hostClient.js';
+import { resolveHost, OWNER_WAIT_MS, type HostAttach } from './hostClient.js';
 import { hostProcessExists } from './hostFile.js';
 import type { HeadedIo } from './headed.js';
 
@@ -36,7 +36,7 @@ export async function runHeadedProfile(
   try {
     const shared = resolveHost(deps.host, process.env, deps.launcher);
     if (shared) {
-      const r = await shared({ headed: true, contextOptions: HEADLESS_CONTEXT_OPTIONS });
+      const r = await shared({ headed: true, waitForTasksMs: OWNER_WAIT_MS, contextOptions: HEADLESS_CONTEXT_OPTIONS });
       if (r.ok) {
         try {
           const stateRefreshed = await interact(url, `shared (${info.label})`, r.context, statePath, deps.name, deps.io);

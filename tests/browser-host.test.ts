@@ -352,6 +352,80 @@ describe('client attach (hostClient)', () => {
   });
 });
 
+describe('owner window request (owner-wait marker)', () => {
+  const ownerPath = () => path.join(dir, 'secrets', 'browser-host-owner-wait.json');
+
+  it('waits for the running task, blocks new task attaches meanwhile, then takes the window and removes the marker', async () => {
+    alive.add(process.pid);
+    alive.add(4242);
+    const fc = fakeCtx();
+    const handles: HostHandle[] = [];
+    let t = 1_000_000;
+    let ticks = 0;
+    const lines: string[] = [];
+    const tick = async () => { t += 2000; ticks++; await new Promise<void>((r) => setTimeout(r, 2)); };
+    const a = wiredClient(fc, handles, { ownerWaitPath: ownerPath(), now: () => t });
+    const task = await a.client.attach();
+    if (!task.ok) throw new Error('attach');
+    let checked = false;
+    const b = wiredClient(fc, handles, {
+      ownerWaitPath: ownerPath(), now: () => t,
+      sleep: async () => {
+        await tick();
+        if (ticks === 1 && !checked) {
+          checked = true;
+          expect(existsSync(ownerPath())).toBe(true);
+          expect(statSync(ownerPath()).mode & 0o777).toBe(0o600);
+          const other = createHostClient({ ...paths(), env: { BROWSER_HOST: 'true' }, stopFile: path.join(dir, 'STOP'), isAlive, sleep, now: () => t, ownerWaitPath: ownerPath(), spawnHost: () => { throw new Error('must not start'); } });
+          const mine = readFileSync(ownerPath(), 'utf8');
+          writeFileSync(ownerPath(), JSON.stringify({ pid: 4242, at: t }), { mode: 0o600 });
+          expect(await other.attach()).toMatchObject({ ok: false, code: 'busy' });
+          writeFileSync(ownerPath(), mine, { mode: 0o600 });
+        }
+        if (ticks === 3) await task.browser.close();
+      },
+    });
+    const owner = await b.client.attach({ headed: true, waitForTasksMs: 600_000, onWait: (l) => lines.push(l) });
+    if (!owner.ok) throw new Error(`headed: ${JSON.stringify(owner)}`);
+    expect(ticks).toBeGreaterThanOrEqual(3);
+    expect(existsSync(ownerPath())).toBe(false);
+    expect(owner.mode).toBe('headed');
+    await owner.browser.close();
+    alive.delete(4242);
+  });
+
+  it('gives up after the wait time with the manual fallback, removes the marker and never closes the task client', async () => {
+    alive.add(process.pid);
+    const fc = fakeCtx();
+    const handles: HostHandle[] = [];
+    let t = 5_000_000;
+    const lines: string[] = [];
+    const sl = async () => { t += 2000; await new Promise<void>((r) => setTimeout(r, 1)); };
+    const a = wiredClient(fc, handles, { ownerWaitPath: ownerPath(), now: () => t, sleep: sl });
+    const task = await a.client.attach();
+    if (!task.ok) throw new Error('attach');
+    const r = await a.client.attach({ headed: true, waitForTasksMs: 40_000, onWait: (l) => lines.push(l) });
+    expect(r).toMatchObject({ ok: false, code: 'busy' });
+    expect(r.ok === false && r.reason).toMatch(/jobber-stack/);
+    expect(lines.some((l) => /waiting for the running task to finish/.test(l))).toBe(true);
+    expect(existsSync(ownerPath())).toBe(false);
+    expect(liveLeases(paths().leaseDir, isAlive)).toBe(1);
+    await task.browser.close();
+    await handles[0]!.shutdown('test');
+  });
+
+  it('ignores a stale or dead-pid marker', async () => {
+    const fc = fakeCtx();
+    const handles: HostHandle[] = [];
+    writeFileSync(ownerPath(), JSON.stringify({ pid: 999999, at: Date.now() }), { mode: 0o600 });
+    const a = wiredClient(fc, handles, { ownerWaitPath: ownerPath() });
+    const task = await a.client.attach();
+    expect(task.ok).toBe(true);
+    if (task.ok) await task.browser.close();
+    await handles[0]!.shutdown('test');
+  });
+});
+
 describe('web runtime on the shared host', () => {
   it('opens a shared tab without the web lock, shares the per-host gap by file, and falls back when the host is unavailable', async () => {
     const db = openDb(':memory:');
