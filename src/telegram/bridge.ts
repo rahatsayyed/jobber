@@ -10,6 +10,8 @@ import { fetchApi, scrub, type ApiResult, type TelegramApi } from './api.js';
 import { createChatRunner, type ChatRunner } from './chat.js';
 import { handleOwnerMessage, type BridgeDeps } from './commands.js';
 import { isOwnerId, loadTelegramConfig, PROJECT_ROOT, type TelegramConfig } from './config.js';
+import { createChatWindow } from './chatwin/bridge.js';
+import type { ChatWindow } from './chatwin/window.js';
 import { chunksFor, postChunks } from './send.js';
 import { runProcess, type SpawnFn } from './spawn.js';
 import { ensureTopics } from './topics.js';
@@ -48,6 +50,8 @@ export interface BridgeOptions {
   bot?: Bot;
   /** Test seam: the live window views (default: built from the environment). */
   windowViews?: WindowViews;
+  /** Test seam: the chat window controller (default: built from the environment). */
+  chatWindow?: Pick<ChatWindow, 'handle'>;
 }
 
 export function createBridgeBot(cfg: TelegramConfig, opts: BridgeOptions): Bot {
@@ -73,12 +77,16 @@ export function createBridgeBot(cfg: TelegramConfig, opts: BridgeOptions): Bot {
   });
   // --- end windows
 
+  // chat window: free text and /clear /compact /chat in the chat topic go to the long-running `chat` claude window
+  const chatWindow = opts.chatWindow ?? createChatWindow({ cfg, env: opts.env, root, api: grammyApi(bot.api, cfg.token) });
+
   bot.on('message:text', async (ctx) => {
     const m = ctx.message;
     const threadId = m.is_topic_message ? m.message_thread_id : undefined;
     const api = grammyApi(ctx.api, cfg.token);
     // windows hook: /windows, /window <name> and typed text in a window topic
     if (await handleWindowsMessage(windowViews, { text: m.text, chatId: m.chat.id, threadId, messageId: m.message_id, replyToMessageId: m.reply_to_message?.message_id })) return;
+    if (await chatWindow.handle({ text: m.text, chatId: m.chat.id, threadId, messageId: m.message_id })) return;
     const deps: BridgeDeps = {
       root,
       env: opts.env,

@@ -19,6 +19,11 @@ export async function ensureWindowTopic(api: TelegramApi, root: string, chatId: 
       const st = await ensureTopics(api, root, chatId, [kind]);
       return st.forum ? st.topics[kind] : undefined;
     }
+    if (window === 'chat') {
+      // The chat window's live view lives in the chat topic itself (no second topic with the same name).
+      const cst = await ensureTopics(api, root, chatId, ['chat']);
+      return cst.forum ? cst.topics.chat : undefined;
+    }
     let st: TopicState | null = readTopicState(root);
     if (!st || st.chat_id !== chatId) st = await ensureTopics(api, root, chatId, []);
     if (!st.forum) return undefined;

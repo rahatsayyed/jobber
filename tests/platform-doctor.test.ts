@@ -18,7 +18,7 @@ interface Files {
 
 function ctxWith(
   files: Files,
-  opts: { tmux?: boolean; session?: boolean; env?: NodeJS.ProcessEnv } = {},
+  opts: { tmux?: boolean; session?: boolean; env?: NodeJS.ProcessEnv; noChat?: boolean } = {},
 ): DoctorContext {
   return {
     root: '/p',
@@ -28,7 +28,8 @@ function ctxWith(
       if (cmd === 'tmux' && args[0] === 'has-session') return { stdout: '', code: opts.session ? 0 : 1 };
       // opts.session: the stack session exists and holds the bridge window
       if (cmd === 'tmux' && args[0] === 'list-windows') {
-        return opts.session ? { stdout: '0|bridge|1|node\n1|web|0|node', code: 0 } : { stdout: '', code: 1 };
+        const chat = opts.noChat ? '' : '\n2|chat|0|claude';
+        return opts.session ? { stdout: `0|bridge|1|node\n1|web|0|node${chat}`, code: 0 } : { stdout: '', code: 1 };
       }
       return { stdout: '', code: 1 };
     },
@@ -86,6 +87,13 @@ describe('stack checks', () => {
       const r = await byId(ctxWith(withEnv(GROUP_ENV), { session: true }));
       expect(r['telegram-bridge'].status).toBe('pass');
       expect(r['telegram-bridge'].detail).toContain('2 allowed user(s)');
+    });
+
+    it('warns when the bridge runs but the chat window does not', async () => {
+      const r = await byId(ctxWith(withEnv(GROUP_ENV), { session: true, noChat: true }));
+      expect(r['telegram-bridge'].status).toBe('warn');
+      expect(r['telegram-bridge'].detail).toContain('chat window is not');
+      expect(r['telegram-bridge'].fix).toContain('npm run up');
     });
 
     it('warns (not fails) when the bridge window is not running', async () => {

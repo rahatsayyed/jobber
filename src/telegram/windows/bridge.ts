@@ -26,7 +26,8 @@ export function protectedWindowNames(root: string): string[] {
   const out = ['bridge', 'manager'];
   try {
     const cfg = loadManagerConfig(readFileSync(path.join(root, 'config', 'manager-windows.json'), 'utf8'));
-    for (const p of cfg.protected) if (!out.includes(p)) out.push(p);
+    // `chat` is protected from the manager, not from the live view: its permission prompts are answered there (input stays behind TELEGRAM_WINDOW_INPUT).
+    for (const p of cfg.protected) if (p !== 'chat' && !out.includes(p)) out.push(p);
   } catch { /* keep the built-in two */ }
   return out;
 }

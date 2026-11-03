@@ -92,7 +92,7 @@ describe('up', () => {
         const n = c.indexOf('-n');
         return n >= 0 ? c[n + 1] : c[c.indexOf('-s') + 1];
       });
-    expect(order).toEqual(['bridge', 'hunt', 'followups', 'manager', 'scheduler', 'web']);
+    expect(order).toEqual(['bridge', 'hunt', 'followups', 'manager', 'chat', 'scheduler', 'web']);
     f.calls.length = 0;
     expect(await runUp(deps(f), { status: false })).toBe(0);
     expect(starts(f).filter((c) => c[1] === 'new-window' || c[1] === 'new-session')).toEqual([]);
@@ -266,7 +266,7 @@ describe('up', () => {
     expect(bridge.slice(bridge.indexOf('-s'), bridge.indexOf('-s') + 2)).toEqual(['-s', 'Jobber']);
     expect(bridge.join(' ')).toContain('telegram:bridge');
     expect(bridge.join(' ')).not.toContain(SECRET);
-    expect(f.sessions.get('Jobber')).toEqual(['bridge', 'hunt', 'followups', 'manager', 'scheduler', 'web']);
+    expect(f.sessions.get('Jobber')).toEqual(['bridge', 'hunt', 'followups', 'manager', 'chat', 'scheduler', 'web']);
     expect(d.out.some((l) => /^\s*bridge\s+running\s/.test(l))).toBe(true);
     // a second run finds it and starts nothing
     const again = deps(f);

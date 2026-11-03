@@ -58,4 +58,6 @@ while IFS= read -r name; do
 done < <(compgen -v CLAUDE_CODE_ || true)
 shopt -u nocasematch
 cd "$ROOT"
+# The bot token must never reach a Claude window, even when the parent environment carries it.
+unset TELEGRAM_BOT_TOKEN
 exec claude "$@"
