@@ -112,7 +112,7 @@ npm start
 
 `npm start` is the same as `npm run up`, and `npm stop` is the same as `npm run down`. Extra flags go after `--`, for example `npm start -- --status`.
 
-Order: kill-switch check, doctor gate, then bridge, windows, scheduler and dashboard. The scheduler and the dashboard run in the one tmux session `Jobber` (`STACK_TMUX_SESSION`, windows `scheduler` and `web`; the Telegram bridge is the window `bridge`, and run windows are `wake-<runId>`, `drip-mail-<runId>` and `drip-linkedin-<runId>`, kept for `RUN_WINDOW_KEEP_MIN` minutes after a run, default 0); the scheduler daemon is also what runs the mail drip lane and the early wake for a priority request. Exit codes:
+Order: kill-switch check, doctor gate, then bridge, windows, scheduler and dashboard. The scheduler and the dashboard run in the one tmux session `Jobber` (`STACK_TMUX_SESSION`, windows `scheduler` and `web`; the Telegram bridge is the window `bridge`, the Telegram `chat` topic talks to the long-running window `chat`, and run windows are `wake-<runId>`, `drip-mail-<runId>` and `drip-linkedin-<runId>`, kept for `RUN_WINDOW_KEEP_MIN` minutes after a run, default 0); the scheduler daemon is also what runs the mail drip lane and the early wake for a priority request. Exit codes:
 
 | Code | Meaning |
 |---|---|

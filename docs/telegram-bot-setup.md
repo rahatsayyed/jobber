@@ -104,11 +104,53 @@ paste the token into it.
   `/include`, `/calibrate`, `/patterns`.
 - Not wired in the bridge yet: `/followups`, `/checkreplies`, `/applyall`, `/connect`. Use the `hunt`
   and `followups` windows of the `Jobber` session for those (`tmux attach -t Jobber`).
-- Free text in the `chat` topic runs `claude -p --output-format json --resume <id>` under the
-  `read_only` permission set. It never runs with skip-permissions.
+- Also typed in code: `/windows`, `/window <name>` and `/drip` (sections 5a to 5c).
+- Free text in the `chat` topic goes to the long-running `chat` window (section 5d). It runs under the
+  `read_only` permission set and never with skip-permissions.
 - Code-sent notifications go to a topic by kind (`src/platform/notify.ts`): the escalation digest and
   the manual-request reports go to `inbox`, the `apply:assist` ping goes to `assist`, wake and drip
   summaries go to `wakes` and `drips`, and problems go to `alerts`.
+
+### 5a. Notices and topics
+
+- `wakes`: after each wake the scheduler sends a short summary, written by code (never by the model).
+- `alerts`: failures.
+- `drips`: one line per mail or LinkedIn drip action; email addresses are masked.
+- Window topics are created on demand the first time you open a window view and are stored under `windows` in
+  `.jobber/telegram-topics.json`. `wake-*` windows use the `wakes` topic, `drip-*` windows use the `drips` topic,
+  and the `chat` window uses the `chat` topic.
+
+### 5b. `/windows` and the input flag
+
+- `/windows` lists the tmux windows you may view; `/window <name>` opens a live view of one. Buttons: Refresh,
+  Pause, Close. The view is an edited message that follows the pane.
+- Allowlist: the session `Jobber` plus the sessions in `WEB_TERMINAL_SESSIONS`. Anything else is refused.
+- View only by default. Input buttons and typed text work only when `TELEGRAM_WINDOW_INPUT=true` in `.env`
+  (default false; restart the bridge after a change). Protected windows are always view only.
+- Unverified live: how hard Telegram rate-limits `editMessageText` for a busy window. If views lag, use Pause.
+
+### 5c. `/drip`
+
+- `/drip` shows the mail and LinkedIn drip lanes with buttons Mail now, LinkedIn now and Status.
+- Mail now and LinkedIn now ask for a confirm step first. The confirm uses a single-use token that expires
+  after 2 minutes. A confirmed request is stored in `scheduler_state` (`drip_request_mail`,
+  `drip_request_linkedin`) and only skips the random wait between ticks. The send window, quiet hours, caps,
+  halts, the kill switch and the dry run all still apply. When a lane refuses, the reason is kept in
+  `drip_last_refusal_<lane>` and shown by Status.
+- The scheduler daemon picks the request up, so the daemon must be running.
+
+### 5d. The chat window and `/clear`
+
+- `npm run up` starts a long-running interactive `claude` window named `chat` in the `Jobber` session
+  (`ensureChatWindow`) with a `--session-id` recorded in `.jobber/chat-session.json`.
+- The `chat` topic types your text into that window. The reply is read from Claude's transcript jsonl under
+  `~/.claude/projects`. Typed text is one line: at most 2000 characters, newlines become spaces, and a leading
+  `!`, `#` or `&` is prefixed with "Owner says: " so it cannot act as a shell, memory or background command.
+- Chat-topic only commands: `/clear` (types Claude's `/clear` and best-effort deletes the Telegram messages the
+  bridge logged; Telegram only allows deleting messages younger than 48 hours), `/compact` and `/chat restart`.
+- `TELEGRAM_CHAT_FALLBACK=print` switches back to the old `claude -p` path. Default off.
+- Unverified live: that `/clear` creates a new transcript file the bridge then follows, and that the installed
+  `claude` accepts `--session-id` as expected. If replies stop after `/clear`, use `/chat restart`.
 
 ## 6. Register the command menu and branding
 
@@ -148,6 +190,9 @@ paste the token into it.
 | Test message not received | You never pressed Start on the bot, or the ID is wrong | Open the bot, press Start, retry; verify the numeric ID |
 | No topics appear | Threaded Mode is off for the bot in BotFather (private chat), or, with a group, Topics are off, the bot is not admin or lacks `can_manage_topics`, or `TELEGRAM_CHAT_ID` is wrong | Redo step 3; check the `bridge` window for the error |
 | Bot works in a group but ignores plain messages | Group Privacy is on | BotFather, `/mybots`, bot, Bot Settings, Group Privacy off (re-add the bot to the group if it does not take effect) |
+| Chat topic says login expired | The `chat` window's Claude login ran out | In a terminal run `claude`, then `/login`; then `/chat restart` in the chat topic |
+| Topics are empty or missing | Threaded Mode off, or `.jobber/telegram-topics.json` holds stale ids | Redo step 3 and send the bot one message; if ids are stale, stop the bridge, delete that file and start it again |
+| Changed `.env` but nothing changed (`TELEGRAM_WINDOW_INPUT`, `TELEGRAM_CHAT_FALLBACK`) | The bridge reads `.env` only at start | Restart the `bridge` window |
 | `/followups` or `/connect` does nothing | Not wired in the bridge yet | Use the `followups` or `hunt` window of the `Jobber` session |
 | Token shown in a screenshot or log | Leak | Rotate with `/revoke`, see Security notes |
 | Doctor says `.env` is readable by others | File mode too open | `chmod 600 .env` |

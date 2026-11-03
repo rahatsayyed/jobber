@@ -26,11 +26,14 @@ Jobber uses explicit slash commands (`/runhunt`, `/status`, etc.) for reliable, 
    health - Platform and pipeline health
    sources - Per-source status table
    escalations - Open escalations that need you
+   windows - List the live tmux windows
+   window - Live view of one tmux window
+   drip - Mail and LinkedIn drip status, run one now
    ```
 
 5. **Save.** The commands are now registered for your bot.
 
-The custom Telegram bridge types `/limits`, `/working`, `/health`, `/sources`, `/escalations`, `/apply`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`, `/include`, `/calibrate` and `/patterns` in code. `/followups`, `/checkreplies`, `/applyall` and `/connect` are not wired in the bridge yet, so they are not in the list above; use the `hunt` and `followups` windows of the tmux session `Jobber`.
+The custom Telegram bridge types `/limits`, `/working`, `/health`, `/sources`, `/escalations`, `/apply`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`, `/include`, `/calibrate`, `/patterns`, `/windows`, `/window` and `/drip` in code. `/clear`, `/compact` and `/chat restart` work only inside the `chat` topic (they go to the long-running chat window), so they are not in the BotFather list. `/followups`, `/checkreplies`, `/applyall` and `/connect` are not wired in the bridge yet, so they are not in the list above; use the `hunt` and `followups` windows of the tmux session `Jobber`.
 
 ## Using Slash Commands
 
@@ -46,6 +49,9 @@ Examples:
                   → a priority run on one job page or careers page: validated in code, queued, picked up by an early wake
                     (the hunt window needs the rule Bash(npm run apply:request:*)); the report comes back on Telegram
 /sources          → the per-source status table
+/windows          → buttons for the live tmux windows
+/window hunt      → a live view of the `hunt` window (Refresh, Pause, Close)
+/drip             → drip status; buttons Mail now, LinkedIn now, Status (a confirm step follows)
 ```
 
 ## Updating Commands

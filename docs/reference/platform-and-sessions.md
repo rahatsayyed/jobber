@@ -7,7 +7,7 @@ section is the reference for what exists.
 
 - **tmux sessions**: ONE session, `Jobber` (`JOBBER_TMUX_SESSION`, the default of `STACK_TMUX_SESSION`,
   `SCHEDULER_TMUX_SESSION` and `WEB_TMUX_SESSION`), holds everything. Windows: `bridge` (the Telegram bridge),
-  `scheduler` (the daemon), `web` (the dashboard), the named Claude windows from `config/manager-windows.json`
+  `scheduler` (the daemon), `web` (the dashboard), `chat` (the long-running Claude window of the Telegram `chat` topic, started by `npm run up`), the named Claude windows from `config/manager-windows.json`
   (`hunt`, an interactive read-only session whose `/runhunt` runs one wake and whose `/apply <url>` queues a
   priority request, `followups`, and `manager`; `manager` and the bridge are protected), and the run windows
   `wake-<runId>`, `drip-mail-<runId>` and `drip-linkedin-<runId>` (closed when the run ends, or after
@@ -22,9 +22,18 @@ section is the reference for what exists.
   notifications route by topic through `src/platform/notify.ts` (the escalation digest and manual-request
   reports to `inbox`, the `apply:assist` ping to `assist`). Typed commands run in code: `/limits`, `/working`,
   `/health`, `/sources`, `/escalations`, `/apply`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`,
-  `/include`, `/calibrate`, `/patterns`. NOT wired yet: `/followups`, `/checkreplies`, `/applyall`, `/connect`
-  (use the `hunt` and `followups` windows). The free `chat` topic runs `claude -p --output-format json
-  --resume <id>` under `read_only`, never skip-permissions. The doctor check `telegram-bridge` covers it.
+  `/include`, `/calibrate`, `/patterns`, `/windows`, `/window`, `/drip`. NOT wired yet: `/followups`,
+  `/checkreplies`, `/applyall`, `/connect` (use the `hunt` and `followups` windows). `/windows` and
+  `/window <name>` are live tmux views (`src/telegram/windows/`; allowlist `Jobber` plus `WEB_TERMINAL_SESSIONS`;
+  protected windows view only; input only with `TELEGRAM_WINDOW_INPUT=true`, default false; window topics on demand
+  under `windows` in `.jobber/telegram-topics.json`, `wake-*` use `wakes`, `drip-*` use `drips`). `/drip`
+  (`src/telegram/drip.ts`, `src/scheduler/dripRequest.ts`) asks for one drip tick with a 2-minute single-use
+  confirm and only skips the random wait. The scheduler sends the wake summary to `wakes`, failures to `alerts`
+  and one masked line per drip action to `drips` (`src/scheduler/dripNotice.ts`). The `chat` topic talks to the
+  long-running `chat` window (`src/telegram/chatwin/`, session id in `.jobber/chat-session.json`, replies read
+  from the Claude transcript; `/clear`, `/compact`, `/chat restart` chat-only; `TELEGRAM_CHAT_FALLBACK=print`
+  re-enables `claude -p`, default off), `read_only`, never skip-permissions. Unverified live: `editMessageText`
+  rate limits, `/clear` creating a new transcript file, `--session-id` support. The doctor check `telegram-bridge` covers it.
   Setup runbook: `docs/telegram-bot-setup.md`.
 - **Migration note (ccgram removed 2026-11-03)**: the pinned ccgram bridge, its pin file `config/ccgram.pin.json`,
   `scripts/ccgram/`, the `ccgram-hooks` hooks installer and the `ccgram-*` doctor checks are gone, and the

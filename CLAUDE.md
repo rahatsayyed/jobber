@@ -183,8 +183,22 @@ The bridge uses topics in the bot's own private chat (BotFather Threaded Mode; `
 `.jobber/telegram-topics.json`), is owner-only by the numeric `ALLOWED_USERS`, and formats replies
 with its own markdown to Telegram HTML formatter (`src/telegram/format.ts`, always escapes). Code-sent
 notifications route by topic through `src/platform/notify.ts` (escalation digest and manual-request
-reports go to `inbox`, the `apply:assist` ping to `assist`). The free `chat` topic runs
-`claude -p --output-format json --resume <id>` under `read_only`, never skip-permissions.
+reports go to `inbox`, the `apply:assist` ping to `assist`; the scheduler sends the wake summary to `wakes`,
+failures to `alerts` and one line per mail or LinkedIn drip action to `drips`, addresses masked, from
+`src/scheduler/dripNotice.ts`). The `chat` topic talks to ONE long-running interactive `claude` window named
+`chat` in the `Jobber` session (started by `npm run up`, session id kept in `.jobber/chat-session.json`); the
+bridge types the text into it and reads the reply from Claude's transcript under `~/.claude/projects`. In
+that topic `/clear` (also best-effort deletes the logged Telegram messages, 48 h limit), `/compact` and
+`/chat restart` are chat-only. The old `claude -p` path runs only with `TELEGRAM_CHAT_FALLBACK=print`
+(default off). Typed text goes in as one line (max 2000 chars, newlines become spaces) and a leading `!`,
+`#` or `&` is prefixed with "Owner says: ". `/windows` and `/window <name>` show live views of the
+allowlisted tmux windows (session `Jobber` plus `WEB_TERMINAL_SESSIONS`) with Refresh, Pause and Close buttons;
+input buttons and typed text work only with `TELEGRAM_WINDOW_INPUT=true` (default false) and never in
+protected windows. `/drip` shows the drip lanes and can ask for one mail or LinkedIn tick now (confirm step,
+single-use token, 2 minutes); it only skips the random wait, every other gate still applies. Details:
+`docs/telegram-bot-setup.md`. Not verified live: Telegram edit rate limits for the live views, whether
+`/clear` starts a new transcript file, and `--session-id` support in the installed `claude`. The chat window
+is `read_only` like the others, never skip-permissions.
 Whenever you are running with a Telegram channel active (either route):
 
 **Every command → Telegram response:**
@@ -263,7 +277,6 @@ Message-ID is exposed, so recipient-side threading is not guaranteed).
    include - Un-exclude a vetoed job (manual override)
    outcome - Record a job outcome (replied/interview/offer/rejected...)
    calibrate - Check whether match scores predict interviews
-   checkreplies - Detect replies in Gmail and record outcomes
    patterns - What kind of jobs reply
    report - Offline HTML funnel
    limits - Today's send, apply and connect limits
@@ -271,11 +284,15 @@ Message-ID is exposed, so recipient-side threading is not guaranteed).
    health - Platform and pipeline health
    sources - Per-source status table
    escalations - Open escalations that need you
+   windows - List the live tmux windows
+   window - Live view of one tmux window
+   drip - Mail and LinkedIn drip status, run one now
    ```
 
 The custom bridge types these commands in code: `/limits`, `/working`, `/health`, `/sources`, `/escalations`,
-`/apply`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`, `/include`, `/calibrate` and `/patterns`.
-NOT wired in the bridge yet: `/followups`, `/checkreplies`, `/applyall` and `/connect`; run them in the
+`/apply`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`, `/include`, `/calibrate`, `/patterns`,
+`/windows`, `/window` and `/drip`. `/clear`, `/compact` and `/chat restart` work only inside the `chat` topic,
+so they are not in the BotFather list. NOT wired in the bridge yet: `/followups`, `/checkreplies`, `/applyall` and `/connect`; run them in the
 `hunt` and `followups` windows of the `Jobber` session (`tmux attach -t Jobber`), so they are left out of
 the BotFather list above.
 
