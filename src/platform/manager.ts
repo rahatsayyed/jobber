@@ -6,11 +6,18 @@ import { assertName, capture, listWindows, type Run } from './tmux.js';
 // ccgram removed 2026-11-03; .ccgram/ state is dropped. The named windows now live in session Jobber.
 const shellQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`;
 import { redactPane } from './redact.js';
+import { parseWindowFields, WORKER_LAUNCHER, type WindowFields } from './windowConfig.js';
+import { startWorkerWindow } from './windowSession.js';
+
+export interface ManagerWindow extends WindowFields {
+  argv: string[];
+  description: string;
+}
 
 export interface ManagerConfig {
   session: string;
   protected: string[];
-  windows: Record<string, { argv: string[]; description: string }>;
+  windows: Record<string, ManagerWindow>;
 }
 
 export const SUBCOMMANDS = ['list', 'read', 'start', 'stop', 'restart', 'status'] as const;
@@ -37,13 +44,20 @@ export function loadManagerConfig(text: string): ManagerConfig {
     assertName(name);
     if (name in Object.prototype) throw new Error(`manager config: window name ${name} is reserved`);
     if (prot.includes(name)) throw new Error(`manager config: ${name} is protected and cannot be managed`);
-    if (!isObj(w) || !Array.isArray(w.argv) || w.argv.length === 0 || !w.argv.every((a) => typeof a === 'string')) {
+    if (!isObj(w)) throw new Error(`manager config: ${name}.argv must be a non-empty string array`);
+    const fields = parseWindowFields(name, w);
+    // A worker window may leave argv out: it is always the worker launcher.
+    const rawArgv = w.argv === undefined && fields.kind === 'worker' ? ['bash', WORKER_LAUNCHER, name] : w.argv;
+    if (!Array.isArray(rawArgv) || rawArgv.length === 0 || !rawArgv.every((a) => typeof a === 'string')) {
       throw new Error(`manager config: ${name}.argv must be a non-empty string array`);
     }
-    const argv = w.argv as string[];
+    const argv = rawArgv as string[];
     if (argv[0] !== 'bash' && argv[0] !== 'claude') throw new Error(`manager config: ${name}.argv[0] must be bash or claude`);
     if (argv.some((a) => FORBIDDEN_ARG.test(a))) throw new Error(`manager config: ${name}.argv has a forbidden flag`);
-    windows[name] = { argv, description: typeof w.description === 'string' ? w.description : '' };
+    if (fields.kind === 'worker' && (argv[0] !== 'bash' || argv[1] !== WORKER_LAUNCHER || argv[2] !== name)) {
+      throw new Error(`manager config: ${name} is a worker window, argv must be bash ${WORKER_LAUNCHER} ${name}`);
+    }
+    windows[name] = { ...fields, argv, description: typeof w.description === 'string' ? w.description : '' };
   }
   return { session: raw.session, protected: prot, windows };
 }
@@ -113,6 +127,8 @@ export async function startWindow(
   const session = sessionName(cfg, env);
   const command = buildCommand(w.argv);
   if ((await listWindows(run, session)).some((x) => x.name === name)) return 'exists';
+  // A worker window gets a fresh recorded session id and starts through scripts/claude-window.sh with --session-id.
+  if (w.kind === 'worker') return startWorkerWindow(run, { session, window: name, root });
   const r = await run('tmux', ['new-window', '-d', '-t', `=${session}:`, '-n', name, '-c', root, command]);
   if (r.code !== 0) throw new Error(`failed to start window ${name}`);
   return 'started';

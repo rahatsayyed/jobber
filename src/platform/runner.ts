@@ -44,11 +44,11 @@ export function disallowedBuiltins(p: { builtin_tools: string[]; unrestricted_bu
   return DANGEROUS_BUILTINS.filter((b) => !(p.unrestricted_builtins === true && p.builtin_tools.includes(b)));
 }
 const TOOL_RE = /^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$/;
-const SECRET_KEY_RE = /KEY|SECRET|TOKEN|PASSWORD|PASS|COOKIE/i;
-const SAFE_BASE_KEYS = ['HOME', 'PATH', 'LANG', 'LC_ALL', 'TZ', 'USER', 'TMPDIR'];
+export const SECRET_KEY_RE = /KEY|SECRET|TOKEN|PASSWORD|PASS|COOKIE/i;
+export const SAFE_BASE_KEYS = ['HOME', 'PATH', 'LANG', 'LC_ALL', 'TZ', 'USER', 'TMPDIR'];
 const ALWAYS_DROP = new Set(['ANTHROPIC_API_KEY', 'IS_SANDBOX']);
 
-function isDroppedKey(k: string): boolean {
+export function isDroppedKey(k: string): boolean {
   return ALWAYS_DROP.has(k) || /^CLAUDE_CODE_.*(SKIP|BYPASS|DANGEROUS|PERMISSION)/i.test(k);
 }
 

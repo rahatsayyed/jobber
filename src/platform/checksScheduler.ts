@@ -10,6 +10,7 @@ import { budgetEnvWarnings } from '../scheduler/budget.js';
 import { loadDripConfig } from '../scheduler/mailDrip.js';
 import { loadActiveHours } from '../linkedin/activeHours.js';
 import { loadLinkedinDripConfig } from '../scheduler/linkedinDrip.js';
+import { parseWindowLanes } from '../scheduler/windowLanes.js';
 import { DEFAULT_LABEL, SERVICE_NAME } from '../scheduler/units.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -227,6 +228,23 @@ export function schedulerChecks(): Check[] {
         return bad.length === 0
           ? pass('three operator agents match config/worker-tools.json')
           : fail(bad.join('; '), 'align the agent tools line with config/worker-tools.json');
+      },
+    },
+    {
+      id: 'window-foundation',
+      title: 'worker windows: launcher, guard hook, unverified claude behaviours',
+      async run(ctx) {
+        const files = ['scripts/claude-window.sh', 'scripts/window-env.ts', '.claude/hooks/window-guard.cjs'];
+        const missing = files.filter((f) => !ctx.fs.exists(join(ctx.root, f)));
+        if (missing.length > 0) return fail(`missing: ${missing.join(', ')}`, 'restore the files from git');
+        const { lanes, invalid } = parseWindowLanes(mergedEnv(ctx));
+        if (invalid.length > 0) return warn(`WINDOW_LANES has entries that are not lane names: ${invalid.join(', ')}`, 'use lowercase names separated by commas');
+        const note =
+          'UNVERIFIED with the installed claude: (1) --session-id for an interactive session, (2) a first positional prompt (the startup line is typed with sendText instead)';
+        if (lanes.length === 0) return skip(`WINDOW_LANES is empty, no lane uses a window yet. ${note}`);
+        const help = await ctx.run('claude', ['--help']);
+        const listed = /--session-id/.test(help.stdout) ? '--session-id is listed in claude --help' : '--session-id is NOT listed in claude --help';
+        return warn(`lanes through windows: ${lanes.join(', ')}. ${note}. ${listed}`, 'run one item of the lane in dry run and watch the window before going live');
       },
     },
   ];

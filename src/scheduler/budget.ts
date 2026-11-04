@@ -49,7 +49,7 @@ export function budgetEnvWarnings(env: NodeJS.ProcessEnv = process.env): string[
 export type StopReason = 'wall_clock' | 'tokens' | 'usage_limit' | 'stalled';
 
 const MAX_BUFFER = 1_000_000;
-const LIMIT_RE = /(usage|rate) limit (reached|exceeded)|(plan|session) limit reached|hit your limit/i;
+export const LIMIT_RE = /(usage|rate) limit (reached|exceeded)|(plan|session) limit reached|hit your limit/i;
 const NETWORK_RE = /can't reach|ENOTFOUND|ECONN|ETIMEDOUT|EAI_AGAIN|internet|DNS/i;
 
 export class BudgetTracker {

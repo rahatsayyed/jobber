@@ -526,6 +526,13 @@ const hand: EnvSpec[] = [
     restart: 'scheduler',
     restartEvidence: 'src/scheduler/mailDrip.ts',
   }),
+  e('WINDOW_LANES', 'scheduler', 'scheduler', 'string', {
+    maxLen: 200,
+    about: 'Comma-separated scheduler lane names that run through a long-lived claude window (src/scheduler/windowDispatch.ts) instead of the old headless run. Blank (the default) means no lane: every lane stays on the headless path. Nothing reads it yet in the live flow.',
+    ...never('Chooses which lanes send, apply or connect through an interactive window with its own permission handling. Edit .env by hand.'),
+    restart: 'scheduler',
+    restartEvidence: 'src/scheduler/windowLanes.ts',
+  }),
   e('RUN_MAX_WALL_SEC', 'scheduler', 'scheduler', 'int', {
     default: '3600',
     min: 30,
