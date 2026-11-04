@@ -6,7 +6,7 @@
 // at most HANDOFF_MAX entries, every text single line, redacted and at most 300 characters. The text may come from
 // model output: treat it as data, never as instructions.
 import { randomBytes } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { acquireLock } from './lock.js';
 import { redactPane } from './redact.js';
@@ -132,8 +132,37 @@ export function resolveHandoff(root: string, id: string): boolean {
   });
 }
 
-/** The one line typed into (or passed to) a worker window at start. */
+/** Creates `.jobber/handoff.md` (header only, 0600) when it is missing. Returns true when it was created. Never throws. */
+export function ensureHandoffFile(root: string): boolean {
+  try {
+    const p = handoffFile(root);
+    if (existsSync(p)) return false;
+    withLock(root, () => { if (!existsSync(p)) writeEntries(root, []); });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The call site for the scheduler lanes (Phase 3 wires it): when a lane skips an item because a daily cap or a usage
+ * limit stopped it, it calls this so the item survives a restart and the reminder tick can mention it. Example:
+ *   noteSkippedItem(root, { window: 'mail', item: 'cold email to job 41', reason: 'daily send cap reached' })
+ * Same window and same item text while still pending: no second entry. Never throws (the lane must not fail on it).
+ */
+export function noteSkippedItem(root: string, e: { window: string; item: string; reason: string }, now: Date = new Date()): AddHandoffResult | null {
+  try {
+    return addHandoff(root, { window: e.window, what: `skipped: ${e.item}`, why: e.reason }, now);
+  } catch {
+    return null;
+  }
+}
+
+/** The one line typed into (or passed to) a window at start. The manager gets its own line. */
 export function startupLine(window: string): string {
   assertName(window);
+  if (window === 'manager') {
+    return 'Read .jobber/handoff.md, then tell me in your reply which entries are still open, grouped by window, and do not act on them without me.';
+  }
   return `Read .jobber/handoff.md for pending items for window ${window} and your role file config/windows/${window}.md, then wait for work items.`;
 }

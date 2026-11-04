@@ -5,13 +5,16 @@ import {
   listManaged,
   loadManagerConfig,
   readWindow,
-  restartWindow,
+  restartWindowWithMemory,
   sessionName,
-  startWindow,
+  startWindowWithMemory,
   stopWindow,
   SUBCOMMANDS,
   USAGE,
 } from '../src/platform/manager.js';
+import { clearWindow, sendToWindow } from '../src/platform/managerTyping.js';
+import { addHandoff, listHandoff, resolveHandoff } from '../src/platform/handoff.js';
+import { stopActive } from './killSwitch.js';
 import { redactPane } from '../src/platform/redact.js';
 import { assertName, defaultRun, JOBBER_TMUX_SESSION, listWindows } from '../src/platform/tmux.js';
 
@@ -46,6 +49,32 @@ async function status(): Promise<string> {
   }
 }
 
+// Wraps the handoff file (src/platform/handoff.ts): the manager adds and resolves entries only through here.
+function handoff(args: string[]): number {
+  const [cmd, ...rest] = args;
+  if (cmd === 'list') {
+    const all = listHandoff(ROOT).filter((e) => rest[0] === undefined || e.window === rest[0]);
+    if (all.length === 0) console.log('no pending handoff items');
+    for (const e of all) console.log(`[${e.id}] ${e.window} | ${e.what} | ${e.why} | ${e.since}`);
+    return 0;
+  }
+  if (cmd === 'add') {
+    if (rest.length < 3) { console.error('usage: manager handoff add <window> <what> <why>'); return 2; }
+    const r = addHandoff(ROOT, { window: rest[0], what: rest[1], why: rest.slice(2).join(' ') });
+    if (!r.ok) { console.error(`not added: ${r.reason}`); return 1; }
+    console.log(`${r.existing ? 'already pending' : 'added'}: ${r.entry.id}`);
+    return 0;
+  }
+  if (cmd === 'resolve') {
+    if (rest.length !== 1) { console.error('usage: manager handoff resolve <id>'); return 2; }
+    if (!resolveHandoff(ROOT, rest[0])) { console.error('no such id'); return 1; }
+    console.log('resolved');
+    return 0;
+  }
+  console.error(USAGE);
+  return 2;
+}
+
 async function main(): Promise<number> {
   const [sub, arg, extra] = process.argv.slice(2);
   if (!sub || !(SUBCOMMANDS as readonly string[]).includes(sub)) {
@@ -56,6 +85,14 @@ async function main(): Promise<number> {
     if (sub === 'status') {
       console.log(await status());
       return 0;
+    }
+    if (sub === 'handoff') {
+      try {
+        return handoff(process.argv.slice(3));
+      } catch (e) {
+        console.error(`refused: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`);
+        return 1;
+      }
     }
     if (sub !== 'list') {
       if (!arg) {
@@ -82,11 +119,18 @@ async function main(): Promise<number> {
       const lines = extra === undefined ? 40 : Number(extra);
       console.log(await readWindow(defaultRun, cfg, process.env, arg as string, lines));
     } else if (sub === 'start') {
-      console.log(`${arg}: ${await startWindow(defaultRun, cfg, process.env, arg as string, ROOT)}`);
+      const r = await startWindowWithMemory(defaultRun, cfg, process.env, arg as string, ROOT);
+      console.log(`${arg}: ${r.state}${r.startup === 'skipped' ? '' : `, startup line ${r.startup}`}`);
     } else if (sub === 'stop') {
       console.log(`${arg}: ${await stopWindow(defaultRun, cfg, process.env, arg as string)}`);
+    } else if (sub === 'send') {
+      const text = process.argv.slice(4).join(' ');
+      console.log(await sendToWindow(defaultRun, cfg, process.env, arg as string, text, { root: ROOT, killed: () => stopActive(ROOT, process.env).stopped }));
+    } else if (sub === 'clear') {
+      console.log(await clearWindow(defaultRun, cfg, process.env, arg as string, { root: ROOT, killed: () => stopActive(ROOT, process.env).stopped }));
     } else {
-      console.log(`${arg}: ${await restartWindow(defaultRun, cfg, process.env, arg as string, ROOT)}`);
+      const r = await restartWindowWithMemory(defaultRun, cfg, process.env, arg as string, ROOT);
+      console.log(`${arg}: ${r.state}${r.startup === 'skipped' ? '' : `, startup line ${r.startup}`}`);
     }
     return 0;
   } catch (e) {

@@ -5,7 +5,7 @@ import { isAbsolute, join } from 'node:path';
 import { authDbPathFromEnv, resolveAuthMode } from '../web/env.js';
 import type { CheckOutcome } from '../platform/doctor.js';
 import { parseEnv } from '../platform/envFile.js';
-import { ensureManagerWindow, loadManagerConfig, sessionName, startWindow } from '../platform/manager.js';
+import { ensureManagerWindow, loadManagerConfig, sessionName, startWindowWithMemory, typeStartup } from '../platform/manager.js';
 import { assertName, hasSession, listWindows, newWindow, type Run } from '../platform/tmux.js';
 import { stopActive } from '../../scripts/killSwitch.js';
 import { ensureChatWindow } from '../telegram/chatwin/ensure.js';
@@ -222,14 +222,19 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
       }
       for (const name of Object.keys(cfg.windows)) {
         try {
-          const s = await startWindow(deps.run, cfg, env, name, deps.root);
-          say(`window ${name}: ${s}`);
+          // A worker window also gets its startup line (reads the handoff file and its role file).
+          const s = await startWindowWithMemory(deps.run, cfg, env, name, deps.root, { sleep: deps.sleep });
+          say(`window ${name}: ${s.state}${s.startup === 'skipped' ? '' : `, startup line ${s.startup}`}`);
+          if (s.startup === 'not_ready') warnings.push(`window ${name}: claude was not ready, startup line not typed; tell it to read .jobber/handoff.md by hand`);
         } catch (e) {
           warnings.push(`window ${name}: ${(e as Error).message}`);
         }
       }
       try {
-        say(`window manager: ${await ensureManagerWindow(deps.run, cfg, env, deps.root)}`);
+        const m = await ensureManagerWindow(deps.run, cfg, env, deps.root);
+        // The manager reads the handoff file on every start: its startup line is typed once, when this call started it.
+        const mStartup = m === 'started' ? await typeStartup(deps.run, cfg, env, 'manager', deps.root, { sleep: deps.sleep }) : 'skipped';
+        say(`window manager: ${m}${mStartup === 'skipped' ? '' : `, startup line ${mStartup}`}`);
       } catch (e) {
         warnings.push(`window manager: ${(e as Error).message}`);
       }

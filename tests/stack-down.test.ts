@@ -92,13 +92,13 @@ const OPTS: DownOpts = { keepBridge: false, force: false, yes: true };
 const kills = (f: Fake): string[] => f.calls.filter((c) => c[0] === 'tmux' && c[1] === 'kill-window').map((c) => c[c.length - 1]);
 
 describe('down', () => {
-  it('stops in order web, scheduler, hunt, followups, bridge; never manager', async () => {
+  it('stops in order web, scheduler, the windows in reverse config order, bridge; never manager', async () => {
     const f = fake({ sessions: full(), exitOnCtrlC: true });
     expect(await runDown(mk(f), OPTS)).toBe(0);
     const order = f.calls
       .filter((c) => c[0] === 'tmux' && (c[1] === 'kill-window' || c[1] === 'send-keys'))
       .map((c) => c[c.length - (c[1] === 'send-keys' ? 2 : 1)].replace(/^=.*:=?/, ''));
-    expect(order).toEqual(['web', 'scheduler', 'hunt', 'followups', 'bridge']);
+    expect(order).toEqual(['web', 'scheduler', 'followups', 'hunt', 'bridge']);
     expect(f.sessions.get('Jobber')).toEqual(['manager']);
     expect(f.calls.flat().some((a) => a.endsWith('manager') && a.includes(':') )).toBe(false);
   });

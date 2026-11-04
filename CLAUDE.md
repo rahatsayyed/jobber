@@ -592,7 +592,7 @@ wake-report, preferences-detail); `docs/reference/CLAUDE-full.md` is the unsplit
 
 ## Platform and sessions
 
-the one tmux session `Jobber`, the Telegram bridge, permission sets, the npm scripts, the dashboard and its Apply tab, bring-up commands, setup modes, the one credentials file and auto-update and backup. Details: `docs/reference/platform-and-sessions.md` (read it before working in this area). Foundation only, not used by any live lane yet: worker windows (`scripts/claude-window.sh`), the handoff file `.jobber/handoff.md` (written by code only) and the flag `WINDOW_LANES` (default empty: every lane stays on the headless path).
+the one tmux session `Jobber`, the Telegram bridge, permission sets, the npm scripts, the dashboard and its Apply tab, bring-up commands, setup modes, the one credentials file and auto-update and backup. Details: `docs/reference/platform-and-sessions.md` (read it before working in this area). The `manager` window drives worker windows only through `scripts/manager.ts` `send`, `clear`, `restart` and `handoff` (guards in `src/platform/manager.ts`), and the scheduler daemon sends the handoff reminders and recycles idle old windows (`src/scheduler/windowTick.ts`). Foundation only, not used by any live lane yet: worker windows (`scripts/claude-window.sh`), the handoff file `.jobber/handoff.md` (written by code only) and the flag `WINDOW_LANES` (default empty: every lane stays on the headless path).
 
 ## Layout memory and platform operators
 

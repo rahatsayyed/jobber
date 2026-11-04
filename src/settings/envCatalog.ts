@@ -533,6 +533,22 @@ const hand: EnvSpec[] = [
     restart: 'scheduler',
     restartEvidence: 'src/scheduler/windowLanes.ts',
   }),
+  e('WINDOW_RECYCLE_HOURS', 'scheduler', 'scheduler', 'int', {
+    default: '8',
+    min: 1,
+    max: 72,
+    about: 'Hours after which the manager window and the worker windows are restarted by the scheduler, but only when the window is idle (no work item running, no activity for 5 minutes). A window entry can override it with recycle_hours. Invalid values use the default.',
+    restart: 'scheduler',
+    restartEvidence: 'src/platform/manager.ts',
+  }),
+  e('HANDOFF_REMIND_EVERY_MIN', 'scheduler', 'scheduler', 'int', {
+    default: '120',
+    min: 15,
+    max: 1440,
+    about: 'Minutes between Telegram reminders (alerts topic) about open items in .jobber/handoff.md that are older than 30 minutes. One grouped notice per interval. Invalid values use the default.',
+    restart: 'scheduler',
+    restartEvidence: 'src/scheduler/windowTick.ts',
+  }),
   e('RUN_MAX_WALL_SEC', 'scheduler', 'scheduler', 'int', {
     default: '3600',
     min: 30,

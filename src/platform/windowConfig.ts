@@ -15,6 +15,8 @@ export interface WindowFields extends WindowEnvSpec {
   role_prompt?: string;
   /** Scheduler lane name this window serves (matched against WINDOW_LANES). */
   lane?: string;
+  /** Per-window override of WINDOW_RECYCLE_HOURS (1..72). */
+  recycle_hours?: number;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -43,13 +45,19 @@ export function parseWindowFields(name: string, w: Record<string, unknown>): Win
     if (typeof w.lane !== 'string' || !LANE_RE.test(w.lane)) throw new Error(`manager config: ${name}.lane must be a lane name`);
     out.lane = w.lane;
   }
+  if (w.recycle_hours !== undefined) {
+    if (typeof w.recycle_hours !== 'number' || !Number.isInteger(w.recycle_hours) || w.recycle_hours < 1 || w.recycle_hours > 72) {
+      throw new Error(`manager config: ${name}.recycle_hours must be an integer 1..72`);
+    }
+    out.recycle_hours = w.recycle_hours;
+  }
   if (w.env_keys !== undefined) out.env_keys = strArray(name, 'env_keys', w.env_keys);
   if (w.env_prefixes !== undefined) out.env_prefixes = strArray(name, 'env_prefixes', w.env_prefixes);
   if (w.env !== undefined) {
     if (!isObj(w.env)) throw new Error(`manager config: ${name}.env must be an object`);
     out.env = w.env as Record<string, string>;
   }
-  const hasWorkerFields = out.role_prompt !== undefined || out.lane !== undefined || out.env_keys !== undefined || out.env_prefixes !== undefined || out.env !== undefined;
+  const hasWorkerFields = out.role_prompt !== undefined || out.lane !== undefined || out.recycle_hours !== undefined || out.env_keys !== undefined || out.env_prefixes !== undefined || out.env !== undefined;
   if (hasWorkerFields && out.kind !== 'worker') throw new Error(`manager config: ${name} sets worker fields but kind is not worker`);
   if (out.kind === 'worker') validateWindowEnvSpec(name, out);
   return out;

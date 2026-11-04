@@ -12,7 +12,9 @@ import { redactPane } from '../src/platform/redact.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
 import { ceilings } from '../src/outreach/limits.js';
-import { quietFromConfig } from '../src/outreach/quiet.js';
+import { inQuietHours, quietFromConfig } from '../src/outreach/quiet.js';
+import { stopActive } from './killSwitch.js';
+import { configReader, windowTick } from '../src/scheduler/windowTick.js';
 import { daemonLoop, wakeOnce, type DriverDeps } from '../src/scheduler/driver.js';
 import { runCodePass } from '../src/scheduler/pipeline.js';
 import { defaultDeps as controlDefaults, readControl } from '../src/scheduler/control.js';
@@ -154,6 +156,13 @@ async function main(): Promise<void> {
     linkedinDrip: args.mode === 'daemon',
     // New escalations go to the owner's Telegram as a batched digest (at most one per 15 minutes); the daemon only.
     escalationDigest: args.mode === 'daemon' ? escalationDigestTick(db, env, quietFromConfig(cfg), now) : undefined,
+    // Handoff reminders and window recycle (src/scheduler/windowTick.ts); the daemon only. Zero LLM calls.
+    windowTick: args.mode === 'daemon' ? windowTick({
+      root: projectRoot, env, run: defaultRun, config: configReader(projectRoot),
+      killed: () => stopActive(projectRoot, env).stopped,
+      inQuiet: () => inQuietHours(now(), quietFromConfig(cfg)),
+      alert: (text) => telegramNotifier(env).send(text, { topic: 'alerts' }),
+    }) : undefined,
     manualIngest: (runId) => ingestManualRequests(db, { runId, now }),
     manualReport: async (runStatus) => {
       const tg = telegramNotifier(env);

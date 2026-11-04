@@ -75,7 +75,8 @@ export async function runDown(deps: DownDeps, opts: DownOpts): Promise<number> {
   }
   if (cfg) {
     const present = await windowNames(deps.run, sessionName(cfg, env));
-    for (const name of Object.keys(cfg.windows)) {
+    // Reverse of the order `up` starts them in.
+    for (const name of Object.keys(cfg.windows).reverse()) {
       if (!present.has(name)) {
         say(`${name}: absent`);
         continue;

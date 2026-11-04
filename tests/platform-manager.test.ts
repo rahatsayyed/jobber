@@ -176,7 +176,7 @@ describe('source constraints and exports', () => {
     }
   });
   it('exports SUBCOMMANDS and USAGE', () => {
-    expect([...SUBCOMMANDS]).toEqual(['list', 'read', 'start', 'stop', 'restart', 'status']);
+    expect([...SUBCOMMANDS]).toEqual(['list', 'read', 'start', 'stop', 'restart', 'status', 'send', 'clear', 'handoff']);
     expect(USAGE).toMatch(/usage/);
   });
 });

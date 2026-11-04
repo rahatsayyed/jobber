@@ -14,7 +14,8 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { randomBytes } from 'node:crypto';
 import { chmodSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { acquireLock, type LockHandle } from '../platform/lock.js';
+import { type LockHandle } from '../platform/lock.js';
+import { takeWindowLock, WINDOW_LOCK_TTL_MS } from '../platform/windowLock.js';
 import { redactPane } from '../platform/redact.js';
 import { assertClaudePane, assertName, capture, sendText, validateSendText, type Run } from '../platform/tmux.js';
 import {
@@ -199,8 +200,7 @@ export class WindowDispatcher {
     } catch (e) {
       return this.refuse(/not found/.test((e as Error).message) ? 'window_missing' : 'not_claude');
     }
-    const lockName = `win-${i.window.toLowerCase().replace(/[^a-z0-9]/g, '-')}`.slice(0, 32);
-    const lock = acquireLock(path.join(this.d.root, '.jobber'), lockName, `dispatch:${i.window}`, undefined, { ttlMs: this.d.lockTtlMs ?? 600_000 });
+    const lock = takeWindowLock(this.d.root, i.window, `dispatch:${i.window}`, this.d.lockTtlMs ?? WINDOW_LOCK_TTL_MS);
     if (!lock) return this.refuse('window_busy');
 
     const runId = `w-${i.window.slice(0, 12)}-${this.now().toString(36)}-${randomBytes(2).toString('hex')}`;
@@ -215,7 +215,7 @@ export class WindowDispatcher {
       validateSendText(line);
       const rec = readWindowSession(this.d.root, i.window);
       let tailer: TranscriptTailer | null = null;
-      if (rec && !this.stale.has(i.window)) tailer = TranscriptTailer.atEnd(transcriptFile(this.dir, rec.session_id));
+      if (rec && !rec.stale && !this.stale.has(i.window)) tailer = TranscriptTailer.atEnd(transcriptFile(this.dir, rec.session_id));
       const sentAt = this.now();
       try {
         await sendText(this.d.run, this.d.session, i.window, line);

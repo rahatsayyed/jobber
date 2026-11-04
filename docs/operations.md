@@ -351,3 +351,7 @@ Every cold email and email follow-up is sent as multipart/alternative. The plain
 | Open LinkedIn or Naukri behaviour questions | Selectors are live-unverified | `docs/phase2-known-issues.md` and `CLAUDE.md` "Known limits and not yet live-verified" | Supervised run first |
 
 Not every row above has been exercised against real services; the platform and outreach work is covered by unit tests with fakes (see `CLAUDE.md` "Known limits and not yet live-verified").
+
+## Manager window, handoff list and window recycle
+
+The `manager` window can tell a worker window something short with `npx tsx scripts/manager.ts send <window> <text>` or clear it with `clear <window>`; both refuse a protected window, a window with a work item running (`window_busy`), a pane that is not claude and the kill switch. `restart <window>` also types the window's startup line. Pending items live in `.jobber/handoff.md` (`npx tsx scripts/manager.ts handoff list|add|resolve`, or `scripts/handoff.ts`); the file is created empty when it is missing and read by the manager and every worker window at start. The scheduler daemon sends one grouped Telegram reminder to the `alerts` topic for entries older than 30 minutes, at most once per entry per `HANDOFF_REMIND_EVERY_MIN` (default 120 minutes), and restarts `manager` and worker windows that are older than `WINDOW_RECYCLE_HOURS` (default 8) once they are idle (it posts `recycled window X (age)`). Both settings are read when the scheduler daemon starts: restart it after a change.

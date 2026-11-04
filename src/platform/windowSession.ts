@@ -29,26 +29,39 @@ export const windowSessionFile = (root: string, window: string): string => {
 export interface WindowSessionRecord {
   session_id: string;
   started_at: string;
+  /** Set by the manager `clear` command when it could not find the new transcript: the next dispatch finds it by the typed text. */
+  stale?: boolean;
 }
 
 export function readWindowSession(root: string, window: string): WindowSessionRecord | null {
   try {
     const j = JSON.parse(readFileSync(windowSessionFile(root, window), 'utf8')) as Partial<WindowSessionRecord>;
     if (typeof j.session_id !== 'string' || !SESSION_ID_RE.test(j.session_id)) return null;
-    return { session_id: j.session_id, started_at: typeof j.started_at === 'string' ? j.started_at : '' };
+    return {
+      session_id: j.session_id,
+      started_at: typeof j.started_at === 'string' ? j.started_at : '',
+      ...(j.stale === true ? { stale: true } : {}),
+    };
   } catch {
     return null;
   }
 }
 
-export function writeWindowSession(root: string, window: string, sessionId: string, now: Date = new Date()): void {
+export function writeWindowSession(root: string, window: string, sessionId: string, now: Date = new Date(), stale = false): void {
   if (!SESSION_ID_RE.test(sessionId)) throw new Error('invalid session id');
   const p = windowSessionFile(root, window);
   mkdirSync(path.dirname(p), { recursive: true });
   const tmp = `${p}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify({ session_id: sessionId, started_at: now.toISOString() }, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(tmp, `${JSON.stringify({ session_id: sessionId, started_at: now.toISOString(), ...(stale ? { stale: true } : {}) }, null, 2)}\n`, { mode: 0o600 });
   renameSync(tmp, p);
   chmodSync(p, 0o600);
+}
+
+/** Marks the recorded transcript stale (after /clear) without changing the id or the start time. No record: nothing to mark. */
+export function markWindowSessionStale(root: string, window: string): void {
+  const rec = readWindowSession(root, window);
+  if (!rec) return;
+  writeWindowSession(root, window, rec.session_id, rec.started_at ? new Date(rec.started_at) : new Date(), true);
 }
 
 /** The transcript file of the recorded session of a window (null when there is no record). */
