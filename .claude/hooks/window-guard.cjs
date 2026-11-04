@@ -11,6 +11,7 @@
 const path = require('path');
 const kill = require('./kill-switch.cjs');
 const tamper = require('./tamper-guard.cjs');
+const allowlist = require('./tool-allowlist.cjs');
 
 const DEFAULT_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -24,6 +25,12 @@ function decide(event, opts) {
     if (tamper.GUARDED.has(event.tool_name)) {
       const g = tamper.decide(event, { root });
       if (!g.allow) return { allow: false, reason: g.reason };
+    }
+    // The Gmail MCP is an external package with no argument checks of its own, so the send_email argument screen of the
+    // headless mail profile (attachments only a rendered resume PDF, no secret-shaped path) lives here for every window.
+    if (event.tool_name === 'mcp__gmail__send_email') {
+      const why = allowlist.screenSendEmail(event.tool_input, root);
+      if (why) return { allow: false, reason: why };
     }
     return { allow: true, reason: '' };
   } catch {

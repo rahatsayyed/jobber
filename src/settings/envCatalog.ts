@@ -528,7 +528,7 @@ const hand: EnvSpec[] = [
   }),
   e('WINDOW_LANES', 'scheduler', 'scheduler', 'string', {
     maxLen: 200,
-    about: 'Comma-separated scheduler lane names that run through a long-lived claude window (src/scheduler/windowDispatch.ts) instead of the old headless run. Blank (the default) means no lane: every lane stays on the headless path. Nothing reads it yet in the live flow.',
+    about: 'Comma-separated scheduler lane names that run through a long-lived claude window (src/scheduler/windowDispatch.ts) instead of the old headless run. Blank (the default) means no lane: every lane stays on the headless path. Today only `mail` is read (the mail drip lane goes through the `mail` window); restart the scheduler after a change and run `npm run up` so the window exists.',
     ...never('Chooses which lanes send, apply or connect through an interactive window with its own permission handling. Edit .env by hand.'),
     restart: 'scheduler',
     restartEvidence: 'src/scheduler/windowLanes.ts',

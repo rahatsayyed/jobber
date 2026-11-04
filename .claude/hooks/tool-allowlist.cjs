@@ -249,6 +249,29 @@ function decide(event, profile, opts) {
   }
 }
 
+// The screen_args rule for mcp__gmail__send_email as a reusable function (window-guard.cjs uses it too, where no run profile
+// exists): attachments may only be a rendered resume PDF, and no other string may look like a secret path.
+// Returns null when it passes, else the deny reason.
+function screenSendEmail(toolInput, root) {
+  let strs;
+  try {
+    strs = collectStrings(toolInput);
+  } catch {
+    return 'tool_input too deeply nested or too large to screen';
+  }
+  let skip = null;
+  if (toolInput && toolInput.attachments !== undefined) {
+    const att = toolInput.attachments;
+    if (!Array.isArray(att) || !att.every((a) => isRenderedResumePdf(a, root))) return 'attachment path not allowed';
+    skip = new Set(att);
+  }
+  for (const s of strs) {
+    if (skip && skip.has(s)) continue;
+    if (SECRET_ARG_RES.some((re) => re.test(s))) return 'secret-shaped path in tool arguments';
+  }
+  return null;
+}
+
 function denyJson(reason) {
   return JSON.stringify({
     hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Blocked by run policy: ${reason}` },
@@ -313,7 +336,7 @@ function main() {
   });
 }
 
-module.exports = { decide, agentTools, validBashExact };
+module.exports = { decide, agentTools, validBashExact, screenSendEmail };
 if (require.main === module) {
   process.on('uncaughtException', () => emitDenyAndExit('hook crashed (fail closed)'));
   process.stdin.on('error', () => emitDenyAndExit('stdin error (fail closed)'));

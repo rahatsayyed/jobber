@@ -26,6 +26,7 @@ import { buildContinuationPrompt, buildWakePrompt } from './prompt.js';
 import { describeStep, MAX_CONTINUATIONS, StreamInspector, unprovenSteps, type WakeCounts } from './stream.js';
 import { notifyTg, wakeNotice, type TgPost } from './dripNotice.js';
 import { dripLoop } from './mailDrip.js';
+import type { WindowDispatcher } from './windowDispatch.js';
 import { linkedinDripEnabled, linkedinDripLoop } from './linkedinDrip.js';
 import { finishRun, getState, markOrphans, setRunLogPath, setRunSession, setState, startRun, type RunStatus } from './runLog.js';
 
@@ -58,6 +59,8 @@ export interface DriverDeps {
   codePass?: () => Promise<CodePassResult>;
   /** Run the mail drip lane (src/scheduler/mailDrip.ts) beside the wakes in the daemon loop. Absent or false: no drip. */
   mailDrip?: boolean;
+  /** Hands one work item to a long-lived worker window (src/scheduler/windowDispatch.ts). Used by a lane only when WINDOW_LANES lists it (today: `mail`); absent means the old headless path. */
+  windows?: WindowDispatcher;
   /** Run the LinkedIn drip lane (src/scheduler/linkedinDrip.ts) beside the wakes in the daemon loop. Absent or false: no LinkedIn drip. */
   linkedinDrip?: boolean;
   /** One tick of the owner's escalation digest (src/scheduler/escalationDigest.ts), run every 30 seconds beside the wakes in the daemon loop. Never throws. Absent: no digest. */

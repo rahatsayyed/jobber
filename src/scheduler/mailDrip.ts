@@ -18,6 +18,9 @@ import { BudgetTracker, loadBudget, loadStallSec, type Budget } from './budget.j
 import { readControl, statExists, type ControlDeps } from './control.js';
 import type { DriverDeps } from './driver.js';
 import { JOBBER_TMUX_SESSION } from '../platform/tmux.js';
+import { noteSkippedItem } from '../platform/handoff.js';
+import { NO_CAP_LIMIT } from './mailLimit.js';
+import { laneUsesWindow } from './windowLanes.js';
 import type { LaunchHandle } from './launch.js';
 import { finishRun, getState, setRunLogPath, setState, startRun, type RunStatus } from './runLog.js';
 import { withDripRequest } from './dripRequest.js';
@@ -29,7 +32,7 @@ export const DRIP_LOCK = 'mail';
 /** Seconds between daemon drip ticks. */
 export const DRIP_TICK_MS = 30_000;
 /** daily_counters limit handed to the mail-operator when EMAIL_MAX_PER_DAY is 0 or unset: effectively no cap. EMAIL_MAX_PER_DAY is the drip cap; SEND_LIMIT_PER_RUN only acts as the 0 brake (emailBrakeOn). */
-export const NO_CAP_LIMIT = 100000;
+export { NO_CAP_LIMIT };
 export const STATE_NEXT_AT = 'mail_drip_next_at';
 export const STATE_LAST_AT = 'mail_drip_last_at';
 export const STATE_QUARANTINE = 'mail_drip_quarantine';
@@ -396,14 +399,132 @@ export function gate(d: DriverDeps, cfg: DripConfig, now: Date, spacing: boolean
   return null;
 }
 
-interface OneRun { runId: string; status: RunStatus; quarantined?: boolean; reason?: string | null }
+interface OneRun {
+  runId: string; status: RunStatus; quarantined?: boolean; reason?: string | null;
+  /** Window path only: nothing was typed (window busy or refused), the row was put back, no send happened, no run row, no alert. */
+  skipped?: boolean;
+}
+
+/** Name of the long-lived mail window and its lane (config/manager-windows.json, WINDOW_LANES). */
+export const MAIL_WINDOW = 'mail';
+export const MAIL_LANE = 'mail';
+
+function setUsageBackoff(d: DriverDeps, t: Date): string | null {
+  const mins = Number(d.env.USAGE_LIMIT_BACKOFF_MIN);
+  const until = new Date(t.getTime() + (Number.isInteger(mins) && mins >= 1 && mins <= 10080 ? mins : 300) * 60000).toISOString();
+  try {
+    setState(d.db, 'usage_backoff_until', until, t);
+    return until;
+  } catch {
+    return null;
+  }
+}
+
+/** A launched run that leaves the cold row unrecorded (still 'sending' or queued) is quarantined: never re-sent, never retried; the owner is told. */
+async function holdIfUnrecorded(d: DriverDeps, item: DripItem, runId: string, why: string): Promise<boolean> {
+  let held = false;
+  try {
+    const row = d.db.prepare('SELECT email_status FROM outreach_queue WHERE id = ?').get(item.id) as { email_status: string | null } | undefined;
+    if (row && (!row.email_status || row.email_status === 'queued' || row.email_status === 'sending')) {
+      quarantine(d.db, `cold:${item.id}`, d.now());
+      quarantine(d.db, `job:${item.job_id}`, d.now());
+      held = true;
+      await d.notifier.notify({
+        level: 'warn', title: 'mail drip run ended without a recorded send, row held for the owner',
+        detail: `row ${item.id} job ${item.job_id}: ${why}; check Gmail Sent before releasing`, runId,
+      });
+      await notifyTg(d, 'drips', formatQuarantineNotice(item.id, item.job_id, why));
+    }
+  } catch {
+    // ignore
+  }
+  return held;
+}
+
+const warnedWindow = new Set<string>();
+
+/**
+ * The window path of one item (lane `mail` listed in WINDOW_LANES): the same prompt, claim, reconciliation and quarantine as the
+ * headless path, but the prompt is handed to the long-lived `mail` window through WindowDispatcher. Returns null when the window is
+ * missing or not a claude pane (nothing was typed, the row is put back): the caller then runs the headless path for this item.
+ * A busy window or any other refusal returns a `skipped` result (no send this tick). Never throws.
+ */
+async function runViaWindow(d: DriverDeps, item: DripItem, dailyLimit: number, batch: { n: number; of: number }, dry: boolean): Promise<OneRun | null> {
+  const disp = d.windows;
+  if (!disp) return null;
+  const unclaim = (): void => {
+    if (item.kind !== 'cold' || dry) return;
+    try {
+      d.db.prepare("UPDATE outreach_queue SET email_status = 'queued', updated_at = datetime('now') WHERE id = ? AND email_status = 'sending'").run(item.id);
+    } catch {
+      // the row stays 'sending': never a re-send
+    }
+  };
+  const prepRunId = d.newRunId();
+  try {
+    const now = d.now();
+    const budget = loadBudget(d.env);
+    if (item.kind === 'cold' && !dry) {
+      const claimed = d.db.prepare("UPDATE outreach_queue SET email_status = 'sending', updated_at = datetime('now') WHERE id = ? AND (email_status IS NULL OR email_status IN ('', 'queued', 'dry_run'))").run(item.id).changes;
+      if (claimed === 0) return { runId: prepRunId, status: 'failed', reason: 'error: claim_refused: row is no longer sendable', skipped: true };
+    }
+    const prompt = buildDripPrompt({
+      runId: prepRunId, dryRun: dry, now, budget, item, dailyLimit, batch,
+      replyCheckClean: hasFreshCleanReplyCheck(d.db, now, followupCheckMaxAgeMin(d.env)),
+    });
+    const res = await disp.dispatch({
+      window: MAIL_WINDOW, lane: MAIL_LANE, trigger: DRIP_TRIGGER, dryRun: dry,
+      item: { operator: 'mail-operator', kind: 'mail', quota: 1, item: itemKey(item) },
+      promptText: prompt, deadlineMs: budget.maxWallSec * 1000,
+    });
+    if (res.status === 'unavailable' || !res.runId) {
+      // Nothing was typed (the dispatcher refuses before typing, or failed before typing): put the row back.
+      unclaim();
+      if (res.status === 'unavailable' && (res.stopReason === 'window_missing' || res.stopReason === 'not_claude')) {
+        if (!warnedWindow.has(res.stopReason)) {
+          warnedWindow.add(res.stopReason);
+          try {
+            await d.notifier.notify({ level: 'warn', title: 'mail window unavailable, using the headless drip path', detail: res.stopReason });
+          } catch {
+            // ignore
+          }
+        }
+        return null;
+      }
+      return { runId: prepRunId, status: 'incomplete', reason: res.stopReason, skipped: true };
+    }
+    // Typed: the item may have gone out. Reconcile from the DB exactly like the headless path.
+    const status: RunStatus =
+      res.status === 'ok' ? 'ok' : res.status === 'timeout' ? 'budget_exceeded' : res.status === 'usage_limit' ? 'usage_limit' : res.status === 'killed' ? 'killed' : 'failed';
+    const why = res.status === 'ok' ? null : res.stopReason;
+    if (res.status === 'usage_limit') {
+      const until = setUsageBackoff(d, d.now());
+      noteSkippedItem(d.projectRoot, { window: MAIL_WINDOW, item: `mail ${itemKey(item)} (job ${item.job_id})`, reason: `usage limit${until ? `, backoff until ${until}` : ''}` });
+    }
+    let held = false;
+    if (item.kind === 'cold' && !dry) held = await holdIfUnrecorded(d, item, res.runId, why ?? status);
+    try {
+      await disp.finish(res.runId); // work file, /clear, lock; best effort, never throws
+    } catch {
+      // ignore
+    }
+    return { runId: res.runId, status, quarantined: held, reason: why };
+  } catch (e) {
+    unclaim();
+    return { runId: prepRunId, status: 'failed', reason: `error: ${safeMsg(e)}`, skipped: true };
+  }
+}
 
 /** One tiny run: dispatches mail-operator for exactly one item and waits for it. Never throws. */
 async function runOne(
   d: DriverDeps, lock: { heartbeat: () => void }, item: DripItem, dailyLimit: number, batch: { n: number; of: number }, opts: { abort?: () => boolean },
 ): Promise<OneRun> {
-  const runId = d.newRunId();
   const dry = isDryRun(d.env);
+  if (d.windows && laneUsesWindow(MAIL_LANE, d.env)) {
+    const w = await runViaWindow(d, item, dailyLimit, batch, dry);
+    if (w) return w;
+  }
+  const runId = d.newRunId();
   let status: RunStatus = 'running';
   let stopReason: string | null = null;
   let exitCode: number | null = null;
@@ -478,13 +599,7 @@ async function runOne(
         stopReason = stop;
         exitCode = r.exitCode;
         if (stop === 'usage_limit') {
-          const mins = Number(d.env.USAGE_LIMIT_BACKOFF_MIN);
-          const until = new Date(t.getTime() + (Number.isInteger(mins) && mins >= 1 && mins <= 10080 ? mins : 300) * 60000).toISOString();
-          try {
-            setState(d.db, 'usage_backoff_until', until, t);
-          } catch {
-            // ignore
-          }
+          setUsageBackoff(d, t);
         }
         break;
       }
@@ -545,30 +660,14 @@ async function runOne(
   // A run that did not end cleanly may have sent the email without recording it: that cold row is never picked again automatically.
   // Any launched run (ok or not) that leaves the cold row unrecorded (still 'sending' or queued) is quarantined: never re-sent, never retried.
   let held = false;
-  if (launched && item.kind === 'cold' && !dry) {
-    try {
-      const row = d.db.prepare('SELECT email_status FROM outreach_queue WHERE id = ?').get(item.id) as { email_status: string | null } | undefined;
-      if (row && (!row.email_status || row.email_status === 'queued' || row.email_status === 'sending')) {
-        quarantine(d.db, `cold:${item.id}`, d.now());
-        quarantine(d.db, `job:${item.job_id}`, d.now());
-        held = true;
-        await d.notifier.notify({
-          level: 'warn', title: 'mail drip run ended without a recorded send, row held for the owner',
-          detail: `row ${item.id} job ${item.job_id}: ${stopReason ?? status}; check Gmail Sent before releasing`, runId,
-        });
-        await notifyTg(d, 'drips', formatQuarantineNotice(item.id, item.job_id, stopReason ?? status));
-      }
-    } catch {
-      // ignore
-    }
-  }
+  if (launched && item.kind === 'cold' && !dry) held = await holdIfUnrecorded(d, item, runId, stopReason ?? status);
   return { runId, status, quarantined: held, reason: stopReason };
 }
 
 /** One Telegram line per real send (zero LLM). A no-op run says nothing. A failed run goes to `alerts` unless it was already told as a held row. Never throws. */
 async function mailRunNotice(d: DriverDeps, item: DripItem, r: OneRun): Promise<void> {
   try {
-    if (!d.tg || r.quarantined) return;
+    if (!d.tg || r.quarantined || r.skipped) return;
     const dry = isDryRun(d.env);
     if (r.status !== 'ok') {
       await notifyTg(d, 'alerts', formatDripFailure('mail', itemKey(item), r.reason ?? r.status));
@@ -646,6 +745,7 @@ async function dripTickInner(d: DriverDeps, opts: { abort?: () => boolean }, byp
       tried.add(`addr:${item.address}`);
       const r = await runOne(d, lock, item, dailyLimit, { n, of: size }, opts);
       runs.push(r);
+      if (r.skipped) break; // window path: nothing was sent, the item stays due and is not marked as tried
       await mailRunNotice(d, item, r);
       try {
         markTried(d.db, itemKey(item), d.now());

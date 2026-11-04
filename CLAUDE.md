@@ -417,7 +417,7 @@ emails first (queue row not excluded, with an address, never the same exact addr
 drafts first). A cold row whose run ended without a recorded send is quarantined (never picked again
 automatically) and the owner is notified to check Gmail Sent first. The drip run is handed `DAILY_SEND_LIMIT`
 (`EMAIL_MAX_PER_DAY`, or 100000 when unset) as the limit of the shared `send_email` counter. Dry runs
-follow the master flag: the run records and sends nothing.
+follow the master flag: the run records and sends nothing. Optional (`WINDOW_LANES` lists `mail`, off by default): the same prompt goes to the long-lived `mail` window through `WindowDispatcher` instead of a headless run, with every gate still in code before any text is typed (`docs/reference/scheduler.md`).
 
 **The LinkedIn drip lane** (`src/scheduler/linkedinDrip.ts`, daemon only, lock `linkedin`, profile and trigger `linkedin_drip`, `LINKEDIN_DRIP` default true): one LinkedIn
 action per tick, `LINKEDIN_DRIP_MIN_GAP_MIN` to `_MAX_GAP_MIN` (8 to 20) apart, inside `LINKEDIN_ACTIVE_HOURS`, chosen in code: inbox, owner-approved reply (`npm run replies`,

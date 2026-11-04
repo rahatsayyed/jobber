@@ -1,5 +1,22 @@
 {
   "session": "Jobber",
   "protected": ["manager", "bridge", "chat"],
-  "windows": {}
+  "windows": {
+    "mail": {
+      "kind": "worker",
+      "description": "Mail lane: sends ONE email per work item through mail-operator (cold email or follow-up), typed by the scheduler",
+      "lane": "mail",
+      "role_prompt": "config/windows/mail.md",
+      "env_keys": [
+        "FOLLOWUPS_AUTONOMOUS",
+        "EMAIL_FOLLOWUP_GAPS_DAYS",
+        "FOLLOWUP_CHECK_MAX_AGE_MIN"
+      ],
+      "env_prefixes": ["CLASSIFIER_"],
+      "env": {
+        "JOBBER_RUN_LANE": "mail",
+        "SEND_LIMIT_PER_RUN": "100000"
+      }
+    }
+  }
 }

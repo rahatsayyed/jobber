@@ -78,6 +78,20 @@ describe('scheduler doctor checks', () => {
     ]);
   });
 
+  it('window-foundation warns when the mail window started with another daily limit than EMAIL_MAX_PER_DAY now gives', async () => {
+    const base: Files = {
+      '/p/scripts/claude-window.sh': { text: '' }, '/p/scripts/window-env.ts': { text: '' }, '/p/.claude/hooks/window-guard.cjs': { text: '' },
+    };
+    const rec = (v: string): Files => ({ ...base, '/p/.jobber/window-start/mail.json': { text: JSON.stringify({ SEND_LIMIT_PER_RUN: v }) } });
+    const stale = (await run(ctxWith(rec('100000'), { env: { WINDOW_LANES: 'mail', EMAIL_MAX_PER_DAY: '20' } })))['window-foundation'];
+    expect(stale.status).toBe('warn');
+    expect(stale.detail).toMatch(/EMAIL_MAX_PER_DAY/);
+    const same = (await run(ctxWith(rec('20'), { env: { WINDOW_LANES: 'mail', EMAIL_MAX_PER_DAY: '20' } })))['window-foundation'];
+    expect(same.detail).not.toMatch(/started with/);
+    const off = (await run(ctxWith(rec('100000'), { env: { EMAIL_MAX_PER_DAY: '20' } })))['window-foundation'];
+    expect(off.status).toBe('skip');
+  });
+
   it('tmux version gate', async () => {
     expect((await run(ctxWith({})))['scheduler-tmux'].status).toBe('pass');
     expect((await run(ctxWith({}, { tmux: 'tmux 3.2a' })))['scheduler-tmux'].status).toBe('pass');

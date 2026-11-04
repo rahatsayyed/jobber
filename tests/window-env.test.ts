@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { loadManagerConfig, startWindow } from '../src/platform/manager.js';
@@ -84,9 +84,17 @@ describe('window env allowlist', () => {
 describe('window config schema (config/manager-windows.json)', () => {
   const mk = (windows: unknown, prot = ['manager']) => JSON.stringify({ session: 'Jobber', protected: prot, windows });
 
-  it('the shipped file still has no windows and old entries load unchanged', () => {
+  it('the shipped file has exactly the mail worker window and old entries load unchanged', () => {
     const shipped = loadManagerConfig(readFileSync(path.join(ROOT, 'config/manager-windows.json'), 'utf8'));
-    expect(shipped.windows).toEqual({});
+    expect(Object.keys(shipped.windows)).toEqual(['mail']);
+    const m = shipped.windows.mail;
+    expect(m.kind).toBe('worker');
+    expect(m.lane).toBe('mail');
+    expect(m.role_prompt).toBe('config/windows/mail.md');
+    expect(readFileSync(path.join(ROOT, m.role_prompt as string), 'utf8')).toMatch(/mail-operator/);
+    // no secret-looking key or Telegram/scheduler key in the env allowlist
+    expect(m.env_keys?.some((k) => /KEY|TOKEN|SECRET|PASSWORD/.test(k))).toBe(false);
+    expect(m.env).toEqual({ JOBBER_RUN_LANE: 'mail', SEND_LIMIT_PER_RUN: '100000' });
     const old = loadManagerConfig(mk({ a: { argv: ['bash', 'x.sh'], description: 'd' } }));
     expect(old.windows.a).toEqual({ argv: ['bash', 'x.sh'], description: 'd' });
   });
@@ -179,6 +187,28 @@ describe('window-guard hook', () => {
       expect(guard.decide({ tool_name: 'mcp__db__list_jobs', tool_input: {} }, o).allow).toBe(false);
       expect(guard.decide(null, o).allow).toBe(false);
       expect(guard.decide({ tool_input: {} }, o).allow).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('screens mcp__gmail__send_email arguments like the headless mail profile (attachments, secret-shaped paths)', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'wg-mail-'));
+    try {
+      const o = { root, env: {} as Record<string, string> };
+      const send = (input: unknown) => guard.decide({ tool_name: 'mcp__gmail__send_email', tool_input: input }, o);
+      expect(send({ to: ['a@b.example'], subject: 's', body: 'hello' }).allow).toBe(true);
+      expect(send({ to: ['a@b.example'], subject: 's', body: 'see secrets/gmail-credentials.json' }).allow).toBe(false);
+      expect(send({ to: ['a@b.example'], subject: 's', body: 'b', attachments: [path.join(root, 'secrets', 'x.pdf')] }).allow).toBe(false);
+      expect(send({ to: ['a@b.example'], subject: 's', body: 'b', attachments: ['/etc/passwd'] }).allow).toBe(false);
+      expect(send({ to: ['a@b.example'], subject: 's', body: 'b', attachments: 'x' }).allow).toBe(false);
+      // a rendered resume PDF is the only allowed attachment
+      mkdirSync(path.join(root, 'renderer', 'automation', 'job-1'), { recursive: true });
+      const pdf = path.join(realpathSync(root), 'renderer', 'automation', 'job-1', 'resume.pdf');
+      writeFileSync(pdf, 'x');
+      expect(guard.decide({ tool_name: 'mcp__gmail__send_email', tool_input: { to: ['a@b.example'], subject: 's', body: 'b', attachments: [pdf] } }, { root: realpathSync(root), env: {} }).allow).toBe(true);
+      // other gmail tools are not screened by this rule
+      expect(guard.decide({ tool_name: 'mcp__gmail__search_emails', tool_input: { query: 'secrets/' } }, o).allow).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

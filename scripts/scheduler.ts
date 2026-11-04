@@ -7,7 +7,8 @@ import BetterSqlite3 from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { dbPath } from '../src/dbPath.js';
 import { parseEnv } from '../src/platform/envFile.js';
-import { defaultRun } from '../src/platform/tmux.js';
+import { defaultRun, JOBBER_TMUX_SESSION } from '../src/platform/tmux.js';
+import { WindowDispatcher } from '../src/scheduler/windowDispatch.js';
 import { redactPane } from '../src/platform/redact.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
@@ -152,6 +153,10 @@ async function main(): Promise<void> {
     codePass: () => runCodePass({ db, now, projectRoot }),
     // The slow email lane beside the wakes (src/scheduler/mailDrip.ts); only the daemon runs it, never --once or --now.
     mailDrip: args.mode === 'daemon',
+    // The dispatcher for lanes listed in WINDOW_LANES (today only `mail`); no lane listed means nothing ever uses it.
+    windows: args.mode === 'daemon'
+      ? new WindowDispatcher({ root: projectRoot, session: env.SCHEDULER_TMUX_SESSION || JOBBER_TMUX_SESSION, run: defaultRun, db, killed: () => stopActive(projectRoot, env).stopped })
+      : undefined,
     // The slow LinkedIn lane (src/scheduler/linkedinDrip.ts); daemon only. LINKEDIN_DRIP=false turns it off and wakes plan LinkedIn again.
     linkedinDrip: args.mode === 'daemon',
     // New escalations go to the owner's Telegram as a batched digest (at most one per 15 minutes); the daemon only.

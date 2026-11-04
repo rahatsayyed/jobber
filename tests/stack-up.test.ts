@@ -295,6 +295,20 @@ describe('up', () => {
     expect([...f.sessions.keys()]).toEqual(['Jobber']);
   });
 
+  it('the mail worker window is started only when `mail` is in WINDOW_LANES', async () => {
+    const off = fake();
+    const dOff = deps(off);
+    await runUp(dOff, { status: false });
+    expect(off.sessions.get('Jobber')).not.toContain('mail');
+    expect(dOff.out).toContain('window mail: skipped (lane mail is not in WINDOW_LANES)');
+    setEnvFile('WINDOW_LANES=mail\n');
+    const on = fake();
+    const dOn = deps(on);
+    await runUp(dOn, { status: false });
+    expect(on.sessions.get('Jobber')).toContain('mail');
+    expect(dOn.out.some((l) => l.startsWith('window mail: skipped'))).toBe(false);
+  });
+
   it('a manager window failure is a warning, not a failure', async () => {
     const f = fake();
     const base = f.run;

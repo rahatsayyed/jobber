@@ -4,8 +4,9 @@
 // in live mode when it fails), writes .jobber/window-settings/<window>.json and prints the allowlisted environment as
 // `KEY=value` lines on stdout (nothing else on stdout). Messages go to stderr and never contain env values.
 // Exit codes: 0 ok, 1 refused (bad window or config), 3 classifier not ready.
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { mailDailyLimit } from '../src/scheduler/mailLimit.js';
 import { loadManagerConfig } from '../src/platform/manager.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { checkClassifierForLaunch } from '../src/platform/launchCheck.js';
@@ -39,6 +40,16 @@ async function main(): Promise<void> {
     launch = prepareWindowLaunch(ROOT, name, w, process.env, dotenv);
   } catch (e) {
     die(1, (e as Error).message);
+  }
+  // The mail window's SEND_LIMIT_PER_RUN is fixed for the window's life: derive it from EMAIL_MAX_PER_DAY like the headless
+  // drip does (dripEnv). A change of EMAIL_MAX_PER_DAY needs a window restart; the doctor warns when the two differ.
+  if (w.lane === 'mail') {
+    launch.env.SEND_LIMIT_PER_RUN = String(mailDailyLimit(merged));
+    try {
+      const p = resolve(ROOT, '.jobber', 'window-start', `${name}.json`);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, `${JSON.stringify({ SEND_LIMIT_PER_RUN: launch.env.SEND_LIMIT_PER_RUN, at: new Date().toISOString() })}\n`, { mode: 0o600 });
+    } catch { /* the record is only for the doctor */ }
   }
   let check;
   try {
