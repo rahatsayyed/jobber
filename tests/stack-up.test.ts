@@ -92,7 +92,7 @@ describe('up', () => {
         const n = c.indexOf('-n');
         return n >= 0 ? c[n + 1] : c[c.indexOf('-s') + 1];
       });
-    expect(order).toEqual(['bridge', 'hunt', 'followups', 'manager', 'chat', 'scheduler', 'web']);
+    expect(order).toEqual(['bridge', 'manager','chat', 'scheduler', 'web']);
     f.calls.length = 0;
     expect(await runUp(deps(f), { status: false })).toBe(0);
     expect(starts(f).filter((c) => c[1] === 'new-window' || c[1] === 'new-session')).toEqual([]);
@@ -266,7 +266,7 @@ describe('up', () => {
     expect(bridge.slice(bridge.indexOf('-s'), bridge.indexOf('-s') + 2)).toEqual(['-s', 'Jobber']);
     expect(bridge.join(' ')).toContain('telegram:bridge');
     expect(bridge.join(' ')).not.toContain(SECRET);
-    expect(f.sessions.get('Jobber')).toEqual(['bridge', 'hunt', 'followups', 'manager', 'chat', 'scheduler', 'web']);
+    expect(f.sessions.get('Jobber')).toEqual(['bridge', 'manager','chat', 'scheduler', 'web']);
     expect(d.out.some((l) => /^\s*bridge\s+running\s/.test(l))).toBe(true);
     // a second run finds it and starts nothing
     const again = deps(f);
@@ -287,7 +287,7 @@ describe('up', () => {
     const f = fake();
     await runUp(deps(f), { status: false });
     const wins = f.calls.filter((c) => c[1] === 'new-window' && ['hunt', 'followups', 'manager'].includes(c[c.indexOf('-n') + 1]));
-    expect(wins.map((c) => c[c.indexOf('-n') + 1])).toEqual(['hunt', 'followups', 'manager']);
+    expect(wins.map((c) => c[c.indexOf('-n') + 1])).toEqual(['manager']);
     for (const c of wins) {
       expect(c[c.indexOf('-t') + 1]).toBe('=Jobber:');
       expect(c.join(' ')).toContain('scripts/claude-session.sh');

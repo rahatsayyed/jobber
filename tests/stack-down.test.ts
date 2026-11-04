@@ -11,7 +11,12 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'stack-down-'));
   mkdirSync(join(root, 'config'));
   mkdirSync(join(root, '.jobber'));
-  writeFileSync(join(root, 'config', 'manager-windows.json'), readFileSync('config/manager-windows.json', 'utf8'));
+  // Fixture config with two arbitrary managed windows: the committed config has none, the loop is generic.
+  const w = (d: string) => ({ argv: ['bash', 'scripts/claude-session.sh'], description: d });
+  writeFileSync(
+    join(root, 'config', 'manager-windows.json'),
+    JSON.stringify({ session: 'Jobber', protected: ['manager', 'bridge', 'chat'], windows: { hunt: w('a'), followups: w('b') } }),
+  );
   writeFileSync(join(root, '.jobber', 'STOP'), 'x');
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));

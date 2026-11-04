@@ -15,7 +15,15 @@ import {
 import { redactPane } from '../src/platform/redact.js';
 import type { Run } from '../src/platform/tmux.js';
 
-const cfg = loadManagerConfig(readFileSync('config/manager-windows.json', 'utf8'));
+const committed = loadManagerConfig(readFileSync('config/manager-windows.json', 'utf8'));
+// Fixture config: `hunt` is just an arbitrary managed window name here (the committed config has none).
+const cfg = loadManagerConfig(
+  JSON.stringify({
+    session: 'Jobber',
+    protected: ['manager', 'bridge', 'chat'],
+    windows: { hunt: { argv: ['bash', 'scripts/claude-session.sh'], description: 'fixture' } },
+  }),
+);
 
 function fake(windows: string[] = [], capText = ''): { run: Run; calls: string[][] } {
   const calls: string[][] = [];
@@ -32,8 +40,9 @@ function fake(windows: string[] = [], capText = ''): { run: Run; calls: string[]
 
 describe('config and session', () => {
   it('loads the committed config', () => {
-    expect(cfg.session).toBe('Jobber');
-    expect(Object.keys(cfg.windows)).toEqual(['hunt', 'followups']);
+    expect(committed.session).toBe('Jobber');
+    expect(committed.protected).toEqual(['manager', 'bridge', 'chat']);
+    expect(Object.keys(committed.windows)).toEqual([]);
   });
   it('rejects bad argv, flags and protected windows', () => {
     const mk = (w: unknown, p = ['manager']) => JSON.stringify({ session: 's', protected: p, windows: w });

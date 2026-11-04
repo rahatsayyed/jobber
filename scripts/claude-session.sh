@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launch Claude Code for a named window of the Jobber tmux session (hunt, followups, manager).
+# Launch Claude Code for a named window of the Jobber tmux session (manager and any window listed in config/manager-windows.json).
 # Loads the project env line by line (plain parsing, nothing in it is ever executed)
 # so MCP servers get their credentials, and never skips permissions.
 # The Telegram bridge keys are NOT exported into the Claude process.

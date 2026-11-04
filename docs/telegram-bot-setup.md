@@ -91,7 +91,7 @@ npm run telegram:bridge
 Or just run `npm start` (`npm run up`), which starts the `bridge`, `scheduler` and `web` windows in the
 one tmux session `Jobber` (env `STACK_TMUX_SESSION`, default `Jobber`). The bridge reads
 `TELEGRAM_BOT_TOKEN`, `ALLOWED_USERS` and `TELEGRAM_CHAT_ID` from `.env`. The named Claude windows
-(`hunt`, `followups`, `manager`) are started by `scripts/claude-session.sh`, which loads the rest of
+(listed in `config/manager-windows.json`, plus `manager`) are started by `scripts/claude-session.sh`, which loads the rest of
 `.env` for the MCP servers (not the Telegram keys) and refuses any permission-skipping flag.
 
 Look at it with `tmux attach -t Jobber` and pick the `bridge` window (detach with Ctrl-b d). Do not
@@ -102,8 +102,9 @@ paste the token into it.
 - Typed commands, handled in code (no model): `/limits`, `/working`, `/health`, `/sources`,
   `/escalations`, `/apply <url>`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`,
   `/include`, `/calibrate`, `/patterns`.
-- Not wired in the bridge yet: `/followups`, `/checkreplies`, `/applyall`, `/connect`. Use the `hunt`
-  and `followups` windows of the `Jobber` session for those (`tmux attach -t Jobber`).
+- Not wired in the bridge yet: `/followups` and `/checkreplies`. They have no window right now (the idle `hunt`
+  and `followups` windows were removed) and move to a dedicated window in a coming phase. `/applyall` and
+  `/connect` no longer exist.
 - Also typed in code: `/windows`, `/window <name>` and `/drip` (sections 5a to 5c).
 - Free text in the `chat` topic goes to the long-running `chat` window (section 5d). It runs under the
   `read_only` permission set and never with skip-permissions.
@@ -193,7 +194,7 @@ paste the token into it.
 | Chat topic says login expired | The `chat` window's Claude login ran out | In a terminal run `claude`, then `/login`; then `/chat restart` in the chat topic |
 | Topics are empty or missing | Threaded Mode off, or `.jobber/telegram-topics.json` holds stale ids | Redo step 3 and send the bot one message; if ids are stale, stop the bridge, delete that file and start it again |
 | Changed `.env` but nothing changed (`TELEGRAM_WINDOW_INPUT`, `TELEGRAM_CHAT_FALLBACK`) | The bridge reads `.env` only at start | Restart the `bridge` window |
-| `/followups` or `/connect` does nothing | Not wired in the bridge yet | Use the `followups` or `hunt` window of the `Jobber` session |
+| `/followups` or `/checkreplies` does nothing | Not wired in the bridge yet, no window for it right now | Wait for the dedicated window in a coming phase |
 | Token shown in a screenshot or log | Leak | Rotate with `/revoke`, see Security notes |
 | Doctor says `.env` is readable by others | File mode too open | `chmod 600 .env` |
 

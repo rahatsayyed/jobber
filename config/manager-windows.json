@@ -1,8 +1,5 @@
 {
   "session": "Jobber",
   "protected": ["manager", "bridge", "chat"],
-  "windows": {
-    "hunt": { "argv": ["bash", "scripts/claude-session.sh"], "description": "Interactive read-only Claude session (shim window; /runhunt runs one pipeline wake now via the scheduler)" },
-    "followups": { "argv": ["bash", "scripts/claude-session.sh"], "description": "Claude session for follow-up review" }
-  }
+  "windows": {}
 }

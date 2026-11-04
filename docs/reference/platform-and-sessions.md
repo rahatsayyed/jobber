@@ -22,8 +22,9 @@ section is the reference for what exists.
   notifications route by topic through `src/platform/notify.ts` (the escalation digest and manual-request
   reports to `inbox`, the `apply:assist` ping to `assist`). Typed commands run in code: `/limits`, `/working`,
   `/health`, `/sources`, `/escalations`, `/apply`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`,
-  `/include`, `/calibrate`, `/patterns`, `/windows`, `/window`, `/drip`. NOT wired yet: `/followups`,
-  `/checkreplies`, `/applyall`, `/connect` (use the `hunt` and `followups` windows). `/windows` and
+  `/include`, `/calibrate`, `/patterns`, `/windows`, `/window`, `/drip`. NOT wired yet: `/followups` and
+  `/checkreplies` (no window for them right now; they move to a dedicated window in a coming phase).
+  `/applyall` and `/connect` no longer exist. `/windows` and
   `/window <name>` are live tmux views (`src/telegram/windows/`; allowlist `Jobber` plus `WEB_TERMINAL_SESSIONS`;
   protected windows view only; input only with `TELEGRAM_WINDOW_INPUT=true`, default false; window topics on demand
   under `windows` in `.jobber/telegram-topics.json`, `wake-*` use `wakes`, `drip-*` use `drips`). `/drip`

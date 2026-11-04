@@ -33,7 +33,7 @@ Jobber uses explicit slash commands (`/runhunt`, `/status`, etc.) for reliable, 
 
 5. **Save.** The commands are now registered for your bot.
 
-The custom Telegram bridge types `/limits`, `/working`, `/health`, `/sources`, `/escalations`, `/apply`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`, `/include`, `/calibrate`, `/patterns`, `/windows`, `/window` and `/drip` in code. `/clear`, `/compact` and `/chat restart` work only inside the `chat` topic (they go to the long-running chat window), so they are not in the BotFather list. `/followups`, `/checkreplies`, `/applyall` and `/connect` are not wired in the bridge yet, so they are not in the list above; use the `hunt` and `followups` windows of the tmux session `Jobber`.
+The custom Telegram bridge types `/limits`, `/working`, `/health`, `/sources`, `/escalations`, `/apply`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`, `/include`, `/calibrate`, `/patterns`, `/windows`, `/window` and `/drip` in code. `/clear`, `/compact` and `/chat restart` work only inside the `chat` topic (they go to the long-running chat window), so they are not in the BotFather list. `/followups` and `/checkreplies` are not wired in the bridge yet and have no window right now (a dedicated window comes in a coming phase), so they are not in the list above. `/applyall` and `/connect` no longer exist.
 
 ## Using Slash Commands
 
@@ -43,14 +43,14 @@ Examples:
 ```
 /runhunt          → runs one wake now (discover → match → contacts → send → apply)
 /status           → shows current job/outreach/thread counts
-/followups        → not wired in the bridge yet; run it in the `followups` window of the `Jobber` tmux session
+/followups        → not wired in the bridge yet (no window for it right now; a dedicated window comes in a coming phase)
 /apply #123       → shows job #123 in the apply queue (applying happens in a wake)
 /apply https://example.com/jobs/1 [--force]
                   → a priority run on one job page or careers page: validated in code, queued, picked up by an early wake
-                    (the hunt window needs the rule Bash(npm run apply:request:*)); the report comes back on Telegram
+                    (the session that types it needs the rule Bash(npm run apply:request:*)); the report comes back on Telegram
 /sources          → the per-source status table
 /windows          → buttons for the live tmux windows
-/window hunt      → a live view of the `hunt` window (Refresh, Pause, Close)
+/window chat      → a live view of one tmux window (Refresh, Pause, Close)
 /drip             → drip status; buttons Mail now, LinkedIn now, Status (a confirm step follows)
 ```
 

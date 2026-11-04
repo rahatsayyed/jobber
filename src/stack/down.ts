@@ -1,5 +1,5 @@
 // src/stack/down.ts
-// `down`: stops what `up` started, in order: dashboard, scheduler (graceful), hunt and followups, bridge.
+// `down`: stops what `up` started, in order: dashboard, scheduler (graceful), the managed windows, bridge.
 // It never touches `manager`, the kill switch, halts, .env, secrets or the database, and never stops a
 // scheduler that belongs to a launchd or systemd unit.
 import { join } from 'node:path';
@@ -66,7 +66,7 @@ export async function runDown(deps: DownDeps, opts: DownOpts): Promise<number> {
     else say('scheduler: stopped');
   }
 
-  // 3. hunt and followups (may hold interactive work): confirmation required.
+  // 3. managed windows from the config (may hold interactive work): confirmation required.
   let cfg;
   try {
     cfg = loadManagerConfig(deps.fs.read(join(deps.root, 'config', 'manager-windows.json')));
@@ -75,7 +75,7 @@ export async function runDown(deps: DownDeps, opts: DownOpts): Promise<number> {
   }
   if (cfg) {
     const present = await windowNames(deps.run, sessionName(cfg, env));
-    for (const name of ['hunt', 'followups']) {
+    for (const name of Object.keys(cfg.windows)) {
       if (!present.has(name)) {
         say(`${name}: absent`);
         continue;

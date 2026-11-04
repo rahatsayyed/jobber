@@ -310,7 +310,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
     rows.push(['windows', 'skipped (setup)', telegramFix]);
   } else {
     rows.push(['bridge', stackNames.has('bridge') ? 'running' : 'not running', `tmux attach -t ${session}`]);
-    for (const n of ['hunt', 'followups', 'manager', 'chat']) {
+    for (const n of [...Object.keys(cfg?.windows ?? {}), 'manager', 'chat']) {
       rows.push([n, cNames.has(n) ? 'running' : 'not running', `tmux attach -t ${csess}`]);
     }
   }
@@ -330,7 +330,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
     say(`dashboard: ${webUrl(env)}`);
     for (const l of dashboardAuthLines(deps, env)) say(l);
   }
-  if (noTelegram) say('local-only windows: npx tsx scripts/manager.ts start hunt');
+  if (noTelegram) say('local-only windows: npx tsx scripts/manager.ts list');
   else say(`windows: tmux attach -t ${csess}   scheduler and web: tmux attach -t ${session}`);
   say(`ticks (run by the scheduler after a wake): auto-update ${env.AUTO_UPDATE === 'true' ? 'on' : 'off'}, backup ${env.BACKUP_ENABLED === 'true' ? 'on' : 'off'}`);
   say(lastVerify(deps));
