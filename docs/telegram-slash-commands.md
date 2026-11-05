@@ -33,7 +33,7 @@ Jobber uses explicit slash commands (`/runhunt`, `/status`, etc.) for reliable, 
 
 5. **Save.** The commands are now registered for your bot.
 
-The custom Telegram bridge types `/limits`, `/working`, `/health`, `/sources`, `/escalations`, `/apply`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`, `/include`, `/calibrate`, `/patterns`, `/windows`, `/window` and `/drip` in code. `/clear`, `/compact` and `/chat restart` work only inside the `chat` topic (they go to the long-running chat window), so they are not in the BotFather list. `/followups` and `/checkreplies` are not wired in the bridge yet and have no window right now (a dedicated window comes in a coming phase), so they are not in the list above. `/applyall` and `/connect` no longer exist.
+The custom Telegram bridge types `/limits`, `/working`, `/health`, `/sources`, `/escalations`, `/apply`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`, `/include`, `/calibrate`, `/patterns`, `/windows`, `/window` and `/drip` in code. `/clear`, `/compact` and `/chat restart` work only inside the `chat` topic (they go to the long-running chat window), so they are not in the BotFather list. `/followups` and `/checkreplies` are not wired in the bridge: they are still typed commands that nobody has wired to a window (proposal for a later piece: make them `mail`-window items), so they are not in the list above. `/windows` and `/window` never show the daemons `bridge`, `scheduler` and `web` (`hidden_in_telegram` in `config/manager-windows.json`). `/applyall` and `/connect` no longer exist.
 
 ## Using Slash Commands
 
@@ -43,13 +43,13 @@ Examples:
 ```
 /runhunt          → runs one wake now (discover → match → contacts → send → apply)
 /status           → shows current job/outreach/thread counts
-/followups        → not wired in the bridge yet (no window for it right now; a dedicated window comes in a coming phase)
+/followups        → not wired in the bridge (a typed command nobody has wired to a window; may become a `mail` window item later)
 /apply #123       → shows job #123 in the apply queue (applying happens in a wake)
 /apply https://example.com/jobs/1 [--force]
                   → a priority run on one job page or careers page: validated in code, queued, picked up by an early wake
                     (the session that types it needs the rule Bash(npm run apply:request:*)); the report comes back on Telegram
 /sources          → the per-source status table
-/windows          → buttons for the live tmux windows
+/windows          → buttons for the live tmux windows (workers first, then manager and chat; daemons hidden)
 /window chat      → a live view of one tmux window (Refresh, Pause, Close)
 /drip             → drip status; buttons Mail now, LinkedIn now, Status (a confirm step follows)
 ```

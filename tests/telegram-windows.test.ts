@@ -65,7 +65,7 @@ function build(over: Partial<WindowsDeps> = {}, tmux = new FakeTmux()) {
   const clock = { now: () => t, advance: (ms: number) => { t += ms; } };
   const views = new WindowViews({
     api: fa.api, run: tmux.run, root, chatId: CHAT, isOwner: (id) => id === OWNER, sessions: ['Jobber'], inputEnabled: false,
-    killed: () => false, redact: (s) => s, protectedWindows: ['bridge', 'manager'], now: clock.now, autoPoll: false, pollMs: 3000, ...over,
+    killed: () => false, redact: (s) => s, protectedWindows: ['bridge', 'manager'], hiddenWindows: [], now: clock.now, autoPoll: false, pollMs: 3000, ...over,
   });
   return { views, tmux, fa, clock };
 }
@@ -405,5 +405,58 @@ describe('window topics', () => {
   it('a chat without topics gives no thread id', async () => {
     const api: TelegramApi = { call: async () => ({ ok: false, description: 'Bad Request: the chat is not a forum' }) } as never;
     expect(await ensureWindowTopic(api, root, CHAT, 'hunt', 'own')).toBeUndefined();
+  });
+});
+
+describe('hidden daemons and worker grouping (Phase 4)', () => {
+  const labels = {
+    mail: { kind: 'worker', description: 'Mail lane: sends ONE email per work item' },
+    linkedin: { kind: 'worker', description: 'LinkedIn lane: one action per item' },
+  };
+  const mk = () => {
+    const t = new FakeTmux();
+    t.windows.Jobber = [{ name: 'bridge' }, { name: 'scheduler' }, { name: 'web' }, { name: 'chat' }, { name: 'manager' }, { name: 'mail' }, { name: 'linkedin' }, { name: 'wake-1' }];
+    t.screen.scheduler = 'SECRET-SCHEDULER-LOG';
+    return t;
+  };
+
+  it('the list hides the three daemons and shows workers, then manager and chat, with role labels', async () => {
+    const b = build({ hiddenWindows: ['bridge', 'scheduler', 'web'], windowLabels: labels }, mk());
+    await b.views.handleCommand('windows', '', where);
+    const kb = (methods(b.fa.calls, 'sendMessage')[0]!.payload.reply_markup as { inline_keyboard: { text: string }[][] }).inline_keyboard;
+    const texts = kb.flat().map((x) => x.text).filter((x) => x !== 'Refresh list');
+    expect(texts).toEqual(['🟢 mail · Mail lane', '🟢 linkedin · LinkedIn lane', '🟢 manager · Manager', '🟢 chat · Chat', '🟢 wake-1']);
+  });
+
+  it('a hidden daemon asked by name answers "not available" and the pane is never read', async () => {
+    const b = build({ hiddenWindows: ['bridge', 'scheduler', 'web'] }, mk());
+    for (const n of ['bridge', 'scheduler', 'web']) await b.views.handleCommand('window', n, where);
+    const texts = methods(b.fa.calls, 'sendMessage').map((c) => String(c.payload.text));
+    expect(texts).toEqual(Array(3).fill('That window is not available in Telegram.'));
+    expect(b.views.viewCount()).toBe(0);
+    expect(b.tmux.calls.some((c) => c[0] === 'capture-pane')).toBe(false);
+    expect(JSON.stringify(b.fa.calls)).not.toContain('SECRET-SCHEDULER-LOG');
+  });
+
+  it('defaults hide the three daemons; manager, chat, workers and temporary windows stay openable', async () => {
+    const b = build({ hiddenWindows: undefined }, mk());
+    await b.views.handleCommand('window', 'scheduler', where);
+    expect(b.views.viewCount()).toBe(0);
+    for (const n of ['manager', 'chat', 'mail', 'wake-1']) await b.views.handleCommand('window', n, where);
+    expect(b.views.viewCount()).toBe(4);
+  });
+
+  it('worker windows get their own topic named like the window; wake and drip stay shared', async () => {
+    mkdirSync(path.join(root, '.jobber'), { recursive: true });
+    writeFileSync(topicsPath(root), JSON.stringify({ chat_id: CHAT, forum: true, topics: { alerts: 11 } }));
+    const fa = fakeApi();
+    for (const n of ['mail', 'linkedin', 'boards', 'sources', 'pipeline', 'apply']) {
+      expect(topicKindOf(n)).toBe('own');
+      await ensureWindowTopic(fa.api, root, CHAT, n, 'own');
+    }
+    const names = methods(fa.calls, 'createForumTopic').map((c) => c.payload.name);
+    expect(names).toEqual(['mail', 'linkedin', 'boards', 'sources', 'pipeline', 'apply']);
+    expect(topicKindOf('wake-9')).toBe('wakes');
+    expect(topicKindOf('drip-linkedin-3')).toBe('drips');
   });
 });

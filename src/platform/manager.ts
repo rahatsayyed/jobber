@@ -21,8 +21,12 @@ export interface ManagerWindow extends WindowFields {
 export interface ManagerConfig {
   session: string;
   protected: string[];
+  // Windows the Telegram window views never list or open (the daemons). The web terminal still shows everything.
+  hidden_in_telegram: string[];
   windows: Record<string, ManagerWindow>;
 }
+
+export const DEFAULT_HIDDEN_IN_TELEGRAM: readonly string[] = ['bridge', 'scheduler', 'web'];
 
 export const SUBCOMMANDS = ['list', 'read', 'start', 'stop', 'restart', 'status', 'send', 'clear', 'handoff'] as const;
 export const USAGE =
@@ -44,6 +48,14 @@ export function loadManagerConfig(text: string): ManagerConfig {
   const prot = raw.protected as string[];
   prot.forEach(assertName);
   if (!isObj(raw.windows)) throw new Error('manager config: windows must be an object');
+  let hidden: string[] = [...DEFAULT_HIDDEN_IN_TELEGRAM];
+  if (raw.hidden_in_telegram !== undefined) {
+    if (!Array.isArray(raw.hidden_in_telegram) || !raw.hidden_in_telegram.every((p) => typeof p === 'string')) {
+      throw new Error('manager config: hidden_in_telegram must be a string array');
+    }
+    hidden = raw.hidden_in_telegram as string[];
+    hidden.forEach(assertName);
+  }
   const windows: ManagerConfig['windows'] = {};
   for (const [name, w] of Object.entries(raw.windows)) {
     assertName(name);
@@ -64,7 +76,7 @@ export function loadManagerConfig(text: string): ManagerConfig {
     }
     windows[name] = { ...fields, argv, description: typeof w.description === 'string' ? w.description : '' };
   }
-  return { session: raw.session, protected: prot, windows };
+  return { session: raw.session, protected: prot, hidden_in_telegram: hidden, windows };
 }
 
 export function sessionName(cfg: ManagerConfig, env: NodeJS.ProcessEnv): string {

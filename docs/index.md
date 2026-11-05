@@ -24,6 +24,7 @@ This page lists every owner doc in `docs/`. Start with the ordered list, then us
 
 ## Topic docs
 
+- [Window rollout](window-rollout.md): turn the mail, LinkedIn and wake window lanes on one at a time, with a dry run and a roll-back.
 - [Backup and restore](backup-and-restore.md): encrypted backup, restore drill and auto-update runbook.
 - [Classifier models](classifier-models.md): the prompt-injection classifier and how to fetch, pin and fit a model.
 - [Dashboard exposure](dashboard-exposure.md): how to reach the dashboard from elsewhere, the sign-in modes and the Apply tab.

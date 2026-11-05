@@ -20,7 +20,7 @@ export async function ensureChatWindow(
   root: string,
   opts: { restart?: boolean } = {},
 ): Promise<'started' | 'exists' | 'restarted'> {
-  const session = sessionName({ ...cfg, protected: [], windows: {} }, env);
+  const session = sessionName({ ...cfg, protected: [], hidden_in_telegram: [], windows: {} }, env);
   const exists = (await listWindows(run, session)).some((w) => w.name === CHAT_WINDOW);
   if (exists && !opts.restart) return 'exists';
   if (exists) await killWindow(run, session, CHAT_WINDOW);

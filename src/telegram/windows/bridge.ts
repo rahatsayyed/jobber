@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { stopActive } from '../../../scripts/killSwitch.js';
-import { loadManagerConfig } from '../../platform/manager.js';
+import { DEFAULT_HIDDEN_IN_TELEGRAM, loadManagerConfig } from '../../platform/manager.js';
 import { defaultRun, JOBBER_TMUX_SESSION, type Run } from '../../platform/tmux.js';
 import { redactSecrets } from '../../safety/redact.js';
 import { allowedTerminalSessions } from '../../web/terminalRoutes.js';
@@ -32,9 +32,29 @@ export function protectedWindowNames(root: string): string[] {
   return out;
 }
 
+export interface TelegramWindowConfig {
+  hidden: string[];
+  labels: Record<string, { kind?: string; description: string }>;
+}
+
+// Hidden window names and role labels from config/manager-windows.json (defaults when it cannot be read).
+export function telegramWindowConfig(root: string): TelegramWindowConfig {
+  try {
+    const cfg = loadManagerConfig(readFileSync(path.join(root, 'config', 'manager-windows.json'), 'utf8'));
+    const labels: TelegramWindowConfig['labels'] = {};
+    for (const [n, w] of Object.entries(cfg.windows)) labels[n] = { kind: w.kind, description: w.description };
+    return { hidden: cfg.hidden_in_telegram, labels };
+  } catch {
+    return { hidden: [...DEFAULT_HIDDEN_IN_TELEGRAM], labels: {} };
+  }
+}
+
 export function createWindowViews(s: WindowsSetup): WindowViews {
+  const tg = telegramWindowConfig(s.root);
   const session = (s.env.WEB_TMUX_SESSION ?? '').trim() || JOBBER_TMUX_SESSION;
   return new WindowViews({
+    hiddenWindows: tg.hidden,
+    windowLabels: tg.labels,
     api: s.api,
     run: s.run ?? defaultRun,
     root: s.root,

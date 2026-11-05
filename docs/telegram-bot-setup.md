@@ -90,9 +90,10 @@ npm run telegram:bridge
 
 Or just run `npm start` (`npm run up`), which starts the `bridge`, `scheduler` and `web` windows in the
 one tmux session `Jobber` (env `STACK_TMUX_SESSION`, default `Jobber`). The bridge reads
-`TELEGRAM_BOT_TOKEN`, `ALLOWED_USERS` and `TELEGRAM_CHAT_ID` from `.env`. The named Claude windows
-(listed in `config/manager-windows.json`, plus `manager`) are started by `scripts/claude-session.sh`, which loads the rest of
-`.env` for the MCP servers (not the Telegram keys) and refuses any permission-skipping flag.
+`TELEGRAM_BOT_TOKEN`, `ALLOWED_USERS` and `TELEGRAM_CHAT_ID` from `.env`. It then starts `manager` and `chat`
+(`scripts/claude-session.sh`, which loads the rest of `.env` for the MCP servers, not the Telegram keys, and refuses any
+permission-skipping flag) and every worker window whose lane is listed in `WINDOW_LANES`
+(`scripts/claude-window.sh`; none by default, see `docs/window-rollout.md`).
 
 Look at it with `tmux attach -t Jobber` and pick the `bridge` window (detach with Ctrl-b d). Do not
 paste the token into it.
@@ -102,9 +103,9 @@ paste the token into it.
 - Typed commands, handled in code (no model): `/limits`, `/working`, `/health`, `/sources`,
   `/escalations`, `/apply <url>`, `/runhunt`, `/instruction`, `/report`, `/status`, `/outcome`,
   `/include`, `/calibrate`, `/patterns`.
-- Not wired in the bridge yet: `/followups` and `/checkreplies`. They have no window right now (the idle `hunt`
-  and `followups` windows were removed) and move to a dedicated window in a coming phase. `/applyall` and
-  `/connect` no longer exist.
+- Not wired in the bridge yet: `/followups` and `/checkreplies`. They are still typed commands that nobody has wired
+  to a window (the idle `hunt` and `followups` windows are gone). Proposal for a later piece: make them `mail`-window
+  items. `/applyall` and `/connect` no longer exist.
 - Also typed in code: `/windows`, `/window <name>` and `/drip` (sections 5a to 5c).
 - Free text in the `chat` topic goes to the long-running `chat` window (section 5d). It runs under the
   `read_only` permission set and never with skip-permissions.
@@ -118,13 +119,18 @@ paste the token into it.
 - `alerts`: failures.
 - `drips`: one line per mail or LinkedIn drip action; email addresses are masked.
 - Window topics are created on demand the first time you open a window view and are stored under `windows` in
-  `.jobber/telegram-topics.json`. `wake-*` windows use the `wakes` topic, `drip-*` windows use the `drips` topic,
-  and the `chat` window uses the `chat` topic.
+  `.jobber/telegram-topics.json`. Each worker window (`mail`, `linkedin`, `boards`, `sources`, `pipeline`,
+  `apply`) and `manager` gets its own topic, named exactly like the window. `wake-*` windows (the headless
+  fallback) use the `wakes` topic, `drip-*` windows use the `drips` topic, and the `chat` window uses the `chat` topic.
 
 ### 5b. `/windows` and the input flag
 
-- `/windows` lists the tmux windows you may view; `/window <name>` opens a live view of one. Buttons: Refresh,
-  Pause, Close. The view is an edited message that follows the pane.
+- `/windows` lists the tmux windows you may view, workers first (`mail`, `linkedin`, `boards`, `sources`,
+  `pipeline`, `apply`, each with a short role label), then `manager` and `chat`, then temporary windows.
+  `/window <name>` opens a live view of one. Buttons: Refresh, Pause, Close. The view is an edited message that follows the pane.
+- The three daemons `bridge`, `scheduler` and `web` are hidden in Telegram (`hidden_in_telegram` in
+  `config/manager-windows.json`). Asking for one by name answers "That window is not available in Telegram."
+  and shows nothing. The dashboard terminal still shows every window.
 - Allowlist: the session `Jobber` plus the sessions in `WEB_TERMINAL_SESSIONS`. Anything else is refused.
 - View only by default. Input buttons and typed text work only when `TELEGRAM_WINDOW_INPUT=true` in `.env`
   (default false; restart the bridge after a change). Protected windows are always view only.

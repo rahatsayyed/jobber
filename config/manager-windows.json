@@ -1,6 +1,7 @@
 {
   "session": "Jobber",
   "protected": ["manager", "bridge", "chat"],
+  "hidden_in_telegram": ["bridge", "scheduler", "web"],
   "windows": {
     "mail": {
       "kind": "worker",

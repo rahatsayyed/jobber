@@ -31,6 +31,10 @@ export interface WindowsDeps {
   redact: (text: string) => string;
   /** Windows that may be viewed but never typed into. */
   protectedWindows: readonly string[];
+  /** Windows never listed or opened in Telegram (the daemons). Default: bridge, scheduler, web. */
+  hiddenWindows?: readonly string[];
+  /** Kind and description of the configured windows, for the role label in /windows. */
+  windowLabels?: Record<string, { kind?: string; description: string }>;
   now?: () => number;
   pollMs?: number;
   /** Tests turn the timers off and call pollOnce themselves. */
@@ -72,6 +76,15 @@ export interface TextInput {
 }
 
 const NOT_RUNNING = 'Jobber tmux session is not running';
+const NOT_AVAILABLE = 'That window is not available in Telegram.';
+const DEFAULT_HIDDEN: readonly string[] = ['bridge', 'scheduler', 'web'];
+const FIXED_LABELS: Record<string, string> = { manager: 'Manager', chat: 'Chat' };
+
+// Short role label: the description up to its first colon (at most 30 characters).
+export function roleLabel(description: string): string {
+  const head = description.split(':')[0]?.trim() ?? '';
+  return head.slice(0, 30);
+}
 
 export class WindowViews {
   private views = new Map<string, View>();
@@ -113,6 +126,23 @@ export class WindowViews {
     return out.length > 0 ? out : null;
   }
 
+  private isHidden(window: string): boolean {
+    return (this.d.hiddenWindows ?? DEFAULT_HIDDEN).includes(window);
+  }
+
+  // Workers first, then manager and chat, then the rest (temporary windows).
+  private groupOf(window: string): number {
+    if (this.d.windowLabels?.[window]?.kind === 'worker') return 0;
+    if (window === 'manager') return 1;
+    if (window === 'chat') return 2;
+    return 3;
+  }
+
+  private labelOf(window: string): string {
+    const l = this.d.windowLabels?.[window];
+    return (l ? roleLabel(l.description) : '') || FIXED_LABELS[window] || '';
+  }
+
   private primary(): string {
     return this.d.sessions[0] ?? 'Jobber';
   }
@@ -151,6 +181,10 @@ export class WindowViews {
       const wanted = rest.trim();
       const hits = all.flatMap((s) => s.wins.filter((w) => w.name === wanted).map((w) => ({ session: s.session, window: w.name })));
       const hit = hits[0];
+      if (hit && this.isHidden(hit.window)) {
+        await this.sendPlain(where.chatId, where.threadId, NOT_AVAILABLE, where.messageId);
+        return true;
+      }
       if (!hit) {
         await this.sendPlain(where.chatId, where.threadId, wanted ? `No window named ${wanted.slice(0, 64)}. Use /windows.` : 'usage: /window <name>, or use /windows', where.messageId);
         return true;
@@ -165,15 +199,17 @@ export class WindowViews {
   private listKeyboard(all: { session: string; wins: WinInfo[] }[]): Keyboard {
     this.listMap.clear();
     const buttons: { text: string; callback_data: string }[] = [];
-    for (const s of all) {
-      for (const w of s.wins) {
-        if (buttons.length >= MAX_LIST_BUTTONS) break;
-        const id = `o${++this.listSeq}`;
-        if (this.listMap.size >= MAX_LIST_MAP) break;
-        this.listMap.set(id, { session: s.session, window: w.name });
-        const label = s.session === this.primary() ? w.name : `${s.session}/${w.name}`;
-        buttons.push({ text: `${w.dead ? '🔴' : '🟢'} ${label}`.slice(0, 40), callback_data: cb('o', id) });
-      }
+    const rows = all.flatMap((s) => s.wins.filter((w) => !this.isHidden(w.name)).map((w) => ({ s, w })));
+    rows.sort((a, b) => this.groupOf(a.w.name) - this.groupOf(b.w.name) || a.w.index - b.w.index);
+    for (const { s, w } of rows) {
+      if (buttons.length >= MAX_LIST_BUTTONS) break;
+      const id = `o${++this.listSeq}`;
+      if (this.listMap.size >= MAX_LIST_MAP) break;
+      this.listMap.set(id, { session: s.session, window: w.name });
+      const name = s.session === this.primary() ? w.name : `${s.session}/${w.name}`;
+      const role = this.labelOf(w.name);
+      const label = role ? `${name} · ${role}` : name;
+      buttons.push({ text: `${w.dead ? '🔴' : '🟢'} ${label}`.slice(0, 40), callback_data: cb('o', id) });
     }
     const kb: Keyboard = [];
     for (let i = 0; i < buttons.length; i += 2) kb.push(buttons.slice(i, i + 2));
@@ -182,7 +218,7 @@ export class WindowViews {
   }
 
   private async sendList(all: { session: string; wins: WinInfo[] }[], where: { chatId: number | string; threadId?: number; messageId?: number }): Promise<void> {
-    await this.sendPlain(where.chatId, where.threadId, 'tmux windows (green: running, red: exited). Tap one for a live view.', undefined, this.listKeyboard(all));
+    await this.sendPlain(where.chatId, where.threadId, 'tmux windows (green: running, red: exited). Workers first, then manager and chat. Tap one for a live view.', undefined, this.listKeyboard(all));
   }
 
   // ---- views
@@ -371,6 +407,7 @@ export class WindowViews {
       if (act === 'o') {
         const t = this.listMap.get(arg);
         if (!t) return void (await this.answer(c.callbackId, 'List expired, use /windows'));
+        if (this.isHidden(t.window)) return void (await this.answer(c.callbackId, NOT_AVAILABLE));
         await this.answer(c.callbackId, 'Opening view');
         return await this.openView(t.session, t.window, c.threadId);
       }
@@ -451,6 +488,7 @@ export class WindowViews {
         if (w) target = { session: this.primary(), window: w };
       }
       if (!target) return false;
+      if (this.isHidden(target.window)) return await this.sendPlain(t.chatId, t.threadId, NOT_AVAILABLE), true;
       const reply = (text: string): Promise<void> => this.sendPlain(t.chatId, t.threadId, text, undefined);
       const refusal = await this.inputRefusal(target.session, target.window);
       if (refusal) return await reply(refusal), true;

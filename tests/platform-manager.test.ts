@@ -44,6 +44,15 @@ describe('config and session', () => {
     expect(committed.protected).toEqual(['manager', 'bridge', 'chat']);
     expect(Object.keys(committed.windows)).toEqual(['mail', 'linkedin', 'sources', 'pipeline', 'boards', 'apply']);
   });
+  it('hidden_in_telegram: default, committed value, validation, every worker has a description', () => {
+    const mk = (extra: Record<string, unknown>) => JSON.stringify({ session: 's', protected: [], windows: {}, ...extra });
+    expect(committed.hidden_in_telegram).toEqual(['bridge', 'scheduler', 'web']);
+    expect(loadManagerConfig(mk({})).hidden_in_telegram).toEqual(['bridge', 'scheduler', 'web']);
+    expect(loadManagerConfig(mk({ hidden_in_telegram: ['x'] })).hidden_in_telegram).toEqual(['x']);
+    expect(() => loadManagerConfig(mk({ hidden_in_telegram: 'web' }))).toThrow();
+    expect(() => loadManagerConfig(mk({ hidden_in_telegram: ['-bad'] }))).toThrow();
+    for (const [n, w] of Object.entries(committed.windows)) expect(w.description.length, n).toBeGreaterThan(10);
+  });
   it('rejects bad argv, flags and protected windows', () => {
     const mk = (w: unknown, p = ['manager']) => JSON.stringify({ session: 's', protected: p, windows: w });
     expect(() => loadManagerConfig(mk({ a: { argv: ['sh', 'x'] } }))).toThrow();
