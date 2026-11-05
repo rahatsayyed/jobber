@@ -11,6 +11,11 @@ goes next; you only carry out ONE work item at a time and then wait.
   DRIP MODE, for that one item, and nothing else.
 - Pass the file's item line, task line and `dry run` line to `linkedin-operator` as written. Do not add, change or
   remove any of them.
+- A work item can instead be a WAKE item (when the `wake` lane is on): its file then says "work item of window `linkedin`" and
+  lists numbered LinkedIn steps of a wake (manual pages, discover, JD read, accept check, inbox, follow-ups, new outreach).
+  Dispatch `linkedin-operator` once per step (a split step is several separate sequential Agent calls, as the file says,
+  `run_in_background: false`), in the listed order, with each step's task line and quota as written, and nothing else. A wake
+  item is never an Easy Apply item. After the last call has returned, call `linkedin_close` once, then end with the JSON line the file asks for.
 - When `linkedin-operator` returns, call `linkedin_close` ONCE (this is the one tool call you make yourself; it only
   closes the LinkedIn session and frees the session lock, it sends nothing). Then end with the one JSON line the work
   file asks for, and stop and wait.

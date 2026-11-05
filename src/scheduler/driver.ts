@@ -28,6 +28,8 @@ import { notifyTg, wakeNotice, type TgPost } from './dripNotice.js';
 import { dripLoop } from './mailDrip.js';
 import type { WindowDispatcher } from './windowDispatch.js';
 import { linkedinDripEnabled, linkedinDripLoop } from './linkedinDrip.js';
+import { laneUsesWindow } from './windowLanes.js';
+import { enabledWakeWindows, groupWakeSteps, runWakeThroughWindows, WAKE_LANE, type HeadlessResult } from './wakeWindows.js';
 import { finishRun, getState, markOrphans, setRunLogPath, setRunSession, setState, startRun, type RunStatus } from './runLog.js';
 
 type Db = BetterSqlite3.Database;
@@ -299,6 +301,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
   let wakeStartIso = '';
   let codePassNote: string | undefined;
   let reportCounts = null as WakeCounts | null;
+  let windowsRan = false;
 
   try {
     // (4) plan
@@ -369,11 +372,15 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       codePass,
       jdLine: ((): string => { try { return jdReportLine(d.db, startAt); } catch { return ''; } })(),
     } : undefined;
-    const prompt = buildWakePrompt({
+    // Phase 3c: with the `wake` lane in WINDOW_LANES the steps go to the long-lived windows (src/scheduler/wakeWindows.ts). A forced wake
+    // (--once, --now, /runhunt) never does: its dispatcher is absent and `force` is checked here too, so it stays the old headless wake.
+    const useWindows = !!order && !opts.force && !!d.windows && laneUsesWindow(WAKE_LANE, d.env);
+    const claimInstructions = (): OwnerInstruction[] => { try { return claimPending(d.db, startAt); } catch { return []; } };
+    const prompt = useWindows ? '' : buildWakePrompt({
       runId, dryRun: dry, tasks: decision.tasks, budget, allowed: control.allowed, now: startAt,
       order,
       pipeline: pipelineInput,
-      instructions: ((): OwnerInstruction[] => { try { return claimPending(d.db, startAt); } catch { return []; } })(),
+      instructions: claimInstructions(),
     });
     const pollMs = d.pollMs ?? DEFAULT_POLL_MS;
 
@@ -488,113 +495,162 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
 
     // A wake that exits 0 without proof that it finished (no final report line, a subagent still pending, a step with no
     // completed operator call) is `incomplete`, not `ok`, and is continued (at most maxCont times) with `claude --resume`.
-    const verify = d.verifyCompletion !== false;
-    const maxCont = Math.max(0, Math.min(d.maxContinuations ?? MAX_CONTINUATIONS, MAX_CONTINUATIONS));
-    const settled = new Set<number>(); // proven done, or dropped because the platform is halted now
-    const dropped = new Set<number>();
-    const chainIds = [runId];
-    let chain = 0;
-    let curPrompt = prompt;
-    let resumeId: string | undefined;
-    for (;;) {
-      const insp = await runSession(activeRunId, curPrompt, resumeId);
-      try {
-        const rep = insp.report(chainIds);
-        if (rep) reportCounts = rep.counts;
-      } catch {
-        // counts are a convenience for the Telegram notice
-      }
-      if (status === 'ok' && verify) {
-        const proof = unprovenSteps(steps, insp, chainIds, settled);
-        for (const i of proof.proven) settled.add(i);
-        const hasReport = insp.report(chainIds) !== null;
-        const stuck = insp.pending();
-        if (!insp.resultSeen || !hasReport || stuck.length > 0 || proof.unproven.length > 0) {
-          status = 'incomplete';
-          const why: string[] = [];
-          if (!insp.resultSeen) why.push('no result event in the log');
-          else if (!hasReport) why.push('no final report line');
-          if (stuck.length > 0) why.push(`${stuck.length} subagent(s) did not return (${stuck.slice(0, 4).map((x) => x.subagent || 'agent').join(', ')})`);
-          const list = proof.unproven.map((i) => describeStep(steps[i], i));
-          stopReason = `incomplete: ${why.join('; ') || 'steps unproven'}; unproven steps: ${list.length > 0 ? list.join(', ') : 'none listed'}`.slice(0, 500);
-        }
-      }
-      if (status !== 'incomplete') break;
-      await say(d, { level: 'warn', title: 'scheduler run incomplete', detail: stopReason ?? undefined, runId: activeRunId });
-      const noGo = async (why: string): Promise<void> => {
-        stopReason = `${stopReason ?? 'incomplete'}; not continued: ${why}`.slice(0, 600);
-      };
-      if (chain >= maxCont) {
-        await noGo(maxCont === 0 ? 'continuation off' : 'continuation limit reached');
-        break;
-      }
-      const sid = insp.sessionId;
-      if (!sid) {
-        await noGo('no session id in the log');
-        break;
-      }
-      // Same gates as a new wake: shutdown, kill switch, halts, quiet hours, usage backoff. Dry-run handling is the wake's own flag.
-      let ctl: ControlState | null = null;
-      try {
-        ctl = readControl(d.db, controlDeps(d));
-      } catch {
-        ctl = null;
-      }
-      let block: string | null = null;
-      if (opts.abort?.()) block = 'shutdown';
-      else if (!ctl) block = 'control unreadable';
-      else if (ctl.killed) block = 'kill switch';
-      else if (ctl.allowed.length === 0) block = 'all platforms halted';
-      else if (inQuietHours(d.now(), quiet)) block = 'quiet hours';
-      else {
+    // `runHeadless` is the whole old path: one headless session for `hSteps` plus its continuations. The windows path calls it for the
+    // residual steps of a window that is not usable; `rootId` is the run row that session belongs to.
+    const runHeadless = async (hSteps: Step[], hPrompt: string, rootId: string): Promise<void> => {
+      const verify = d.verifyCompletion !== false;
+      const maxCont = Math.max(0, Math.min(d.maxContinuations ?? MAX_CONTINUATIONS, MAX_CONTINUATIONS));
+      const settled = new Set<number>(); // proven done, or dropped because the platform is halted now
+      const dropped = new Set<number>();
+      const chainIds = [rootId];
+      let chain = 0;
+      let curPrompt = hPrompt;
+      let resumeId: string | undefined;
+      for (;;) {
+        const insp = await runSession(activeRunId, curPrompt, resumeId);
         try {
-          const until = getState(d.db, 'usage_backoff_until');
-          if (until && Date.parse(until) > d.now().getTime()) block = 'usage backoff';
+          const rep = insp.report(chainIds);
+          if (rep) reportCounts = rep.counts;
         } catch {
-          block = 'state unreadable';
+          // counts are a convenience for the Telegram notice
         }
-      }
-      if (block || !ctl) {
-        await noGo(block ?? 'control unreadable');
-        break;
-      }
-      // A step of a platform halted since the wake began is not worked on in the continuation.
-      steps.forEach((s, i) => {
-        if (!settled.has(i) && s.platform && !ctl.allowed.includes(s.platform)) {
-          settled.add(i);
-          dropped.add(i);
+        if (status === 'ok' && verify) {
+          const proof = unprovenSteps(hSteps, insp, chainIds, settled);
+          for (const i of proof.proven) settled.add(i);
+          const hasReport = insp.report(chainIds) !== null;
+          const stuck = insp.pending();
+          if (!insp.resultSeen || !hasReport || stuck.length > 0 || proof.unproven.length > 0) {
+            status = 'incomplete';
+            const why: string[] = [];
+            if (!insp.resultSeen) why.push('no result event in the log');
+            else if (!hasReport) why.push('no final report line');
+            if (stuck.length > 0) why.push(`${stuck.length} subagent(s) did not return (${stuck.slice(0, 4).map((x) => x.subagent || 'agent').join(', ')})`);
+            const list = proof.unproven.map((i) => describeStep(hSteps[i], i));
+            stopReason = `incomplete: ${why.join('; ') || 'steps unproven'}; unproven steps: ${list.length > 0 ? list.join(', ') : 'none listed'}`.slice(0, 500);
+          }
         }
-      });
-      const nextId = d.newRunId();
-      const snap = tracker?.snapshot();
-      try {
-        finishRun(d.db, activeRunId, {
-          at: d.now(), status: 'incomplete', stopReason: `${stopReason ?? 'incomplete'}; continued by ${nextId}`.slice(0, 600), exitCode,
-          toolCalls: snap?.toolCalls, tokensApprox: snap?.tokensApprox,
-          summary: snap ? redactPane(snap.lastLines.join('\n')).slice(0, 2000) : null,
+        if (status !== 'incomplete') break;
+        await say(d, { level: 'warn', title: 'scheduler run incomplete', detail: stopReason ?? undefined, runId: activeRunId });
+        const noGo = async (why: string): Promise<void> => {
+          stopReason = `${stopReason ?? 'incomplete'}; not continued: ${why}`.slice(0, 600);
+        };
+        if (chain >= maxCont) {
+          await noGo(maxCont === 0 ? 'continuation off' : 'continuation limit reached');
+          break;
+        }
+        const sid = insp.sessionId;
+        if (!sid) {
+          await noGo('no session id in the log');
+          break;
+        }
+        // Same gates as a new wake: shutdown, kill switch, halts, quiet hours, usage backoff. Dry-run handling is the wake's own flag.
+        let ctl: ControlState | null = null;
+        try {
+          ctl = readControl(d.db, controlDeps(d));
+        } catch {
+          ctl = null;
+        }
+        let block: string | null = null;
+        if (opts.abort?.()) block = 'shutdown';
+        else if (!ctl) block = 'control unreadable';
+        else if (ctl.killed) block = 'kill switch';
+        else if (ctl.allowed.length === 0) block = 'all platforms halted';
+        else if (inQuietHours(d.now(), quiet)) block = 'quiet hours';
+        else {
+          try {
+            const until = getState(d.db, 'usage_backoff_until');
+            if (until && Date.parse(until) > d.now().getTime()) block = 'usage backoff';
+          } catch {
+            block = 'state unreadable';
+          }
+        }
+        if (block || !ctl) {
+          await noGo(block ?? 'control unreadable');
+          break;
+        }
+        // A step of a platform halted since the wake began is not worked on in the continuation.
+        hSteps.forEach((s, i) => {
+          if (!settled.has(i) && s.platform && !ctl.allowed.includes(s.platform)) {
+            settled.add(i);
+            dropped.add(i);
+          }
         });
-        startRun(d.db, {
-          id: nextId, at: d.now(), trigger: 'continuation', dryRun: dry, tasks: decision.tasks,
-          status: 'running', parentRunId: activeRunId,
+        const nextId = d.newRunId();
+        const snap = tracker?.snapshot();
+        try {
+          finishRun(d.db, activeRunId, {
+            at: d.now(), status: 'incomplete', stopReason: `${stopReason ?? 'incomplete'}; continued by ${nextId}`.slice(0, 600), exitCode,
+            toolCalls: snap?.toolCalls, tokensApprox: snap?.tokensApprox,
+            summary: snap ? redactPane(snap.lastLines.join('\n')).slice(0, 2000) : null,
+          });
+          startRun(d.db, {
+            id: nextId, at: d.now(), trigger: 'continuation', dryRun: dry, tasks: decision.tasks,
+            status: 'running', parentRunId: activeRunId,
+          });
+        } catch (e) {
+          await say(d, { level: 'warn', title: 'scheduler continuation row not written, not continuing', detail: safeMsg(e), runId: activeRunId });
+          stopReason = `${stopReason ?? 'incomplete'}; not continued: run log unwritable`.slice(0, 600);
+          break;
+        }
+        chain++;
+        await say(d, { level: 'info', title: `scheduler continuing wake ${runId} (${chain} of ${maxCont})`, detail: `run ${nextId} resumes session ${sid}`, runId: nextId });
+        chainIds.push(nextId);
+        activeRunId = nextId;
+        resumeId = sid;
+        curPrompt = buildContinuationPrompt({
+          rootRunId: rootId, runId: nextId, n: chain, max: maxCont, dryRun: dry, budget, allowed: ctl.allowed, now: d.now(),
+          order: hSteps, proven: settled, dropped,
+          pending: insp.pending().map((p) => ({ subagent: p.subagent, description: p.description })),
+          pipeline: pipelineInput,
         });
-      } catch (e) {
-        await say(d, { level: 'warn', title: 'scheduler continuation row not written, not continuing', detail: safeMsg(e), runId: activeRunId });
-        stopReason = `${stopReason ?? 'incomplete'}; not continued: run log unwritable`.slice(0, 600);
-        break;
+        status = 'running';
+        stopReason = null;
       }
-      chain++;
-      await say(d, { level: 'info', title: `scheduler continuing wake ${runId} (${chain} of ${maxCont})`, detail: `run ${nextId} resumes session ${sid}`, runId: nextId });
-      chainIds.push(nextId);
-      activeRunId = nextId;
-      resumeId = sid;
-      curPrompt = buildContinuationPrompt({
-        rootRunId: runId, runId: nextId, n: chain, max: maxCont, dryRun: dry, budget, allowed: ctl.allowed, now: d.now(),
-        order: steps, proven: settled, dropped,
-        pending: insp.pending().map((p) => ({ subagent: p.subagent, description: p.description })),
-        pipeline: pipelineInput,
+    };
+
+    if (!useWindows) await runHeadless(steps, prompt, runId);
+    else {
+      const enabled = enabledWakeWindows(d.projectRoot, d.env);
+      let residuals = 0;
+      const r = await runWakeThroughWindows({
+        d, runId, dry, budget, now: startAt, allowed: control.allowed,
+        items: groupWakeSteps(steps, (w) => enabled.has(w)),
+        pipelineInput, claimInstructions,
+        headless: async (hSteps, hPrompt): Promise<HeadlessResult> => {
+          // The first residual session is the wake's own row; a later one gets its own row (child of the wake) so log and window names stay unique.
+          let rowId = runId;
+          if (residuals++ > 0) {
+            rowId = d.newRunId();
+            try { startRun(d.db, { id: rowId, at: d.now(), trigger: 'wake', dryRun: dry, tasks: [], status: 'running', parentRunId: runId }); } catch { /* the session still runs */ }
+          }
+          reportCounts = null;
+          activeRunId = rowId;
+          await runHeadless(hSteps, hPrompt, rowId);
+          const res: HeadlessResult = { status, stopReason, counts: reportCounts };
+          if (activeRunId !== runId) {
+            try { finishRun(d.db, activeRunId, { at: d.now(), status, stopReason, exitCode }); } catch { /* ignore */ }
+          }
+          activeRunId = runId;
+          return res;
+        },
+        stopCheck: () => {
+          if (opts.abort?.()) return 'shutdown';
+          let ctl: ControlState | null = null;
+          try { ctl = readControl(d.db, controlDeps(d)); } catch { ctl = null; }
+          if (!ctl || ctl.killed) return 'kill_switch';
+          if (inQuietHours(d.now(), quiet)) return 'quiet_hours';
+          return null;
+        },
+        heartbeat: () => {
+          lock.heartbeat();
+          try { d.heartbeat?.(); } catch { /* ignore */ }
+        },
       });
-      status = 'running';
-      stopReason = null;
+      status = r.status;
+      stopReason = r.stopReason;
+      reportCounts = r.counts;
+      windowsRan = r.sessionRan;
+      if (status === 'incomplete') await say(d, { level: 'warn', title: 'scheduler run incomplete', detail: stopReason ?? undefined, runId });
     }
   } catch (e) {
     status = 'failed';
@@ -635,7 +691,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
   }
   if (skippedResult) return skippedResult;
   // Owner-submitted requests whose jobs are all settled get their report now (code composes and sends it; never fatal).
-  if (started && launchTried && d.manualReport) {
+  if (started && (launchTried || windowsRan) && d.manualReport) {
     try {
       await d.manualReport(status);
     } catch (e) {
@@ -786,6 +842,8 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
         rows = [];
       }
       for (const r of rows) {
+        // A row written by the window dispatcher names a LONG-LIVED worker window (mail, linkedin, boards ...): never kill that one here.
+        if (r.window && !/^(wake|drip)-/.test(r.window)) continue;
         await killChecked(d, handleFor(r.id, d.session ?? DEFAULT_SESSION, r.window), r.id);
       }
       markOrphans(d.db, d.now());

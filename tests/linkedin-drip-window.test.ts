@@ -331,9 +331,12 @@ describe('window-guard carries the screen_args of the linkedin_drip profile', ()
   };
   const profile = (JSON.parse(readFileSync(join(ROOT, 'config/run-profiles.json'), 'utf8')) as { profiles?: Record<string, { screen_args: string[] }> } & Record<string, { screen_args: string[] }>);
   const prof = (profile.profiles ?? profile).linkedin_drip;
+  const wake = (profile.profiles ?? profile).outreach_wake;
 
-  it('the screened set equals the profile list (without gmail, which has its own rule)', () => {
-    expect([...guard.SCREENED_TOOLS].sort()).toEqual(prof.screen_args.filter((t) => !t.startsWith('mcp__gmail__')).sort());
+  it('the screened set is the union of the linkedin_drip and outreach_wake lists (without gmail, which has its own rule)', () => {
+    const union = new Set([...prof.screen_args, ...wake.screen_args].filter((t) => !t.startsWith('mcp__gmail__')));
+    expect([...guard.SCREENED_TOOLS].sort()).toEqual([...union].sort());
+    for (const t of prof.screen_args.filter((x) => !x.startsWith('mcp__gmail__'))) expect(guard.SCREENED_TOOLS.has(t)).toBe(true);
   });
 
   it('denies secret-shaped strings in each screened tool and passes normal text; other tools are not screened', () => {

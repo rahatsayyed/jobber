@@ -191,3 +191,10 @@ export function unprovenSteps(
   });
   return { proven, unproven };
 }
+
+/** The final JSON line of a plain text (the last text of a window turn), same parser as StreamInspector.report. */
+export function reportFromText(text: string | null, runIds: string[]): WakeReport | null {
+  const i = new StreamInspector();
+  i.resultText = text;
+  return i.report(runIds);
+}

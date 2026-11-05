@@ -15,7 +15,11 @@ const allowlist = require('./tool-allowlist.cjs');
 
 const DEFAULT_ROOT = path.resolve(__dirname, '..', '..');
 
-/** screen_args of the `linkedin_drip` profile (Phase 3b): active in every worker window, which has no run profile. */
+/**
+ * screen_args of the headless profiles `linkedin_drip` (Phase 3b) and `outreach_wake` (Phase 3c), active in every worker window, which has no
+ * run profile. The generic secret-path screen of tool-allowlist.cjs applies to each; mcp__gmail__send_email has its own rule below
+ * (it is in outreach_wake's screen_args too). tests/window-guard-screen.test.ts keeps this list equal to the union of the profiles.
+ */
 const SCREENED_TOOLS = new Set([
   'mcp__outreach__escalate',
   'mcp__outreach__record_inbound',
@@ -23,6 +27,13 @@ const SCREENED_TOOLS = new Set([
   'mcp__linkedin__linkedin_arm_send',
   'mcp__linkedin__linkedin_type',
   'mcp__linkedin__linkedin_open',
+  'mcp__naukri__naukri_arm_send',
+  'mcp__naukri__naukri_type',
+  'mcp__wellfound__wellfound_arm_send',
+  'mcp__wellfound__wellfound_arm_apply',
+  'mcp__wellfound__wellfound_type',
+  'mcp__applier__apply_escalate',
+  'mcp__applier__site_open_link',
 ]);
 
 function decide(event, opts) {

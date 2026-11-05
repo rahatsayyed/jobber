@@ -86,7 +86,15 @@ describe('window config schema (config/manager-windows.json)', () => {
 
   it('the shipped file has exactly the mail and linkedin worker windows and old entries load unchanged', () => {
     const shipped = loadManagerConfig(readFileSync(path.join(ROOT, 'config/manager-windows.json'), 'utf8'));
-    expect(Object.keys(shipped.windows)).toEqual(['mail', 'linkedin']);
+    expect(Object.keys(shipped.windows)).toEqual(['mail', 'linkedin', 'sources', 'pipeline', 'boards', 'apply']);
+    for (const w of ['sources', 'pipeline', 'boards', 'apply']) {
+      const c = shipped.windows[w];
+      expect(c.kind).toBe('worker');
+      expect(c.lane).toBe('wake');
+      expect(c.env).toBeUndefined(); // no JOBBER_RUN_LANE: Easy Apply stays a drip-lane action
+      expect(readFileSync(path.join(ROOT, c.role_prompt as string), 'utf8')).toMatch(/work item/i);
+      expect([...(c.env_keys ?? []), ...(c.env_prefixes ?? [])].some((k) => /KEY|TOKEN|SECRET|PASSWORD/.test(k))).toBe(false);
+    }
     const m = shipped.windows.mail;
     expect(m.kind).toBe('worker');
     expect(m.lane).toBe('mail');

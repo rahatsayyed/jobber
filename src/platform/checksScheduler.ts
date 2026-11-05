@@ -13,6 +13,8 @@ import { loadLinkedinDripConfig } from '../scheduler/linkedinDrip.js';
 import { parseWindowLanes } from '../scheduler/windowLanes.js';
 import { mailDailyLimit } from '../scheduler/mailLimit.js';
 import { linkedinStartDiff } from '../scheduler/linkedinWindowStart.js';
+import { wakeStartDiff } from '../scheduler/wakeWindowStart.js';
+import { LINKEDIN_WINDOW, WAKE_WINDOWS } from '../scheduler/wakeWindows.js';
 import { DEFAULT_LABEL, SERVICE_NAME } from '../scheduler/units.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -273,6 +275,36 @@ export function schedulerChecks(): Check[] {
             } catch {
               // unreadable record: nothing to compare
             }
+          }
+        }
+        // The `wake` lane (Phase 3c): the wake's steps go to the sources, pipeline, boards and apply windows (and the linkedin window when its lane is
+        // listed too). Warn when a window's start record differs from .env, when a required window is not in the config or not running, or
+        // when the dispatcher code is missing. --once and --now always stay headless.
+        if (lanes.includes('wake')) {
+          const need = [...WAKE_WINDOWS, ...(lanes.includes('linkedin') ? [LINKEDIN_WINDOW] : [])];
+          const cfgFile = join(ctx.root, 'config', 'manager-windows.json');
+          let configured: string[] = [];
+          try { configured = Object.keys((JSON.parse(ctx.fs.read(cfgFile)) as { windows?: Record<string, unknown> }).windows ?? {}); } catch { configured = need; }
+          const noCfg = WAKE_WINDOWS.filter((w) => !configured.includes(w));
+          if (noCfg.length > 0) return warn(`the wake lane is on but config/manager-windows.json has no window: ${noCfg.join(', ')} (their steps run in a headless session)`, 'restore config/manager-windows.json from git');
+          if (!ctx.fs.exists(join(ctx.root, 'src', 'scheduler', 'windowDispatch.ts'))) return warn('the wake lane is on but the window dispatcher (src/scheduler/windowDispatch.ts) is missing', 'restore the file from git');
+          const diffs: string[] = [];
+          for (const w of need) {
+            const rec = join(ctx.root, '.jobber', 'window-start', `${w}.json`);
+            if (!ctx.fs.exists(rec)) continue;
+            try {
+              const diff = wakeStartDiff(JSON.parse(ctx.fs.read(rec)) as Record<string, unknown>, mergedEnv(ctx));
+              if (diff.length > 0) diffs.push(`${w} (${diff.join(', ')})`);
+            } catch {
+              // unreadable record: nothing to compare
+            }
+          }
+          if (diffs.length > 0) return warn(`wake windows started with different values than .env gives now: ${diffs.join('; ')}`, 'restart those windows: npx tsx scripts/manager.ts restart <window>');
+          const listed = await ctx.run('tmux', ['list-windows', '-t', '=Jobber', '-F', '#{window_name}']);
+          if (listed.code === 0) {
+            const running = new Set(listed.stdout.split('\n').map((l) => l.trim()).filter(Boolean));
+            const down = need.filter((w) => !running.has(w));
+            if (down.length > 0) return warn(`the wake lane is on but these windows are not running: ${down.join(', ')} (their steps run in a headless session each wake)`, 'start them: npm run up');
           }
         }
         if (lanes.length === 0) return skip(`WINDOW_LANES is empty, no lane uses a window yet. ${note}`);

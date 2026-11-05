@@ -20,7 +20,7 @@
     },
     "linkedin": {
       "kind": "worker",
-      "description": "LinkedIn drip lane: ONE LinkedIn action per work item through linkedin-operator (inbox, reply, JD read, accept check, DM, invite, Easy Apply), typed by the scheduler",
+      "description": "LinkedIn lane: ONE LinkedIn action per drip work item through linkedin-operator (inbox, reply, JD read, accept check, DM, invite, Easy Apply), or the LinkedIn steps of a wake when the wake lane is on, typed by the scheduler",
       "lane": "linkedin",
       "role_prompt": "config/windows/linkedin.md",
       "env_keys": [
@@ -38,6 +38,56 @@
         "JOBBER_RUN_LANE": "linkedin_drip",
         "LINKEDIN_IDLE_MS": "60000"
       }
+    },
+    "sources": {
+      "kind": "worker",
+      "description": "Wake lane: the source-operator step of a wake (queued source tasks: owner-submitted pages, fallbacks, custom sites), typed by the scheduler",
+      "lane": "wake",
+      "role_prompt": "config/windows/sources.md",
+      "env_prefixes": ["SCOUT_", "SITE_", "SEARCH_", "DORK_", "CLASSIFIER_", "LAYOUT_"]
+    },
+    "pipeline": {
+      "kind": "worker",
+      "description": "Wake lane: the pipeline stage of a wake (sweep, reply check, match, vetoes, contacts, prepare, follow-up drafts), typed by the scheduler",
+      "lane": "wake",
+      "role_prompt": "config/windows/pipeline.md",
+      "env_keys": [
+        "QUIET_HOURS_START",
+        "QUIET_HOURS_END",
+        "COMPANY_CONTACT_LIMIT",
+        "SPECULATIVE_COMPANY_LIMIT",
+        "MAX_LINKEDIN_SEARCHES_PER_DAY",
+        "MATCH_THRESHOLD",
+        "FOLLOWUPS_AUTONOMOUS",
+        "EMAIL_FOLLOWUP_GAPS_DAYS",
+        "FOLLOWUP_CHECK_MAX_AGE_MIN"
+      ],
+      "env_prefixes": ["LINKEDIN_", "COOLDOWN_", "CADENCE_", "SEARCH_", "DORK_", "APPLY_", "CLASSIFIER_", "LAYOUT_"]
+    },
+    "boards": {
+      "kind": "worker",
+      "description": "Wake lane: the Naukri and Wellfound steps of a wake (manual pages, discover, JD fetch, inbox, follow-ups, new outreach), typed by the scheduler",
+      "lane": "wake",
+      "role_prompt": "config/windows/boards.md",
+      "env_keys": [
+        "QUIET_HOURS_START",
+        "QUIET_HOURS_END",
+        "COMPANY_CONTACT_LIMIT",
+        "SPECULATIVE_COMPANY_LIMIT"
+      ],
+      "env_prefixes": ["NAUKRI_", "WELLFOUND_", "COOLDOWN_", "CADENCE_", "CLASSIFIER_", "LAYOUT_"]
+    },
+    "apply": {
+      "kind": "worker",
+      "description": "Wake lane: the apply-operator step of a wake (browser applications from the queue), typed by the scheduler",
+      "lane": "wake",
+      "role_prompt": "config/windows/apply.md",
+      "env_keys": [
+        "QUIET_HOURS_START",
+        "QUIET_HOURS_END",
+        "MAX_APPLIES_PER_DAY"
+      ],
+      "env_prefixes": ["APPLY_", "SITE_", "NAUKRI_", "WELLFOUND_", "LINKEDIN_", "CLASSIFIER_", "LAYOUT_"]
     }
   }
 }

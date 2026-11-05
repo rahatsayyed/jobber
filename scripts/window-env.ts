@@ -8,6 +8,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { mailDailyLimit } from '../src/scheduler/mailLimit.js';
 import { linkedinStartValues } from '../src/scheduler/linkedinWindowStart.js';
+import { wakeStartValues } from '../src/scheduler/wakeWindowStart.js';
 import { loadManagerConfig } from '../src/platform/manager.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { checkClassifierForLaunch } from '../src/platform/launchCheck.js';
@@ -59,6 +60,15 @@ async function main(): Promise<void> {
       const p = resolve(ROOT, '.jobber', 'window-start', `${name}.json`);
       mkdirSync(dirname(p), { recursive: true });
       writeFileSync(p, `${JSON.stringify({ ...linkedinStartValues(launch.env), at: new Date().toISOString() })}\n`, { mode: 0o600 });
+    } catch { /* the record is only for the doctor */ }
+  }
+  // The windows of the `wake` lane (sources, pipeline, boards, apply) also read the dry-run flag and the daily limits once at start: record them
+  // the same way (the wake refuses to type into a window that started live while the scheduler is dry; the doctor warns on a change).
+  if (w.lane === 'wake') {
+    try {
+      const p = resolve(ROOT, '.jobber', 'window-start', `${name}.json`);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, `${JSON.stringify({ ...wakeStartValues(launch.env), at: new Date().toISOString() })}\n`, { mode: 0o600 });
     } catch { /* the record is only for the doctor */ }
   }
   let check;
