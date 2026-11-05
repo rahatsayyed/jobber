@@ -15,6 +15,16 @@ const allowlist = require('./tool-allowlist.cjs');
 
 const DEFAULT_ROOT = path.resolve(__dirname, '..', '..');
 
+/** screen_args of the `linkedin_drip` profile (Phase 3b): active in every worker window, which has no run profile. */
+const SCREENED_TOOLS = new Set([
+  'mcp__outreach__escalate',
+  'mcp__outreach__record_inbound',
+  'mcp__outreach__save_reply_draft',
+  'mcp__linkedin__linkedin_arm_send',
+  'mcp__linkedin__linkedin_type',
+  'mcp__linkedin__linkedin_open',
+]);
+
 function decide(event, opts) {
   const root = (opts && opts.root) || DEFAULT_ROOT;
   const env = (opts && opts.env) || process.env;
@@ -30,6 +40,12 @@ function decide(event, opts) {
     // headless mail profile (attachments only a rendered resume PDF, no secret-shaped path) lives here for every window.
     if (event.tool_name === 'mcp__gmail__send_email') {
       const why = allowlist.screenSendEmail(event.tool_input, root);
+      if (why) return { allow: false, reason: why };
+    }
+    // The same generic secret-path screen the headless `linkedin_drip` profile applies (config/run-profiles.json screen_args) to the
+    // LinkedIn and outreach tools whose text arguments the model fills. tests/window-guard-linkedin.test.ts keeps this list equal to the profile.
+    if (SCREENED_TOOLS.has(event.tool_name)) {
+      const why = allowlist.screenSecretArgs(event.tool_input);
       if (why) return { allow: false, reason: why };
     }
     return { allow: true, reason: '' };
@@ -49,7 +65,7 @@ function emitDenyAndExit(reason) {
   }
 }
 
-module.exports = { decide };
+module.exports = { decide, SCREENED_TOOLS };
 
 if (require.main === module) {
   process.on('uncaughtException', () => emitDenyAndExit('hook crashed (fail closed)'));

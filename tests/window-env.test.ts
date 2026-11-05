@@ -84,9 +84,9 @@ describe('window env allowlist', () => {
 describe('window config schema (config/manager-windows.json)', () => {
   const mk = (windows: unknown, prot = ['manager']) => JSON.stringify({ session: 'Jobber', protected: prot, windows });
 
-  it('the shipped file has exactly the mail worker window and old entries load unchanged', () => {
+  it('the shipped file has exactly the mail and linkedin worker windows and old entries load unchanged', () => {
     const shipped = loadManagerConfig(readFileSync(path.join(ROOT, 'config/manager-windows.json'), 'utf8'));
-    expect(Object.keys(shipped.windows)).toEqual(['mail']);
+    expect(Object.keys(shipped.windows)).toEqual(['mail', 'linkedin']);
     const m = shipped.windows.mail;
     expect(m.kind).toBe('worker');
     expect(m.lane).toBe('mail');

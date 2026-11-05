@@ -108,6 +108,13 @@ describe('arm kind easy_apply', () => {
     expect(await w.arm({ kind: 'easy_apply', job_id: JOB })).toMatchObject({ status: 'refused', code: 'drip_lane_only' });
     expect(w.page.log.some((l) => l.startsWith('goto'))).toBe(false);
   });
+  it('a worker window without the linkedin_drip marker (the mail window, a bare or other lane name) cannot arm it', async () => {
+    for (const lane of ['mail', 'linkedin', 'wake', 'LINKEDIN_DRIP']) {
+      const { w } = setup({ env: { JOBBER_RUN_LANE: lane } });
+      expect(await w.arm({ kind: 'easy_apply', job_id: JOB })).toMatchObject({ status: 'refused', code: 'drip_lane_only' });
+      expect(w.page.log.some((l) => l.startsWith('goto'))).toBe(false);
+    }
+  });
   it('is refused while APPLY_LINKEDIN_EASY is off, for unknown, vetoed and applied jobs, and without a resume', async () => {
     const off = setup({ env: { APPLY_LINKEDIN_EASY: 'false' } });
     expect(await off.w.arm({ kind: 'easy_apply', job_id: JOB })).toMatchObject({ status: 'refused', code: 'easy_apply_off' });

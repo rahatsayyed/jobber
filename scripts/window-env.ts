@@ -7,6 +7,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { mailDailyLimit } from '../src/scheduler/mailLimit.js';
+import { linkedinStartValues } from '../src/scheduler/linkedinWindowStart.js';
 import { loadManagerConfig } from '../src/platform/manager.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { checkClassifierForLaunch } from '../src/platform/launchCheck.js';
@@ -49,6 +50,15 @@ async function main(): Promise<void> {
       const p = resolve(ROOT, '.jobber', 'window-start', `${name}.json`);
       mkdirSync(dirname(p), { recursive: true });
       writeFileSync(p, `${JSON.stringify({ SEND_LIMIT_PER_RUN: launch.env.SEND_LIMIT_PER_RUN, at: new Date().toISOString() })}\n`, { mode: 0o600 });
+    } catch { /* the record is only for the doctor */ }
+  }
+  // The linkedin window also reads these once at start (dry run, Easy Apply switch, daily limits): record them for the doctor and for
+  // the lane's dry-run guard. A change needs a window restart. Values only of the listed keys, never secrets.
+  if (w.lane === 'linkedin') {
+    try {
+      const p = resolve(ROOT, '.jobber', 'window-start', `${name}.json`);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, `${JSON.stringify({ ...linkedinStartValues(launch.env), at: new Date().toISOString() })}\n`, { mode: 0o600 });
     } catch { /* the record is only for the doctor */ }
   }
   let check;

@@ -92,6 +92,21 @@ describe('scheduler doctor checks', () => {
     expect(off.status).toBe('skip');
   });
 
+  it('window-foundation warns when the linkedin window started with another dry-run flag, Easy Apply switch or limit than .env gives now', async () => {
+    const base: Files = {
+      '/p/scripts/claude-window.sh': { text: '' }, '/p/scripts/window-env.ts': { text: '' }, '/p/.claude/hooks/window-guard.cjs': { text: '' },
+    };
+    const rec = (o: Record<string, string>): Files => ({ ...base, '/p/.jobber/window-start/linkedin.json': { text: JSON.stringify(o) } });
+    const stale = (await run(ctxWith(rec({ JOBBER_DRY_RUN: 'true', APPLY_LINKEDIN_EASY: '' }), { env: { WINDOW_LANES: 'linkedin', JOBBER_DRY_RUN: 'false' } })))['window-foundation'];
+    expect(stale.status).toBe('warn');
+    expect(stale.detail).toMatch(/JOBBER_DRY_RUN/);
+    expect(stale.detail).toMatch(/restart the linkedin window|started with/);
+    const same = (await run(ctxWith(rec({ JOBBER_DRY_RUN: 'true' }), { env: { WINDOW_LANES: 'linkedin', JOBBER_DRY_RUN: 'true' } })))['window-foundation'];
+    expect(same.detail).not.toMatch(/started with/);
+    const off = (await run(ctxWith(rec({ JOBBER_DRY_RUN: 'true' }), { env: { JOBBER_DRY_RUN: 'false' } })))['window-foundation'];
+    expect(off.status).toBe('skip');
+  });
+
   it('tmux version gate', async () => {
     expect((await run(ctxWith({})))['scheduler-tmux'].status).toBe('pass');
     expect((await run(ctxWith({}, { tmux: 'tmux 3.2a' })))['scheduler-tmux'].status).toBe('pass');

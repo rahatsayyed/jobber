@@ -42,7 +42,7 @@ describe('config and session', () => {
   it('loads the committed config', () => {
     expect(committed.session).toBe('Jobber');
     expect(committed.protected).toEqual(['manager', 'bridge', 'chat']);
-    expect(Object.keys(committed.windows)).toEqual(['mail']);
+    expect(Object.keys(committed.windows)).toEqual(['mail', 'linkedin']);
   });
   it('rejects bad argv, flags and protected windows', () => {
     const mk = (w: unknown, p = ['manager']) => JSON.stringify({ session: 's', protected: p, windows: w });

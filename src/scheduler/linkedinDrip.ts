@@ -11,6 +11,7 @@
 // check, (d) a DM to a newly connected person, then due follow-ups, (e) a new invite. A person with an unhandled inbound message is skipped by
 // every outbound pick (only the owner-approved reply to that very message may go).
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import type BetterSqlite3 from 'better-sqlite3';
 import { acquireLock } from '../platform/lock.js';
 import { redactPane } from '../platform/redact.js';
@@ -34,6 +35,8 @@ import { BudgetTracker, loadBudget, loadStallSec, type Budget } from './budget.j
 import { readControl, statExists, type ControlDeps } from './control.js';
 import type { DriverDeps } from './driver.js';
 import { JOBBER_TMUX_SESSION } from '../platform/tmux.js';
+import { noteSkippedItem } from '../platform/handoff.js';
+import { laneUsesWindow } from './windowLanes.js';
 import type { LaunchHandle } from './launch.js';
 import { finishRun, getState, setRunLogPath, setState, startRun, type RunStatus } from './runLog.js';
 import { withDripRequest } from './dripRequest.js';
@@ -490,12 +493,108 @@ export function gate(d: DriverDeps, cfg: LinkedinDripConfig, now: Date, bypassNe
   return null;
 }
 
-interface OneRun { runId: string; status: RunStatus; reason?: string | null }
+interface OneRun {
+  runId: string; status: RunStatus; reason?: string | null;
+  /** Window path only: nothing was typed (window busy or refused), no run row, no alert; the tick restores the item's stamps. */
+  skipped?: boolean;
+}
+
+/** Name of the long-lived LinkedIn window and its lane (config/manager-windows.json, WINDOW_LANES). */
+export const LI_WINDOW = 'linkedin';
+export const LI_LANE = 'linkedin';
+
+function setUsageBackoff(d: DriverDeps, t: Date): string | null {
+  const mins = Number(d.env.USAGE_LIMIT_BACKOFF_MIN);
+  const until = new Date(t.getTime() + (Number.isInteger(mins) && mins >= 1 && mins <= 10080 ? mins : 300) * 60000).toISOString();
+  try {
+    setState(d.db, 'usage_backoff_until', until, t);
+    return until;
+  } catch {
+    return null;
+  }
+}
+
+const warnedWindow = new Set<string>();
+
+/**
+ * True when the scheduler is in a dry run but the window was started live: the window's tools read JOBBER_DRY_RUN once at window start
+ * (scripts/window-env.ts records it in .jobber/window-start/linkedin.json), so they would act for real. Nothing is typed then.
+ * No record (a window started by an older script, or tests) means no opinion.
+ */
+function windowStartedLive(d: DriverDeps, dry: boolean): boolean {
+  if (!dry) return false;
+  try {
+    const rec = JSON.parse(readFileSync(path.join(d.projectRoot, '.jobber', 'window-start', `${LI_WINDOW}.json`), 'utf8')) as { JOBBER_DRY_RUN?: string };
+    return !isDryRun({ JOBBER_DRY_RUN: rec.JOBBER_DRY_RUN });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The window path of one item (lane `linkedin` listed in WINDOW_LANES): the same prompt and the same reconciliation as the headless path,
+ * but the prompt is handed to the long-lived `linkedin` window through WindowDispatcher. Returns null when the window is missing or not a
+ * claude pane (nothing was typed): the caller then runs the headless path for this item. A busy window or any other refusal returns a
+ * `skipped` result (no action this tick). Never throws.
+ */
+async function runViaWindow(d: DriverDeps, item: LiItem, dry: boolean): Promise<OneRun | null> {
+  const disp = d.windows;
+  if (!disp) return null;
+  const prepRunId = d.newRunId();
+  try {
+    const now = d.now();
+    const budget = loadBudget(d.env);
+    if (windowStartedLive(d, dry)) return { runId: prepRunId, status: 'incomplete', reason: 'window_started_live_but_dry_run_now', skipped: true };
+    const prompt = buildLinkedinDripPrompt({ runId: prepRunId, dryRun: dry, now, budget, item });
+    const res = await disp.dispatch({
+      window: LI_WINDOW, lane: LI_LANE, trigger: LI_DRIP_TRIGGER, dryRun: dry,
+      item: { operator: 'linkedin-operator', kind: item.kind, quota: 1, item: itemKey(item) },
+      promptText: prompt, deadlineMs: budget.maxWallSec * 1000,
+    });
+    if (res.status === 'unavailable' || !res.runId) {
+      // The dispatcher refuses before typing (or failed before typing): nothing happened on LinkedIn.
+      if (res.status === 'unavailable' && (res.stopReason === 'window_missing' || res.stopReason === 'not_claude')) {
+        if (!warnedWindow.has(res.stopReason)) {
+          warnedWindow.add(res.stopReason);
+          try {
+            await d.notifier.notify({ level: 'warn', title: 'linkedin window unavailable, using the headless drip path', detail: res.stopReason });
+          } catch { /* ignore */ }
+        }
+        return null;
+      }
+      return { runId: prepRunId, status: 'incomplete', reason: res.stopReason, skipped: true };
+    }
+    // Typed: the action may have happened. Same reconciliation as headless: the touch rows are the truth (a `sending` touch becomes
+    // `unconfirmed` after 30 minutes in markStaleSending at the next pick, and is never re-sent).
+    const status: RunStatus =
+      res.status === 'ok' ? 'ok' : res.status === 'timeout' ? 'budget_exceeded' : res.status === 'usage_limit' ? 'usage_limit' : res.status === 'killed' ? 'killed' : 'failed';
+    const why = res.status === 'ok' ? null : res.stopReason;
+    if (res.status === 'usage_limit') {
+      const until = setUsageBackoff(d, d.now());
+      noteSkippedItem(d.projectRoot, { window: LI_WINDOW, item: `linkedin ${itemKey(item)}`, reason: `usage limit${until ? `, backoff until ${until}` : ''}` });
+    }
+    if (status !== 'ok') {
+      try {
+        await d.notifier.notify({ level: 'warn', title: 'LinkedIn drip run did not end cleanly', detail: `${itemKey(item)}: ${why ?? status}; check LinkedIn before the person is touched again`, runId: res.runId });
+      } catch { /* ignore */ }
+    }
+    try {
+      await disp.finish(res.runId); // work file, /clear, lock; best effort, never throws
+    } catch { /* ignore */ }
+    return { runId: res.runId, status, reason: why };
+  } catch (e) {
+    return { runId: prepRunId, status: 'failed', reason: `error: ${safeMsg(e)}`, skipped: true };
+  }
+}
 
 /** One tiny run: dispatches linkedin-operator for exactly one item and waits for it. Never throws. */
 async function runOne(d: DriverDeps, lock: { heartbeat: () => void }, item: LiItem, opts: { abort?: () => boolean }): Promise<OneRun> {
-  const runId = d.newRunId();
   const dry = isDryRun(d.env);
+  if (d.windows && laneUsesWindow(LI_LANE, d.env)) {
+    const w = await runViaWindow(d, item, dry);
+    if (w) return w;
+  }
+  const runId = d.newRunId();
   let status: RunStatus = 'running';
   let stopReason: string | null = null;
   let exitCode: number | null = null;
@@ -657,6 +756,9 @@ async function linkedinDripTickInner(d: DriverDeps, opts: { abort?: () => boolea
     const again = gate(d, cfg, start, bypassNext);
     if (again) return { status: 'skipped', reason: again };
     const gap = (): number => drawUniformMinMs(d.rng, cfg.minGapMin, cfg.maxGapMin);
+    const prevLast = getState(d.db, LI_STATE_LAST_AT);
+    const prevInbox = getState(d.db, LI_STATE_INBOX_AT);
+    const prevTried = getState(d.db, LI_STATE_TRIED);
     setState(d.db, LI_STATE_NEXT_AT, new Date(start.getTime() + gap()).toISOString(), start);
     setState(d.db, LI_STATE_LAST_AT, start.toISOString(), start);
     const item = pick.item;
@@ -665,8 +767,18 @@ async function linkedinDripTickInner(d: DriverDeps, opts: { abort?: () => boolea
     if (item.kind === 'inbox') setState(d.db, LI_STATE_INBOX_AT, start.toISOString(), start);
     else markTried(d.db, key, start);
     const run = await runOne(d, lock, item, opts);
-    await linkedinRunNotice(d, item, run);
     const end = d.now();
+    if (run.skipped) {
+      // Window path, nothing was typed: the item stays due (stamps put back), no notice; only the normal gap applies.
+      try {
+        setState(d.db, LI_STATE_LAST_AT, prevLast ?? '', end);
+        setState(d.db, LI_STATE_INBOX_AT, prevInbox ?? '', end);
+        setState(d.db, LI_STATE_TRIED, prevTried ?? '{}', end);
+      } catch { /* the stamps stay: the item is simply not offered again soon */ }
+      setState(d.db, LI_STATE_NEXT_AT, new Date(end.getTime() + gap()).toISOString(), end);
+      return { status: 'ran', item: key, run };
+    }
+    await linkedinRunNotice(d, item, run);
     setState(d.db, LI_STATE_NEXT_AT, new Date(end.getTime() + gap()).toISOString(), end);
     setState(d.db, LI_STATE_LAST_ACTION, JSON.stringify({ at: start.toISOString(), kind: item.kind, key, run_id: run.runId, status: run.status }), end);
     return { status: 'ran', item: key, run };

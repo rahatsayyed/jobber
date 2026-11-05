@@ -12,6 +12,7 @@ import { loadActiveHours } from '../linkedin/activeHours.js';
 import { loadLinkedinDripConfig } from '../scheduler/linkedinDrip.js';
 import { parseWindowLanes } from '../scheduler/windowLanes.js';
 import { mailDailyLimit } from '../scheduler/mailLimit.js';
+import { linkedinStartDiff } from '../scheduler/linkedinWindowStart.js';
 import { DEFAULT_LABEL, SERVICE_NAME } from '../scheduler/units.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -252,6 +253,22 @@ export function schedulerChecks(): Check[] {
               const now = String(mailDailyLimit(mergedEnv(ctx)));
               if (started !== undefined && started !== now) {
                 return warn(`the mail window started with SEND_LIMIT_PER_RUN=${started} but EMAIL_MAX_PER_DAY now gives ${now}`, 'restart the mail window: npx tsx scripts/manager.ts restart mail');
+              }
+            } catch {
+              // unreadable record: nothing to compare
+            }
+          }
+        }
+        // The linkedin window reads the dry-run flag, the Easy Apply switch and the daily limits once at window start
+        // (scripts/window-env.ts records them): warn when .env differs now. A dry-run difference matters most (the lane refuses to type
+        // when the scheduler is dry but the window started live).
+        if (lanes.includes('linkedin')) {
+          const rec = join(ctx.root, '.jobber', 'window-start', 'linkedin.json');
+          if (ctx.fs.exists(rec)) {
+            try {
+              const diff = linkedinStartDiff(JSON.parse(ctx.fs.read(rec)) as Record<string, unknown>, mergedEnv(ctx));
+              if (diff.length > 0) {
+                return warn(`the linkedin window started with different values of: ${diff.join(', ')} (.env changed since)`, 'restart the linkedin window: npx tsx scripts/manager.ts restart linkedin');
               }
             } catch {
               // unreadable record: nothing to compare

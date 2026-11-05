@@ -15,6 +15,8 @@ URL and the recipient name shown in the dialog are verified against the expected
 (`src/linkedin/verify.ts`: `verifyProfileUrl`, `verifyRecipientName`, `namesPlausiblyMatch`), outbound text passes the style and output gates and the classifier screen (see "Outreach
 safety layers"), and the ceiling is consumed right before the Send click.
 
+Optional: with `WINDOW_LANES=linkedin` each drip item goes to the long-lived `linkedin` claude window instead of a headless run (same prompt, same gates in code, same session lock; see `scheduler.md`, "LinkedIn drip lane through the `linkedin` window").
+
 **Drip lane, approved replies and attachments.** With `LINKEDIN_DRIP=true` (the default) the scheduler's LinkedIn drip lane
 (see `scheduler.md`) does the LinkedIn inbox, accept check, follow-ups and invites, one action per tick, 8 to 20 minutes apart, inside
 `LINKEDIN_ACTIVE_HOURS`; wakes no longer do them. The `linkedin-operator` works exactly one named "Drip item" per run (DRIP MODE in its agent file).

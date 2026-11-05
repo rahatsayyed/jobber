@@ -17,6 +17,27 @@
         "JOBBER_RUN_LANE": "mail",
         "SEND_LIMIT_PER_RUN": "100000"
       }
+    },
+    "linkedin": {
+      "kind": "worker",
+      "description": "LinkedIn drip lane: ONE LinkedIn action per work item through linkedin-operator (inbox, reply, JD read, accept check, DM, invite, Easy Apply), typed by the scheduler",
+      "lane": "linkedin",
+      "role_prompt": "config/windows/linkedin.md",
+      "env_keys": [
+        "QUIET_HOURS_START",
+        "QUIET_HOURS_END",
+        "COMPANY_CONTACT_LIMIT",
+        "SPECULATIVE_COMPANY_LIMIT",
+        "MAX_LINKEDIN_SEARCHES_PER_DAY",
+        "MATCH_THRESHOLD",
+        "APPLY_LINKEDIN_EASY",
+        "MAX_APPLIES_PER_DAY"
+      ],
+      "env_prefixes": ["LINKEDIN_", "COOLDOWN_", "CADENCE_", "CLASSIFIER_", "LAYOUT_"],
+      "env": {
+        "JOBBER_RUN_LANE": "linkedin_drip",
+        "LINKEDIN_IDLE_MS": "60000"
+      }
     }
   }
 }
