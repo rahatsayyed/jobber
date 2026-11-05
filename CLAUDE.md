@@ -396,6 +396,8 @@ manual request does not wait for the next scheduled wake: the daemon (`--daemon`
 every 30 seconds and runs an early wake outside quiet hours (the regular wake schedule is left alone; after
 an early wake the next one waits 60 seconds when it ended `ok`, 5 minutes otherwise).
 
+**Optional wake through windows** (`WINDOW_LANES` lists `wake`, off by default): the scheduled wake keeps its planning, code pass, gates and locks in the scheduler, but types each window's steps as work items into the long-lived `sources`, `pipeline`, `boards`, `apply` (and `linkedin`) windows instead of one headless session; `--once`, `--now` and `/runhunt` always stay headless. Details: `docs/reference/scheduler.md`.
+
 **The mail drip lane** (`src/scheduler/mailDrip.ts`) runs beside the wakes, in the scheduler daemon
 only (never `--once` or `--now`), under its own lock name `mail` so a long wake never pauses it.
 Every 30 seconds a tick runs in code with zero LLM calls and sends nothing unless all of these hold:

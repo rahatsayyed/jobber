@@ -153,7 +153,7 @@ async function main(): Promise<void> {
     codePass: () => runCodePass({ db, now, projectRoot }),
     // The slow email lane beside the wakes (src/scheduler/mailDrip.ts); only the daemon runs it, never --once or --now.
     mailDrip: args.mode === 'daemon',
-    // The dispatcher for lanes listed in WINDOW_LANES (today only `mail`); no lane listed means nothing ever uses it.
+    // The dispatcher for lanes listed in WINDOW_LANES (`mail`, `linkedin`, `wake`); no lane listed means nothing ever uses it.
     windows: args.mode === 'daemon'
       ? new WindowDispatcher({ root: projectRoot, session: env.SCHEDULER_TMUX_SESSION || JOBBER_TMUX_SESSION, run: defaultRun, db, killed: () => stopActive(projectRoot, env).stopped })
       : undefined,

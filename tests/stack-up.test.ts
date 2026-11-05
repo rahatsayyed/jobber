@@ -327,6 +327,32 @@ describe('up', () => {
     expect(dOn.out.some((l) => l.startsWith('window linkedin: skipped'))).toBe(false);
   });
 
+  it('the four wake windows are started only when `wake` is in WINDOW_LANES; the linkedin window still needs `linkedin`', async () => {
+    const wakeWins = ['sources', 'pipeline', 'boards', 'apply'];
+    const off = fake();
+    const dOff = deps(off);
+    await runUp(dOff, { status: false });
+    for (const w of wakeWins) {
+      expect(off.sessions.get('Jobber')).not.toContain(w);
+      expect(dOff.out).toContain(`window ${w}: skipped (lane wake is not in WINDOW_LANES)`);
+    }
+    setEnvFile('WINDOW_LANES=mail,linkedin\n');
+    const noWake = fake();
+    await runUp(deps(noWake), { status: false });
+    for (const w of wakeWins) expect(noWake.sessions.get('Jobber')).not.toContain(w);
+    setEnvFile('WINDOW_LANES=wake\n');
+    const on = fake();
+    await runUp(deps(on), { status: false });
+    for (const w of wakeWins) expect(on.sessions.get('Jobber')).toContain(w);
+    expect(on.sessions.get('Jobber')).not.toContain('linkedin');
+    expect(on.sessions.get('Jobber')).not.toContain('mail');
+    setEnvFile('WINDOW_LANES=wake,linkedin\n');
+    const both = fake();
+    await runUp(deps(both), { status: false });
+    expect(both.sessions.get('Jobber')).toContain('linkedin');
+    for (const w of wakeWins) expect(both.sessions.get('Jobber')).toContain(w);
+  });
+
   it('a manager window failure is a warning, not a failure', async () => {
     const f = fake();
     const base = f.run;

@@ -12,7 +12,7 @@ section is the reference for what exists.
   priority request, `followups`, and `manager`; `manager` and the bridge are protected), and the run windows
   `wake-<runId>`, `drip-mail-<runId>` and `drip-linkedin-<runId>` (closed when the run ends, or after
   `RUN_WINDOW_KEEP_MIN` minutes; default 0). `npm start` (`npm run up`) creates `bridge`, `scheduler` and `web`;
-  `scripts/claude-session.sh` starts the named Claude windows. `tmux attach -t Jobber` shows all of them.
+  `scripts/claude-session.sh` starts the named Claude windows. `tmux attach -t Jobber` shows all of them. With `WINDOW_LANES` listing `wake` (off by default) four more long-lived worker windows exist: `sources`, `pipeline`, `boards` and `apply` (`config/manager-windows.json`, role files `config/windows/*.md`); the scheduled wake types its work items into them (`docs/reference/scheduler.md`, "The wake through windows"); `npm run up` starts a window only when its lane is listed.
 - **Telegram bridge** (`src/telegram/`, `npm run telegram:bridge`, window `bridge`): a custom grammY bot that
   replaced ccgram (see the migration note below). Topics `alerts`, `wakes`, `drips`, `inbox`, `assist`
   and `chat` (ids in `.jobber/telegram-topics.json`) in the bot's own private chat with the first `ALLOWED_USERS`

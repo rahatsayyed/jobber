@@ -107,6 +107,39 @@ describe('scheduler doctor checks', () => {
     expect(off.status).toBe('skip');
   });
 
+  it('window-foundation, wake lane: warns on a changed start value, a missing config window, a missing dispatcher or a window that is not running', async () => {
+    const base: Files = {
+      '/p/scripts/claude-window.sh': { text: '' }, '/p/scripts/window-env.ts': { text: '' }, '/p/.claude/hooks/window-guard.cjs': { text: '' },
+      '/p/src/scheduler/windowDispatch.ts': { text: '' },
+      '/p/config/manager-windows.json': { text: JSON.stringify({ windows: { sources: {}, pipeline: {}, boards: {}, apply: {} } }) },
+    };
+    const env = { WINDOW_LANES: 'wake' };
+    const fine = (await run(ctxWith(base, { env })))['window-foundation'];
+    expect(fine.status).toBe('warn');
+    expect(fine.detail).toMatch(/lanes through windows: wake/);
+    const stale = (await run(ctxWith({ ...base, '/p/.jobber/window-start/boards.json': { text: JSON.stringify({ JOBBER_DRY_RUN: 'true', MAX_APPLIES_PER_DAY: '5' }) } }, { env: { ...env, JOBBER_DRY_RUN: 'false' } })))['window-foundation'];
+    expect(stale.detail).toMatch(/boards \(JOBBER_DRY_RUN/);
+    const noCfg = (await run(ctxWith({ ...base, '/p/config/manager-windows.json': { text: JSON.stringify({ windows: { sources: {} } }) } }, { env })))['window-foundation'];
+    expect(noCfg.detail).toMatch(/no window: pipeline, boards, apply/);
+    const { '/p/src/scheduler/windowDispatch.ts': _gone, ...noDisp } = base;
+    expect((await run(ctxWith(noDisp, { env })))['window-foundation'].detail).toMatch(/dispatcher .* is missing/);
+    // the lane off: the wake windows are not looked at
+    expect((await run(ctxWith(base, { env: {} })))['window-foundation'].status).toBe('skip');
+  });
+
+  it('window-foundation, wake lane: a required window that tmux does not list is reported', async () => {
+    const files: Files = {
+      '/p/scripts/claude-window.sh': { text: '' }, '/p/scripts/window-env.ts': { text: '' }, '/p/.claude/hooks/window-guard.cjs': { text: '' },
+      '/p/src/scheduler/windowDispatch.ts': { text: '' },
+      '/p/config/manager-windows.json': { text: JSON.stringify({ windows: { sources: {}, pipeline: {}, boards: {}, apply: {}, linkedin: {} } }) },
+    };
+    const ctx = ctxWith(files, { env: { WINDOW_LANES: 'wake,linkedin' } });
+    ctx.run = async (cmd, args) => (cmd === 'tmux' && args[0] === 'list-windows' ? { stdout: 'sources\npipeline\nboards\n', code: 0 } : { stdout: '', code: 1 });
+    const r = (await run(ctx))['window-foundation'];
+    expect(r.status).toBe('warn');
+    expect(r.detail).toMatch(/not running: apply, linkedin/);
+  });
+
   it('tmux version gate', async () => {
     expect((await run(ctxWith({})))['scheduler-tmux'].status).toBe('pass');
     expect((await run(ctxWith({}, { tmux: 'tmux 3.2a' })))['scheduler-tmux'].status).toBe('pass');
