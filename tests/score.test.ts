@@ -75,7 +75,7 @@ describe('hardStops', () => {
 describe('normalizeMatchRow', () => {
   it('computes score from dims (code wins over the model)', () => {
     const r = normalizeMatchRow(row({ score: 99 }), desc);
-    expect(r.ok && r.row.score).toBe(80);
+    expect(r.ok && r.row.score).toBe(4);
   });
   it.each([[6], [0.9], [4.25], ['4'], [Number.NaN], [true]])('rejects invalid dim %s', (bad) => {
     const r = normalizeMatchRow(row({ score_dims: { ...dims, cv_match: bad } }), desc);
@@ -117,7 +117,7 @@ describe('saveMatchResultsChecked', () => {
     expect(out.saved).toBe(1);
     expect(out.errors).toEqual([{ job_id: 'j2', error: expect.stringContaining('invalid score_dims.red_flags: 1') }]);
     const j1 = db.prepare('SELECT * FROM jobs WHERE id = ?').get('j1') as any;
-    expect(j1.score).toBe(80);
+    expect(j1.score).toBe(4);
     expect(JSON.parse(j1.score_dims)).toMatchObject({ ...dims, decision: 'apply' });
     expect(JSON.parse(j1.strengths)).toEqual(['React']);
     expect((db.prepare('SELECT score FROM jobs WHERE id = ?').get('j2') as any).score).toBeNull();

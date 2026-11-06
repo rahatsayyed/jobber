@@ -4,8 +4,8 @@ import { setupToolingChecks } from '../src/platform/checksSetup.js';
 import { ENV_CATALOG } from '../src/settings/envCatalog.js';
 import { validateEnvValue } from '../src/settings/valueCheck.js';
 import {
-  DEFAULT_DIM_MINIMUMS, DEFAULT_MATCH_THRESHOLD, LEGACY_MATCH_THRESHOLD, dimMinimumsFromEnv, dimsKind, dimsLabel, failedDims, decisionOf,
-  globalOfScore, matchThresholdFromEnv, matchedBinds, parseCareerOpsDims, parseDimMinimums, parseMatchThreshold, parseStoredDims, passRule, rubricOfStored, scaleGlobal, thresholdForKind,
+  DEFAULT_DIM_MINIMUMS, DEFAULT_MATCH_THRESHOLD, dimMinimumsFromEnv, dimsKind, dimsLabel, failedDims, decisionOf,
+  legacyScoreTo5, matchThresholdFromEnv, matchedBinds, parseCareerOpsDims, parseDimMinimums, parseMatchThreshold, parseStoredDims, passRule, rubricOfStored, storedScoreOf,
 } from '../src/matchRubric.js';
 import { normalizeMatchRow } from '../src/score.js';
 import { openDb, saveJob, saveMatchResultsChecked, listUnscoredJobs } from '../src/db.js';
@@ -24,48 +24,53 @@ const norm = (dims: any, extra: Record<string, unknown> = {}, opts = {}) => {
 };
 
 describe('the career-ops go line and the scale', () => {
-  it('Global x 20 is the stored score: 3.9 -> 78, 4.0 -> 80, 4.5 -> 90, 5.0 -> 100', () => {
-    expect([3.9, 4.0, 4.5, 5.0, 3.5, 1.0].map(scaleGlobal)).toEqual([78, 80, 90, 100, 70, 20]);
-    expect(globalOfScore(78)).toBe(3.9);
+  it('the stored score is the Global itself on the 1..5 scale: 3.9, 4.0, 4.5, 5.0 stay as they are', () => {
+    expect([3.9, 4.0, 4.5, 5.0, 3.5, 1.0].map(storedScoreOf)).toEqual([3.9, 4.0, 4.5, 5.0, 3.5, 1.0]);
+    expect(legacyScoreTo5(78)).toBe(3.9);
+    expect(legacyScoreTo5(72)).toBe(3.6);
   });
-  it('the default MATCH_THRESHOLD is 80 (4.0 of 5); the env key still overrides; a bad value falls back to 80', () => {
-    expect(DEFAULT_MATCH_THRESHOLD).toBe(80);
-    expect(matchThresholdFromEnv({})).toBe(80);
-    expect(matchThresholdFromEnv({ MATCH_THRESHOLD: '70' })).toBe(70);
-    expect(matchThresholdFromEnv({ MATCH_THRESHOLD: 'abc' })).toBe(80);
-    expect(matchThresholdFromEnv({ MATCH_THRESHOLD: '101' })).toBe(80);
+  it('the default MATCH_THRESHOLD is 4.0 of 5; the env key still overrides; a bad value falls back to 4', () => {
+    expect(DEFAULT_MATCH_THRESHOLD).toBe(4);
+    expect(matchThresholdFromEnv({})).toBe(4);
+    expect(matchThresholdFromEnv({ MATCH_THRESHOLD: '3.5' })).toBe(3.5);
+    expect(matchThresholdFromEnv({ MATCH_THRESHOLD: 'abc' })).toBe(4);
+    expect(matchThresholdFromEnv({ MATCH_THRESHOLD: '101' })).toBe(4);
   });
-  it('MATCH_THRESHOLD takes either scale: 0 < v <= 5 is multiplied by 20, anything else is a 0..100 value ("4.0 and 80 mean the same")', () => {
+  it('MATCH_THRESHOLD is on the 1..5 scale; an old 0..100 value above 5 is divided by 20 (60 -> 3.0, 80 -> 4.0)', () => {
     const t = (v: string | undefined) => matchThresholdFromEnv({ MATCH_THRESHOLD: v });
-    expect([t('3.5'), t('4'), t('4.0'), t('4.5'), t('5'), t('60'), t('80'), t('0.5'), t('0')]).toEqual([70, 80, 80, 90, 100, 60, 80, 10, 0]);
-    expect(t('5.1')).toBe(5); // above 5 means a 0..100 value, so 5.1 rounds to 5
-    expect(t('100')).toBe(100);
-    expect([t(undefined), t(''), t('   ')]).toEqual([80, 80, 80]); // blank = default
-    expect([t('junk'), t('-4'), t('-1.5'), t('4,5'), t('1e1'), t('101'), t('4.')]).toEqual([80, 80, 80, 80, 80, 80, 80]);
+    expect([t('3.5'), t('4'), t('4.0'), t('4.5'), t('5'), t('60'), t('80'), t('0.5'), t('0')]).toEqual([3.5, 4, 4, 4.5, 5, 3, 4, 0.5, 0]);
+    expect(t('100')).toBe(5);
+    expect(t('70')).toBe(3.5);
+    expect([t(undefined), t(''), t('   ')]).toEqual([4, 4, 4]); // blank = default
+    expect([t('junk'), t('-4'), t('-1.5'), t('4,5'), t('1e1'), t('101'), t('4.')]).toEqual([4, 4, 4, 4, 4, 4, 4]);
   });
-  it('parseMatchThreshold: blank has no error, junk and out-of-range values say why', () => {
-    expect(parseMatchThreshold('')).toEqual({ value: 80 });
-    expect(parseMatchThreshold(undefined)).toEqual({ value: 80 });
-    expect(parseMatchThreshold('4.0')).toEqual({ value: 80 });
+  it('parseMatchThreshold: blank has no error, an old value warns, junk and out-of-range values say why', () => {
+    expect(parseMatchThreshold('')).toEqual({ value: 4 });
+    expect(parseMatchThreshold(undefined)).toEqual({ value: 4 });
+    expect(parseMatchThreshold('4.0')).toEqual({ value: 4 });
+    expect(parseMatchThreshold('4.5')).toEqual({ value: 4.5 });
+    expect(parseMatchThreshold('60')).toMatchObject({ value: 3, warning: expect.stringContaining('MATCH_THRESHOLD=3.0') });
+    expect(parseMatchThreshold('80')).toMatchObject({ value: 4, warning: expect.stringContaining('old 0 to 100') });
+    expect(parseMatchThreshold('80').invalid).toBeUndefined();
     expect(parseMatchThreshold('junk').invalid).toContain('not a number');
     expect(parseMatchThreshold('-4').invalid).toContain('not a number');
-    expect(parseMatchThreshold('101').invalid).toContain('above 100');
-    expect(parseMatchThreshold('junk').value).toBe(80);
+    expect(parseMatchThreshold('101').invalid).toContain('above 5');
+    expect(parseMatchThreshold('junk').value).toBe(4);
   });
   it('career-ops Score interpretation bands: 4.5+ apply now, 4.0-4.4 apply, 3.5-3.9 consider (recommend against), below 3.5 skip', () => {
     expect([5, 4.5, 4.4, 4.0, 3.9, 3.5, 3.4, 1].map(decisionOf)).toEqual(['apply_now', 'apply_now', 'apply', 'apply', 'consider', 'consider', 'skip', 'skip']);
   });
   it('cutoff behaviour at 3.9 / 4.0 / 4.5 through the pass rule', () => {
-    expect(passRule({ score: scaleGlobal(3.9), threshold: 80 })).toEqual({ ok: false, why: ['below_threshold'] });
-    expect(passRule({ score: scaleGlobal(4.0), threshold: 80 }).ok).toBe(true);
-    expect(passRule({ score: scaleGlobal(4.5), threshold: 80 }).ok).toBe(true);
-    expect(passRule({ score: 90, threshold: 80, locationVerdict: 'FAIL', hardStops: ['x'] }).why).toEqual(['location_fail', 'hard_stop']);
+    expect(passRule({ score: storedScoreOf(3.9), threshold: 4 })).toEqual({ ok: false, why: ['below_threshold'] });
+    expect(passRule({ score: storedScoreOf(4.0), threshold: 4 }).ok).toBe(true);
+    expect(passRule({ score: storedScoreOf(4.5), threshold: 4 }).ok).toBe(true);
+    expect(passRule({ score: 4.5, threshold: 4, locationVerdict: 'FAIL', hardStops: ['x'] }).why).toEqual(['location_fail', 'hard_stop']);
   });
-  it('through normalizeMatchRow: 3.9 is stored 78 (below the line), 4.0 is 80, 4.5 is 90, with decision bands', () => {
-    expect(norm(coDims(3.9)).score).toBe(78);
+  it('through normalizeMatchRow: 3.9 is stored 3.9 (below the line), 4.0 is 4, 4.5 is 4.5, with decision bands', () => {
+    expect(norm(coDims(3.9)).score).toBe(3.9);
     expect(norm(coDims(3.9)).score_dims).toMatchObject({ global: 3.9, decision: 'consider' });
     expect(norm(coDims(4.0)).score_dims).toMatchObject({ decision: 'apply', rubric: 'career_ops_v1' });
-    expect(norm(coDims(4.5)).score).toBe(90);
+    expect(norm(coDims(4.5)).score).toBe(4.5);
     expect(norm(coDims(4.5)).score_dims).toMatchObject({ decision: 'apply_now' });
   });
 });
@@ -95,36 +100,36 @@ describe('parseCareerOpsDims (validation)', () => {
     expect(r.dims.global).toBe(3.0);
     expect(r.clamped).toBe(5.0);
     const x = norm({ ...coDims(3.0), global: 5.0 });
-    expect(x.score).toBe(60);
+    expect(x.score).toBe(3);
     expect(x.score_cap_reason).toContain('global-above-dimensions:5');
   });
   it('the red flags adjustment does not change the stored score by itself: the model folds it into the Global', () => {
-    expect(norm(coDims(4.0, { red_flags: -1.5 })).score).toBe(80);
+    expect(norm(coDims(4.0, { red_flags: -1.5 })).score).toBe(4);
   });
 });
 
 describe('the pass rule in code (normalizeMatchRow)', () => {
   it('a clean strong row keeps its score and has no cap', () => {
     const x = norm(coDims(5.0));
-    expect(x.score).toBe(100);
+    expect(x.score).toBe(5);
     expect(x.score_cap_reason).toBeNull();
     expect(x.score_dims).toMatchObject({ cv_match: 5, north_star: 5, comp: 5, culture: 5, red_flags: 0, global: 5, decision: 'apply_now' });
   });
   it('a location_verdict FAIL holds the stored score under the threshold, a FLAG or PASS does not', () => {
     const f = norm(coDims(5.0), { location_verdict: 'FAIL' });
-    expect([f.score, f.score_cap_reason]).toEqual([79, 'location_fail']);
+    expect([f.score, f.score_cap_reason]).toEqual([3.9, 'location_fail']);
     expect(f.reasons).toContain('held back: location FAIL');
-    expect(norm(coDims(5.0), { location_verdict: 'FLAG' }).score).toBe(100);
-    expect(norm(coDims(5.0), { location_verdict: 'PASS' }).score).toBe(100);
+    expect(norm(coDims(5.0), { location_verdict: 'FLAG' }).score).toBe(5);
+    expect(norm(coDims(5.0), { location_verdict: 'PASS' }).score).toBe(5);
   });
   it('a hard stop holds the stored score', () => {
     const x = norm(coDims(5.0), { requirements: [{ req: 'Kubernetes', category: 'skill', importance: 'critical', evidence: 'stated', jd_quote: 'Strong TypeScript required', match: 'missing' }] });
     expect(x.hard_stops.length).toBe(1);
-    expect(x.score).toBeLessThanOrEqual(79);
+    expect(x.score).toBeLessThanOrEqual(3.9);
     expect(x.score_cap_reason).toContain('hard_stop');
   });
-  it('MATCH_THRESHOLD moves the hold line (threshold 70 -> 69)', () => {
-    expect(norm(coDims(5.0), { location_verdict: 'FAIL' }, { threshold: 70 }).score).toBe(69);
+  it('MATCH_THRESHOLD moves the hold line (threshold 3.5 -> 3.4)', () => {
+    expect(norm(coDims(5.0), { location_verdict: 'FAIL' }, { threshold: 3.5 }).score).toBe(3.4);
   });
   it('career-ops culture warning: Global 4.5+ with Cultural signals 2 or less carries the verify warning', () => {
     const x = norm({ ...coDims(4.6), culture: 2.0 });
@@ -134,7 +139,7 @@ describe('the pass rule in code (normalizeMatchRow)', () => {
   });
   it('an unmatched role (North Star 1) with a low Global is far under the line', () => {
     const x = norm({ cv_match: 4.5, north_star: 1.0, comp: 3.0, culture: 3.0, red_flags: 0, global: 2.0, archetype: null });
-    expect([x.score, x.score_dims!.archetype, x.score_dims!.decision]).toEqual([40, null, 'skip']);
+    expect([x.score, x.score_dims!.archetype, x.score_dims!.decision]).toEqual([2, null, 'skip']);
   });
 });
 
@@ -162,38 +167,37 @@ describe('older shapes: refused for a new save, readable when stored', () => {
     expect(dimsLabel(null)).toBe('no dimensions');
     expect([CO, V2, LEG].map((d) => rubricOfStored(JSON.stringify(d)))).toEqual(['career_ops_v1', 'rubric_v2', 'legacy']);
   });
-  it('older rows keep the old line of 60 (never above MATCH_THRESHOLD); career_ops_v1 rows use MATCH_THRESHOLD', () => {
-    expect(LEGACY_MATCH_THRESHOLD).toBe(60);
-    expect(thresholdForKind('career_ops', 80)).toBe(80);
-    expect(thresholdForKind('rubric_v2', 80)).toBe(60);
-    expect(thresholdForKind('legacy', 50)).toBe(50);
-    expect(matchedBinds(80)).toEqual([80, 60]);
-    expect(matchedBinds(40)).toEqual([40, 40]);
+  it('every rubric uses the same threshold on the 1..5 scale; only a grandfathered row (set by the scale migration) is matched below it', () => {
+    expect(matchedBinds(4)).toEqual([4, 4]);
+    expect(matchedBinds(101)).toEqual([101, 101]);
   });
-  it('listUnscoredJobs (kind matched) offers an old 72 row and a new 80 row, but not a new 76 row; funnel matches the same way', () => {
+  it('listUnscoredJobs (kind matched) offers rows at or above 4.0 whatever the rubric, a grandfathered row below it, but not a plain 3.6 row; funnel matches the same way', () => {
     const db = openDb(':memory:');
-    const put = (id: string, score: number, dims: unknown) => {
+    const put = (id: string, score: number, dims: unknown, grandfathered = 0) => {
       saveJob(db, { id, source: 't', title: 'Full Stack Developer', company: id, url: id, apply_url: id, description: desc });
-      db.prepare('UPDATE jobs SET score = ?, score_dims = ? WHERE id = ?').run(score, dims === null ? null : JSON.stringify(dims), id);
+      db.prepare('UPDATE jobs SET score = ?, score_dims = ?, grandfathered = ? WHERE id = ?').run(score, dims === null ? null : JSON.stringify(dims), grandfathered, id);
     };
-    put('old72', 72, LEG);
-    put('v2_72', 72, V2);
-    put('nodims', 65, null);
-    put('co80', 80, coDims(4.0));
-    put('co76', 76, coDims(3.8));
-    const r = listUnscoredJobs(db, { kind: 'matched', matchThreshold: 80, limit: 20 }) as any[];
-    expect(r.map((x) => x.id).sort()).toEqual(['co80', 'nodims', 'old72', 'v2_72']);
-    expect(funnelStats(db, 80).matched).toBe(4);
+    put('old36', 3.6, LEG);
+    put('v2_36_gf', 3.6, V2, 1);
+    put('nodims_gf', 3.3, null, 1);
+    put('v2_40', 4.0, V2);
+    put('co40', 4.0, coDims(4.0));
+    put('co38', 3.8, coDims(3.8));
+    const r = listUnscoredJobs(db, { kind: 'matched', matchThreshold: 4, limit: 20 }) as any[];
+    expect(r.map((x) => x.id).sort()).toEqual(['co40', 'nodims_gf', 'v2_36_gf', 'v2_40']);
+    expect(funnelStats(db, 4).matched).toBe(4);
+    // "no threshold" (the 101 sentinel) matches nothing, grandfathered rows included
+    expect(listUnscoredJobs(db, { kind: 'matched', limit: 20 }) as any[]).toEqual([]);
   });
   it('a legacy row keeps its score; calibration works on mixed legacy, v2 and career-ops rows', () => {
     const db = openDb(':memory:');
     const ids = ['l1', 'l2', 'l3', 'n1', 'n2', 'n3'];
     for (const id of ids) saveJob(db, { id, source: 't', title: 'Dev', company: id, url: id, apply_url: id, description: desc });
-    for (const id of ['l1', 'l2']) db.prepare('UPDATE jobs SET score = 72, score_dims = ? WHERE id = ?').run(JSON.stringify(LEG), id);
-    db.prepare('UPDATE jobs SET score = 72, score_dims = ? WHERE id = ?').run(JSON.stringify(V2), 'l3');
-    for (const id of ['n1', 'n2', 'n3']) db.prepare('UPDATE jobs SET score = 85, score_dims = ? WHERE id = ?').run(JSON.stringify(CO), id);
+    for (const id of ['l1', 'l2']) db.prepare('UPDATE jobs SET score = 3.6, score_dims = ? WHERE id = ?').run(JSON.stringify(LEG), id);
+    db.prepare('UPDATE jobs SET score = 3.6, score_dims = ? WHERE id = ?').run(JSON.stringify(V2), 'l3');
+    for (const id of ['n1', 'n2', 'n3']) db.prepare('UPDATE jobs SET score = 4.3, score_dims = ? WHERE id = ?').run(JSON.stringify(CO), id);
     for (const id of ids) recordOutcome(db, id, id.startsWith('n') ? 'interview' : 'no_response');
-    expect((db.prepare("SELECT score FROM jobs WHERE id = 'l1'").get() as any).score).toBe(72);
+    expect((db.prepare("SELECT score FROM jobs WHERE id = 'l1'").get() as any).score).toBe(3.6);
     const rows = getCalibrationRows(db);
     expect(rows.length).toBe(6);
     expect(() => calibrate(rows, 1)).not.toThrow();
@@ -203,7 +207,7 @@ describe('older shapes: refused for a new save, readable when stored', () => {
     saveJob(db, { id: 'rl', source: 't', title: 'Full Stack Developer', company: 'Acme', url: 'u', apply_url: 'u', description: desc });
     const out = saveMatchResultsChecked(db, [row(coDims(4.2), { job_id: 'rl' })] as any);
     expect(out.errors).toEqual([]);
-    expect(out.scores[0]).toMatchObject({ job_id: 'rl', score: 84, score_cap_reason: null });
+    expect(out.scores[0]).toMatchObject({ job_id: 'rl', score: 4.2, score_cap_reason: null });
     const j = db.prepare('SELECT score, score_dims FROM jobs WHERE id = ?').get('rl') as any;
     expect(JSON.parse(j.score_dims)).toMatchObject({ rubric: 'career_ops_v1', global: 4.2, decision: 'apply', archetype: 'Full-stack developer' });
     expect(JSON.parse(j.score_dims).evidence.north_star).toContain('Full Stack Developer');
@@ -246,17 +250,17 @@ describe('MATCH_DIM_MINIMUMS (legacy rubric_v2 key, read only by the re-check sc
 });
 
 describe('MATCH_THRESHOLD catalog and example', () => {
-  it('the catalog, the limits and .env.example all say 80 and explain 4.0 of 5', () => {
+  it('the catalog, the limits and .env.example all say 4 and explain 4.0 of 5', () => {
     const spec = ENV_CATALOG.find((s) => s.key === 'MATCH_THRESHOLD')!;
-    expect(String(spec.default)).toBe('80');
+    expect(String(spec.default)).toBe('4');
     expect(spec.about).toContain('4.0 of 5');
-    expect(readFileSync(new URL('../.env.example', import.meta.url), 'utf8')).toMatch(/^MATCH_THRESHOLD=80$/m);
+    expect(readFileSync(new URL('../.env.example', import.meta.url), 'utf8')).toMatch(/^MATCH_THRESHOLD=4$/m);
   });
-  it('the settings editor and the doctor accept either scale, reject junk, negatives and above 100', async () => {
+  it('the settings editor and the doctor accept the 1..5 scale and an old 0..100 value, reject junk, negatives and above 100', async () => {
     const spec = ENV_CATALOG.find((s) => s.key === 'MATCH_THRESHOLD')!;
     for (const ok of ['3.5', '4', '4.0', '4.5', '60', '80', '0.5', '5.1']) expect(validateEnvValue(spec, ok), ok).toBeNull();
     for (const bad of ['junk', '-4', '101', '1e1']) expect(validateEnvValue(spec, bad), bad).not.toBeNull();
-    expect(spec.about).toContain('4.0 and 80 mean the same');
+    expect(spec.about).toContain('divided by 20');
     const check = setupToolingChecks.find((c) => c.id === 'env-limits')!;
     const run = (t: string) => check.run({ root: '/r', env: {}, fs: { exists: () => true, read: () => t } } as never);
     expect((await run('MATCH_THRESHOLD=4.0\n')).status).toBe('pass');
@@ -290,7 +294,7 @@ describe('text and wiring', () => {
   it('docs/matching.md is linked from the docs index and carries the career-ops attribution, the bands and the go line', () => {
     expect(readFileSync(new URL('../docs/index.md', import.meta.url), 'utf8')).toContain('(matching.md)');
     const d = readFileSync(new URL('../docs/matching.md', import.meta.url), 'utf8');
-    for (const k of ['https://github.com/career-ops-hq/career-ops', 'MIT License', 'Santiago Fernandez de Valderrama', '4.0 of 5', 'round(Global x 20)', 'rubric_v2', 'legacy']) expect(d).toContain(k);
+    for (const k of ['https://github.com/career-ops-hq/career-ops', 'MIT License', 'Santiago Fernandez de Valderrama', '4.0 of 5', 'rubric_v2', 'rubric_v2', 'legacy']) expect(d).toContain(k);
     expect(readFileSync(new URL('../src/matchRubric.ts', import.meta.url), 'utf8')).toContain('career-ops-hq/career-ops');
   });
   it('the matcher agent text names the career-ops rubric and the North Star line, not the old five keys as the rubric', () => {

@@ -54,7 +54,7 @@ export const ENV_EXAMPLE_HEADER = `# Jobber environment file.
 # Format rules (every loader in this project reads the file the same way):
 # - One \`KEY=value\` per line. Surrounding single or double quotes are stripped, nothing else.
 # - NEVER put a comment after a value on the same line: the loaders read the inline comment as
-#   part of the value, so \`MATCH_THRESHOLD=60  # note\` makes the limit invalid. Comments go on
+#   part of the value, so \`MATCH_THRESHOLD=4  # note\` makes the limit invalid. Comments go on
 #   their own line above the key.
 # - A blank value (\`KEY=\`) means "not set". A commented-out line (\`# KEY=value\`) is an optional
 #   setting that stays unset by default; the value shown is the code default.

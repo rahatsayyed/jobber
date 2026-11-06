@@ -6,8 +6,8 @@ import { handleSaveMatchResults, matchResultsInputShape } from '../src/matchTool
 import { coDims } from './helpers/coDims.js';
 
 const desc = 'We need 3+ years of React. Strong TypeScript required. Kubernetes is a plus. Must be based in India.';
-const dims = coDims(4.0); // Global 4.0 = stored 80
-const full = coDims(5.0); // 100
+const dims = coDims(4.0); // Global 4.0 = stored 4
+const full = coDims(5.0); // 5
 const Q1 = '3+ years of React';
 const Q2 = 'Strong TypeScript required';
 const req = (importance: string, evidence: string, match: string, quote: string | null = null, name = `r-${Math.random()}`) =>
@@ -18,50 +18,50 @@ const run = (d: any, reqs: any[]) => {
   return r.row;
 };
 
-describe('evidence ceiling caps the score (Global 4.0 = 80 unless the evidence is weaker)', () => {
-  it('1. all required met, stated: score = Global x 20', () => {
+describe('evidence ceiling caps the score (Global 4.0 = stored 4 unless the evidence is weaker)', () => {
+  it('1. all required met, stated: score = the Global', () => {
     const x = run(dims, [req('critical', 'stated', 'strong', Q1), req('high', 'stated', 'strong', Q2)]);
-    expect([x.score, x.score_cap_reason]).toEqual([80, null]);
+    expect([x.score, x.score_cap_reason]).toEqual([4, null]);
   });
-  it('2. a critical stated requirement missing: ceiling 69', () => {
+  it('2. a critical stated requirement missing: ceiling 3.5', () => {
     const x = run(dims, [req('critical', 'stated', 'missing', Q1), req('meaningful', 'stated', 'strong', Q2)]);
-    // A verified critical missing requirement is a hard stop: the pass rule also holds the stored score one point under the threshold (79); the ceiling 69 is lower.
-    expect([x.score, x.score_cap_reason]).toEqual([69, 'evidence-ceiling:69;hard_stop']);
+    // A verified critical missing requirement is a hard stop: the pass rule also holds the stored score 0.1 under the threshold (3.9); the ceiling 3.5 is lower.
+    expect([x.score, x.score_cap_reason]).toEqual([3.5, 'evidence-ceiling:3.5;hard_stop']);
     expect(x.hard_stops.length).toBe(1);
   });
-  it('3. all inferred and met cannot exceed 75 (even with Global 5.0)', () => {
+  it('3. all inferred and met cannot exceed 3.8 (even with Global 5.0)', () => {
     const rs = [req('meaningful', 'inferred', 'strong'), req('critical', 'inferred', 'strong')];
-    expect(run(dims, rs).score).toBe(75);
+    expect(run(dims, rs).score).toBe(3.8);
     const x = run(full, rs);
-    expect([x.score, x.score_cap_reason]).toEqual([75, 'evidence-ceiling:75']);
+    expect([x.score, x.score_cap_reason]).toEqual([3.8, 'evidence-ceiling:3.8']);
   });
-  it('4. mixed tiers and partial matches: ceiling 74', () => {
+  it('4. mixed tiers and partial matches: ceiling 3.7', () => {
     const x = run(dims, [req('critical', 'structural', 'partial'), req('high', 'stated', 'partial', Q1), req('meaningful', 'stated', 'missing', Q2)]);
-    expect([x.score, x.score_cap_reason]).toEqual([74, 'evidence-ceiling:74']);
+    expect([x.score, x.score_cap_reason]).toEqual([3.7, 'evidence-ceiling:3.7']);
   });
-  it('5. empty table: ceiling 70 and confidence low', () => {
+  it('5. empty table: ceiling 3.5 and confidence low', () => {
     const x = run(dims, []);
-    expect([x.score, x.score_cap_reason, x.confidence]).toEqual([70, 'empty-table:70', 'low']);
+    expect([x.score, x.score_cap_reason, x.confidence]).toEqual([3.5, 'empty-table:3.5', 'low']);
   });
   it('6. duplicate ids in one batch: first wins, second is an error and not counted', () => {
     const db = openDb(':memory:');
     saveJob(db, { id: 'j1', source: 't', title: 'Dev', company: 'A', url: 'u', apply_url: 'u', description: desc });
     const mk = (d: any) => ({ job_id: 'j1', reasons: 'r', missing_keywords: [], score_dims: d, requirements: [req('critical', 'stated', 'strong', Q1)] });
     const out = saveMatchResultsChecked(db, [mk(dims), mk(coDims(3.0))] as any);
-    expect(out).toMatchObject({ saved: 1, errors: [{ job_id: 'j1', error: 'duplicate job_id' }], hard_stops: [], injection_suspects: [], scores: [{ job_id: 'j1', score: 80 }] });
-    expect((db.prepare("SELECT score FROM jobs WHERE id = 'j1'").get() as any).score).toBe(80);
+    expect(out).toMatchObject({ saved: 1, errors: [{ job_id: 'j1', error: 'duplicate job_id' }], hard_stops: [], injection_suspects: [], scores: [{ job_id: 'j1', score: 4 }] });
+    expect((db.prepare("SELECT score FROM jobs WHERE id = 'j1'").get() as any).score).toBe(4);
   });
-  it('7. Global 5.0 with all stated and met: 100; with an empty table: 70', () => {
-    expect(run(full, [req('critical', 'stated', 'strong', Q1)]).score).toBe(100);
-    expect(run(full, []).score).toBe(70);
+  it('7. Global 5.0 with all stated and met: 5; with an empty table: 3.5', () => {
+    expect(run(full, [req('critical', 'stated', 'strong', Q1)]).score).toBe(5);
+    expect(run(full, []).score).toBe(3.5);
   });
-  it('8. unknown importance defaults to meaningful (stated + missing => ceiling 59)', () => {
+  it('8. unknown importance defaults to meaningful (stated + missing => ceiling 3)', () => {
     const x = run(dims, [req('huge', 'stated', 'missing', Q1)]);
-    expect([x.score, x.score_cap_reason]).toEqual([59, 'evidence-ceiling:59']);
+    expect([x.score, x.score_cap_reason]).toEqual([3, 'evidence-ceiling:3']);
   });
-  it('only low-importance rows count as no weighted evidence (70)', () => {
+  it('only low-importance rows count as no weighted evidence (3.5)', () => {
     const x = run(dims, [req('preferred', 'stated', 'strong', Q1)]);
-    expect([x.score, x.score_cap_reason]).toEqual([70, 'no-weighted-rows:70']);
+    expect([x.score, x.score_cap_reason]).toEqual([3.5, 'no-weighted-rows:3.5']);
   });
   // Changed deliberately (final review M1): a legacy row without dims is no longer accepted uncapped; only an expired row is.
   it('legacy rows without dims are rejected unless expired; the cap reason is stored for dims rows', () => {
@@ -71,7 +71,7 @@ describe('evidence ceiling caps the score (Global 4.0 = 80 unless the evidence i
     const db = openDb(':memory:');
     saveJob(db, { id: 'j1', source: 't', title: 'Dev', company: 'A', url: 'u', apply_url: 'u', description: desc });
     saveMatchResultsChecked(db, [{ job_id: 'j1', reasons: '', missing_keywords: [], score_dims: dims, requirements: [] } as any]);
-    expect((db.prepare("SELECT score, score_cap_reason FROM jobs WHERE id = 'j1'").get() as any)).toEqual({ score: 70, score_cap_reason: 'empty-table:70' });
+    expect((db.prepare("SELECT score, score_cap_reason FROM jobs WHERE id = 'j1'").get() as any)).toEqual({ score: 3.5, score_cap_reason: 'empty-table:3.5' });
   });
 });
 

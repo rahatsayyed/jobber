@@ -10,25 +10,25 @@ const mk = () => {
 };
 
 describe('save_match_result returns the stored (capped) scores (final review I1)', () => {
-  it('Global 4.3 (=86) with unverifiable critical rows returns 59, which fails the 80 threshold', () => {
+  it('Global 4.3 with unverifiable critical rows returns 3, which fails the 4.0 threshold', () => {
     const db = mk();
     const row = {
       job_id: 'j1', score: 85, reasons: 'r', missing_keywords: [], score_dims: coDims(4.3),
       requirements: [{ req: 'React', importance: 'critical', evidence: 'stated', jd_quote: 'not in the posting at all', match: 'missing' }],
     };
     const out = saveMatchResultsChecked(db, [row] as any);
-    expect(out.scores).toEqual([{ job_id: 'j1', score: 59, score_cap_reason: 'evidence-ceiling:59', confidence: 'low' }]);
-    expect(out.scores[0].score).toBeLessThan(80);
-    expect((db.prepare("SELECT score FROM jobs WHERE id='j1'").get() as any).score).toBe(59);
+    expect(out.scores).toEqual([{ job_id: 'j1', score: 3, score_cap_reason: 'evidence-ceiling:3', confidence: 'low' }]);
+    expect(out.scores[0].score).toBeLessThan(4);
+    expect((db.prepare("SELECT score FROM jobs WHERE id='j1'").get() as any).score).toBe(3);
   });
-  it('Global 2.5 (=50) with a row score of 90 returns 50', () => {
+  it('Global 2.5 with a row score of 90 returns 2.5', () => {
     const db = mk();
     const row = {
       job_id: 'j1', score: 90, reasons: 'r', missing_keywords: [], score_dims: coDims(2.5),
       requirements: [{ req: 'React', importance: 'critical', evidence: 'stated', jd_quote: '3+ years of React', match: 'strong' }],
     };
     const out = saveMatchResultsChecked(db, [row] as any);
-    expect(out.scores[0]).toMatchObject({ job_id: 'j1', score: 50, score_cap_reason: null });
+    expect(out.scores[0]).toMatchObject({ job_id: 'j1', score: 2.5, score_cap_reason: null });
   });
   it('error rows and unknown ids have no entry in scores', () => {
     const db = mk();
