@@ -10,20 +10,20 @@ import {
 import type { TopicName } from '../telegram/topics.js';
 import type { WakeCounts } from './stream.js';
 
-export interface PostOpts { html?: boolean }
+export interface PostOpts { html?: boolean; silent?: boolean }
 export type TgPost = (topic: TopicName, text: string, opts?: PostOpts) => Promise<unknown>;
 export interface HasTg { tg?: TgPost }
 
 export const NOTICE_TIMEOUT_MS = 10_000;
 
 /** Send one notice (HTML text from the builders below). Failures and slow sends are ignored. */
-export async function notifyTg(d: HasTg, topic: TopicName, text: string, timeoutMs: number = NOTICE_TIMEOUT_MS): Promise<void> {
+export async function notifyTg(d: HasTg, topic: TopicName, text: string, timeoutMs: number = NOTICE_TIMEOUT_MS, silent?: boolean): Promise<void> {
   const post = d.tg;
   if (!post) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
-      Promise.resolve().then(() => post(topic, text, { html: true })).catch(() => undefined),
+      Promise.resolve().then(() => post(topic, text, { html: true, ...(silent === undefined ? {} : { silent }) })).catch(() => undefined),
       new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); timer.unref?.(); }),
     ]);
   } catch {

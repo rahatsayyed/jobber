@@ -112,7 +112,10 @@ describe('web_wired', () => {
 
 describe('apply_recipes', () => {
   it('passes on the shipped recipes', async () => {
-    const r = await run('apply_recipes', ctxFor(REPO));
+    // A temp root with only the shipped recipes: the live repo's .jobber/ats-recipes (learned candidates) must not change the result.
+    const root = tempRoot({});
+    copyFromRepo(root, ['ashby', 'greenhouse', 'lever', 'smartrecruiters', 'workable'].map((n) => `config/ats-recipes/${n}.json`));
+    const r = await run('apply_recipes', on(root));
     expect(r.status).toBe('pass');
     expect(r.detail).toMatch(/5 shipped/);
   });

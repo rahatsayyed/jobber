@@ -24,6 +24,7 @@ import { targetRegionsLine, type CodePassResult } from './pipeline.js';
 import { jdReportLine } from '../jdStore.js';
 import { buildContinuationPrompt, buildWakePrompt } from './prompt.js';
 import { describeStep, MAX_CONTINUATIONS, StreamInspector, unprovenSteps, type WakeCounts } from './stream.js';
+import { noticeUrgency } from '../telegram/silent.js';
 import { notifyTg, wakeNotice, type TgPost, type WakeNotice } from './dripNotice.js';
 import { dripLoop } from './mailDrip.js';
 import type { WindowDispatcher } from './windowDispatch.js';
@@ -762,7 +763,9 @@ async function wakeFinishedNotice(
       ...(w.startAt ? wakeGroups(d, w.startAt) : {}),
     });
     try { setState(d.db, 'wake_skip_notified', '', d.now()); } catch { /* ignore */ }
-    if (n) await notifyTg(d, n.topic, n.text);
+    // Loud when the wake did not end ok or something needs the owner (escalations); else the topic default (silent) applies.
+    const loud = noticeUrgency({ failed: w.status !== 'ok', needsOwner: (w.counts?.escalated ?? 0) > 0 });
+    if (n) await notifyTg(d, n.topic, n.text, undefined, loud);
   } catch {
     // a notice never breaks a wake
   }
@@ -776,7 +779,7 @@ async function wakeSkippedNotice(d: DriverDeps, r: WakeResult, trigger: string):
     const code = (r.reason ?? '').split(':')[0] ?? '';
     if (getState(d.db, 'wake_skip_notified') === code) return;
     setState(d.db, 'wake_skip_notified', code, d.now());
-    await notifyTg(d, n.topic, n.text);
+    await notifyTg(d, n.topic, n.text, undefined, noticeUrgency({ halted: true }));
   } catch {
     // a notice never breaks a wake
   }
