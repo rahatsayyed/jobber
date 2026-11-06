@@ -43,5 +43,5 @@ health - Platform and pipeline health
 - Telegram renders URLs as tappable links in the about and description fields,
   but does not support HTML or Markdown hyperlinks there, so the visible text is
   the URL itself.
-- The greeting after `/start` now comes from our own bridge (`src/telegram/`), so it can be changed
-  in code. The old ccgram greeting (hard-coded in ccgram) is gone with ccgram.
+- The greeting after `/start` comes from our own bridge (`src/telegram/`), so it can be changed
+  in code.

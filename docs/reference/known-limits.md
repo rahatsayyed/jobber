@@ -74,7 +74,7 @@
   single-instance scheduler and SIGINT behaviour (U9, until L8). Check upstream, no live check:
   the Claude Code CLI install method and flags (U1), Homebrew and apt package names (U5),
   Linux Node, uv and Chrome installer URLs (U6); L1 and L2
-  exercise the install paths only loosely. The `manager` window now lives in the session `Jobber` (ccgram was removed 2026-11-03). The `better-sqlite3` native build toolchain (U12) is surfaced by the
+  exercise the install paths only loosely. The `manager` window lives in the session `Jobber`. The `better-sqlite3` native build toolchain (U12) is surfaced by the
   `build-tools` item and `npm ci` output. The dry-run dashboard stage runs the token login for real (plan 8C merged; it skips only on a 404 auth mode route). No browser download is needed (U13 is closed): every browser runs on the installed Google Chrome.
 - Plan 8F setup text is unverified until the owner live checks: BotFather's Threaded Mode / Topics
   label and path, Mini App versus `/mybots` (unverified until owner live check L1); whether `getMe`

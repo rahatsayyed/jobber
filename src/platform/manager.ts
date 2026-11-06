@@ -7,7 +7,7 @@ import { assertName, capture, killWindow, listWindows, type Run } from './tmux.j
 import { windowActivityMs, windowAgeMs } from './windowAge.js';
 import { takeWindowLock, windowLockHeld } from './windowLock.js';
 
-// ccgram removed 2026-11-03; .ccgram/ state is dropped. The named windows now live in session Jobber.
+// The named windows live in the session Jobber.
 const shellQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`;
 import { redactPane } from './redact.js';
 import { parseWindowFields, WORKER_LAUNCHER, type WindowFields } from './windowConfig.js';

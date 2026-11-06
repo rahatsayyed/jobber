@@ -30,7 +30,7 @@ Runs the full health check; each failing item prints a `fix:` line.
 | npm dependencies, renderer dependencies | yes | all servers, PDF rendering |
 | Claude Code CLI (`claude`), logged in | yes | scheduler wakes (and `./run-hunt.sh`), setup guide |
 | tmux | yes | the one session `Jobber`: bridge, named windows, scheduler runs |
-| uv | yes | Python tooling (ccgram, its old user, was removed) |
+| uv | yes | Python tooling |
 | Google Chrome | yes (warning if missing) | every browser tool (LinkedIn, Naukri, scout, applier) and the resume PDF render |
 | patchright browser | per package install | LinkedIn and apply sessions |
 | age, rclone | optional | backups only |
@@ -48,7 +48,7 @@ Runs the full health check; each failing item prints a `fix:` line.
 | Claude Code CLI | runs the agent sessions | doctor `restricted_hook` warns below 2.1.295 (hook `onFailure: block`) | `claude --version` | check upstream: https://docs.claude.com/en/docs/claude-code/setup. Bootstrap may offer `npm install -g @anthropic-ai/claude-code` when the npm global prefix is writable. Then run `claude` once. |
 | Claude login | subscription session used by headless runs | n/a | `claude auth status` | `claude auth login` |
 | tmux | holds the session `Jobber` (bridge, windows, scheduler runs) | none checked | `tmux -V` | macOS `brew install tmux`; Ubuntu `apt-get install -y tmux` |
-| uv | Python tooling (no longer needed by ccgram, which was removed) | none checked | `uv --version` | macOS `brew install uv`. Ubuntu: official installer (check upstream: https://astral.sh/uv/install.sh); bootstrap can download it, show url, size and sha256, then ask again. |
+| uv | Python tooling | none checked | `uv --version` | macOS `brew install uv`. Ubuntu: official installer (check upstream: https://astral.sh/uv/install.sh); bootstrap can download it, show url, size and sha256, then ask again. |
 | Google Chrome | every browser (LinkedIn, Naukri, scout, applier) and the resume PDF render use `channel: 'chrome'` | none checked | macOS: `/Applications/Google Chrome.app` exists; else `google-chrome --version` | macOS: bootstrap runs `brew install --cask google-chrome`. Linux: download page (check upstream: https://www.google.com/chrome/). |
 | patchright | launches the installed Chrome for every browser tool | `patchright` dependency in `package.json`; doctor `browser-binaries` | `npx patchright --version` | `npm ci` installs the package. No browser download is needed: browsers run on the installed Google Chrome. |
 | age | encrypts backups | none checked | `age --version` | `brew install age` (Ubuntu `apt install age`) |

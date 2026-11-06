@@ -99,9 +99,7 @@ Warnings for `--apply`:
   scheduler first.
 - A backup contains `.claude/settings.local.json` (plus the managed settings file), so `--apply`
   writes the permission set from the backup (the old files are moved aside). Review it after a
-  restore. Older backups may still hold `config/ccgram.pin.json` and a `.ccgram/` state folder; ccgram
-  was removed on 2026-11-03, so ignore them. The Telegram topic ids (`.jobber/telegram-topics.json`) are
-  recreated by the bridge if missing.
+  restore. The Telegram topic ids (`.jobber/telegram-topics.json`) are recreated by the bridge if missing.
 - Restoring a stale database can make already-sent outreach look unsent, which risks duplicate
   sends. After any restore run `/checkreplies` and compare the Gmail Sent folder with
   `outreach_queue` before the next wake.

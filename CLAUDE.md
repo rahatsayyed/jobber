@@ -647,7 +647,7 @@ Everything built and tested only with fakes or not yet checked against a real si
    (no one is asked during a run; the cap is not raised from inside a run). Follow-up emails count under the
    same `send_email` counter (there is no separate follow-up cap).
 3. Cold email and email follow-ups are sent automatically by the mail drip lane (`mail-operator`, one email
-   per run, scheduler daemon only, inside the send window and outside quiet hours; a wake never sends email),
+   per run, or per work item when the `mail` window lane is on; scheduler daemon only, inside the send window and outside quiet hours; a wake never sends email),
    and a scheduled wake sends LinkedIn connection requests (`linkedin-operator`) automatically, per the
    "Connecting" section: an explicit, informed design decision, not an oversight. Since the agent-driven runtime (ADR 2026-10-13) LinkedIn and Naukri
    messages are also allowed, but only through the arm tools (`linkedin_arm_send` with a required `kind`,
@@ -726,7 +726,7 @@ Everything built and tested only with fakes or not yet checked against a real si
 14. The kill switch always wins: `.jobber/STOP`, `JOBBER_KILL=1` or a `halt_flags` row for `all`,
     `linkedin` or `naukri` stops the LinkedIn and Naukri tools and the scheduler for that
     scope; `.jobber/STOP` and `JOBBER_KILL=1` are additionally enforced by the PreToolUse hook
-    on every tool in restricted runs and on the irreversible tools (Gmail send, the applier's acting tools, the scout tools, typed
+    on every tool in restricted runs and in the worker windows (`window-guard.cjs`), and on the irreversible tools (Gmail send, the applier's acting tools, the scout tools, typed
     LinkedIn and Naukri sends and discovery) everywhere in this project, and by the launcher (exit 4); see
     "Outreach safety layers" layer 6 for what is not covered. Never clear a halt, delete STOP or
     flip a dry-run flag on your own; only the owner does (`jobber:control resume`,

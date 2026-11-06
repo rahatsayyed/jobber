@@ -5,8 +5,7 @@ Jobber is operated mostly from Telegram. The bridge is our own grammY bot in `sr
 topics in the bot's own private chat with you: one topic per kind of message (`alerts`, `wakes`, `drips`, `inbox`, `assist`,
 `chat`). The ids of the topics are kept in `.jobber/telegram-topics.json`. This runbook covers creating
 the bot, wiring `.env`, enabling Threaded Mode (topics in the private chat), starting the bridge and fixing the usual
-problems. (ccgram, the old bridge, was removed on 2026-11-03; see the migration note in
-`docs/reference/platform-and-sessions.md`.)
+problems.
 
 BotFather's menus and button labels change over time. Follow the label currently on screen where it
 differs from the one written here. Anything not confirmed by this repository is marked "unverified".

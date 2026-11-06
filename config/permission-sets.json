@@ -148,7 +148,9 @@
       "mcp__naukri",
       "mcp__wellfound",
       "mcp__gmail",
-      "mcp__scout"
+      "mcp__scout",
+      "mcp__outreach",
+      "mcp__linkedin"
     ]
   }
 }
