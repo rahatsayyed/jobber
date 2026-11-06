@@ -1,0 +1,29 @@
+{
+  "_about": "Deterministic ROLE GATE (src/roleGate.ts). Runs on the job TITLE before the matcher and again inside gates.apply_vetoes. Order: deny words (win over everything) -> pay-model phrases in the posting -> allowed families -> borderline families -> anything else is rejected. Patterns are case-insensitive regular expressions on the title. Owner level: no level is declared in user-data or config (the resume only shows job titles), so every seniority word is allowed and the matcher judges level fit in seniority_comp.",
+  "deny": [
+    "reviewers?", "evaluators?", "raters?", "annotators?", "annotation", "labell?ers?", "tutors?", "trainers?", "coach(?:es)?",
+    "qa", "quality assurance", "tests?", "testers?", "testing", "sdet",
+    "sales", "recruiters?", "recruiting", "talent acquisition", "designers?",
+    "data entry", "content", "writers?", "support",
+    "unpaid", "volunteers?", "freelance", "per[- ]task", "gig", "crowd"
+  ],
+  "deny_intern": ["interns?", "internship", "trainee"],
+  "allow_intern": false,
+  "pay_model_phrases": [
+    "per task", "per-task", "per approved task", "paid per task", "pay per task", "gig work", "crowd work"
+  ],
+  "allow": [
+    { "family": "full-stack", "patterns": ["full[- ]?stack", "\\bmern\\b", "\\bmean\\b stack"] },
+    { "family": "frontend", "patterns": ["front[- ]?end", "\\bui (?:engineer|developer)", "\\bui\\b.*\\b(?:engineer|developer)", "user interface (?:engineer|developer)"] },
+    { "family": "react", "patterns": ["\\breact(?:[ .]?js)?\\b"], "needs_not": ["react native"] },
+    { "family": "javascript", "patterns": ["javascript", "typescript", "(?<![.\\w])js (?:developer|engineer)", "(?<![.\\w])ts (?:developer|engineer)"] },
+    { "family": "web", "patterns": ["web (?:developer|engineer|application developer)"] },
+    { "family": "software", "patterns": ["software (?:developer|engineer)", "\\bsde\\b", "\\bsoftware dev\\b", "application developer", "programmer"] }
+  ],
+  "borderline": [
+    { "family": "react-native", "patterns": ["react[- ]native"], "note": "React Native is mobile; allowed to the matcher only with the strict flag. A title that is also full-stack/frontend is allowed outright." },
+    { "family": "backend", "patterns": ["back[- ]?end", "\\bnode(?:[ .]?js)?\\b", "\\bexpress(?:[ .]?js)?\\b"], "requires_signal": true, "note": "Backend or Node roles go to the matcher (strict) only when the title or the posting shows a full-stack, javascript, typescript, node or react signal; otherwise rejected." },
+    { "family": "generic", "patterns": ["^\\W*(?:(?:senior|sr\\.?|junior|jr\\.?|lead|principal|staff|associate|mid|[ivx]+|\\d+)\\W+)*(?:developer|engineer|programmer)\\W*$"], "note": "A bare Developer or Engineer title says nothing about the stack; the matcher is told to be strict." }
+  ],
+  "signal_patterns": ["full[- ]?stack", "javascript", "typescript", "\\bnode(?:[ .]?js)?\\b", "\\breact(?:[ .]?js)?\\b", "\\bmern\\b"]
+}

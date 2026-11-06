@@ -19,6 +19,7 @@ import { loadTuning } from '../src/outreach/tuning.js';
 import { loadLayoutConfig } from '../src/layout/config.js';
 import { validateRunnerConfig } from '../src/web/env.js';
 import { replyCheckEveryMin } from '../src/scheduler/replyCheck.js';
+import { dimMinimumsFromEnv } from '../src/matchRubric.js';
 
 const guard = installNoRealEnv();
 afterAll(() => guard.restore());
@@ -306,6 +307,7 @@ describe('classifier ids', () => {
 const alt = (s: EnvSpec): string => {
   if (s.type === 'enum') return s.allowed!.find((a) => a !== s.default)!;
   if (s.type === 'path') return 'blank-test-dir';
+  if (s.key === 'MATCH_DIM_MINIMUMS') return 'role_fit=13';
   if (s.type === 'string') return String(Number(s.default) - 0.1);
   if (s.type === 'intList') {
     const parts = s.default!.split(',').map(Number);
@@ -345,6 +347,7 @@ describe('blankMeansDefault (real loaders)', () => {
     ...DRIP_KEYS.map((k): [string, Loader] => [k, (e) => loadDripConfig(e)]),
     ...LI_DRIP_KEYS.map((k): [string, Loader] => [k, (e) => loadLinkedinDripConfig(e)]),
     ['REPLY_CHECK_EVERY_MIN', (e) => replyCheckEveryMin(e)],
+    ['MATCH_DIM_MINIMUMS', (e) => dimMinimumsFromEnv(e)],
   ];
 
   it('each covered loader reads the key and treats blank like unset', () => {

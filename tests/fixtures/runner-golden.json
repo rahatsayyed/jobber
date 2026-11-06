@@ -485,6 +485,7 @@
             "MAX_APPLIES_PER_DAY",
             "MAX_LINKEDIN_SEARCHES_PER_DAY",
             "MATCH_THRESHOLD",
+            "MATCH_DIM_MINIMUMS",
             "FOLLOWUPS_AUTONOMOUS",
             "EMAIL_FOLLOWUP_GAPS_DAYS",
             "FOLLOWUP_CHECK_MAX_AGE_MIN"

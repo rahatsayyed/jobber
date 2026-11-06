@@ -912,6 +912,17 @@ const hand: EnvSpec[] = [
     ...never('Starts a model run for every owner message when the chat window is missing: only the owner, by hand in .env, can change it.'),
   }),
 
+  // ---- Matching: per-dimension minimums of the five-dimension rubric (src/matchRubric.ts)
+  e('MATCH_DIM_MINIMUMS', 'limits', 'matching', 'string', {
+    default: 'role_fit=12,skills=10,seniority_comp=8,location=8,flags=10',
+    maxLen: 120,
+    blankMeansDefault: true,
+    about: 'Lowest score (0 to 20) each match dimension must reach before a job moves ahead, as a comma list of key=number: role_fit, skills, seniority_comp, location, flags. A job below any minimum is saved with its scores but its stored score is held under MATCH_THRESHOLD (score_cap_reason dim_min:<dimension>), so it is not contacted. Keys you leave out keep their default. An invalid value (unknown key, number above 20) falls back to ALL defaults and the doctor warns. The scheduler and the db MCP read it at start, so restart them after a change.',
+    ...tier('guarded', 'Lowering a minimum lets weaker or off-target roles through to outreach.', 'any'),
+    restart: 'mcp',
+    restartEvidence: 'src/matchRubric.ts',
+  }),
+
   // ---- Layout memory (plan 8B)
   e('LAYOUT_ENFORCE', 'layout', 'layout memory', 'enum', {
     default: 'warn',

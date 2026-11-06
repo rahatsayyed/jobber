@@ -9,6 +9,7 @@ import { dbPath } from '../dbPath.js';
 import { jobFactsFromDb, withStoredDescriptions } from '../gateFacts.js';
 import { loadLanguageConfigStatus } from '../languageGate.js';
 import { loadTargetRegionsStatus } from '../targetRegions.js';
+import { loadRoleGateConfig } from '../roleGate.js';
 
 let db: BetterSqlite3.Database | null = null;
 const getDb = () => (db ??= openDb(dbPath()));
@@ -52,7 +53,8 @@ server.registerTool(
     const facts = new Map(results.map((r) => [r.job_id, jobFactsFromDb(d, r.job_id)]));
     const lc = loadLanguageConfigStatus();
     const tr = loadTargetRegionsStatus();
-    const out = vetoResults(results, withStoredDescriptions(d, jobs), undefined, { facts, now: new Date(), languages: lc.config, languagesInvalid: lc.invalid, targetRegions: tr.config, targetRegionsInvalid: tr.invalid });
+    const rg = loadRoleGateConfig();
+    const out = vetoResults(results, withStoredDescriptions(d, jobs), undefined, { facts, now: new Date(), languages: lc.config, languagesInvalid: lc.invalid, targetRegions: tr.config, targetRegionsInvalid: tr.invalid, roleGate: rg.config, roleGateInvalid: rg.invalid });
     saveGateResults(d, out);
     return { content: [{ type: 'text', text: JSON.stringify(out) }] };
   }

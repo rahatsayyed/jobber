@@ -10,6 +10,7 @@ import { validateSets, type RawSets } from './permissions.js';
 import { userDataDir } from '../lib/userData.js';
 import { hostStatus } from '../webcore/hostFile.js';
 import { LIMITS, validateLimit, validatePairs } from '../setup/limitsCatalog.js';
+import { parseDimMinimums } from '../matchRubric.js';
 import { validateProfile } from '../setup/profile.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -199,6 +200,18 @@ export const setupToolingChecks: Check[] = [
         return fail([...bad.map((b) => `invalid ${b}`), ...pairs].join('; '), 'fix the value(s) in .env or run npm run setup -- --step limits');
       }
       return pass('all set limits are inside their ranges');
+    },
+  },
+  {
+    id: 'match-dim-minimums',
+    title: 'MATCH_DIM_MINIMUMS is valid',
+    async run(ctx) {
+      const env: Record<string, string> = { ...dotEnv(ctx) };
+      for (const [k, v] of Object.entries(ctx.env)) if (v !== undefined) env[k] = v; // process env wins, as at runtime
+      const bad = parseDimMinimums(env.MATCH_DIM_MINIMUMS).invalid;
+      return bad
+        ? warn(`MATCH_DIM_MINIMUMS is invalid (${bad}); the defaults are used`, 'fix the value in .env (key=number list, numbers 0 to 20) or leave it blank')
+        : pass(env.MATCH_DIM_MINIMUMS?.trim() ? 'valid' : 'default minimums');
     },
   },
   {
