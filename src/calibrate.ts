@@ -2,8 +2,12 @@ import type { Outcome } from './db.js';
 
 const RESOLVED: Outcome[] = ['interview', 'offer', 'hired', 'rejected', 'no_response'];
 const POSITIVE: Outcome[] = ['interview', 'offer', 'hired'];
-// Half-open bands [lo, hi) so fractional scores (69.5) land in 60-69 rather than falling in a gap.
-const BANDS = [{ label: '60-69', lo: 60, hi: 70 }, { label: '70-79', lo: 70, hi: 80 }, { label: '80+', lo: 80, hi: Infinity }];
+// Half-open bands [lo, hi) on the stored 1..5 score, so the career-ops lines (3.5, 4.0, 4.5) start a band and one-decimal scores never fall in a gap.
+export const SCORE_BANDS = [
+  { label: '<3.0', lo: -Infinity, hi: 3.0 }, { label: '3.0-3.4', lo: 3.0, hi: 3.5 }, { label: '3.5-3.9', lo: 3.5, hi: 4.0 },
+  { label: '4.0-4.4', lo: 4.0, hi: 4.5 }, { label: '4.5+', lo: 4.5, hi: Infinity },
+];
+const BANDS = SCORE_BANDS;
 
 export function calibrate(rows: { score: number; outcome: Outcome }[], minN = 5) {
   const resolved = rows.filter(r => RESOLVED.includes(r.outcome));

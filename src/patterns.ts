@@ -3,6 +3,7 @@
 // Valderrama): minimum 5 contacted before any analysis, sufficientSample n >= 8, "avoid" needs 0 positives over >= 2 decided.
 import type BetterSqlite3 from 'better-sqlite3';
 import { hostMatches } from './lib/hostClass.js';
+import { SCORE_BANDS } from './calibrate.js';
 
 const ATS_APEXES: Array<[string, string]> = [
   ['greenhouse', 'greenhouse.io'], ['lever', 'lever.co'], ['workday', 'myworkdayjobs.com'], ['ashby', 'ashbyhq.com'],
@@ -14,10 +15,8 @@ export interface Patterns { contacted: number; insufficient: boolean; message: s
 
 export function scoreBand(score: number | null): string {
   if (score == null) return 'unscored';
-  if (score < 60) return '<60';
-  if (score < 70) return '60-69';
-  if (score < 80) return '70-79';
-  return '80+';
+  const band = SCORE_BANDS.find((b) => score >= b.lo && score < b.hi);
+  return band ? band.label : SCORE_BANDS[SCORE_BANDS.length - 1]!.label;
 }
 
 export function atsVendor(applyUrl: string | null): string {

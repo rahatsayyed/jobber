@@ -5,7 +5,7 @@
 import type { MatchResultInput } from './db.js';
 import { htmlToText } from './htmlText.js';
 import { LANGUAGES } from './languages.js';
-import { CO_DIMS, RED_FLAGS_FLOOR, RUBRIC_TAG, dimsKind, matchThresholdFromEnv, parseCareerOpsDims, scaleGlobal, type CareerOpsDims } from './matchRubric.js';
+import { CO_DIMS, RED_FLAGS_FLOOR, RUBRIC_TAG, dimsKind, matchThresholdFromEnv, parseCareerOpsDims, roundScore, storedScoreOf, type CareerOpsDims } from './matchRubric.js';
 
 export type Importance = 'critical' | 'high' | 'meaningful' | 'preferred' | 'low_signal';
 export type Evidence = 'stated' | 'structural' | 'inferred';
@@ -33,10 +33,10 @@ export interface NormalizedMatch extends MatchResultInput {
   confidence: 'high' | 'medium' | 'low';
   deadline: string | null | undefined;
   language_note: string | null;
-  // Which cap lowered the score (e.g. "evidence-ceiling:72", "empty-table:70"), or null when the dims sum stood.
-  // Prefixed "injection-suspect" (";"-joined) whenever the posting contains an injection phrase, even if the score was already <= 89.
+  // Which cap lowered the score (e.g. "evidence-ceiling:3.6", "empty-table:3.5"), or null when the Global stood.
+  // Prefixed "injection-suspect" (";"-joined) whenever the posting contains an injection phrase, even if the score was already <= 4.4.
   score_cap_reason: string | null;
-  // Injection phrases found in the posting (non-empty => score capped at 89 and score_cap_reason starts with "injection-suspect").
+  // Injection phrases found in the posting (non-empty => score capped at 4.4 and score_cap_reason starts with "injection-suspect").
   injection_phrases: string[];
 }
 
@@ -51,7 +51,8 @@ const QUOTE_MAX = 300;
 const WEIGHT: Partial<Record<Importance, number>> = { critical: 3, high: 2, meaningful: 1 };
 const TIER_FACTOR: Record<Evidence, number> = { stated: 1, structural: 0.75, inferred: 0.4 };
 const MET: Record<ReqMatch, number> = { strong: 1, partial: 0.5, missing: 0 };
-const EMPTY_TABLE_CEILING = 70;
+// On the stored 1..5 scale (the old 0..100 constants divided by 20): empty table 70 -> 3.5.
+const EMPTY_TABLE_CEILING = 3.5;
 
 const fold = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim();
 
@@ -80,8 +81,8 @@ const INJECTION_RES: RegExp[] = [
   /\b(?:output|return|respond\s+with|reply\s+with)\s+a\s+(?:(?:match|fit)\s+)?(?:score|rating)\s+of\b/i,
 ];
 const INJECTION_SCAN_MAX = 20000;
-// 89 = Global 4.4 of 5: a posting aimed at an AI screener can never be a strong (4.5+) match, but it still passes the 4.0 cutoff when it earned it.
-export const INJECTION_SCORE_CAP = 89;
+// 4.4 of 5 (the old 89 of 100): a posting aimed at an AI screener can never be a strong (4.5+) match, but it still passes the 4.0 cutoff when it earned it.
+export const INJECTION_SCORE_CAP = 4.4;
 
 /** The injection phrases found in a text (deduped, each cut to 80 chars), scanning at most the first 20000 chars of collapsed text. */
 export function injectionPhrases(text: string | null | undefined): string[] {
@@ -137,8 +138,8 @@ export function hardStops(reqs: Requirement[]): string[] {
   return [...new Set(names)];
 }
 
-// The requirement table can only LOWER the score: ceiling = 59 + round(41 * F), F = evidence-weighted share of the
-// critical/high/meaningful rows that are met. No weighted rows (empty table) => 70. All-stated-and-met => 100; all-inferred-and-met => 75.
+// The requirement table can only LOWER the score: ceiling = (59 + 41 * F) / 20 on the 1..5 scale, one decimal, F = evidence-weighted share of
+// the critical/high/meaningful rows that are met. No weighted rows (empty table) => 3.5. All-stated-and-met => 5.0; all-inferred-and-met => 3.8.
 export function evidenceCeiling(reqs: Requirement[]): { ceiling: number; reason: string } {
   let num = 0;
   let den = 0;
@@ -149,7 +150,7 @@ export function evidenceCeiling(reqs: Requirement[]): { ceiling: number; reason:
     den += w;
   }
   if (den === 0) return { ceiling: EMPTY_TABLE_CEILING, reason: `${reqs.length ? 'no-weighted-rows' : 'empty-table'}:${EMPTY_TABLE_CEILING}` };
-  const ceiling = 59 + Math.round(41 * (num / den));
+  const ceiling = roundScore((59 + 41 * (num / den)) / 20);
   return { ceiling, reason: `evidence-ceiling:${ceiling}` };
 }
 
@@ -162,7 +163,7 @@ const cap3 = (xs: unknown): string[] =>
   (Array.isArray(xs) ? xs : []).filter((s): s is string => typeof s === 'string' && !!s.trim()).map((s) => s.trim()).slice(0, 3);
 
 export interface NormalizeOpts {
-  /** MATCH_THRESHOLD (default: the env value, 80 = 4.0 of 5). A job held back by the pass rule is stored one point under it. */
+  /** MATCH_THRESHOLD (default: the env value, 1..5 scale, 4.0). A job held back by the pass rule is stored 0.1 under it. */
   threshold?: number;
 }
 
@@ -181,9 +182,9 @@ export function normalizeMatchRow(r: MatchRowInput, description?: string, opts: 
     const parsed = parseCareerOpsDims(r.score_dims);
     if (!parsed.ok) return { ok: false, error: parsed.error };
     dims = parsed.dims;
-    // The stored score is the Global score scaled to 0..100. career-ops has no formula: the Global is the model's holistic call
+    // The stored score is the Global score itself (1..5, one decimal). career-ops has no formula: the Global is the model's holistic call
     // (code only keeps it from exceeding the best dimension, reported as a cap reason).
-    score = scaleGlobal(dims.global);
+    score = storedScoreOf(dims.global);
     if (parsed.clamped) reasonsOfCap.push(`global-above-dimensions:${parsed.clamped}`);
   } else {
     // Without score_dims only an expired row (score 0, reasons "expired") is acceptable; anything else would bypass the evidence ceiling.
@@ -201,16 +202,16 @@ export function normalizeMatchRow(r: MatchRowInput, description?: string, opts: 
     const globalScore = score;
     const cap = evidenceCeiling(requirements);
     if (score > cap.ceiling) { score = cap.ceiling; reasonsOfCap.push(cap.reason); }
-    // PASS RULE (career-ops cutoff): the stored score (Global x 20) must reach MATCH_THRESHOLD (default 80 = 4.0 of 5; every consumer checks the
+    // PASS RULE (career-ops cutoff): the stored score (the Global, 1..5) must reach MATCH_THRESHOLD (default 4.0; every consumer checks the
     // stored score). On top of that the two gates we keep: the location verdict is not FAIL and there is no hard stop. A job that fails one of
-    // those is stored with its dimensions but one point under the threshold, so every existing consumer (P2c and the rest read
+    // those is stored with its dimensions but 0.1 under the threshold, so every existing consumer (P2c and the rest read
     // "stored score >= threshold") rejects it with no further change. The caps combine as a minimum.
     const threshold = opts.threshold ?? matchThresholdFromEnv();
     const held: string[] = [];
     if (locationVerdict === 'FAIL') held.push('location_fail');
     if (hard_stops.length) held.push('hard_stop');
     if (held.length) {
-      const ceiling = Math.max(0, threshold - 1);
+      const ceiling = Math.max(0, roundScore(threshold - 0.1));
       if (score > ceiling) score = ceiling;
       reasonsOfCap.push(held.join(','));
       const why = [...(locationVerdict === 'FAIL' ? ['location FAIL'] : []), ...(hard_stops.length ? ['hard stop'] : [])];
@@ -219,12 +220,12 @@ export function normalizeMatchRow(r: MatchRowInput, description?: string, opts: 
     // career-ops: "A role scoring 4.5+ overall but 2 or below on Cultural signals must carry an explicit warning in the report".
     if (dims.global >= 4.5 && dims.culture <= 2) heldNote += ' [High technical fit, unconfirmed/poor culture fit - verify before applying.]';
   }
-  // Injection defence: a posting that talks to the AI screener cannot score above 89, whatever the model was talked into.
+  // Injection defence: a posting that talks to the AI screener cannot score above 4.4, whatever the model was talked into.
   // Raw text is scanned too, so an instruction hidden in an HTML comment or attribute still counts.
   const injection = [...new Set([...injectionPhrases(plain), ...injectionPhrases(description)])];
   let capReason: string | null = reasonsOfCap.length ? reasonsOfCap.join(';') : null;
   if (injection.length) {
-    // Keep the other cap reasons only when they are the binding ones (they took the score to 89 or below).
+    // Keep the other cap reasons only when they are the binding ones (they took the score to 4.4 or below).
     if (score > INJECTION_SCORE_CAP) { score = INJECTION_SCORE_CAP; capReason = null; }
     capReason = capReason ? `injection-suspect;${capReason}` : 'injection-suspect';
   }

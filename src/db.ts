@@ -2,6 +2,7 @@ import BetterSqlite3 from 'better-sqlite3';
 import { z } from 'zod';
 import { normalizeMatchRow, type MatchRowInput } from './score.js';
 import { MATCHED_SQL, matchedBinds } from './matchRubric.js';
+import { assertDbNotNewer, ensureMatchScale } from './scoreScale.js';
 import { classifyDeadlines, type DeadlineSweep } from './freshness.js';
 import type { Legitimacy } from './legitimacy.js';
 import { dbPath } from './dbPath.js';
@@ -31,6 +32,8 @@ export const atsCoverageSchema = z.number().int().min(0).max(100).nullable().opt
 export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   const db = new BetterSqlite3(path);
   db.pragma('busy_timeout = 5000');
+  // A db written by newer code (user_version above what this code knows) is never opened: see src/scoreScale.ts.
+  try { assertDbNotNewer(db); } catch (e) { db.close(); throw e; }
 
   // Create tables if they don't exist
   db.exec(`
@@ -42,7 +45,7 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
       url TEXT,
       apply_url TEXT,
       description TEXT,
-      score INTEGER,
+      score REAL,
       status TEXT,
       excluded_reason TEXT,
       posted_at TEXT,
@@ -326,6 +329,8 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   if (!jobCols.has('priority')) db.exec('ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0');
   // Promoted listing on Naukri or Wellfound (set by code from a card marker, never cleared): ordering only, see src/promoted.ts.
   if (!jobCols.has('promoted')) db.exec('ALTER TABLE jobs ADD COLUMN promoted INTEGER DEFAULT 0');
+  // Set by the 1..5 score scale migration (src/scoreScale.ts) on jobs that were already matched, queued or prepared; cleared by a new match save.
+  if (!jobCols.has('grandfathered')) db.exec('ALTER TABLE jobs ADD COLUMN grandfathered INTEGER NOT NULL DEFAULT 0');
   // A manual_url source task carries the owner's URL and the request it belongs to.
   const taskCols = new Set((db.prepare('PRAGMA table_info(source_tasks)').all() as { name: string }[]).map((c) => c.name));
   if (!taskCols.has('url')) db.exec('ALTER TABLE source_tasks ADD COLUMN url TEXT');
@@ -377,6 +382,8 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   migrateApplyQuestions(db);
   migrateOwnerInstructions(db);
   migrateEmailReplies(db);
+  // Last: the scores move to the 1..5 scale (once, with a backup copy first). A refused migration closes the handle and throws.
+  try { ensureMatchScale(db, path); } catch (e) { db.close(); throw e; }
   return db;
 }
 
@@ -1139,7 +1146,7 @@ export function saveMatchResultsChecked(
   const descOf = db.prepare("SELECT source, description AS own, trim(coalesce(description, '') || ' ' || coalesce(jd_snapshot, '')) AS d FROM jobs WHERE id = ?");
   const upd = db.prepare(`UPDATE jobs SET score = ?, match_reasons = ?, match_missing = ?, location_verdict = ?, language_gate = ?,
     language_note = ?, score_dims = ?, requirements = ?, strengths = ?, gaps = ?, hard_stops = ?, confidence = ?,
-    deadline = COALESCE(?, deadline), score_cap_reason = ? WHERE id = ?`);
+    deadline = COALESCE(?, deadline), score_cap_reason = ?, grandfathered = 0 WHERE id = ?`);
   const failed = db.prepare('UPDATE jobs SET match_fails = match_fails + 1 WHERE id = ?');
   const seen = new Set<string>();
   db.transaction(() => {

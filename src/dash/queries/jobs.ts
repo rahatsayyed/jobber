@@ -5,10 +5,14 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { clampLimit, likePattern, tableExists, type Page } from '../readDb.js';
 import { cleanRow, cleanText } from '../clean.js';
 import { CONTACTED } from '../../funnel.js';
-import { DEFAULT_MATCH_THRESHOLD, LEGACY_MATCH_THRESHOLD, RUBRIC_TAG } from '../../matchRubric.js';
+import { DEFAULT_MATCH_THRESHOLD } from '../../matchRubric.js';
 
-// A career_ops_v1 row is matched at MATCH_THRESHOLD; an older row (rubric_v2, legacy, no dimensions) keeps the old threshold (see MATCHED_SQL in src/matchRubric.ts).
-const MATCHED_J = `(j.score >= @threshold OR (j.score >= @legacy_threshold AND (j.score_dims IS NULL OR instr(j.score_dims, '"rubric":"${RUBRIC_TAG}"') = 0)))`;
+// A job is matched when its stored 1..5 score reaches the threshold, or it was grandfathered by the scale migration (see matchedSql in
+// src/matchRubric.ts). The grandfathered column is read only when the db has it (a db the migration code never opened does not).
+const matchedJ = (db: BetterSqlite3.Database): string => {
+  const hasFlag = (db.prepare('PRAGMA table_info(jobs)').all() as { name: string }[]).some((c) => c.name === 'grandfathered');
+  return hasFlag ? '(j.score >= @threshold OR (COALESCE(j.grandfathered, 0) = 1 AND @threshold <= 5))' : '(j.score >= @threshold)';
+};
 
 type Db = BetterSqlite3.Database;
 
@@ -75,6 +79,7 @@ const sqlList = (xs: readonly string[]): string => xs.map((x) => `'${x}'`).join(
 interface Exprs { matched: string; applied: string; pending: string; failed: string }
 /** Bucket predicates over the `jobs` alias `j`; a missing table makes its predicates constant false. */
 function bucketExprs(db: Db): Exprs {
+  const MATCHED_J = matchedJ(db);
   const hasApps = tableExists(db, 'applications');
   const hasQueue = tableExists(db, 'outreach_queue');
   const app = (cond: string) => `EXISTS (SELECT 1 FROM applications a WHERE a.job_id = j.id AND ${cond})`;
@@ -113,7 +118,7 @@ const COLS = `j.rowid AS rid, j.id, j.title, j.company, j.source, j.score, j.con
 function toRow(r: Record<string, unknown>, ex: Exprs, db: Db, threshold: number): JobRow {
   const flags = parseList(r.gate_flags);
   const b = db.prepare(`SELECT 1 AS discovered, ${ex.matched} AS matched, ${ex.applied} AS applied, ${ex.pending} AS pending, ${ex.failed} AS failed
-    FROM jobs j WHERE j.id = @id`).get({ id: r.id, threshold, legacy_threshold: Math.min(threshold, LEGACY_MATCH_THRESHOLD) }) as Record<JobBucket, number>;
+    FROM jobs j WHERE j.id = @id`).get({ id: r.id, threshold }) as Record<JobBucket, number>;
   const bucket = JOB_BUCKETS.filter((k) => b[k] === 1);
   const { rid: _rid, gate_flags: _g, ...rest } = r;
   const clean = cleanRow(rest as Record<string, unknown>, LIMITS) as Record<string, unknown>;
@@ -146,7 +151,7 @@ export function listJobs(db: Db, opts: {
   const threshold = Number.isFinite(opts.threshold) ? (opts.threshold as number) : DEFAULT_MATCH_THRESHOLD;
   const ex = bucketExprs(db);
   const where: string[] = [];
-  const params: Record<string, unknown> = { threshold, legacy_threshold: Math.min(threshold, LEGACY_MATCH_THRESHOLD), lim: limit + 1 };
+  const params: Record<string, unknown> = { threshold, lim: limit + 1 };
   if (opts.bucket && opts.bucket !== 'discovered') where.push(ex[opts.bucket]);
   if (opts.q && opts.q.trim() !== '') {
     where.push("(j.title LIKE @like ESCAPE '\\' OR j.company LIKE @like ESCAPE '\\')");
@@ -180,7 +185,7 @@ export function jobCounts(db: Db, threshold: number): Record<JobBucket, number> 
   const ex = bucketExprs(db);
   const r = db.prepare(`SELECT COUNT(*) AS discovered,
       COALESCE(SUM(${ex.matched}), 0) AS matched, COALESCE(SUM(${ex.applied}), 0) AS applied,
-      COALESCE(SUM(${ex.pending}), 0) AS pending, COALESCE(SUM(${ex.failed}), 0) AS failed FROM jobs j`).get({ threshold, legacy_threshold: Math.min(threshold, LEGACY_MATCH_THRESHOLD) }) as Record<JobBucket, number>;
+      COALESCE(SUM(${ex.pending}), 0) AS pending, COALESCE(SUM(${ex.failed}), 0) AS failed FROM jobs j`).get({ threshold }) as Record<JobBucket, number>;
   return { discovered: r.discovered, matched: r.matched, applied: r.applied, pending: r.pending, failed: r.failed };
 }
 

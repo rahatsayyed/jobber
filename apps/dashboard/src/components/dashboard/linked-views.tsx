@@ -62,7 +62,7 @@ export function JobLinkRow({ job }: { job: JobBrief }) {
   const { open } = usePanels();
   return <LinkRow onOpen={() => open({ kind: "job", id: job.id })} title={jobTitle(job)}
     meta={job.excluded_reason ?? undefined}
-    aside={<>{job.score !== null ? <Badge tone={job.score >= 60 ? "good" : ""}>{job.score}</Badge> : null}{job.excluded_reason ? <Badge tone="bad">excluded</Badge> : <StatusBadge status={job.status} />}</>} />;
+    aside={<>{job.score !== null ? <Badge tone={job.score >= 4 ? "good" : ""}>{job.score}</Badge> : null}{job.excluded_reason ? <Badge tone="bad">excluded</Badge> : <StatusBadge status={job.status} />}</>} />;
 }
 
 /** Row that opens a person (ref = people id) or an email contact (ref = "c" + contacts id). Exported for the Inbox. */
@@ -200,7 +200,7 @@ export function JobsView() {
     <ListFrame state={list} empty={{ title: "No jobs match", text: "Change the search or filters, or wait for the next discovery run." }}>
       {(items) => items.map((j) => <RecordRow key={j.id} onOpen={() => open({ kind: "job", id: j.id })} title={`${j.title} at ${j.company || "unknown company"}`}
         meta={`${j.source} · found ${readableTime(j.created_at)}${j.excluded_reason ? ` · ${j.excluded_reason}` : ""}`}
-        aside={<>{j.score !== null ? <Badge tone={j.score >= 60 ? "good" : ""}>{j.score}</Badge> : <Badge>unscored</Badge>}{j.excluded_reason ? <Badge tone="bad">excluded</Badge> : <StatusBadge status={j.status} />}</>} />)}
+        aside={<>{j.score !== null ? <Badge tone={j.score >= 4 ? "good" : ""}>{j.score}</Badge> : <Badge>unscored</Badge>}{j.excluded_reason ? <Badge tone="bad">excluded</Badge> : <StatusBadge status={j.status} />}</>} />)}
     </ListFrame>
   </Panel>;
 }
@@ -221,7 +221,7 @@ function RelatedRecords({ links }: { links: { data: PersonLinksData | null; erro
 function LinkRowJob({ j }: { j: JobBrief & { via: string[] } }) {
   const { open } = usePanels();
   return <LinkRow onOpen={() => open({ kind: "job", id: j.id })} title={jobTitle(j)} meta={j.via.join(", ")}
-    aside={<>{j.score !== null ? <Badge tone={j.score >= 60 ? "good" : ""}>{j.score}</Badge> : null}{j.excluded_reason ? <Badge tone="bad">excluded</Badge> : <StatusBadge status={j.status} />}</>} />;
+    aside={<>{j.score !== null ? <Badge tone={j.score >= 4 ? "good" : ""}>{j.score}</Badge> : null}{j.excluded_reason ? <Badge tone="bad">excluded</Badge> : <StatusBadge status={j.status} />}</>} />;
 }
 
 function PersonDetail({ id, nav }: { id: number; nav: PanelNav }) {
@@ -409,7 +409,7 @@ function RunDetail({ id, nav }: { id: string; nav: PanelNav }) {
       <h4>Jobs found ({data.jobs.total})</h4>
       {data.jobs.by_source.length ? <div className="chip-row">{data.jobs.by_source.map((s) => <span className="chip" key={s.source}>{s.source} <b>{s.count}</b></span>)}</div> : null}
       {data.jobs.items.length ? <div>{data.jobs.items.map((j) => <LinkRow key={j.id} onOpen={() => open({ kind: "job", id: j.id })} title={jobTitle(j)} meta={`${j.source} · ${readableTime(j.created_at)}`}
-        aside={j.score !== null ? <Badge tone={j.score >= 60 ? "good" : ""}>{j.score}</Badge> : <Badge>unscored</Badge>} />)}</div> : <p className="muted">No new job was saved during this run.</p>}
+        aside={j.score !== null ? <Badge tone={j.score >= 4 ? "good" : ""}>{j.score}</Badge> : <Badge>unscored</Badge>} />)}</div> : <p className="muted">No new job was saved during this run.</p>}
       {more(data.jobs.items.length, data.jobs.total)}
       <h4>LinkedIn and Naukri messages sent ({data.touches.total})</h4>
       {data.touches.items.length ? <div>{data.touches.items.map((t) => <LinkRow key={t.id} onOpen={t.person_ref ? () => open({ kind: "person", id: t.person_ref as string }) : undefined}

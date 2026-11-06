@@ -64,7 +64,7 @@ export interface WebDeps {
   now?: () => Date;
   // optional wiring
   secrets?: string[]; // literal secret values masked in pane output, status and config (include the OIDC client secret)
-  threshold?: number; // MATCH_THRESHOLD, default 80
+  threshold?: number; // MATCH_THRESHOLD, 1 to 5 scale, default 4.0
   env?: NodeJS.ProcessEnv; // for the masked config view, default process.env
   root?: string; // project root for the config view, default cwd
   settings?: SettingsDeps; // dashboard settings editor (plan 8H); routes exist only when set. Never given to chat.

@@ -82,13 +82,13 @@ function Overview() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [jobCounts, setJobCounts] = useState<JobCounts | null>(null);
   const [scored, setScored] = useState(0);
-  const [threshold, setThreshold] = useState(60);
+  const [threshold, setThreshold] = useState(4);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
       const [nextSnapshot, nextCounts, facets, funnel] = await Promise.all([
         api<Snapshot>("/api/status"), api<JobCounts>("/api/jobs/counts"), api<{ scored: number }>("/api/jobs/facets"),
-        api<{ threshold: number }>("/api/funnel").catch(() => ({ threshold: 60 })),
+        api<{ threshold: number }>("/api/funnel").catch(() => ({ threshold: 4 })),
       ]);
       setSnapshot(nextSnapshot); setJobCounts(nextCounts); setScored(facets.scored); setThreshold(funnel.threshold); setError(null);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The dashboard data could not be loaded."); }

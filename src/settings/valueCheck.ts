@@ -57,7 +57,7 @@ export function validateEnvValue(spec: EnvSpec, raw: string): string | null {
       return ok.includes(raw) ? null : `must be one of: ${ok.join(', ')}`;
     }
     case 'int':
-      if (spec.key === 'MATCH_THRESHOLD') return raw.trim() === '' ? 'value is empty' : (parseMatchThreshold(raw).invalid ?? null); // 4.0 and 80 mean the same
+      if (spec.key === 'MATCH_THRESHOLD') return raw.trim() === '' ? 'value is empty' : (parseMatchThreshold(raw).invalid ?? null); // 4.0 on the 1 to 5 scale; an old 80 is read as 4.0
       return intIn(spec, raw);
     case 'enum':
       if (!spec.allowed) return 'enum spec has no allowed values';

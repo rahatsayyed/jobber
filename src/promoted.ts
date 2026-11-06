@@ -6,7 +6,7 @@
 /** Share of one page (and of the match batch overall) the promoted-first lane may take, so the round-robin by source still runs. */
 export const PROMOTED_LANE_FRACTION = 0.4;
 /** Added to the stored score ONLY to order the prepare pool; never stored, never compared with the threshold. */
-export const PROMOTED_TIEBREAK_BONUS = 3;
+export const PROMOTED_TIEBREAK_BONUS = 0.15; // 3 points of the old 0..100 scale, on the stored 1..5 scale
 
 /** Largest promoted-first lane for a page of `size` rows (40 percent, rounded down). */
 export function promotedLaneSize(size: number): number {
@@ -56,9 +56,9 @@ export function matchPromotedSignals(sig: PromotedSignals | null | undefined, wo
   return false;
 }
 
-/** Order for the P4 prepare pool: stored score (+3 for a promoted job, ordering only), then promoted, then already matched. Stable. */
+/** Order for the P4 prepare pool: stored score (+0.15 for a promoted job, ordering only), then promoted, then already matched. Stable. */
 export function sortPreparePool<T extends { score: number; promoted?: boolean; already_matched?: boolean }>(pool: readonly T[]): T[] {
-  const eff = (j: T): number => j.score + (j.promoted ? PROMOTED_TIEBREAK_BONUS : 0);
+  const eff = (j: T): number => Math.round((j.score + (j.promoted ? PROMOTED_TIEBREAK_BONUS : 0)) * 100) / 100; // 2 decimals: no float noise in ties
   return pool
     .map((j, i) => ({ j, i }))
     .sort((a, b) =>

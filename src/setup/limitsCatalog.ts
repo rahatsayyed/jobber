@@ -29,9 +29,9 @@ export interface LimitSpec {
 
 export const LIMITS: LimitSpec[] = [
   // matching and sending
-  { key: 'MATCH_THRESHOLD', group: 'matching', default: 80, min: 0, max: 100, unit: 'score',
-    what: 'Jobs scoring below this match score are skipped and never contacted. The score is the career-ops Global score (1 to 5) times 20, so 80 is 4.0 of 5 (you may write either: 4.0 and 80 mean the same; a value from 1 to 5 is multiplied by 20), career-ops "good match, worth applying" (3.5 to 3.9 is "decent but not ideal", below 3.5 is a skip). Jobs scored before the career-ops rubric keep the old line of 60.',
-    raiseNote: 'Lowering it sends outreach for weaker matches (70 is 3.5 of 5, which career-ops recommends against).' },
+  { key: 'MATCH_THRESHOLD', group: 'matching', default: 4, min: 0, max: 100, unit: 'score',
+    what: 'Jobs scoring below this match score are skipped and never contacted. The score is the career-ops Global score on the 1 to 5 scale (one decimal), so 4 is 4.0 of 5, career-ops "good match, worth applying" (3.5 to 3.9 is "decent but not ideal", below 3.5 is a skip). Write it on the 1 to 5 scale (3.5, 4, 4.5). An old 0 to 100 value (60, 80) still works: it is divided by 20 (60 is 3.0, 80 is 4.0) and the doctor warns you to rewrite it.',
+    raiseNote: 'Lowering it sends outreach for weaker matches (3.5 is "decent but not ideal", which career-ops recommends against).' },
   { key: 'SEND_LIMIT_PER_RUN', group: 'daily-caps', default: 1, min: 0, max: 100, unit: 'per day',
     what: 'Daily cap on cold emails and follow-ups sent by wakes and /followups (a daily counter shared by every run that day). The mail drip lane is capped by EMAIL_MAX_PER_DAY instead and ignores this number, except that a value of 0 is the emergency brake: it stops ALL email, drip included.',
     raiseNote: 'More email from one address raises spam-folder and bounce risk.' },
@@ -193,7 +193,7 @@ function intIn(raw: string, min: number, max: number): string | null {
 
 // null = ok, else the reason. Mirrors the loaders: whole numbers only, inside min..max.
 export function validateLimit(spec: LimitSpec, raw: string): string | null {
-  if (spec.key === 'MATCH_THRESHOLD') return raw.trim() === '' ? 'value is empty' : (parseMatchThreshold(raw).invalid ?? null); // 4.0 and 80 both work
+  if (spec.key === 'MATCH_THRESHOLD') return raw.trim() === '' ? 'value is empty' : (parseMatchThreshold(raw).invalid ?? null); // 4.0 on the 1 to 5 scale; an old 80 is read as 4.0
   if (typeof spec.default === 'string') {
     if (raw.trim() === '') return 'value is empty';
     const want = String(spec.default).split(',').length;

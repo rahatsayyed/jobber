@@ -5,15 +5,14 @@
 //   adjustment, 0 or less), integrated into ONE holistic Global score of 1..5 ("no arithmetic formula").
 //   Score interpretation (modes/_shared.md): 4.5+ strong, apply immediately; 4.0-4.4 good, worth applying; 3.5-3.9 decent but not
 //   ideal, recommend against; below 3.5 recommend against. AGENTS.md "Ethical Use": below 4.0 is recommended against.
-// Our stored `score` stays 0..100 for the existing consumers: score = round(global * 20), so the go line 4.0 is 80 and the default
-// MATCH_THRESHOLD is 80. Two older shapes stay readable: `rubric_v2` (role_fit, skills, seniority_comp, location, flags, each an
-// integer 0..20, summed) and `legacy` (skills, seniority, domain, location, each 0..25). No row is rewritten.
+// Our stored `score` IS the Global score on the 1..5 scale (one decimal; 0 only for an expired posting), and MATCH_THRESHOLD is on the
+// same scale (default 4.0). Since the 2026-11-06 scale migration (src/scoreScale.ts) every stored score of every rubric is on this scale.
+// Two older shapes stay readable: `rubric_v2` (role_fit, skills, seniority_comp, location, flags, each an integer 0..20, summed) and
+// `legacy` (skills, seniority, domain, location, each 0..25); their dimension values are NOT rescaled, only the stored score was.
 
 export const RUBRIC_TAG = 'career_ops_v1';
-/** The default MATCH_THRESHOLD: career-ops's "good match, worth applying" line, 4.0 of 5, on our 0..100 scale. */
-export const DEFAULT_MATCH_THRESHOLD = 80;
-/** Rows scored before career_ops_v1 (legacy, rubric_v2) were passed at this stored score; they keep it. */
-export const LEGACY_MATCH_THRESHOLD = 60;
+/** The default MATCH_THRESHOLD: career-ops's "good match, worth applying" line, 4.0 of 5. */
+export const DEFAULT_MATCH_THRESHOLD = 4.0;
 
 /** The four positive dimensions, 1..5 each (career-ops modes/_shared.md "Scoring System"). Red flags is separate (0 or negative). */
 export const CO_DIMS = ['cv_match', 'north_star', 'comp', 'culture'] as const;
@@ -59,10 +58,12 @@ export function decisionOf(global: number): Decision {
   return 'skip';
 }
 
-/** The stored 0..100 score of a Global score: round(global * 20). 3.9 -> 78, 4.0 -> 80, 4.5 -> 90. */
-export const scaleGlobal = (global: number): number => Math.round(global * 20);
-/** The Global score a stored career_ops_v1 score came from. */
-export const globalOfScore = (score: number): number => round1(score / 20);
+/** The stored score of a Global score: the Global itself on the 1..5 scale, one decimal. 3.9 -> 3.9, 4.0 -> 4.0. */
+export const storedScoreOf = (global: number): number => round1(global);
+/** One decimal rounding, shared by the score code (3.45 -> 3.5). */
+export const roundScore = round1;
+/** An old 0..100 stored score on the 1..5 scale (the db migration and the old MATCH_THRESHOLD reading): 72 -> 3.6. */
+export const legacyScoreTo5 = (score: number): number => round1(score / 20);
 
 export type CoParse = { ok: true; dims: CareerOpsDims; clamped: number } | { ok: false; error: string };
 
@@ -144,21 +145,23 @@ export function parseDimMinimums(raw: string | undefined | null): DimMinimums {
 export const dimMinimumsFromEnv = (env: Record<string, string | undefined> = process.env): DimMinimums => parseDimMinimums(env.MATCH_DIM_MINIMUMS);
 
 /**
- * Parse a MATCH_THRESHOLD value. Either scale works: a number above 0 and up to 5 is the career-ops 1..5 Global and is multiplied by 20
- * (`4.0` and `80` mean the same); anything above 5 is a 0..100 stored score as is; `0` stays 0. Plain decimal digits only (no sign, no
- * exponent), at most 100. Blank = the default, no error. Anything else = the default plus `invalid` (the doctor shows it).
+ * Parse a MATCH_THRESHOLD value, on the 1..5 scale of the stored score (default 4.0, career-ops "worth applying"). A number from 0 to 5 is
+ * used as is (3.5, 4, 4.5). For backward compatibility a number above 5 and up to 100 is read as an old 0..100 value and divided by 20
+ * (60 -> 3.0, 80 -> 4.0) with a `warning` (the doctor shows it). Plain decimal digits only (no sign, no exponent). Blank = the default,
+ * no error. Anything else, or above 100 = the default plus `invalid` (the doctor shows it).
  */
-export function parseMatchThreshold(raw: string | undefined | null): { value: number; invalid?: string } {
+export function parseMatchThreshold(raw: string | undefined | null): { value: number; invalid?: string; warning?: string } {
   const t = (raw ?? '').trim();
   if (t === '') return { value: DEFAULT_MATCH_THRESHOLD };
-  if (!/^\d+(\.\d+)?$/.test(t)) return { value: DEFAULT_MATCH_THRESHOLD, invalid: `"${t.slice(0, 40)}" is not a number (use 4.0 or 80)` };
+  if (!/^\d+(\.\d+)?$/.test(t)) return { value: DEFAULT_MATCH_THRESHOLD, invalid: `"${t.slice(0, 40)}" is not a number (use 4.0 on the 1 to 5 scale)` };
   const n = Number(t);
-  const v = n > 0 && n <= 5 ? n * 20 : n;
-  if (!Number.isFinite(v) || v > 100) return { value: DEFAULT_MATCH_THRESHOLD, invalid: `${t.slice(0, 40)} is above 100` };
-  return { value: Math.round(v) };
+  if (!Number.isFinite(n) || n > 100) return { value: DEFAULT_MATCH_THRESHOLD, invalid: `${t.slice(0, 40)} is above 5 (use a number from 1 to 5, for example 4.0)` };
+  if (n <= 5) return { value: n };
+  const value = legacyScoreTo5(n);
+  return { value, warning: `MATCH_THRESHOLD=${t} is an old 0 to 100 value, read as ${value.toFixed(1)} on the 1 to 5 scale; write MATCH_THRESHOLD=${value.toFixed(1)} instead` };
 }
 
-/** MATCH_THRESHOLD as the loaders read it: 0..100 (a 1..5 value is scaled by 20), default 80 (career-ops 4.0 of 5). */
+/** MATCH_THRESHOLD as the loaders read it: the 1..5 scale, default 4.0 (an old 0..100 value is converted, see parseMatchThreshold). */
 export function matchThresholdFromEnv(env: Record<string, string | undefined> = process.env): number {
   return parseMatchThreshold(env.MATCH_THRESHOLD).value;
 }
@@ -196,14 +199,18 @@ export function parseStoredDims(text: string | null | undefined): { kind: DimsKi
   }
 }
 
-/** The threshold a stored row is judged against: career_ops_v1 rows use MATCH_THRESHOLD, older rows keep the old 60 (never above MATCH_THRESHOLD). */
-export function thresholdForKind(kind: DimsKind, threshold: number): number {
-  return kind === 'career_ops' ? threshold : Math.min(threshold, LEGACY_MATCH_THRESHOLD);
-}
-
-/** SQL for "this job counts as matched": a career_ops_v1 row at MATCH_THRESHOLD, an older row at the old threshold. Two binds: (threshold, legacyThreshold). */
-export const MATCHED_SQL = `(score >= ? OR (score >= ? AND (score_dims IS NULL OR instr(score_dims, '"rubric":"${RUBRIC_TAG}"') = 0)))`;
-export const matchedBinds = (threshold: number): [number, number] => [threshold, Math.min(threshold, LEGACY_MATCH_THRESHOLD)];
+/**
+ * SQL for "this job counts as matched": the stored score (1..5) reaches the threshold, OR the row was grandfathered by the scale migration
+ * (`jobs.grandfathered = 1`: an older-rubric row that was matched, or any row that was already queued or prepared, when the scores moved
+ * to the 1..5 scale; a fresh match save clears the flag). Two binds: (threshold, threshold). The flag counts only while the threshold is a
+ * real 1..5 value (callers pass 101 for "no threshold"), so "no threshold" still matches nothing. Pass an alias for a joined table.
+ */
+export const matchedSql = (alias = ''): string => {
+  const a = alias ? `${alias}.` : '';
+  return `(${a}score >= ? OR (COALESCE(${a}grandfathered, 0) = 1 AND ? <= 5))`;
+};
+export const MATCHED_SQL = matchedSql();
+export const matchedBinds = (threshold: number): [number, number] => [threshold, threshold];
 
 /** Human label for reports and the dashboard. Older shapes are labelled and keep their stored score. */
 export function dimsLabel(text: string | null | undefined): string {
@@ -217,14 +224,14 @@ export function dimsLabel(text: string | null | undefined): string {
 }
 
 export interface PassInput {
-  /** The stored 0..100 score (round(global * 20), after the evidence ceiling and the injection cap). */
+  /** The stored 1..5 score (the Global, after the evidence ceiling and the injection cap). */
   score: number;
   threshold: number;
   locationVerdict?: 'PASS' | 'FAIL' | 'FLAG';
   hardStops?: string[];
 }
 /**
- * The pass rule of career_ops_v1: the Global score reaches the cutoff (MATCH_THRESHOLD, default 80 = 4.0 of 5, career-ops "worth applying"),
+ * The pass rule of career_ops_v1: the Global score reaches the cutoff (MATCH_THRESHOLD, default 4.0 of 5, career-ops "worth applying"),
  * plus the two code gates career-ops does not have and we keep: no location FAIL and no hard stop. `why` lists every failure.
  */
 export function passRule(i: PassInput): { ok: boolean; why: string[] } {

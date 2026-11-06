@@ -10,7 +10,7 @@ import { validateSets, type RawSets } from './permissions.js';
 import { userDataDir } from '../lib/userData.js';
 import { hostStatus } from '../webcore/hostFile.js';
 import { LIMITS, validateLimit, validatePairs } from '../setup/limitsCatalog.js';
-import { parseDimMinimums } from '../matchRubric.js';
+import { parseDimMinimums, parseMatchThreshold } from '../matchRubric.js';
 import { validateProfile } from '../setup/profile.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -211,6 +211,18 @@ export const setupToolingChecks: Check[] = [
       return bad
         ? warn(`MATCH_DIM_MINIMUMS is invalid (${bad}); the defaults are used`, 'fix the value in .env (key=number list, numbers 0 to 20) or leave it blank')
         : pass(env.MATCH_DIM_MINIMUMS?.trim() ? 'valid' : 'default minimums');
+    },
+  },
+  {
+    id: 'match-threshold-scale',
+    title: 'MATCH_THRESHOLD is on the 1 to 5 scale',
+    async run(ctx) {
+      const env: Record<string, string> = { ...dotEnv(ctx) };
+      for (const [k, v] of Object.entries(ctx.env)) if (v !== undefined) env[k] = v; // process env wins, as at runtime
+      const r = parseMatchThreshold(env.MATCH_THRESHOLD);
+      if (r.invalid) return warn(`MATCH_THRESHOLD is invalid (${r.invalid}); the default 4.0 is used`, 'write a number from 1 to 5 in .env, for example MATCH_THRESHOLD=4');
+      if (r.warning) return warn(r.warning, `write MATCH_THRESHOLD=${r.value.toFixed(1)} in .env`);
+      return pass(env.MATCH_THRESHOLD?.trim() ? `${r.value.toFixed(1)} of 5` : 'default 4.0 of 5');
     },
   },
   {
