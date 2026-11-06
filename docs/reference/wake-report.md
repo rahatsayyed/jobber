@@ -16,3 +16,8 @@ messages; applies submitted/held/manual_review/needs_owner/failed/rate_limited/q
 follow-up candidates (`db.list_followup_candidates`) and stale count (`db.list_stale`) with the active
 follow-up mode (`FOLLOWUPS_AUTONOMOUS` true means follow-ups send without a Telegram approval step,
 under the four code guards in Safety rule 10; the shipped default is legacy, with approval).
+
+Match rubric lines: a job dropped by the pass rule is reported with its `score_cap_reason` (`dim_min:role_fit`,
+`location_fail`, `hard_stop`) and the dimension sum from its reasons; jobs removed by the role gate appear as
+exclusions `role: <word>` (status `role_mismatch`). A matched job's line shows its five dimensions
+(`role_fit 18, skills 16, seniority_comp 15, location 17, flags 18`); an old stored row shows `legacy`.

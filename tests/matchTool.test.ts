@@ -4,7 +4,7 @@ import { openDb, saveJob } from '../src/db.js';
 import { handleSaveMatchResults, matchResultsInputShape } from '../src/matchTool.js';
 
 const desc = 'We need 3+ years of React. Strong TypeScript required. Kubernetes is a plus. Must be based in India.';
-const dims = { skills: 20, seniority: 18, domain: 12, location: 25 };
+const dims = { role_fit: 15, skills: 15, seniority_comp: 15, location: 15, flags: 15 };
 const base = { reasons: 'r', missing_keywords: [] as string[] };
 const call = (db: any, results: unknown[]) => {
   const args = z.object(matchResultsInputShape).parse({ results });
@@ -19,16 +19,16 @@ describe('save_match_result tool', () => {
       { job_id: 'good', score: 1, ...base, score_dims: dims,
         requirements: [{ req: 'React', importance: 'medium', evidence: 'stated', jd_quote: '3+ years of React', match: 'strong' }] },
       { job_id: 'strdim', score: 1, ...base, score_dims: { ...dims, skills: '20' } },
-      { job_id: 'booldim', score: 1, ...base, score_dims: { ...dims, seniority: true } },
-      { job_id: 'medium', score: 1, ...base, score_dims: { ...dims, domain: 'medium' } },
+      { job_id: 'booldim', score: 1, ...base, score_dims: { ...dims, seniority_comp: true } },
+      { job_id: 'medium', score: 1, ...base, score_dims: { ...dims, flags: 'medium' } },
       { job_id: 'noscore', ...base },
       { job_id: 'overflow', error: 'batch over 5; resend in a new batch' },
     ]);
     expect(out.saved).toBe(1);
     expect(out.errors).toEqual([
       { job_id: 'strdim', error: 'invalid score_dims.skills: 20' },
-      { job_id: 'booldim', error: 'invalid score_dims.seniority: true' },
-      { job_id: 'medium', error: 'invalid score_dims.domain: medium' },
+      { job_id: 'booldim', error: 'invalid score_dims.seniority_comp: true' },
+      { job_id: 'medium', error: 'invalid score_dims.flags: medium' },
       { job_id: 'noscore', error: 'missing score_dims' },
       { job_id: 'overflow', error: 'batch over 5; resend in a new batch' },
     ]);

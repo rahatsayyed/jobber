@@ -5,8 +5,8 @@ import { normalizeMatchRow, normalizeRequirements, hardStops } from '../src/scor
 import { handleSaveMatchResults, matchResultsInputShape } from '../src/matchTool.js';
 
 const desc = 'We need 3+ years of React. Strong TypeScript required. Kubernetes is a plus. Must be based in India.';
-const dims = { skills: 20, seniority: 18, domain: 12, location: 25 }; // sum 75
-const full = { skills: 25, seniority: 25, domain: 25, location: 25 };
+const dims = { role_fit: 15, skills: 15, seniority_comp: 15, location: 15, flags: 15 }; // sum 75
+const full = { role_fit: 20, skills: 20, seniority_comp: 20, location: 20, flags: 20 };
 const Q1 = '3+ years of React';
 const Q2 = 'Strong TypeScript required';
 const req = (importance: string, evidence: string, match: string, quote: string | null = null, name = `r-${Math.random()}`) =>
@@ -24,7 +24,9 @@ describe('evidence ceiling caps the score (dims 20/18/12/25 = 75 unless stated)'
   });
   it('2. a critical stated requirement missing: ceiling 69', () => {
     const x = run(dims, [req('critical', 'stated', 'missing', Q1), req('meaningful', 'stated', 'strong', Q2)]);
-    expect([x.score, x.score_cap_reason]).toEqual([69, 'evidence-ceiling:69']);
+    // A verified critical missing requirement is a hard stop: the pass rule also holds the stored score one point under the threshold.
+    expect([x.score, x.score_cap_reason]).toEqual([59, 'evidence-ceiling:69;hard_stop']);
+    expect(x.hard_stops.length).toBe(1);
   });
   it('3. all inferred and met cannot exceed 75 (even with dims 100)', () => {
     const rs = [req('meaningful', 'inferred', 'strong'), req('critical', 'inferred', 'strong')];

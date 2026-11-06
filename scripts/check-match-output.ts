@@ -5,6 +5,7 @@
 // Expired rows from the matcher's liveness check ({job_id, score: 0, reasons: "expired", missing_keywords: []}) are valid.
 import { readFileSync } from 'node:fs';
 import { normalizeMatchRow } from '../src/score.js';
+import { checkRole, loadRoleGateConfig } from '../src/roleGate.js';
 
 const [outFile, jobsFile] = process.argv.slice(2);
 if (!outFile || !jobsFile) { console.error('usage: npx tsx scripts/check-match-output.ts <matcher-output.json> <jobs.json>'); process.exit(2); }
@@ -20,7 +21,8 @@ for (const r of rows) {
   const top = n.row.requirements.filter((q) => q.importance === 'critical' || q.importance === 'high');
   // The code silently demotes inferred critical/high rows; the model was told not to produce them, so count them as a prompt failure.
   const inferredTop = (r.requirements ?? []).filter((q: any) => q.evidence === 'inferred' && (q.importance === 'critical' || q.importance === 'high')).length;
-  console.log(JSON.stringify({ job_id: r.job_id, score: n.row.score, model_score: r.score, cap: n.row.score_cap_reason, rows: n.row.requirements.length, top: top.length,
+  const gate = checkRole({ title: jobs.get(r.job_id)?.title, description: jobs.get(r.job_id)?.description }, loadRoleGateConfig().config);
+  console.log(JSON.stringify({ job_id: r.job_id, score: n.row.score, model_score: r.score, dims: n.row.score_dims, role_gate: gate.verdict, cap: n.row.score_cap_reason, rows: n.row.requirements.length, top: top.length,
     stated_quotes_not_found: demoted, hard_stops: n.row.hard_stops, strengths: n.row.strengths.length, gaps: n.row.gaps.length, confidence: n.row.confidence, deadline: n.row.deadline ?? null,
     location_verdict: n.row.location_verdict ?? null, language_gate: n.row.language_gate ?? null, injection_phrases: n.row.injection_phrases.length }));
   if (!n.row.strengths.length || !n.row.gaps.length) { console.error(`${r.job_id}: strengths and gaps must each have 1-3 items`); bad++; }

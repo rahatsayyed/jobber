@@ -3,7 +3,7 @@ import { openDb, saveJob, saveMatchResultsChecked } from '../src/db.js';
 import { hardStops, normalizeMatchRow, normalizeRequirements, type Requirement } from '../src/score.js';
 
 const desc = 'We need 3+ years of React. Strong TypeScript required. Kubernetes is a plus. Must be based in India.';
-const dims = { skills: 20, seniority: 18, domain: 12, location: 25 };
+const dims = { role_fit: 15, skills: 15, seniority_comp: 15, location: 15, flags: 15 };
 // default table: one stated-and-met critical row, so the evidence ceiling does not bite (empty-table ceiling is covered in scoreCeiling.test.ts)
 const okReqs = [{ req: 'React', importance: 'critical', evidence: 'stated', jd_quote: '3+ years of React', match: 'strong' }];
 const row = (over: any = {}) => ({ job_id: 'j1', score: 1, reasons: 'r', missing_keywords: [], score_dims: dims, requirements: okReqs, ...over });
@@ -111,9 +111,9 @@ describe('saveMatchResultsChecked', () => {
   };
   it('writes valid rows, reports invalid ones, leaves invalid rows untouched', () => {
     const db = setup();
-    const out = saveMatchResultsChecked(db, [row({ job_id: 'j1', strengths: ['React'] }), row({ job_id: 'j2', score_dims: { ...dims, domain: 30 } })]);
+    const out = saveMatchResultsChecked(db, [row({ job_id: 'j1', strengths: ['React'] }), row({ job_id: 'j2', score_dims: { ...dims, flags: 30 } })]);
     expect(out.saved).toBe(1);
-    expect(out.errors).toEqual([{ job_id: 'j2', error: 'invalid score_dims.domain: 30' }]);
+    expect(out.errors).toEqual([{ job_id: 'j2', error: 'invalid score_dims.flags: 30' }]);
     const j1 = db.prepare('SELECT * FROM jobs WHERE id = ?').get('j1') as any;
     expect(j1.score).toBe(75);
     expect(JSON.parse(j1.score_dims)).toEqual(dims);

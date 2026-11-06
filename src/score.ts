@@ -5,13 +5,15 @@
 import type { MatchResultInput } from './db.js';
 import { htmlToText } from './htmlText.js';
 import { LANGUAGES } from './languages.js';
+import { DIM_KEYS, DIM_MAX, DEFAULT_DIM_MINIMUMS, dimMinimumsFromEnv, dimsKind, failedDims, matchThresholdFromEnv, type RubricDims } from './matchRubric.js';
 
 export type Importance = 'critical' | 'high' | 'meaningful' | 'preferred' | 'low_signal';
 export type Evidence = 'stated' | 'structural' | 'inferred';
 export type ReqMatch = 'strong' | 'partial' | 'missing';
 export type ReqCategory = 'skill' | 'experience' | 'education' | 'location' | 'language' | 'other';
 export interface Requirement { req: string; importance: Importance; evidence: Evidence; jd_quote: string | null; match: ReqMatch; category?: ReqCategory }
-export interface ScoreDims { skills: number; seniority: number; domain: number; location: number }
+/** The five-dimension rubric (src/matchRubric.ts): role_fit, skills, seniority_comp, location, flags, each an integer 0..20. */
+export type ScoreDims = RubricDims;
 export interface MatchRowInput extends MatchResultInput {
   score_dims?: ScoreDims;
   requirements?: Requirement[];
@@ -42,7 +44,6 @@ const EVIDENCE: Evidence[] = ['stated', 'structural', 'inferred'];
 const MATCHES: ReqMatch[] = ['missing', 'partial', 'strong'];
 const CATEGORIES: ReqCategory[] = ['skill', 'experience', 'education', 'location', 'language', 'other'];
 const VERDICTS = ['PASS', 'FAIL', 'FLAG'] as const;
-const DIMS: Array<keyof ScoreDims> = ['skills', 'seniority', 'domain', 'location'];
 const MAX_ROWS = 12;
 const QUOTE_MIN = 12;
 const QUOTE_MAX = 300;
@@ -158,17 +159,30 @@ function confidenceOf(reqs: Requirement[], plainLength?: number): 'high' | 'medi
 const cap3 = (xs: unknown): string[] =>
   (Array.isArray(xs) ? xs : []).filter((s): s is string => typeof s === 'string' && !!s.trim()).map((s) => s.trim()).slice(0, 3);
 
-export function normalizeMatchRow(r: MatchRowInput, description?: string): { ok: true; row: NormalizedMatch } | { ok: false; error: string } {
+export interface NormalizeOpts {
+  /** MATCH_THRESHOLD (default: the env value, 60). A job held back by the pass rule is stored one point under it. */
+  threshold?: number;
+  /** Per-dimension minimums (default: MATCH_DIM_MINIMUMS from the env, else the shipped defaults). */
+  mins?: Readonly<RubricDims>;
+}
+
+export function normalizeMatchRow(r: MatchRowInput, description?: string, opts: NormalizeOpts = {}): { ok: true; row: NormalizedMatch } | { ok: false; error: string } {
   let score: number;
-  let capReason: string | null = null;
   let dims: ScoreDims | null = null;
+  const reasonsOfCap: string[] = [];
+  let heldNote = '';
   if (r.score_dims != null) {
-    for (const k of DIMS) {
-      const v = (r.score_dims as any)[k];
-      if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 25) return { ok: false, error: `invalid score_dims.${k}: ${String(v)}` };
+    // The old four-key shape (skills, seniority, domain, location) is no longer accepted for a NEW save: it has no role_fit, so it could not
+    // pass the rule. Stored old rows stay readable (src/matchRubric.ts dimsKind 'legacy'); this only refuses a fresh one.
+    if (dimsKind(r.score_dims) === 'legacy') {
+      return { ok: false, error: `legacy score_dims (skills, seniority, domain, location) is no longer accepted: use ${DIM_KEYS.join(', ')}, each an integer 0 to ${DIM_MAX}` };
     }
-    dims = { skills: r.score_dims.skills, seniority: r.score_dims.seniority, domain: r.score_dims.domain, location: r.score_dims.location };
-    score = dims.skills + dims.seniority + dims.domain + dims.location;
+    for (const k of DIM_KEYS) {
+      const v = (r.score_dims as any)[k];
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > DIM_MAX) return { ok: false, error: `invalid score_dims.${k}: ${String(v)}` };
+    }
+    dims = DIM_KEYS.reduce((a, k) => ({ ...a, [k]: (r.score_dims as any)[k] }), {} as RubricDims);
+    score = DIM_KEYS.reduce((a, k) => a + dims![k], 0);
   } else {
     // Without score_dims only an expired row (score 0, reasons "expired") is acceptable; anything else would bypass the evidence ceiling.
     const expired = r.score === 0 && typeof r.reasons === 'string' && r.reasons.trim().toLowerCase() === 'expired';
@@ -177,35 +191,59 @@ export function normalizeMatchRow(r: MatchRowInput, description?: string): { ok:
   }
   const plain = description != null ? htmlToText(description) : undefined;
   const requirements = normalizeRequirementsWith(r.requirements, description ? foldedPosting(description, plain ?? '') : null);
+  // Without the posting text no quote was verified, so no row can create a hard stop.
+  const hard_stops = description ? hardStops(requirements) : [];
+  const verdict = (v: unknown) => ((VERDICTS as readonly unknown[]).includes(v) ? (v as 'PASS' | 'FAIL' | 'FLAG') : undefined);
+  const locationVerdict = verdict(r.location_verdict);
   if (dims) {
+    const sum = score;
     const cap = evidenceCeiling(requirements);
-    if (score > cap.ceiling) { score = cap.ceiling; capReason = cap.reason; }
+    if (score > cap.ceiling) { score = cap.ceiling; reasonsOfCap.push(cap.reason); }
+    // PASS RULE: every dimension at its minimum, the sum at MATCH_THRESHOLD (every consumer checks the stored score), the location verdict
+    // not FAIL, no hard stop. A job that fails a rule is stored with its dimensions but one point under the threshold, so every existing
+    // consumer (P2c and the rest read "stored score >= threshold") rejects it with no further change. The caps combine as a minimum.
+    const threshold = opts.threshold ?? matchThresholdFromEnv();
+    const mins = opts.mins ?? dimMinimumsFromEnv().mins ?? DEFAULT_DIM_MINIMUMS;
+    const failed = failedDims(dims, mins);
+    const held: string[] = failed.map((k) => `dim_min:${k}`);
+    if (locationVerdict === 'FAIL') held.push('location_fail');
+    if (hard_stops.length) held.push('hard_stop');
+    if (held.length) {
+      const ceiling = Math.max(0, threshold - 1);
+      if (score > ceiling) score = ceiling;
+      reasonsOfCap.push(held.join(','));
+      const why = [
+        ...failed.map((k) => `${k} ${dims![k]} < ${mins[k]}`),
+        ...(locationVerdict === 'FAIL' ? ['location FAIL'] : []),
+        ...(hard_stops.length ? ['hard stop'] : []),
+      ];
+      heldNote = ` [held back: ${why.join('; ')}; dimension sum was ${sum}]`;
+    }
   }
   // Injection defence: a posting that talks to the AI screener cannot score above 75, whatever the model was talked into.
   // Raw text is scanned too, so an instruction hidden in an HTML comment or attribute still counts.
   const injection = [...new Set([...injectionPhrases(plain), ...injectionPhrases(description)])];
+  let capReason: string | null = reasonsOfCap.length ? reasonsOfCap.join(';') : null;
   if (injection.length) {
-    // Keep the evidence-cap reason only when it is the binding one (it took the score to 75 or below).
+    // Keep the other cap reasons only when they are the binding ones (they took the score to 75 or below).
     if (score > INJECTION_SCORE_CAP) { score = INJECTION_SCORE_CAP; capReason = null; }
     capReason = capReason ? `injection-suspect;${capReason}` : 'injection-suspect';
   }
   // Loosely typed fields are sanitized here, never allowed to fail the call: only the score/dims decide rejection.
-  const verdict = (v: unknown) => ((VERDICTS as readonly unknown[]).includes(v) ? (v as 'PASS' | 'FAIL' | 'FLAG') : undefined);
   return {
     ok: true,
     row: {
       ...r,
-      reasons: typeof r.reasons === 'string' ? r.reasons : '',
+      reasons: (typeof r.reasons === 'string' ? r.reasons : '') + heldNote,
       missing_keywords: Array.isArray(r.missing_keywords) ? r.missing_keywords.filter((k): k is string => typeof k === 'string') : [],
-      location_verdict: verdict(r.location_verdict),
+      location_verdict: locationVerdict,
       language_gate: verdict(r.language_gate),
       score,
       score_dims: dims,
       requirements,
       strengths: cap3(r.strengths),
       gaps: cap3(r.gaps),
-      // Without the posting text no quote was verified, so no row can create a hard stop.
-      hard_stops: description ? hardStops(requirements) : [],
+      hard_stops,
       injection_phrases: injection,
       confidence: confidenceOf(requirements, plain?.length),
       deadline: r.deadline === undefined ? undefined : typeof r.deadline === 'string' && r.deadline.trim() ? r.deadline.trim() : null,

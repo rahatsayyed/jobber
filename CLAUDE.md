@@ -140,7 +140,13 @@ change for day-to-day tuning.
   `full-stack-react-india-remote`, in `config/wellfound-discovery.json` (`role`, `location`,
   `remote`, `limit` 1 to 40, default 20); it is planned only when `secrets/wellfound-state.json`
   exists (see "Wellfound").
-- **MATCH_THRESHOLD**: `60` (env var; jobs scoring below this are skipped — see `.env`)
+- **MATCH_THRESHOLD**: `60` (env var; jobs scoring below this are skipped — see `.env`). The score is the sum of
+  five dimensions, each 0 to 20 (see "Running a wake", P2). A job also needs EVERY dimension at its minimum:
+- **MATCH_DIM_MINIMUMS**: `role_fit=12,skills=10,seniority_comp=8,location=8,flags=10` (env var, comma list of
+  `key=number`, keys you leave out keep these defaults; an invalid value falls back to ALL defaults and the doctor
+  warns; the scheduler and the db MCP read it at start). A job below any minimum is stored under the threshold.
+- **Role gate**: `config/role-families.json` (allowed title families, deny words, pay-model phrases). Code excludes a
+  job whose title is not a target role (`role: <word>`) before the matcher, and again in `gates.apply_vetoes`.
 - **Email drip lane** (env vars, catalog in `src/setup/limitsCatalog.ts` and `src/settings/envCatalog.ts`,
   read by the scheduler daemon at start, so restart it after a change; all commented out in `.env.example`
   because the defaults are the shipped behaviour): `EMAIL_SEND_WINDOW_START` (`09:30`) and
@@ -516,14 +522,27 @@ never skipped.
   waits for the whole wave, runs P2a to P2c on that wave's results (save and veto per wave), then reads
   the next page and dispatches the next wave. Each returns
   `[{job_id, score, score_dims, reasons, missing_keywords, requirements, strengths, gaps, deadline,
-  location_verdict?, language_gate?, language_note?}, ...]`. The matcher checks each posting with
+  location_verdict?, language_gate?, language_note?}, ...]`. `score_dims` is the five-dimension rubric (adapted
+  from career-ops, MIT): `role_fit` (the North Star: is it the role the owner targets, with the exact title and one
+  JD line as evidence), `skills` (match with the CV), `seniority_comp` (level fit and pay or employment type),
+  `location` (location verdict and language gate; remote gives no free maximum), `flags` (inverse red flags, 20 =
+  clean), each an integer 0 to 20, summed in code. The old four-key shape is rejected for a new save. Before the
+  matcher, code runs the ROLE GATE (`src/roleGate.ts`, `config/role-families.json`) on the title: a deny word or a
+  title in no target family is marked `role_mismatch` and excluded as `role: <word>` (never matched, manual
+  requests and `--force` included, as vetoes always apply); a borderline title is handed to the matcher with
+  `role_gate: "borderline"` so it scores `role_fit` strictly. The matcher checks each posting with
   `gates.check_liveness` and returns score 0 / reasons "expired" for expired postings. Remove every
   `{job_id, error}` overflow row (a matcher given more than 5 jobs returns these) and re-dispatch
   exactly those jobs once; report any still failing as match errors.
   - **P2a** `db.save_match_result` with the full result array. It validates per row and never fails
     the whole call for one bad row: report every `errors` entry as "match rows rejected: <job_id>:
     <error>" and treat those jobs as unscored. The score is capped by the evidence in the requirement
-    table. If `injection_suspects` is non-empty (the posting contained phrases aimed at an AI
+    table, and the PASS RULE is applied in code: a job moves ahead only if every dimension reaches its minimum
+    (`MATCH_DIM_MINIMUMS`), the sum reaches `MATCH_THRESHOLD`, `location_verdict` is not FAIL and there is no hard
+    stop. A job that fails a minimum, a FAIL verdict or a hard stop is saved with its dimensions and a
+    `score_cap_reason` (`dim_min:role_fit`, `location_fail`, `hard_stop`) and a stored score of at most
+    `MATCH_THRESHOLD` minus 1, so P2c and every other consumer reject it; the dimension sum stays in `score_dims`
+    and in the reasons. Rows stored before this rubric keep their score and are read as `legacy`. If `injection_suspects` is non-empty (the posting contained phrases aimed at an AI
     screener; score capped at 75 with `score_cap_reason` "injection-suspect"), report those job ids;
     it is a warning, the job still proceeds. The result's `scores` array
     (`[{job_id, score, score_cap_reason, confidence}]`) holds the STORED scores after the evidence
