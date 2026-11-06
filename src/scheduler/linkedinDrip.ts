@@ -13,6 +13,8 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type BetterSqlite3 from 'better-sqlite3';
+import { replyCheckEveryMin } from './replyCheck.js';
+import { notifyLinkedinInbox } from './linkedinNotice.js';
 import { acquireLock } from '../platform/lock.js';
 import { redactPane } from '../platform/redact.js';
 import { isDryRun } from '../safety/dryRun.js';
@@ -106,7 +108,8 @@ export function loadLinkedinDripConfig(env: NodeJS.ProcessEnv): LinkedinDripConf
   const enabled = parseEnabled(env.LINKEDIN_DRIP, problems);
   const minGapMin = int('LINKEDIN_DRIP_MIN_GAP_MIN', LI_DRIP_DEFAULTS.minGap, 1, 1440);
   const maxGapMin = int('LINKEDIN_DRIP_MAX_GAP_MIN', LI_DRIP_DEFAULTS.maxGap, 1, 1440);
-  const inboxGapMin = int('LINKEDIN_INBOX_MIN_GAP_MIN', LI_DRIP_DEFAULTS.inboxGap, 5, 1440);
+  // Unset LINKEDIN_INBOX_MIN_GAP_MIN: the inbox follows REPLY_CHECK_EVERY_MIN (default 60), like the mail lane. A set value keeps working.
+  const inboxGapMin = int('LINKEDIN_INBOX_MIN_GAP_MIN', replyCheckEveryMin(env), 5, 1440);
   if (minGapMin > maxGapMin) problems.push('LINKEDIN_DRIP_MIN_GAP_MIN must not exceed LINKEDIN_DRIP_MAX_GAP_MIN');
   return { enabled, minGapMin, maxGapMin, inboxGapMin, problems };
 }
@@ -252,6 +255,11 @@ function markTried(db: Db, key: string, now: Date): void {
 export type PickResult = { item: LiItem } | { item: null; reason: string; blocked?: string[] };
 
 const ok = (c: Record<LimitKey, CeilingStatus>, k: LimitKey): boolean => c[k]?.ok === true;
+
+/** Daemon start: the inbox is due once, whatever the last stamp says (every gate still applies before it is read). */
+export function markInboxDueAtStart(db: Db): void {
+  try { setState(db, LI_STATE_INBOX_AT, '', new Date()); } catch { /* advisory */ }
+}
 
 function inboxDue(db: Db, now: Date, gapMin: number): boolean {
   const v = getState(db, LI_STATE_INBOX_AT);
@@ -468,7 +476,7 @@ function wakeUsesLinkedin(db: Db): boolean {
  * The code gates a LinkedIn action must pass right now; null when it may go. `bypassNext` (an owner /drip request) skips ONLY the stored random
  * next-tick time; the minimum gap since the last action, the active hours, halts, the kill switch and the rest stay.
  */
-export function gate(d: DriverDeps, cfg: LinkedinDripConfig, now: Date, bypassNext = false): string | null {
+export function gate(d: DriverDeps, cfg: LinkedinDripConfig, now: Date, bypassNext = false, inboxOnly = false): string | null {
   try {
     const ctl = readControl(d.db, controlFor(d));
     if (ctl.killed) return 'killed';
@@ -483,9 +491,12 @@ export function gate(d: DriverDeps, cfg: LinkedinDripConfig, now: Date, bypassNe
     const until = getState(d.db, 'usage_backoff_until');
     if (until && Date.parse(until) > now.getTime()) return 'usage_backoff';
     const next = getState(d.db, LI_STATE_NEXT_AT);
-    if (!bypassNext && next && Date.parse(next) > now.getTime()) return 'spacing';
-    const last = getState(d.db, LI_STATE_LAST_AT);
-    if (last && now.getTime() - Date.parse(last) < cfg.minGapMin * 60_000) return 'spacing';
+    // inboxOnly (the inbox read, owner decision 2026-11-06) skips ONLY the 8 to 20 minute spacing; every other gate stays.
+    if (!inboxOnly) {
+      if (!bypassNext && next && Date.parse(next) > now.getTime()) return 'spacing';
+      const last = getState(d.db, LI_STATE_LAST_AT);
+      if (last && now.getTime() - Date.parse(last) < cfg.minGapMin * 60_000) return 'spacing';
+    }
     if (wakeUsesLinkedin(d.db)) return 'wake_running';
   } catch (e) {
     return `state_error: ${safeMsg(e)}`;
@@ -737,11 +748,17 @@ async function linkedinDripTickInner(d: DriverDeps, opts: { abort?: () => boolea
   const cfg = loadLinkedinDripConfig(d.env);
   if (cfg.problems.length > 0) return { status: 'skipped', reason: 'bad_config' };
   if (!cfg.enabled) return { status: 'skipped', reason: 'disabled' };
-  const why = gate(d, cfg, d.now(), bypassNext);
+  let why = gate(d, cfg, d.now(), bypassNext);
+  // Replies first: a due inbox read ignores the spacing (and only the spacing). The next action keeps its own spacing.
+  let inboxBypass = false;
+  if (why === 'spacing' && inboxDue(d.db, d.now(), cfg.inboxGapMin) && !recentlyTried(d.db, d.now()).has('inbox') && !gate(d, cfg, d.now(), bypassNext, true)) {
+    inboxBypass = true;
+    why = null;
+  }
   if (why) return { status: 'skipped', reason: why };
   let pick: PickResult;
   try {
-    pick = await pickLinkedinItem(d, d.now(), cfg);
+    pick = inboxBypass ? { item: { kind: 'inbox' } } : await pickLinkedinItem(d, d.now(), cfg);
   } catch (e) {
     return { status: 'skipped', reason: `pick_error: ${safeMsg(e)}` };
   }
@@ -757,14 +774,17 @@ async function linkedinDripTickInner(d: DriverDeps, opts: { abort?: () => boolea
   try {
     // Re-check under the lock, then reserve the slot BEFORE launching: a crash or a failed launch never turns into a quick second tick.
     const start = d.now();
-    const again = gate(d, cfg, start, bypassNext);
+    const again = gate(d, cfg, start, bypassNext, inboxBypass);
     if (again) return { status: 'skipped', reason: again };
     const gap = (): number => drawUniformMinMs(d.rng, cfg.minGapMin, cfg.maxGapMin);
     const prevLast = getState(d.db, LI_STATE_LAST_AT);
     const prevInbox = getState(d.db, LI_STATE_INBOX_AT);
     const prevTried = getState(d.db, LI_STATE_TRIED);
-    setState(d.db, LI_STATE_NEXT_AT, new Date(start.getTime() + gap()).toISOString(), start);
-    setState(d.db, LI_STATE_LAST_AT, start.toISOString(), start);
+    // An inbox read that skipped the spacing leaves NEXT_AT and LAST_AT alone: it never moves the next action.
+    if (!inboxBypass) {
+      setState(d.db, LI_STATE_NEXT_AT, new Date(start.getTime() + gap()).toISOString(), start);
+      setState(d.db, LI_STATE_LAST_AT, start.toISOString(), start);
+    }
     const item = pick.item;
     const key = itemKey(item);
     // Stamp before the launch, whatever comes out: the inbox is not read twice inside its gap, and a failing item is not retried at once.
@@ -775,15 +795,16 @@ async function linkedinDripTickInner(d: DriverDeps, opts: { abort?: () => boolea
     if (run.skipped) {
       // Window path, nothing was typed: the item stays due (stamps put back), no notice; only the normal gap applies.
       try {
-        setState(d.db, LI_STATE_LAST_AT, prevLast ?? '', end);
+        if (!inboxBypass) setState(d.db, LI_STATE_LAST_AT, prevLast ?? '', end);
         setState(d.db, LI_STATE_INBOX_AT, prevInbox ?? '', end);
         setState(d.db, LI_STATE_TRIED, prevTried ?? '{}', end);
       } catch { /* the stamps stay: the item is simply not offered again soon */ }
-      setState(d.db, LI_STATE_NEXT_AT, new Date(end.getTime() + gap()).toISOString(), end);
+      if (!inboxBypass) setState(d.db, LI_STATE_NEXT_AT, new Date(end.getTime() + gap()).toISOString(), end);
       return { status: 'ran', item: key, run };
     }
     await linkedinRunNotice(d, item, run);
-    setState(d.db, LI_STATE_NEXT_AT, new Date(end.getTime() + gap()).toISOString(), end);
+    if (item.kind === 'inbox' && run.status === 'ok') await notifyLinkedinInbox(d);
+    if (!inboxBypass) setState(d.db, LI_STATE_NEXT_AT, new Date(end.getTime() + gap()).toISOString(), end);
     setState(d.db, LI_STATE_LAST_ACTION, JSON.stringify({ at: start.toISOString(), kind: item.kind, key, run_id: run.runId, status: run.status }), end);
     return { status: 'ran', item: key, run };
   } finally {
@@ -793,6 +814,7 @@ async function linkedinDripTickInner(d: DriverDeps, opts: { abort?: () => boolea
 
 /** The daemon's concurrent LinkedIn drip loop: one tick every LI_DRIP_TICK_MS until stopped. A tick never throws. */
 export async function linkedinDripLoop(d: DriverDeps, stop: { stopped: boolean }): Promise<void> {
+  markInboxDueAtStart(d.db);
   while (!stop.stopped) {
     try {
       await linkedinDripTick(d, { abort: () => stop.stopped });
@@ -838,7 +860,7 @@ export function linkedinDripStatus(db: Db, env: NodeJS.ProcessEnv, d: { now: Dat
       jd_fetch: n(() => listJdCandidates(db, 'linkedin', d.now, 100000).length),
       inbox: inboxDue(db, d.now, cfg.inboxGapMin),
       replies_approved: n(() => approvedReplyDrafts(db).length),
-      drafts_to_approve: n(() => (db.prepare("SELECT COUNT(*) AS n FROM reply_drafts WHERE status = 'drafted'").get() as { n: number }).n),
+      drafts_to_approve: n(() => (db.prepare("SELECT COUNT(*) AS n FROM reply_drafts WHERE status = 'approved'").get() as { n: number }).n),
       accept_recent: acceptRecentDue(db, d.now),
       accept_check: n(() => countAcceptCandidates(db, d.now)),
       dms_due: n(() => listDueTouches(db, d.now, d.tuning, { platform: 'linkedin', limit: 20 }).length),
@@ -861,6 +883,6 @@ export function renderLinkedinDripLines(s: LinkedinDripStatus, now: Date): strin
   lines.push(s.lastAction ? `  last action: ${s.lastAction.kind} ${s.lastAction.at} (${s.lastAction.status})` : '  last action: none yet');
   const w = s.waiting;
   lines.push(`  waiting: job descriptions to read ${w.jd_fetch}, inbox ${w.inbox ? 'due' : 'ok'}, approved replies ${w.replies_approved}, accept check ${w.accept_recent ? 'recent page due' : 'no'}${w.accept_check ? ` + ${w.accept_check} profile(s)` : ''}, DMs due ${w.dms_due}, ${s.easyApply ? `Easy Apply ready ${w.easy_applies_ready}` : 'Easy Apply off (owner applies by hand: npm run apply:manual -- list)'}, invites ready ${w.invites_ready}`);
-  lines.push(`  reply drafts waiting for your approval: ${w.drafts_to_approve} (npm run replies -- list)${w.unhandled_inbound_people ? `; people paused for an unanswered message: ${w.unhandled_inbound_people}` : ''}`);
+  lines.push(`  reply drafts approved and waiting to be sent: ${w.drafts_to_approve} (npm run replies -- list; skip one with npm run replies -- skip <id>)${w.unhandled_inbound_people ? `; people paused for an unanswered message: ${w.unhandled_inbound_people}` : ''}`);
   return lines;
 }

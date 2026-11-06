@@ -7,7 +7,7 @@ import { dbPath } from '../dbPath.js';
 import { handleSaveMatchResults, matchResultsInputShape } from '../matchTool.js';
 import { REPLY_WINDOW_DAYS } from '../replies.js';
 import { resolveReplyProposals, triageReplies } from '../replyTriage.js';
-import { approveDraftedFollowups, claimFollowupForSend, claimFollowupGuarded, emailFollowupGaps, followupCheckMaxAgeMin, followupMode, recordReplyCheck, listApprovedFollowups, listFollowupCandidates, replyWatchQueries, listStale, listStuckSending, markFollowupFailed, markFollowupSent, resolveStale, saveFollowupDraft, setFollowupApproval } from '../followups.js';
+import { approveDraftedFollowups, claimFollowupForSend, claimFollowupGuarded, emailFollowupGaps, followupCheckMaxAgeMin, followupMode, recordReplyCheck, recordThreadCheck, listApprovedFollowups, listFollowupCandidates, replyWatchQueries, listStale, listStuckSending, markFollowupFailed, markFollowupSent, resolveStale, saveFollowupDraft, setFollowupApproval } from '../followups.js';
 import { calibrate } from '../calibrate.js';
 import { funnelStats } from '../funnel.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
@@ -507,18 +507,25 @@ server.registerTool('claim_followup_for_send', {
   description: 'Call RIGHT BEFORE gmail.send_email for one approved follow-up: atomically moves it approved -> sending. Returns {claimed}. If claimed is false (already claimed or sent, skipped, cancelled by an outcome, or the job is now blocked by a reply/bounce) do NOT send it.',
   inputSchema: { id: z.number().int() },
 }, async ({ id }) => {
-  if (followupMode(process.env) !== 'autonomous') return { content: [{ type: 'text', text: JSON.stringify({ claimed: claimFollowupForSend(db, id) }) }] };
+  // Both modes also need a fresh clean reply check of the follow-up's own Gmail thread (requireThreadCheck, an added precondition).
+  if (followupMode(process.env) !== 'autonomous') {
+    const ok = claimFollowupForSend(db, id, { now: new Date(), maxAgeMin: followupCheckMaxAgeMin(process.env), requireThreadCheck: true });
+    return { content: [{ type: 'text', text: JSON.stringify({ claimed: ok, ...(ok ? {} : { reason: 'not_approved_blocked_or_no_thread_check' }) }) }] };
+  }
   const raw = process.env.SEND_LIMIT_PER_RUN;
   const n = raw === undefined || raw.trim() === '' ? NaN : Number(raw);
   const sendLimit = Number.isFinite(n) && n >= 0 ? n : 1;
-  const r = claimFollowupGuarded(db, id, { now: new Date(), maxAgeMin: followupCheckMaxAgeMin(process.env), sendLimit });
+  const r = claimFollowupGuarded(db, id, { now: new Date(), maxAgeMin: followupCheckMaxAgeMin(process.env), sendLimit, requireThreadCheck: true });
   return { content: [{ type: 'text', text: JSON.stringify(r) }] };
 });
 
 server.registerTool('record_reply_check', {
   description: "Record that a reply check just finished: {messages, errors}. Call it with the reply-watcher's counts (errors = its errors length, including any possible truncation). Only a check with errors = 0 is clean; in autonomous mode claim_followup_for_send refuses unless the latest check is clean and fresh (FOLLOWUP_CHECK_MAX_AGE_MIN).",
-  inputSchema: { messages: z.number().int().min(0), errors: z.number().int().min(0) },
-}, async ({ messages, errors }) => ({ content: [{ type: 'text', text: JSON.stringify(recordReplyCheck(db, { messages, errors }, new Date())) }] }));
+  inputSchema: { messages: z.number().int().min(0), errors: z.number().int().min(0), thread_id: z.string().min(1).max(200).optional() },
+}, async ({ messages, errors, thread_id }) => ({
+  // thread_id given: the check covered ONE Gmail thread only. It is stored apart (followup_thread_checks) and never counts as the mailbox-wide check.
+  content: [{ type: 'text', text: JSON.stringify(thread_id ? recordThreadCheck(db, { thread_id, messages, errors }, new Date()) : recordReplyCheck(db, { messages, errors }, new Date())) }],
+}));
 
 server.registerTool('approve_drafted_followups', {
   description: "Autonomous mode only (FOLLOWUPS_AUTONOMOUS=true): approve every drafted follow-up whose job has no outcome, reply or bounce; blocked ones are skipped. Otherwise refuses with reason autonomous_off. Never use it in legacy mode: approval there is the user's Telegram decision.",

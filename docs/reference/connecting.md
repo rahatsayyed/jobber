@@ -20,6 +20,8 @@ Optional: with `WINDOW_LANES=linkedin` each drip item goes to the long-lived `li
 **Drip lane, approved replies and attachments.** With `LINKEDIN_DRIP=true` (the default) the scheduler's LinkedIn drip lane
 (see `scheduler.md`) does the LinkedIn inbox, accept check, follow-ups and invites, one action per tick, 8 to 20 minutes apart, inside
 `LINKEDIN_ACTIVE_HOURS`; wakes no longer do them. The `linkedin-operator` works exactly one named "Drip item" per run (DRIP MODE in its agent file).
+*Inbox timing and notices.* The inbox read is due at daemon start and every `REPLY_CHECK_EVERY_MIN` minutes (default 60; `LINKEDIN_INBOX_MIN_GAP_MIN` still overrides). It is the only action that ignores the 8 to 20 minute spacing, and it does not move the stored next-action time. After it, Telegram `inbox` gets one message with each new thread (🔔 `needs you` for salary, interview time, personal data, references, link or phone asks, which are never drafted) and each queued reply with `npm run replies -- skip <id>`.
+
 *Replies.* The inbox read still only records and escalates, but for an escalation with reason `documents` (a request for the resume or CV) or
 `linkedin_reply_needed` with a plain ask it also stores ONE short draft in `reply_drafts` (`outreach.save_reply_draft`: style, fact and output gates; never for
 salary or interview-slot asks; `documents` sets `attach_resume`). A draft that passes every gate is approved on save (owner decision 2026-11-02: no approval step for these safe replies); owner-only asks

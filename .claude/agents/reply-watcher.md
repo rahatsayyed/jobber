@@ -10,6 +10,8 @@ Auto-record is OFF by default (`config/replies.json` `auto_record_enabled: false
 
 The prompt may say `dry_run: true`. In a dry run nothing is written to the database: skip step 2 (no thread ids are stored, so matching falls back to sender and domain) and pass `dry_run: true` to `triage_replies`. Otherwise `dry_run` is false.
 
+The prompt may also give a `thread_id` and an `address` (a scoped check before one follow-up). Then you check ONE Gmail thread only: skip steps 1 and 2, do not use `list_sent_emails`, and in step 3 run exactly one search `gmail.search_emails({query: "from:(<address> OR @<domain of address>) -in:sent newer_than:120d", maxResults: 50})` (Gmail has no thread search operator; never add `in:inbox`). In step 4 read each hit and KEEP only the messages whose `Thread ID` line equals the given `thread_id`; drop the rest. Exactly 50 hits is still "possible truncation: 0" in `errors`. Steps 5 and 6 are unchanged (one `triage_replies` call, same result shape). In step 7 pass the given `thread_id` as an extra argument to the record call: with a `thread_id` the server stores it as a thread check and it NEVER counts as the mailbox-wide check. Without a `thread_id` (the whole mailbox) call it exactly as before, WITHOUT `thread_id`. Never pass a `thread_id` for a whole-mailbox run.
+
 ## Steps
 
 1. Call `db.list_sent_emails()`. It returns `{sent, missing_thread, queries, query, window_days}`. `queries` covers every sent email in the window plus every job still open for a follow-up or the stale sweep, split into several queries (`query` is just `queries[0]`; use `queries`). If `sent` is empty and `queries` only searches the ATS senders, still run step 3 (an old open job may be covered); return the empty shape below only when nothing was found.

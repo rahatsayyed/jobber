@@ -18,6 +18,7 @@ import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
 import { loadLayoutConfig } from '../src/layout/config.js';
 import { validateRunnerConfig } from '../src/web/env.js';
+import { replyCheckEveryMin } from '../src/scheduler/replyCheck.js';
 
 const guard = installNoRealEnv();
 afterAll(() => guard.restore());
@@ -342,6 +343,7 @@ describe('blankMeansDefault (real loaders)', () => {
     ...HOST_KEYS.map(([k, id]): [string, Loader] => [k, hostCap(id)]),
     ...DRIP_KEYS.map((k): [string, Loader] => [k, (e) => loadDripConfig(e)]),
     ...LI_DRIP_KEYS.map((k): [string, Loader] => [k, (e) => loadLinkedinDripConfig(e)]),
+    ['REPLY_CHECK_EVERY_MIN', (e) => replyCheckEveryMin(e)],
   ];
 
   it('each covered loader reads the key and treats blank like unset', () => {

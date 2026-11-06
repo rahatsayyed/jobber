@@ -232,6 +232,7 @@ describe('gates come before any text is typed', () => {
     expect(await linkedinDripTick(halted.d)).toMatchObject({ reason: 'halted' });
     const spaced = setup();
     setState(spaced.db, LI_STATE_LAST_AT, spaced.now().toISOString(), spaced.now());
+    setState(spaced.db, 'linkedin_inbox_last_at', spaced.now().toISOString(), spaced.now()); // a due inbox read would ignore the spacing (reply priority)
     expect(await linkedinDripTick(spaced.d)).toMatchObject({ reason: 'spacing' });
     const wake = setup();
     startRun(wake.db, { id: 'wake1', at: wake.now(), trigger: 'scheduled', dryRun: false, tasks: [{ operator: 'linkedin-operator', kind: 'discover', quota: 1 }], status: 'running' });
