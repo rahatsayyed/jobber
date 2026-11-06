@@ -83,7 +83,7 @@ const dmDue = (s: S, slug: string, company = 'Acme'): number => {
 /** A queued connect row for a new person at a company. */
 const inviteReady = (s: S, n: string, company: string): number => {
   saveJob(s.db, { id: `j${n}`, source: 'naukri', title: 'React Dev', company, url: `u${n}`, apply_url: `u${n}`, description: 'd' });
-  s.db.prepare('UPDATE jobs SET score = 80 WHERE id = ?').run(`j${n}`);
+  s.db.prepare('UPDATE jobs SET score = 4 WHERE id = ?').run(`j${n}`);
   const id = person(s, `new${n}`, { company });
   s.db.prepare("INSERT INTO outreach_queue (job_id, connect_note, connect_profile_url, connect_category, connect_company, status, created_at) VALUES (?, 'note', ?, 'recruiter', ?, 'queued', '2026-10-14 01:00:00')")
     .run(`j${n}`, `https://www.linkedin.com/in/new${n}`, company);

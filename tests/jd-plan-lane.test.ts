@@ -92,7 +92,7 @@ describe('planner: Naukri jd_fetch task', () => {
     if (d.kind !== 'run') throw new Error('x');
     const prompt = buildWakePrompt({
       runId: 'r1', dryRun: false, tasks: d.tasks, budget: loadBudget({}), allowed: ['linkedin', 'naukri'], now: NOW, order: stepOrder(d),
-      pipeline: { matchThreshold: 60, sendLimit: 1, targetRegions: 'Target regions: x', followupsAutonomous: false, jdLine: jdReportLine(db, NOW) },
+      pipeline: { matchThreshold: 3, sendLimit: 1, targetRegions: 'Target regions: x', followupsAutonomous: false, jdLine: jdReportLine(db, NOW) },
     });
     expect(prompt).toContain('task: jd_fetch quota 1');
     expect(prompt).toContain('naukri_fetch_jd');
@@ -101,7 +101,7 @@ describe('planner: Naukri jd_fetch task', () => {
     expect(prompt).toMatch(/jd_incomplete/);
   });
   it('pipelineLines carries the JD rules and the code-computed report line', () => {
-    const lines = pipelineLines({ matchThreshold: 60, sendLimit: 1, targetRegions: 'x', followupsAutonomous: false, jdLine: 'JD fetched 2, unavailable 1, waiting 3' }).join('\n');
+    const lines = pipelineLines({ matchThreshold: 3, sendLimit: 1, targetRegions: 'x', followupsAutonomous: false, jdLine: 'JD fetched 2, unavailable 1, waiting 3' }).join('\n');
     expect(lines).toContain('JD fetched 2, unavailable 1, waiting 3');
     expect(lines).toContain('jd_pending');
     expect(lines).toContain('do not re-dispatch it');

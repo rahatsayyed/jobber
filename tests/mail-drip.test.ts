@@ -424,7 +424,7 @@ describe('wakes no longer burst-send', () => {
     if (d.kind !== 'run') return;
     expect(d.stages?.some((x) => x.kind === 'mail' || x.operator === 'mail-operator')).toBe(false);
     expect(stepOrder(d).some((x) => x.operator === 'mail-operator')).toBe(false);
-    const text = pipelineLines({ matchThreshold: 60, sendLimit: 1, targetRegions: 'Target regions: x', followupsAutonomous: false, codePass: null }).join('\n');
+    const text = pipelineLines({ matchThreshold: 3, sendLimit: 1, targetRegions: 'Target regions: x', followupsAutonomous: false, codePass: null }).join('\n');
     expect(text).toMatch(/Do NOT dispatch `mail-operator`/);
     expect(text).not.toMatch(/Mail stage: dispatch/);
   });

@@ -12,7 +12,7 @@ const cfg = { companyContactLimit: 2 };
 /** A job at `company`, one person whose headline names it, and one queued connect row for that person. */
 function seed(db: D, n: string, company: string, o: { headline?: string; priority?: number; score?: number; created?: string; person?: string } = {}) {
   saveJob(db, { id: `j${n}`, source: 'naukri', title: 'React Dev', company, url: `u${n}`, apply_url: `u${n}`, description: 'd', ...(o.priority ? { priority: o.priority } : {}) });
-  db.prepare('UPDATE jobs SET score = ? WHERE id = ?').run(o.score ?? 80, `j${n}`);
+  db.prepare('UPDATE jobs SET score = ? WHERE id = ?').run(o.score ?? 4, `j${n}`);
   const slug = o.person ?? `p${n}`;
   const personId = upsertPerson(db, { platform: 'linkedin', profileKey: `linkedin.com/in/${slug}`, name: `Person ${slug}`, headline: o.headline ?? `Recruiter at ${company}`, company, category: 'recruiter' });
   db.prepare(

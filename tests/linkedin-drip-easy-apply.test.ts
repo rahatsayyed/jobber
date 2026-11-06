@@ -96,7 +96,7 @@ describe('picker', () => {
     easyJob(s, '4011111111');
     // a queued invite for a new person
     saveJob(s.db, { id: 'jinv', source: 'naukri', title: 'React Dev', company: 'Globex', url: 'u', apply_url: 'u', description: 'd' });
-    s.db.prepare('UPDATE jobs SET score = 80 WHERE id = ?').run('jinv');
+    s.db.prepare('UPDATE jobs SET score = 4 WHERE id = ?').run('jinv');
     upsertPerson(s.db, { platform: 'linkedin', profileKey: 'linkedin.com/in/new1', name: 'New One', headline: 'Recruiter at Globex', company: 'Globex', category: 'recruiter' });
     s.db.prepare("INSERT INTO outreach_queue (job_id, connect_note, connect_profile_url, connect_category, connect_company, status, created_at) VALUES ('jinv', 'note', 'https://www.linkedin.com/in/new1', 'recruiter', 'Globex', 'queued', '2026-10-14 01:00:00')").run();
     expect(await pick(s)).toMatchObject({ kind: 'easy_apply' });

@@ -50,8 +50,8 @@ describe('pipeline window', () => {
   it('does not window already matched jobs: a matched job older than a day is still offered for preparation', () => {
     const db = openDb(':memory:');
     add(db, 'old-matched', { company: 'M', at: agoDays(5) });
-    db.prepare('UPDATE jobs SET score = 80 WHERE id = ?').run('old-matched');
-    expect(ids(db, { kind: 'matched', matchThreshold: 60 })).toEqual(['old-matched']);
+    db.prepare('UPDATE jobs SET score = 4 WHERE id = ?').run('old-matched');
+    expect(ids(db, { kind: 'matched', matchThreshold: 3 })).toEqual(['old-matched']);
   });
   it('stops at the safety ceiling: nothing past the ceiling is listed and the last page is clipped', () => {
     const db = openDb(':memory:');
@@ -92,7 +92,7 @@ describe('pipeline duplicates', () => {
   it('a job whose twin is already scored is a duplicate, even from another source', () => {
     const db = openDb(':memory:');
     add(db, 'scored', { at: agoDays(3) });
-    db.prepare('UPDATE jobs SET score = 30 WHERE id = ?').run('scored');
+    db.prepare('UPDATE jobs SET score = 1.5 WHERE id = ?').run('scored');
     add(db, 'twin', { source: 'lever', apply_url: 'https://jobs.lever.co/acme/2', at: ago(1) });
     expect(ids(db, { kind: 'unscored' })).toEqual([]);
     expect(status(db, 'twin')).toBe('duplicate');
@@ -110,7 +110,7 @@ describe('pipeline repeated contact', () => {
   it('skips a job whose company and title already has an outreach row, with the reason in jobs.status', () => {
     const db = openDb(':memory:');
     add(db, 'done', { at: agoDays(10) });
-    db.prepare("UPDATE jobs SET score = 80 WHERE id = 'done'").run();
+    db.prepare("UPDATE jobs SET score = 4 WHERE id = 'done'").run();
     db.prepare("INSERT INTO outreach_queue (job_id, status, email_status) VALUES ('done', 'queued', 'sent')").run();
     add(db, 'again', { source: 'lever', apply_url: 'https://jobs.lever.co/acme/3', at: ago(1) });
     expect(ids(db, { kind: 'unscored' })).toEqual([]);
@@ -121,11 +121,11 @@ describe('pipeline repeated contact', () => {
   it('a connection or an application on file counts the same', () => {
     const db = openDb(':memory:');
     add(db, 'c1', { company: 'ConnCo' });
-    db.prepare("UPDATE jobs SET score = 70 WHERE id = 'c1'").run();
+    db.prepare("UPDATE jobs SET score = 3.5 WHERE id = 'c1'").run();
     db.prepare("INSERT INTO connections (job_id, company, status) VALUES ('c1', 'ConnCo', 'sent')").run();
     add(db, 'c2', { company: 'ConnCo', source: 'lever', apply_url: 'https://jobs.lever.co/c/1' });
     add(db, 'a1', { company: 'AppCo' });
-    db.prepare("UPDATE jobs SET score = 70 WHERE id = 'a1'").run();
+    db.prepare("UPDATE jobs SET score = 3.5 WHERE id = 'a1'").run();
     db.prepare("INSERT INTO applications (job_id, platform, status) VALUES ('a1', 'greenhouse', 'submitted')").run();
     add(db, 'a2', { company: 'AppCo', source: 'lever', apply_url: 'https://jobs.lever.co/a/1' });
     expect(ids(db, { kind: 'unscored' })).toEqual([]);
@@ -135,7 +135,7 @@ describe('pipeline repeated contact', () => {
   it('a contact older than 90 days does not block the job', () => {
     const db = openDb(':memory:');
     add(db, 'old', { at: agoDays(120) });
-    db.prepare("UPDATE jobs SET score = 80 WHERE id = 'old'").run();
+    db.prepare("UPDATE jobs SET score = 4 WHERE id = 'old'").run();
     db.prepare('INSERT INTO outreach_queue (job_id, status, email_status, created_at) VALUES (?, ?, ?, ?)').run('old', 'sent', 'sent', agoDays(100));
     add(db, 'new', { source: 'lever', apply_url: 'https://jobs.lever.co/acme/4', at: ago(1) });
     expect(ids(db, { kind: 'unscored' })).toEqual(['new']);
@@ -150,17 +150,17 @@ describe('pipeline repeated contact', () => {
   it('a matched job without an outreach row is dropped from the carry-over once a twin was contacted', () => {
     const db = openDb(':memory:');
     add(db, 'pending', { at: agoDays(2) });
-    db.prepare("UPDATE jobs SET score = 75 WHERE id = 'pending'").run();
+    db.prepare("UPDATE jobs SET score = 3.8 WHERE id = 'pending'").run();
     add(db, 'twin', { source: 'lever', apply_url: 'https://jobs.lever.co/acme/6', at: agoDays(2) });
-    db.prepare("UPDATE jobs SET score = 75 WHERE id = 'twin'").run();
+    db.prepare("UPDATE jobs SET score = 3.8 WHERE id = 'twin'").run();
     db.prepare("INSERT INTO outreach_queue (job_id, status, email_status) VALUES ('twin', 'queued', 'sent')").run();
-    expect(ids(db, { kind: 'matched', matchThreshold: 60 })).toEqual([]);
+    expect(ids(db, { kind: 'matched', matchThreshold: 3 })).toEqual([]);
     expect(status(db, 'pending')).toBe('repeat_contact');
   });
   it('countDue plans the pipeline only for real work and writes nothing', () => {
     const db = openDb(':memory:');
     add(db, 'done', { at: agoDays(10) });
-    db.prepare("UPDATE jobs SET score = 80 WHERE id = 'done'").run();
+    db.prepare("UPDATE jobs SET score = 4 WHERE id = 'done'").run();
     db.prepare("INSERT INTO outreach_queue (job_id, status, email_status) VALUES ('done', 'queued', 'sent')").run();
     add(db, 'dup1', { source: 'lever', apply_url: 'https://jobs.lever.co/acme/7', at: ago(1) });
     add(db, 'real', { company: 'Other', at: ago(1) });

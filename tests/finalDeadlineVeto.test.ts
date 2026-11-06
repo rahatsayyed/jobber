@@ -10,10 +10,10 @@ const langs = { declared: [{ language: 'English', level: 'fluent' as const }], c
 function setup(deadline: string | null) {
   const db = openDb(':memory:');
   saveJob(db, { id: 'naukri:240926037182', source: 'naukri', title: 'React Developer', company: 'Acme', url: 'https://naukri.example/1', apply_url: 'https://boards.greenhouse.io/a/jobs/1', description: long, posted_at: '2026-09-28' });
-  db.prepare("UPDATE jobs SET deadline = ?, score = 80 WHERE id = 'naukri:240926037182'").run(deadline);
+  db.prepare("UPDATE jobs SET deadline = ?, score = 4 WHERE id = 'naukri:240926037182'").run(deadline);
   return db;
 }
-const run = (db: ReturnType<typeof openDb>, score = 80) => {
+const run = (db: ReturnType<typeof openDb>, score = 4) => {
   const facts = new Map([['naukri:240926037182', jobFactsFromDb(db, 'naukri:240926037182')]]);
   return vetoResults([{ job_id: 'naukri:240926037182', score }], [{ id: 'naukri:240926037182', title: 'React Developer', description: long }], [], { facts, now, languages: langs })[0];
 };

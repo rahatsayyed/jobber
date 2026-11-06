@@ -33,7 +33,7 @@ describe('save_match_result tool', () => {
       { job_id: 'noscore', error: 'missing score_dims' },
       { job_id: 'overflow', error: 'batch over 5; resend in a new batch' },
     ]);
-    expect((db.prepare("SELECT score FROM jobs WHERE id = 'good'").get() as any).score).toBe(80);
+    expect((db.prepare("SELECT score FROM jobs WHERE id = 'good'").get() as any).score).toBe(4);
     expect(JSON.parse((db.prepare("SELECT requirements FROM jobs WHERE id = 'good'").get() as any).requirements)[0].importance).toBe('meaningful');
     for (const id of ['strdim', 'booldim', 'medium', 'noscore', 'overflow']) expect((db.prepare('SELECT score FROM jobs WHERE id = ?').get(id) as any).score).toBeNull();
   });

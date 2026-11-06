@@ -86,7 +86,7 @@ describe('list_unscored_jobs: the matched list and manual priority jobs', () => 
     const db = openDb(':memory:');
     add(db, 'guess', { score: 80 });
     add(db, 'real', { score: 80, desc: FULL_JD });
-    const m = listUnscoredJobs(db, { now: NOW, kind: 'matched', matchThreshold: 60 });
+    const m = listUnscoredJobs(db, { now: NOW, kind: 'matched', matchThreshold: 3 });
     expect(m.map((j) => j.id)).toEqual(['real']);
     expect(m[0].already_matched).toBe(true);
     expect(status(db, 'guess')).toBe('jd_pending');
@@ -185,7 +185,7 @@ describe('queue readers: needs_reprep and jd_pending are not sendable and not ap
     add(db, 'job', { desc: FULL_JD, score: 82 });
     const id = enqueueOutreach(db, item('job', { email_subject: 'Old', email_body: 'Old body' }));
     db.prepare("UPDATE outreach_queue SET status = 'needs_reprep', apply_status = 'manual_review', apply_note = 'x' WHERE id = ?").run(id);
-    expect(listUnscoredJobs(db, { now: NOW, kind: 'matched', matchThreshold: 60 }).map((j) => j.id)).toEqual(['job']);
+    expect(listUnscoredJobs(db, { now: NOW, kind: 'matched', matchThreshold: 3 }).map((j) => j.id)).toEqual(['job']);
     const again = enqueueOutreach(db, item('job', { email_subject: 'New subject', email_body: 'New body' }));
     expect(again).toBe(id);
     const q = db.prepare('SELECT status, email_subject, email_body, apply_status, apply_note FROM outreach_queue WHERE id = ?').get(id);

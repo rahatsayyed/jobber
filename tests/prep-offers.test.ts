@@ -14,7 +14,7 @@ function addMatched(db: Db, id: string, o: { source: string; apply_url: string |
     'INSERT INTO jobs (id, source, title, company, apply_url, score, prep_offers, created_at, company_key, title_key, description) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
   ).run(id, o.source, `Role ${id}`, `Co ${id}`, o.apply_url, o.score ?? 75, o.offers, '2026-10-20 00:00:00', `co${id}`, `role${id}`, FULL_JD);
 }
-const offered = (db: Db): string[] => listUnscoredJobs(db, { kind: 'matched', limit: 15, matchThreshold: 60, now: NOW }).map((r) => r.id);
+const offered = (db: Db): string[] => listUnscoredJobs(db, { kind: 'matched', limit: 15, matchThreshold: 3, now: NOW }).map((r) => r.id);
 
 describe('prep offers: apply-capable matched jobs are not dropped at the plain limit', () => {
   it('limit per job: apply-capable (Naukri, Wellfound, ATS form) get the larger one, the rest the plain one', () => {
@@ -45,7 +45,7 @@ describe('prep offers: apply-capable matched jobs are not dropped at the plain l
     const db = openDb(':memory:');
     addMatched(db, 'nk', { source: 'naukri', apply_url: 'https://www.naukri.com/job-listings-full-stack-1', offers: PREP_OFFER_LIMIT });
     addMatched(db, 'rok', { source: 'remoteok', apply_url: 'https://acme.example/jobs/1', offers: PREP_OFFER_LIMIT });
-    expect(planPipelineWork(db, { now: NOW, failLimit: 3, matchThreshold: 60 }).matchedOffer).toEqual(['nk']);
+    expect(planPipelineWork(db, { now: NOW, failLimit: 3, matchThreshold: 3 }).matchedOffer).toEqual(['nk']);
     expect(countDue(db, NOW, loadTuning({}), {}).matchedAwaitingPrepare).toBe(1);
   });
 });

@@ -4,7 +4,7 @@ import { atsVendor, patternStats, remoteBucket, scoreBand, seniority } from '../
 
 describe('classifiers', () => {
   it('score band, vendor, remote bucket, seniority', () => {
-    expect([scoreBand(null), scoreBand(59), scoreBand(60), scoreBand(79.5), scoreBand(80)]).toEqual(['unscored', '<60', '60-69', '70-79', '80+']);
+    expect([scoreBand(null), scoreBand(2.9), scoreBand(3.0), scoreBand(3.5), scoreBand(3.9), scoreBand(4.0), scoreBand(4.4), scoreBand(4.5), scoreBand(5)]).toEqual(['unscored', '<3.0', '3.0-3.4', '3.5-3.9', '3.5-3.9', '4.0-4.4', '4.0-4.4', '4.5+', '4.5+']);
     expect([atsVendor('https://boards.greenhouse.io/a/jobs/1'), atsVendor('https://jobs.lever.co/a/1'), atsVendor('https://www.linkedin.com/jobs/view/1'), atsVendor('https://x.com'), atsVendor(null)])
       .toEqual(['greenhouse', 'lever', 'linkedin', 'other', 'none']);
     expect(remoteBucket('Fully remote, work from anywhere.')).toBe('remote-global');
@@ -25,7 +25,7 @@ describe('patternStats', () => {
     const db = openDb(':memory:');
     for (let i = 1; i <= 6; i++) {
       saveJob(db, { id: `j${i}`, source: i <= 3 ? 'remotive' : 'remoteok', title: i === 1 ? 'Senior React Dev' : 'React Dev', company: `C${i}`, url: 'u', apply_url: 'https://boards.greenhouse.io/x/jobs/1', description: 'Remote, work from anywhere' });
-      saveMatchResult(db, { job_id: `j${i}`, score: 60 + i * 3, reasons: '', missing_keywords: [] });
+      saveMatchResult(db, { job_id: `j${i}`, score: Math.round((3 + i * 0.2) * 10) / 10, reasons: '', missing_keywords: [] });
       const q = enqueueOutreach(db, { job_id: `j${i}`, resume_pdf_path: null, email_subject: 's', email_body: 'b', email_to: `a@c${i}.dev`, connect_note: null, connect_profile_url: null, connect_category: null, connect_company: null, apply_platform: null, apply_url: null });
       recordEmailSent(db, q, `m${i}`);
     }

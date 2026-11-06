@@ -25,7 +25,7 @@ export const FULL_ORDER: Step[] = [
 ];
 
 export const PIPELINE_INPUT = {
-  matchThreshold: 60,
+  matchThreshold: 4,
   sendLimit: 1,
   targetRegions: 'Target regions: home=india; targets=uae, saudi arabia; remote OK=true; remote anywhere=true',
   northStar: 'North Star: archetypes=full stack (primary); require=none; deprioritize_if_absent=false; dealbreakers=none; comp=unknown',

@@ -129,22 +129,22 @@ describe('lane and tie-break helpers', () => {
     expect(out.slice(8, 20).map((x) => x.id)).toEqual(Array.from({ length: 12 }, (_, i) => `n${i}`));
     expect(out.slice(20).map((x) => x.id)).toEqual(['p8', 'p9', 'p10', 'p11']);
   });
-  it('sortPreparePool: promoted wins ties and gets +3 for ordering only, never changing the score', () => {
-    expect(PROMOTED_TIEBREAK_BONUS).toBe(3);
+  it('sortPreparePool: promoted wins ties and gets +0.15 for ordering only, never changing the score', () => {
+    expect(PROMOTED_TIEBREAK_BONUS).toBe(0.15);
     const pool = [
-      { id: 'a', score: 80, already_matched: true },
-      { id: 'b', score: 80, promoted: true },
-      { id: 'c', score: 78, promoted: true },
-      { id: 'd', score: 82 },
-      { id: 'e', score: 76, promoted: true },
+      { id: 'a', score: 4, already_matched: true },
+      { id: 'b', score: 4, promoted: true },
+      { id: 'c', score: 3.9, promoted: true },
+      { id: 'd', score: 4.1 },
+      { id: 'e', score: 3.8, promoted: true },
     ];
     const out = sortPreparePool(pool);
     expect(out.map((x) => x.id)).toEqual(['b', 'd', 'c', 'a', 'e']);
-    expect(out.find((x) => x.id === 'c')?.score).toBe(78);
-    expect(pool.find((x) => x.id === 'b')?.score).toBe(80);
+    expect(out.find((x) => x.id === 'c')?.score).toBe(3.9);
+    expect(pool.find((x) => x.id === 'b')?.score).toBe(4);
   });
   it('sortPreparePool with equal ordering value: promoted first, then already matched', () => {
-    const out = sortPreparePool([{ id: 'm', score: 70, already_matched: true }, { id: 'n', score: 70 }, { id: 'p', score: 67, promoted: true }]);
+    const out = sortPreparePool([{ id: 'm', score: 3.5, already_matched: true }, { id: 'n', score: 3.5 }, { id: 'p', score: 3.35, promoted: true }]);
     expect(out.map((x) => x.id)).toEqual(['p', 'm', 'n']);
   });
 });
@@ -196,21 +196,21 @@ describe('listUnscoredJobs ordering', () => {
   });
   it('matched carry-over: promoted first within a 40 percent lane, then score order', () => {
     const db = openDb(':memory:');
-    add(db, 'hi1', { score: 95 }); add(db, 'hi2', { score: 90 }); add(db, 'hi3', { score: 88 });
-    add(db, 'p1', { score: 70, promoted: true }); add(db, 'p2', { score: 65, promoted: true }); add(db, 'p3', { score: 64, promoted: true });
-    const out = list(db, { kind: 'matched', limit: 5, matchThreshold: 60 }).map((r) => r.id);
+    add(db, 'hi1', { score: 4.8 }); add(db, 'hi2', { score: 4.5 }); add(db, 'hi3', { score: 4.4 });
+    add(db, 'p1', { score: 3.5, promoted: true }); add(db, 'p2', { score: 3.3, promoted: true }); add(db, 'p3', { score: 3.2, promoted: true });
+    const out = list(db, { kind: 'matched', limit: 5, matchThreshold: 3 }).map((r) => r.id);
     expect(out).toEqual(['p1', 'p2', 'hi1', 'hi2', 'hi3']);
   });
   it('never bypasses the threshold, a veto or a repeat: below-threshold and excluded promoted jobs are not offered as matched', () => {
     const db = openDb(':memory:');
-    add(db, 'low', { score: 50, promoted: true });
-    add(db, 'vetoed', { score: 90, promoted: true });
-    add(db, 'ok', { score: 70, promoted: true });
+    add(db, 'low', { score: 2.5, promoted: true });
+    add(db, 'vetoed', { score: 4.5, promoted: true });
+    add(db, 'ok', { score: 3.5, promoted: true });
     setJobExcluded(db, 'vetoed', 'hard stop: test');
-    const out = list(db, { kind: 'matched', limit: 10, matchThreshold: 60 }).map((r) => r.id);
+    const out = list(db, { kind: 'matched', limit: 10, matchThreshold: 3 }).map((r) => r.id);
     expect(out).toEqual(['ok']);
     // the stored score is untouched by promotion
-    expect((db.prepare('SELECT score FROM jobs WHERE id = ?').get('ok') as { score: number }).score).toBe(70);
+    expect((db.prepare('SELECT score FROM jobs WHERE id = ?').get('ok') as { score: number }).score).toBe(3.5);
   });
   it('excluded promoted unscored jobs are not offered either', () => {
     const db = openDb(':memory:');

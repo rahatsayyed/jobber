@@ -109,7 +109,7 @@ describe('countDue new fields', () => {
     const db = openDb(':memory:');
     const t = NOW.toISOString();
     db.prepare("INSERT INTO jobs (id, source, title, company, created_at) VALUES ('a','greenhouse','t','c','2026-10-15 07:00:00'), ('b','greenhouse','t','c','2026-10-15 07:00:00')").run();
-    db.prepare("UPDATE jobs SET score = 70 WHERE id = 'b'").run();
+    db.prepare("UPDATE jobs SET score = 3.5 WHERE id = 'b'").run();
     db.prepare("INSERT INTO outreach_queue (job_id, email_to, status) VALUES ('a','x@co.test','queued')").run();
     db.prepare("INSERT INTO source_tasks (platform, company, reason, state, created_at, updated_at) VALUES ('greenhouse','deadco','error','queued',?,?), ('greenhouse',NULL,'shape','queued',?,?), ('naukri',NULL,'error','queued',?,?)").run(t, t, t, t, t, t);
     const c = countDue(db, NOW, loadTuning({}), {});
@@ -128,23 +128,23 @@ describe('matched backlog makes the pipeline due', () => {
   };
   it('countDue counts matched jobs without an outreach row, not exhausted, not excluded, with the threshold from env', () => {
     const db = openDb(':memory:');
-    addScored(db, 'ok', 80);
-    addScored(db, 'low', 40);
-    addScored(db, 'spent', 80, { offers: PREP_OFFER_LIMIT });
-    addScored(db, 'vetoed', 80, { excluded: 'x' });
-    addScored(db, 'queued', 80);
+    addScored(db, 'ok', 4);
+    addScored(db, 'low', 2);
+    addScored(db, 'spent', 4, { offers: PREP_OFFER_LIMIT });
+    addScored(db, 'vetoed', 4, { excluded: 'x' });
+    addScored(db, 'queued', 4);
     db.prepare("INSERT INTO outreach_queue (job_id, status) VALUES ('queued','queued')").run();
     const c = countDue(db, NOW, loadTuning({}), {});
     expect(c.matchedAwaitingPrepare).toBe(1);
     expect(c.unmatchedJobs).toBe(0);
-    expect(countDue(db, NOW, loadTuning({}), { MATCH_THRESHOLD: '30' }).matchedAwaitingPrepare).toBe(2);
+    expect(countDue(db, NOW, loadTuning({}), { MATCH_THRESHOLD: '1.5' }).matchedAwaitingPrepare).toBe(2);
   });
   it('a planner with only a matched backlog plans the pipeline; none or exhausted does not', () => {
     const d = run(plan({ due: due({ matchedAwaitingPrepare: 9, inboxLastCheckedMinAgo: 1 }) }));
     expect(d.stages?.find((s) => s.kind === 'pipeline')?.quota).toBe(9);
     expect(plan({ due: due({ matchedAwaitingPrepare: 0, inboxLastCheckedMinAgo: 1 }) })).toMatchObject({ kind: 'skip', reason: 'nothing_due' });
     const db = openDb(':memory:');
-    addScored(db, 'spent', 80, { offers: PREP_OFFER_LIMIT });
+    addScored(db, 'spent', 4, { offers: PREP_OFFER_LIMIT });
     const c = countDue(db, NOW, loadTuning({}), {});
     expect(c.matchedAwaitingPrepare).toBe(0);
     expect(plan({ due: { ...c, scriptDiscoverLastHoursAgo: 1, inboxLastCheckedMinAgo: 1, naukriSearchLastHoursAgo: 1, linkedinDiscoverLastHoursAgo: 1 } })).toMatchObject({ kind: 'skip' });
@@ -156,7 +156,7 @@ describe('matched backlog makes the pipeline due', () => {
     expect(big.stages?.find((s) => s.kind === 'pipeline')?.quota).toBe(PIPELINE_MAX_JOBS_PER_WAKE_CEILING);
   });
   it('the P1 prompt says to run the matched call first even with 0 unscored jobs', () => {
-    const t = pipelineLines({ matchThreshold: 60, sendLimit: 1, targetRegions: 'T', followupsAutonomous: false }).join('\n');
+    const t = pipelineLines({ matchThreshold: 3, sendLimit: 1, targetRegions: 'T', followupsAutonomous: false }).join('\n');
     expect(t).toMatch(/even when there are 0 unscored/i);
   });
 });
@@ -207,7 +207,7 @@ describe('runCodePass', () => {
 });
 
 describe('prompt', () => {
-  const pipe = { matchThreshold: 60, sendLimit: 1, targetRegions: 'Target regions: home=India; targets=UAE', followupsAutonomous: false };
+  const pipe = { matchThreshold: 3, sendLimit: 1, targetRegions: 'Target regions: home=India; targets=UAE', followupsAutonomous: false };
   it('lists the wake order and the pipeline instructions; the wake only enqueues email', () => {
     const d = run(plan({ due: due({ scriptDiscoverLastHoursAgo: null, sourceTasksQueued: 1, inboxLastCheckedMinAgo: null }) }));
     const p = buildWakePrompt({
@@ -235,7 +235,7 @@ describe('prompt', () => {
   });
   it('the pipeline keeps the veto-gate stop rule and the threshold', () => {
     const t = pipelineLines(pipe).join('\n');
-    expect(t).toContain('at least 60');
+    expect(t).toContain('at least 3');
     expect(t).toContain('STOP the pipeline');
     expect(t).toContain('batches of at most 5');
     expect(t).toContain('contact-finder');
@@ -286,7 +286,7 @@ describe('list_unscored_jobs', () => {
     const db = openDb(':memory:');
     add(db, 'new', { at: '2026-10-15 02:00:00' });
     add(db, 'old', { at: '2026-10-14 10:00:00' });
-    add(db, 'scored'); db.prepare("UPDATE jobs SET score = 70 WHERE id = 'scored'").run();
+    add(db, 'scored'); db.prepare("UPDATE jobs SET score = 3.5 WHERE id = 'scored'").run();
     add(db, 'vetoed'); db.prepare("UPDATE jobs SET excluded_reason = 'x' WHERE id = 'vetoed'").run();
     add(db, 'gaveup');
     for (let i = 0; i < MATCH_FAIL_LIMIT; i++) saveMatchResultsChecked(db, [{ job_id: 'gaveup', error: 'overflow' } as never]);
@@ -300,24 +300,24 @@ describe('list_unscored_jobs', () => {
     const db = openDb(':memory:');
     add(db, 'fresh', { at: '2026-10-14 10:00:00' });
     // no apply path (unknown host): the plain PREP_OFFER_LIMIT applies; apply-capable jobs get PREP_OFFER_LIMIT_APPLY (tests/prep-offers.test.ts)
-    add(db, 'pending', { at: '2026-10-15 01:00:00', source: 'remotive', apply_url: 'https://acme.example/j' }); db.prepare("UPDATE jobs SET score = 74 WHERE id = 'pending'").run();
-    add(db, 'low'); db.prepare("UPDATE jobs SET score = 59 WHERE id = 'low'").run();
-    add(db, 'queued'); db.prepare("UPDATE jobs SET score = 80 WHERE id = 'queued'").run();
+    add(db, 'pending', { at: '2026-10-15 01:00:00', source: 'remotive', apply_url: 'https://acme.example/j' }); db.prepare("UPDATE jobs SET score = 3.7 WHERE id = 'pending'").run();
+    add(db, 'low'); db.prepare("UPDATE jobs SET score = 2.9 WHERE id = 'low'").run();
+    add(db, 'queued'); db.prepare("UPDATE jobs SET score = 4 WHERE id = 'queued'").run();
     db.prepare("INSERT INTO outreach_queue (job_id, status) VALUES ('queued', 'queued')").run();
-    add(db, 'vetoed'); db.prepare("UPDATE jobs SET score = 80, excluded_reason = 'x' WHERE id = 'vetoed'").run();
-    const first = listUnscoredJobs(db, { limit: 10, matchThreshold: 60 });
+    add(db, 'vetoed'); db.prepare("UPDATE jobs SET score = 4, excluded_reason = 'x' WHERE id = 'vetoed'").run();
+    const first = listUnscoredJobs(db, { limit: 10, matchThreshold: 3 });
     expect(first.map((r) => r.id)).toEqual(['pending', 'fresh']);
-    expect(first[0]).toMatchObject({ already_matched: true, score: 74 });
+    expect(first[0]).toMatchObject({ already_matched: true, score: 3.7 });
     expect(first[1].already_matched).toBeUndefined();
-    for (let n = 1; n < PREP_OFFER_LIMIT; n++) expect(listUnscoredJobs(db, { limit: 10, matchThreshold: 60 }).map((r) => r.id)).toEqual(['pending', 'fresh']);
-    expect(listUnscoredJobs(db, { limit: 10, matchThreshold: 60 }).map((r) => r.id)).toEqual(['fresh']);
+    for (let n = 1; n < PREP_OFFER_LIMIT; n++) expect(listUnscoredJobs(db, { limit: 10, matchThreshold: 3 }).map((r) => r.id)).toEqual(['pending', 'fresh']);
+    expect(listUnscoredJobs(db, { limit: 10, matchThreshold: 3 }).map((r) => r.id)).toEqual(['fresh']);
     expect(listUnscoredJobs(db, { limit: 10 }).map((r) => r.id)).toEqual(['fresh']);
   });
   it('hands back at most half the batch as already matched so new jobs are still matched', () => {
     const db = openDb(':memory:');
-    for (let i = 0; i < 6; i++) { add(db, `m${i}`); db.prepare('UPDATE jobs SET score = 70 WHERE id = ?').run(`m${i}`); }
+    for (let i = 0; i < 6; i++) { add(db, `m${i}`); db.prepare('UPDATE jobs SET score = 3.5 WHERE id = ?').run(`m${i}`); }
     add(db, 'fresh');
-    const rows = listUnscoredJobs(db, { limit: 4, matchThreshold: 60 });
+    const rows = listUnscoredJobs(db, { limit: 4, matchThreshold: 3 });
     expect(rows.filter((r) => r.already_matched)).toHaveLength(2);
     expect(rows.map((r) => r.id)).toContain('fresh');
   });
@@ -376,23 +376,23 @@ describe('list_unscored_jobs', () => {
   });
   it('at most half of a 25-job batch is already_matched; the rest is round-robin by source', () => {
     const db = openDb(':memory:');
-    for (let i = 0; i < 20; i++) { add(db, `m${i}`); db.prepare('UPDATE jobs SET score = 80 WHERE id = ?').run(`m${i}`); }
+    for (let i = 0; i < 20; i++) { add(db, `m${i}`); db.prepare('UPDATE jobs SET score = 4 WHERE id = ?').run(`m${i}`); }
     for (let i = 0; i < 20; i++) add(db, `u${i}`);
-    const rows = listUnscoredJobs(db, { limit: 25, matchThreshold: 60 });
+    const rows = listUnscoredJobs(db, { limit: 25, matchThreshold: 3 });
     expect(rows).toHaveLength(25);
     expect(rows.filter((r) => r.already_matched)).toHaveLength(12);
     expect(rows.filter((r) => !r.already_matched)).toHaveLength(13);
   });
   it('kind matched returns only already-matched jobs up to the full limit; kind unscored pages through the round-robin order', () => {
     const db = openDb(':memory:');
-    for (let i = 0; i < 20; i++) { add(db, `m${i}`, { at: `2026-10-14 10:${String(i).padStart(2, '0')}:00` }); db.prepare('UPDATE jobs SET score = ? WHERE id = ?').run(60 + i, `m${i}`); }
+    for (let i = 0; i < 20; i++) { add(db, `m${i}`, { at: `2026-10-14 10:${String(i).padStart(2, '0')}:00` }); db.prepare('UPDATE jobs SET score = ? WHERE id = ?').run(3 + i / 20, `m${i}`); }
     for (let i = 0; i < 7; i++) add(db, `g${i}`, { at: `2026-10-15 01:0${i}:00` });
     for (let i = 0; i < 3; i++) add(db, `n${i}`, { source: 'naukri', apply_url: 'https://www.naukri.com/job-listings-x', at: `2026-10-15 02:0${i}:00` });
-    const m = listUnscoredJobs(db, { kind: 'matched', limit: 15, matchThreshold: 60 });
+    const m = listUnscoredJobs(db, { kind: 'matched', limit: 15, matchThreshold: 3 });
     expect(m).toHaveLength(15);
     expect(m.every((r) => r.already_matched)).toBe(true);
     expect(m[0].id).toBe('m19');
-    const p0 = listUnscoredJobs(db, { kind: 'unscored', limit: 4, offset: 0, matchThreshold: 60 }).map((r) => r.id);
+    const p0 = listUnscoredJobs(db, { kind: 'unscored', limit: 4, offset: 0, matchThreshold: 3 }).map((r) => r.id);
     const p1 = listUnscoredJobs(db, { kind: 'unscored', limit: 4, offset: 4 }).map((r) => r.id);
     const p2 = listUnscoredJobs(db, { kind: 'unscored', limit: 4, offset: 8 }).map((r) => r.id);
     expect(p0).toEqual(['g0', 'n0', 'g1', 'n1']);
@@ -402,9 +402,9 @@ describe('list_unscored_jobs', () => {
   });
   it('matched jobs deferred past the prepare cap stay offered for PREP_OFFER_LIMIT wakes, highest score first', () => {
     const db = openDb(':memory:');
-    for (let i = 0; i < 30; i++) { add(db, `d${i}`); db.prepare('UPDATE jobs SET score = ? WHERE id = ?').run(60 + i, `d${i}`); }
-    const w1 = listUnscoredJobs(db, { kind: 'matched', limit: 15, matchThreshold: 60 }).map((r) => r.id);
-    const w2 = listUnscoredJobs(db, { kind: 'matched', limit: 15, matchThreshold: 60 }).map((r) => r.id);
+    for (let i = 0; i < 30; i++) { add(db, `d${i}`); db.prepare('UPDATE jobs SET score = ? WHERE id = ?').run(3 + i / 20, `d${i}`); }
+    const w1 = listUnscoredJobs(db, { kind: 'matched', limit: 15, matchThreshold: 3 }).map((r) => r.id);
+    const w2 = listUnscoredJobs(db, { kind: 'matched', limit: 15, matchThreshold: 3 }).map((r) => r.id);
     expect(w1).toEqual(w2);
     expect(w1[0]).toBe('d29');
   });
@@ -426,8 +426,8 @@ describe('list_unscored_jobs', () => {
     expect(PIPELINE_WINDOW_HOURS).toBe(168);
   });
   it('P1 names the tool, the cap and apply_class; the direct-call list names every tool used', () => {
-    const t = pipelineLines({ matchThreshold: 60, sendLimit: 1, targetRegions: 'T', followupsAutonomous: false }).join('\n');
-    expect(t).toContain('`db.list_unscored_jobs({kind: "matched", limit: 15, match_threshold: 60})`');
+    const t = pipelineLines({ matchThreshold: 3, sendLimit: 1, targetRegions: 'T', followupsAutonomous: false }).join('\n');
+    expect(t).toContain('`db.list_unscored_jobs({kind: "matched", limit: 15, match_threshold: 3})`');
     expect(t).toContain('`db.list_unscored_jobs({kind: "unscored", limit: 20, offset: 0})`');
     expect(t).toContain('already_matched');
     expect(t).toContain('apply_class');

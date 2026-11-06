@@ -14,13 +14,13 @@ describe('review fixes: finalize waits and retries', () => {
     const r = createManualRequest(db, 'https://www.linkedin.com/jobs/view/123');
     if (!r.ok) throw new Error('create');
     saveJob(db, job('p1'));
-    db.prepare("UPDATE jobs SET score = 80, priority = 1 WHERE id = 'p1'").run();
+    db.prepare("UPDATE jobs SET score = 4, priority = 1 WHERE id = 'p1'").run();
     db.prepare("UPDATE manual_requests SET status = 'running', job_ids = ?, started_at = ? WHERE id = ?").run(JSON.stringify(['p1']), NOW.toISOString(), r.id);
     return { db, id: r.id };
   }
   it('keeps the request running while a scored priority job has no queue row', async () => {
     const { db, id } = seed();
-    const d = { send: async () => undefined, now: () => NOW, matchThreshold: 60 };
+    const d = { send: async () => undefined, now: () => NOW, matchThreshold: 3 };
     expect((await finalizeManualRequests(db, 'ok', d)).waiting).toEqual([id]);
     db.prepare("INSERT INTO outreach_queue (job_id, status) VALUES ('p1', 'queued')").run();
     expect((await finalizeManualRequests(db, 'ok', d)).reported).toEqual([id]);
@@ -63,9 +63,9 @@ describe('review fixes: priority work, match omissions, offers', () => {
   it('oncePerRun does not burn a second prep offer on a re-list', () => {
     const db = openDb(':memory:');
     saveJob(db, job('s'));
-    db.prepare("UPDATE jobs SET score = 90 WHERE id = 's'").run();
-    listUnscoredJobs(db, { kind: 'matched', limit: 10, matchThreshold: 60, oncePerRun: true });
-    listUnscoredJobs(db, { kind: 'matched', limit: 10, matchThreshold: 60, oncePerRun: true });
+    db.prepare("UPDATE jobs SET score = 4.5 WHERE id = 's'").run();
+    listUnscoredJobs(db, { kind: 'matched', limit: 10, matchThreshold: 3, oncePerRun: true });
+    listUnscoredJobs(db, { kind: 'matched', limit: 10, matchThreshold: 3, oncePerRun: true });
     expect((db.prepare("SELECT prep_offers AS n FROM jobs WHERE id = 's'").get() as { n: number }).n).toBe(1);
   });
 });

@@ -220,7 +220,7 @@ export const setupToolingChecks: Check[] = [
       const env: Record<string, string> = { ...dotEnv(ctx) };
       for (const [k, v] of Object.entries(ctx.env)) if (v !== undefined) env[k] = v; // process env wins, as at runtime
       const r = parseMatchThreshold(env.MATCH_THRESHOLD);
-      if (r.invalid) return warn(`MATCH_THRESHOLD is invalid (${r.invalid}); the default 4.0 is used`, 'write a number from 1 to 5 in .env, for example MATCH_THRESHOLD=4');
+      if (r.invalid) return warn('MATCH_THRESHOLD is not a number from 1 to 5; the default 4.0 is used','write a number from 1 to 5 in .env, for example MATCH_THRESHOLD=4');
       if (r.warning) return warn(r.warning, `write MATCH_THRESHOLD=${r.value.toFixed(1)} in .env`);
       return pass(env.MATCH_THRESHOLD?.trim() ? `${r.value.toFixed(1)} of 5` : 'default 4.0 of 5');
     },

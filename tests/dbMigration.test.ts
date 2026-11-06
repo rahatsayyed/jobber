@@ -60,7 +60,7 @@ describe('openDb migrations (old-shape database)', () => {
       const nid = enqueueOutreach(db, { job_id: 'old-2', resume_pdf_path: null, email_subject: 's', email_body: 'b', email_to: 'a@b.co', connect_note: null, connect_profile_url: null, connect_category: null, connect_company: null, apply_platform: 'none', apply_url: null });
       expect(db.prepare('SELECT apply_tier FROM outreach_queue WHERE id = ?').get(nid)).toEqual({ apply_tier: 'never' });
 
-      expect(getJob(db, 'old-1')).toMatchObject({ title: 'Old Job', score: 77 });
+      expect(getJob(db, 'old-1')).toMatchObject({ title: 'Old Job', score: 3.9 });
       expect(db.prepare('SELECT email_subject FROM outreach_queue WHERE job_id = ?').get('old-1')).toEqual({
         email_subject: 'hello',
       });

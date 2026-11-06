@@ -11,7 +11,7 @@ function setup() {
   const db = openDb(':memory:');
   for (const id of ['a', 'b']) {
     saveJob(db, { id, source: 'naukri', title: 'Dev', company: 'Co', url: `https://example.test/${id}`, apply_url: 'https://boards.greenhouse.io/a/jobs/1', description: long });
-    db.prepare("UPDATE jobs SET deadline = '2026-10-01', score = 80 WHERE id = ?").run(id);
+    db.prepare("UPDATE jobs SET deadline = '2026-10-01', score = 4 WHERE id = ?").run(id);
   }
   return db;
 }

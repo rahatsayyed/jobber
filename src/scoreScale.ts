@@ -16,7 +16,7 @@
 //   - a half-migrated db (marker absent but every stored score already <= 5) only gets the marker and the grandfather pass is skipped.
 // A db whose user_version is NEWER than this code knows is refused with a clear error (an old process must never write 0..100 scores into a
 // 1..5 db, and an old process cannot be stopped from reading, so the owner restarts the whole stack after the update).
-import { chmodSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
+import { chmodSync, existsSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type BetterSqlite3 from 'better-sqlite3';
 import { RUBRIC_TAG } from './matchRubric.js';
@@ -56,13 +56,18 @@ function backupPath(dbFile: string): string {
 function existingBackup(dbFile: string): string | null {
   const prefix = `${basename(dbFile)}.pre-scale-`;
   try {
-    const hit = readdirSync(dirname(dbFile)).find((f) => f.startsWith(prefix));
+    const hit = readdirSync(dirname(dbFile)).find((f) => f.startsWith(prefix) && statSync(join(dirname(dbFile), f)).isFile());
     return hit ? join(dirname(dbFile), hit) : null;
   } catch { return null; }
 }
 
 /** The score migration. Idempotent, safe when two processes open the same db together. Throws (and changes nothing) if the backup fails. */
-export function ensureMatchScale(db: BetterSqlite3.Database, dbFile: string): ScaleMigrationResult {
+export function ensureMatchScale(
+  db: BetterSqlite3.Database,
+  dbFile: string,
+  /** Test hook: how the file-level copy is made (default: VACUUM INTO, a consistent snapshot). */
+  copy: (db: BetterSqlite3.Database, target: string) => void = (d, target) => { d.exec(`VACUUM INTO ${sqlQuote(target)}`); },
+): ScaleMigrationResult {
   if (isMigrated(db)) return { action: 'current', converted: 0, grandfathered: 0, backup: null };
   db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
   const stats = db.prepare('SELECT COUNT(*) AS n, COALESCE(MAX(score), 0) AS top FROM jobs WHERE score IS NOT NULL').get() as { n: number; top: number };
@@ -75,7 +80,7 @@ export function ensureMatchScale(db: BetterSqlite3.Database, dbFile: string): Sc
     if (!backup) {
       const target = backupPath(dbFile);
       try {
-        db.exec(`VACUUM INTO ${sqlQuote(target)}`);
+        copy(db, target);
         chmodSync(target, 0o600);
       } catch (e) {
         throw new Error(`score scale migration refused: could not copy the database to ${target} first (${(e as Error).message}). Nothing was changed.`);
