@@ -11,8 +11,11 @@ import { isDryRun } from '../safety/dryRun.js';
 import { listQueuedOutreach } from '../db.js';
 import { addrOf, isVerifiedAddress } from '../lib/verifiedAddress.js';
 import {
-  approveDraftedFollowups, followupCheckMaxAgeMin, followupMode, hasFreshCleanReplyCheck, listApprovedFollowups,
+  approveDraftedFollowups, followupCheckMaxAgeMin, followupMode, hasFreshCleanReplyCheck, listApprovedFollowups, threadCheckOk,
 } from '../followups.js';
+import {
+  markReplyCheckDueAtStart, onDemandHeld, pickReplyCheck, replyGate, runReplyCheck, type ReplyCheckItem, type ReplyCheckOutcome,
+} from './replyCheck.js';
 import { drawUniformMinMs, inQuietHours, quietFromConfig } from '../outreach/quiet.js';
 import { BudgetTracker, loadBudget, loadStallSec, type Budget } from './budget.js';
 import { readControl, statExists, type ControlDeps } from './control.js';
@@ -173,7 +176,7 @@ export function emailBrakeOn(env: NodeJS.ProcessEnv): boolean {
 
 export type DripItem =
   | { kind: 'cold'; id: number; job_id: string; address: string }
-  | { kind: 'followup'; id: number; job_id: string; address: string };
+  | { kind: 'followup'; id: number; job_id: string; address: string; thread_id?: string | null };
 
 export function itemKey(i: DripItem): string {
   return `${i.kind}:${i.id}`;
@@ -300,7 +303,7 @@ export function pickDripItem(db: DriverDeps['db'], now: Date, env: NodeJS.Proces
           const addr = addrOf(f.email_to);
           if (!addr || exclude.has(`followup:${f.id}`) || !isVerifiedAddress(db, addr)) continue;
           anyCandidate = true;
-          return { item: { kind: 'followup', id: f.id, job_id: f.job_id, address: addr } };
+          return { item: { kind: 'followup', id: f.id, job_id: f.job_id, address: addr, thread_id: f.thread_id } };
         }
       }
     }
@@ -700,6 +703,8 @@ export interface DripResult {
   reason?: string;
   /** Runs launched in this tick, in order (a batch of 2 to 3). */
   runs?: OneRun[];
+  /** Reply checks run in this tick (reason `reply_check`). */
+  checks?: ReplyCheckOutcome[];
 }
 
 /**
@@ -713,7 +718,52 @@ export async function dripTick(d: DriverDeps, opts: { abort?: () => boolean } = 
   return withDripRequest(d.db, 'mail', d.now, (bypass) => dripTickInner(d, opts, bypass));
 }
 
+/** Takes the lane lock and runs one reply check. The reply check sends nothing: no send window, brake, cap or spacing applies (replyGate has its own gates). */
+async function runCheckTick(d: DriverDeps, item: ReplyCheckItem, opts: { abort?: () => boolean }): Promise<DripResult> {
+  let lock;
+  try {
+    lock = acquireLock(d.lockRoot, DRIP_LOCK, 'mail-reply-check', d.lockDeps);
+  } catch {
+    return { status: 'skipped', reason: 'lock_error' };
+  }
+  if (!lock) return { status: 'skipped', reason: 'locked' };
+  try {
+    const again = replyGate(d, d.now());
+    if (again) return { status: 'skipped', reason: again };
+    const r = await runReplyCheck(d, lock, item, opts);
+    return { status: 'ran', reason: 'reply_check', checks: [r] };
+  } finally {
+    try { lock.release(); } catch { /* ignore */ }
+  }
+}
+
+/** The on-demand check a follow-up needs first, or null. Never for a dry run, a held key or when the reply gates say no. */
+function onDemandCheck(d: DriverDeps, pick: PickResult): ReplyCheckItem | null {
+  const now = d.now();
+  if (isDryRun(d.env) || replyGate(d, now)) return null;
+  if (!pick.item) {
+    if (pick.reason !== 'no_clean_reply_check' || onDemandHeld(d.db, 'mailbox', now)) return null;
+    return { kind: 'reply_check', scope: 'mailbox', reason: 'before_followup' };
+  }
+  if (pick.item.kind !== 'followup' || !pick.item.thread_id) return null;
+  if (threadCheckOk(d.db, pick.item.thread_id, now, followupCheckMaxAgeMin(d.env)) || onDemandHeld(d.db, `thread:${pick.item.thread_id}`, now)) return null;
+  return { kind: 'reply_check', scope: 'thread', reason: 'before_followup', thread_id: pick.item.thread_id, address: pick.item.address, followup_id: pick.item.id, job_id: pick.item.job_id };
+}
+
+/** A follow-up whose thread check is missing or on hold is not sent (dry runs send nothing anyway). */
+function followupHeld(d: DriverDeps, i: Extract<DripItem, { kind: 'followup' }>): boolean {
+  if (isDryRun(d.env)) return false;
+  return !threadCheckOk(d.db, i.thread_id ?? null, d.now(), followupCheckMaxAgeMin(d.env));
+}
+
 async function dripTickInner(d: DriverDeps, opts: { abort?: () => boolean }, bypassNext: boolean): Promise<DripResult> {
+  // Replies first (owner decision): at daemon start, then every REPLY_CHECK_EVERY_MIN. Not subject to the send gates.
+  try {
+    const rc = replyGate(d, d.now()) ? null : pickReplyCheck(d.db, d.now(), d.env);
+    if (rc) return await runCheckTick(d, rc, opts);
+  } catch {
+    // a failing reply stage never stops the sends
+  }
   const cfg = loadDripConfig(d.env);
   if (cfg.problems.length > 0) return { status: 'skipped', reason: 'bad_config' };
   const why = gate(d, cfg, d.now(), true, bypassNext);
@@ -724,7 +774,11 @@ async function dripTickInner(d: DriverDeps, opts: { abort?: () => boolean }, byp
   } catch (e) {
     return { status: 'skipped', reason: `pick_error: ${safeMsg(e)}` };
   }
+  // On demand, right before a follow-up: a stale mailbox check gets a fresh one; the follow-up's own thread gets a scoped check.
+  const demand = onDemandCheck(d, pick);
+  if (demand) return runCheckTick(d, demand, opts);
   if (!pick.item) return { status: 'skipped', reason: pick.reason };
+  if (pick.item.kind === 'followup' && followupHeld(d, pick.item)) return { status: 'skipped', reason: 'reply_check_held' };
 
   let lock;
   try {
@@ -771,6 +825,8 @@ async function dripTickInner(d: DriverDeps, opts: { abort?: () => boolean }, byp
       if (opts.abort?.() || gate(d, cfg, d.now(), false)) break;
       const nx = pickDripItem(d.db, d.now(), d.env, tried);
       item = nx.item;
+      // a follow-up without its own clean thread check waits for the next tick (which runs the check first)
+      if (item && item.kind === 'followup' && followupHeld(d, item)) break;
     }
     const end = d.now();
     setState(d.db, STATE_NEXT_AT, new Date(end.getTime() + gap()).toISOString(), end);
@@ -786,6 +842,7 @@ async function dripTickInner(d: DriverDeps, opts: { abort?: () => boolean }, byp
 
 /** The daemon's concurrent drip loop: one tick every DRIP_TICK_MS until stopped. A tick never throws. */
 export async function dripLoop(d: DriverDeps, stop: { stopped: boolean }): Promise<void> {
+  markReplyCheckDueAtStart(d.db, d.now()); // replies first: one check at daemon start, then every REPLY_CHECK_EVERY_MIN
   while (!stop.stopped) {
     try {
       await dripTick(d, { abort: () => stop.stopped });

@@ -188,6 +188,15 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
       messages INTEGER NOT NULL,
       errors INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS followup_thread_checks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id TEXT NOT NULL,
+      checked_at TEXT NOT NULL,
+      clean INTEGER NOT NULL,
+      messages INTEGER NOT NULL,
+      errors INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_followup_thread_checks_thread ON followup_thread_checks(thread_id);
     CREATE TABLE IF NOT EXISTS job_exclusion_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       job_id TEXT NOT NULL,
@@ -342,6 +351,15 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   // Migration: processed_messages.candidates (JSON array of job ids) for an ambiguous reply/bounce, so follow-ups are blocked for every candidate.
   const pmCols = new Set((db.prepare('PRAGMA table_info(processed_messages)').all() as { name: string }[]).map((c) => c.name));
   if (!pmCols.has('candidates')) db.exec('ALTER TABLE processed_messages ADD COLUMN candidates TEXT');
+  // Migration: owner notice fields. thread_id, a short cleaned excerpt (max 200 chars), needs_you (1 = the owner must answer by hand) and notified_at
+  // (set once the Telegram notice for the row went out). Rows that exist when notified_at is added count as already notified (no flood of old mail).
+  if (!pmCols.has('thread_id')) db.exec('ALTER TABLE processed_messages ADD COLUMN thread_id TEXT');
+  if (!pmCols.has('excerpt')) db.exec('ALTER TABLE processed_messages ADD COLUMN excerpt TEXT');
+  if (!pmCols.has('needs_you')) db.exec('ALTER TABLE processed_messages ADD COLUMN needs_you INTEGER NOT NULL DEFAULT 0');
+  if (!pmCols.has('notified_at')) {
+    db.exec('ALTER TABLE processed_messages ADD COLUMN notified_at TEXT');
+    db.exec("UPDATE processed_messages SET notified_at = datetime('now')");
+  }
   // Backfill: rows sent before email_sent_at existed. updated_at is when the sender marked them sent. Idempotent, and guarded:
   // a legacy table without email_status or updated_at has nothing to backfill (and must still open).
   const queueNow = new Set((db.prepare('PRAGMA table_info(outreach_queue)').all() as { name: string }[]).map((c) => c.name));

@@ -210,13 +210,15 @@ export function listStuckSending(db: BetterSqlite3.Database): Array<{ id: number
 
 /** The sender's claim step, called right BEFORE gmail.send_email: approved -> sending, atomically. Returns false (send nothing) when the row is
  *  not approved (already claimed, sent, skipped, cancelled, failed, unknown), has no sent cold email to reply to, or its job is blocked now. */
-export function claimFollowupForSend(db: BetterSqlite3.Database, id: number): boolean {
+export function claimFollowupForSend(db: BetterSqlite3.Database, id: number, g?: { now: Date; maxAgeMin: number; requireThreadCheck?: boolean }): boolean {
   return db.transaction(() => {
     const row = db.prepare("SELECT job_id FROM followups WHERE id = ? AND status = 'approved'").get(id) as { job_id: string } | undefined;
     if (!row) return false;
     const listed = listApprovedFollowups(db).find((r) => r.id === id);
     if (!listed) return false;
     if (!isVerifiedAddress(db, listed.email_to)) return false; // Safety rule 1: no verified contact, no send
+    // ADDED precondition (legacy mode too): the follow-up's own thread was checked, clean and fresh.
+    if (g?.requireThreadCheck && !threadCheckOk(db, listed.thread_id, g.now, g.maxAgeMin)) return false;
     return db.prepare("UPDATE followups SET status = 'sending' WHERE id = ? AND status = 'approved'").run(id).changes > 0;
   }).immediate();
 }
@@ -304,11 +306,33 @@ export function hasFreshCleanReplyCheck(db: BetterSqlite3.Database, now: Date, m
   return age >= 0 && age <= maxAgeMin * 60_000;
 }
 
-export type ClaimResult = { claimed: true } | { claimed: false; reason: 'not_approved' | 'blocked' | 'unverified_address' | 'no_clean_reply_check' | 'cap' };
+/** Records one reply-watcher run scoped to ONE Gmail thread (a follow-up's thread). It is NOT a mailbox-wide check: it never touches reply_checks,
+ *  so it can never satisfy hasFreshCleanReplyCheck. clean = no errors. */
+export function recordThreadCheck(db: BetterSqlite3.Database, c: { thread_id: string; messages: number; errors: number }, now: Date): { id: number; clean: boolean } {
+  const clean = c.errors === 0;
+  const id = Number(db.prepare('INSERT INTO followup_thread_checks (thread_id, checked_at, clean, messages, errors) VALUES (?, ?, ?, ?, ?)').run(c.thread_id.slice(0, 200), sqlNow(now), clean ? 1 : 0, c.messages, c.errors).lastInsertRowid);
+  return { id, clean };
+}
+
+/** True when the LATEST thread-scoped check of this Gmail thread is clean and no older than maxAgeMin (inclusive). */
+export function hasFreshCleanThreadCheck(db: BetterSqlite3.Database, threadId: string, now: Date, maxAgeMin: number): boolean {
+  const r = db.prepare('SELECT checked_at, clean FROM followup_thread_checks WHERE thread_id = ? ORDER BY checked_at DESC, id DESC LIMIT 1').get(threadId) as { checked_at: string; clean: number } | undefined;
+  if (!r || r.clean !== 1) return false;
+  const age = now.getTime() - parseSqlTime(r.checked_at);
+  return age >= 0 && age <= maxAgeMin * 60_000;
+}
+
+/** The extra precondition of a follow-up send (owner decision 2026-11-06): the follow-up's own Gmail thread was checked for replies, clean and fresh.
+ *  A row with no known thread id has nothing to scope; it relies on the mailbox-wide check (which the guarded claim also needs). */
+export function threadCheckOk(db: BetterSqlite3.Database, threadId: string | null, now: Date, maxAgeMin: number): boolean {
+  return !threadId || hasFreshCleanThreadCheck(db, threadId, now, maxAgeMin);
+}
+
+export type ClaimResult = { claimed: true } | { claimed: false; reason: 'not_approved' | 'blocked' | 'unverified_address' | 'no_clean_reply_check' | 'no_thread_check' | 'cap' };
 
 /** Autonomous claim: ONE immediate transaction. approved (and not blocked), then a fresh clean reply check, then the shared send_email counter
  *  (consumed only here, on success), then approved -> sending. Any refusal writes nothing. */
-export function claimFollowupGuarded(db: BetterSqlite3.Database, id: number, g: { now: Date; maxAgeMin: number; sendLimit: number }): ClaimResult {
+export function claimFollowupGuarded(db: BetterSqlite3.Database, id: number, g: { now: Date; maxAgeMin: number; sendLimit: number; requireThreadCheck?: boolean }): ClaimResult {
   return db.transaction((): ClaimResult => {
     const row = db.prepare("SELECT job_id FROM followups WHERE id = ? AND status = 'approved'").get(id) as { job_id: string } | undefined;
     if (!row) return { claimed: false, reason: 'not_approved' };
@@ -316,6 +340,8 @@ export function claimFollowupGuarded(db: BetterSqlite3.Database, id: number, g: 
     if (!listed) return { claimed: false, reason: 'blocked' };
     if (!isVerifiedAddress(db, listed.email_to)) return { claimed: false, reason: UNVERIFIED_ADDRESS };
     if (!hasFreshCleanReplyCheck(db, g.now, g.maxAgeMin)) return { claimed: false, reason: 'no_clean_reply_check' };
+    // ADDED precondition (never replaces the one above): the follow-up's own thread was checked, clean and fresh.
+    if (g.requireThreadCheck && !threadCheckOk(db, listed.thread_id, g.now, g.maxAgeMin)) return { claimed: false, reason: 'no_thread_check' };
     if (!checkAndIncrement(db, 'send_email', g.sendLimit)) return { claimed: false, reason: 'cap' };
     const ok = db.prepare("UPDATE followups SET status = 'sending' WHERE id = ? AND status = 'approved'").run(id).changes > 0;
     return ok ? { claimed: true } : { claimed: false, reason: 'not_approved' };

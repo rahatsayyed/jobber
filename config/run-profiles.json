@@ -298,6 +298,34 @@
       "output_format": "stream-json",
       "max_turns": 25
     },
+    "mail_reply_check": {
+      "description": "Mail reply check (mail drip lane, reads only): dispatches reply-watcher once. Only the reply-watcher tools (.claude/agents/reply-watcher.md), no gmail.send_email, no secrets in env.",
+      "mcp_config": "config/runner/mcp.mail.json",
+      "builtin_tools": [
+        "Agent",
+        "Task"
+      ],
+      "allow": [
+        "mcp__db__list_sent_emails",
+        "mcp__db__set_email_thread",
+        "mcp__db__triage_replies",
+        "mcp__db__record_reply_check",
+        "mcp__gmail__search_emails",
+        "mcp__gmail__read_email"
+      ],
+      "env_mode": "allowlist",
+      "env_keys": [
+        "TZ",
+        "JOBBER_RUN_ID",
+        "JOBBER_DRY_RUN",
+        "FOLLOWUP_CHECK_MAX_AGE_MIN"
+      ],
+      "env_prefixes": [
+        "CLASSIFIER_"
+      ],
+      "output_format": "stream-json",
+      "max_turns": 25
+    },
     "linkedin_drip": {
       "description": "LinkedIn drip lane: one tiny run per LinkedIn action. Only the linkedin-operator tools (config/worker-tools.json), the db, outreach and linkedin servers, no secrets in env.",
       "mcp_config": "config/runner/mcp.linkedin_drip.json",

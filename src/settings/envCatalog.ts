@@ -1130,7 +1130,7 @@ const BLANK_OK = new Set<string>([
   'COOLDOWN_IGNORED_DAYS', 'COOLDOWN_NOT_NOW_DAYS', 'COOLDOWN_EXPLICIT_STOP_DAYS', 'CADENCE_GAPS_DAYS',
   'EMAIL_MAX_PER_DAY', 'EMAIL_DRIP_MIN_BATCH', 'EMAIL_DRIP_MAX_BATCH', 'EMAIL_DRIP_MIN_GAP_MIN', 'EMAIL_DRIP_MAX_GAP_MIN',
   'EMAIL_DRIP_INTRA_PAUSE_MIN_SEC', 'EMAIL_DRIP_INTRA_PAUSE_MAX_SEC',
-  'LINKEDIN_DRIP_MIN_GAP_MIN', 'LINKEDIN_DRIP_MAX_GAP_MIN', 'LINKEDIN_INBOX_MIN_GAP_MIN',
+  'LINKEDIN_DRIP_MIN_GAP_MIN', 'LINKEDIN_DRIP_MAX_GAP_MIN', 'LINKEDIN_INBOX_MIN_GAP_MIN', 'REPLY_CHECK_EVERY_MIN',
   TOP_LEVEL_KEY, ...APPLY_HOST_PLATFORM_IDS.map(hostCapKey),
 ]);
 const ACTIVE_IN_EXAMPLE = new Set([
@@ -1161,6 +1161,12 @@ function limitOverride(key: string): LimitOverride {
     o.feature = 'LinkedIn drip lane';
     o.restart = 'scheduler';
     o.restartEvidence = 'src/scheduler/linkedinDrip.ts';
+  }
+  if (key === 'REPLY_CHECK_EVERY_MIN') {
+    o.section = 'scheduler';
+    o.feature = 'mail and LinkedIn drip lanes (reply check)';
+    o.restart = 'scheduler';
+    o.restartEvidence = 'src/scheduler/replyCheck.ts';
   }
   if (key === 'HUNTER_MONTHLY_CAP') o.aboutExtra = 'Needed only when HUNTER_ENABLED=true.';
   if (key === 'FOLLOWUP_CHECK_MAX_AGE_MIN') o.aboutExtra = 'Used only when FOLLOWUPS_AUTONOMOUS=true.';

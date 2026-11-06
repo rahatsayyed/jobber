@@ -426,11 +426,18 @@ emails first (queue row not excluded, with an address, never the same exact addr
 drafts first). A cold row whose run ended without a recorded send is quarantined (never picked again
 automatically) and the owner is notified to check Gmail Sent first. The drip run is handed `DAILY_SEND_LIMIT`
 (`EMAIL_MAX_PER_DAY`, or 100000 when unset) as the limit of the shared `send_email` counter. Dry runs
-follow the master flag: the run records and sends nothing. Optional (`WINDOW_LANES` lists `mail`, off by default): the same prompt goes to the long-lived `mail` window through `WindowDispatcher` instead of a headless run, with every gate still in code before any text is typed (`docs/reference/scheduler.md`).
+follow the master flag: the run records and sends nothing. Replies come first: a `reply_check` item (profile `mail_reply_check`, only the
+`reply-watcher` tools, no `gmail.send_email`) runs at daemon start and then every `REPLY_CHECK_EVERY_MIN` minutes (default 60, clamp 10 to 1440); it sends nothing,
+so the send window, the daily cap and the send spacing do not apply, but the kill switch, an `all` halt, quiet hours, the usage backoff, the lane lock and the dry run (no
+check, no notice) do. Code then tells the owner on the Telegram `inbox` topic about each new reply (one grouped message; a reply that asks for a test, link, time,
+salary, documents, references or personal data is flagged 🔔 `needs you` and is never answered by the agent). Before each follow-up code also runs a `reply-watcher` check of
+THAT Gmail thread (and a fresh mailbox check when the last clean one is older than `FOLLOWUP_CHECK_MAX_AGE_MIN`); the claim needs both, and a failed check holds the follow-up
+(owner notice at most hourly). The reply check is headless only, even with `WINDOW_LANES=mail`. Optional (`WINDOW_LANES` lists `mail`, off by default): the same prompt goes to the long-lived `mail` window through `WindowDispatcher` instead of a headless run, with every gate still in code before any text is typed (`docs/reference/scheduler.md`).
 
 **The LinkedIn drip lane** (`src/scheduler/linkedinDrip.ts`, daemon only, lock `linkedin`, profile and trigger `linkedin_drip`, `LINKEDIN_DRIP` default true): one LinkedIn
-action per tick, `LINKEDIN_DRIP_MIN_GAP_MIN` to `_MAX_GAP_MIN` (8 to 20) apart, inside `LINKEDIN_ACTIVE_HOURS`, chosen in code: inbox, owner-approved reply (`npm run replies`,
-kind `reply`, optional resume via `linkedin_attach_file`), accept check, DM, invite; an unanswered inbound pauses that person. While on, wakes plan no LinkedIn inbox,
+action per tick, `LINKEDIN_DRIP_MIN_GAP_MIN` to `_MAX_GAP_MIN` (8 to 20) apart, inside `LINKEDIN_ACTIVE_HOURS`, chosen in code: inbox (due at daemon start and every `REPLY_CHECK_EVERY_MIN` unless `LINKEDIN_INBOX_MIN_GAP_MIN` is set; it alone ignores the 8 to 20 minute
+spacing, every other gate stays; new threads and queued replies are announced on Telegram `inbox`, the reply with its `npm run replies -- skip <id>` hint), a reply draft that passed
+the gates (auto-approved; `npm run replies`, kind `reply`, optional resume via `linkedin_attach_file`), accept check, DM, invite; an unanswered inbound pauses that person. While on, wakes plan no LinkedIn inbox,
 accept check, follow-up or new outreach. With `WINDOW_LANES=linkedin` the same items go to the long-lived `linkedin` window (same prompt and gates; off by default). Details: `docs/reference/scheduler.md` and `connecting.md`.
 
 ### The pipeline stage

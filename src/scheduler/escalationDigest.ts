@@ -10,6 +10,7 @@ import { telegramNotifier } from '../platform/notify.js';
 import { ageText } from '../status/escalations.js';
 import { BLANK, E, b, clean, code, excerpt, headline, html, i as ital, join, line, lines, link, type Html } from '../platform/tgHtml.js';
 import { getState, setState } from './runLog.js';
+import { announcedEscalations } from './linkedinNotice.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -93,10 +94,12 @@ export async function runEscalationDigest(
   const lastAt = Date.parse(getState(db, KEY_LAST_AT) ?? '');
   if (Number.isFinite(lastAt) && d.now.getTime() - lastAt < ESCALATION_DIGEST_GAP_MS) return { sent: false, reason: 'too_soon' };
   const lastId = Number(getState(db, KEY_LAST_ID) ?? 0) || 0;
-  const fresh = listEscalations(db, { now: d.now, status: 'open' }).items.filter((i) => i.ids.some((id) => id > lastId));
+  // Escalations the LinkedIn inbox notice already announced (linkedinNotice.ts) are not announced again.
+  const done = announcedEscalations(db);
+  const fresh = listEscalations(db, { now: d.now, status: 'open' }).items.filter((i) => i.ids.some((id) => id > lastId && !done.has(id)));
   if (!fresh.length) return { sent: false, reason: 'nothing_new' };
   if (fresh.every((i) => i.group === 'noise')) return { sent: false, reason: 'only_flagged' };
-  const rowCount = fresh.reduce((n, i) => n + i.ids.filter((id) => id > lastId).length, 0);
+  const rowCount = fresh.reduce((n, i) => n + i.ids.filter((id) => id > lastId && !done.has(id)).length, 0);
   // Recorded before the send so a failing Telegram is retried at most once per gap.
   setState(db, KEY_LAST_AT, d.now.toISOString(), d.now);
   const sent = await d.send(compose(fresh, rowCount, d.url, d.now, manualLineOf(db, d.env ?? process.env)));

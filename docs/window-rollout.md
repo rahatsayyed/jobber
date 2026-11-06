@@ -70,3 +70,7 @@ Symptom: after about 60 seconds of silence the item ends as `stalled`, the lane 
 Cause: a tool the window called is not in the permission set. The windows use the top-level set (`npm run permissions -- --status`, set `full`). Tools that the shipped `full` set does not allow (check `config/permission-sets.json`): the whole `outreach` server (`list_due_touches`, `next_contacts`, `record_inbound`, `escalate`, `save_reply_draft`, `complete_instruction`) and the `linkedin_scroll`, `linkedin_wait_for`, `linkedin_screenshot`, `linkedin_limits` and `linkedin_close` tools. The LinkedIn window needs them.
 
 Fix: you decide this, the agent never edits permission sets. Add the tool names (for example `mcp__outreach__escalate`) to the `allow` list of `outreach_send` or `full` in `config/permission-sets.json`, run `npm run permissions -- full`, then restart the window (`npx tsx scripts/manager.ts restart <window>`). `npm run permissions -- --status` shows the set that is applied. Note that `full` allows every Jobber send and apply tool for any session on this machine.
+
+## Reply checks stay headless
+
+The mail reply check (`reply_check`, profile `mail_reply_check`) is never typed into the `mail` window, even with `WINDOW_LANES=mail`: a long-lived window cannot enforce a per-item tool list, so the read-only guarantee (no `gmail.send_email`) is only provable in the headless profile. Enforcement of the window path was not proven, so it is not built. The LinkedIn inbox read goes through the `linkedin` window like any other item, and it ignores only the item spacing.

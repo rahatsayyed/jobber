@@ -1,8 +1,10 @@
 // src/outreach/replyDrafts.ts
-// Owner-approved LinkedIn replies. The inbox tick records an inbound message and escalates it; for a plain request (a resume/CV, a
-// simple question) it may also store ONE short draft answer here. A draft is NEVER sent before the owner approves it
-// (npm run replies -- approve <id>, scripts/replies.ts). The LinkedIn drip lane then sends an approved draft as the kind `reply`
-// (cadence-neutral, see src/linkedin/touches.ts), marks the draft sent and the escalation handled.
+// LinkedIn replies for plain requests. The inbox tick records an inbound message and escalates it; for a plain request (a resume/CV, a
+// simple question) it may also store ONE short draft answer here. A draft that passes every gate is stored as `approved` at once (owner
+// decision 2026-11-02, see saveReplyDraft); the owner is told on Telegram before it goes out and can stop it with
+// `npm run replies -- skip <id>` (scripts/replies.ts). The LinkedIn drip lane sends an approved draft as the kind `reply`
+// (cadence-neutral, see src/linkedin/touches.ts), marks the draft sent and the escalation handled. Salary, interview time, personal data,
+// references, link or phone asks are never drafted.
 // Draft text is model text derived from a third-party message: it is gated here (style, fact, output gate) and again at arm time.
 import type BetterSqlite3 from 'better-sqlite3';
 import { resolveEscalations } from './escalations.js';

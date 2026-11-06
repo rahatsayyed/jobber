@@ -1,5 +1,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { listSentEmails, recordOutcome, type Outcome } from './db.js';
+import { clean } from './platform/tgHtml.js';
+import { ownerOnlyCodes, unquotedText } from './outreach/ownerOnly.js';
 import { classifyReplyDetail, decideReply, emailAddress, isAutomatedSender, loadRepliesConfig, matchReply, type IncomingMessage, type RepliesConfig } from './replies.js';
 
 export interface TriageResult {
@@ -65,7 +67,16 @@ export function triageReplies(db: BetterSqlite3.Database, messages: IncomingMess
       const rd = replyDate(m.date);
       // An ambiguous match stores every candidate job so follow-ups are blocked for all of them (blockedJobIds).
       const candidates = match.via === 'ambiguous' && match.candidates?.length ? JSON.stringify(match.candidates) : null;
-      const record = (action: string, outcome: Outcome | null) => { if (!dry) ins.run(m.message_id, match.job_id, cls, action, outcome, addr, subject, rd, candidates); };
+      // Owner notice fields: a short cleaned excerpt of the NEW text (secrets redacted, max 200) and the "needs you" flag (interview and offer
+      // always; a reply or unknown mail that asks for a time, test, link, salary, document, reference or personal data). Never used to answer.
+      const excerptText = clean(unquotedText(m.body), 200);
+      const needsYou = cls === 'interview' || cls === 'offer' || ((cls === 'replied' || cls === 'unknown') && ownerOnlyCodes(m.subject, m.body).length > 0) ? 1 : 0;
+      const threadId = m.thread_id ? clampStr(m.thread_id, 200) : null;
+      const record = (action: string, outcome: Outcome | null) => {
+        if (dry) return;
+        ins.run(m.message_id, match.job_id, cls, action, outcome, addr, subject, rd, candidates);
+        db.prepare('UPDATE processed_messages SET thread_id = ?, excerpt = ?, needs_you = ? WHERE message_id = ?').run(threadId, excerptText, needsYou, m.message_id);
+      };
       if (d.action === 'auto_record' && match.job_id && d.outcome) {
         if (!dry) recordOutcome(db, match.job_id, d.outcome, `auto: ${cls} reply via ${match.via} from ${m.from}: ${subject}`);
         latest.set(match.job_id, d.outcome);
