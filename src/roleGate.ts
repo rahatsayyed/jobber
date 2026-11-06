@@ -39,7 +39,7 @@ const DEFAULTS: RoleGateConfig = {
     { family: 'react', patterns: ['\\breact(?:[ .]?js)?\\b'], needs_not: ['react native'] },
     { family: 'javascript', patterns: ['javascript', 'typescript', '(?<![.\\w])js (?:developer|engineer)', '(?<![.\\w])ts (?:developer|engineer)'] },
     { family: 'web', patterns: ['web (?:developer|engineer|application developer)'] },
-    { family: 'software', patterns: ['software (?:developer|engineer)', '\\bsde\\b', 'application developer', 'programmer'] },
+    { family: 'software', patterns: ['software (?:development )?(?:developer|engineer)', 'software development', '\\bsde\\b(?: ?(?:i|ii|iii|1|2|3))?', 'application developer', 'programmer'] },
   ],
   borderline: [
     { family: 'react-native', patterns: ['react[- ]native'], note: 'React Native is mobile' },

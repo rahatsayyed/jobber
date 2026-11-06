@@ -47,7 +47,7 @@ describe('role gate title table', () => {
     expect((r as any).reason).toBe(`role: ${word}`);
   });
 
-  it.each(['Full Stack Developer', 'React Developer', 'Senior Software Engineer', 'MERN Stack Developer', 'Frontend Engineer II', 'UI Engineer', 'Fullstack Engineer', 'Front-End Developer', 'Lead JavaScript Developer', 'Web Developer', 'TypeScript Engineer', 'Sr. Software Developer'])('passes %s', (title) => {
+  it.each(['Full Stack Developer', 'React Developer', 'Senior Software Engineer', 'MERN Stack Developer', 'Frontend Engineer II', 'UI Engineer', 'Fullstack Engineer', 'Front-End Developer', 'Lead JavaScript Developer', 'Web Developer', 'TypeScript Engineer', 'Sr. Software Developer', 'Senior Software Development Engineer', 'Software Development Engineer II', 'SDE 2'])('passes %s', (title) => {
     expect(role(title).verdict).toBe('pass');
   });
 
