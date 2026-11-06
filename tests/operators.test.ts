@@ -133,19 +133,9 @@ describe('platform operators', () => {
         expect(body).not.toContain('LAYOUT_EXPLORE_BUDGET');
         expect(body).not.toMatch(/reason `layout_drift`/);
       });
-      it('every operator tool is in the wake profile allow list', () => {
-        for (const t of tools) {
-          if (t === 'Skill') expect(wake.builtin_tools).toContain('Skill');
-          else expect(wake.allow, t).toContain(t);
-        }
-      });
     });
   }
 
-  it('the wake profile allows both layout tools', () => {
-    expect(wake.allow).toContain('mcp__linkedin__linkedin_layout');
-    expect(wake.allow).toContain('mcp__naukri__naukri_layout');
-  });
   it('the layout tools are read-only members of the read_only permission set', () => {
     const sets = JSON.parse(readFileSync('config/permission-sets.json', 'utf8')) as Record<string, { allow: string[] }>;
     expect(sets.read_only.allow).toContain('mcp__linkedin__linkedin_layout');

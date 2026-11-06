@@ -75,15 +75,6 @@ describe('doctor and classifier-smoke', () => {
 });
 
 describe('launcher', () => {
-  it('runs outreach_wake and setup_guide --interactive --print-args, only for profiles that exist', async () => {
-    const seen: string[][] = [];
-    const r = await S.launcher.run(mk({ run: async (_c, a) => { seen.push(a); return { stdout: 'claude --safe', code: 0 }; } }));
-    expect(r.status).toBe('pass');
-    const profiles = Object.keys((JSON.parse(readFileSync('config/run-profiles.json', 'utf8')) as { profiles: Record<string, unknown> }).profiles);
-    for (const a of seen) expect(profiles).toContain(a[2]);
-    expect(seen.some((a) => a.includes('outreach_wake') && a.includes('--print-args'))).toBe(true);
-    expect(seen.some((a) => a.includes('setup_guide') && a.includes('--interactive') && a.includes('--print-args'))).toBe(true);
-  });
   it('fails on a forbidden flag or non-zero exit', async () => {
     expect((await S.launcher.run(mk({ run: async () => ({ stdout: 'claude --dangerously-skip-permissions', code: 0 }) }))).status).toBe('fail');
     const r = await S.launcher.run(mk({ run: async () => ({ stdout: 'launcher: nope\nmore', code: 3 }) }));

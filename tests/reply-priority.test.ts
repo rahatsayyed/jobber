@@ -171,16 +171,6 @@ describe('mail reply_check: gates', () => {
     expect(dry.launcher.starts.filter((p) => p.profile === 'mail_reply_check')).toHaveLength(0);
     expect(dry.posts).toHaveLength(0);
   });
-  it('the profile has the reply-watcher tools and NO gmail.send_email, no Bash', () => {
-    const p = JSON.parse(readFileSync('config/run-profiles.json', 'utf8')).profiles.mail_reply_check;
-    expect(p.allow).not.toContain('mcp__gmail__send_email');
-    expect(p.allow.some((e: string) => /send|draft|delete|modify|label/.test(e))).toBe(false);
-    expect(p.builtin_tools).not.toContain('Bash');
-    const agent = readFileSync('.claude/agents/reply-watcher.md', 'utf8');
-    const tools = /^tools: (.*)$/m.exec(agent)![1].split(',').map((x) => x.trim());
-    for (const t of tools) expect(p.allow, t).toContain(t);
-    expect(tools).not.toContain('mcp__gmail__send_email');
-  });
 });
 
 describe('thread check before a follow-up (rule 10 stays, one more precondition)', () => {

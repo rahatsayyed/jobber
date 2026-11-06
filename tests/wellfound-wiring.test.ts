@@ -162,20 +162,6 @@ describe('permission sets, run profile, MCP registration and the kill-switch mat
     expect(resolveSet(sets, 'full')).toContain('mcp__wellfound');
   });
 
-  it('the wake profile allows the wellfound tools, screens typed and armed text, passes the flag and the ceiling prefix', () => {
-    const wake = loadProfiles('config/run-profiles.json', 'config/permission-sets.json').outreach_wake;
-    for (const n of [...ENGINE, 'arm_send', 'arm_apply', 'discover', 'inbox', 'read_thread', 'layout', 'close']) expect(wake.allow, n).toContain(WF(n));
-    for (const n of ['arm_send', 'arm_apply', 'type']) expect(wake.screen_args, n).toContain(WF(n));
-    expect(wake.env_keys).toContain('WELLFOUND_SCREENSHOT');
-    expect(wake.env_prefixes).toContain('WELLFOUND_MAX_');
-    expect(wake.unrestricted_builtins).toBe(true); // the full session: Bash sits behind the tamper guard (tests/hook-tamper-guard.test.ts)
-  });
-
-  it('.mcp.json and the wake MCP config both start src/mcp/wellfound.ts', () => {
-    expect(json<{ mcpServers: Record<string, { args: string[] }> }>('.mcp.json').mcpServers.wellfound.args).toContain('src/mcp/wellfound.ts');
-    expect(json<{ mcpServers: Record<string, { args: string[] }> }>('config/runner/mcp.platform.json').mcpServers.wellfound.args).toContain('src/mcp/wellfound.ts');
-  });
-
   it('the kill-switch matcher covers the acting wellfound tools and wellfound_discover but not the read tools', () => {
     const settings = json<{ hooks: { PreToolUse: Array<{ matcher: string; hooks: Array<{ command: string }> }> } }>('.claude/settings.json');
     const entry = settings.hooks.PreToolUse.find((e) => e.hooks.some((h) => h.command.includes('kill-switch.cjs')))!;

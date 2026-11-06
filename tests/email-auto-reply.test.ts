@@ -701,19 +701,6 @@ describe('nudge after our own automatic reply', () => {
 });
 
 describe('static wiring', () => {
-  it('mail-operator, worker-tools and the mail_drip profile list the three reply tools; the agent file has a REPLY MODE', () => {
-    const tools = ['mcp__db__claim_email_reply_for_send', 'mcp__db__mark_email_reply_sent', 'mcp__db__mark_email_reply_failed'];
-    const wt = JSON.parse(read('config/worker-tools.json', 'utf8'))['mail-operator'] as string[];
-    const rp = JSON.parse(read('config/run-profiles.json', 'utf8')).profiles?.mail_drip ?? JSON.parse(read('config/run-profiles.json', 'utf8')).mail_drip;
-    const agent = read('.claude/agents/mail-operator.md', 'utf8');
-    for (const t of tools) {
-      expect(wt).toContain(t);
-      expect(rp.allow).toContain(t);
-      expect(agent.split('\n').find((l) => l.startsWith('tools:'))).toContain(t);
-    }
-    expect(agent).toContain('REPLY MODE');
-    expect(agent).toMatch(/NO attachment/);
-  });
   it('the mail window gets no headless env: the drip hands items to the window and has no dripEnv', () => {
     const src = read('src/scheduler/mailDrip.ts', 'utf8');
     expect(src).not.toContain('dripEnv');

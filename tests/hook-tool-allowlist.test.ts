@@ -270,16 +270,6 @@ describe('CLI', () => {
     expect(r.status).toBe(0);
     expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision).toBe('deny');
   });
-  it('prints nothing for an allowed call under the shipped outreach_wake profile', () => {
-    const r = run(['outreach_wake'], { tool_name: 'mcp__naukri__naukri_snapshot', tool_input: {} });
-    expect(r.status).toBe(0);
-    expect(r.stdout.trim()).toBe('');
-  });
-  it('runs Bash through the tamper guard under the shipped outreach_wake profile', () => {
-    expect(run(['outreach_wake'], { tool_name: 'Bash', tool_input: { command: 'ls src' } }).stdout.trim()).toBe('');
-    const r = run(['outreach_wake'], { tool_name: 'Bash', tool_input: { command: 'cat .env' } });
-    expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision).toBe('deny');
-  });
 });
 
 describe('gmail sender allowlist rule (plan 8G task 6)', () => {
@@ -338,17 +328,5 @@ describe('gmail tools and the apply-operator (plan 8G-2 task 22)', () => {
     expect(operator('mcp__db__list_queued_outreach')).toBe(true);
     // and the other gmail tools are denied for the main session of a sender-pinned profile too
     for (const t of ['mcp__gmail__send_email', 'mcp__gmail__delete_email', 'mcp__gmail__modify_email']) expect(main(t, { to: 'x@example.test' }), t).toBe(false);
-  });
-});
-
-describe('applier MCP tools in the wake profile (plan 8G-2 task 20)', () => {
-  it('are allowed, and screened tools refuse secret-shaped arguments', async () => {
-    const { loadProfiles } = await import('../src/platform/runner.js');
-    const wake = loadProfiles(resolve(ROOT, 'config/run-profiles.json'), resolve(ROOT, 'config/permission-sets.json')).outreach_wake as never;
-    const d = (tool_name: string, tool_input: object = {}) => hook.decide({ tool_name, tool_input }, wake, { root: ROOT });
-    expect(d('mcp__applier__apply_open', { job_id: 'job-1' }).allow).toBe(true);
-    expect(d('mcp__applier__apply_escalate', { job_id: 'job-1', reason: 'other', detail: 'needs a look' }).allow).toBe(true);
-    expect(d('mcp__applier__apply_escalate', { job_id: 'job-1', reason: 'other', detail: 'see secrets/webcore.lock' }).allow).toBe(false);
-    expect(d('mcp__applier__not_a_tool').allow).toBe(false);
   });
 });

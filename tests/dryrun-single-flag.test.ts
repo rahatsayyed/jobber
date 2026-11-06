@@ -88,12 +88,6 @@ describe('every path follows the single flag', () => {
 
 describe('JOBBER_DRY_RUN reaches wake runs and every MCP child', () => {
   const profiles = loadProfiles('config/run-profiles.json', 'config/permission-sets.json');
-  it('the outreach_wake profile passes it through buildEnv', () => {
-    const p = profiles.outreach_wake;
-    expect(p.env_keys).toContain('JOBBER_DRY_RUN');
-    for (const v of ['true', 'false', '1']) expect(buildEnv(p, { JOBBER_DRY_RUN: v, SOME_API_KEY: 's' }, {}).JOBBER_DRY_RUN).toBe(v);
-    for (const k of LEGACY_DRY_RUN_KEYS) expect(p.env_keys).not.toContain(k);
-  });
   it('no server in .mcp.json overrides or drops it (children inherit the launcher env)', () => {
     const servers = JSON.parse(readFileSync('.mcp.json', 'utf8')).mcpServers as Record<string, { env?: Record<string, string>; args?: string[] }>;
     expect(Object.keys(servers).length).toBeGreaterThanOrEqual(11);

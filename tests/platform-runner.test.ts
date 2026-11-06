@@ -3,7 +3,6 @@ import { describe, it, expect } from 'vitest';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import {
   assertSafeArgs,
-  buildClaudeArgs,
   buildEnv,
   loadProfiles,
   renderPolicy,
@@ -19,82 +18,6 @@ const hunt = loadProfiles('tests/fixtures/runner-send-profile.json', 'config/per
 // Ruling R4 (8G-2 task 23): sender.md still names the retired apply server until the 8G-1 branch removes the agent (task 14).
 const RETIRED_SERVERS = ['apply'];
 const retired = (t: string): boolean => RETIRED_SERVERS.includes(/^mcp__([a-z0-9-]+)__/.exec(t)?.[1] ?? '');
-
-describe('shipped profiles', () => {
-  it('never contain raw_query, wildcards or dangerous built-ins', () => {
-    for (const [n, p] of Object.entries(profiles)) {
-      expect(p.allow).not.toContain('mcp__db__raw_query');
-      // only the scheduled wake runs with the full built-in set (behind the tamper guard)
-      if (n === 'outreach_wake') continue;
-      expect(p.allow.every((e) => /^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$/.test(e))).toBe(true);
-      for (const b of ['Bash', 'Write', 'Edit', 'NotebookEdit', 'WebFetch', 'WebSearch']) {
-        expect(p.builtin_tools).not.toContain(b);
-      }
-    }
-  });
-
-  it('keeps the wake MCP config and allow list in step', () => {
-    const cfg = JSON.parse(readFileSync(wake.mcp_config, 'utf8')) as { mcpServers: Record<string, unknown> };
-    const used = new Set(wake.allow.map((e) => e.split('__')[1]));
-    expect([...used].sort()).toEqual(Object.keys(cfg.mcpServers).sort());
-  });
-
-  it('covers every tool the pipeline agents declare in the hunt profile', () => {
-    const missing: string[] = [];
-    // The four scheduler workers run under the wake profile; the next test covers them.
-    const WORKERS = ['linkedin-operator.md', 'naukri-operator.md', 'wellfound-operator.md', 'source-operator.md'];
-    for (const f of readdirSync('.claude/agents').filter((x) => x.endsWith('.md') && x !== 'hook-probe.md' && !WORKERS.includes(x))) {
-      const fm = /^---\n([\s\S]*?)\n---/.exec(readFileSync(`.claude/agents/${f}`, 'utf8'))?.[1] ?? '';
-      const tools = (fm.split('\n').find((l) => l.startsWith('tools:')) ?? '').replace('tools:', '').split(',').map((s) => s.trim()).filter(Boolean);
-      for (const t of tools) {
-        if (retired(t)) continue;
-        if (t.startsWith('mcp__') && !hunt.allow.includes(t)) missing.push(`${f}: ${t}`);
-        if (!t.startsWith('mcp__') && !hunt.builtin_tools.includes(t)) missing.push(`${f}: ${t}`);
-      }
-    }
-    expect(missing).toEqual([]);
-  });
-
-  it('covers every tool the scheduler workers declare in the wake profile', () => {
-    const missing: string[] = [];
-    for (const f of ['linkedin-operator', 'naukri-operator', 'wellfound-operator', 'source-operator']) {
-      const fm = /^---\n([\s\S]*?)\n---/.exec(readFileSync(`.claude/agents/${f}.md`, 'utf8'))?.[1] ?? '';
-      const tools = (fm.split('\n').find((l) => l.startsWith('tools:')) ?? '').replace('tools:', '').split(',').map((s) => s.trim()).filter(Boolean);
-      for (const t of tools) {
-        if (t.startsWith('mcp__') && !wake.allow.includes(t)) missing.push(`${f}: ${t}`);
-        if (!t.startsWith('mcp__') && !wake.builtin_tools.includes(t)) missing.push(`${f}: ${t}`);
-      }
-    }
-    expect(missing).toEqual([]);
-  });
-});
-
-describe('buildClaudeArgs', () => {
-  const args = buildClaudeArgs('outreach_wake', wake, { settingsPath: 'debug/runner/outreach_wake.settings.json' });
-  const next = (flag: string) => args[args.indexOf(flag) + 1];
-
-  it('is dontAsk with no prompts and strict MCP', () => {
-    expect(next('--permission-mode')).toBe('dontAsk');
-    expect(next('--permission-prompts')).toBe('none');
-    expect(args).toContain('--strict-mcp-config');
-    expect(next('--mcp-config')).toBe('config/runner/mcp.platform.json');
-    expect(next('--setting-sources')).toBe('project');
-  });
-  it('restricts built-ins and denies the dangerous ones explicitly', () => {
-    expect(next('--tools')).toBe(wake.builtin_tools.join(','));
-    // the wake lists every dangerous built-in itself, so nothing is left to deny on the command line
-    expect(args).not.toContain('--disallowedTools');
-    const huntArgs = buildClaudeArgs('hunt', hunt, { settingsPath: 'debug/runner/hunt.settings.json' });
-    expect(huntArgs[huntArgs.indexOf('--disallowedTools') + 1]).toBe('Bash,Write,Edit,NotebookEdit,WebFetch,WebSearch');
-  });
-  it('puts the prompt nowhere in argv', () => {
-    expect(args).not.toContain('run the hunt');
-    expect(args[0]).toBe('-p');
-  });
-  it('never contains a bypass flag', () => {
-    expect(() => assertSafeArgs(args, {})).not.toThrow();
-  });
-});
 
 describe('assertSafeArgs', () => {
   it('rejects bypass and skip flags and env', () => {
@@ -121,32 +44,11 @@ describe('buildEnv', () => {
     SERPER_API_KEY: 'synthetic-key-123456',
     ANTHROPIC_API_KEY: 'synthetic',
   };
-  it('allowlist mode passes only listed keys and prefixes and never a secret-shaped key', () => {
-    const env = buildEnv(wake, base, {});
-    expect(env.COOLDOWN_IGNORED_DAYS).toBe('3');
-    expect(env.QUIET_HOURS_START).toBe('1');
-    expect(env.HOME).toBe('/home/u');
-    expect(env.JOBBER_RUN_PROFILE).toBe('outreach_wake');
-    expect(env.GMAIL_APP_PASSWORD).toBeUndefined();
-    expect(env.SERPER_API_KEY).toBeUndefined();
-    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
-  });
-  it('passes LAYOUT_* to the wake (MCP servers read LAYOUT_ENFORCE) and nothing unrelated', () => {
-    const env = buildEnv(wake, { ...base, LAYOUT_ENFORCE: 'enforce', LAYOUT_DRIFT_HALT_N: '4', UNRELATED_FLAG: '1' }, {});
-    expect(env.LAYOUT_ENFORCE).toBe('enforce');
-    expect(env.LAYOUT_DRIFT_HALT_N).toBe('4');
-    expect(env.UNRELATED_FLAG).toBeUndefined();
-    expect(wake.env_prefixes).toContain('LAYOUT_');
-  });
   it('every allowlist profile that launches linkedin or naukri servers passes LAYOUT_', () => {
     for (const p of Object.values(profiles)) {
       const launches = p.allow.some((e) => e.startsWith('mcp__linkedin__') || e.startsWith('mcp__naukri__'));
       if (p.env_mode === 'allowlist' && launches) expect(p.env_prefixes ?? []).toContain('LAYOUT_');
     }
-  });
-  it('does not let a prefix pull in a secret-shaped key', () => {
-    const p: ResolvedProfile = { ...wake, env_prefixes: ['COOLDOWN_'] };
-    expect(buildEnv(p, { ...base, COOLDOWN_API_KEY: 'x-secret-value' }, {}).COOLDOWN_API_KEY).toBeUndefined();
   });
   it('dotenv_all mode includes parsed .env keys but still drops ANTHROPIC_API_KEY', () => {
     const env = buildEnv(hunt, base, { GMAIL_APP_PASSWORD: 'p', ANTHROPIC_API_KEY: 'k', IS_SANDBOX: '1', CLAUDE_CODE_SKIP_PERMISSIONS: '1' });
@@ -159,35 +61,6 @@ describe('buildEnv', () => {
 });
 
 describe('renderSettings and renderPolicy', () => {
-  it('registers both hooks with onFailure block and the rendered policy path', () => {
-    const s = renderSettings('outreach_wake', wake, {
-      hookPath: '$CLAUDE_PROJECT_DIR/.claude/hooks/tool-allowlist.cjs',
-      policyPath: 'debug/runner/outreach_wake.policy.json',
-    }) as any;
-    const cmds = JSON.stringify(s.hooks.PreToolUse);
-    expect(cmds).toContain('tool-allowlist.cjs');
-    expect(cmds).toContain('outreach_wake');
-    expect(cmds).toContain('block-outside-project.cjs');
-    expect(cmds).toContain('"onFailure":"block"');
-    expect(s.permissions.deny).toEqual([]);
-    expect(JSON.stringify(s.hooks.PreToolUse)).toContain('Read|Write|Edit|NotebookEdit|Bash|Grep|Glob|WebFetch');
-    const h = renderSettings('hunt', hunt, { hookPath: '$CLAUDE_PROJECT_DIR/.claude/hooks/tool-allowlist.cjs', policyPath: 'debug/runner/hunt.policy.json' }) as any;
-    expect(h.permissions.deny).toEqual(expect.arrayContaining(['Bash', 'Write', 'Edit']));
-  });
-  it('renders the full built-in tools and the flag only for outreach_wake', () => {
-    const pol = renderPolicy('outreach_wake', wake) as any;
-    expect(pol.profiles.outreach_wake.unrestricted_builtins).toBe(true);
-    for (const t of ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch', 'TodoWrite']) expect(pol.profiles.outreach_wake.builtin_tools).toContain(t);
-    expect((renderPolicy('hunt', hunt) as any).profiles.hunt.unrestricted_builtins).toBeUndefined();
-    expect(profiles.mail_drip.builtin_tools).not.toContain('Bash');
-    expect(profiles.mail_drip.unrestricted_builtins).toBeUndefined();
-  });
-  it('lists every .mcp.json server and no db.raw_query in the wake', () => {
-    const mcp = JSON.parse(readFileSync('.mcp.json', 'utf8')) as { mcpServers: Record<string, unknown> };
-    const used = new Set(wake.allow.map((e) => e.split('__')[1]));
-    for (const srv of Object.keys(mcp.mcpServers)) expect(used.has(srv), srv).toBe(true);
-    expect(wake.allow).not.toContain('mcp__db__raw_query');
-  });
   it('expands the permission set into allow in the rendered policy', () => {
     const pol = renderPolicy('hunt', hunt) as any;
     expect(pol.profiles.hunt.allow).toContain('mcp__gmail__send_email');
@@ -239,20 +112,8 @@ describe('loadProfiles validation', () => {
 
 describe('name validation', () => {
   const paths = { hookPath: 'h.cjs', policyPath: 'p.json' };
-  it('rejects unsafe names and paths', () => {
-    expect(() => renderSettings('x; touch pwn', wake, paths)).toThrow();
-    expect(() => renderPolicy('x; touch pwn', wake)).toThrow();
-    expect(() => renderSettings('ok_name', wake, paths)).not.toThrow();
-    expect(() => renderPolicy('ok_name', wake)).not.toThrow();
-    expect(() => renderSettings('ok', wake, { hookPath: 'h', policyPath: 'a"b' })).toThrow();
-  });
   it('loadProfiles rejects a bad name', () => {
     writeFileSync('debug/runner-test/name.json', JSON.stringify({ version: 1, profiles: { 'x; touch pwn': { mcp_config: 'm', builtin_tools: [], allow: ['mcp__db__get_funnel'], env_mode: 'allowlist', env_keys: ['TZ'], max_turns: 1 } } }));
     expect(() => loadProfiles('debug/runner-test/name.json', 'config/permission-sets.json')).toThrow();
-  });
-  it('buildEnv throws without a name', () => {
-    const { name: _n, ...noName } = wake;
-    void _n;
-    expect(() => buildEnv(noName as ResolvedProfile, {}, {})).toThrow();
   });
 });

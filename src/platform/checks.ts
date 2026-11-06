@@ -260,27 +260,22 @@ export function restrictedChecks(deps: Partial<RestrictedDeps> = {}): Check[] {
           const msg = String((e as Error)?.message ?? 'unknown error').split('\n')[0];
           return fail(msg, 'fix config/run-profiles.json');
         }
-        const wake = profiles.outreach_wake;
-        if (!wake) return fail('profile outreach_wake is missing', 'restore config/run-profiles.json from git');
-        const known = new Set([...serverNames(ctx, ['.mcp.json']), ...serverNames(ctx, ['config', 'runner', 'mcp.platform.json'])]);
-        const unknown = [...new Set(wake.allow.map((t) => t.split('__')[1] ?? ''))].filter((s) => !known.has(s));
-        return unknown.length
-          ? warn(`outreach_wake allows tools of unconfigured server(s): ${unknown.join(', ')}`, 'add the server to config/runner/mcp.platform.json or drop the tool')
-          : pass(`${Object.keys(profiles).length} profile(s) valid`);
+        const guide = profiles.setup_guide;
+        if (!guide) return fail('profile setup_guide is missing', 'restore config/run-profiles.json from git');
+        return pass(`${Object.keys(profiles).length} profile(s) valid (setup_guide only: the headless run profiles are gone, all work goes through the worker windows)`);
       },
     },
     {
       id: 'restricted_hook',
-      title: 'restricted-run tool allowlist hook',
+      title: 'setup guide tool allowlist hook',
       async run(ctx) {
         const hook = join(ctx.root, '.claude', 'hooks', 'tool-allowlist.cjs');
         if (!ctx.fs.exists(hook)) return fail('.claude/hooks/tool-allowlist.cjs is missing', 'restore it from git');
         const event = JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'true' } });
-        // outreach_wake is a full session (unrestricted_builtins) and allows Bash on purpose, so the probe uses
-        // mail_drip, a profile that stays restricted: the hook must still deny Bash there.
-        const r = await ctx.run('node', [hook, 'mail_drip'], { cwd: ctx.root, input: event, env: { HOOK_NO_LOG: '1' } });
+        // setup_guide is the one profile left (interactive, Bash only for an exact list): a free Bash command must be denied there.
+        const r = await ctx.run('node', [hook, 'setup_guide'], { cwd: ctx.root, input: event, env: { HOOK_NO_LOG: '1' } });
         if (!/"deny"/.test(r.stdout)) {
-          return fail('the hook did not deny a Bash event under mail_drip', 'check .claude/hooks/tool-allowlist.cjs and config/run-profiles.json');
+          return fail('the hook did not deny a Bash event under setup_guide', 'check .claude/hooks/tool-allowlist.cjs and config/run-profiles.json');
         }
         const v = await ctx.run('claude', ['--version']);
         const m = /(\d+)\.(\d+)\.(\d+)/.exec(v.stdout);

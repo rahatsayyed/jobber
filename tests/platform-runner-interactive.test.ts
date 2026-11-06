@@ -4,7 +4,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import {
-  buildClaudeArgs,
   buildInteractiveArgs,
   loadProfiles,
   renderPolicy,
@@ -15,22 +14,6 @@ import { checkInteractiveUse, formatPrintArgs, spawnInteractive } from '../src/p
 
 const profiles = loadProfiles('config/run-profiles.json', 'config/permission-sets.json');
 const hunt = loadProfiles('tests/fixtures/runner-send-profile.json', 'config/permission-sets.json').hunt;
-
-describe('golden: outreach_wake is unchanged by the interactive work', () => {
-  const golden = JSON.parse(readFileSync('tests/fixtures/runner-golden.json', 'utf8')) as Record<string, any>;
-  for (const n of ['outreach_wake']) {
-    it(`${n} argv, settings and policy match the pre-change capture`, () => {
-      const p = profiles[n];
-      expect(buildClaudeArgs(n, p, { settingsPath: `debug/runner/${n}.settings.json` })).toEqual(golden[n].args);
-      const paths = {
-        hookPath: '$CLAUDE_PROJECT_DIR/.claude/hooks/tool-allowlist.cjs',
-        policyPath: `$CLAUDE_PROJECT_DIR/debug/runner/${n}.policy.json`,
-      };
-      expect(JSON.stringify(renderSettings(n, p, paths))).toBe(JSON.stringify(golden[n].settings));
-      expect(JSON.stringify(renderPolicy(n, p))).toBe(JSON.stringify(golden[n].policy));
-    });
-  }
-});
 
 describe('interactive profiles: validation', () => {
   const dir = 'debug/runner-test';

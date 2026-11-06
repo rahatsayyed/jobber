@@ -118,36 +118,6 @@ describe('mail-operator definition', () => {
   });
 });
 
-describe('wake profile', () => {
-  const wake = loadProfiles('config/run-profiles.json', 'config/permission-sets.json').outreach_wake;
-  it('allow list equals the committed list', () => {
-    expect(wake.allow).toEqual([...WAKE_ALLOW, ...WAKE_ALLOW_FULL_SESSION]);
-  });
-  it('allows Agent dispatch and every tool of the pipeline and mail agents', () => {
-    expect(wake.builtin_tools).toEqual(expect.arrayContaining(['Skill', 'Agent']));
-    for (const a of ['mail-operator', 'matcher', 'contact-finder', 'outreach-preparer', 'reply-watcher', 'followup-drafter']) {
-      for (const t of def(a).tools) {
-        if (t.startsWith('mcp__')) expect(wake.allow, `${a}: ${t}`).toContain(t);
-        else expect(wake.builtin_tools, `${a}: ${t}`).toContain(t);
-      }
-    }
-  });
-  it('screens gmail send arguments and passes the follow-up mode keys', () => {
-    expect(wake.screen_args).toContain('mcp__gmail__send_email');
-    for (const k of ['SEND_LIMIT_PER_RUN', 'FOLLOWUPS_AUTONOMOUS']) expect(wake.env_keys).toContain(k);
-  });
-  it('passes the web, scout, site, dork and search prefixes (task 7) and no secret', () => {
-    for (const p of ['WEB_', 'SCOUT_', 'SITE_', 'DORK_', 'SEARCH_']) expect(wake.env_prefixes).toContain(p);
-    expect(wake.env_keys).toContain('JOBBER_DRY_RUN');
-    expect(wake.env_keys).not.toContain('APPLY_DRY_RUN');
-    expect([...(wake.env_keys ?? []), ...(wake.env_prefixes ?? [])].some((k) => /SERPER|PASSWORD|TOKEN|SECRET|API_KEY/.test(k))).toBe(false);
-  });
-  it('serves every wake tool from a configured server', () => {
-    const cfg = JSON.parse(readFileSync(wake.mcp_config, 'utf8')) as { mcpServers: Record<string, unknown> };
-    for (const t of wake.allow) expect(Object.keys(cfg.mcpServers), t).toContain(t.split('__')[1]);
-  });
-});
-
 describe('contact-finder and outreach-preparer', () => {
   it('contact-finder names the closed reason codes and the ladder domain', () => {
     const b = def('contact-finder').body;

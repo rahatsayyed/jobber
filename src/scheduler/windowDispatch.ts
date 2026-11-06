@@ -204,7 +204,7 @@ export class WindowDispatcher {
       await assertClaudePane(this.d.run, this.d.session, i.window);
     } catch (e) {
       const why = /not found/.test((e as Error).message) ? 'window_missing' : 'not_claude';
-      if (!this.d.ensureReady) return this.refuse('window_unavailable');
+      if (!this.d.ensureReady) return this.refuse(`window_unavailable:${why}`);
       let r: string;
       try { r = await this.d.ensureReady(i.window); } catch { r = 'ensure_failed'; }
       if (r !== 'ready') return this.refuse(`window_unavailable:${why}:${r}`.slice(0, 80));

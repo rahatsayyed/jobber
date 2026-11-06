@@ -463,14 +463,6 @@ describe('restricted-run checks', () => {
     expect(ok.detail).toContain('0.004');
     expect(ok.detail).toContain('0.91');
   });
-  it('run_profiles: fail on throw, warn on unknown server, pass otherwise', async () => {
-    const t = await run(mk({ loadProfiles: () => { throw new Error('bad profile x'); } }), base());
-    expect(t.run_profiles.status).toBe('fail');
-    expect(t.run_profiles.detail).toContain('bad profile x');
-    const w = await run(mk({ loadProfiles: () => profiles(['mcp__ghost__do']) }), base());
-    expect(w.run_profiles.status).toBe('warn');
-    expect((await run(mk(), base())).run_profiles.status).toBe('pass');
-  });
   it('restricted_hook: fails when missing or not denying, warns on old or unparseable claude', async () => {
     const f = base();
     delete f[HOOK];
