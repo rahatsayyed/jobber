@@ -23,6 +23,7 @@ const OWNER_DOCS: string[] = [
   'docs/dashboard-login.md',
   'docs/setup-modes.md',
   'docs/email-auto-reply.md',
+  'docs/matching.md',
   'docs/index.md',
 ];
 // Docs allowed to be absent until their task lands. A writer removes its own

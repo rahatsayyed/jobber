@@ -4,6 +4,7 @@
 // `composeManualReport` gives the same report as plain text (stored in the request row and used by tests); the Telegram send uses the HTML.
 import type BetterSqlite3 from 'better-sqlite3';
 import { MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT } from '../db.js';
+import { DEFAULT_MATCH_THRESHOLD } from '../matchRubric.js';
 import { JOB_STATUS_JD_PENDING, JOB_STATUS_REPEAT_CONTACT, repeatContactOf } from '../pipelineWork.js';
 import {
   E, b, clean, code, headline, htmlToPlain, i as ital, join, line, link, type Html,
@@ -156,7 +157,7 @@ const joinLines = (parts: Html[]): string => parts.map((p) => p.s).join('\n');
 
 /** The update for one request as one or more Telegram HTML messages of at most 3500 characters (one posting per block, never split). */
 export function composeManualReportHtml(db: Db, r: ManualRequest, opts: { matchThreshold?: number; extra?: string[] } = {}): string[] {
-  const threshold = opts.matchThreshold ?? 60;
+  const threshold = opts.matchThreshold ?? DEFAULT_MATCH_THRESHOLD;
   let where = r.url;
   try { const u = new URL(r.url); where = `${u.hostname}${u.pathname}`; } catch { /* keep raw */ }
   const ids = jobIdsOf(r);
@@ -212,7 +213,7 @@ export async function finalizeManualRequests(db: Db, runStatus: string, d: Final
     for (const id of ids) {
       const j = db.prepare('SELECT score, excluded_reason, match_fails, status FROM jobs WHERE id = ?').get(id) as JobRow | undefined;
       if (j && !jobSettled(j)) { unsettled++; continue; }
-      if (j && j.score !== null && !j.excluded_reason && (r.force || j.score >= (d.matchThreshold ?? 60))) {
+      if (j && j.score !== null && !j.excluded_reason && (r.force || j.score >= (d.matchThreshold ?? DEFAULT_MATCH_THRESHOLD))) {
         // Scored but the wake stopped before prepare: not settled while the job has no queue row and prep offers remain.
         const x = db.prepare('SELECT priority, prep_offers, status FROM jobs WHERE id = ?').get(id) as { priority: number | null; prep_offers: number | null; status: string | null } | undefined;
         const hasQueue = (db.prepare('SELECT COUNT(*) AS n FROM outreach_queue WHERE job_id = ?').get(id) as { n: number }).n > 0;

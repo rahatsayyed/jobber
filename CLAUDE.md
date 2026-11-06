@@ -140,13 +140,23 @@ change for day-to-day tuning.
   `full-stack-react-india-remote`, in `config/wellfound-discovery.json` (`role`, `location`,
   `remote`, `limit` 1 to 40, default 20); it is planned only when `secrets/wellfound-state.json`
   exists (see "Wellfound").
-- **MATCH_THRESHOLD**: `60` (env var; jobs scoring below this are skipped — see `.env`). The score is the sum of
-  five dimensions, each 0 to 20 (see "Running a wake", P2). A job also needs EVERY dimension at its minimum:
-- **MATCH_DIM_MINIMUMS**: `role_fit=12,skills=10,seniority_comp=8,location=8,flags=10` (env var, comma list of
-  `key=number`, keys you leave out keep these defaults; an invalid value falls back to ALL defaults and the doctor
-  warns; the scheduler and the db MCP read it at start). A job below any minimum is stored under the threshold.
-- **Role gate**: `config/role-families.json` (allowed title families, deny words, pay-model phrases). Code excludes a
-  job whose title is not a target role (`role: <word>`) before the matcher, and again in `gates.apply_vetoes`.
+- **MATCH_THRESHOLD**: `80` (env var; jobs scoring below this are skipped — see `.env`). The stored score is the
+  career-ops Global score (1 to 5) times 20, so 80 is 4.0 of 5, the career-ops "worth applying" line; below 4.0 it
+  recommends against applying (see "Running a wake", P2 and `docs/matching.md`). Jobs scored before the career-ops
+  rubric keep the old line of 60 (never above this value).
+- **North Star**: the optional `north_star` section of `user-data/profile.json` (target role archetypes with fit
+  primary, secondary or adjacent, culture criteria, dealbreakers, comp; empty comp is unknown and is never invented).
+  `northStarLine` (`src/northStar.ts`) builds the `North Star:` line for the matcher prompt; the wake prompt must append it
+  next to the `Target regions` line (until it does, the `match-jobs` skill uses the same default families). The section
+  also drives the code role gate's allowed families. Example:
+  `user-data.example/profile.json`.
+- **MATCH_DIM_MINIMUMS**: legacy. `role_fit=12,skills=10,seniority_comp=8,location=8,flags=10` (env var, comma list of
+  `key=number`) were the per-dimension minimums of the old five-key rubric (`rubric_v2`). The career-ops rubric has no
+  per-dimension minimums; the key is now read only by `npm run matches:regate` for queued rows saved under that rubric.
+- **Role gate**: `config/role-families.json` (allowed title families, deny words, pay-model phrases; the allowed
+  families come from the North Star archetypes when `user-data/profile.json` has them). Code excludes a
+  job whose title is not a target role (`role: <word>`) before the matcher, and again in `gates.apply_vetoes`. It is a
+  cheap code pre-filter that career-ops does not have; it is stricter than the model judgment and saves model cost.
 - **Email drip lane** (env vars, catalog in `src/setup/limitsCatalog.ts` and `src/settings/envCatalog.ts`,
   read by the scheduler daemon at start, so restart it after a change; all commented out in `.env.example`
   because the defaults are the shipped behaviour): `EMAIL_SEND_WINDOW_START` (`09:30`) and
@@ -522,28 +532,33 @@ never skipped.
   waits for the whole wave, runs P2a to P2c on that wave's results (save and veto per wave), then reads
   the next page and dispatches the next wave. Each returns
   `[{job_id, score, score_dims, reasons, missing_keywords, requirements, strengths, gaps, deadline,
-  location_verdict?, language_gate?, language_note?}, ...]`. `score_dims` is the five-dimension rubric (adapted
-  from career-ops, MIT): `role_fit` (the North Star: is it the role the owner targets, with the exact title and one
-  JD line as evidence), `skills` (match with the CV), `seniority_comp` (level fit and pay or employment type),
-  `location` (location verdict and language gate; remote gives no free maximum), `flags` (inverse red flags, 20 =
-  clean), each an integer 0 to 20, summed in code. The old four-key shape is rejected for a new save. Before the
+  location_verdict?, language_gate?, language_note?}, ...]`. `score_dims` is the career-ops rubric
+  (https://github.com/career-ops-hq/career-ops, MIT, (c) 2026 Santiago Fernandez de Valderrama; attribution in
+  `docs/matching.md`), tag `career_ops_v1`: `cv_match` (skills, experience, proof points), `north_star` (fit with the
+  owner's target archetypes; an unmatched role scores 1), `comp` (salary vs market), `culture` (company culture,
+  growth, stability, remote policy), each 1.0 to 5.0 with one decimal, `red_flags` (a negative adjustment, 0 to -3.0)
+  and the holistic `global` (1.0 to 5.0, no arithmetic formula), with `archetype` and a short `evidence` text per
+  dimension; the stored score is `round(global x 20)`. The older shapes (`rubric_v2`, `legacy`) are rejected for a new
+  save and stay readable when stored. Before the
   matcher, code runs the ROLE GATE (`src/roleGate.ts`, `config/role-families.json`) on the title: a deny word or a
   title in no target family is marked `role_mismatch` and excluded as `role: <word>` (never matched, manual
   requests and `--force` included, as vetoes always apply); a borderline title is handed to the matcher with
-  `role_gate: "borderline"` so it scores `role_fit` strictly. The matcher checks each posting with
+  `role_gate: "borderline"` so it scores `north_star` strictly. The matcher checks each posting with
   `gates.check_liveness` and returns score 0 / reasons "expired" for expired postings. Remove every
   `{job_id, error}` overflow row (a matcher given more than 5 jobs returns these) and re-dispatch
   exactly those jobs once; report any still failing as match errors.
   - **P2a** `db.save_match_result` with the full result array. It validates per row and never fails
     the whole call for one bad row: report every `errors` entry as "match rows rejected: <job_id>:
     <error>" and treat those jobs as unscored. The score is capped by the evidence in the requirement
-    table, and the PASS RULE is applied in code: a job moves ahead only if every dimension reaches its minimum
-    (`MATCH_DIM_MINIMUMS`), the sum reaches `MATCH_THRESHOLD`, `location_verdict` is not FAIL and there is no hard
-    stop. A job that fails a minimum, a FAIL verdict or a hard stop is saved with its dimensions and a
-    `score_cap_reason` (`dim_min:role_fit`, `location_fail`, `hard_stop`) and a stored score of at most
-    `MATCH_THRESHOLD` minus 1, so P2c and every other consumer reject it; the dimension sum stays in `score_dims`
-    and in the reasons. Rows stored before this rubric keep their score and are read as `legacy`. If `injection_suspects` is non-empty (the posting contained phrases aimed at an AI
-    screener; score capped at 75 with `score_cap_reason` "injection-suspect"), report those job ids;
+    table, and the PASS RULE is applied in code: a job moves ahead only if the stored score (Global x 20)
+    reaches `MATCH_THRESHOLD` (default 80 = 4.0 of 5; career-ops bands: 4.5+ apply immediately, 4.0 to 4.4 worth
+    applying, 3.5 to 3.9 recommend against, below 3.5 recommend against), `location_verdict` is not FAIL and there is
+    no hard stop. A FAIL verdict or a hard stop is saved with its dimensions and a
+    `score_cap_reason` (`location_fail`, `hard_stop`) and a stored score of at most
+    `MATCH_THRESHOLD` minus 1, so P2c and every other consumer reject it; the Global score stays in `score_dims`
+    and in the reasons. Rows stored before this rubric keep their score, are read as `rubric_v2` or `legacy`, and keep
+    the old line of 60. If `injection_suspects` is non-empty (the posting contained phrases aimed at an AI
+    screener; score capped at 89, below the 4.5 band, with `score_cap_reason` "injection-suspect"), report those job ids;
     it is a warning, the job still proceeds. The result's `scores` array
     (`[{job_id, score, score_cap_reason, confidence}]`) holds the STORED scores after the evidence
     ceiling and injection cap: from here on use ONLY these values. A job with no entry was not saved
@@ -565,7 +580,7 @@ never skipped.
     the apply tools skip the job (skip the call if nothing was excluded). If `db.save_match_result`,
     `gates.apply_vetoes` or `db.mark_excluded` errors twice, STOP the pipeline for this wake and
     report it (an explicit exception to Safety rule 4's "continue with the next job").
-  - **P2c** Keep only jobs whose STORED score is at least `MATCH_THRESHOLD` (default 60), plus every
+  - **P2c** Keep only jobs whose STORED score is at least `MATCH_THRESHOLD` (default 80), plus every
     surviving priority job marked `force_prepare: true` (it still passed the vetoes); the rest
     are not contacted, tailored or drafted.
 - **P3 Contacts**: after the last wave, dispatch `contact-finder` with the matched jobs (every wave's

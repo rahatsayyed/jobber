@@ -1,8 +1,9 @@
 // One-off, idempotent migration (owner runs it; never a wake): re-runs the ROLE GATE (config/role-families.json) and, for rows that carry
-// the five-dimension rubric, the per-dimension minimums on jobs that are scored and have a QUEUED outreach row that has not gone out.
-// Rows that fail are parked: outreach_queue.status = 'skipped' and the job gets excluded_reason ('role: <word>' or 'dim_min:<dim>') and
-// status 'role_mismatch' (role) so no lane picks it up. An old 4-key row (skills, seniority, domain, location) has no role_fit: only the
-// TITLE gate applies to it. Sent, applied, connected, sending and any other advanced rows are never touched.
+// the old five-key rubric (rubric_v2) the per-dimension minimums, and for rows saved with the career-ops rubric (career_ops_v1) the cutoff
+// (stored score below MATCH_THRESHOLD, default 80 = 4.0 of 5), on jobs that are scored and have a QUEUED outreach row that has not gone out.
+// Rows that fail are parked: outreach_queue.status = 'skipped' and the job gets excluded_reason ('role: <word>', 'dim_min:<dim>' or 'below_cutoff:<score>') and
+// status 'role_mismatch' (role) so no lane picks it up. An old 4-key row (legacy: skills, seniority, domain, location) has neither: only the
+// TITLE gate applies to it, and its old stored score is never judged against the new cutoff. Sent, applied, connected, sending and any other advanced rows are never touched.
 // Usage: npm run matches:regate            (dry run: prints what WOULD be parked, changes nothing)
 //        npm run matches:regate -- --apply (parks them)        database: JOBAPPLIER_DB, default data.sqlite
 import { fileURLToPath } from 'node:url';
@@ -10,7 +11,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { dbPath } from '../src/dbPath.js';
 import { checkRole, loadRoleGateConfig, ROLE_MISMATCH_STATUS, type RoleGateConfig } from '../src/roleGate.js';
-import { dimMinimumsFromEnv, failedDims, parseStoredDims, type DimKey, type RubricDims } from '../src/matchRubric.js';
+import { dimMinimumsFromEnv, failedDims, matchThresholdFromEnv, parseStoredDims, type DimKey, type RubricDims } from '../src/matchRubric.js';
 
 export interface RegateRow { job_id: string; title: string; company: string; reason: string }
 export interface RegateResult { considered: number; would_park: RegateRow[]; parked: number; applied: boolean }
@@ -19,12 +20,13 @@ const OPEN = "('', 'queued', 'manual_review')";
 
 export function rematchGate(
   db: BetterSqlite3.Database,
-  opts: { apply?: boolean; cfg?: RoleGateConfig; mins?: Readonly<RubricDims> } = {},
+  opts: { apply?: boolean; cfg?: RoleGateConfig; mins?: Readonly<RubricDims>; threshold?: number } = {},
 ): RegateResult {
   const cfg = opts.cfg ?? loadRoleGateConfig().config;
   const mins = opts.mins ?? dimMinimumsFromEnv().mins;
+  const threshold = opts.threshold ?? matchThresholdFromEnv();
   const rows = db.prepare(
-    `SELECT j.id AS id, j.title AS title, j.company AS company, j.description AS description, j.score_dims AS score_dims
+    `SELECT j.id AS id, j.title AS title, j.company AS company, j.description AS description, j.score_dims AS score_dims, j.score AS score
        FROM jobs j
       WHERE j.score IS NOT NULL AND j.excluded_reason IS NULL
         AND NOT EXISTS (SELECT 1 FROM job_exclusion_log l WHERE l.job_id = j.id)
@@ -38,16 +40,18 @@ export function rematchGate(
         AND NOT EXISTS (SELECT 1 FROM connections c WHERE c.job_id = j.id)
         AND NOT EXISTS (SELECT 1 FROM outreach o WHERE o.job_id = j.id)
       ORDER BY j.id`,
-  ).all() as Array<{ id: string; title: string | null; company: string | null; description: string | null; score_dims: string | null }>;
+  ).all() as Array<{ id: string; title: string | null; company: string | null; description: string | null; score_dims: string | null; score: number | null }>;
   const bad: RegateRow[] = [];
   for (const r of rows) {
     const role = checkRole({ title: r.title, description: r.description }, cfg);
     let reason: string | null = role.verdict === 'reject' ? role.reason : null;
     if (!reason) {
       const { kind, dims } = parseStoredDims(r.score_dims);
-      if (kind === 'rubric' && dims) {
+      if (kind === 'rubric_v2' && dims) {
         const failed = failedDims(dims as unknown as RubricDims, mins) as DimKey[];
         if (failed.length) reason = `dim_min:${failed.join(',')}`;
+      } else if (kind === 'career_ops' && r.score !== null && r.score < threshold) {
+        reason = `below_cutoff:${r.score}`;
       }
     }
     if (reason) bad.push({ job_id: r.id, title: r.title ?? '', company: r.company ?? '', reason });

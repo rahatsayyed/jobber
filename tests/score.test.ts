@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { openDb, saveJob, saveMatchResultsChecked } from '../src/db.js';
 import { hardStops, normalizeMatchRow, normalizeRequirements, type Requirement } from '../src/score.js';
+import { coDims } from './helpers/coDims.js';
 
 const desc = 'We need 3+ years of React. Strong TypeScript required. Kubernetes is a plus. Must be based in India.';
-const dims = { role_fit: 15, skills: 15, seniority_comp: 15, location: 15, flags: 15 };
+const dims = coDims(4.0);
 // default table: one stated-and-met critical row, so the evidence ceiling does not bite (empty-table ceiling is covered in scoreCeiling.test.ts)
 const okReqs = [{ req: 'React', importance: 'critical', evidence: 'stated', jd_quote: '3+ years of React', match: 'strong' }];
 const row = (over: any = {}) => ({ job_id: 'j1', score: 1, reasons: 'r', missing_keywords: [], score_dims: dims, requirements: okReqs, ...over });
@@ -74,11 +75,12 @@ describe('hardStops', () => {
 describe('normalizeMatchRow', () => {
   it('computes score from dims (code wins over the model)', () => {
     const r = normalizeMatchRow(row({ score: 99 }), desc);
-    expect(r.ok && r.row.score).toBe(75);
+    expect(r.ok && r.row.score).toBe(80);
   });
-  it.each([[26], [-1], [12.5], ['20'], [Number.NaN], [true]])('rejects invalid dim %s', (bad) => {
-    const r = normalizeMatchRow(row({ score_dims: { ...dims, skills: bad } }), desc);
-    expect(r).toEqual({ ok: false, error: `invalid score_dims.skills: ${String(bad)}` });
+  it.each([[6], [0.9], [4.25], ['4'], [Number.NaN], [true]])('rejects invalid dim %s', (bad) => {
+    const r = normalizeMatchRow(row({ score_dims: { ...dims, cv_match: bad } }), desc);
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.error).toContain('invalid score_dims.cv_match');
   });
   // Changed deliberately (final review M1): a legacy row without dims used to be accepted with its own score; now only an expired row is.
   it('a row without dims is accepted only as an expired row (score 0); any other score is "missing score_dims"', () => {
@@ -111,12 +113,12 @@ describe('saveMatchResultsChecked', () => {
   };
   it('writes valid rows, reports invalid ones, leaves invalid rows untouched', () => {
     const db = setup();
-    const out = saveMatchResultsChecked(db, [row({ job_id: 'j1', strengths: ['React'] }), row({ job_id: 'j2', score_dims: { ...dims, flags: 30 } })]);
+    const out = saveMatchResultsChecked(db, [row({ job_id: 'j1', strengths: ['React'] }), row({ job_id: 'j2', score_dims: { ...dims, red_flags: 1 } })]);
     expect(out.saved).toBe(1);
-    expect(out.errors).toEqual([{ job_id: 'j2', error: 'invalid score_dims.flags: 30' }]);
+    expect(out.errors).toEqual([{ job_id: 'j2', error: expect.stringContaining('invalid score_dims.red_flags: 1') }]);
     const j1 = db.prepare('SELECT * FROM jobs WHERE id = ?').get('j1') as any;
-    expect(j1.score).toBe(75);
-    expect(JSON.parse(j1.score_dims)).toEqual(dims);
+    expect(j1.score).toBe(80);
+    expect(JSON.parse(j1.score_dims)).toMatchObject({ ...dims, decision: 'apply' });
     expect(JSON.parse(j1.strengths)).toEqual(['React']);
     expect((db.prepare('SELECT score FROM jobs WHERE id = ?').get('j2') as any).score).toBeNull();
   });

@@ -12,6 +12,7 @@ import type { ChatRunner } from './chat.js';
 import { childEnv, type SpawnFn } from './spawn.js';
 import { readTopicState, type TopicName } from './topics.js';
 import { DripController, type Button, type DripIo } from './drip.js';
+import { matchThresholdFromEnv } from '../matchRubric.js';
 
 export const STATUS_SCRIPT_COMMANDS = ['limits', 'working', 'health', 'sources', 'escalations'] as const;
 /** Commands that only read: they still answer while the kill switch is on. */
@@ -209,7 +210,7 @@ async function handleCommand(name: string, rest: string, deps: BridgeDeps): Prom
   }
 
   if (name === 'status') {
-    const f = await withDb(deps, (db) => funnelStats(db, Number(deps.env.MATCH_THRESHOLD) || 60));
+    const f = await withDb(deps, (db) => funnelStats(db, matchThresholdFromEnv(deps.env)));
     return deps.reply([
       '📈 **Funnel**',
       `discovered **${f.discovered}** → matched **${f.matched}** → contacted **${f.contacted}** → replied **${f.replied}** → interview **${f.interview}** → offer **${f.offer}**`,

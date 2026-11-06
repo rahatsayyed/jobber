@@ -1,6 +1,7 @@
 // Adapted from MadsLorentzen/ai-job-search /html-report (MIT, (c) 2026 Mads Lorentzen): stage-history funnel, with benchmark
 // context from career-ops-hq/career-ops templates/benchmarks.yml (MIT, (c) 2026 Santiago Fernandez de Valderrama).
 import type BetterSqlite3 from 'better-sqlite3';
+import { DEFAULT_MATCH_THRESHOLD, MATCHED_SQL, matchedBinds } from './matchRubric.js';
 
 export const BENCHMARKS = {
   response_rate: { typical: 0.03, low: 0.02, high: 0.13 },
@@ -50,11 +51,11 @@ export function renderFunnelHtml(f: Funnel, generatedAt: string): string {
 <p>Benchmarks: ${esc(f.benchmarks.source)}.</p></body></html>`;
 }
 
-export function funnelStats(db: BetterSqlite3.Database, threshold = 60): Funnel {
+export function funnelStats(db: BetterSqlite3.Database, threshold = DEFAULT_MATCH_THRESHOLD): Funnel {
   const discovered = count(db, 'SELECT COUNT(*) AS n FROM jobs');
   // Plan 2: an excluded job (veto, deadline, hard stop) never proceeded, so it is not "matched", unless we already contacted it
   // (an emailed job keeps counting, otherwise `contacted` could exceed `matched`).
-  const matched = count(db, `SELECT COUNT(*) AS n FROM jobs WHERE score >= ? AND (excluded_reason IS NULL OR id IN (${CONTACTED}))`, threshold);
+  const matched = count(db, `SELECT COUNT(*) AS n FROM jobs WHERE ${MATCHED_SQL} AND (excluded_reason IS NULL OR id IN (${CONTACTED}))`, ...matchedBinds(threshold));
   const contacted = count(db, `SELECT COUNT(*) AS n FROM (${CONTACTED})`);
   // Only contacted jobs count as replied/interview/offer (an outcome typed for a never-contacted job id must not push a rate above 1).
   const ever = (outcomes: string[]) => count(db, `SELECT COUNT(DISTINCT job_id) AS n FROM job_outcomes WHERE outcome IN (${outcomes.map(() => '?').join(',')}) AND job_id IN (${CONTACTED})`, ...outcomes);

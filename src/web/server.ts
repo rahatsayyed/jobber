@@ -42,6 +42,7 @@ import { createInstructionRoutes, type InstructionDeps } from './instructionRout
 import { createQuestionRoutes, type QuestionDeps } from './questionRoutes.js';
 import { createManualApplyRoutes, type ManualApplyDeps } from './manualApplyRoutes.js';
 import { createTerminalRoutes } from './terminalRoutes.js';
+import { DEFAULT_MATCH_THRESHOLD } from '../matchRubric.js';
 import { applySecurityHeaders, HttpError, json, readJson, securityHeaders, type Ctx } from './router.js';
 
 export interface WebDeps {
@@ -63,7 +64,7 @@ export interface WebDeps {
   now?: () => Date;
   // optional wiring
   secrets?: string[]; // literal secret values masked in pane output, status and config (include the OIDC client secret)
-  threshold?: number; // MATCH_THRESHOLD, default 60
+  threshold?: number; // MATCH_THRESHOLD, default 80
   env?: NodeJS.ProcessEnv; // for the masked config view, default process.env
   root?: string; // project root for the config view, default cwd
   settings?: SettingsDeps; // dashboard settings editor (plan 8H); routes exist only when set. Never given to chat.
@@ -111,7 +112,7 @@ export function createWebServer(deps: WebDeps): http.Server {
   }
   const reauthMaxAgeSec = deps.oidcCfg?.reauthMaxAgeSec ?? 300;
   const now = deps.now ?? ((): Date => new Date());
-  const threshold = deps.threshold ?? 60;
+  const threshold = deps.threshold ?? DEFAULT_MATCH_THRESHOLD;
   const secrets = deps.secrets ?? [];
   const allowedHosts = new Set(deps.allowedHosts.map((h) => h.toLowerCase()));
   const hits = new Map<string, number[]>(); // session id hash -> request times (ms)

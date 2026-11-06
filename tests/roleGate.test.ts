@@ -171,10 +171,16 @@ describe('migration scripts/rematch-gate.ts', () => {
     mk(db, 'sending', 'QA Engineer');
     mk(db, 'applied', 'Sales Engineer');
     mk(db, 'dim', 'React Developer');
+    mk(db, 'colow', 'Full Stack Engineer');
+    mk(db, 'cook', 'Full Stack Engineer II');
     db.prepare('UPDATE jobs SET score = 72').run();
     db.prepare("UPDATE jobs SET score_dims = ? WHERE id = 'bad'").run(JSON.stringify({ skills: 20, seniority: 15, domain: 12, location: 25 }));
     db.prepare("UPDATE jobs SET score_dims = ? WHERE id = 'dim'").run(JSON.stringify({ role_fit: 6, skills: 16, seniority_comp: 14, location: 18, flags: 18 }));
-    for (const id of ['ok', 'bad', 'sent', 'sending', 'applied', 'dim']) db.prepare("INSERT INTO outreach_queue (job_id, status) VALUES (?, 'queued')").run(id);
+    // career_ops_v1 rows: judged by the cutoff (default 80 = 4.0 of 5), not by the old minimums
+    const co = (g: number) => JSON.stringify({ rubric: 'career_ops_v1', cv_match: g, north_star: g, comp: g, culture: g, red_flags: 0, global: g });
+    db.prepare("UPDATE jobs SET score = 76, score_dims = ? WHERE id = 'colow'").run(co(3.8));
+    db.prepare("UPDATE jobs SET score = 80, score_dims = ? WHERE id = 'cook'").run(co(4.0));
+    for (const id of ['ok', 'bad', 'sent', 'sending', 'applied', 'dim', 'colow', 'cook']) db.prepare("INSERT INTO outreach_queue (job_id, status) VALUES (?, 'queued')").run(id);
     db.prepare("UPDATE outreach_queue SET email_sent_at = datetime('now'), email_status = 'sent' WHERE job_id = 'sent'").run();
     db.prepare("UPDATE outreach_queue SET email_status = 'sending' WHERE job_id = 'sending'").run();
     db.prepare("INSERT INTO applications (job_id, platform, status) VALUES ('applied', 'greenhouse', 'submitted')").run();
@@ -184,7 +190,7 @@ describe('migration scripts/rematch-gate.ts', () => {
     const db = setup();
     const r = rematchGate(db, { cfg: cfg.config });
     expect(r.applied).toBe(false);
-    expect(r.would_park.map((x) => [x.job_id, x.reason])).toEqual([['bad', 'role: reviewer'], ['dim', 'dim_min:role_fit']]);
+    expect(r.would_park.map((x) => [x.job_id, x.reason])).toEqual([['bad', 'role: reviewer'], ['colow', 'below_cutoff:76'], ['dim', 'dim_min:role_fit']]);
     expect(r.would_park[0]).toMatchObject({ title: 'Code Reviewer – JavaScript', company: 'Co bad' });
     expect((db.prepare("SELECT status FROM outreach_queue WHERE job_id = 'bad'").get() as any).status).toBe('queued');
     expect((db.prepare("SELECT excluded_reason FROM jobs WHERE id = 'bad'").get() as any).excluded_reason).toBeNull();
@@ -192,19 +198,22 @@ describe('migration scripts/rematch-gate.ts', () => {
   it('apply parks them, never touches sent / sending / applied rows, and is idempotent', () => {
     const db = setup();
     const r = rematchGate(db, { apply: true, cfg: cfg.config });
-    expect(r.parked).toBe(2);
+    expect(r.parked).toBe(3);
     const q = (id: string) => db.prepare('SELECT status FROM outreach_queue WHERE job_id = ?').get(id) as any;
     expect(q('bad').status).toBe('skipped');
     expect(q('dim').status).toBe('skipped');
-    for (const id of ['ok', 'sent', 'sending', 'applied']) expect(q(id).status).toBe('queued');
+    expect(q('colow').status).toBe('skipped');
+    for (const id of ['ok', 'sent', 'sending', 'applied', 'cook']) expect(q(id).status).toBe('queued');
     const j = (id: string) => db.prepare('SELECT status, excluded_reason FROM jobs WHERE id = ?').get(id) as any;
     expect(j('bad')).toEqual({ status: 'role_mismatch', excluded_reason: 'role: reviewer' });
     expect(j('dim').excluded_reason).toBe('dim_min:role_fit');
+    expect(j('colow').excluded_reason).toBe('below_cutoff:76');
+    expect(j('cook').excluded_reason).toBeNull();
     expect(j('sent').excluded_reason).toBeNull();
     expect(j('applied').excluded_reason).toBeNull();
     expect(rematchGate(db, { apply: true, cfg: cfg.config }).would_park).toEqual([]);
   });
-  it('an old 4-key row gets the title gate only (no dimension check)', () => {
+  it('an old 4-key row gets the title gate only (no dimension check, and its old score is not judged against the new cutoff)', () => {
     const db = openDb(':memory:');
     mk(db, 'old', 'Full Stack Developer');
     db.prepare("UPDATE jobs SET score = 70, score_dims = ? WHERE id = 'old'").run(JSON.stringify({ skills: 1, seniority: 1, domain: 1, location: 1 }));

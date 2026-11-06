@@ -17,7 +17,7 @@ follow-up candidates (`db.list_followup_candidates`) and stale count (`db.list_s
 follow-up mode (`FOLLOWUPS_AUTONOMOUS` true means follow-ups send without a Telegram approval step,
 under the four code guards in Safety rule 10; the shipped default is legacy, with approval).
 
-Match rubric lines: a job dropped by the pass rule is reported with its `score_cap_reason` (`dim_min:role_fit`,
-`location_fail`, `hard_stop`) and the dimension sum from its reasons; jobs removed by the role gate appear as
-exclusions `role: <word>` (status `role_mismatch`). A matched job's line shows its five dimensions
-(`role_fit 18, skills 16, seniority_comp 15, location 17, flags 18`); an old stored row shows `legacy`.
+Match rubric lines: a job dropped by the pass rule is reported with its `score_cap_reason` (`location_fail`,
+`hard_stop`) and its Global score from its reasons; jobs removed by the role gate appear as
+exclusions `role: <word>` (status `role_mismatch`). A matched job's line shows its career-ops dimensions and band
+(`CV match 4.5, North Star 5.0, Comp 3.0, Culture 3.5, Red flags -0.5, Global 4.2: apply`, see `docs/matching.md`); an old stored row shows `rubric_v2` or `legacy`.

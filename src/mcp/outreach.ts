@@ -26,6 +26,7 @@ import { loadStyleConfigSafe, type StyleConfig } from '../safety/styleGate.js';
 import type { FactCheck } from '../linkedin/guard.js';
 import { completeInstruction } from '../owner/instructions.js';
 import { saveReplyDraft } from '../outreach/replyDrafts.js';
+import { matchThresholdFromEnv } from '../matchRubric.js';
 import { screenUntrusted, type ScreenDeps, type ScreenPurpose, type ScreenVerdict } from '../safety/screen.js';
 
 /**
@@ -75,7 +76,7 @@ export function handleNextContacts(
   }
   if (!a.job_id && !a.posters) throw new Error('next_contacts needs company_key, job_id or posters: true');
   // Authors of matched hiring posts (no company needed): priority jobs first, the same per-person and per-company rules.
-  const minScore = Number.isFinite(Number(process.env.MATCH_THRESHOLD)) && process.env.MATCH_THRESHOLD ? Number(process.env.MATCH_THRESHOLD) : 60;
+  const minScore = matchThresholdFromEnv();
   return nextPosterContacts(db, loadOutreachConfig(), a.platform, { jobId: a.job_id, limit: a.limit, minScore, now: nowOf(deps) });
 }
 export function handleRecordInbound(

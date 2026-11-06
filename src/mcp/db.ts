@@ -16,6 +16,7 @@ import { patternStats } from '../patterns.js';
 import { updateJobCompany } from '../lib/jobCompany.js';
 import { jdBlocksPrepare } from '../jdStore.js';
 import { loadRoleGateConfig } from '../roleGate.js';
+import { matchThresholdFromEnv } from '../matchRubric.js';
 
 const db = openDb(dbPath());
 
@@ -254,11 +255,11 @@ server.registerTool(
   'save_match_result',
   {
     description:
-      'Persist match-stage results onto the jobs table, one row at a time. Score: when score_dims is given (five integers 0-20: role_fit, skills, seniority_comp, location, flags; the old four-key shape is rejected) the model score is ignored and the score is their sum, ' +
-      'PASS RULE: a row whose dimensions do not ALL reach their minimum (MATCH_DIM_MINIMUMS, default role_fit 12, skills 10, seniority_comp 8, location 8, flags 10), or whose location_verdict is FAIL, or that has a hard stop, is stored with its dimensions but a score of at most MATCH_THRESHOLD minus 1 and score_cap_reason dim_min:<dimension> (or location_fail, hard_stop), so the stage filter "stored score >= threshold" drops it; the dimension sum stays in score_dims and in reasons. ' +
+      'Persist match-stage results onto the jobs table, one row at a time. Score: the career-ops rubric. score_dims has cv_match, north_star, comp, culture (1.0-5.0), red_flags (0 to -3.0) and the holistic global (1.0-5.0), one decimal each, plus rubric "career_ops_v1", archetype, evidence; the model score is ignored and the score is round(global x 20) (3.9 -> 78, 4.0 -> 80, 4.5 -> 90); global is never kept above the best dimension. The older five-key (role_fit, ...) and four-key shapes are rejected for a new save; stored old rows stay readable. ' +
+      'PASS RULE: the stored score must reach MATCH_THRESHOLD (default 80 = career-ops 4.0 of 5, worth applying). A row whose location_verdict is FAIL, or that has a hard stop, is stored with its dimensions but a score of at most MATCH_THRESHOLD minus 1 and score_cap_reason location_fail (or hard_stop), so the stage filter "stored score >= threshold" drops it; the Global score stays in score_dims and in reasons. ' +
       'then capped by an evidence ceiling from the requirement table (59 + round(41 x evidence-weighted share of critical/high/meaningful rows met; stated counts more than structural, structural more than inferred; no weighted rows => 70)); the cap can only lower the score and the cap applied is stored as score_cap_reason (null when the sum stood). A row without score_dims is accepted ONLY as an expired row (score 0, reasons "expired"); any other row without score_dims is a per-row error "missing score_dims". ' +
       'Requirements: a stated row needs a jd_quote of 12-300 chars found in the job description or archived snapshot, else it is downgraded to structural (quotes over 300 chars are truncated); inferred rows are demoted below critical/high; the table is capped at 12 rows (critical/high always kept). ' +
-      'Injection defence: if the posting (description plus snapshot, raw and as text) contains a phrase aimed at an AI screener, the score is capped at 75, score_cap_reason starts with "injection-suspect", the job is listed in `injection_suspects` ({job_id, phrases}) for the run report, and any requirement whose jd_quote is such a phrase becomes inferred. ' +
+      'Injection defence: if the posting (description plus snapshot, raw and as text) contains a phrase aimed at an AI screener, the score is capped at 89 (below career-ops 4.5), score_cap_reason starts with "injection-suspect", the job is listed in `injection_suspects` ({job_id, phrases}) for the run report, and any requirement whose jd_quote is such a phrase becomes inferred. ' +
       'Strengths/gaps are capped at 3. Hard stops = critical + missing rows with a VERIFIED stated quote (structural, downgraded and inferred rows never create one; no posting text => none), never location or language rows; they are returned in `hard_stops` and stored, and apply_vetoes excludes those jobs. Confidence: low for an empty table or a posting under 300 chars of text, medium if any row is inferred, else high. ' +
       'Per-row errors, reported in `errors` and never written, never failing the call: a row without a string job_id, an error row ({job_id, error}, e.g. a matcher batch overflow: re-dispatch those jobs first), a duplicate job_id (the first occurrence wins), an unknown job_id, and an invalid score or sub-score. Valid rows are still saved in the same transaction. A null deadline never erases a stored one. Returns {saved, errors, hard_stops, injection_suspects, scores}, where scores is [{job_id, score, score_cap_reason, confidence}] with the STORED (capped) values: filter on these, never on the matcher\'s own score.',
     inputSchema: matchResultsInputShape,
@@ -323,7 +324,7 @@ server.registerTool(
     description: 'Funnel discovered -> matched (score >= threshold) -> contacted -> replied -> interview -> offer, counted per job from outcome HISTORY (a job that reached interview then got rejected still counts as interview), with rates, median days to first response, and industry benchmarks for context.',
     inputSchema: { threshold: z.number().optional() },
   },
-  async ({ threshold }) => ({ content: [{ type: 'text', text: JSON.stringify(funnelStats(db, threshold ?? Number(process.env.MATCH_THRESHOLD ?? 60))) }] })
+  async ({ threshold }) => ({ content: [{ type: 'text', text: JSON.stringify(funnelStats(db, threshold ?? matchThresholdFromEnv())) }] })
 );
 
 server.registerTool('get_patterns', {

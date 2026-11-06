@@ -912,12 +912,12 @@ const hand: EnvSpec[] = [
     ...never('Starts a model run for every owner message when the chat window is missing: only the owner, by hand in .env, can change it.'),
   }),
 
-  // ---- Matching: per-dimension minimums of the five-dimension rubric (src/matchRubric.ts)
+  // ---- Matching: per-dimension minimums of the OLD five-key rubric (rubric_v2, src/matchRubric.ts). The career-ops rubric has none.
   e('MATCH_DIM_MINIMUMS', 'limits', 'matching', 'string', {
     default: 'role_fit=12,skills=10,seniority_comp=8,location=8,flags=10',
     maxLen: 120,
     blankMeansDefault: true,
-    about: 'Lowest score (0 to 20) each match dimension must reach before a job moves ahead, as a comma list of key=number: role_fit, skills, seniority_comp, location, flags. A job below any minimum is saved with its scores but its stored score is held under MATCH_THRESHOLD (score_cap_reason dim_min:<dimension>), so it is not contacted. Keys you leave out keep their default. An invalid value (unknown key, number above 20) falls back to ALL defaults and the doctor warns. The scheduler and the db MCP read it at start, so restart them after a change.',
+    about: 'Legacy. Lowest score (0 to 20) each dimension of the OLD five-key match rubric (rubric_v2: role_fit, skills, seniority_comp, location, flags) must reach, as a comma list of key=number. New matches use the career-ops rubric (see docs/matching.md), which has no per-dimension minimums and ignores this key. It is still read by `npm run matches:regate`, which re-checks queued, unsent rows saved under the old rubric. Keys you leave out keep their default. An invalid value (unknown key, number above 20) falls back to ALL defaults and the doctor warns.',
     ...tier('guarded', 'Lowering a minimum lets weaker or off-target roles through to outreach.', 'any'),
     restart: 'mcp',
     restartEvidence: 'src/matchRubric.ts',

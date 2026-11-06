@@ -7,6 +7,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type BetterSqlite3 from 'better-sqlite3';
+import { MATCHED_SQL, matchedBinds } from './matchRubric.js';
+import { applyArchetypes } from './northStar.js';
+import { loadNorthStar } from './northStarLoad.js';
 
 export const ROLE_MISMATCH_STATUS = 'role_mismatch';
 export const ROLE_REASON_PREFIX = 'role: ';
@@ -91,6 +94,21 @@ export interface RoleGateStatus { config: RoleGateConfig; source: 'file' | 'defa
 
 /** Load config/role-families.json. Missing file = built-in defaults. Invalid file = built-in defaults plus `invalid` (callers show a flag). */
 export function loadRoleGateConfig(file: string = roleFamiliesPath): RoleGateStatus {
+  const base = loadBase(file);
+  // ONE source of truth for the target roles: the production gate (the shipped file path) takes its allowed families from the owner's
+  // North Star archetypes in user-data/profile.json when that section exists (src/northStar.ts); the deny list, pay-model phrases and
+  // the backend signal stay in config/role-families.json. A call with another file (tests, tools) never reads the owner's profile.
+  if (file !== roleFamiliesPath) return base;
+  const ns = loadNorthStar();
+  if (!ns.northStar) return ns.invalid && !base.invalid ? { ...base, invalid: `north_star ignored: ${ns.invalid}` } : base;
+  try {
+    return { ...base, config: parseRoleGateConfig(applyArchetypes(base.config, ns.northStar)) };
+  } catch (e) {
+    return { ...base, invalid: `north_star archetypes ignored: ${(e as Error).message.slice(0, 120)}` };
+  }
+}
+
+function loadBase(file: string): RoleGateStatus {
   if (!existsSync(file)) return { config: DEFAULTS, source: 'default' };
   try {
     return { config: parseRoleGateConfig(JSON.parse(readFileSync(file, 'utf8'))), source: 'file' };
@@ -179,8 +197,8 @@ export function sweepRoleGate(db: BetterSqlite3.Database, o: RoleSweepOpts): Rol
         AND NOT EXISTS (SELECT 1 FROM connections c WHERE c.job_id = jobs.id)
         AND NOT EXISTS (SELECT 1 FROM outreach o WHERE o.job_id = jobs.id)
         AND ((score IS NULL AND (priority > 0 OR created_at >= ? OR COALESCE(jd_fetched_at, '') >= ?))
-             OR (? IS NOT NULL AND score >= ?))`,
-  ).all(o.windowStart, o.windowStart, o.matchThreshold ?? null, o.matchThreshold ?? null) as Array<{ id: string; title: string | null; company: string | null; description: string | null }>;
+             OR (? IS NOT NULL AND ${MATCHED_SQL}))`,
+  ).all(o.windowStart, o.windowStart, o.matchThreshold ?? null, ...matchedBinds(o.matchThreshold ?? 101)) as Array<{ id: string; title: string | null; company: string | null; description: string | null }>;
   const out: RoleSweepRow[] = [];
   for (const r of rows) {
     const v = checkRole({ title: r.title, description: r.description }, cfg);

@@ -1,6 +1,7 @@
 import BetterSqlite3 from 'better-sqlite3';
 import { z } from 'zod';
 import { normalizeMatchRow, type MatchRowInput } from './score.js';
+import { MATCHED_SQL, matchedBinds } from './matchRubric.js';
 import { classifyDeadlines, type DeadlineSweep } from './freshness.js';
 import type { Legitimacy } from './legitimacy.js';
 import { dbPath } from './dbPath.js';
@@ -1275,9 +1276,9 @@ export function listUnscoredJobs(
   let prio: Row[] = offset > 0 && kind === 'unscored' ? [] : db.prepare(
     `SELECT ${cols}, ${forcedSql} AS forced FROM jobs
       WHERE priority > 0 AND excluded_reason IS NULL AND match_fails < ? AND (status IS NULL OR status NOT IN ('${JOB_STATUS_REPEAT_CONTACT}', '${JOB_STATUS_JD_PENDING}'))
-        AND (score IS NULL OR (prep_offers < ? AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id AND ${QUEUE_NOT_REPREP_SQL}) AND (score >= ? OR ${forcedSql})))
+        AND (score IS NULL OR (prep_offers < ? AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id AND ${QUEUE_NOT_REPREP_SQL}) AND (${MATCHED_SQL} OR ${forcedSql})))
       ORDER BY priority DESC, COALESCE(promoted, 0) DESC, created_at ASC, rowid ASC LIMIT ?`,
-  ).all(MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT + 1, typeof opts.matchThreshold === 'number' ? opts.matchThreshold : 101, MANUAL_PRIORITY_PER_WAKE) as Row[];
+  ).all(MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT + 1, ...matchedBinds(typeof opts.matchThreshold === 'number' ? opts.matchThreshold : 101), MANUAL_PRIORITY_PER_WAKE) as Row[];
   // An owner request also waits for its job description (snippet-only sources): marked jd_pending, not offered; the owner report says so.
   const prioWaiting = prio.filter((r) => needsJdFetch(r.source as string | null, r.description as string | null));
   if (prioWaiting.length) {
@@ -1298,10 +1299,10 @@ export function listUnscoredJobs(
   const pending: Row[] = typeof opts.matchThreshold === 'number' && kind !== 'unscored' && pendingLimitRest > 0
     ? (db.prepare(
       `SELECT ${cols} FROM jobs
-        WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ? AND priority = 0 AND ${PIPELINE_SKIP_SQL}
+        WHERE ${MATCHED_SQL} AND excluded_reason IS NULL AND prep_offers < ? AND priority = 0 AND ${PIPELINE_SKIP_SQL}
           AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id AND ${QUEUE_NOT_REPREP_SQL})
         ORDER BY score DESC, created_at ASC, rowid ASC`,
-    ).all(opts.matchThreshold, PREP_OFFER_LIMIT_APPLY) as Row[])
+    ).all(...matchedBinds(opts.matchThreshold!), PREP_OFFER_LIMIT_APPLY) as Row[])
       .filter((r) => (r.prep_offers as number) < prepOfferLimitFor({ source: r.source as string | null, apply_url: r.apply_url as string | null }))
     : [];
   // Promoted jobs take at most 40 percent of the carry-over batch, first; the rest follow in the normal order (score desc).

@@ -118,7 +118,7 @@ describe('list_unscored_jobs: the matched list and manual priority jobs', () => 
 
 describe('save_match_result and enqueue_outreach refuse a job without its JD', () => {
   const rowFor = (id: string) => ({
-    job_id: id, score: 80, reasons: 'r', missing_keywords: [], score_dims: { role_fit: 16, skills: 16, seniority_comp: 16, location: 16, flags: 16 },
+    job_id: id, score: 80, reasons: 'r', missing_keywords: [], score_dims: { rubric: 'career_ops_v1', cv_match: 4, north_star: 4, comp: 4, culture: 4, red_flags: 0, global: 4 },
     requirements: [{ req: 'React', importance: 'critical', evidence: 'structural', jd_quote: null, match: 'strong' }],
   });
   it('rejects a score for a snippet-only job in code, marks it waiting and does not count a failed match', () => {

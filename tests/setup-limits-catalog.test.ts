@@ -52,7 +52,7 @@ describe('limits catalog drift against code defaults', () => {
   });
 
   it('direct env readers keep their documented defaults', () => {
-    expect(spec('MATCH_THRESHOLD').default).toBe(60);
+    expect(spec('MATCH_THRESHOLD').default).toBe(80); // 4.0 of 5 in the career-ops rubric
     expect(spec('SEND_LIMIT_PER_RUN').default).toBe(1);
     expect(spec('MAX_APPLIES_PER_DAY').default).toBe(5);
     expect(spec('MAX_LINKEDIN_SEARCHES_PER_DAY').default).toBe(10);

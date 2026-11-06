@@ -9,5 +9,21 @@
   },
   "notice_period_days": 30,
   "work_authorization": { "india": true, "other": "unknown" },
-  "languages": ["English"]
+  "languages": ["English"],
+  "north_star": {
+    "archetypes": [
+      { "name": "Full-stack developer", "fit": "primary", "title_patterns": ["full[- ]?stack", "\\bmern\\b", "\\bmean\\b stack"], "signals": ["React", "Node", "TypeScript", "REST"], "level": "" },
+      { "name": "Frontend developer", "fit": "primary", "title_patterns": ["front[- ]?end", "\\bui (?:engineer|developer)", "\\bui\\b.*\\b(?:engineer|developer)", "user interface (?:engineer|developer)"], "signals": ["React", "TypeScript", "UI"], "level": "" },
+      { "name": "React developer", "fit": "primary", "title_patterns": ["\\breact(?:[ .]?js)?\\b"], "title_not": ["react native"], "signals": ["React", "hooks", "Next.js"], "level": "" },
+      { "name": "JavaScript / TypeScript developer", "fit": "primary", "title_patterns": ["javascript", "typescript", "(?<![.\\w])js (?:developer|engineer)", "(?<![.\\w])ts (?:developer|engineer)"], "signals": ["JavaScript", "TypeScript"], "level": "" },
+      { "name": "Web developer", "fit": "primary", "title_patterns": ["web (?:developer|engineer|application developer)"], "signals": ["HTML", "CSS", "JavaScript"], "level": "" },
+      { "name": "Software developer / engineer", "fit": "primary", "title_patterns": ["software (?:development )?(?:developer|engineer)", "software development", "\\bsde\\b(?: ?(?:i|ii|iii|1|2|3))?", "\\bsoftware dev\\b", "application developer", "programmer"], "signals": ["web applications", "APIs"], "level": "" },
+      { "name": "Backend (Node)", "fit": "adjacent", "title_patterns": ["back[- ]?end", "\\bnode(?:[ .]?js)?\\b", "\\bexpress(?:[ .]?js)?\\b"], "requires_signal": true, "signals": ["Node", "Express", "TypeScript"], "level": "" },
+      { "name": "React Native (mobile)", "fit": "adjacent", "title_patterns": ["react[- ]native"], "signals": ["React Native"], "level": "" }
+    ],
+    "require": [],
+    "deprioritize_if_absent": false,
+    "dealbreakers": [],
+    "comp": { "currency": "", "target_range": "", "minimum": "" }
+  }
 }

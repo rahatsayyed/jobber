@@ -5,6 +5,10 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { clampLimit, likePattern, tableExists, type Page } from '../readDb.js';
 import { cleanRow, cleanText } from '../clean.js';
 import { CONTACTED } from '../../funnel.js';
+import { DEFAULT_MATCH_THRESHOLD, LEGACY_MATCH_THRESHOLD, RUBRIC_TAG } from '../../matchRubric.js';
+
+// A career_ops_v1 row is matched at MATCH_THRESHOLD; an older row (rubric_v2, legacy, no dimensions) keeps the old threshold (see MATCHED_SQL in src/matchRubric.ts).
+const MATCHED_J = `(j.score >= @threshold OR (j.score >= @legacy_threshold AND (j.score_dims IS NULL OR instr(j.score_dims, '"rubric":"${RUBRIC_TAG}"') = 0)))`;
 
 type Db = BetterSqlite3.Database;
 
@@ -79,8 +83,8 @@ function bucketExprs(db: Db): Exprs {
   return {
     // Same as funnelStats (src/funnel.ts): an excluded job still counts once contacted. CONTACTED reads three tables.
     matched: tableExists(db, 'outreach') && hasApps && hasQueue
-      ? `(j.score >= @threshold AND (j.excluded_reason IS NULL OR j.id IN (${CONTACTED})))`
-      : '(j.score >= @threshold AND j.excluded_reason IS NULL)',
+      ? `(${MATCHED_J} AND (j.excluded_reason IS NULL OR j.id IN (${CONTACTED})))`
+      : `(${MATCHED_J} AND j.excluded_reason IS NULL)`,
     applied: hasApps ? app(`a.status = '${APPLICATION_SUBMITTED}'`) : '0',
     pending: any([
       ...(hasQueue ? [que(`q.status = '${QUEUE_PENDING}'`)] : []),
@@ -109,7 +113,7 @@ const COLS = `j.rowid AS rid, j.id, j.title, j.company, j.source, j.score, j.con
 function toRow(r: Record<string, unknown>, ex: Exprs, db: Db, threshold: number): JobRow {
   const flags = parseList(r.gate_flags);
   const b = db.prepare(`SELECT 1 AS discovered, ${ex.matched} AS matched, ${ex.applied} AS applied, ${ex.pending} AS pending, ${ex.failed} AS failed
-    FROM jobs j WHERE j.id = @id`).get({ id: r.id, threshold }) as Record<JobBucket, number>;
+    FROM jobs j WHERE j.id = @id`).get({ id: r.id, threshold, legacy_threshold: Math.min(threshold, LEGACY_MATCH_THRESHOLD) }) as Record<JobBucket, number>;
   const bucket = JOB_BUCKETS.filter((k) => b[k] === 1);
   const { rid: _rid, gate_flags: _g, ...rest } = r;
   const clean = cleanRow(rest as Record<string, unknown>, LIMITS) as Record<string, unknown>;
@@ -139,10 +143,10 @@ export function listJobs(db: Db, opts: {
 }): Page<JobRow> {
   if (!tableExists(db, 'jobs')) return { items: [], nextCursor: null };
   const limit = clampLimit(opts.limit);
-  const threshold = Number.isFinite(opts.threshold) ? (opts.threshold as number) : 60;
+  const threshold = Number.isFinite(opts.threshold) ? (opts.threshold as number) : DEFAULT_MATCH_THRESHOLD;
   const ex = bucketExprs(db);
   const where: string[] = [];
-  const params: Record<string, unknown> = { threshold, lim: limit + 1 };
+  const params: Record<string, unknown> = { threshold, legacy_threshold: Math.min(threshold, LEGACY_MATCH_THRESHOLD), lim: limit + 1 };
   if (opts.bucket && opts.bucket !== 'discovered') where.push(ex[opts.bucket]);
   if (opts.q && opts.q.trim() !== '') {
     where.push("(j.title LIKE @like ESCAPE '\\' OR j.company LIKE @like ESCAPE '\\')");
@@ -176,7 +180,7 @@ export function jobCounts(db: Db, threshold: number): Record<JobBucket, number> 
   const ex = bucketExprs(db);
   const r = db.prepare(`SELECT COUNT(*) AS discovered,
       COALESCE(SUM(${ex.matched}), 0) AS matched, COALESCE(SUM(${ex.applied}), 0) AS applied,
-      COALESCE(SUM(${ex.pending}), 0) AS pending, COALESCE(SUM(${ex.failed}), 0) AS failed FROM jobs j`).get({ threshold }) as Record<JobBucket, number>;
+      COALESCE(SUM(${ex.pending}), 0) AS pending, COALESCE(SUM(${ex.failed}), 0) AS failed FROM jobs j`).get({ threshold, legacy_threshold: Math.min(threshold, LEGACY_MATCH_THRESHOLD) }) as Record<JobBucket, number>;
   return { discovered: r.discovered, matched: r.matched, applied: r.applied, pending: r.pending, failed: r.failed };
 }
 
@@ -189,7 +193,7 @@ export function jobFacets(db: Db): { scored: number; sources: { source: string; 
   return { scored, sources: rows.map((r) => ({ source: cleanText(r.source ?? '', 64), count: r.count })).filter((r) => r.source !== '') };
 }
 
-export function jobDetail(db: Db, id: string, threshold = 60): JobDetail | null {
+export function jobDetail(db: Db, id: string, threshold = DEFAULT_MATCH_THRESHOLD): JobDetail | null {
   if (!tableExists(db, 'jobs')) return null;
   const ex = bucketExprs(db);
   const r = db.prepare(`SELECT ${COLS}, j.url, j.apply_url, j.strengths, j.gaps, j.requirements FROM jobs j WHERE j.id = ?`).get(id) as

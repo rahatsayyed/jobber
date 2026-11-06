@@ -4,26 +4,29 @@
 
 - **Target regions**: `config/target-regions.json` (`{"home": ["India"], "targets": [UAE, United Arab Emirates, Dubai, Abu Dhabi, Sharjah, Saudi Arabia, KSA, Riyadh, Jeddah, Qatar, Doha, Kuwait, Bahrain, Oman, Muscat, GCC, Middle East, MENA], "remote": true, "remote_anywhere": true}`; `remote_anywhere` (default false when absent or not the boolean `true`; shipped true here AND as `location_filter.remote_anywhere` in `config/portals.json`, keep the two in step, a test checks it): a remote role based elsewhere passes the board location filter ("Remote, Brazil", "Germany (Remote)") and a model location FAIL on a remote posting becomes `location FLAG: remote role based elsewhere: verify eligibility`, unless the location string, title or the first 20000 characters of the description carry a restriction marker (`src/remotePolicy.ts`, the one list used by both the board filter and the veto backstop: "only", "must reside/be located/live/be based", "US-based", "residents of", citizens, right to work, work authorization, "excluding/except", "not open to", "other than India", "no India", "does not hire", "candidates in/from <place>", "within the US", residency, work permit, "US person", EEA, "must ... time zone", "can only hire" ...; a target-region subject such as "must be located in the UAE" does not count); on-site, hybrid, in-person, in-office or relocation wording anywhere in the first 20000 characters keeps the FAIL (conservative: a remote posting that mentions "in-person interviews" is not downgraded, and the check is a word list, so it is a best-effort backstop, not proof a role is remote); a missing file means these defaults, an invalid one is flagged as `target regions config invalid: <why>`). The wake session passes it to every matcher as a `Target regions` line. On-site or hybrid work in a target region is a location FLAG (relocation, visa or an existing right to work may be needed), never a FAIL on location alone; on-site elsewhere is still a FAIL, and code turns a model FAIL into a visible `location FLAG: ...` only on real evidence: a specific target term in the job's location field or title, or in the description within 80 characters of on-site/located/based/office/relocation/headquarter wording (not next to "or" or "/", and not when the posting puts on-site work in a non-target place); GCC, Middle East and MENA alone never count, and any restriction marker (`src/remotePolicy.ts`: "must reside/be located in <non-target place>", "US only", right to work, "excl.", citizens ...) keeps the FAIL. For board jobs the location reaches the matcher and this backstop through the FIRST description line `Location: <locations joined by "; ">[ (remote)]` (added by `fetchBoards`, at most 300 characters, followed by a blank line; the 8000-character description cap applies after it); nothing else passes a location on (the `location` and `remote` fields of `gates.apply_vetoes` exist but the wake session does not feed them), and jobs from other sources have no such line. The location-scope markers ("only", "based in", "-based") run on that line, and a bare continent such as "Remote, Europe" counts as a restriction. Known gap: an "Arabic-speaking candidates only" style requirement is not caught by the language gate (it only reads "Arabic required/speaker" wording), so such a posting is not excluded. Visa, work-permit and "must be located in" conditions are never hard stops; a stated critical nationality restriction ("Saudi nationals only") is. Arabic requirements go through the language gate (FLAG only until `user-data/languages.json` is confirmed). The board filters in `config/portals.json` list the same Gulf terms in `location_filter.allow`; keep the two lists in step. To search the Gulf on LinkedIn add `jobs[]` entries with a Gulf `location` (for example "United Arab Emirates") to `config/linkedin-discovery.json` (a `posts[]` entry takes its own `geo`), while Naukri (India) does not search the Gulf, so the Gulf comes from the company boards and the LinkedIn entries.
 
-- **Match rubric and pass rule** (replaces the old four-part 0 to 25 score; adapted from career-ops, MIT): five dimensions,
-  each an integer 0 to 20, summed in code to a score out of 100.
-
-  | Dimension | What it judges | Default minimum |
-  |-----------|----------------|-----------------|
-  | `role_fit` | The North Star: is this the role family, level and employment type the owner targets (full stack developer / react, India or remote). Per-task, gig, tutor, annotation, reviewer, QA-only, sales, recruiter, design, data entry, intern and unpaid work is 0 to 4. | 12 |
-  | `skills` | Match with the CV, evidence-based (the requirement table caps it). | 10 |
-  | `seniority_comp` | Level fit AND pay or employment type (full-time or permanent with a fitting salary is high; per-task, hourly gig, equity-only, unpaid is low). | 8 |
-  | `location` | The location verdict and the language gate. Remote is no longer a free maximum: 14 to 20 only when eligibility is explicit. | 8 |
-  | `flags` | Inverse red flags (legitimacy, hard stops, injection suspects, thin post, reposts, vague company); 20 = clean. | 10 |
-
-  A job moves ahead only if EVERY dimension reaches its minimum AND the sum reaches `MATCH_THRESHOLD` (60) AND
-  `location_verdict` is not FAIL AND there is no hard stop. Minimums: `MATCH_DIM_MINIMUMS`, a comma list
-  `role_fit=12,skills=10,seniority_comp=8,location=8,flags=10` (partial lists keep the other defaults; an invalid
-  value falls back to all defaults and the doctor warns). A job that fails is saved with its dimensions and a
-  `score_cap_reason` (`dim_min:<dimension>`, `location_fail`, `hard_stop`) and a stored score of at most
-  `MATCH_THRESHOLD` minus 1; the dimension sum stays in `score_dims` and in `jobs.match_reasons`. The evidence
-  ceiling and the injection cap still apply; the lowest cap wins. Rows stored before the rubric (keys `skills`,
-  `seniority`, `domain`, `location`, each 0 to 25) keep their score and read as `legacy`; a new save with the old keys
-  is rejected.
+- **Match rubric and pass rule** (the career-ops scoring flow, MIT, (c) 2026 Santiago Fernandez de Valderrama,
+  https://github.com/career-ops-hq/career-ops; owner page `docs/matching.md`): rubric tag `career_ops_v1`. Four dimensions
+  from 1.0 to 5.0 with one decimal, `cv_match` (skills, experience, proof points), `north_star` (fit with the owner's
+  target archetypes; an offer that matches none scores 1), `comp` (salary vs market; the owner's own numbers only when
+  set, never invented) and `culture` (company culture, growth, stability, remote policy; a contradicted
+  `north_star.require` criterion caps it at 2), plus `red_flags`, a negative adjustment from 0 down to -3.0, and the
+  holistic `global` (1.0 to 5.0, "no arithmetic formula"). `score_dims` also carries `archetype`, a short `evidence`
+  text per dimension and a `decision` derived in code. The stored `score` stays 0 to 100 for every old consumer:
+  `score = round(global x 20)` (3.9 -> 78, 4.0 -> 80, 4.5 -> 90); code keeps `global` from exceeding the best dimension.
+  Bands (career-ops "Score interpretation"): 4.5+ apply immediately, 4.0 to 4.4 worth applying, 3.5 to 3.9 decent but
+  recommend against, below 3.5 recommend against. The pass rule: the stored score reaches `MATCH_THRESHOLD`, default 80 (4.0 of 5,
+  career-ops "Ethical Use": below 4.0 is recommended against), AND `location_verdict` is not FAIL AND there is no hard stop (the
+  last two are our own gates). A job that fails the location or hard-stop gate is saved with its dimensions and a stored score
+  of at most `MATCH_THRESHOLD` minus 1 (`score_cap_reason` `location_fail` or `hard_stop`). The evidence ceiling
+  (59 + 41 x the evidence-weighted share of critical/high/meaningful rows met; an empty table is 70) and the injection cap
+  (89, below 4.5) still apply; the lowest cap wins. A role with `global` 4.5+ and `culture` 2 or less carries the career-ops
+  warning "High technical fit, unconfirmed/poor culture fit - verify before applying." in its reasons. The archetypes,
+  culture criteria, dealbreakers and comp come from the optional `north_star` section of `user-data/profile.json`
+  (`src/northStar.ts`, example in `user-data.example/profile.json`) and are turned into a `North Star:` line for the matcher by `northStarLine` (the wake prompt appends it next to the `Target regions` line; until then the skill's built-in default families apply); the code role
+  gate takes its allowed families from the same archetypes. Older rows stay readable: `rubric_v2` (keys `role_fit`, `skills`,
+  `seniority_comp`, `location`, `flags`, each 0 to 20, summed; minimums `MATCH_DIM_MINIMUMS` are now read only by
+  `npm run matches:regate`) and `legacy` (keys `skills`, `seniority`, `domain`, `location`, each 0 to 25). They keep their score
+  and the old line of 60 (`min(MATCH_THRESHOLD, 60)`) in the matched lists; a new save in an older shape is rejected.
 
 - **Role gate** (`src/roleGate.ts`, `config/role-families.json`, runs on the job title before the matcher and again in
   `gates.apply_vetoes`): a title with a deny word (reviewer, evaluator, rater, annotator, tutor, trainer, coach, QA,

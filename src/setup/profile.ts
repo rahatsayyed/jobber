@@ -3,6 +3,8 @@
 // Pure (no node imports): src/platform/checksSetup.ts delegates profileProblems to validateProfile,
 // so the doctor check and the wizard cannot drift. Problems are field paths, never values.
 
+import { validateNorthStar } from '../northStar.js';
+
 export interface SalaryBand {
   floor: number;
   target: number;
@@ -59,6 +61,8 @@ export function validateProfile(p: unknown): string[] {
     if (!(WORK_AUTH_OTHER as readonly string[]).includes(wa.other as string)) bad.push('work_authorization.other');
   }
   if (p.languages !== undefined && !isStrArr(p.languages)) bad.push('languages');
+  // The optional North Star section (target archetypes, culture criteria, dealbreakers, comp): src/northStar.ts.
+  bad.push(...validateNorthStar(p.north_star));
   return bad;
 }
 

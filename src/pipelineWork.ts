@@ -3,6 +3,7 @@ import { classifyApplyUrl } from './apply/registry.js';
 import { channelsFor } from './lib/channels.js';
 import { JD_FETCH_SOURCES, JOB_STATUS_JD_PENDING, QUEUE_STATUS_NEEDS_REPREP, needsJdFetch } from './jdComplete.js';
 import { markJdPending } from './jdStore.js';
+import { MATCHED_SQL, matchedBinds } from './matchRubric.js';
 
 /**
  * The pipeline stage considers every unscored job saved in the last PIPELINE_WINDOW_HOURS hours (jobs.created_at, UTC), not a fixed count.
@@ -108,9 +109,9 @@ export function planPipelineWork(db: BetterSqlite3.Database, o: PipelineWorkOpts
   const matched = typeof o.matchThreshold === 'number'
     ? (db.prepare(
       `SELECT ${cols} FROM jobs
-        WHERE score >= ? AND excluded_reason IS NULL AND prep_offers < ? AND priority = 0 AND ${PIPELINE_SKIP_SQL}
+        WHERE ${MATCHED_SQL} AND excluded_reason IS NULL AND prep_offers < ? AND priority = 0 AND ${PIPELINE_SKIP_SQL}
           AND NOT EXISTS (SELECT 1 FROM outreach_queue q WHERE q.job_id = jobs.id AND ${QUEUE_NOT_REPREP_SQL})`,
-    ).all(o.matchThreshold, PREP_OFFER_LIMIT_APPLY) as Cand[]).filter((r) => r.prep_offers < prepOfferLimitFor(r))
+    ).all(...matchedBinds(o.matchThreshold), PREP_OFFER_LIMIT_APPLY) as Cand[]).filter((r) => r.prep_offers < prepOfferLimitFor(r))
     : [];
   const repeatStmt = db.prepare(
     `SELECT j2.id AS id FROM jobs j2

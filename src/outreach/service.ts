@@ -23,6 +23,7 @@ import { cleanText } from '../dash/clean.js';
 import { deriveAskKind, linkedinThreadUrl } from './escalations.js';
 import type { Platform } from '../scheduler/control.js';
 import { noiseKind, closeGoneJob, dedupeHost } from './escalationPolicy.js';
+import { DEFAULT_MATCH_THRESHOLD, MATCHED_SQL, matchedBinds } from '../matchRubric.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -259,7 +260,7 @@ export interface PosterContact extends ContactCandidate {
 }
 
 export const POST_TEXT_CHARS = 1500;
-const DEFAULT_MIN_SCORE = 60;
+const DEFAULT_MIN_SCORE = DEFAULT_MATCH_THRESHOLD;
 
 /**
  * New (not yet contacted) authors of matched LinkedIn hiring posts. A post with no company has no company key, so the
@@ -282,11 +283,11 @@ export function nextPosterContacts(
       `SELECT id, title, company, url, description, poster_url, COALESCE(priority, 0) AS priority
          FROM jobs
         WHERE source = 'linkedin-posts' AND poster_url IS NOT NULL AND poster_url != ''
-          AND excluded_reason IS NULL AND score IS NOT NULL AND score >= ?
+          AND excluded_reason IS NULL AND score IS NOT NULL AND ${MATCHED_SQL}
           AND (? IS NULL OR id = ?)
         ORDER BY COALESCE(priority, 0) DESC, rowid ASC`,
     )
-    .all(minScore, opts.jobId ?? null, opts.jobId ?? null) as {
+    .all(...matchedBinds(minScore), opts.jobId ?? null, opts.jobId ?? null) as {
     id: string; title: string; company: string | null; url: string; description: string | null; poster_url: string; priority: number;
   }[];
   const personStmt = db.prepare(

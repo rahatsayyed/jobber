@@ -155,7 +155,7 @@ Start the Next.js dashboard with `npm run web`; on first run use `npm run dashbo
 There is no separate batch hunt any more. The scheduler plans each wake in code, runs the script providers itself, then launches one restricted `claude` run that executes these steps in order, one subagent or operator per step (see [docs/architecture.md](docs/architecture.md)):
 
 1. **Discover**: the code pass over the enabled sources (Remotive, RemoteOK, Naukri, company boards and any imported feeds you enabled; see [docs/sources-and-platforms.md](docs/sources-and-platforms.md)); the `source-operator` reads pages a script provider could not; the `linkedin-operator`, `naukri-operator` and (once you have logged in) `wellfound-operator` run their named searches.
-2. **Match** (`matcher`): scores each job against your base resume; code vetoes (location, language, deal-breakers, legitimacy) then apply. Jobs below `MATCH_THRESHOLD` (default 60) are skipped.
+2. **Match** (`matcher`): scores each job against your base resume; code vetoes (location, language, deal-breakers, legitimacy) then apply. Jobs below `MATCH_THRESHOLD` (default 80, which is 4.0 of 5 in the career-ops scoring flow, see `docs/matching.md`) are skipped.
 3. **Find contacts** (`contact-finder`): a verified email and up to two LinkedIn profiles per job.
 4. **Prepare** (`outreach-preparer`): tailors the resume, drafts the email and connect notes, reviews and fact-checks them, then queues them.
 5. **Send**: the `linkedin-operator` and `naukri-operator` send connects, messages and replies (the `wellfound-operator` replies in existing threads); the `apply-operator` applies through the browser ([docs/apply.md](docs/apply.md)). All within the caps. A wake only queues email: the **mail drip lane** of the scheduler daemon sends queued emails and email follow-ups slowly through the day (batches of 2 to 3, minutes apart, inside a send window; see [docs/operations.md](docs/operations.md)).
@@ -165,7 +165,7 @@ There is no separate batch hunt any more. The scheduler plans each wake in code,
 Tune the basics in the Preferences block of `CLAUDE.md` and the limits in `.env`:
 
 ```
-MATCH_THRESHOLD=60        # min score to pursue a job
+MATCH_THRESHOLD=80        # min score to pursue a job (80 = 4.0 of 5)
 SEND_LIMIT_PER_RUN=1      # daily email limit for the followups command; the mail drip lane is capped by EMAIL_MAX_PER_DAY (0 or unset: no cap)
 ```
 

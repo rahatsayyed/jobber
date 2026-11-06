@@ -24,6 +24,7 @@ This page lists every owner doc in `docs/`. Start with the ordered list, then us
 
 ## Topic docs
 
+- [How a job gets scored](matching.md): the career-ops scoring flow (five dimensions, the 1 to 5 Global score, the 4.0 go line), the North Star archetypes in `user-data/profile.json`, how older scores are treated, and the license credit.
 - [Window rollout](window-rollout.md): turn the mail, LinkedIn and wake window lanes on one at a time, with a dry run and a roll-back.
 - [Backup and restore](backup-and-restore.md): encrypted backup, restore drill and auto-update runbook.
 - [Classifier models](classifier-models.md): the prompt-injection classifier and how to fetch, pin and fit a model.

@@ -10,7 +10,7 @@ Run `npm run user-data -- init` to copy these templates into `user-data/`, then 
 | `easy-apply-answers.json` | Your answers to common screening questions. |
 | `fact-gate.json` | Facts you confirm, which the fact checker may allow, plus phrases to block or warn on. |
 | `languages.json` | The languages you speak, used by the language gate. |
-| `profile.json` | Roles, locations, remote preference, salary floors and targets per currency, notice period and work authorization (written by the setup wizard). |
+| `profile.json` | Roles, locations, remote preference, salary floors and targets per currency, notice period and work authorization (written by the setup wizard). The optional `north_star` section holds your target role archetypes, culture criteria, dealbreakers and comp expectations for the match score (see `docs/matching.md`); empty comp means unknown. |
 | `account.json` | Your LinkedIn plan: `free`, `premium` or `unknown` (the default). Optional: a missing or invalid file means `unknown`. |
 | `reply-facts.json` | Plain facts (CTC, notice period, location, relocation, availability, work authorization) the agent may use to answer simple email replies when `EMAIL_AUTO_REPLY=true`. Nothing is answered while `confirmed` is false. See `docs/email-auto-reply.md`. |
 

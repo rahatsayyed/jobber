@@ -5,17 +5,18 @@
 import type { MatchResultInput } from './db.js';
 import { htmlToText } from './htmlText.js';
 import { LANGUAGES } from './languages.js';
-import { DIM_KEYS, DIM_MAX, DEFAULT_DIM_MINIMUMS, dimMinimumsFromEnv, dimsKind, failedDims, matchThresholdFromEnv, type RubricDims } from './matchRubric.js';
+import { CO_DIMS, RED_FLAGS_FLOOR, RUBRIC_TAG, dimsKind, matchThresholdFromEnv, parseCareerOpsDims, scaleGlobal, type CareerOpsDims } from './matchRubric.js';
 
 export type Importance = 'critical' | 'high' | 'meaningful' | 'preferred' | 'low_signal';
 export type Evidence = 'stated' | 'structural' | 'inferred';
 export type ReqMatch = 'strong' | 'partial' | 'missing';
 export type ReqCategory = 'skill' | 'experience' | 'education' | 'location' | 'language' | 'other';
 export interface Requirement { req: string; importance: Importance; evidence: Evidence; jd_quote: string | null; match: ReqMatch; category?: ReqCategory }
-/** The five-dimension rubric (src/matchRubric.ts): role_fit, skills, seniority_comp, location, flags, each an integer 0..20. */
-export type ScoreDims = RubricDims;
+/** The career-ops rubric (src/matchRubric.ts): cv_match, north_star, comp, culture (1..5), red_flags (0 or negative) and the holistic global (1..5). */
+export type ScoreDims = CareerOpsDims;
 export interface MatchRowInput extends MatchResultInput {
-  score_dims?: ScoreDims;
+  /** What the matcher sends (validated in normalizeMatchRow; `decision` is derived in code, never read). */
+  score_dims?: Record<string, unknown>;
   requirements?: Requirement[];
   strengths?: string[];
   gaps?: string[];
@@ -33,9 +34,9 @@ export interface NormalizedMatch extends MatchResultInput {
   deadline: string | null | undefined;
   language_note: string | null;
   // Which cap lowered the score (e.g. "evidence-ceiling:72", "empty-table:70"), or null when the dims sum stood.
-  // Prefixed "injection-suspect" (";"-joined) whenever the posting contains an injection phrase, even if the score was already <= 75.
+  // Prefixed "injection-suspect" (";"-joined) whenever the posting contains an injection phrase, even if the score was already <= 89.
   score_cap_reason: string | null;
-  // Injection phrases found in the posting (non-empty => score capped at 75 and score_cap_reason starts with "injection-suspect").
+  // Injection phrases found in the posting (non-empty => score capped at 89 and score_cap_reason starts with "injection-suspect").
   injection_phrases: string[];
 }
 
@@ -79,7 +80,8 @@ const INJECTION_RES: RegExp[] = [
   /\b(?:output|return|respond\s+with|reply\s+with)\s+a\s+(?:(?:match|fit)\s+)?(?:score|rating)\s+of\b/i,
 ];
 const INJECTION_SCAN_MAX = 20000;
-export const INJECTION_SCORE_CAP = 75;
+// 89 = Global 4.4 of 5: a posting aimed at an AI screener can never be a strong (4.5+) match, but it still passes the 4.0 cutoff when it earned it.
+export const INJECTION_SCORE_CAP = 89;
 
 /** The injection phrases found in a text (deduped, each cut to 80 chars), scanning at most the first 20000 chars of collapsed text. */
 export function injectionPhrases(text: string | null | undefined): string[] {
@@ -160,10 +162,8 @@ const cap3 = (xs: unknown): string[] =>
   (Array.isArray(xs) ? xs : []).filter((s): s is string => typeof s === 'string' && !!s.trim()).map((s) => s.trim()).slice(0, 3);
 
 export interface NormalizeOpts {
-  /** MATCH_THRESHOLD (default: the env value, 60). A job held back by the pass rule is stored one point under it. */
+  /** MATCH_THRESHOLD (default: the env value, 80 = 4.0 of 5). A job held back by the pass rule is stored one point under it. */
   threshold?: number;
-  /** Per-dimension minimums (default: MATCH_DIM_MINIMUMS from the env, else the shipped defaults). */
-  mins?: Readonly<RubricDims>;
 }
 
 export function normalizeMatchRow(r: MatchRowInput, description?: string, opts: NormalizeOpts = {}): { ok: true; row: NormalizedMatch } | { ok: false; error: string } {
@@ -172,17 +172,19 @@ export function normalizeMatchRow(r: MatchRowInput, description?: string, opts: 
   const reasonsOfCap: string[] = [];
   let heldNote = '';
   if (r.score_dims != null) {
-    // The old four-key shape (skills, seniority, domain, location) is no longer accepted for a NEW save: it has no role_fit, so it could not
-    // pass the rule. Stored old rows stay readable (src/matchRubric.ts dimsKind 'legacy'); this only refuses a fresh one.
-    if (dimsKind(r.score_dims) === 'legacy') {
-      return { ok: false, error: `legacy score_dims (skills, seniority, domain, location) is no longer accepted: use ${DIM_KEYS.join(', ')}, each an integer 0 to ${DIM_MAX}` };
+    // Only the career-ops shape is accepted for a NEW save. The older shapes (rubric_v2: role_fit, skills, ...; legacy: skills, seniority,
+    // domain, location) stay readable in the db (src/matchRubric.ts dimsKind) but a fresh row in them is refused.
+    const kind = dimsKind(r.score_dims);
+    if (kind === 'legacy' || kind === 'rubric_v2') {
+      return { ok: false, error: `${kind} score_dims is no longer accepted: use the career-ops rubric ${RUBRIC_TAG}: ${CO_DIMS.join(', ')} (1 to 5), red_flags (${RED_FLAGS_FLOOR} to 0) and global (1 to 5), one decimal each` };
     }
-    for (const k of DIM_KEYS) {
-      const v = (r.score_dims as any)[k];
-      if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > DIM_MAX) return { ok: false, error: `invalid score_dims.${k}: ${String(v)}` };
-    }
-    dims = DIM_KEYS.reduce((a, k) => ({ ...a, [k]: (r.score_dims as any)[k] }), {} as RubricDims);
-    score = DIM_KEYS.reduce((a, k) => a + dims![k], 0);
+    const parsed = parseCareerOpsDims(r.score_dims);
+    if (!parsed.ok) return { ok: false, error: parsed.error };
+    dims = parsed.dims;
+    // The stored score is the Global score scaled to 0..100. career-ops has no formula: the Global is the model's holistic call
+    // (code only keeps it from exceeding the best dimension, reported as a cap reason).
+    score = scaleGlobal(dims.global);
+    if (parsed.clamped) reasonsOfCap.push(`global-above-dimensions:${parsed.clamped}`);
   } else {
     // Without score_dims only an expired row (score 0, reasons "expired") is acceptable; anything else would bypass the evidence ceiling.
     const expired = r.score === 0 && typeof r.reasons === 'string' && r.reasons.trim().toLowerCase() === 'expired';
@@ -196,36 +198,33 @@ export function normalizeMatchRow(r: MatchRowInput, description?: string, opts: 
   const verdict = (v: unknown) => ((VERDICTS as readonly unknown[]).includes(v) ? (v as 'PASS' | 'FAIL' | 'FLAG') : undefined);
   const locationVerdict = verdict(r.location_verdict);
   if (dims) {
-    const sum = score;
+    const globalScore = score;
     const cap = evidenceCeiling(requirements);
     if (score > cap.ceiling) { score = cap.ceiling; reasonsOfCap.push(cap.reason); }
-    // PASS RULE: every dimension at its minimum, the sum at MATCH_THRESHOLD (every consumer checks the stored score), the location verdict
-    // not FAIL, no hard stop. A job that fails a rule is stored with its dimensions but one point under the threshold, so every existing
-    // consumer (P2c and the rest read "stored score >= threshold") rejects it with no further change. The caps combine as a minimum.
+    // PASS RULE (career-ops cutoff): the stored score (Global x 20) must reach MATCH_THRESHOLD (default 80 = 4.0 of 5; every consumer checks the
+    // stored score). On top of that the two gates we keep: the location verdict is not FAIL and there is no hard stop. A job that fails one of
+    // those is stored with its dimensions but one point under the threshold, so every existing consumer (P2c and the rest read
+    // "stored score >= threshold") rejects it with no further change. The caps combine as a minimum.
     const threshold = opts.threshold ?? matchThresholdFromEnv();
-    const mins = opts.mins ?? dimMinimumsFromEnv().mins ?? DEFAULT_DIM_MINIMUMS;
-    const failed = failedDims(dims, mins);
-    const held: string[] = failed.map((k) => `dim_min:${k}`);
+    const held: string[] = [];
     if (locationVerdict === 'FAIL') held.push('location_fail');
     if (hard_stops.length) held.push('hard_stop');
     if (held.length) {
       const ceiling = Math.max(0, threshold - 1);
       if (score > ceiling) score = ceiling;
       reasonsOfCap.push(held.join(','));
-      const why = [
-        ...failed.map((k) => `${k} ${dims![k]} < ${mins[k]}`),
-        ...(locationVerdict === 'FAIL' ? ['location FAIL'] : []),
-        ...(hard_stops.length ? ['hard stop'] : []),
-      ];
-      heldNote = ` [held back: ${why.join('; ')}; dimension sum was ${sum}]`;
+      const why = [...(locationVerdict === 'FAIL' ? ['location FAIL'] : []), ...(hard_stops.length ? ['hard stop'] : [])];
+      heldNote = ` [held back: ${why.join('; ')}; global score was ${dims.global} (${globalScore})]`;
     }
+    // career-ops: "A role scoring 4.5+ overall but 2 or below on Cultural signals must carry an explicit warning in the report".
+    if (dims.global >= 4.5 && dims.culture <= 2) heldNote += ' [High technical fit, unconfirmed/poor culture fit - verify before applying.]';
   }
-  // Injection defence: a posting that talks to the AI screener cannot score above 75, whatever the model was talked into.
+  // Injection defence: a posting that talks to the AI screener cannot score above 89, whatever the model was talked into.
   // Raw text is scanned too, so an instruction hidden in an HTML comment or attribute still counts.
   const injection = [...new Set([...injectionPhrases(plain), ...injectionPhrases(description)])];
   let capReason: string | null = reasonsOfCap.length ? reasonsOfCap.join(';') : null;
   if (injection.length) {
-    // Keep the other cap reasons only when they are the binding ones (they took the score to 75 or below).
+    // Keep the other cap reasons only when they are the binding ones (they took the score to 89 or below).
     if (score > INJECTION_SCORE_CAP) { score = INJECTION_SCORE_CAP; capReason = null; }
     capReason = capReason ? `injection-suspect;${capReason}` : 'injection-suspect';
   }
