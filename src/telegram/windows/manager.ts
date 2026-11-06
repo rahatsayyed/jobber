@@ -246,7 +246,7 @@ export class WindowViews {
     return { info, text: this.d.redact(r.stdout.slice(-200_000)) };
   }
 
-  /** Where the view of a window goes: its own topic (long-lived), the wakes or drips topic, or no topic. */
+  /** Where the view of a window goes: its own topic (long-lived), the wakes, mail, linkedin or old drips topic, or no topic. */
   private async targetThread(window: string, fallback: number | undefined): Promise<number | undefined> {
     const chatId = this.d.chatId;
     if (!chatId) return fallback;

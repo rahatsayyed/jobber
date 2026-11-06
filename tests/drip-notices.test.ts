@@ -205,14 +205,14 @@ function setup(opts: { env?: NodeJS.ProcessEnv; tg?: TgPost; sends?: boolean; st
 }
 
 describe('mail drip lane notices', () => {
-  it('one drips notice per real send, full address shown, third-party text cleaned and escaped', async () => {
+  it('one mail notice per real send, full address shown, third-party text cleaned and escaped', async () => {
     const s = setup();
     s.queue(5);
     const r = await dripTick(s.d);
     expect(r.status).toBe('ran');
     expect(s.posts).toHaveLength(r.runs?.length ?? -1);
     for (const p of s.posts) {
-      expect(p.topic).toBe('drips');
+      expect(p.topic).toBe('mail');
       expect(p.text).toMatch(/^✅ <b>Cold email sent<\/b>\n<b>To:<\/b> <a href="mailto:person\d@co\d\.example">person\d@co\d\.example<\/a>\n<b>Job:<\/b> <b>&lt;b&gt;Acme\d&lt;\/b&gt;<\/b> · Dev_\d \*x\*\n<b>Subject:<\/b> <i>s<\/i>\n<b>Result:<\/b> sent$/);
     }
   });
@@ -229,17 +229,17 @@ describe('mail drip lane notices', () => {
     await dripTick(s.d);
     expect(s.posts.length).toBeGreaterThan(0);
     for (const p of s.posts) {
-      expect(p.topic).toBe('drips');
+      expect(p.topic).toBe('mail');
       expect(p.text).toMatch(/^⏸ <b>Dry run: Cold email not sent<\/b>/);
     }
   });
 
-  it('a held (quarantined) row is told on drips and not as a send or an alert', async () => {
+  it('a held (quarantined) row is told on mail and not as a send or an alert', async () => {
     const s = setup({ sends: false });
     s.queue(1);
     await dripTick(s.d);
     expect(s.posts).toHaveLength(1);
-    expect(s.posts[0]).toMatchObject({ topic: 'drips' });
+    expect(s.posts[0]).toMatchObject({ topic: 'mail' });
     expect(s.posts[0]?.text).toMatch(/Mail held: check Gmail Sent/);
     expect(s.posts[0]?.text).not.toMatch(/sent<\/b>/);
   });
@@ -281,7 +281,7 @@ describe('LinkedIn drip lane notices', () => {
     const r = await linkedinDripTick(s.d);
     expect(r.status).toBe('ran');
     expect(s.posts).toEqual([{
-      topic: 'drips',
+      topic: 'linkedin',
       text: '✅ <b>LinkedIn DM</b>\n<b>Person:</b> <a href="https://www.linkedin.com/in/jane">Jane *Roe*</a>\n<b>Company:</b> Acme\n<b>Result:</b> done',
     }]);
   });

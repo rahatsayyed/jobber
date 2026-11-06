@@ -439,6 +439,16 @@ export function formatReplyNotice(rows: ReplyRow[]): string | null {
   return html(lines(out));
 }
 
+/**
+ * Where a grouped reply notice goes. Anything that may need the owner (needs_you, a real reply, interview, offer, rejection, bounce,
+ * unmatched mail) stays in the loud `inbox` topic. Only a group made ONLY of routine rows (auto acknowledgements, mail the auto reply
+ * path already answered) goes to the silent `mail` topic.
+ */
+export function replyNoticeTopic(rows: ReplyRow[]): 'inbox' | 'mail' {
+  const routine = (r: ReplyRow): boolean => !r.needs_you && (r.classification === 'auto_ack' || r.classification === 'noise' || (!!r.auto_note && r.action !== 'bounced'));
+  return rows.length > 0 && rows.every(routine) ? 'mail' : 'inbox';
+}
+
 /** Posts one grouped notice for every processed mail not yet announced, then marks them. Never throws. Returns how many rows were announced. */
 export async function notifyNewReplies(d: Pick<DriverDeps, 'db' | 'tg' | 'now'>): Promise<number> {
   try {
@@ -450,7 +460,7 @@ export async function notifyNewReplies(d: Pick<DriverDeps, 'db' | 'tg' | 'now'>)
     if (rows.length === 0) return 0;
     const worth = rows.filter(worthNotice);
     const text = formatReplyNotice(worth);
-    if (text) await notifyTg(d, 'inbox', text);
+    if (text) await notifyTg(d, replyNoticeTopic(worth), text);
     const mark = d.db.prepare("UPDATE processed_messages SET notified_at = datetime('now') WHERE message_id = ? AND notified_at IS NULL");
     d.db.transaction(() => { for (const r of rows) mark.run(r.message_id); })();
     return worth.length;

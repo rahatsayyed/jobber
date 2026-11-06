@@ -479,7 +479,7 @@ describe('mail drip: automatic replies', () => {
     expect(plan.prompt).toContain(`email reply id ${rid}`);
     expect(plan.env?.EMAIL_AUTO_REPLY).toBe('true');
     expect(l.db.prepare('SELECT status, reply_message_id FROM email_replies').get()).toEqual({ status: 'sent', reply_message_id: 'gmail-reply-1' });
-    const note = l.posts.find((p) => p.topic === 'inbox');
+    const note = l.posts.find((p) => p.topic === 'mail');
     expect(note?.silent).toBe(true);
     expect(note?.text).toContain('hr@acme.example');
     expect(note?.text).toContain('Re: Full Stack Developer');

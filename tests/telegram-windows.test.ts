@@ -394,7 +394,7 @@ describe('window topics', () => {
 
   it('wake and drip windows use the shared wakes and drips topics', async () => {
     expect(topicKindOf('wake-abc')).toBe('wakes');
-    expect(topicKindOf('drip-mail-x')).toBe('drips');
+    expect(topicKindOf('drip-mail-x')).toBe('mail');
     expect(topicKindOf('scheduler')).toBe('own');
     const fa = fakeApi();
     const w = await ensureWindowTopic(fa.api, root, CHAT, 'wake-1', 'wakes');
@@ -450,13 +450,13 @@ describe('hidden daemons and worker grouping (Phase 4)', () => {
     mkdirSync(path.join(root, '.jobber'), { recursive: true });
     writeFileSync(topicsPath(root), JSON.stringify({ chat_id: CHAT, forum: true, topics: { alerts: 11 } }));
     const fa = fakeApi();
-    for (const n of ['mail', 'linkedin', 'boards', 'sources', 'pipeline', 'apply']) {
+    for (const n of ['boards', 'sources', 'pipeline', 'apply']) {
       expect(topicKindOf(n)).toBe('own');
       await ensureWindowTopic(fa.api, root, CHAT, n, 'own');
     }
     const names = methods(fa.calls, 'createForumTopic').map((c) => c.payload.name);
-    expect(names).toEqual(['mail', 'linkedin', 'boards', 'sources', 'pipeline', 'apply']);
+    expect(names).toEqual(['boards', 'sources', 'pipeline', 'apply']);
     expect(topicKindOf('wake-9')).toBe('wakes');
-    expect(topicKindOf('drip-linkedin-3')).toBe('drips');
+    expect(topicKindOf('drip-linkedin-3')).toBe('linkedin');
   });
 });

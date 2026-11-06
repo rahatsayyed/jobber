@@ -145,8 +145,8 @@ async function main(): Promise<void> {
     projectRoot,
     launcher: tmuxLauncher(defaultRun, undefined, runWindowKeepMin(env)),
     notifier,
-    // Code-sent notices to the wakes, alerts and drips topics (zero LLM); a missing Telegram setup just returns not ok.
-    // `silent` is optional: unset means the topic default (wakes and drips silent, alerts loud); see src/telegram/silent.ts noticeUrgency.
+    // Code-sent notices to the wakes, alerts, mail and linkedin topics (zero LLM); a missing Telegram setup just returns not ok.
+    // `silent` is optional: unset means the topic default (wakes, mail and linkedin silent, alerts loud); see src/telegram/silent.ts noticeUrgency.
     tg: async (topic, text, opts) => {
       const silent = (opts as { silent?: boolean } | undefined)?.silent;
       await telegramNotifier(env).send(text, { topic, ...(opts?.html ? { html: true } : {}), ...(typeof silent === 'boolean' ? { silent } : {}) });

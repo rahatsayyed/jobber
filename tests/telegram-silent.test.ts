@@ -39,7 +39,7 @@ const send = async (topic: Parameters<typeof sendToTopic>[0], o: Partial<Paramet
 };
 
 describe('topic defaults', () => {
-  it('drips and wakes are silent; alerts, assist, inbox, chat are loud', async () => {
+  it('drips, wakes, mail and linkedin are silent; alerts, assist, inbox, chat are loud', async () => {
     const table: Record<string, boolean> = {};
     for (const t of TOPIC_NAMES) {
       const { sent } = await send(t);
@@ -48,8 +48,8 @@ describe('topic defaults', () => {
       // loud means the key is absent (never an explicit false the client could misread)
       if (!table[t]) expect('disable_notification' in sent[0].payload).toBe(false);
     }
-    expect(table).toEqual({ alerts: false, wakes: true, drips: true, inbox: false, assist: false, chat: false });
-    expect([...DEFAULT_SILENT_TOPICS].sort()).toEqual(['drips', 'wakes']);
+    expect(table).toEqual({ alerts: false, wakes: true, mail: true, linkedin: true, drips: true, inbox: false, assist: false, chat: false });
+    expect([...DEFAULT_SILENT_TOPICS].sort()).toEqual(['drips', 'linkedin', 'mail', 'wakes']);
   });
 
   it('no topic (plain chat, resolveSilent) is loud', () => {
@@ -114,13 +114,13 @@ describe('TELEGRAM_SILENT_TOPICS', () => {
   });
 
   it('blank is the default, none silences nothing, unknown names are ignored with a warning', () => {
-    expect([...silentTopicsFromEnv({ TELEGRAM_SILENT_TOPICS: '  ' } as NodeJS.ProcessEnv).topics].sort()).toEqual(['drips', 'wakes']);
+    expect([...silentTopicsFromEnv({ TELEGRAM_SILENT_TOPICS: '  ' } as NodeJS.ProcessEnv).topics].sort()).toEqual(['drips', 'linkedin', 'mail', 'wakes']);
     expect(silentTopicsFromEnv({ TELEGRAM_SILENT_TOPICS: 'none' } as NodeJS.ProcessEnv).topics.size).toBe(0);
     const r = silentTopicsFromEnv({ TELEGRAM_SILENT_TOPICS: 'wakes,bogus' } as NodeJS.ProcessEnv);
     expect([...r.topics]).toEqual(['wakes']);
     expect(r.warnings.join(' ')).toContain('bogus');
     const allBad = silentTopicsFromEnv({ TELEGRAM_SILENT_TOPICS: 'x,y' } as NodeJS.ProcessEnv);
-    expect([...allBad.topics].sort()).toEqual(['drips', 'wakes']);
+    expect([...allBad.topics].sort()).toEqual(['drips', 'linkedin', 'mail', 'wakes']);
     expect(allBad.warnings.length).toBe(3);
   });
 

@@ -182,7 +182,7 @@ export class DripController {
     } finally {
       db.close();
     }
-    await io.reply(`${LANE_LABEL[lane]} drip tick requested. The daemon picks it up within 30 s; the result goes to the drips topic. If a gate refuses it, /drip shows the reason.`);
+    await io.reply(`${LANE_LABEL[lane]} drip tick requested. The daemon picks it up within 30 s; the result goes to the mail or linkedin topic. If a gate refuses it, /drip shows the reason.`);
   }
 
   async cancel(token: string, io: DripIo, userId?: number): Promise<void> {

@@ -882,7 +882,7 @@ const hand: EnvSpec[] = [
   }),
   e('TELEGRAM_CHAT_ID', 'telegram', 'Telegram bridge', 'string', {
     maxLen: 32,
-    about: "Optional override. Blank (the default): the bridge creates its topics (alerts, wakes, drips, inbox, assist, chat) in the bot's own private chat with the first ALLOWED_USERS id; that needs Threaded Mode enabled for the bot in BotFather. Set it to the id of a forum supergroup (a negative number such as -1001234567890, bot admin with can_manage_topics) to use that group instead.",
+    about: "Optional override. Blank (the default): the bridge creates its topics (alerts, wakes, mail, linkedin, inbox, assist, chat) in the bot's own private chat with the first ALLOWED_USERS id; that needs Threaded Mode enabled for the bot in BotFather. Set it to the id of a forum supergroup (a negative number such as -1001234567890, bot admin with can_manage_topics) to use that group instead.",
     ...never('Decides where agent messages and escalations are delivered: a wrong value sends them to another chat. Edit .env by hand.'),
   }),
   e('MANAGER_TMUX_SESSION', 'telegram', 'Telegram bridge', 'string', {
@@ -899,9 +899,9 @@ const hand: EnvSpec[] = [
   }),
 
   e('TELEGRAM_SILENT_TOPICS', 'telegram', 'Telegram bridge', 'string', {
-    default: 'drips,wakes',
+    default: 'drips,wakes,mail,linkedin',
     maxLen: 80,
-    about: 'Comma-separated topic names (alerts, wakes, drips, inbox, assist, chat) whose code-sent notices arrive silent (no sound or vibration; the message still appears). Blank (the default): drips and wakes. The word none: nothing is silent. An unknown name is ignored. A notice that asks for the owner (handoff reminder, manual-request report, assist ping, escalation digest) is always loud, and replies to your own commands are never silent.',
+    about: 'Comma-separated topic names (alerts, wakes, mail, linkedin, drips, inbox, assist, chat; drips is the old shared drip topic) whose code-sent notices arrive silent (no sound or vibration; the message still appears). Blank (the default): drips, wakes, mail and linkedin. The word none: nothing is silent. An unknown name is ignored. A notice that asks for the owner (handoff reminder, manual-request report, assist ping, escalation digest) is always loud, and replies to your own commands are never silent.',
     ...never('Decides which Telegram notices make a sound: only the owner, by hand in .env, can change it.'),
   }),
 

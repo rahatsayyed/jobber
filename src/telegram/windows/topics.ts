@@ -1,13 +1,16 @@
 // src/telegram/windows/topics.ts
 // Topic routing for window views: a long-lived window gets its own topic (created on demand, id stored under
-// `windows` in .jobber/telegram-topics.json); wake-* windows share the wakes topic and drip-* windows the drips topic.
+// `windows` in .jobber/telegram-topics.json); wake-* windows share the wakes topic; the lane windows `mail` and `linkedin` and their
+// drip-* runs share ONE topic per lane (`mail`, `linkedin`); any other drip-* window uses the old `drips` topic.
 import type { TelegramApi } from '../api.js';
 import { ensureTopics, readTopicState, writeTopicState, type TopicState } from '../topics.js';
 
-export type WindowTopicKind = 'own' | 'wakes' | 'drips';
+export type WindowTopicKind = 'own' | 'wakes' | 'mail' | 'linkedin' | 'drips';
 
 export function topicKindOf(window: string): WindowTopicKind {
   if (window.startsWith('wake-')) return 'wakes';
+  if (window === 'mail' || window.startsWith('drip-mail')) return 'mail';
+  if (window === 'linkedin' || window.startsWith('drip-linkedin')) return 'linkedin';
   if (window.startsWith('drip-')) return 'drips';
   return 'own';
 }
@@ -57,7 +60,11 @@ export function forgetWindowTopic(root: string, window: string, kind: WindowTopi
 /** Window name whose own topic has this thread id (from the stored map), or null. */
 export function windowOfThread(root: string, threadId: number): string | null {
   const st = readTopicState(root);
-  if (!st || !st.forum || !st.windows) return null;
+  if (!st || !st.forum) return null;
+  // The lane topics belong to the worker windows of the same name (typed text there goes to that window).
+  if (st.topics.mail === threadId) return 'mail';
+  if (st.topics.linkedin === threadId) return 'linkedin';
+  if (!st.windows) return null;
   for (const [name, id] of Object.entries(st.windows)) if (id === threadId) return name;
   return null;
 }

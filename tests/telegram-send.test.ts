@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ApiResult, TelegramApi } from '../src/telegram/api.js';
 import { loadTelegramConfig, isOwnerId } from '../src/telegram/config.js';
-import { ensureTopics, readTopicState, topicsPath, TOPIC_NAMES } from '../src/telegram/topics.js';
+import { ensureTopics, readTopicState, topicsPath, TOPIC_NAMES, CREATED_TOPIC_NAMES } from '../src/telegram/topics.js';
 import { sendToTopic } from '../src/telegram/send.js';
 import { telegramNotifier } from '../src/platform/notify.js';
 
@@ -52,8 +52,8 @@ describe('topics', () => {
   it('creates every topic once, stores ids 0600 and is idempotent', async () => {
     const { api, calls } = fakeApi();
     const st = await ensureTopics(api, root, '-100123');
-    expect(Object.keys(st.topics).sort()).toEqual([...TOPIC_NAMES].sort());
-    expect(calls.filter((c) => c.method === 'createForumTopic')).toHaveLength(6);
+    expect(Object.keys(st.topics).sort()).toEqual([...CREATED_TOPIC_NAMES].sort());
+    expect(calls.filter((c) => c.method === 'createForumTopic')).toHaveLength(CREATED_TOPIC_NAMES.length);
     expect(statSync(topicsPath(root)).mode & 0o777).toBe(0o600);
     const again = fakeApi();
     await ensureTopics(again.api, root, '-100123');

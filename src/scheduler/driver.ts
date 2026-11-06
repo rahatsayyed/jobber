@@ -52,7 +52,7 @@ export interface DriverDeps {
   projectRoot: string;
   launcher: Launcher;
   notifier: Notifier;
-  /** Code-sent Telegram notices (topics wakes, alerts, drips). Absent: none. Never throws and never blocks long (src/scheduler/dripNotice.ts). */
+  /** Code-sent Telegram notices (topics wakes, alerts, mail, linkedin). Absent: none. Never throws and never blocks long (src/scheduler/dripNotice.ts). */
   tg?: TgPost;
   newRunId: () => string;
   lockDeps?: LockDeps;

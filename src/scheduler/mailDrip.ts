@@ -469,7 +469,7 @@ async function holdIfUnrecorded(d: DriverDeps, item: DripItem, runId: string, wh
         level: 'warn', title: 'mail drip run ended without a recorded send, row held for the owner',
         detail: `row ${item.id} job ${item.job_id}: ${why}; check Gmail Sent before releasing`, runId,
       });
-      await notifyTg(d, 'drips', formatQuarantineNotice(item.id, item.job_id, why));
+      await notifyTg(d, 'mail', formatQuarantineNotice(item.id, item.job_id, why));
     }
   } catch {
     // ignore
@@ -723,7 +723,7 @@ async function runOne(
 }
 
 /**
- * The notice of an automatic email reply (zero LLM): a sent reply shows exactly what went out, to whom, with the full text (inbox topic, silent);
+ * The notice of an automatic email reply (zero LLM): a sent reply shows exactly what went out, to whom, with the full text (mail topic, silent);
  * a reply the claim cancelled (a newer message arrived, the sender is no longer safe) is a loud "answer by hand" notice. Never throws.
  */
 async function emailReplyRunNotice(d: DriverDeps, item: Extract<DripItem, { kind: 'email_reply' }>, dry: boolean): Promise<void> {
@@ -733,9 +733,9 @@ async function emailReplyRunNotice(d: DriverDeps, item: Extract<DripItem, { kind
   const job = d.db.prepare('SELECT company, title FROM jobs WHERE id = ?').get(item.job_id) as { company: string | null; title: string | null } | undefined;
   const base = { address: row.to_addr, subject: row.subject, body: row.body, kinds: row.kind.split(',').filter(Boolean), company: job?.company ?? null, title: job?.title ?? null };
   if (dry) {
-    await notifyTg(d, 'inbox', formatEmailReplyNotice({ ...base, dry: true, outcome: 'sent' }), undefined, true);
+    await notifyTg(d, 'mail', formatEmailReplyNotice({ ...base, dry: true, outcome: 'sent' }), undefined, true);
   } else if (row.status === 'sent') {
-    await notifyTg(d, 'inbox', formatEmailReplyNotice({ ...base, dry: false, outcome: 'sent' }), undefined, true);
+    await notifyTg(d, 'mail', formatEmailReplyNotice({ ...base, dry: false, outcome: 'sent' }), undefined, true);
   } else if (row.status === 'cancelled') {
     await notifyTg(d, 'inbox', formatEmailReplyNotice({ ...base, dry: false, outcome: 'cancelled', note: row.note }), undefined, false);
   }
@@ -770,7 +770,7 @@ async function mailRunNotice(d: DriverDeps, item: DripItem, r: OneRun): Promise<
         : d.db.prepare('SELECT subject AS s FROM followups WHERE id = ?').get(item.id) as { s: string | null } | undefined;
       subject = s?.s ?? null;
     } catch { /* the subject is optional */ }
-    await notifyTg(d, 'drips', formatMailNotice({ kind: item.kind, company: job?.company ?? null, title: job?.title ?? null, address: item.address, subject, dry }));
+    await notifyTg(d, 'mail', formatMailNotice({ kind: item.kind, company: job?.company ?? null, title: job?.title ?? null, address: item.address, subject, dry }));
   } catch {
     // a notice never breaks the lane
   }

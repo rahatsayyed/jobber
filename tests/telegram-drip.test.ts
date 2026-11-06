@@ -84,7 +84,7 @@ describe('confirm flow', () => {
     const token = tokenOf(t.buttons[0]!);
     await c.callback(`dr:y:${token}`, t.io, 42);
     expect(pendingRequest('mail')).not.toBeNull();
-    expect(t.replies.at(-1)).toMatch(/requested.*within 30 s.*drips topic/);
+    expect(t.replies.at(-1)).toMatch(/requested.*within 30 s.*mail or linkedin topic/);
     // second use of the same token is refused and writes nothing new
     const before = t.replies.length;
     await c.callback(`dr:y:${token}`, t.io, 42);

@@ -15,7 +15,7 @@ section is the reference for what exists.
 - **What stays in code whatever the lane:** planning, item choice, the kill switch, halts, quiet hours, ceilings, spacing, locks, the usage backoff and the dry-run flag are checked by the scheduler BEFORE any text is typed; the window only does the item. Guards that still apply inside a window: the allowlisted environment, the `window-guard.cjs` hook (kill switch, tamper guard, the `send_email` screen), the tool lists of the subagents, and the typed arm tools.
 - **Honest known weaknesses of the window path:** the main thread of a window holds the full tool set (an interactive session, not the restricted run profile); there is no `dontAsk` permission mode, so a tool outside the allow list waits on a prompt (the scheduler sends a stall notice); whether the hooks fire inside subagents is unverified; the environment is fixed when the window starts, so a changed `.env` value (a cap, the dry-run flag) needs `restart <window>` (or the recycle) to take effect.
 - **Telegram view of the windows:** `/windows` lists workers first, then `manager` and `chat`, then temporary windows, each with a short role label from its `description`. The three daemons (`bridge`, `scheduler`, `web`) are listed in `hidden_in_telegram` of `config/manager-windows.json` and never appear in Telegram: `/window scheduler` answers "not available in Telegram" and shows nothing of the pane. The dashboard terminal still shows every window. Each worker window gets its own topic, named like the window, created the first time you open it.
-- **Telegram bridge** (`src/telegram/`, `npm run telegram:bridge`, window `bridge`): a custom grammY bot. Topics `alerts`, `wakes`, `drips`, `inbox`, `assist`
+- **Telegram bridge** (`src/telegram/`, `npm run telegram:bridge`, window `bridge`): a custom grammY bot. Topics `alerts`, `wakes`, `mail`, `linkedin`, `inbox`, `assist`
   and `chat` (ids in `.jobber/telegram-topics.json`) in the bot's own private chat with the first `ALLOWED_USERS`
   id (BotFather Threaded Mode must be on); `TELEGRAM_CHAT_ID` is an optional override for a forum group
   (the bot then needs admin with `can_manage_topics`). Owner-only by the numeric `ALLOWED_USERS`. The
@@ -28,16 +28,16 @@ section is the reference for what exists.
   `/applyall` and `/connect` no longer exist. `/windows` and
   `/window <name>` are live tmux views (`src/telegram/windows/`; allowlist `Jobber` plus `WEB_TERMINAL_SESSIONS`;
   protected windows view only; input only with `TELEGRAM_WINDOW_INPUT=true`, default false; window topics on demand
-  under `windows` in `.jobber/telegram-topics.json`, `wake-*` use `wakes`, `drip-*` use `drips`). `/drip`
+  under `windows` in `.jobber/telegram-topics.json`, `wake-*` use `wakes`; the windows `mail` and `linkedin` and their `drip-mail-*` / `drip-linkedin-*` runs use the lane topics `mail` and `linkedin`, one topic per lane; other `drip-*` use the old `drips`). `/drip`
   (`src/telegram/drip.ts`, `src/scheduler/dripRequest.ts`) asks for one drip tick with a 2-minute single-use
   confirm and only skips the random wait. The scheduler sends the wake summary to `wakes`, failures to `alerts`
-  and one notice per drip action to `drips` (addresses in full, owner-only chat; HTML built by `src/platform/tgHtml.ts`) (`src/scheduler/dripNotice.ts`). The `chat` topic talks to the
+  and one notice per mail drip action to `mail` and per LinkedIn drip action to `linkedin` (routing table: `docs/telegram-bot-setup.md` section 5a; addresses in full, owner-only chat; HTML built by `src/platform/tgHtml.ts`) (`src/scheduler/dripNotice.ts`). The `chat` topic talks to the
   long-running `chat` window (`src/telegram/chatwin/`, session id in `.jobber/chat-session.json`, replies read
   from the Claude transcript; `/clear`, `/compact`, `/chat restart` chat-only; `TELEGRAM_CHAT_FALLBACK=print`
   re-enables `claude -p`, default off), `read_only`, never skip-permissions. Unverified live: `editMessageText`
   rate limits, `/clear` creating a new transcript file, `--session-id` support. The doctor check `telegram-bridge` covers it.
-  Code-sent notices carry Telegram's `disable_notification` (silent, no sound) by topic: `drips` and `wakes` silent,
-  `alerts`, `assist`, `inbox` and plain chat loud, changed by `TELEGRAM_SILENT_TOPICS` (default `drips,wakes`; `none`
+  Code-sent notices carry Telegram's `disable_notification` (silent, no sound) by topic: `mail`, `linkedin`, `wakes` and the old `drips` silent,
+  `alerts`, `assist`, `inbox` and plain chat loud, changed by `TELEGRAM_SILENT_TOPICS` (default `drips,wakes,mail,linkedin`; `none`
   = nothing silent); `Notifier.send(text, {silent})` overrides per call (`src/telegram/silent.ts`: `resolveSilent`,
   `noticeUrgency`), the owner-facing ones (handoff reminder, manual-request report, assist ping, escalation digest,
   applier escalation) are forced loud, bridge replies to commands and buttons are never silent.

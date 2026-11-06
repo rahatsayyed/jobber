@@ -725,7 +725,7 @@ async function linkedinRunNotice(d: DriverDeps, item: LiItem, run: OneRun): Prom
       kind: item.kind, name, company, jobTitle, profileUrl,
       dry: isDryRun(d.env), ok, reason: run.reason ?? run.status,
     });
-    if (ok) await notifyTg(d, 'drips', text);
+    if (ok) await notifyTg(d, 'linkedin', text);
     else await notifyTg(d, 'alerts', formatDripFailure('linkedin', item.kind, run.reason ?? run.status));
   } catch {
     // a notice never breaks the lane

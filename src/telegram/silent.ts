@@ -5,7 +5,7 @@
 import { TOPIC_NAMES, type TopicName } from './topics.js';
 
 /** Silent unless the owner sets TELEGRAM_SILENT_TOPICS. alerts, assist, inbox and chat stay loud. */
-export const DEFAULT_SILENT_TOPICS: readonly TopicName[] = ['drips', 'wakes'];
+export const DEFAULT_SILENT_TOPICS: readonly TopicName[] = ['drips', 'wakes', 'mail', 'linkedin'];
 
 export interface SilentTopics {
   topics: Set<TopicName>;
@@ -14,7 +14,7 @@ export interface SilentTopics {
 }
 
 /**
- * Reads TELEGRAM_SILENT_TOPICS. Blank or unset: the default (`drips,wakes`). The word `none` alone: nothing is
+ * Reads TELEGRAM_SILENT_TOPICS. Blank or unset: the default (`drips,wakes,mail,linkedin`). The word `none` alone: nothing is
  * silent. An unknown name is ignored and reported in `warnings`; a list with no valid name falls back to the default.
  */
 export function silentTopicsFromEnv(env: NodeJS.ProcessEnv): SilentTopics {
@@ -29,7 +29,7 @@ export function silentTopicsFromEnv(env: NodeJS.ProcessEnv): SilentTopics {
     else warnings.push(`TELEGRAM_SILENT_TOPICS: unknown topic "${p.slice(0, 40)}" ignored (known: ${TOPIC_NAMES.join(', ')})`);
   }
   if (topics.size === 0) {
-    warnings.push('TELEGRAM_SILENT_TOPICS: no valid topic name, the default (drips,wakes) is used');
+    warnings.push('TELEGRAM_SILENT_TOPICS: no valid topic name, the default (drips,wakes,mail,linkedin) is used');
     return { topics: new Set(DEFAULT_SILENT_TOPICS), warnings };
   }
   return { topics, warnings };

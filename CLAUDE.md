@@ -179,19 +179,19 @@ This agent is primarily operated through the **Telegram channel**. Two routes ex
 custom grammY bridge in `src/telegram/` (`npm run telegram:bridge`, tmux window `bridge` of the session
 `Jobber`; the route `npm run setup` configures, see "Platform and sessions" below), and
 the older single session started with `--channels plugin:telegram@claude-plugins-official`.
-The bridge uses topics in the bot's own private chat (BotFather Threaded Mode; `TELEGRAM_CHAT_ID` is an optional forum group override) (`alerts`, `wakes`, `drips`, `inbox`, `assist`, `chat`; ids in
+The bridge uses topics in the bot's own private chat (BotFather Threaded Mode; `TELEGRAM_CHAT_ID` is an optional forum group override) (`alerts`, `wakes`, `mail`, `linkedin`, `inbox`, `assist`, `chat`; the old `drips` is no longer created; ids in
 `.jobber/telegram-topics.json`), is owner-only by the numeric `ALLOWED_USERS`, and formats replies
 with its own markdown to Telegram HTML formatter (`src/telegram/format.ts`, always escapes). Code-sent
 notifications route by topic through `src/platform/notify.ts` (escalation digest and manual-request
 reports go to `inbox`, the `apply:assist` ping to `assist`; the scheduler sends the wake summary to `wakes`,
-failures to `alerts` and one short notice per mail or LinkedIn drip action to `drips`, email addresses shown in full because the chat is owner-only, from
+failures to `alerts` and one short notice per mail drip action to `mail` and per LinkedIn drip action to `linkedin` (the live views of the worker windows `mail` and `linkedin` share those topics; needs-you notices stay in `inbox`/`alerts`), email addresses shown in full because the chat is owner-only, from
 `src/scheduler/dripNotice.ts`). Every code-sent notice is Telegram HTML built with `src/platform/tgHtml.ts` (bold headline with a status emoji, label/value lines, `code` for ids and commands; untrusted text is always escaped and secret shapes redacted; sent with `html: true`, plain-text fallback when Telegram rejects the markup); status command outputs are shown unchanged in a code block under a bold heading. The `chat` topic talks to ONE long-running interactive `claude` window named
 `chat` in the `Jobber` session (started by `npm run up`, session id kept in `.jobber/chat-session.json`); the
 bridge types the text into it and reads the reply from Claude's transcript under `~/.claude/projects`. In
 that topic `/clear` (also best-effort deletes the logged Telegram messages, 48 h limit), `/compact` and
 `/chat restart` are chat-only. The old `claude -p` path runs only with `TELEGRAM_CHAT_FALLBACK=print`
-(default off). Routine code-sent notices arrive silent (Telegram `disable_notification`, by topic: `drips` and `wakes`
-silent, `alerts`, `assist`, `inbox` loud; env `TELEGRAM_SILENT_TOPICS`, default `drips,wakes`); notices that ask for
+(default off). Routine code-sent notices arrive silent (Telegram `disable_notification`, by topic: `mail`, `linkedin`, `wakes` and the old `drips`
+silent, `alerts`, `assist`, `inbox` loud; env `TELEGRAM_SILENT_TOPICS`, default `drips,wakes,mail,linkedin`); notices that ask for
 the owner and every reply to a typed command or button press are loud. Typed text goes in as one line (max 2000 chars, newlines become spaces) and a leading `!`,
 `#` or `&` is prefixed with "Owner says: ". `/windows` and `/window <name>` show live views of the
 allowlisted tmux windows (session `Jobber` plus `WEB_TERMINAL_SESSIONS`) with Refresh, Pause and Close buttons; the list shows

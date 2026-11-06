@@ -5,8 +5,16 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import path from 'node:path';
 import type { TelegramApi } from './api.js';
 
-export const TOPIC_NAMES = ['alerts', 'wakes', 'drips', 'inbox', 'assist', 'chat'] as const;
+export const TOPIC_NAMES = ['alerts', 'wakes', 'mail', 'linkedin', 'drips', 'inbox', 'assist', 'chat'] as const;
 export type TopicName = (typeof TOPIC_NAMES)[number];
+
+// One topic per lane: the worker window of the lane, its drip runs and its routine notices all land here.
+export const LANE_TOPICS: readonly TopicName[] = ['mail', 'linkedin'];
+
+// The topics the bridge creates at start. `drips` is NOT in it: it was the shared topic of both drip lanes and nothing
+// sends to it any more. It stays a valid name (old state files keep their id; a headless drip-* window that is not a
+// lane window can still make it on demand).
+export const CREATED_TOPIC_NAMES: readonly TopicName[] = TOPIC_NAMES.filter((n) => n !== 'drips');
 
 export interface TopicState {
   chat_id: string;
@@ -77,8 +85,16 @@ export async function ensureTopics(
   let st = readTopicState(root);
   if (!st || st.chat_id !== chatId) st = { chat_id: chatId, forum: true, topics: {} };
   let changed = false;
-  for (const name of only ?? TOPIC_NAMES) {
+  for (const name of only ?? CREATED_TOPIC_NAMES) {
     if (!st.forum) break;
+    // A lane topic that an earlier build made as the on-demand topic of the worker window of the same name is adopted,
+    // so one lane never has two topics.
+    if (st.topics[name] === undefined && LANE_TOPICS.includes(name) && st.windows?.[name] !== undefined) {
+      st.topics[name] = st.windows[name];
+      delete st.windows[name];
+      if (Object.keys(st.windows).length === 0) delete st.windows;
+      changed = true;
+    }
     const id = st.topics[name];
     if (id !== undefined) {
       if (await topicExists(api, chatId, id, name)) continue;

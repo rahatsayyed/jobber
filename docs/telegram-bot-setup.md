@@ -2,7 +2,7 @@
 
 Jobber is operated mostly from Telegram. The bridge is our own grammY bot in `src/telegram/`
 (`npm run telegram:bridge`), running in the tmux window `bridge` of the one session `Jobber`. It uses
-topics in the bot's own private chat with you: one topic per kind of message (`alerts`, `wakes`, `drips`, `inbox`, `assist`,
+topics in the bot's own private chat with you: one topic per kind of message (`alerts`, `wakes`, `mail`, `linkedin`, `inbox`, `assist`,
 `chat`). The ids of the topics are kept in `.jobber/telegram-topics.json`. This runbook covers creating
 the bot, wiring `.env`, enabling Threaded Mode (topics in the private chat), starting the bridge and fixing the usual
 problems.
@@ -66,7 +66,7 @@ Default path: the topics live in the bot's own private chat with you. No group i
    4. Open **Threads Setting**.
    5. Turn **Threaded mode** on.
 2. Open your bot in Telegram and send it one message (or press Start). The bridge creates its topics
-   itself (`alerts`, `wakes`, `drips`, `inbox`, `assist`, `chat`) in the private chat with the first id of
+   itself (`alerts`, `wakes`, `mail`, `linkedin`, `inbox`, `assist`, `chat`) in the private chat with the first id of
    `ALLOWED_USERS` and stores their ids in `.jobber/telegram-topics.json`.
 3. Leave `TELEGRAM_CHAT_ID` empty. If Threaded Mode is off, the bridge sends everything to the private
    chat without topics.
@@ -110,17 +110,48 @@ paste the token into it.
   `read_only` permission set and never with skip-permissions.
 - Code-sent notifications go to a topic by kind (`src/platform/notify.ts`): the escalation digest and
   the manual-request reports go to `inbox`, the `apply:assist` ping goes to `assist`, wake and drip
-  summaries go to `wakes` and `drips`, and problems go to `alerts`.
+  summaries go to `wakes`, routine mail and LinkedIn lane lines go to `mail` and `linkedin`, and problems go to `alerts`.
 
 ### 5a. Notices and topics
 
 - `wakes`: after each wake the scheduler sends a short summary, written by code (never by the model).
 - `alerts`: failures.
-- `drips`: one short notice per mail or LinkedIn drip action; email addresses are shown in full (the chat is owner-only).
+- `mail`: everything routine about the mail lane: one short notice per email sent (cold or follow-up, addresses in full, the chat is
+  owner-only), automatic replies that went out, routine reply-check groups (auto acknowledgements, mail the auto reply already
+  answered) and held-row notes. Silent. The live view and typed text of the `mail` window are in this same topic.
+- `linkedin`: one short notice per LinkedIn drip action (invite, DM, accept check, Easy Apply). Silent. The live view of the
+  `linkedin` window is in this same topic. LinkedIn inbox thread summaries and queued reply drafts stay in `inbox` (loud).
+- `drips`: the old shared topic of both lanes. New setups do not create it any more and nothing sends to it; an existing one is
+  kept (its id stays in the state file) and is only used by a headless `drip-*` window that is not a lane window.
+- Where each notice goes (loud means it makes a sound):
+
+  | Notice | Topic | Sound |
+  |---|---|---|
+  | email sent or dry-run line (cold, follow-up) | `mail` | silent |
+  | automatic email reply sent (or dry run) | `mail` | silent |
+  | held row, check Gmail Sent (cold row) | `mail` | silent |
+  | held email reply, check Gmail Sent | `alerts` | loud |
+  | automatic reply cancelled, answer by hand | `inbox` | loud |
+  | reply notice with a needs-you, interview, offer, rejection, real reply, bounce or unmatched mail | `inbox` | loud |
+  | reply notice made only of auto acknowledgements or already answered mail | `mail` | silent |
+  | auto replies on but facts file unusable | `inbox` | loud |
+  | reply check failed, follow-up or reply held | `alerts` | loud |
+  | mail or LinkedIn drip run failed | `alerts` | loud |
+  | LinkedIn drip action done (or dry run) | `linkedin` | silent |
+  | LinkedIn inbox summary, queued reply draft | `inbox` | loud |
+  | wake summary | `wakes` | silent (a failed or halted wake is loud) |
+  | escalation digest, manual-request report | `inbox` | loud |
+  | apply:assist ping | `assist` | loud |
+  | replies to your own commands (`/drip`, `/windows`, ...) | the chat where you typed the command | loud |
+
 - Window topics are created on demand the first time you open a window view and are stored under `windows` in
-  `.jobber/telegram-topics.json`. Each worker window (`mail`, `linkedin`, `boards`, `sources`, `pipeline`,
-  `apply`) and `manager` gets its own topic, named exactly like the window. `wake-*` windows (the headless
-  fallback) use the `wakes` topic, `drip-*` windows use the `drips` topic, and the `chat` window uses the `chat` topic.
+  `.jobber/telegram-topics.json`. The worker windows `mail` and `linkedin` do NOT get a second topic: their live
+  views and typed text live in the lane topics `mail` and `linkedin` (the same topics the lane notices use; `drip-mail-*` and
+  `drip-linkedin-*` runs go there too). If an earlier build already made a window topic named `mail` or `linkedin` (stored under
+  `windows`), the bridge adopts that id as the lane topic at the next start, so nothing is duplicated. Every other worker window
+  (`boards`, `sources`, `pipeline`, `apply`) and `manager` gets its own topic, named exactly like the window. `wake-*` windows
+  (the headless fallback) use the `wakes` topic, other `drip-*` windows the old `drips` topic, and the `chat` window the `chat` topic.
+  Restart the bridge once after updating: it creates the missing `mail` and `linkedin` topics.
 
 ### 5b. `/windows` and the input flag
 
@@ -159,8 +190,8 @@ paste the token into it.
 ### Silent versus loud notices
 
 Code-sent notices use Telegram's `disable_notification` flag: a silent one still appears (and counts as unread) but
-makes no sound or vibration. By default `drips` and `wakes` are silent; `alerts`, `assist`, `inbox` and plain-chat
-messages notify. `TELEGRAM_SILENT_TOPICS` (comma list of topic names, default `drips,wakes`, the word `none` for
+makes no sound or vibration. By default `mail`, `linkedin`, `wakes` and the old `drips` are silent; `alerts`, `assist`, `inbox` and plain-chat
+messages notify. `TELEGRAM_SILENT_TOPICS` (comma list of topic names, default `drips,wakes,mail,linkedin`, the word `none` for
 nothing silent, unknown names ignored) changes the set; restart the scheduler daemon after a change. Some notices
 force a choice: the handoff reminder, the manual-request report, the assist ping, the escalation digest and an
 applier escalation are always loud (they ask for you), the window-recycle notice is always silent, and every reply

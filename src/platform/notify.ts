@@ -6,7 +6,7 @@ export interface SendNotifyOpts {
   topic?: TopicName;
   /** The text is HTML built by src/platform/tgHtml.ts (already escaped): sent as is, not converted from markdown. */
   html?: boolean;
-  /** true: arrives without sound (disable_notification). false: always notifies. Unset: the topic default (drips and wakes silent, others loud; TELEGRAM_SILENT_TOPICS). */
+  /** true: arrives without sound (disable_notification). false: always notifies. Unset: the topic default (drips, wakes, mail and linkedin silent, others loud; TELEGRAM_SILENT_TOPICS). */
   silent?: boolean;
 }
 
