@@ -28,8 +28,10 @@ describe('user-data templates', () => {
     it(`user-data.example/${f} has the same keys as the real file when the real file is present`, () => {
       const real = `user-data/${f}`;
       if (!existsSync(real)) return;
-      const a = keysOf(JSON.parse(readFileSync(real, 'utf8'))).sort();
-      const b = keysOf(JSON.parse(readFileSync(`user-data.example/${f}`, 'utf8'))).sort();
+      // `north_star` is an optional section (the owner adds it when they want their own archetypes), so it is not compared.
+      const optional = (k: string): boolean => k === 'north_star' || k.startsWith('north_star.') || k.startsWith('north_star[');
+      const a = keysOf(JSON.parse(readFileSync(real, 'utf8'))).filter((k) => !optional(k)).sort();
+      const b = keysOf(JSON.parse(readFileSync(`user-data.example/${f}`, 'utf8'))).filter((k) => !optional(k)).sort();
       expect(b).toEqual(a);
     });
   }
