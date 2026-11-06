@@ -12,6 +12,8 @@ import { readFreshRequest, readRefusal, writeDripRequest, type DripLane } from '
 import {
   LI_STATE_LAST_ACTION, LI_STATE_NEXT_AT, loadLinkedinDripConfig,
 } from '../scheduler/linkedinDrip.js';
+import { emailAutoReplyOn } from '../outreach/emailReplyFlags.js';
+import { emailRepliesSentToday } from '../outreach/emailReplies.js';
 import { STATE_NEXT_AT, emailBrakeOn, lastSendAt, loadDripConfig, sentToday } from '../scheduler/mailDrip.js';
 import { getState } from '../scheduler/runLog.js';
 
@@ -104,6 +106,7 @@ export function renderDripStatus(db: BetterSqlite3.Database, env: NodeJS.Process
   L.push(`- **next tick:** ${nextTick(safe(() => getState(db, STATE_NEXT_AT), null), now)}`);
   L.push(`- **last send:** ${mailLast ? when(mailLast.toISOString(), now) : 'none yet'}`);
   L.push(`- **today:** **${mailToday}** sent, cap ${mc.maxPerDay > 0 ? mc.maxPerDay : 'none'}`);
+  if (emailAutoReplyOn(env)) L.push(`- **auto replies today:** **${safe(() => emailRepliesSentToday(db), 0)}** sent (counted in the sends above)`);
   L.push(`- **send window:**${String(Math.floor(mc.windowStartMin / 60)).padStart(2, '0')}:${String(mc.windowStartMin % 60).padStart(2, '0')} to ${String(Math.floor(mc.windowEndMin / 60)).padStart(2, '0')}:${String(mc.windowEndMin % 60).padStart(2, '0')} IST`);
   L.push(...refusalLines(db, 'mail', now));
 

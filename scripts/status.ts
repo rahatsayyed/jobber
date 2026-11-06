@@ -15,6 +15,8 @@ import { renderEscalations } from '../src/status/escalations.js';
 import { renderReplyDraftLines } from '../src/outreach/replyDraftsCli.js';
 import { linkedinDripStatus, renderLinkedinDripLines } from '../src/scheduler/linkedinDrip.js';
 import { loadTuning } from '../src/outreach/tuning.js';
+import { emailAutoReplyOn } from '../src/outreach/emailReplyFlags.js';
+import { emailReplyLimitLine } from '../src/outreach/emailRepliesCli.js';
 import { renderRunToolCounts, summarizeRunLog } from '../src/status/runs.js';
 import { defaultRun, JOBBER_TMUX_SESSION, listWindows } from '../src/platform/tmux.js';
 
@@ -81,7 +83,8 @@ async function main(): Promise<number> {
     const env = { ...dotenv, ...process.env };
     const snap = buildSnapshot(db, loadOutreachConfig(env), new Date(), env);
     const dripLines = (): string[] => renderLinkedinDripLines(linkedinDripStatus(db!, env, { now: new Date(), tuning: loadTuning(env) }), new Date());
-    if (cmd === 'limits') console.log([renderLimits(snap, { env }), ...dripLines()].join('\n'));
+    const replyLines = (): string[] => (emailAutoReplyOn(env) ? [emailReplyLimitLine(db!)] : []);
+    if (cmd === 'limits') console.log([renderLimits(snap, { env }), ...dripLines(), ...replyLines()].join('\n'));
     else if (cmd === 'working') console.log([renderWorking(snap), ...dripLines()].join('\n'));
     else if (cmd === 'json') console.log(JSON.stringify(snap, null, 2));
     else {

@@ -12,5 +12,6 @@ Run `npm run user-data -- init` to copy these templates into `user-data/`, then 
 | `languages.json` | The languages you speak, used by the language gate. |
 | `profile.json` | Roles, locations, remote preference, salary floors and targets per currency, notice period and work authorization (written by the setup wizard). |
 | `account.json` | Your LinkedIn plan: `free`, `premium` or `unknown` (the default). Optional: a missing or invalid file means `unknown`. |
+| `reply-facts.json` | Plain facts (CTC, notice period, location, relocation, availability, work authorization) the agent may use to answer simple email replies when `EMAIL_AUTO_REPLY=true`. Nothing is answered while `confirmed` is false. See `docs/email-auto-reply.md`. |
 
 The setup skill (plan 7B) asks for your resume and a few questions and writes these files for you.

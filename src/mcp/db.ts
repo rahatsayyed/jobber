@@ -8,6 +8,7 @@ import { handleSaveMatchResults, matchResultsInputShape } from '../matchTool.js'
 import { REPLY_WINDOW_DAYS } from '../replies.js';
 import { resolveReplyProposals, triageReplies } from '../replyTriage.js';
 import { approveDraftedFollowups, claimFollowupForSend, claimFollowupGuarded, emailFollowupGaps, followupCheckMaxAgeMin, followupMode, recordReplyCheck, recordThreadCheck, listApprovedFollowups, listFollowupCandidates, replyWatchQueries, listStale, listStuckSending, markFollowupFailed, markFollowupSent, resolveStale, saveFollowupDraft, setFollowupApproval } from '../followups.js';
+import { claimEmailReplyForSend, markEmailReplyFailed, markEmailReplySent } from '../outreach/emailReplies.js';
 import { calibrate } from '../calibrate.js';
 import { funnelStats } from '../funnel.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
@@ -518,6 +519,27 @@ server.registerTool('claim_followup_for_send', {
   const r = claimFollowupGuarded(db, id, { now: new Date(), maxAgeMin: followupCheckMaxAgeMin(process.env), sendLimit, requireThreadCheck: true });
   return { content: [{ type: 'text', text: JSON.stringify(r) }] };
 });
+
+server.registerTool('claim_email_reply_for_send', {
+  description: 'REPLY MODE of mail-operator only (mail drip lane, EMAIL_AUTO_REPLY=true): call RIGHT BEFORE gmail.send_email for ONE approved automatic email reply. In one transaction it checks the reply is still approved, the flag is still on, the inbound message is still safe to answer (job outcome, sender, thread, no newer message), the recipient is a verified contact, a fresh clean mailbox reply check exists and the shared daily send_email counter has room, then moves approved -> sending. Returns {claimed: true, id, to, subject, body, thread_id} (send exactly that, to that one address, no attachment) or {claimed: false, reason} (send NOTHING).',
+  inputSchema: { id: z.number().int() },
+}, async ({ id }) => {
+  const raw = process.env.SEND_LIMIT_PER_RUN;
+  const n = raw === undefined || raw.trim() === '' ? NaN : Number(raw);
+  const sendLimit = Number.isFinite(n) && n >= 0 ? n : 1;
+  const r = claimEmailReplyForSend(db, id, { now: new Date(), maxAgeMin: followupCheckMaxAgeMin(process.env), sendLimit, env: process.env });
+  return { content: [{ type: 'text', text: JSON.stringify(r) }] };
+});
+
+server.registerTool('mark_email_reply_sent', {
+  description: 'After gmail.send_email succeeds for a claimed automatic email reply: mark it sent with the Gmail message id. Only a sending (claimed) or approved row changes. Returns {ok}. Never send the same reply id twice.',
+  inputSchema: { id: z.number().int(), message_id: z.string().max(500).optional() },
+}, async ({ id, message_id }) => ({ content: [{ type: 'text', text: JSON.stringify(markEmailReplySent(db, id, message_id ?? null)) }] }));
+
+server.registerTool('mark_email_reply_failed', {
+  description: 'Only after a policy or hook denial of gmail.send_email (nothing was sent): mark a claimed automatic email reply failed. A send error that may have gone out must NOT call this: leave the row sending (stuck rows are never re-sent; the owner decides).',
+  inputSchema: { id: z.number().int() },
+}, async ({ id }) => ({ content: [{ type: 'text', text: JSON.stringify(markEmailReplyFailed(db, id)) }] }));
 
 server.registerTool('record_reply_check', {
   description: "Record that a reply check just finished: {messages, errors}. Call it with the reply-watcher's counts (errors = its errors length, including any possible truncation). Only a check with errors = 0 is clean; in autonomous mode claim_followup_for_send refuses unless the latest check is clean and fresh (FOLLOWUP_CHECK_MAX_AGE_MIN).",

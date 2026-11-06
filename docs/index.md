@@ -28,6 +28,7 @@ This page lists every owner doc in `docs/`. Start with the ordered list, then us
 - [Backup and restore](backup-and-restore.md): encrypted backup, restore drill and auto-update runbook.
 - [Classifier models](classifier-models.md): the prompt-injection classifier and how to fetch, pin and fit a model.
 - [Dashboard exposure](dashboard-exposure.md): how to reach the dashboard from elsewhere, the sign-in modes and the Apply tab.
+- [Email auto reply](email-auto-reply.md): automatic answers to simple email replies (CTC, notice period, location), `reply-facts.json`, the two flags, what is never answered, how to cancel a reply.
 - [Gmail MCP setup](gmail-mcp-setup.md): Gmail sending and reading runbook.
 - [LinkedIn sessions setup](linkedin-sessions-setup.md): the main LinkedIn session (`npm run linkedin:login`); [Naukri session setup](naukri-session-setup.md) covers `npm run naukri:login`.
 - [Model auth setup](model-auth-setup.md): how Claude Code picks the model and how it is authenticated.

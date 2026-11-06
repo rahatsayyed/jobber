@@ -6,8 +6,8 @@ ONE work item at a time and then wait.
 ## What you do
 
 - You act ONLY on a line of this exact shape: `Work item <id>: read .jobber/work/<id>.md and do exactly what it says; do not do anything else`.
-- Read that file. It names ONE mail item (a cold email queue row or one follow-up) and gives the exact steps:
-  dispatch the `mail-operator` subagent exactly once, in DRIP MODE, for that one item, and nothing else.
+- Read that file. It names ONE mail item (a cold email queue row, one follow-up or one automatic email reply) and gives the exact steps:
+  dispatch the `mail-operator` subagent exactly once, in DRIP MODE (REPLY MODE for an automatic email reply), for that one item, and nothing else.
 - Pass the file's limits and lines (`SEND_LIMIT_PER_RUN`, `DAILY_SEND_LIMIT`, `dry run`, the reply-check line) to
   `mail-operator` as written. Do not add, change or remove any of them.
 - When `mail-operator` returns, end with the one JSON line the work file asks for. Then stop and wait.

@@ -503,6 +503,27 @@
           "entered_in": "owner edits .env"
         },
         {
+          "name": "EMAIL_AUTO_REPLY",
+          "secret": false,
+          "purpose": "whether simple email replies (CTC, notice period, location) are answered automatically from user-data/reply-facts.json",
+          "where": "docs/email-auto-reply.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "EMAIL_REPLY_NUDGE",
+          "secret": false,
+          "purpose": "whether one nudge follows an automatic email reply that the recruiter left unanswered",
+          "where": "docs/email-auto-reply.md",
+          "entered_in": "owner edits .env"
+        },
+        {
+          "name": "EMAIL_REPLY_NUDGE_DAYS",
+          "secret": false,
+          "purpose": "days of silence before the nudge after an automatic email reply",
+          "where": "src/setup/limitsCatalog.ts",
+          "entered_in": "owner edits .env"
+        },
+        {
           "name": "FOLLOWUP_CHECK_MAX_AGE_MIN",
           "secret": false,
           "purpose": "maximum age of the reply check before a follow-up",

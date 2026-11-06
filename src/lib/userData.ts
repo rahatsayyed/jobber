@@ -9,6 +9,7 @@ export const USER_FILES = [
   'languages.json',
   'profile.json',
   'account.json',
+  'reply-facts.json',
 ] as const;
 export type UserFile = (typeof USER_FILES)[number];
 
@@ -36,6 +37,7 @@ export const LEGACY_PATHS: Record<UserFile, string[]> = {
   'languages.json': ['config/languages.json'],
   'profile.json': [],
   'account.json': [],
+  'reply-facts.json': [],
 };
 
 export interface CopyOp {

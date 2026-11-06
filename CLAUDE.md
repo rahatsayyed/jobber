@@ -418,8 +418,9 @@ sends them one after another: each email is ONE tiny restricted `claude` run (pr
 trigger `mail_drip` in `scheduler_runs`) that dispatches `mail-operator` in DRIP MODE for exactly one
 item chosen in code, with a random `EMAIL_DRIP_INTRA_PAUSE_MIN_SEC` to `_MAX_SEC` pause between runs;
 afterwards the next tick is pushed out by a random `EMAIL_DRIP_MIN_GAP_MIN` to `_MAX_GAP_MIN`
-(the state lives in `scheduler_state`, so a restart never resets the spacing). Item choice: queued cold
-emails first (queue row not excluded, with an address, never the same exact address twice, an address a
+(the state lives in `scheduler_state`, so a restart never resets the spacing). Item choice: automatic
+email replies first, only while `EMAIL_AUTO_REPLY` is exactly `true` (ships false, tier never; see "Email auto reply" below), then
+queued cold emails (queue row not excluded, with an address, never the same exact address twice, an address a
 `contacts` row marks unverified is skipped), then approved follow-ups, and a follow-up only while a clean
 `reply-watcher` check younger than `FOLLOWUP_CHECK_MAX_AGE_MIN` is on record (the run prompt carries the
 "pre-send reply check completed with no errors" line only then; in autonomous mode code approves the
@@ -433,6 +434,27 @@ check, no notice) do. Code then tells the owner on the Telegram `inbox` topic ab
 salary, documents, references or personal data is flagged 🔔 `needs you` and is never answered by the agent). Before each follow-up code also runs a `reply-watcher` check of
 THAT Gmail thread (and a fresh mailbox check when the last clean one is older than `FOLLOWUP_CHECK_MAX_AGE_MIN`); the claim needs both, and a failed check holds the follow-up
 (owner notice at most hourly). The reply check is headless only, even with `WINDOW_LANES=mail`. Optional (`WINDOW_LANES` lists `mail`, off by default): the same prompt goes to the long-lived `mail` window through `WindowDispatcher` instead of a headless run, with every gate still in code before any text is typed (`docs/reference/scheduler.md`).
+
+**Email auto reply** (owner decision 2026-11-06; owner howto `docs/email-auto-reply.md`; `src/outreach/emailReplyClass.ts`,
+`emailReplies.ts`, `replyFacts.ts`). Off unless `EMAIL_AUTO_REPLY=true` (only the owner sets it, by hand in `.env`; tier never). The mail
+`reply_check` still only reads Gmail and tells the owner on Telegram `inbox`; `triage_replies` now also stores a deterministic verdict per
+inbound mail (`processed_messages.auto_class`, no model). With the flag on, a mail that asks only for plain facts the owner pre-answered in
+`user-data/reply-facts.json` (current and expected CTC, notice period, location, relocation, availability to join, work authorization; English
+and Hinglish; `"confirmed": true` required, an empty field is never guessed) gets a reply built in code from templates, gated by `checkStyle`,
+the fact gate (the facts file values are allowed facts for replies only) and the output gate, and stored in `email_replies` (one reply per
+inbound message, at most 3 per Gmail thread). Anything about a time, slot, interview, test or link that asks for action, documents or
+attachments, references, a phone call, an offer, a rejection, personal data or negotiation, any mail that mixes a plain ask with such a part,
+instruction-like text, a long or unclear mail, or a sender that bounced or rejected is NEVER answered: the owner gets a loud 🔔 notice that
+names the reason. Sending is the mail drip lane's item kind `email_reply` (picked after `reply_check`, before cold emails and follow-ups;
+send window, quiet hours, kill switch, halts, usage backoff and dry run apply): `mail-operator` REPLY MODE calls
+`db.claim_email_reply_for_send` (one transaction: still approved, flag still on, job outcome, sender, thread, a verified recipient, a fresh
+clean mailbox check, the shared daily `send_email` counter), sends plain text with `threadId` and no attachment, then
+`db.mark_email_reply_sent`. A row stuck in `sending` is never re-sent (the owner is told, `npm run email-replies -- resolve <id>`). The
+owner cancels a reply with `npm run email-replies -- skip <id>`. A sent reply is announced silently on `inbox` with the exact text.
+`EMAIL_REPLY_NUDGE=true` (ships false, tier never; `EMAIL_REPLY_NUDGE_DAYS`, default 3) allows ONE nudge per thread after our own automatic
+reply and then silence, through the normal follow-up machinery (`nudgeEligible` in `src/followups.ts`, fresh clean mailbox and thread check,
+shared counter). That is a controlled exception to the follow-up block list of Safety rule 10; the owner must amend rule 10's wording
+before turning the nudge on (see `docs/email-auto-reply.md`).
 
 **The LinkedIn drip lane** (`src/scheduler/linkedinDrip.ts`, daemon only, lock `linkedin`, profile and trigger `linkedin_drip`, `LINKEDIN_DRIP` default true): one LinkedIn
 action per tick, `LINKEDIN_DRIP_MIN_GAP_MIN` to `_MAX_GAP_MIN` (8 to 20) apart, inside `LINKEDIN_ACTIVE_HOURS`, chosen in code: inbox (due at daemon start and every `REPLY_CHECK_EVERY_MIN` unless `LINKEDIN_INBOX_MIN_GAP_MIN` is set; it alone ignores the 8 to 20 minute

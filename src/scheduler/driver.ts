@@ -28,6 +28,9 @@ import { noticeUrgency } from '../telegram/silent.js';
 import { notifyTg, wakeNotice, type TgPost, type WakeNotice } from './dripNotice.js';
 import { dripLoop } from './mailDrip.js';
 import type { WindowDispatcher } from './windowDispatch.js';
+import type { ReplyFactsState } from '../outreach/replyFacts.js';
+import type { FactCheckFn } from '../outreach/emailReplies.js';
+import type { StyleConfig } from '../safety/styleGate.js';
 import { linkedinDripEnabled, linkedinDripLoop } from './linkedinDrip.js';
 import { laneUsesWindow } from './windowLanes.js';
 import { enabledWakeWindows, groupWakeSteps, runWakeThroughWindows, WAKE_LANE, type HeadlessResult } from './wakeWindows.js';
@@ -62,6 +65,8 @@ export interface DriverDeps {
   codePass?: () => Promise<CodePassResult>;
   /** Run the mail drip lane (src/scheduler/mailDrip.ts) beside the wakes in the daemon loop. Absent or false: no drip. */
   mailDrip?: boolean;
+  /** Test seams of the email auto reply path (src/outreach/emailReplies.ts): the reply facts, the fact gate and the owner name. Absent: the real files. */
+  emailReply?: { facts?: () => ReplyFactsState; factCheck?: FactCheckFn; ownerName?: string | null; styleCfg?: StyleConfig };
   /** Hands one work item to a long-lived worker window (src/scheduler/windowDispatch.ts). Used by a lane only when WINDOW_LANES lists it (today: `mail`); absent means the old headless path. */
   windows?: WindowDispatcher;
   /** Run the LinkedIn drip lane (src/scheduler/linkedinDrip.ts) beside the wakes in the daemon loop. Absent or false: no LinkedIn drip. */

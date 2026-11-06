@@ -23,6 +23,7 @@ Restart rule of thumb: an MCP server keeps what it loaded at start. After you ch
 | `user-data/resume.json` | Base resume the agent tailors (the agent never edits it) | resume MCP, matcher | restart after a change (unverified inference: MCP servers keep what they loaded) | none found |
 | `user-data/profile.json` | Roles, locations, salary floors, notice period, work authorization | setup wizard (`profile` step) | per use (unverified inference) | `npm run doctor` check `profile-valid` |
 | `user-data/account.json` | Your LinkedIn plan (`free`, `premium`, `unknown`) | `src/accountPlan.ts` | per call | none (optional) |
+| `user-data/reply-facts.json` | Plain facts (CTC, notice period, location, relocation, availability, work authorization) for automatic email replies; nothing is answered while `confirmed` is false | `src/outreach/replyFacts.ts` (`loadReplyFacts`) | per reply check, no restart | none (optional; see `docs/email-auto-reply.md`) |
 | `user-data/languages.json` | Languages you speak and whether you confirmed the list | `src/languageGate.ts` | per call | `npm run doctor` check `languages-confirmed` (parse and `confirmed` only) |
 | `user-data/easy-apply-answers.json` | Answers to common screening questions | `src/apply/answers.ts` | per apply call, no restart | none found |
 | `user-data/fact-gate.json` | Facts you confirmed, plus phrases to block or warn on | `src/resumeFacts.ts` (`loadFactGateConfig`) | per render or check call | none found; a bad file blocks with the `unknown key` error |

@@ -20,6 +20,7 @@ import { needsJdFetch } from './jdComplete.js';
 import { markJdPending } from './jdStore.js';
 import { migrateApplyQuestions } from './apply/questions.js';
 import { migrateOwnerInstructions } from './owner/instructions.js';
+import { migrateEmailReplies } from './outreach/emailRepliesSchema.js';
 import { resolveApplyEscalationsForJob } from './outreach/applyEscalations.js';
 
 /** enqueue_outreach.ats_coverage: an integer percentage, or null when the final render had no keywords (tailor contract). */
@@ -373,6 +374,7 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   migrateSchedulerTables(db);
   migrateApplyQuestions(db);
   migrateOwnerInstructions(db);
+  migrateEmailReplies(db);
   return db;
 }
 

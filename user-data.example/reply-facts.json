@@ -1,0 +1,11 @@
+{
+  "_note": "Plain facts for automatic EMAIL replies (EMAIL_AUTO_REPLY=true). Write each value yourself as a short phrase on ONE line, no links, no long dashes. Leave a value empty to never answer that ask (the agent tells you instead). Nothing is answered while confirmed is false. Examples: current_ctc 'X LPA fixed', expected_ctc 'Y LPA', notice_period '30 days', current_location 'Pune', open_to_relocate 'Yes, open to relocating within India', available_from 'within 30 days' (it is read after 'I am available to join'), work_authorization 'Indian citizen, no visa needed'. See docs/email-auto-reply.md.",
+  "confirmed": false,
+  "current_ctc": "",
+  "expected_ctc": "",
+  "notice_period": "",
+  "current_location": "",
+  "open_to_relocate": "",
+  "available_from": "",
+  "work_authorization": ""
+}

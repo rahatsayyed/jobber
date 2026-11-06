@@ -21,6 +21,11 @@ import { finishRun, getState, setRunLogPath, setState, startRun, type RunStatus 
 import { formatDripFailure, notifyTg } from './dripNotice.js';
 import { E, b, clean, excerpt, headline, html, i as ital, join, line, lines, link, BLANK, type Html } from '../platform/tgHtml.js';
 import { ownerOnlyCodes } from '../outreach/ownerOnly.js';
+import { join as joinPath } from 'node:path';
+import { emailAutoReplyOn } from '../outreach/emailReplyFlags.js';
+import { processAutoReplies } from '../outreach/emailReplies.js';
+import { loadReplyFacts } from '../outreach/replyFacts.js';
+import { loadStyleConfigSafe } from '../safety/styleGate.js';
 
 export const REPLY_CHECK_PROFILE = 'mail_reply_check';
 export const REPLY_CHECK_TRIGGER = 'mail_reply_check';
@@ -46,7 +51,7 @@ export function replyCheckEveryMin(env: NodeJS.ProcessEnv): number {
   return Math.min(REPLY_CHECK_MAX, Math.max(REPLY_CHECK_MIN, Math.floor(n)));
 }
 
-export type ReplyCheckReason = 'start' | 'interval' | 'before_followup';
+export type ReplyCheckReason = 'start' | 'interval' | 'before_followup' | 'before_reply';
 export interface ReplyCheckItem {
   kind: 'reply_check';
   scope: 'mailbox' | 'thread';
@@ -291,17 +296,55 @@ export async function runReplyCheck(d: DriverDeps, lock: { heartbeat: () => void
     if (clean && item.scope === 'mailbox') setState(d.db, STATE_RC_AT, now.toISOString(), now);
     if (!clean) await onFailure(d, item, stopReason ?? (status === 'ok' ? 'no clean check was recorded (errors, truncation or no record)' : status), now);
   } catch { /* the lane never breaks on bookkeeping */ }
+  await autoReplyStep(d);
   await notifyNewReplies(d);
   return { runId, status, clean, reason: clean ? null : stopReason ?? status };
 }
 
+export const STATE_FACTS_NOTICE_AT = 'email_reply_facts_notice_at';
+
+/**
+ * Right after a reply check, before the owner notice: with EMAIL_AUTO_REPLY=true, mail the classifier marked safe gets a reply drafted in code
+ * (processAutoReplies); everything else is marked "needs you" with the reason. Flag off: nothing happens at all. When the reply facts file is
+ * missing, invalid or not confirmed the owner gets ONE loud notice per FAIL_NOTICE_GAP_MIN minutes. Never throws.
+ */
+async function autoReplyStep(d: DriverDeps): Promise<void> {
+  try {
+    if (!emailAutoReplyOn(d.env)) return;
+    const facts = d.emailReply?.facts ? d.emailReply.facts() : loadReplyFacts();
+    const styleCfg = d.emailReply?.styleCfg ?? loadStyleConfigSafe(joinPath(d.projectRoot, 'config', 'ai-tells.json')).cfg;
+    const now = d.now();
+    const r = processAutoReplies(d.db, { now, env: d.env, facts, styleCfg, factCheck: d.emailReply?.factCheck, ownerName: d.emailReply?.ownerName });
+    if (r.factsProblem) {
+      const last = Date.parse(getState(d.db, STATE_FACTS_NOTICE_AT) ?? '');
+      if (!Number.isFinite(last) || now.getTime() - last >= FAIL_NOTICE_GAP_MIN * 60_000) {
+        setState(d.db, STATE_FACTS_NOTICE_AT, now.toISOString(), now);
+        await notifyTg(d, 'inbox', html(lines([
+          headline(E.you, 'Automatic email replies are on, but not usable'),
+          line('Why', clean(r.factsProblem, 160)),
+          ital('Until this is fixed nothing is answered automatically and every plain ask comes to you. At most one notice like this per hour.'),
+        ])), undefined, false);
+      }
+    }
+  } catch {
+    // the lane never breaks on the auto reply step
+  }
+}
+
 /** A check that did not end clean: hold the on-demand check, tell the owner (at most hourly), leave a handoff line for a held follow-up. */
 async function onFailure(d: DriverDeps, item: ReplyCheckItem, why: string, now: Date): Promise<void> {
-  if (item.reason === 'before_followup') holdOnDemand(d.db, item.scope === 'thread' ? `thread:${item.thread_id}` : 'mailbox', now);
+  if (item.reason === 'before_followup' || item.reason === 'before_reply') holdOnDemand(d.db, item.scope === 'thread' ? `thread:${item.thread_id}` : 'mailbox', now);
   const last = Date.parse(getState(d.db, STATE_RC_NOTICE_AT) ?? '');
   if (!Number.isFinite(last) || now.getTime() - last >= FAIL_NOTICE_GAP_MIN * 60_000) {
     setState(d.db, STATE_RC_NOTICE_AT, now.toISOString(), now);
     await notifyTg(d, 'alerts', formatReplyCheckHeld(item, why));
+  }
+  if (item.reason === 'before_reply') {
+    try {
+      noteSkippedItem(d.projectRoot, { window: 'mail', item: 'automatic email reply', reason: `reply check failed, the reply is held: ${redactPane(why).slice(0, 120)}` });
+    } catch {
+      // optional
+    }
   }
   if (item.reason === 'before_followup') {
     try {
@@ -312,11 +355,12 @@ async function onFailure(d: DriverDeps, item: ReplyCheckItem, why: string, now: 
 
 export function formatReplyCheckHeld(item: ReplyCheckItem, why: string): string {
   const held = item.reason === 'before_followup';
+  const reply = item.reason === 'before_reply';
   return html(lines([
-    headline(E.warn, held ? 'Reply check failed: follow-up held' : 'Reply check failed'),
+    headline(E.warn, reply ? 'Reply check failed: automatic reply held' : held ? 'Reply check failed: follow-up held' : 'Reply check failed'),
     line('Scope', item.scope === 'thread' ? 'one follow-up thread' : 'whole mailbox'),
     line('Why', clean(why, 140) || 'no reason recorded'),
-    ital(held ? 'The follow-up is not sent until a clean check of its thread is on record. Cold emails are not affected.' : 'New replies may be waiting in Gmail. The next try is in about 10 minutes.'),
+    ital(reply ? 'The automatic reply is not sent until a clean mailbox check is on record. Cold emails are not affected.' : held ? 'The follow-up is not sent until a clean check of its thread is on record. Cold emails are not affected.' : 'New replies may be waiting in Gmail. The next try is in about 10 minutes.'),
     ital('At most one notice like this per hour.'),
   ]));
 }
@@ -326,6 +370,8 @@ export function formatReplyCheckHeld(item: ReplyCheckItem, why: string): string 
 interface ReplyRow {
   message_id: string; job_id: string | null; classification: string | null; action: string | null; proposed_outcome: string | null;
   from_addr: string | null; subject: string | null; excerpt: string | null; needs_you: number; company: string | null; title: string | null;
+  /** Code-built sentence of the email auto reply path ("answered automatically: ..." / "needs you: ..."); absent while the path is off. */
+  auto_note?: string | null;
 }
 
 const CLASS_LABEL: Record<string, string> = {
@@ -361,7 +407,9 @@ function replyBlock(r: ReplyRow): Html {
     clean(r.subject, 100) ? line('Subject', ital(clean(r.subject, 100))) : '',
     r.job_id ? line('Job', job.s ? job : 'matched job') : line('Job', ital('not matched to a job')),
     r.excerpt ? ital(`"${excerpt(r.excerpt, 200)}"`) : '',
-    r.needs_you ? join([b('needs you'), ': answer this by hand, the agent never replies to it', reasons.length ? ` (${reasons.join(', ')})` : ''], '') : '',
+    r.auto_note
+      ? (r.needs_you ? join([b('needs you'), `: ${clean(r.auto_note.replace(/^needs you:\s*/i, ''), 220)}. Answer this by hand.`], '') : ital(clean(r.auto_note, 220)))
+      : r.needs_you ? join([b('needs you'), ': answer this by hand, the agent never replies to it', reasons.length ? ` (${reasons.join(', ')})` : ''], '') : '',
   ]);
 }
 
@@ -395,7 +443,7 @@ export function formatReplyNotice(rows: ReplyRow[]): string | null {
 export async function notifyNewReplies(d: Pick<DriverDeps, 'db' | 'tg' | 'now'>): Promise<number> {
   try {
     const rows = d.db.prepare(
-      `SELECT p.message_id, p.job_id, p.classification, p.action, p.proposed_outcome, p.from_addr, p.subject, p.excerpt, p.needs_you, j.company, j.title
+      `SELECT p.message_id, p.job_id, p.classification, p.action, p.proposed_outcome, p.from_addr, p.subject, p.excerpt, p.needs_you, p.auto_note, j.company, j.title
        FROM processed_messages p LEFT JOIN jobs j ON j.id = p.job_id
        WHERE p.notified_at IS NULL ORDER BY p.processed_at, p.rowid LIMIT 60`,
     ).all() as ReplyRow[];

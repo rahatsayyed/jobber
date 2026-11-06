@@ -125,6 +125,9 @@
         "mcp__db__claim_cold_for_send",
         "mcp__db__mark_followup_sent",
         "mcp__db__mark_followup_failed",
+        "mcp__db__claim_email_reply_for_send",
+        "mcp__db__mark_email_reply_sent",
+        "mcp__db__mark_email_reply_failed",
         "mcp__db__save_followup_draft",
         "mcp__applier__apply_open",
         "mcp__applier__apply_state",
@@ -277,7 +280,10 @@
         "mcp__db__claim_followup_for_send",
         "mcp__db__claim_cold_for_send",
         "mcp__db__mark_followup_sent",
-        "mcp__db__mark_followup_failed"
+        "mcp__db__mark_followup_failed",
+        "mcp__db__claim_email_reply_for_send",
+        "mcp__db__mark_email_reply_sent",
+        "mcp__db__mark_email_reply_failed"
       ],
       "screen_args": [
         "mcp__gmail__send_email"

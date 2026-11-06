@@ -22,6 +22,7 @@ const OWNER_DOCS: string[] = [
   'docs/layout-memory.md',
   'docs/dashboard-login.md',
   'docs/setup-modes.md',
+  'docs/email-auto-reply.md',
   'docs/index.md',
 ];
 // Docs allowed to be absent until their task lands. A writer removes its own
@@ -192,6 +193,14 @@ describe('owner docs: window rollout page', () => {
     for (const d of ['docs/telegram-bot-setup.md', 'docs/reference/platform-and-sessions.md', 'README.md']) {
       expect(read(d), d).not.toMatch(/\(`hunt`, an interactive read-only session/);
     }
+  });
+});
+
+describe('owner docs: email auto reply page', () => {
+  it('is linked from the index and names the flags, the facts file and the cancel command', () => {
+    expect(read('docs/index.md')).toContain('(email-auto-reply.md)');
+    const t = read('docs/email-auto-reply.md');
+    for (const word of ['EMAIL_AUTO_REPLY', 'EMAIL_REPLY_NUDGE', 'reply-facts.json', 'npm run email-replies', 'confirmed', 'Safety rule 10']) expect(t).toContain(word);
   });
 });
 

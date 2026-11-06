@@ -5,7 +5,7 @@
 // the Telegram chat is owner-only (private chat, numeric ALLOWED_USERS). Logs and debug files are not touched by this.
 // A notice never throws and never waits longer than NOTICE_TIMEOUT_MS: a lane or a wake must not depend on Telegram.
 import {
-  E, b, bullets, clean, code, headline, html, i, join, line, lines, link, section, type Html,
+  E, b, bullets, clean, code, headline, html, i, join, line, lines, link, pre, section, type Html,
 } from '../platform/tgHtml.js';
 import type { TopicName } from '../telegram/topics.js';
 import type { WakeCounts } from './stream.js';
@@ -63,6 +63,50 @@ export function formatMailNotice(n: MailNotice): string {
     line('Job', job.s ? job : 'unknown job'),
     line('Subject', clean(n.subject, 120) ? i(clean(n.subject, 120)) : ''),
     line('Result', n.dry ? i('nothing was sent (dry run)') : 'sent'),
+  ]));
+}
+
+export interface EmailReplyNotice {
+  address: string | null;
+  /** The subject of the reply (`Re: <thread subject>`). */
+  subject: string | null;
+  /** The exact text that was sent (code-built from the owner's reply facts). */
+  body: string;
+  /** Safe kind codes that were answered. */
+  kinds: string[];
+  company: string | null;
+  title: string | null;
+  dry: boolean;
+  outcome: 'sent' | 'cancelled';
+  note?: string | null;
+}
+
+const KIND_WORDS: Record<string, string> = {
+  ctc_current: 'current CTC', ctc_expected: 'expected CTC', notice_period: 'notice period', availability: 'availability to join',
+  location: 'current location', relocation: 'relocation', work_authorization: 'work authorization',
+};
+
+/** The notice of an automatic email reply: what was answered, to whom (full address) and the full text sent. A cancelled reply is a loud "answer by hand". */
+export function formatEmailReplyNotice(n: EmailReplyNotice): string {
+  const answered = n.kinds.map((k) => KIND_WORDS[k] ?? clean(k, 30)).join(', ');
+  const job = join([clean(n.company, 60) && b(clean(n.company, 60)), clean(n.title, 80)], ' · ');
+  if (n.outcome === 'cancelled') {
+    return html(lines([
+      headline(E.you, 'Automatic reply cancelled: answer by hand'),
+      line('To', addr(n.address)),
+      line('Subject', clean(n.subject, 120) ? i(clean(n.subject, 120)) : ''),
+      line('Why', clean(n.note, 160) || 'the situation changed after the reply was written'),
+      i('Nothing was sent. Reply on Gmail yourself.'),
+    ]));
+  }
+  return html(lines([
+    n.dry ? headline(E.paused, 'Dry run: email reply not sent') : headline(E.ok, 'Email reply sent automatically'),
+    line('To', addr(n.address)),
+    line('Subject', clean(n.subject, 120) ? i(clean(n.subject, 120)) : ''),
+    line('Job', job.s ? job : 'unknown job'),
+    line('Answered', answered || 'plain asks'),
+    n.dry ? i('nothing was sent (dry run). The text would be:') : i('Exactly what was sent:'),
+    pre(n.body),
   ]));
 }
 

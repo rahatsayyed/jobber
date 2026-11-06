@@ -71,6 +71,10 @@ Cause: a tool the window called is not in the permission set. The windows use th
 
 Fix: you decide this, the agent never edits permission sets. Add the tool names (for example `mcp__outreach__escalate`) to the `allow` list of `outreach_send` or `full` in `config/permission-sets.json`, run `npm run permissions -- full`, then restart the window (`npx tsx scripts/manager.ts restart <window>`). `npm run permissions -- --status` shows the set that is applied. Note that `full` allows every Jobber send and apply tool for any session on this machine.
 
+## Automatic email replies in the mail window
+
+With `EMAIL_AUTO_REPLY=true` (see [Email auto reply](email-auto-reply.md)) an automatic reply is one more mail item: the work file names it and asks `mail-operator` for REPLY MODE. It goes through the `mail` window like the cold email and the follow-up (same claim, same checks); the reply check that precedes it still stays headless. Add `mcp__db__claim_email_reply_for_send`, `mcp__db__mark_email_reply_sent` and `mcp__db__mark_email_reply_failed` to the `full` permission set if you use a custom one (`outreach_send` already has them).
+
 ## Reply checks stay headless
 
 The mail reply check (`reply_check`, profile `mail_reply_check`) is never typed into the `mail` window, even with `WINDOW_LANES=mail`: a long-lived window cannot enforce a per-item tool list, so the read-only guarantee (no `gmail.send_email`) is only provable in the headless profile. Enforcement of the window path was not proven, so it is not built. The LinkedIn inbox read goes through the `linkedin` window like any other item, and it ignores only the item spacing.

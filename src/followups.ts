@@ -11,6 +11,7 @@ import { checkTextWithNormalized } from './resumeFacts.js';
 import { buildReplyQueries, isAutomatedSender, REPLY_WINDOW_DAYS, STALE_DAYS } from './replies.js';
 import type { SentEmail } from './db.js';
 import { buildEmailParts, loadEmailLinks, stripMarkers } from './emailHtml.js';
+import { emailReplyNudgeDays, emailReplyNudgeOn } from './outreach/emailReplyFlags.js';
 
 const DAY = 86_400_000;
 const parseSqlTime = (s: string) => Date.parse(`${s.replace(' ', 'T')}Z`);
@@ -20,6 +21,10 @@ const sqlNow = (now: Date) => now.toISOString().slice(0, 19).replace('T', ' ');
 export interface FollowupCandidate {
   job_id: string; company: string | null; title: string | null; email_to: string; subject: string | null; body: string | null;
   thread_id: string | null; message_id: string | null; sent_at: string; followups_sent: number; days_quiet: number; next_n: 1 | 2 | 3 | 4;
+  /** True for the one nudge after our own automatic email reply (EMAIL_REPLY_NUDGE). */
+  nudge?: boolean;
+  /** The text of our automatic reply, for the nudge draft (our own text, not third-party). */
+  our_reply?: string;
 }
 
 interface Row {
@@ -54,7 +59,7 @@ const lastContact = (r: Row) => [r.sent_at, r.last_fu, r.last_skip].filter((x): 
 /** Bare lowercase address: `Jane <hr@x.com>` gives `hr@x.com`; a string without angle brackets is used whole. */
 export const bare = (s: string): string => { const m = /<([^<>]{1,320})>/.exec(s.slice(0, 1000)); return (m ? m[1] : s).trim().toLowerCase(); };
 
-export function blockedJobIds(db: BetterSqlite3.Database): Set<string> {
+export function blockedJobIds(db: BetterSqlite3.Database, o: { nudgeJobs?: ReadonlySet<string> } = {}): Set<string> {
   const blocked = new Set<string>();
   const addrs = new Set<string>();
   const all = <T,>(sql: string) => db.prepare(sql).all() as T[];
@@ -82,7 +87,86 @@ export function blockedJobIds(db: BetterSqlite3.Database): Set<string> {
   for (const r of all<{ a: string }>("SELECT DISTINCT from_addr AS a FROM processed_messages WHERE from_addr IS NOT NULL AND classification NOT IN ('noise', 'auto_ack', 'bounce') AND coalesce(action, '') != 'bounced'")) addrs.add(bare(r.a));
   for (const r of all<{ a: string }>("SELECT DISTINCT q.email_to AS a FROM processed_messages p JOIN outreach_queue q ON q.job_id = p.job_id WHERE (p.classification = 'bounce' OR p.action = 'bounced') AND q.email_to IS NOT NULL")) addrs.add(bare(r.a));
   for (const r of all<{ job_id: string; a: string }>("SELECT job_id, email_to AS a FROM outreach_queue WHERE email_to IS NOT NULL AND email_status = 'sent'")) if (addrs.has(bare(r.a))) blocked.add(r.job_id);
+  // The ONE controlled exception to the block list (owner decision 2026-11-06, EMAIL_REPLY_NUDGE=true): a job in `nudgeJobs` (see nudgeEligible:
+  // the recruiter's only inbound mail was answered by our own automatic reply, then silence) is a candidate for ONE nudge. Callers pass the set
+  // only for the nudge flow; every other caller keeps the full block list.
+  for (const j of o.nudgeJobs ?? []) blocked.delete(j);
   return blocked;
+}
+
+// ---- The nudge exception (EMAIL_REPLY_NUDGE): see docs/email-auto-reply.md ----
+
+export interface NudgeInfo { job_id: string; our_reply: string; reply_sent_at: string }
+
+const NUDGE_PENDING = ['drafted', 'approved', 'sending'] as const;
+
+/**
+ * Jobs whose block (a reply on file) may be lifted for exactly one nudge follow-up. All of these must hold, else the job stays blocked:
+ * the flag EMAIL_REPLY_NUDGE is true; we sent an automatic reply (email_replies status sent); EVERY non-automated inbound message on file for the job
+ * was answered by one of our sent automatic replies (so the only successor of the recruiter's mail is our own reply, nothing newer); no job outcome;
+ * no bounce; no owner-only, rejection, offer or interview message; the job is in no ambiguous reply; the address has no reply or outcome on another
+ * job; no nudge was drafted before (at most one per thread). `candidate` mode also needs EMAIL_REPLY_NUDGE_DAYS of silence since our reply and no
+ * nudge row at all; `pending` mode (approve, list, claim, mark sent) needs a nudge row that is still drafted, approved or sending.
+ */
+export function nudgeEligible(db: BetterSqlite3.Database, o: { mode: 'candidate' | 'pending'; now?: Date; env?: NodeJS.ProcessEnv }): Map<string, NudgeInfo> {
+  const env = o.env ?? process.env;
+  const out = new Map<string, NudgeInfo>();
+  if (!emailReplyNudgeOn(env)) return out;
+  const now = o.now ?? new Date();
+  const days = emailReplyNudgeDays(env);
+  let sent: Array<{ job_id: string; sent_at: string; body: string }> = [];
+  try {
+    sent = db.prepare("SELECT r.job_id AS job_id, r.sent_at AS sent_at, r.body AS body FROM email_replies r WHERE r.status = 'sent' AND r.job_id IS NOT NULL AND r.sent_at IS NOT NULL ORDER BY r.sent_at, r.id").all() as typeof sent;
+  } catch {
+    return out;
+  }
+  const latest = new Map<string, { sent_at: string; body: string }>();
+  for (const s of sent) latest.set(s.job_id, { sent_at: s.sent_at, body: s.body });
+  const ambiguous = new Set<string>();
+  for (const r of db.prepare('SELECT candidates FROM processed_messages WHERE candidates IS NOT NULL').all() as Array<{ candidates: string }>) {
+    try { const ids = JSON.parse(r.candidates) as unknown; if (Array.isArray(ids)) for (const id of ids) if (typeof id === 'string') ambiguous.add(id); } catch { /* ignore */ }
+  }
+  for (const [jobId, rep] of latest) {
+    if (ambiguous.has(jobId)) continue;
+    if (db.prepare('SELECT 1 FROM job_outcomes WHERE job_id = ? LIMIT 1').get(jobId)) continue;
+    const pendingNudge = db.prepare(`SELECT COUNT(*) AS n FROM followups WHERE job_id = ? AND nudge = 1 AND status IN (${NUDGE_PENDING.map(() => '?').join(',')})`).get(jobId, ...NUDGE_PENDING) as { n: number };
+    const anyNudge = db.prepare('SELECT COUNT(*) AS n FROM followups WHERE job_id = ? AND nudge = 1').get(jobId) as { n: number };
+    if (o.mode === 'candidate' ? anyNudge.n > 0 : pendingNudge.n === 0) continue;
+    if (o.mode === 'candidate' && now.getTime() - parseSqlTime(rep.sent_at) < days * DAY) continue;
+    const msgs = db.prepare('SELECT message_id, from_addr, classification, action, needs_you, auto_class FROM processed_messages WHERE job_id = ?').all(jobId) as Array<{
+      message_id: string; from_addr: string | null; classification: string | null; action: string | null; needs_you: number; auto_class: string | null;
+    }>;
+    let ok = true;
+    for (const m of msgs) {
+      if (m.classification === 'bounce' || m.action === 'bounced' || m.needs_you === 1) { ok = false; break; }
+      if (['rejected', 'offer', 'interview'].includes(m.classification ?? '')) { ok = false; break; }
+      if (isAutomatedSender(m.from_addr)) continue;
+      let verdictOwner = false;
+      try { verdictOwner = (JSON.parse(m.auto_class ?? 'null') as { verdict?: string } | null)?.verdict === 'owner'; } catch { /* ignore */ }
+      if (verdictOwner) { ok = false; break; }
+      const answered = db.prepare("SELECT 1 FROM email_replies WHERE message_id = ? AND status = 'sent'").get(m.message_id);
+      if (!answered) { ok = false; break; }
+    }
+    if (!ok) continue;
+    const to = db.prepare("SELECT MAX(email_to) AS a FROM outreach_queue WHERE job_id = ? AND email_status = 'sent'").get(jobId) as { a: string | null };
+    if (!to.a) continue;
+    const addr = bare(to.a);
+    const elsewhere = db.prepare(
+      "SELECT 1 FROM processed_messages WHERE lower(from_addr) = ? AND (job_id IS NULL OR job_id <> ?) AND classification NOT IN ('noise', 'auto_ack') LIMIT 1",
+    ).get(addr, jobId);
+    if (elsewhere) continue;
+    const otherOutcome = db.prepare(
+      "SELECT 1 FROM outreach_queue q JOIN job_outcomes o ON o.job_id = q.job_id WHERE lower(q.email_to) = ? AND q.job_id <> ? AND o.outcome <> 'no_response' LIMIT 1",
+    ).get(addr, jobId);
+    if (otherOutcome) continue;
+    out.set(jobId, { job_id: jobId, our_reply: rep.body, reply_sent_at: rep.sent_at });
+  }
+  return out;
+}
+
+/** The job ids of the nudge flow's pending rows (approve, list, claim, mark sent): lifts the block for them only. */
+function pendingNudgeJobs(db: BetterSqlite3.Database, env?: NodeJS.ProcessEnv): Set<string> {
+  return new Set(nudgeEligible(db, { mode: 'pending', env }).keys());
 }
 
 // ---- Autonomous mode (flagged: FOLLOWUPS_AUTONOMOUS=true; the legacy 10-day / 2-follow-up flow is the library default) ----
@@ -108,7 +192,7 @@ export function followupCheckMaxAgeMin(env: NodeJS.ProcessEnv = process.env): nu
   return Math.min(240, Math.max(5, Math.floor(n)));
 }
 
-export interface ModeOpts { mode?: FollowupMode; gapsDays?: readonly number[] }
+export interface ModeOpts { mode?: FollowupMode; gapsDays?: readonly number[]; env?: NodeJS.ProcessEnv }
 
 /** A job is either follow-up eligible (10 <= quiet days < staleDays) or stale (quiet >= staleDays), never both.
  *  Autonomous mode: eligible when quiet days >= gapsDays[n_sent] (and n_sent < 4). */
@@ -118,18 +202,30 @@ export function listFollowupCandidates(db: BetterSqlite3.Database, now: Date = n
   const after = opts.afterDays ?? 10;
   const max = auto ? AUTONOMOUS_MAX : opts.max ?? 2;
   const stale = opts.staleDays ?? STALE_DAYS;
-  const blocked = blockedJobIds(db);
+  // The nudge exception (EMAIL_REPLY_NUDGE): jobs whose only reply on file was answered by our own automatic reply, then silence.
+  const nudges = nudgeEligible(db, { mode: 'candidate', now, env: opts.env });
+  const blocked = blockedJobIds(db, { nudgeJobs: new Set(nudges.keys()) });
   return rows(db)
     .filter((r) => {
+      const nd = nudges.get(r.job_id);
+      if (nd) {
+        // Quiet time counts from our own reply (EMAIL_REPLY_NUDGE_DAYS was checked in nudgeEligible); the follow-up number still has to fit.
+        const qn = Math.min(daysBetween(lastContact(r), now), daysBetween(nd.reply_sent_at, now));
+        return !!r.email_to && r.pending === 0 && r.n_sent < AUTONOMOUS_MAX && qn < stale;
+      }
       const q = daysBetween(lastContact(r), now);
       if (blocked.has(r.job_id) || !r.email_to || r.pending !== 0 || r.n_sent >= max || q >= stale) return false;
       return auto ? q >= (gaps[r.n_sent] ?? EMAIL_FOLLOWUP_GAPS_DEFAULT[r.n_sent]) : q >= after;
     })
-    .map((r) => ({
-      job_id: r.job_id, company: r.company, title: r.title, email_to: r.email_to, subject: r.subject, body: r.body,
-      thread_id: r.thread_id, message_id: r.message_id, sent_at: r.sent_at, followups_sent: r.n_sent,
-      days_quiet: daysBetween(lastContact(r), now), next_n: (r.n_sent + 1) as 1 | 2 | 3 | 4,
-    }));
+    .map((r) => {
+      const nd = nudges.get(r.job_id);
+      return {
+        job_id: r.job_id, company: r.company, title: r.title, email_to: r.email_to, subject: r.subject, body: r.body,
+        thread_id: r.thread_id, message_id: r.message_id, sent_at: r.sent_at, followups_sent: r.n_sent,
+        days_quiet: nd ? daysBetween(nd.reply_sent_at, now) : daysBetween(lastContact(r), now), next_n: (r.n_sent + 1) as 1 | 2 | 3 | 4,
+        ...(nd ? { nudge: true, our_reply: nd.our_reply } : {}),
+      };
+    });
 }
 
 // ---- Draft validation: the fact gate and the hard style rules run HERE, in code, not only in the prompt ----
@@ -156,7 +252,7 @@ export function saveFollowupDraft(db: BetterSqlite3.Database, d: { job_id: strin
   if (!c) throw new Error(`job ${d.job_id} is not a follow-up candidate (outcome or reply recorded, too recent, pending draft, or the maximum already sent)`);
   if (d.n !== c.next_n) throw new Error(`expected follow-up #${c.next_n} for job ${d.job_id}, got #${d.n}`);
   if (/[\r\n]/.test(d.subject)) throw new Error('subject must be a single line');
-  const g = gate(`${d.subject}\n\n${d.body}`, { extraSource: `${c.subject ?? ''}\n\n${c.body ?? ''}`, jobTitle: c.title, company: c.company });
+  const g = gate(`${d.subject}\n\n${d.body}`, { extraSource: `${c.subject ?? ''}\n\n${c.body ?? ''}${c.our_reply ? `\n\n${c.our_reply}` : ''}`, jobTitle: c.title, company: c.company });
   if (g.verdict === 'block') throw new Error(`fact gate blocked this draft: ${[...g.invented, ...g.unsupported, ...g.forbidden.map((p) => `forbidden:${p}`)].join(', ')}`);
   const cut = /\n[ \t]*\n/.exec(g.normalized_text);
   if (!cut) throw new Error('draft must be a subject line, a blank line, then the body');
@@ -171,7 +267,7 @@ export function saveFollowupDraft(db: BetterSqlite3.Database, d: { job_id: strin
   if (banned) throw new Error(`banned phrase "${banned[0]}"`);
   const words = body.split(/\s+/).filter(Boolean).length;
   if (words < FOLLOWUP_WORDS.min || words > FOLLOWUP_WORDS.max) throw new Error(`body must be ${FOLLOWUP_WORDS.min}-${FOLLOWUP_WORDS.max} words, got ${words}`);
-  const id = Number(db.prepare("INSERT INTO followups (job_id, n, subject, body, body_html, status) VALUES (?, ?, ?, ?, ?, 'drafted')").run(d.job_id, d.n, subject, body, parts.html).lastInsertRowid);
+  const id = Number(db.prepare("INSERT INTO followups (job_id, n, subject, body, body_html, status, nudge) VALUES (?, ?, ?, ?, ?, 'drafted', ?)").run(d.job_id, d.n, subject, body, parts.html, c.nudge ? 1 : 0).lastInsertRowid);
   return { id, subject, body, warnings: g.warnings };
 }
 
@@ -179,7 +275,7 @@ export function saveFollowupDraft(db: BetterSqlite3.Database, d: { job_id: strin
 export function setFollowupApproval(db: BetterSqlite3.Database, ids: number[], approve: boolean): number {
   const upd = db.prepare("UPDATE followups SET status = ?, decided_at = datetime('now') WHERE id = ? AND status = 'drafted'");
   const jobOf = db.prepare("SELECT job_id FROM followups WHERE id = ? AND status = 'drafted'");
-  const blocked = blockedJobIds(db);
+  const blocked = blockedJobIds(db, { nudgeJobs: pendingNudgeJobs(db) });
   let n = 0;
   db.transaction(() => {
     for (const id of ids) {
@@ -194,7 +290,7 @@ export function setFollowupApproval(db: BetterSqlite3.Database, ids: number[], a
 
 /** Approved, unsent follow-ups, minus any job that has since got an outcome or a reply (even a pending proposal) or whose address bounced. */
 export function listApprovedFollowups(db: BetterSqlite3.Database): Array<{ id: number; job_id: string; n: number; subject: string; body: string; body_html: string; email_to: string; thread_id: string | null }> {
-  const blocked = blockedJobIds(db);
+  const blocked = blockedJobIds(db, { nudgeJobs: pendingNudgeJobs(db) });
   const all = db.prepare(`SELECT f.id, f.job_id, f.n, f.subject, f.body, f.body_html,
       (SELECT MAX(q.email_to) FROM outreach_queue q WHERE q.job_id = f.job_id AND q.email_status = 'sent') AS email_to,
       (SELECT MAX(q.email_thread_id) FROM outreach_queue q WHERE q.job_id = f.job_id AND q.email_status = 'sent') AS thread_id
@@ -230,7 +326,7 @@ export function claimFollowupForSend(db: BetterSqlite3.Database, id: number, g?:
 export function markFollowupSent(db: BetterSqlite3.Database, id: number, messageId: string | null): { ok: boolean; late_block: boolean } {
   const row = db.prepare("SELECT job_id FROM followups WHERE id = ? AND status IN ('approved', 'sending') AND sent_at IS NULL").get(id) as { job_id: string } | undefined;
   if (!row) return { ok: false, late_block: false };
-  const late_block = blockedJobIds(db).has(row.job_id);
+  const late_block = blockedJobIds(db, { nudgeJobs: pendingNudgeJobs(db) }).has(row.job_id);
   const ok = db.prepare("UPDATE followups SET status = 'sent', sent_at = datetime('now'), message_id = ? WHERE id = ? AND status IN ('approved', 'sending') AND sent_at IS NULL").run(messageId, id).changes > 0;
   return { ok, late_block: ok && late_block };
 }
@@ -351,7 +447,7 @@ export function claimFollowupGuarded(db: BetterSqlite3.Database, id: number, g: 
 /** Autonomous approval: every drafted row whose job is not blocked is approved; blocked ones are skipped. */
 export function approveDraftedFollowups(db: BetterSqlite3.Database, _now: Date = new Date()): { approved: number[]; skipped: number[] } {
   const drafted = db.prepare("SELECT id, job_id FROM followups WHERE status = 'drafted' ORDER BY id").all() as Array<{ id: number; job_id: string }>;
-  const blocked = blockedJobIds(db);
+  const blocked = blockedJobIds(db, { nudgeJobs: pendingNudgeJobs(db) });
   const ok = drafted.filter((d) => !blocked.has(d.job_id)).map((d) => d.id);
   const no = drafted.filter((d) => blocked.has(d.job_id)).map((d) => d.id);
   setFollowupApproval(db, ok, true);

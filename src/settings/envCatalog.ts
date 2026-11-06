@@ -196,6 +196,18 @@ const hand: EnvSpec[] = [
     about: 'Autonomous email follow-ups. false is legacy mode (10+ days quiet, max 2 per job, each approved on Telegram). true sends up to 3 follow-ups then a feedback message with no per-draft approval, on a clean reply check, under the shared daily send cap.',
     ...tier('safety', 'Removes the per-draft human approval step for follow-up emails.', 'true'),
   }),
+  e('EMAIL_AUTO_REPLY', 'safety', 'email auto reply', 'bool', {
+    default: 'false',
+    exampleActive: true,
+    about: 'Automatic answers to simple email replies (current and expected CTC, notice period, location, relocation, availability, work authorization), written in code from user-data/reply-facts.json and sent by the mail drip lane. Anything about an interview time, a test or link, documents, references, a phone call, an offer or anything unclear is never answered: you get a Telegram notice instead. Needs reply-facts.json with "confirmed": true. See docs/email-auto-reply.md.',
+    ...never('Lets the agent send email replies on its own about your pay and availability. Only the owner turns it on, by editing .env by hand.'),
+  }),
+  e('EMAIL_REPLY_NUDGE', 'safety', 'email auto reply', 'bool', {
+    default: 'false',
+    exampleActive: true,
+    about: 'One follow-up nudge for an email thread where the agent sent an automatic reply and the recruiter then stayed silent for EMAIL_REPLY_NUDGE_DAYS. It goes through the normal follow-up machinery (fact gate, fresh clean reply check of the mailbox and the thread, shared daily send cap) and needs EMAIL_AUTO_REPLY. At most one nudge per thread.',
+    ...never('Allows a follow-up to a thread that already has a reply from the recruiter (an exception to the follow-up block list). Only the owner turns it on, by editing .env by hand.'),
+  }),
   e('JOBBER_NOTIFY_CMD', 'safety', 'notifications', 'secret', {
     exampleActive: true,
     about: 'Optional command run with the notice title as its only argument when the scheduler writes an owner notice. Unset: notices go only to SQLite and .jobber/notify.jsonl. It may embed a webhook token, so it is write-only.',
@@ -1161,6 +1173,13 @@ function limitOverride(key: string): LimitOverride {
     o.feature = 'LinkedIn drip lane';
     o.restart = 'scheduler';
     o.restartEvidence = 'src/scheduler/linkedinDrip.ts';
+  }
+  if (key === 'EMAIL_REPLY_NUDGE_DAYS') {
+    o.section = 'scheduler';
+    o.feature = 'email auto reply';
+    o.restart = 'scheduler';
+    o.restartEvidence = 'src/followups.ts';
+    o.aboutExtra = 'Used only when EMAIL_REPLY_NUDGE=true.';
   }
   if (key === 'REPLY_CHECK_EVERY_MIN') {
     o.section = 'scheduler';
