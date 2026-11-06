@@ -221,12 +221,6 @@ const hand: EnvSpec[] = [
     about: 'Active classifier profile id (config/classifier-models.json). Required for live LinkedIn and Naukri reads and sends: unset, unpinned, unfitted or erroring means live calls fail closed, dry runs continue unscreened. There is no implicit default and no fallback chain. Fetch, pin and fit the model first (docs/classifier-models.md), then restart every MCP server and session.',
     ...tier('safety', 'Selects the input screen for third-party text. Clearing it makes live calls refuse (safe) but switching profiles changes what is screened.', 'cleared'),
   }),
-  e('SCHEDULER_NO_CLASSIFIER', 'classifier', 'prompt-injection screen', 'bool', {
-    default: 'false',
-    exampleActive: true,
-    about: 'Skip the input classifier in scheduler runs. Honoured for dry runs only; a live run still needs a ready classifier.',
-    ...never('Disables a safety layer (the injection screen).'),
-  }),
   e('DOCTOR_SKIP_SMOKE', 'classifier', 'doctor', 'bool', {
     exampleValue: '1',
     allowed: ['1'],

@@ -784,7 +784,7 @@ Everything built and tested only with fakes or not yet checked against a real si
 14. The kill switch always wins: `.jobber/STOP`, `JOBBER_KILL=1` or a `halt_flags` row for `all`,
     `linkedin` or `naukri` stops the LinkedIn and Naukri tools and the scheduler for that
     scope; `.jobber/STOP` and `JOBBER_KILL=1` are additionally enforced by the PreToolUse hook
-    on every tool in the worker windows (`window-guard.cjs`), and on the irreversible tools (Gmail send, the applier's acting tools, the scout tools, typed
+    on every tool in restricted runs and in the worker windows (`window-guard.cjs`), and on the irreversible tools (Gmail send, the applier's acting tools, the scout tools, typed
     LinkedIn and Naukri sends and discovery) everywhere in this project, and by the launcher (exit 4); see
     "Outreach safety layers" layer 6 for what is not covered. Never clear a halt, delete STOP or
     flip a dry-run flag on your own; only the owner does (`jobber:control resume`,
