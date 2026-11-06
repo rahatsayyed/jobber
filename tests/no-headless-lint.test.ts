@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const walk = (dir: string, out: string[] = []): string[] => {
   for (const name of readdirSync(dir)) {
-    if (name === 'node_modules' || name === '.git' || name === 'debug' || name === 'dist') continue;
+    if (name === 'node_modules' || name === '.git' || name === 'debug' || name === 'dist' || name === 'worktrees' || name === '.worktrees') continue;
     const f = path.join(dir, name);
     if (statSync(f).isDirectory()) walk(f, out);
     else out.push(f);
