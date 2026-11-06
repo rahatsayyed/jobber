@@ -53,6 +53,14 @@ describe('hop policy (pure)', () => {
     expect(vendorLookAlike('greenhouse.io.evil.com')).toBe(true);
     expect(vendorLookAlike('boards.greenhouse.io')).toBe(false);
   });
+  it('vendor short links and regional hosts count as vendor hosts', () => {
+    for (const u of ['https://grnh.se/abc123', 'https://boards.eu.greenhouse.io/x', 'https://job-boards.greenhouse.io/x', 'https://jobs.eu.lever.co/x', 'https://apply.workable.com/x', 'https://jobs.smartrecruiters.com/x', 'https://acme.wd3.myworkdayjobs.com/x', 'https://wd1.myworkdaysite.com/x', 'https://smrtr.io/abc', 'https://careers-acme.icims.com/jobs/1']) {
+      expect(evaluateHost({ host: 'www.zzz.org' }, u), u).toMatchObject({ kind: 'allowed', via: 'vendor' });
+    }
+    expect(evaluateHost({ host: 'www.zzz.org' }, 'https://grnh.se/abc')).toMatchObject({ platform: 'greenhouse' });
+    expect(evaluateHost({ host: 'www.zzz.org' }, 'https://grnh.se.evil.io/abc').kind).toBe('refused');
+    expect(evaluateHost({ host: 'www.zzz.org' }, 'https://notgrnh.se/abc').kind).toBe('refused');
+  });
   it('max 4 hops', () => {
     expect(ev('https://jobs.lever.co/a', {}, { host: 'x.greenhouse.io', hops: 3 }).kind).toBe('allowed');
     expect(ev('https://jobs.lever.co/a', {}, { host: 'x.greenhouse.io', hops: 4 })).toMatchObject({ kind: 'refused', why: 'too_many_hops' });
@@ -271,6 +279,9 @@ describe('apply:release-held --reason host_changed', () => {
     add('new1', { note: 'unknown_apply_host:www.persistent.com' });                    // company site, name match: released
     add('new2', { note: 'unknown_apply_host:evil.example.test' });                     // still untrusted: stays
     add('veto', { note: 'unknown_apply_host:www.persistent.com', excluded: 'location FAIL' }); // vetoed: stays
+    add('blank1', { status: 'manual_review' });                                       // blank note; a resolved escalation names host_changed: released
+    db.prepare("INSERT INTO escalations (platform, reason, detail, created_at, resolved_at) VALUES ('apply', 'apply:other', 'refused host_changed host=boards.greenhouse.io job=blank1', datetime('now'), datetime('now'))").run();
+    add('short1', { url: 'https://grnh.se/abc123', esc: 'apply:host_unknown' });       // Greenhouse short link is a vendor host now: released
     add('other', {});                                                                  // needs_owner for another reason: untouched
     add('held', { status: 'held', note: 'unknown_apply_host:www.persistent.com' });    // not needs_owner: untouched
     return db;
@@ -278,18 +289,21 @@ describe('apply:release-held --reason host_changed', () => {
   it('releases what passes the policy, leaves the rest parked, is idempotent and honours --dry', () => {
     const db = seed();
     const dry = releaseRun(['--reason', 'host_changed', '--dry'], { db });
-    expect(dry.lines.join('\n')).toMatch(/would release 2 of 4/);
-    expect(count(db, "SELECT COUNT(*) n FROM outreach_queue WHERE apply_status = 'needs_owner'")).toBe(5);
+    expect(dry.lines.join('\n')).toMatch(/would release 4 of 6/);
+    expect(count(db, "SELECT COUNT(*) n FROM outreach_queue WHERE apply_status = 'needs_owner'")).toBe(6);
     const r = releaseRun(['--reason', 'host_changed'], { db });
-    expect(r.releasedHostParked).toBe(2);
+    expect(r.releasedHostParked).toBe(4);
+    expect(r.lines.join('\n')).toMatch(/released via escalation: 3/);
     expect(r.lines.join('\n')).toMatch(/still parked: 2 \(hosts: .*evil\.example\.test/);
     const st = db.prepare('SELECT job_id, apply_status, apply_note FROM outreach_queue ORDER BY job_id').all();
     expect(st).toEqual([
+      { job_id: 'blank1', apply_status: null, apply_note: null },
       { job_id: 'held', apply_status: 'held', apply_note: 'unknown_apply_host:www.persistent.com' },
       { job_id: 'new1', apply_status: null, apply_note: null },
       { job_id: 'new2', apply_status: 'needs_owner', apply_note: 'unknown_apply_host:evil.example.test' },
       { job_id: 'old1', apply_status: null, apply_note: null },
       { job_id: 'other', apply_status: 'needs_owner', apply_note: null },
+      { job_id: 'short1', apply_status: null, apply_note: null },
       { job_id: 'veto', apply_status: 'needs_owner', apply_note: 'unknown_apply_host:www.persistent.com' },
     ]);
     expect(count(db, "SELECT COUNT(*) n FROM applications")).toBe(0);

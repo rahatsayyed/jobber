@@ -18,7 +18,7 @@ export interface AtsDef {
 // Every id here must also be in APPLY_HOST_PLATFORM_IDS (src/webcore/hostCaps.ts); a test asserts it.
 // every platform with a shipped recipe in config/ats-recipes is 'fast' (a test asserts it), the rest are 'agent'.
 export const ATS_REGISTRY: AtsDef[] = [
-  { id: 'greenhouse', label: 'Greenhouse', apexes: ['greenhouse.io'], tier: 'fast', accountRequired: false, recipeId: 'greenhouse' },
+  { id: 'greenhouse', label: 'Greenhouse', apexes: ['greenhouse.io', 'grnh.se'], tier: 'fast', accountRequired: false, recipeId: 'greenhouse' },
   { id: 'lever', label: 'Lever', apexes: ['lever.co'], tier: 'fast', accountRequired: false, recipeId: 'lever' },
   { id: 'ashby', label: 'Ashby', apexes: ['ashbyhq.com'], tier: 'fast', accountRequired: false, recipeId: 'ashby' },
   { id: 'workable', label: 'Workable', apexes: ['workable.com'], tier: 'fast', accountRequired: 'maybe', recipeId: 'workable' },

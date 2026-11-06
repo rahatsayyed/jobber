@@ -25,7 +25,7 @@ export const HOP_MAX = 4;
 /** Other well known ATS vendors a form is often hosted on. Used ONLY to accept a hop; a job whose own URL is on one of these is still classified by the registry. */
 export const HOP_ONLY_VENDOR_APEXES: readonly string[] = [
   'icims.com', 'bamboohr.com', 'teamtailor.com', 'jobvite.com', 'breezy.hr', 'applytojob.com', 'taleo.net', 'successfactors.com',
-  'successfactors.eu', 'pinpointhq.com', 'comeet.com', 'join.com', 'dayforcehcm.com', 'paylocity.com', 'rippling.com', 'gem.com',
+  'successfactors.eu', 'myworkdaysite.com', 'smrtr.io', 'pinpointhq.com', 'comeet.com', 'join.com', 'dayforcehcm.com', 'paylocity.com', 'rippling.com', 'gem.com',
 ];
 
 export const vendorApexes = (): string[] => [...ATS_REGISTRY.flatMap((a) => a.apexes), ...HOP_ONLY_VENDOR_APEXES];

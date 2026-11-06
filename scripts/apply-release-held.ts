@@ -33,6 +33,7 @@ export function run(argv: string[], deps: CliDeps = {}): { code: number; lines: 
         `${dry ? 'dry: would release' : 'released'} ${r.released} of ${r.candidates} job(s) parked for a host change`,
         `still parked: ${r.stillParked.length}${r.hosts.length ? ` (hosts: ${r.hosts.join(', ')})` : ''}`,
       ];
+      for (const [k, n] of Object.entries(r.releasedBy).sort()) lines.push(`  released via ${k}: ${n}`);
       const why = new Map<string, number>();
       for (const s of r.stillParked) why.set(s.why, (why.get(s.why) ?? 0) + 1);
       for (const [k, n] of [...why].sort()) lines.push(`  ${k}: ${n}`);
