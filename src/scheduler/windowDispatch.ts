@@ -1,6 +1,6 @@
 // src/scheduler/windowDispatch.ts
-// Hands ONE work item to a long-lived interactive `claude` worker window and learns the outcome (Phase 1 of the window
-// plan; nothing in the live flow calls this yet, Phase 3 does, one lane at a time behind WINDOW_LANES).
+// Hands ONE work item to a long-lived interactive `claude` worker window and learns the outcome. This is the ONLY way work
+// reaches a model: the mail drip, the LinkedIn drip, the reply check and every wake step go through here (no headless `claude -p`).
 //
 // dispatch():  validate -> kill switch, usage backoff, claude pane -> per-window lock -> write .jobber/work/<runId>.md (0600)
 //              -> type ONE line (sendText) -> tail the transcript until the turn ends, the deadline passes, the window
@@ -76,6 +76,11 @@ export interface WindowDispatchDeps {
   paneEveryMs?: number;
   discoverAfterMs?: number;
   lockTtlMs?: number;
+  /**
+   * Called when the window is missing or is not a claude pane: starts it (manager startWindow path, with the startup line) and waits a
+   * bounded time for a claude pane. Returns 'ready' or a short reason. Absent: the item is refused as `window_unavailable`.
+   */
+  ensureReady?: (window: string) => Promise<string>;
 }
 
 const LANE_RE = /^[a-z][a-z0-9_-]{0,31}$/;
@@ -198,7 +203,13 @@ export class WindowDispatcher {
     try {
       await assertClaudePane(this.d.run, this.d.session, i.window);
     } catch (e) {
-      return this.refuse(/not found/.test((e as Error).message) ? 'window_missing' : 'not_claude');
+      const why = /not found/.test((e as Error).message) ? 'window_missing' : 'not_claude';
+      if (!this.d.ensureReady) return this.refuse('window_unavailable');
+      let r: string;
+      try { r = await this.d.ensureReady(i.window); } catch { r = 'ensure_failed'; }
+      if (r !== 'ready') return this.refuse(`window_unavailable:${why}:${r}`.slice(0, 80));
+      if (this.d.killed()) return this.refuse('killed');
+      try { await assertClaudePane(this.d.run, this.d.session, i.window); } catch { return this.refuse(`window_unavailable:${why}:not_ready`); }
     }
     const lock = takeWindowLock(this.d.root, i.window, `dispatch:${i.window}`, this.d.lockTtlMs ?? WINDOW_LOCK_TTL_MS);
     if (!lock) return this.refuse('window_busy');

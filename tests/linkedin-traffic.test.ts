@@ -281,7 +281,7 @@ describe('planner: accept_recent, active hours and the LinkedIn inbox gap', () =
     const kinds = stepOrder(d).map((s) => `${s.platform}:${s.kind}`);
     expect(stepOrder(d).find((s) => s.kind === 'accept_recent')).toMatchObject({ operator: 'linkedin-operator', quota: 1 });
     expect(kinds.indexOf('linkedin:accept_recent')).toBeLessThan(kinds.indexOf('linkedin:followups'));
-    const p = buildWakePrompt({ runId: 'r1', dryRun: false, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 }, allowed: ['linkedin', 'naukri'], now: DAY_TIME, order: stepOrder(d) });
+    const p = buildWakePrompt({ runId: 'r1', dryRun: false, tasks: d.tasks, budget: { maxWallSec: 900 }, allowed: ['linkedin', 'naukri'], now: DAY_TIME, order: stepOrder(d) });
     expect(p).toContain('linkedin_check_accepted_recent');
   });
 

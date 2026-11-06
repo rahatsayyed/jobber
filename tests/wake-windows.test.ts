@@ -1,5 +1,4 @@
-// Phase 3c: the wake through the long-lived windows (lane `wake` in WINDOW_LANES). Fakes only: fake dispatcher or fake tmux and transcripts,
-// fake launcher, in-memory db, temp dirs. Nothing touches a real window, browser, mail or LinkedIn.
+// The wake through the long-lived windows (the only way a wake runs). Fakes only: fake dispatcher, in-memory db, temp dirs. Nothing touches a real window, browser, mail or LinkedIn.
 import { afterEach, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
 import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -13,14 +12,13 @@ import type { Run } from '../src/platform/tmux.js';
 import { projectTranscriptDir, transcriptFile, writeWindowSession } from '../src/platform/windowSession.js';
 import { loadBudget } from '../src/scheduler/budget.js';
 import { wakeOnce, type DriverDeps } from '../src/scheduler/driver.js';
-import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
 import type { Notice } from '../src/scheduler/notify.js';
 import type { Step } from '../src/scheduler/plan.js';
 import { buildWakePrompt, DIAGNOSTIC_RULES, ITEM_RULES } from '../src/scheduler/prompt.js';
 import { getState, listRuns } from '../src/scheduler/runLog.js';
 import { wakeStartDiff, wakeStartValues, windowStartedLive } from '../src/scheduler/wakeWindowStart.js';
 import {
-  enabledWakeWindows, groupWakeSteps, ownerWindow, runWakeThroughWindows, type HeadlessResult, type WakeItem, type WakeWindowsCtx,
+  groupWakeSteps, ownerWindow, runWakeThroughWindows, type WakeItem, type WakeWindowsCtx,
 } from '../src/scheduler/wakeWindows.js';
 import { WindowDispatcher, type DispatchInput, type DispatchResult } from '../src/scheduler/windowDispatch.js';
 import { FULL_ORDER, fullWakeInput, INSTRUCTIONS, PIPELINE_INPUT } from './fixtures/wake-prompt-input.js';
@@ -40,7 +38,7 @@ const tmp = (p: string): string => {
 
 const steps = (...s: Array<[string, string | undefined, string]>): Step[] =>
   s.map(([operator, platform, kind]) => ({ operator, ...(platform ? { platform } : {}), kind, quota: 2 }) as Step);
-const names = (items: WakeItem[]): string[] => items.map((i) => `${i.window ?? 'headless'}:${i.steps.map((s) => `${s.platform ?? s.operator}.${s.kind}`).join('+')}`);
+const names = (items: WakeItem[]): string[] => items.map((i) => `${i.window}:${i.steps.map((s) => `${s.platform ?? s.operator}.${s.kind}`).join('+')}`);
 const all = (): Set<string> => new Set(['sources', 'pipeline', 'boards', 'apply', 'linkedin']);
 
 describe('the all-steps wake prompt is unchanged (byte for byte)', () => {
@@ -89,7 +87,7 @@ describe('grouping the wake steps by window', () => {
   });
 
   it('keeps stepOrder: barriers keep their place, platform steps of one stretch are put together, code steps are in no item', () => {
-    expect(names(groupWakeSteps(FULL_ORDER, (w) => all().has(w)))).toEqual([
+    expect(names(groupWakeSteps(FULL_ORDER))).toEqual([
       'sources:source-operator.discover_agent',
       'linkedin:linkedin.manual_url+linkedin.discover+linkedin.accept_recent',
       'boards:naukri.manual_url+wellfound.manual_url+naukri.discover+wellfound.discover+naukri.jd_fetch',
@@ -100,19 +98,11 @@ describe('grouping the wake steps by window', () => {
     ]);
   });
 
-  it('a window that is not enabled hands its steps to a residual headless item at their place; neighbours merge', () => {
-    const noLi = groupWakeSteps(FULL_ORDER, (w) => all().has(w) && w !== 'linkedin');
-    expect(names(noLi).map((n) => n.split(':')[0])).toEqual(['sources', 'headless', 'boards', 'pipeline', 'headless', 'boards', 'apply']);
-    const none = groupWakeSteps(FULL_ORDER, () => false);
-    expect(none).toHaveLength(1);
-    expect(none[0].window).toBeNull();
-    expect(none[0].steps).toHaveLength(FULL_ORDER.filter((s) => s.operator !== 'code').length);
-    // every non-code step appears exactly once in whatever grouping: nothing dropped, nothing doubled
-    for (const en of [all(), new Set(['pipeline']), new Set<string>(), new Set(['boards', 'apply'])]) {
-      const flat = groupWakeSteps(FULL_ORDER, (w) => en.has(w)).flatMap((i) => i.steps);
-      expect(flat.length).toBe(FULL_ORDER.filter((s) => s.operator !== 'code').length);
-      expect(new Set(flat).size).toBe(flat.length);
-    }
+  it('every non-code step appears exactly once; a step no window owns (mail-operator) is dropped, never run', () => {
+    const flat = groupWakeSteps(FULL_ORDER).flatMap((i) => i.steps);
+    expect(flat.length).toBe(FULL_ORDER.filter((s) => s.operator !== 'code').length);
+    expect(new Set(flat).size).toBe(flat.length);
+    expect(groupWakeSteps(steps(['mail-operator', undefined, 'mail']))).toEqual([]);
   });
 
   it('a mixed small plan (linkedin, naukri, pipeline, apply)', () => {
@@ -120,22 +110,9 @@ describe('grouping the wake steps by window', () => {
       ['naukri-operator', 'naukri', 'discover'], ['linkedin-operator', 'linkedin', 'discover'],
       ['pipeline', undefined, 'pipeline'], ['naukri-operator', 'naukri', 'inbox'], ['apply-operator', undefined, 'apply'],
     );
-    expect(names(groupWakeSteps(o, (w) => all().has(w)))).toEqual([
+    expect(names(groupWakeSteps(o))).toEqual([
       'boards:naukri.discover', 'linkedin:linkedin.discover', 'pipeline:pipeline.pipeline', 'boards:naukri.inbox', 'apply:apply-operator.apply',
     ]);
-  });
-});
-
-describe('enabledWakeWindows (lane gates)', () => {
-  it('is empty unless `wake` is in WINDOW_LANES; linkedin needs its own lane; a window missing from the config is not enabled', () => {
-    const root = tmp('ww-cfg-');
-    mkdirSync(join(root, 'config'));
-    copyFileSync(join(ROOT, 'config/manager-windows.json'), join(root, 'config/manager-windows.json'));
-    expect([...enabledWakeWindows(root, {})]).toEqual([]);
-    expect([...enabledWakeWindows(root, { WINDOW_LANES: 'mail,linkedin' })]).toEqual([]);
-    expect([...enabledWakeWindows(root, { WINDOW_LANES: 'wake' })].sort()).toEqual(['apply', 'boards', 'pipeline', 'sources']);
-    expect([...enabledWakeWindows(root, { WINDOW_LANES: 'wake,linkedin' })].sort()).toEqual(['apply', 'boards', 'linkedin', 'pipeline', 'sources']);
-    expect([...enabledWakeWindows(tmp('ww-nocfg-'), { WINDOW_LANES: 'wake' })]).toEqual([]);
   });
 });
 
@@ -166,14 +143,14 @@ class FakeDispatcher {
   }
 }
 
-function ctxFor(items: WakeItem[], disp: FakeDispatcher | undefined, o: { env?: NodeJS.ProcessEnv; dry?: boolean; stop?: () => string | null; headless?: (s: Step[], p: string) => HeadlessResult } = {}) {
+function ctxFor(items: WakeItem[], disp: FakeDispatcher | undefined, o: { env?: NodeJS.ProcessEnv; dry?: boolean; stop?: () => string | null } = {}) {
   const root = tmp('ww-run-');
   let t = NOON_IST.getTime();
   const notices: Notice[] = [];
   const db = openDb(':memory:');
-  const headlessCalls: Array<{ steps: Step[]; prompt: string }> = [];
+  const headlessCalls: unknown[] = []; // nothing may ever run headless: always empty
   let claims = 0;
-  const env = o.env ?? { WINDOW_LANES: 'wake,linkedin' };
+  const env = o.env ?? {};
   const d = {
     db, now: () => new Date(t), sleep: async (ms: number) => { t += ms; }, env, projectRoot: root,
     notifier: { notify: async (n: Notice) => void notices.push(n) },
@@ -183,17 +160,13 @@ function ctxFor(items: WakeItem[], disp: FakeDispatcher | undefined, o: { env?: 
     d, runId: 'wake0001', dry: o.dry ?? false, budget: loadBudget({}), now: NOON_IST, allowed: ['linkedin', 'naukri', 'wellfound'], items,
     pipelineInput: PIPELINE_INPUT,
     claimInstructions: () => { claims++; return INSTRUCTIONS; },
-    headless: async (s, p) => {
-      headlessCalls.push({ steps: s, prompt: p });
-      return o.headless ? o.headless(s, p) : { status: 'ok', stopReason: null, counts: { done: 1, skipped: 0, escalated: 0, stopped: 0 } };
-    },
     stopCheck: o.stop ?? (() => null),
     heartbeat: () => {},
     waitMs: 60_000, waitPollMs: 10_000,
   };
   return { ctx, db, root, notices, headlessCalls, claims: () => claims, clock: () => t };
 }
-const mixedItems = (): WakeItem[] => groupWakeSteps(FULL_ORDER, (w) => all().has(w));
+const mixedItems = (): WakeItem[] => groupWakeSteps(FULL_ORDER);
 
 describe('runWakeThroughWindows', () => {
   it('dispatches every item to its window in order with trigger wake, lane wake, then finish() after each; sums the report counts', async () => {
@@ -290,48 +263,31 @@ describe('runWakeThroughWindows', () => {
     expect(r.items.filter((x) => x.status === 'skipped')).toHaveLength(2);
   });
 
-  it('a missing window or a pane that is not claude: the steps run in ONE residual headless session built from just those steps, nothing typed', async () => {
-    for (const why of ['window_missing', 'not_claude']) {
-      const disp = new FakeDispatcher((i, n) => (i.window === 'boards' ? { status: 'unavailable', stopReason: why, summary: '', toolCalls: 0 } : new FakeDispatcher().ok(i, n)));
-      const c = ctxFor(mixedItems(), disp);
-      const r = await runWakeThroughWindows(c.ctx);
-      expect(c.headlessCalls).toHaveLength(2); // the two boards items
-      const first = c.headlessCalls[0];
-      expect(first.steps.every((s) => s.platform === 'naukri' || s.platform === 'wellfound')).toBe(true);
-      expect(first.prompt).toContain('`naukri-operator`');
-      expect(first.prompt).not.toContain('`apply-operator`');
-      expect(first.prompt).not.toContain('work item of window');
-      expect(first.prompt).toContain('End with one JSON line {run_id, operators');
-      expect(r.status).toBe('ok');
-      expect(c.notices.some((n) => n.title.includes('unavailable'))).toBe(true);
-    }
+  it('a window that is unavailable after the bounded start wait: its items are skipped (nothing runs elsewhere), handoff entry, one alert per hour, the rest of the wake still runs', async () => {
+    const disp = new FakeDispatcher((i, n) => (i.window === 'boards' ? { status: 'unavailable', stopReason: 'window_unavailable:window_missing:not_ready', summary: '', toolCalls: 0 } : new FakeDispatcher().ok(i, n)));
+    const c = ctxFor(mixedItems(), disp);
+    const posts: string[] = [];
+    (c.ctx.d as { tg?: unknown }).tg = async (_t: string, text: string) => void posts.push(text);
+    const r = await runWakeThroughWindows(c.ctx);
+    expect(c.headlessCalls).toHaveLength(0);
+    expect(r.status).toBe('incomplete');
+    expect(r.items.filter((x) => x.status === 'skipped' && x.window === 'boards')).toHaveLength(2);
+    expect(disp.inputs.map((i) => i.window)).toContain('apply');
+    expect(listHandoff(c.root).some((e) => e.window === 'boards' && /window unavailable/.test(e.why))).toBe(true);
+    expect(posts.filter((t) => /Window boards is not available/.test(t))).toHaveLength(1);
   });
 
-  it('with no dispatcher at all, or windows not enabled, every step runs headless and nothing is dispatched', async () => {
-    const items = groupWakeSteps(FULL_ORDER, () => false);
-    const disp = new FakeDispatcher();
-    const c = ctxFor(items, disp);
+  it('with no dispatcher at all nothing runs: every item is skipped', async () => {
+    const c = ctxFor(mixedItems(), undefined);
     const r = await runWakeThroughWindows(c.ctx);
-    expect(disp.inputs).toHaveLength(0);
-    expect(c.headlessCalls).toHaveLength(1);
-    expect(r.status).toBe('ok');
-    const c2 = ctxFor(mixedItems(), undefined);
-    await runWakeThroughWindows(c2.ctx);
-    expect(c2.headlessCalls.length).toBeGreaterThan(0);
-  });
-
-  it('a headless item that ends badly is reported; usage_limit and killed from it stop the rest', async () => {
-    const disp = new FakeDispatcher();
-    const items = groupWakeSteps(FULL_ORDER, (w) => w !== 'boards' && all().has(w));
-    const c = ctxFor(items, disp, { headless: () => ({ status: 'usage_limit', stopReason: 'usage_limit', counts: null }) });
-    const r = await runWakeThroughWindows(c.ctx);
-    expect(r.status).toBe('usage_limit');
-    expect(disp.inputs.map((i) => i.window)).toEqual(['sources', 'linkedin']);
+    expect(r.sessionRan).toBe(false);
+    expect(r.items.every((x) => x.status === 'skipped' && x.reason === 'no_dispatcher')).toBe(true);
+    expect(r.status).toBe('incomplete');
   });
 
   it('usage_limit from a window sets usage_backoff_until, adds a handoff entry, finishes the item and stops the rest of the wake', async () => {
     const disp = new FakeDispatcher((i, n) => (i.window === 'linkedin' ? { status: 'usage_limit', stopReason: 'usage_limit', summary: '', toolCalls: 2, runId: `w-${n}` } : new FakeDispatcher().ok(i, n)));
-    const c = ctxFor(mixedItems(), disp, { env: { WINDOW_LANES: 'wake,linkedin', USAGE_LIMIT_BACKOFF_MIN: '60' } });
+    const c = ctxFor(mixedItems(), disp, { env: { USAGE_LIMIT_BACKOFF_MIN: '60' } });
     const r = await runWakeThroughWindows(c.ctx);
     expect(r.status).toBe('usage_limit');
     expect(disp.inputs.map((i) => i.window)).toEqual(['sources', 'linkedin']);
@@ -406,18 +362,6 @@ describe('start-time record of the wake windows', () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-class FakeLauncher implements Launcher {
-  starts: LaunchPlan[] = [];
-  async start(plan: LaunchPlan): Promise<LaunchHandle> {
-    this.starts.push(plan);
-    return { runId: plan.runId, session: plan.session, window: `wake-${plan.runId}`, logPath: 'l', exitPath: 'e', promptPath: 'p' };
-  }
-  async poll(): Promise<PollResult> {
-    return { exited: true, exitCode: 0, newOutput: '' };
-  }
-  async kill(): Promise<void> {}
-}
-
 function driverSetup(o: { env: NodeJS.ProcessEnv; disp?: FakeDispatcher | WindowDispatcher; withConfig?: boolean }) {
   const dir = tmp('ww-drv-');
   mkdirSync(join(dir, 'config'));
@@ -428,49 +372,38 @@ function driverSetup(o: { env: NodeJS.ProcessEnv; disp?: FakeDispatcher | Window
   const db = openDb(':memory:');
   // One unscored job: the plan has a pipeline step (and the apply step it pulls in).
   saveJob(db, { id: 'j1', source: 'greenhouse', title: 'React Developer', company: 'Acme', url: 'https://x.test/j1', apply_url: 'https://boards.greenhouse.io/acme/jobs/1', description: 'Location: Remote\n\nbody' });
-  const launcher = new FakeLauncher();
   const d: DriverDeps = {
     db, now: () => new Date(t), rng: () => 0.5, sleep: async (ms) => { t += ms; },
     cfg: loadOutreachConfig(o.env), tuning: loadTuning(o.env), env: o.env,
-    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), runDir: join(dir, 'runs'), projectRoot: dir,
-    launcher, notifier: { notify: async (n) => void notices.push(n) },
+    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), projectRoot: dir,
+    notifier: { notify: async (n) => void notices.push(n) },
     tg: async (topic, text) => void tg.push({ topic, text }),
     newRunId: (() => { let i = 0; return () => `wk${String(++i).padStart(8, '0')}`; })(),
-    pollMs: 5000, verifyCompletion: false,
     windows: o.disp as unknown as WindowDispatcher | undefined,
   };
-  return { d, db, dir, launcher, notices, tg, advance: (ms: number) => void (t += ms) };
+  return { d, db, dir, launcher: { starts: [] as unknown[] }, notices, tg, advance: (ms: number) => void (t += ms) };
 }
 
 describe('the wake lane through the driver', () => {
-  it('lane OFF (default): the old headless session runs, the dispatcher is never used', async () => {
+  it('a forced wake (a /runhunt request read by the daemon) takes the same road through the windows; only the trigger differs', async () => {
     const disp = new FakeDispatcher();
     const s = driverSetup({ env: {}, disp });
-    const r = await wakeOnce(s.d);
-    expect(r.status).toBe('ok');
-    expect(s.launcher.starts).toHaveLength(1);
-    expect(s.launcher.starts[0].prompt).toContain('Pipeline stage (');
-    expect(disp.inputs).toHaveLength(0);
-  });
-
-  it('lane ON but no dispatcher (--once / --now): stays headless', async () => {
-    const s = driverSetup({ env: { WINDOW_LANES: 'wake' }, disp: undefined });
     const r = await wakeOnce(s.d, { force: true });
-    expect(r.status).toBe('ok');
-    expect(s.launcher.starts).toHaveLength(1);
+    expect(disp.inputs.map((i) => i.window)).toEqual(['pipeline', 'boards', 'apply']);
+    expect(listRuns(s.db).find((x) => x.id === r.runId)?.trigger).toBe('forced');
+    expect(s.launcher.starts).toHaveLength(0);
   });
 
-  it('lane ON with a dispatcher but a FORCED wake: stays headless (decision: --once/--now/runhunt never use the windows)', async () => {
-    const disp = new FakeDispatcher();
-    const s = driverSetup({ env: { WINDOW_LANES: 'wake' }, disp });
-    await wakeOnce(s.d, { force: true });
-    expect(disp.inputs).toHaveLength(0);
-    expect(s.launcher.starts).toHaveLength(1);
+  it('no dispatcher: nothing runs anywhere and the wake is incomplete', async () => {
+    const s = driverSetup({ env: {}, disp: undefined });
+    const r = await wakeOnce(s.d, { force: true });
+    expect(r.status).toBe('incomplete');
+    expect(s.launcher.starts).toHaveLength(0);
   });
 
-  it('lane ON: the pipeline and apply items go to their windows, no headless session, the wake row and the notice look like today', async () => {
+  it('the pipeline and apply items go to their windows, the wake row and the notice look like today', async () => {
     const disp = new FakeDispatcher();
-    const s = driverSetup({ env: { WINDOW_LANES: 'wake' }, disp });
+    const s = driverSetup({ env: {}, disp });
     const r = await wakeOnce(s.d);
     expect(disp.inputs.map((i) => i.window)).toEqual(['pipeline', 'boards', 'apply']);
     expect(s.launcher.starts).toHaveLength(0);
@@ -489,26 +422,20 @@ describe('the wake lane through the driver', () => {
     expect(disp.inputs[1].promptText).toContain('naukri-operator');
   });
 
-  it('lane ON but the windows are not in the config or the tmux window is missing: the steps run in a residual headless session, once', async () => {
-    const disp = new FakeDispatcher(() => ({ status: 'unavailable', stopReason: 'window_missing', summary: '', toolCalls: 0 }));
-    const s = driverSetup({ env: { WINDOW_LANES: 'wake' }, disp });
+  it('the windows are not usable: every item is skipped, the wake is incomplete, nothing runs headless, no scheduler_runs row for an item that was never typed', async () => {
+    const disp = new FakeDispatcher(() => ({ status: 'unavailable', stopReason: 'window_unavailable:window_missing:not_ready', summary: '', toolCalls: 0 }));
+    const s = driverSetup({ env: {}, disp });
     const r = await wakeOnce(s.d);
-    expect(r.status).toBe('ok');
-    expect(s.launcher.starts).toHaveLength(3); // pipeline, boards and apply items: each refused before typing, each run once headless
-    expect(s.launcher.starts[0].prompt).toContain('Pipeline stage (');
-    expect(s.launcher.starts[1].prompt).not.toContain('Pipeline stage (');
-    const rows = listRuns(s.db);
-    expect(rows.filter((x) => x.parent_run_id === r.runId)).toHaveLength(2); // the first residual session is the wake row itself
-    expect(rows.every((x) => x.status !== 'running')).toBe(true);
-    const noCfg = driverSetup({ env: { WINDOW_LANES: 'wake' }, disp: new FakeDispatcher(), withConfig: false });
-    await wakeOnce(noCfg.d);
-    expect(noCfg.launcher.starts.length).toBeGreaterThan(0);
-    expect((noCfg.d.windows as unknown as FakeDispatcher).inputs).toHaveLength(0);
+    expect(r.status).toBe('incomplete');
+    expect(r.reason).toMatch(/window_unavailable/);
+    expect(s.launcher.starts).toHaveLength(0);
+    expect(listRuns(s.db).filter((x) => x.trigger === 'wake')).toHaveLength(0);
+    expect(listRuns(s.db).every((x) => x.status !== 'running')).toBe(true);
   });
 
   it('a dry run with a live-started window types nothing and the wake is incomplete (nothing was double-run)', async () => {
     const disp = new FakeDispatcher();
-    const s = driverSetup({ env: { WINDOW_LANES: 'wake', JOBBER_DRY_RUN: 'true' }, disp });
+    const s = driverSetup({ env: { JOBBER_DRY_RUN: 'true' }, disp });
     mkdirSync(join(s.dir, '.jobber', 'window-start'), { recursive: true });
     writeFileSync(join(s.dir, '.jobber', 'window-start', 'pipeline.json'), JSON.stringify({ JOBBER_DRY_RUN: 'false' }));
     const r = await wakeOnce(s.d);
@@ -520,7 +447,7 @@ describe('the wake lane through the driver', () => {
 
   it('usage_limit in a window sets the backoff, the wake row is usage_limit, and the alert notice goes out', async () => {
     const disp = new FakeDispatcher((i, n) => ({ status: 'usage_limit', stopReason: 'usage_limit', summary: '', toolCalls: 0, runId: `w-${n}` }));
-    const s = driverSetup({ env: { WINDOW_LANES: 'wake' }, disp });
+    const s = driverSetup({ env: {}, disp });
     const r = await wakeOnce(s.d);
     expect(r.status).toBe('usage_limit');
     expect(getState(s.db, 'usage_backoff_until')).toBeTruthy();
@@ -534,7 +461,7 @@ describe('the wake lane through the driver', () => {
 
   it('an incomplete item makes the wake incomplete, goes to the alerts topic with the reason, and is not continued', async () => {
     const disp = new FakeDispatcher((i, n) => ({ status: 'ok', stopReason: 'end_turn', summary: 'done, no json', toolCalls: 1, runId: `w-${n}` }));
-    const s = driverSetup({ env: { WINDOW_LANES: 'wake' }, disp });
+    const s = driverSetup({ env: {}, disp });
     const r = await wakeOnce(s.d);
     expect(r.status).toBe('incomplete');
     expect(disp.inputs).toHaveLength(3); // pipeline, boards and apply, each typed once
@@ -546,110 +473,23 @@ describe('the wake lane through the driver', () => {
 
   it('manual request report still runs after a windows wake', async () => {
     const disp = new FakeDispatcher();
-    const s = driverSetup({ env: { WINDOW_LANES: 'wake' }, disp });
+    const s = driverSetup({ env: {}, disp });
     const seen: string[] = [];
     s.d.manualReport = async (st) => void seen.push(st);
     await wakeOnce(s.d);
     expect(seen).toEqual(['ok']);
   });
 
-  it('daemon restart never kills a long-lived worker window of an orphaned dispatcher row', async () => {
-    const { daemonLoop } = await import('../src/scheduler/driver.js');
-    const { startRun } = await import('../src/scheduler/runLog.js');
-    const s = driverSetup({ env: {}, disp: undefined });
-    const killed: string[] = [];
-    s.d.launcher = { ...s.launcher, start: s.launcher.start.bind(s.launcher), poll: s.launcher.poll.bind(s.launcher), kill: async (h?: LaunchHandle) => void (h && killed.push(h.window)) } as Launcher;
-    startRun(s.db, { id: 'orphan-w1', at: NOON_IST, trigger: 'wake', dryRun: true, tasks: [], status: 'running', window: 'boards' });
-    startRun(s.db, { id: 'orphan-h1', at: NOON_IST, trigger: 'scheduled', dryRun: true, tasks: [], status: 'running' });
-    await daemonLoop(s.d, { stopped: true });
-    expect(killed).toEqual(['wake-orphan-h1']);
-    expect(listRuns(s.db).find((x) => x.id === 'orphan-w1')?.status).toBe('crashed');
-  });
-});
-
-// ---------------------------------------------------------------------------------------------------------------------------------
-// The REAL WindowDispatcher over fake tmux and a fake transcript: the final JSON line is read from the window's last text, and the
-// dispatcher writes one scheduler_runs row per item with trigger `wake`.
-describe('the wake lane with the real dispatcher over a fake window', () => {
-  it('one scheduler_runs row per typed item (trigger wake, window name, transcript path) and the final JSON line proves the steps', async () => {
-    const root = tmp('ww-real-');
-    const home = tmp('ww-home-');
-    const sid = '11111111-2222-4333-8444-555555555555';
-    const sid2 = '99999999-2222-4333-8444-555555555555';
-    const tdir = projectTranscriptDir(root, home);
-    mkdirSync(tdir, { recursive: true });
-    mkdirSync(join(root, 'config'));
-    copyFileSync(join(ROOT, 'config/manager-windows.json'), join(root, 'config/manager-windows.json'));
-    const files: Record<string, string> = { pipeline: transcriptFile(tdir, sid), apply: transcriptFile(tdir, sid2) };
-    for (const [w, f] of Object.entries(files)) {
-      writeFileSync(f, '');
-      writeWindowSession(root, w, w === 'pipeline' ? sid : sid2);
-    }
-    const db = openDb(':memory:');
-    saveJob(db, { id: 'j1', source: 'greenhouse', title: 'React Developer', company: 'Acme', url: 'https://x.test/j1', apply_url: 'https://boards.greenhouse.io/acme/jobs/1', description: 'Location: Remote\n\nbody' });
-    const calls: string[][] = [];
-    const run: Run = async (_c, args) => {
-      calls.push(args);
-      if (args[0] === 'list-windows') return { stdout: ['pipeline', 'apply'].map((w, i) => `${i}|${w}|0|claude`).join('\n'), code: 0 };
-      if (args[0] === 'capture-pane') return { stdout: '', code: 0 };
-      return { stdout: '', code: 0 };
-    };
-    let t = NOON_IST.getTime();
-    // When the line for a window is typed, the fake claude answers with the final JSON line naming the typed work item's wake run id.
-    const answered = new Set<string>();
-    const disp = new WindowDispatcher({
-      root, session: 'Jobber', run, db, killed: () => false, now: () => t,
-      sleep: async (ms) => {
-        t += ms;
-        for (const c of calls) {
-          if (c[0] !== 'send-keys' || !c.includes('-l')) continue;
-          const text = c[c.length - 1] as string;
-          const m = /^Work item (w-(\w+)-[^:]+):/.exec(text);
-          if (!m || answered.has(m[1])) continue;
-          answered.add(m[1]);
-          const win = m[2];
-          const work = readFileSync(join(root, '.jobber', 'work', `${m[1]}.md`), 'utf8');
-          const wakeId = /run_id: "([^"]+)"/.exec(work)?.[1] ?? 'none';
-          const op = win === 'pipeline' ? { operator: 'pipeline', tasks: [{ kind: 'pipeline', done: 2 }] } : { operator: 'apply-operator', tasks: [{ kind: 'apply', done: 1 }] };
-          appendFileSync(files[win], `${JSON.stringify({ type: 'user', message: { role: 'user', content: text } })}\n`);
-          appendFileSync(files[win], `${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: JSON.stringify({ run_id: wakeId, operators: [op] }) }], stop_reason: 'end_turn' } })}\n`);
-        }
-      },
-      claudeHome: home, pollMs: 1000, stallMs: 60_000, settleMs: 10,
-    });
-    const s = driverSetup({ env: { WINDOW_LANES: 'wake' }, disp });
-    s.d.db = db;
-    s.d.projectRoot = root;
-    s.d.lockRoot = join(root, 'locks');
-    s.d.stopFile = join(root, 'STOP');
-    s.d.now = () => new Date(t);
-    s.d.sleep = async (ms) => { t += ms; };
-    const r = await wakeOnce(s.d);
-    expect(r.status).toBe('ok');
-    const rows = db.prepare("SELECT window, trigger, status, log_path FROM scheduler_runs WHERE trigger = 'wake' ORDER BY planned_at").all() as Array<{ window: string; trigger: string; status: string; log_path: string | null }>;
-    expect(rows.map((x) => x.window)).toEqual(['pipeline', 'apply']);
-    expect(s.launcher.starts).toHaveLength(1); // the boards window is not in the fake tmux: its steps fell back to one residual session, nothing typed
-    expect(rows.every((x) => x.status === 'ok' && x.log_path)).toBe(true);
-    const wake = listRuns(db).find((x) => x.id === r.runId);
-    expect(wake?.trigger).toBe('scheduled');
-    const typedLines = calls.filter((c) => c[0] === 'send-keys' && c.includes('-l')).map((c) => c[c.length - 1] as string);
-    expect(typedLines.filter((l) => l.startsWith('Work item '))).toHaveLength(2);
-    expect(typedLines.filter((l) => l === '/clear')).toHaveLength(2);
-    const n = s.tg.find((x) => x.topic === 'wakes');
-    expect(n?.text).toMatch(/<b>Operators<\/b>\n• done 3/);
-  });
 });
 
 describe('guards of the wake windows', () => {
-  it('window-guard SCREENED_TOOLS equals the union of the headless profile lists and denies secret-shaped arguments in each', () => {
+  it('window-guard SCREENED_TOOLS (13 tools; send_email has its own rule) denies secret-shaped arguments in each', () => {
     const guard = req('../.claude/hooks/window-guard.cjs') as {
       decide: (e: unknown, o: { root: string; env: Record<string, string> }) => { allow: boolean };
       SCREENED_TOOLS: Set<string>;
     };
-    const prof = JSON.parse(readFileSync(join(ROOT, 'config/run-profiles.json'), 'utf8')) as { profiles?: Record<string, { screen_args: string[] }> } & Record<string, { screen_args: string[] }>;
-    const wake = (prof.profiles ?? prof).outreach_wake.screen_args.filter((x) => !x.startsWith('mcp__gmail__'));
-    for (const t of wake) expect(guard.SCREENED_TOOLS.has(t), t).toBe(true);
-    expect(wake).toHaveLength(13); // 14 entries, one of them send_email, which window-guard handles with its own rule
+    const wake = [...guard.SCREENED_TOOLS];
+    expect(wake).toHaveLength(13);
     const o = { root: ROOT, env: {} as Record<string, string> };
     for (const t of wake) {
       expect(guard.decide({ tool_name: t, tool_input: { text: 'hello' } }, o).allow).toBe(true);

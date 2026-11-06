@@ -1,4 +1,4 @@
-// Phase 3a: the mail drip lane through the long-lived `mail` window (WINDOW_LANES contains `mail`). Fakes only: fake clock,
+// The mail drip lane through the long-lived `mail` window (the only path; no headless run). Fakes only: fake clock,
 // fake dispatcher or fake tmux, in-memory db. Nothing is sent, no tmux, no claude.
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -11,7 +11,6 @@ import { listHandoff } from '../src/platform/handoff.js';
 import { takeWindowLock } from '../src/platform/windowLock.js';
 import type { Run } from '../src/platform/tmux.js';
 import type { DriverDeps } from '../src/scheduler/driver.js';
-import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
 import type { Notice } from '../src/scheduler/notify.js';
 import { dripTick, listDripQuarantine } from '../src/scheduler/mailDrip.js';
 import { getState, listRuns } from '../src/scheduler/runLog.js';
@@ -25,18 +24,6 @@ afterEach(() => {
   while (dirs.length) rmSync(dirs.pop() as string, { recursive: true, force: true });
 });
 const sqlTime = (d: Date): string => d.toISOString().slice(0, 19).replace('T', ' ');
-
-class FakeLauncher implements Launcher {
-  starts: LaunchPlan[] = [];
-  async start(plan: LaunchPlan): Promise<LaunchHandle> {
-    this.starts.push(plan);
-    return { runId: plan.runId, session: plan.session, window: `wake-${plan.runId}`, logPath: 'l', exitPath: 'e', promptPath: 'p' };
-  }
-  async poll(): Promise<PollResult> {
-    return { exited: true, exitCode: 0, newOutput: '' };
-  }
-  async kill(): Promise<void> {}
-}
 
 /** A stand-in for WindowDispatcher: records every call; `reply` decides the result and may mark the row sent. */
 class FakeDispatcher {
@@ -57,11 +44,11 @@ function setup(opts: { start?: Date; env?: NodeJS.ProcessEnv; stopExists?: () =>
   const dir = mkdtempSync(join(tmpdir(), 'mail-win-'));
   dirs.push(dir);
   let t = (opts.start ?? NOON_IST).getTime();
-  const env = opts.env ?? { WINDOW_LANES: 'mail' };
+  const env = opts.env ?? {};
   const notices: Notice[] = [];
   const db = openDb(':memory:');
   const clock = (): Date => new Date(t);
-  const launcher = new FakeLauncher();
+  const launcher = { starts: [] as unknown[] }; // nothing may ever run headless: always empty
   const fake = new FakeDispatcher();
   const markSent = (prompt: string): void => {
     const m = /outreach_queue row id (\d+)/.exec(prompt);
@@ -71,11 +58,10 @@ function setup(opts: { start?: Date; env?: NodeJS.ProcessEnv; stopExists?: () =>
     db, now: clock, rng: () => 0,
     sleep: async (ms) => { t += ms; },
     cfg: loadOutreachConfig(env), tuning: loadTuning(env), env,
-    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), runDir: join(dir, 'runs'), projectRoot: dir,
-    launcher, notifier: { notify: async (n) => void notices.push(n) },
+    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), projectRoot: dir,
+    notifier: { notify: async (n) => void notices.push(n) },
     newRunId: (() => { let i = 0; return () => `drip${String(++i).padStart(8, '0')}`; })(),
     control: opts.stopExists ? { exists: opts.stopExists, read: () => 'stop it' } : undefined,
-    pollMs: 5000,
     windows: opts.withWindows === false ? undefined : (fake as unknown as WindowDispatcher),
   };
   const queue = (n: number): number[] => {
@@ -93,34 +79,24 @@ function setup(opts: { start?: Date; env?: NodeJS.ProcessEnv; stopExists?: () =>
 }
 
 describe('mail lane through the window', () => {
-  it('lane off: the old headless path runs and the dispatcher is never used', async () => {
-    const s = setup({ env: {} });
-    s.queue(1);
-    await dripTick(s.d);
-    expect(s.launcher.starts).toHaveLength(1);
-    expect(s.fake.inputs).toHaveLength(0);
-  });
-
-  it('lane on but no dispatcher object: headless', async () => {
+  it('no dispatcher object: nothing runs anywhere, the item stays queued', async () => {
     const s = setup({ withWindows: false });
-    s.queue(1);
-    await dripTick(s.d);
-    expect(s.launcher.starts).toHaveLength(1);
+    const [id] = s.queue(1);
+    const r = await dripTick(s.d);
+    expect(r.runs?.[0]).toMatchObject({ skipped: true, reason: 'no_dispatcher' });
+    expect(s.status(id)).toBeNull(); // never claimed
   });
 
-  it('lane on: the item goes to window mail, the headless launcher is not used, same prompt as headless, trigger mail_drip', async () => {
-    const headless = setup({ env: {} });
-    headless.queue(1);
-    await dripTick(headless.d);
+  it('the item goes to window mail with trigger mail_drip and one prompt for exactly one row', async () => {
     const win = setup();
     win.queue(1);
     win.fake.reply = (i) => { win.markSent(i.promptText); return { status: 'ok', stopReason: 'end_turn', summary: 'x', toolCalls: 3, runId: 'w-run-1' }; };
     const r = await dripTick(win.d);
     expect(r.status).toBe('ran');
-    expect(win.launcher.starts).toHaveLength(0);
     const i = win.fake.inputs[0];
     expect(i).toMatchObject({ window: 'mail', lane: 'mail', trigger: 'mail_drip', dryRun: false });
-    expect(i.promptText).toBe(headless.launcher.starts[0].prompt);
+    expect(i.promptText).toMatch(/DRIP MODE/);
+    expect(i.promptText.match(/Drip item:/g)).toHaveLength(1);
     expect(i.deadlineMs).toBe(3600 * 1000);
     expect(win.status(1)).toBe('sent');
     expect(win.fake.finished).toContain('w-run-1');
@@ -150,7 +126,7 @@ describe('mail lane through the window', () => {
     }
   });
 
-  it('ok but nothing recorded is quarantined too, like the headless path', async () => {
+  it('ok but nothing recorded is quarantined too', async () => {
     const s = setup();
     s.queue(1);
     const r = await dripTick(s.d);
@@ -158,7 +134,7 @@ describe('mail lane through the window', () => {
   });
 
   it('usage_limit: sets usage_backoff_until, adds a handoff entry, quarantines the unrecorded row, and the next tick is held by the gate', async () => {
-    const s = setup({ env: { WINDOW_LANES: 'mail', USAGE_LIMIT_BACKOFF_MIN: '60' } });
+    const s = setup({ env: { USAGE_LIMIT_BACKOFF_MIN: '60' } });
     s.queue(2);
     s.fake.reply = () => ({ status: 'usage_limit', stopReason: 'usage_limit', summary: '', toolCalls: 0, runId: 'w1' });
     const r = await dripTick(s.d);
@@ -199,15 +175,23 @@ describe('mail lane through the window', () => {
     expect(s.fake.finished).toEqual([]);
   });
 
-  it('window missing or not claude: row put back and the headless path runs for that item, one warning only', async () => {
+  it('window unavailable after the bounded start wait: row put back, nothing runs elsewhere, handoff entry, one alert per hour', async () => {
     const s = setup();
     const [id] = s.queue(2);
-    s.fake.reply = () => ({ status: 'unavailable', stopReason: 'window_missing', summary: '', toolCalls: 0 });
+    const posts: string[] = [];
+    s.d.tg = async (_topic, text) => void posts.push(text);
+    s.fake.reply = () => ({ status: 'unavailable', stopReason: 'window_unavailable:window_missing:not_ready', summary: '', toolCalls: 0 });
+    const r = await dripTick(s.d);
+    expect(r.runs).toHaveLength(1);
+    expect(r.runs?.[0]).toMatchObject({ skipped: true });
+    expect(s.status(id)).toBe('queued');
+    expect(listHandoff(s.dir).some((e) => e.window === 'mail' && /window unavailable/.test(e.why))).toBe(true);
+    expect(posts.filter((t) => /not available/.test(t))).toHaveLength(1);
+    // a second tick a minute later: still unavailable, no second alert inside the hour
+    s.setNow(new Date(NOON_IST.getTime() + 20 * 60_000));
     await dripTick(s.d);
-    expect(s.launcher.starts.length).toBeGreaterThan(0);
-    expect(s.launcher.starts[0].prompt).toMatch(new RegExp(`row id ${id} `));
-    expect(s.notices.filter((n) => /mail window unavailable/.test(n.title)).length).toBeLessThanOrEqual(1);
-    expect(listRuns(s.db, 10).some((x) => x.trigger === 'mail_drip')).toBe(true);
+    expect(posts.filter((t) => /not available/.test(t))).toHaveLength(1);
+    expect(listRuns(s.db, 10).some((x) => x.trigger === 'mail_drip')).toBe(false);
   });
 
   it('a usage_backoff or killed refusal from the dispatcher sends nothing and does not fall back to headless', async () => {
@@ -222,7 +206,7 @@ describe('mail lane through the window', () => {
   });
 
   it('dry run: the dispatcher gets dryRun true, the row is not claimed, nothing is quarantined', async () => {
-    const s = setup({ env: { WINDOW_LANES: 'mail', JOBBER_DRY_RUN: 'true' } });
+    const s = setup({ env: { JOBBER_DRY_RUN: 'true' } });
     const [id] = s.queue(1);
     let during: string | null = 'x';
     s.fake.reply = () => { during = s.status(id); return { status: 'ok', stopReason: 'end_turn', summary: '', toolCalls: 1, runId: 'w1' }; };
@@ -255,7 +239,7 @@ describe('gates come before any text is typed', () => {
     const k = setup({ stopExists: () => true });
     k.queue(1);
     expect(await dripTick(k.d)).toMatchObject({ reason: 'killed' });
-    const z = setup({ env: { WINDOW_LANES: 'mail', SEND_LIMIT_PER_RUN: '0' } });
+    const z = setup({ env: { SEND_LIMIT_PER_RUN: '0' } });
     z.queue(1);
     expect(await dripTick(z.d)).toMatchObject({ reason: 'send_limit_zero' });
     for (const x of [s, k, z]) expect(x.fake.inputs).toHaveLength(0);
@@ -271,14 +255,15 @@ describe('gates come before any text is typed', () => {
     expect(calls.filter((c) => c[0] === 'send-keys')).toHaveLength(0);
   });
 
-  it('with the real dispatcher: missing window falls back to headless, busy window skips with nothing typed', async () => {
+  it('with the real dispatcher and no ensureReady: a missing window skips the item, nothing is typed', async () => {
     const calls: string[][] = [];
     const run: Run = async (_c, args) => { calls.push(args); return { stdout: '', code: 0 }; }; // no windows listed
     const s = setup();
     s.d.windows = new WindowDispatcher({ root: s.dir, session: 'Jobber', run, db: s.db, killed: () => false });
     const [id] = s.queue(1);
-    await dripTick(s.d);
-    expect(s.launcher.starts[0].prompt).toMatch(new RegExp(`row id ${id} `));
+    const r = await dripTick(s.d);
+    expect(r.runs?.[0]).toMatchObject({ skipped: true });
+    expect(s.status(id)).toBe('queued');
     expect(calls.filter((c) => c[0] === 'send-keys')).toHaveLength(0);
 
     const calls2: string[][] = [];
@@ -288,8 +273,8 @@ describe('gates come before any text is typed', () => {
     const [bid] = b.queue(1);
     const lock = takeWindowLock(b.dir, 'mail', 'other');
     expect(lock).not.toBeNull();
-    const r = await dripTick(b.d);
-    expect(r.runs?.[0]).toMatchObject({ skipped: true });
+    const rb = await dripTick(b.d);
+    expect(rb.runs?.[0]).toMatchObject({ skipped: true });
     expect(b.launcher.starts).toHaveLength(0);
     expect(calls2.filter((c) => c[0] === 'send-keys')).toHaveLength(0);
     expect(b.status(bid)).toBe('queued');

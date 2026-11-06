@@ -60,8 +60,6 @@ export interface ChatMessageIn {
   messageId?: number;
 }
 
-const FALLBACK_PRINT = (env: NodeJS.ProcessEnv): boolean => (env.TELEGRAM_CHAT_FALLBACK ?? '').trim() === 'print';
-
 export class ChatWindow {
   private readonly log: ChatMessageLog;
   private readonly now: () => number;
@@ -139,7 +137,6 @@ export class ChatWindow {
     let text = cleanTyped(raw).replace(/\s+/g, ' ').trim();
     if (!text) return true;
     if (this.d.killed()) { await this.reply(KILLED_TEXT); return true; }
-    if ((await this.windowState()) === 'missing' && FALLBACK_PRINT(this.d.env)) return false; // old `claude -p` path
     const why = await this.refusal();
     if (why) { await this.reply(why); return true; }
     if (text.length > MAX_CHAT_TEXT) { await this.reply(`Too long (max ${MAX_CHAT_TEXT} characters).`); return true; }

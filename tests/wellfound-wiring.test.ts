@@ -418,10 +418,10 @@ describe('planner: wellfound discover and inbox tasks', () => {
   it('the wake prompt names the wellfound searches and quota meaning, after linkedin and naukri', () => {
     const d = plan({ due: due({ wellfoundDiscoverLastHoursAgo: null, inboxLastCheckedMinAgo: null }) });
     if (d.kind !== 'run') throw new Error('expected a run');
-    const p = buildWakePrompt({ runId: 'r1', dryRun: false, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 }, allowed: ['linkedin', 'naukri', 'wellfound'], now: NOW, order: stepOrder(d) });
+    const p = buildWakePrompt({ runId: 'r1', dryRun: false, tasks: d.tasks, budget: { maxWallSec: 900 }, allowed: ['linkedin', 'naukri', 'wellfound'], now: NOW, order: stepOrder(d) });
     expect(p).toContain('Dispatch `wellfound-operator` for platform wellfound with task: discover quota 5 (searches: full-stack-react-india-remote; quota is the job pages you may open for descriptions).');
     expect(p).toContain('Dispatch `wellfound-operator` for platform wellfound with task: inbox quota 5.');
-    const legacy = buildWakePrompt({ runId: 'r1', dryRun: false, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 }, allowed: ['wellfound'], now: NOW });
+    const legacy = buildWakePrompt({ runId: 'r1', dryRun: false, tasks: d.tasks, budget: { maxWallSec: 900 }, allowed: ['wellfound'], now: NOW });
     expect(legacy).toContain('Dispatch operator `wellfound-operator` for platform wellfound with tasks: ');
     expect(legacy).toContain('discover quota 5 (searches: full-stack-react-india-remote; quota is the job pages you may open for descriptions)');
   });

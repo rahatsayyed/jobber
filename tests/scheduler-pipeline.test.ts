@@ -14,7 +14,7 @@ import { planWake, stepOrder, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_WINDO
 import { buildWakePrompt } from '../src/scheduler/prompt.js';
 import { runCodePass, statusLines, pipelineLines, targetRegionsLine, loadHuntPreferences, DEFAULT_HUNT_ROLE, DEFAULT_HUNT_LOCATION, type CodePassResult } from '../src/scheduler/pipeline.js';
 import { wakeOnce, type DriverDeps } from '../src/scheduler/driver.js';
-import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
+import { launcherAsWindows, type LaunchHandle, type LaunchPlan, type Launcher, type PollResult } from './helpers/fakeWindows.js';
 import { getState } from '../src/scheduler/runLog.js';
 import { resetSourceStatusForTests } from '../src/sources/status.js';
 
@@ -211,7 +211,7 @@ describe('prompt', () => {
   it('lists the wake order and the pipeline instructions; the wake only enqueues email', () => {
     const d = run(plan({ due: due({ scriptDiscoverLastHoursAgo: null, sourceTasksQueued: 1, inboxLastCheckedMinAgo: null }) }));
     const p = buildWakePrompt({
-      runId: 'r1', dryRun: true, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 },
+      runId: 'r1', dryRun: true, tasks: d.tasks, budget: { maxWallSec: 900 },
       allowed: ['linkedin', 'naukri'], now: NOW, order: stepOrder(d), pipeline: pipe,
     });
     expect(p).toContain('Wake order');
@@ -227,7 +227,7 @@ describe('prompt', () => {
   it('names the discover searches in the ordered wake prompt', () => {
     const d = run(plan({ due: due({ linkedinDiscoverLastHoursAgo: null, naukriSearchLastHoursAgo: null }) }));
     const p = buildWakePrompt({
-      runId: 'r1', dryRun: true, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 },
+      runId: 'r1', dryRun: true, tasks: d.tasks, budget: { maxWallSec: 900 },
       allowed: ['linkedin', 'naukri'], now: NOW, order: stepOrder(d), pipeline: pipe,
     });
     expect(p).toContain('job searches: react; post searches: none');
@@ -486,8 +486,8 @@ describe('driver runs the code pass before the model session', () => {
     const d: DriverDeps = {
       db: openDb(':memory:'), now: () => new Date(t), rng: () => 0.5, sleep: async (ms) => { t += ms; },
       cfg: loadOutreachConfig({}), tuning: loadTuning({}), env: {}, lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'),
-      runDir: join(dir, 'runs'), projectRoot: dir, launcher, notifier: { notify: async (n) => void notices.push(n.title) },
-      newRunId: () => 'runpipe00000001', pollMs: 5000, verifyCompletion: false, // these fakes write no stream-json
+      projectRoot: dir, windows: launcherAsWindows(launcher, () => d), notifier: { notify: async (n) => void notices.push(n.title) },
+      newRunId: () => 'runpipe00000001',
 
       codePass: codePass ? async () => { log.push('code'); return codePass(); } : undefined,
     };
@@ -499,8 +499,8 @@ describe('driver runs the code pass before the model session', () => {
     const h = harness(okPass);
     const r = await wakeOnce(h.d);
     expect(r.status).toBe('ok');
-    expect(h.log).toEqual(['code', 'launch']);
-    const prompt = h.launcher.starts[0].prompt;
+    expect(h.log.slice(0, 2)).toEqual(['code', 'launch']);
+    const prompt = h.launcher.starts.map((p) => p.prompt).find((p) => p.includes('Code pass result')) ?? '';
     expect(prompt).toContain('Wake order');
     expect(prompt).toContain('Code pass result: ok=true, fetched 3, new 2');
     expect(prompt).toContain('SOURCE_STATUS: {"y":2}');
@@ -514,12 +514,7 @@ describe('driver runs the code pass before the model session', () => {
     const h = harness(async () => { throw new Error('nope'); });
     const r = await wakeOnce(h.d);
     expect(r.status).toBe('ok');
-    expect(h.log).toEqual(['code', 'launch']);
+    expect(h.log.slice(0, 2)).toEqual(['code', 'launch']);
     expect(h.notices).toContain('scheduler code pass failed');
-  });
-  it('no code pass seam: the legacy prompt, no stage', async () => {
-    const h = harness();
-    await wakeOnce(h.d);
-    expect(h.launcher.starts[0].prompt).not.toContain('Wake order');
   });
 });

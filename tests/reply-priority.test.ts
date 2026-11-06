@@ -9,7 +9,7 @@ import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
 import { acquireLock } from '../src/platform/lock.js';
 import type { DriverDeps } from '../src/scheduler/driver.js';
-import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
+import { launcherAsWindows, type LaunchHandle, type LaunchPlan, type Launcher, type PollResult } from './helpers/fakeWindows.js';
 import { dripTick } from '../src/scheduler/mailDrip.js';
 import {
   formatReplyNotice, markReplyCheckDueAtStart, notifyNewReplies, pickReplyCheck, replyCheckEveryMin, STATE_RC_AT, STATE_RC_NOTICE_AT,
@@ -63,12 +63,11 @@ function setup(opts: Opts = {}) {
   const d: DriverDeps = {
     db, now: clock, rng: () => 0, sleep: async (ms) => { t += ms; },
     cfg: loadOutreachConfig(env), tuning: loadTuning(env), env,
-    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), runDir: join(dir, 'runs'), projectRoot: dir,
-    launcher, notifier: { notify: async () => undefined },
+    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), projectRoot: dir,
+    windows: launcherAsWindows(launcher, () => d), notifier: { notify: async () => undefined },
     tg: async (topic, text) => void posts.push({ topic, text }),
     newRunId: (() => { let i = 0; return () => `rp${String(++i).padStart(8, '0')}`; })(),
     control: opts.stopExists ? { exists: opts.stopExists, read: () => 'stop' } : undefined,
-    pollMs: 5000,
   };
   const queueCold = (n: number): void => {
     for (let i = 1; i <= n; i++) {
@@ -157,12 +156,6 @@ describe('mail reply_check: gates', () => {
     setState(b.db, 'usage_backoff_until', new Date(b.now().getTime() + 3600_000).toISOString(), b.now());
     await dripTick(b.d);
     expect(b.launcher.starts).toHaveLength(0);
-
-    const w = setup();
-    markReplyCheckDueAtStart(w.db, w.now());
-    setState(w.db, 'unkilled_window', '{}', w.now());
-    await dripTick(w.d);
-    expect(w.launcher.starts).toHaveLength(0);
 
     const l = setup();
     markReplyCheckDueAtStart(l.db, l.now());

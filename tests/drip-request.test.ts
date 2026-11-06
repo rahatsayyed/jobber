@@ -9,7 +9,7 @@ import { loadTuning } from '../src/outreach/tuning.js';
 import { upsertPerson } from '../src/outreach/people.js';
 import { haltPlatform } from '../src/outreach/limits.js';
 import type { DriverDeps } from '../src/scheduler/driver.js';
-import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
+import { launcherAsWindows, type LaunchHandle, type LaunchPlan, type Launcher, type PollResult } from './helpers/fakeWindows.js';
 import { dripTick, STATE_NEXT_AT } from '../src/scheduler/mailDrip.js';
 import { LI_STATE_INBOX_AT, LI_STATE_LAST_AT, LI_STATE_NEXT_AT, linkedinDripTick } from '../src/scheduler/linkedinDrip.js';
 import { getState, setState } from '../src/scheduler/runLog.js';
@@ -49,11 +49,10 @@ function setup(opts: { env?: NodeJS.ProcessEnv; start?: Date; stop?: () => boole
   const d: DriverDeps = {
     db, now: clock, rng: () => 0, sleep: async (ms) => { t += ms; },
     cfg: loadOutreachConfig(env), tuning: loadTuning(env), env,
-    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), runDir: join(dir, 'runs'), projectRoot: dir,
-    launcher, notifier: { notify: async () => undefined },
+    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), projectRoot: dir,
+    windows: launcherAsWindows(launcher, () => d), notifier: { notify: async () => undefined },
     newRunId: (() => { let i = 0; return () => `q${String(++i).padStart(7, '0')}`; })(),
     control: opts.stop ? { exists: opts.stop, read: () => 'stop' } : undefined,
-    pollMs: 5000,
   };
   const queue = (n: number): void => {
     for (let i = 1; i <= n; i++) {

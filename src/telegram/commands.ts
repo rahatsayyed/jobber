@@ -8,7 +8,7 @@ import { calibrate } from '../calibrate.js';
 import { getCalibrationRows, recordOutcomeChecked, unexcludeJob, type Outcome } from '../db.js';
 import { funnelStats } from '../funnel.js';
 import { patternStats } from '../patterns.js';
-import type { ChatRunner } from './chat.js';
+import { requestWake } from '../scheduler/wakeRequest.js';
 import { childEnv, type SpawnFn } from './spawn.js';
 import { readTopicState, type TopicName } from './topics.js';
 import { DripController, type Button, type DripIo } from './drip.js';
@@ -66,7 +66,6 @@ export function commandArgv(name: string, rest: string): Argv | { error: string 
   }
   if (name === 'apply') return applyArgv(rest);
   if (name === 'instruction') return instructionArgv(rest);
-  if (name === 'runhunt') return { cmd: 'npm', args: ['run', 'scheduler', '--', '--once', '--now'], timeoutMs: 45 * 60_000 };
   if (name === 'report') return { cmd: 'npm', args: ['run', 'report'], timeoutMs: 60_000 };
   return null;
 }
@@ -81,7 +80,6 @@ export interface BridgeDeps {
   root: string;
   env: NodeJS.ProcessEnv;
   spawn: SpawnFn;
-  chat: ChatRunner;
   /** { stopped, reason } from the shared kill switch check. */
   killed(): { stopped: boolean; reason: string };
   openDb(): BetterSqlite3.Database;
@@ -168,8 +166,9 @@ export async function handleOwnerMessage(msg: OwnerMessage, deps: BridgeDeps): P
       await deps.reply(`Kill switch is on (${k.reason}). Free chat is paused; read-only commands still work.`);
       return;
     }
-    const answer = await deps.chat.ask(where === 'chat' ? `topic:${msg.threadId}` : 'private', text);
-    await deps.reply(answer);
+    // Free text in the chat topic is answered by the long-running `chat` window (src/telegram/chatwin), before this point. Getting here means
+    // that window did not take it; there is no `claude -p` fallback, so say how to bring the window back.
+    await deps.reply('The chat window did not take that message. Start the stack with: npm run up (window chat), then write again.');
   } catch {
     await deps.reply('Something went wrong while handling that message.').catch(() => undefined);
   }
@@ -196,11 +195,11 @@ async function handleCommand(name: string, rest: string, deps: BridgeDeps): Prom
     await deps.sendDocument(path.join(deps.root, file), 'Funnel report');
     return;
   }
-  if (name === 'runhunt' && argv && !('error' in argv)) {
-    await deps.reply('Wake started. I will post the result line when it ends.');
-    const r = await runChild(deps, argv);
-    const line = r.out.split('\n').map((l) => l.trim()).filter(Boolean).filter((l) => /^run\s/i.test(l)).pop() ?? r.out.split('\n').pop() ?? '';
-    return deps.reply(r.ok ? `✅ **Wake finished**\n${codeBlock(line)}` : `❌ **Wake failed**\n${codeBlock(r.out)}`);
+  if (name === 'runhunt') {
+    // No headless wake: the request goes to the running scheduler daemon, which runs the wake through the windows (src/scheduler/wakeRequest.ts).
+    const out = await withDb(deps, (db) => requestWake(db, path.join(deps.root, '.jobber'), new Date()));
+    if (!out.ok) return deps.reply(`⚠️ **No wake requested**\n${out.message}`);
+    return deps.reply(`✅ **Wake requested** (${out.request.id})\nThe scheduler daemon runs it through the windows within about 30 seconds; the result comes to the **wakes** topic. Quiet hours, halts and the kill switch still apply.`);
   }
   if (argv) {
     const r = await runChild(deps, argv);

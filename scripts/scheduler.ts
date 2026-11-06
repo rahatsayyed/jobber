@@ -16,11 +16,13 @@ import { ceilings } from '../src/outreach/limits.js';
 import { inQuietHours, quietFromConfig } from '../src/outreach/quiet.js';
 import { stopActive } from './killSwitch.js';
 import { configReader, windowTick } from '../src/scheduler/windowTick.js';
-import { daemonLoop, wakeOnce, type DriverDeps } from '../src/scheduler/driver.js';
+import { daemonLoop, type DriverDeps } from '../src/scheduler/driver.js';
 import { runCodePass } from '../src/scheduler/pipeline.js';
 import { defaultDeps as controlDefaults, readControl } from '../src/scheduler/control.js';
 import { countDue } from '../src/scheduler/due.js';
-import { runWindowKeepMin, tmuxLauncher } from '../src/scheduler/launch.js';
+import { stallMsFromEnv } from '../src/scheduler/budget.js';
+import { killLegacyWindows, makeEnsureReady } from '../src/scheduler/windowReady.js';
+import { readWakeResult, requestWake } from '../src/scheduler/wakeRequest.js';
 import { fileNotifier } from '../src/scheduler/notify.js';
 import { loadPlanKnobs, planWake, type DiscoverSearches } from '../src/scheduler/plan.js';
 import { loadDiscoveryConfig } from '../src/linkedin/discoveryConfig.js';
@@ -122,6 +124,7 @@ async function main(): Promise<void> {
   if (args.mode === 'dry-run-plan') return dryRunPlan(env);
   if (args.mode === 'usage') {
     console.log('usage: scheduler --daemon | --once | --now | --status | --dry-run-plan | --help');
+    console.log('note: --once and --now only ask the running scheduler daemon for one wake (npm run up starts it); nothing runs headless.');
     console.log('note: environment and .env changes are read once at start; restart the daemon to apply them.');
     process.exitCode = args.help ? 0 : 2;
     return;
@@ -130,6 +133,7 @@ async function main(): Promise<void> {
   const now = (): Date => new Date();
   const cfg = loadOutreachConfig(env);
   const tuning = loadTuning(env);
+  const dispatchSession = env.SCHEDULER_TMUX_SESSION || JOBBER_TMUX_SESSION;
   const notifier = fileNotifier(join(root, 'notify.jsonl'), now, defaultRun, env.JOBBER_NOTIFY_CMD);
   const deps: DriverDeps = {
     db,
@@ -141,9 +145,7 @@ async function main(): Promise<void> {
     env,
     lockRoot: root,
     stopFile,
-    runDir: join(root, 'runs'),
     projectRoot,
-    launcher: tmuxLauncher(defaultRun, undefined, runWindowKeepMin(env)),
     notifier,
     // Code-sent notices to the wakes, alerts, mail and linkedin topics (zero LLM); a missing Telegram setup just returns not ok.
     // `silent` is optional: unset means the topic default (wakes, mail and linkedin silent, alerts loud); see src/telegram/silent.ts noticeUrgency.
@@ -157,10 +159,15 @@ async function main(): Promise<void> {
     codePass: () => runCodePass({ db, now, projectRoot }),
     // The slow email lane beside the wakes (src/scheduler/mailDrip.ts); only the daemon runs it, never --once or --now.
     mailDrip: args.mode === 'daemon',
-    // The dispatcher for lanes listed in WINDOW_LANES (`mail`, `linkedin`, `wake`); no lane listed means nothing ever uses it.
-    windows: args.mode === 'daemon'
-      ? new WindowDispatcher({ root: projectRoot, session: env.SCHEDULER_TMUX_SESSION || JOBBER_TMUX_SESSION, run: defaultRun, db, killed: () => stopActive(projectRoot, env).stopped })
-      : undefined,
+    // The dispatcher of the long-lived worker windows: the ONLY way work reaches a model (mail drip, LinkedIn drip, reply check, wake steps).
+    // A missing window is started through the manager path (ensureReady) before an item is typed; there is no headless fallback.
+    windows: new WindowDispatcher({
+      root: projectRoot, session: dispatchSession, run: defaultRun, db, killed: () => stopActive(projectRoot, env).stopped,
+      stallMs: stallMsFromEnv(env),
+      ensureReady: makeEnsureReady({ root: projectRoot, env, run: defaultRun }),
+    }),
+    // One-time cleanup at start of the leftover wake-* / drip-* windows of the retired headless design.
+    cleanupLegacyWindows: async () => { await killLegacyWindows(defaultRun, dispatchSession); },
     // The slow LinkedIn lane (src/scheduler/linkedinDrip.ts); daemon only. LINKEDIN_DRIP=false turns it off and wakes plan LinkedIn again.
     linkedinDrip: args.mode === 'daemon',
     // New escalations go to the owner's Telegram as a batched digest (at most one per 15 minutes); the daemon only.
@@ -207,8 +214,17 @@ async function main(): Promise<void> {
   process.on('SIGINT', halt);
   process.on('SIGTERM', halt);
   if (args.mode === 'once') {
-    const r = await wakeOnce(deps, { force: true, abort: () => stop.stopped });
-    console.log(`run ${r.runId}: ${r.status}${r.reason ? ` (${safe(r.reason)})` : ''}; next wake ${r.nextWakeAt}`);
+    // No headless forced wake: this only asks the RUNNING scheduler daemon to run one wake through the windows (src/scheduler/wakeRequest.ts).
+    const req = requestWake(db, root, now());
+    if (!req.ok) {
+      console.error(req.message);
+      db.close();
+      process.exitCode = 3;
+      return;
+    }
+    console.log(`wake requested (${req.request.id}): the scheduler daemon runs it through the windows within about 30 seconds; every wake gate still applies (kill switch, halts, quiet hours, ceilings, nothing due).`);
+    const prev = readWakeResult(db);
+    console.log(`watch it: /working (Telegram) or npx tsx scripts/status.ts working; last request result: ${prev ? `${prev.status}${prev.reason ? ` (${safe(prev.reason)})` : ''}` : 'none yet'}`);
     db.close();
     return;
   }

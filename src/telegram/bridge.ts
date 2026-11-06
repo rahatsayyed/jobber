@@ -7,7 +7,6 @@ import { stopActive } from '../../scripts/killSwitch.js';
 import { openDb } from '../db.js';
 import { dbPath } from '../dbPath.js';
 import { fetchApi, scrub, type ApiResult, type TelegramApi } from './api.js';
-import { createChatRunner, type ChatRunner } from './chat.js';
 import { handleOwnerMessage, type BridgeDeps } from './commands.js';
 import { isOwnerId, loadTelegramConfig, PROJECT_ROOT, type TelegramConfig } from './config.js';
 import { createChatWindow } from './chatwin/bridge.js';
@@ -45,7 +44,6 @@ export interface BridgeOptions {
   env: NodeJS.ProcessEnv;
   root?: string;
   spawn?: SpawnFn;
-  chat?: ChatRunner;
   killed?: BridgeDeps['killed'];
   openDb?: () => BetterSqlite3.Database;
   /** Test seam: a Bot built by the caller (for example with a fake api transformer). */
@@ -59,7 +57,6 @@ export interface BridgeOptions {
 export function createBridgeBot(cfg: TelegramConfig, opts: BridgeOptions): Bot {
   const root = opts.root ?? PROJECT_ROOT;
   const spawn = opts.spawn ?? runProcess;
-  const chat = opts.chat ?? createChatRunner({ root, env: opts.env, spawn });
   const bot = opts.bot ?? new Bot(cfg.token);
 
   // 1. Owner filter by numeric user id, before anything else. Everything else is dropped without a trace.
@@ -143,7 +140,6 @@ export function createBridgeBot(cfg: TelegramConfig, opts: BridgeOptions): Bot {
       root,
       env: opts.env,
       spawn,
-      chat,
       killed: opts.killed ?? (() => stopActive(root, opts.env)),
       openDb: opts.openDb ?? (() => openDb(dbPath())),
       reply: async (markdown) => {

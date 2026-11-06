@@ -8,7 +8,7 @@ import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
 import { acquireLock } from '../src/platform/lock.js';
 import type { DriverDeps } from '../src/scheduler/driver.js';
-import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
+import { launcherAsWindows, type LaunchHandle, type LaunchPlan, type Launcher, type PollResult } from './helpers/fakeWindows.js';
 import type { Notice } from '../src/scheduler/notify.js';
 import { buildDripPrompt, dripTick, listDripQuarantine, releaseDripQuarantine, pickDripItem, inSendWindow, loadDripConfig, NO_CAP_LIMIT, STATE_NEXT_AT } from '../src/scheduler/mailDrip.js';
 import { getState, listRuns } from '../src/scheduler/runLog.js';
@@ -77,16 +77,15 @@ function setup(opts: { start?: Date; env?: NodeJS.ProcessEnv; rng?: () => number
     env,
     lockRoot: join(dir, 'locks'),
     stopFile: join(dir, 'STOP'),
-    runDir: join(dir, 'runs'),
+   
     projectRoot: dir,
-    launcher,
+    windows: launcherAsWindows(launcher, () => d),
     notifier: { notify: async (n) => void notices.push(n) },
     newRunId: (() => {
       let i = 0;
       return () => `drip${String(++i).padStart(8, '0')}`;
     })(),
     control: opts.stopExists ? { exists: opts.stopExists, read: () => 'stop it' } : undefined,
-    pollMs: 5000,
   };
   const verify = (addr: string): void => void db.prepare("INSERT INTO contacts (company, email, type, verified, source, confidence) VALUES ('C', ?, 'hr', 1, 't', 0.9)").run(addr);
   const queue = (n: number, to: (i: number) => string = (i) => `person${i}@co${i}.example`, verified = true): number[] => {
@@ -156,8 +155,7 @@ describe('dripTick', () => {
       expect(g).toBeGreaterThanOrEqual(10_000);
       expect(g).toBeLessThanOrEqual(45_000 + 10_000); // pause plus the fake poll step
     }
-    for (const p of hi.launcher.starts) expect(p.profile).toBe('mail_drip');
-    for (const p of hi.launcher.starts) expect([p.session, p.windowName]).toEqual(['Jobber', `drip-mail-${p.runId}`]);
+    for (const p of hi.launcher.starts) expect([p.trigger, p.window, p.lane]).toEqual(['mail_drip', 'mail', 'mail']);
   });
 
   it('spacing: the next tick waits 5 to 8 minutes after the batch, and the wait survives a restart', async () => {
@@ -221,7 +219,6 @@ describe('dripTick', () => {
     capped.queue(10);
     expect((await dripTick(capped.d)).runs).toHaveLength(3);
     expect(capped.launcher.starts[0].prompt).toContain('DAILY_SEND_LIMIT=3');
-    expect(capped.launcher.starts[0].env?.SEND_LIMIT_PER_RUN).toBe('3');
     capped.db.prepare("INSERT OR REPLACE INTO daily_counters (day, key, count) VALUES (date('now'), 'send_email', 3)").run();
     capped.advance(60 * 60_000);
     expect(await dripTick(capped.d)).toMatchObject({ reason: 'daily_cap' });
@@ -386,7 +383,7 @@ describe('quarantined drip rows can be listed and released by the owner', () => 
 });
 
 describe('prompt', () => {
-  const base = { runId: 'drip00000001', dryRun: false, now: NOON_IST, budget: { maxWallSec: 600, maxTokensApprox: 100000 }, item: { kind: 'cold', id: 7, job_id: 'j', address: 'a@b.c' } as const, dailyLimit: 5 };
+  const base = { runId: 'drip00000001', dryRun: false, now: NOON_IST, budget: { maxWallSec: 600 }, item: { kind: 'cold', id: 7, job_id: 'j', address: 'a@b.c' } as const, dailyLimit: 5 };
   it('names exactly one item, quota 1, and the reply-check line only when the code says the check is clean', () => {
     const p = buildDripPrompt({ ...base, replyCheckClean: false });
     expect(p).toContain('outreach_queue row id 7');

@@ -7,8 +7,7 @@ import { join } from 'node:path';
 import { isDryRun, parseDryFlag, LEGACY_DRY_RUN_KEYS } from '../src/safety/dryRun.js';
 import { loadLinkedinConfig } from '../src/linkedin/config.js';
 import { loadWebConfig } from '../src/webcore/config.js';
-import { wakeIsDry, childEnv } from '../src/scheduler/driver.js';
-import { buildRunnerArgv } from '../src/scheduler/launch.js';
+import { wakeIsDry } from '../src/scheduler/driver.js';
 import { buildEnv, loadProfiles } from '../src/platform/runner.js';
 import { currentUse } from '../src/safety/classifierSelect.js';
 import { currentMode } from '../src/stack/mode.js';
@@ -68,12 +67,6 @@ describe('every path follows the single flag', () => {
       expect(currentUse(env)).toBe(want ? 'dry_run' : 'send');
       expect(currentMode(env).mode).toBe(want ? 'DRY RUN' : 'LIVE');
     }
-  });
-  it('the scheduler launcher emits only the master flag, and the child env carries no dry key', () => {
-    const base = { runId: 'abcd1234', promptPath: '/r/p', logPath: '/r/l', exitPath: '/r/e' };
-    expect(buildRunnerArgv({ ...base, dryRun: true })).toContain('JOBBER_DRY_RUN=true');
-    expect(buildRunnerArgv({ ...base, dryRun: false })).toContain('JOBBER_DRY_RUN=false');
-    expect(Object.keys(childEnv({ JOBBER_DRY_RUN: 'true', SCHEDULER_DRY_RUN: 'true' }, true)).filter((k) => /DRY_RUN/.test(k))).toEqual([]);
   });
   it('no source file reads a retired *_DRY_RUN key', () => {
     const hits: string[] = [];
