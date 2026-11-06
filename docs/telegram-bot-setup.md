@@ -91,8 +91,8 @@ Or just run `npm start` (`npm run up`), which starts the `bridge`, `scheduler` a
 one tmux session `Jobber` (env `STACK_TMUX_SESSION`, default `Jobber`). The bridge reads
 `TELEGRAM_BOT_TOKEN`, `ALLOWED_USERS` and `TELEGRAM_CHAT_ID` from `.env`. It then starts `manager` and `chat`
 (`scripts/claude-session.sh`, which loads the rest of `.env` for the MCP servers, not the Telegram keys, and refuses any
-permission-skipping flag) and every worker window whose lane is listed in `WINDOW_LANES`
-(`scripts/claude-window.sh`; none by default, see `docs/window-rollout.md`).
+permission-skipping flag) and every worker window
+(`scripts/claude-window.sh`; all six: mail, linkedin, boards, sources, pipeline, apply; see `docs/window-rollout.md`).
 
 Look at it with `tmux attach -t Jobber` and pick the `bridge` window (detach with Ctrl-b d). Do not
 paste the token into it.
@@ -122,7 +122,7 @@ paste the token into it.
 - `linkedin`: one short notice per LinkedIn drip action (invite, DM, accept check, Easy Apply). Silent. The live view of the
   `linkedin` window is in this same topic. LinkedIn inbox thread summaries and queued reply drafts stay in `inbox` (loud).
 - `drips`: the old shared topic of both lanes. New setups do not create it any more and nothing sends to it; an existing one is
-  kept (its id stays in the state file) and is only used by a headless `drip-*` window that is not a lane window.
+  kept (its id stays in the state file) and nothing sends to it any more (there are no `drip-*` windows now).
 - Where each notice goes (loud means it makes a sound):
 
   | Notice | Topic | Sound |
@@ -146,11 +146,11 @@ paste the token into it.
 
 - Window topics are created on demand the first time you open a window view and are stored under `windows` in
   `.jobber/telegram-topics.json`. The worker windows `mail` and `linkedin` do NOT get a second topic: their live
-  views and typed text live in the lane topics `mail` and `linkedin` (the same topics the lane notices use; `drip-mail-*` and
-  `drip-linkedin-*` runs go there too). If an earlier build already made a window topic named `mail` or `linkedin` (stored under
+  views and typed text live in the lane topics `mail` and `linkedin` (the same topics the lane notices use).
+  If an earlier build already made a window topic named `mail` or `linkedin` (stored under
   `windows`), the bridge adopts that id as the lane topic at the next start, so nothing is duplicated. Every other worker window
-  (`boards`, `sources`, `pipeline`, `apply`) and `manager` gets its own topic, named exactly like the window. `wake-*` windows
-  (the headless fallback) use the `wakes` topic, other `drip-*` windows the old `drips` topic, and the `chat` window the `chat` topic.
+  (`boards`, `sources`, `pipeline`, `apply`) and `manager` gets its own topic, named exactly like the window. The `chat` window uses the `chat` topic.
+  There are no `wake-*` or `drip-*` windows any more, so no routing for them.
   Restart the bridge once after updating: it creates the missing `mail` and `linkedin` topics.
 
 ### 5b. `/windows` and the input flag
@@ -185,7 +185,7 @@ paste the token into it.
   `!`, `#` or `&` is prefixed with "Owner says: " so it cannot act as a shell, memory or background command.
 - Chat-topic only commands: `/clear` (types Claude's `/clear` and best-effort deletes the Telegram messages the
   bridge logged; Telegram only allows deleting messages younger than 48 hours), `/compact` and `/chat restart`.
-- `TELEGRAM_CHAT_FALLBACK=print` switches back to the old `claude -p` path. Default off.
+- There is no `claude -p` fallback: when the `chat` window is not running the bridge says so (start it with `npm run up`).
 
 ### Silent versus loud notices
 
@@ -240,7 +240,7 @@ topic, Mute); that is client side and hides loud notices too. Not seen on a real
 | Bot works in a group but ignores plain messages | Group Privacy is on | BotFather, `/mybots`, bot, Bot Settings, Group Privacy off (re-add the bot to the group if it does not take effect) |
 | Chat topic says login expired | The `chat` window's Claude login ran out | In a terminal run `claude`, then `/login`; then `/chat restart` in the chat topic |
 | Topics are empty or missing | Threaded Mode off, or `.jobber/telegram-topics.json` holds stale ids | Redo step 3 and send the bot one message; if ids are stale, stop the bridge, delete that file and start it again |
-| Changed `.env` but nothing changed (`TELEGRAM_WINDOW_INPUT`, `TELEGRAM_CHAT_FALLBACK`) | The bridge reads `.env` only at start | Restart the `bridge` window |
+| Changed `.env` but nothing changed (`TELEGRAM_WINDOW_INPUT`) | The bridge reads `.env` only at start | Restart the `bridge` window |
 | `/followups` or `/checkreplies` does nothing | Not wired in the bridge yet, no window for it right now | Wait for the dedicated window in a coming phase |
 | Token shown in a screenshot or log | Leak | Rotate with `/revoke`, see Security notes |
 | Doctor says `.env` is readable by others | File mode too open | `chmod 600 .env` |

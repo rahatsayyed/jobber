@@ -182,12 +182,13 @@ perDoc('owner docs: marker', (t) => checkMarker(t, STRICT));
 perDoc('owner docs: secrets hygiene', (t) => checkSecrets(t));
 
 describe('owner docs: window rollout page', () => {
-  it('is linked from the index and from operations, and names the three lanes', () => {
+  it('is linked from the index and from operations, and has no lane flag steps', () => {
     expect(read('docs/index.md')).toContain('(window-rollout.md)');
     expect(read('docs/operations.md')).toContain('(window-rollout.md)');
     const t = read('docs/window-rollout.md');
-    for (const lane of ['mail', 'mail,linkedin', 'mail,linkedin,wake']) expect(t).toContain(`WINDOW_LANES=${lane}`);
-    for (const word of ['npm run permissions', 'handoff.md', 'window-foundation', 'esc to interrupt', 'Roll back']) expect(t).toContain(word);
+    expect(t).not.toContain('WINDOW_LANE' + 'S');
+    for (const w of ['mail', 'linkedin', 'boards', 'sources', 'pipeline', 'apply']) expect(t).toContain('`' + w + '`');
+    for (const word of ['npm run permissions', 'handoff.md', 'window-foundation', 'esc to interrupt', 'first ticks']) expect(t).toContain(word);
   });
   it('no owner doc says the hunt or followups windows still exist', () => {
     for (const d of ['docs/telegram-bot-setup.md', 'docs/reference/platform-and-sessions.md', 'README.md']) {

@@ -105,12 +105,12 @@ describe('scheduler doctor checks', () => {
     expect(same.detail).not.toMatch(/started with/);
   });
 
-  it('window-foundation: warns on a changed start value, a missing config window or a missing dispatcher; never mentions WINDOW_LANES', async () => {
+  it('window-foundation: warns on a changed start value, a missing config window or a missing dispatcher; never mentions the old lane flag', async () => {
     const env = {};
     const fine = (await run(ctxWith(WIN_BASE, { env })))['window-foundation'];
     expect(fine.status).toBe('warn');
     expect(fine.detail).toMatch(/all work goes through the worker windows/);
-    expect(fine.detail).not.toMatch(/WINDOW_LANES/);
+    expect(fine.detail).not.toMatch(new RegExp('WINDOW_' + 'LANES'));
     const stale = (await run(ctxWith({ ...WIN_BASE, '/p/.jobber/window-start/boards.json': { text: JSON.stringify({ JOBBER_DRY_RUN: 'true', MAX_APPLIES_PER_DAY: '5' }) } }, { env: { JOBBER_DRY_RUN: 'false' } })))['window-foundation'];
     expect(stale.detail).toMatch(/boards \(JOBBER_DRY_RUN/);
     const noCfg = (await run(ctxWith({ ...WIN_BASE, '/p/config/manager-windows.json': { text: JSON.stringify({ windows: { sources: {} } }) } }, { env })))['window-foundation'];

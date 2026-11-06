@@ -302,7 +302,7 @@ describe('up', () => {
     const wins = f.sessions.get('Jobber') ?? [];
     for (const w of ['mail', 'linkedin', 'boards', 'sources', 'pipeline', 'apply', 'manager', 'chat']) expect(wins, w).toContain(w);
     expect(d.out.some((l) => /skipped \(lane/.test(l))).toBe(false);
-    expect(d.out.join('\n')).not.toMatch(/WINDOW_LANES/);
+    expect(d.out.join('\n')).not.toMatch(new RegExp('WINDOW_' + 'LANES'));
     // a second run starts nothing new
     const again = deps(f);
     await runUp(again, { status: false });

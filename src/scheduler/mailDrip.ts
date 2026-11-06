@@ -425,7 +425,7 @@ interface OneRun {
   skipped?: boolean;
 }
 
-/** Name of the long-lived mail window and its lane (config/manager-windows.json, WINDOW_LANES). */
+/** Name of the long-lived mail window and its lane (config/manager-windows.json). */
 export const MAIL_WINDOW = 'mail';
 export const MAIL_LANE = 'mail';
 
