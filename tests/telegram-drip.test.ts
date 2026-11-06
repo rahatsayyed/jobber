@@ -48,18 +48,19 @@ describe('status text', () => {
     const text = renderDripStatus(db, { EMAIL_MAX_PER_DAY: '20' }, NOW);
     db.close();
     expect(text).toContain('**Mail**: on');
-    expect(text).toContain('next tick: not before 13:36 IST (in 6 min)');
-    expect(text).toContain('last send: none yet');
-    expect(text).toContain('today: 0 sent, cap 20');
-    expect(text).toContain('last refusal: quiet_hours at 13:25 IST (5 min ago)');
+    expect(text).toContain('**next tick:** not before 13:36 IST (in 6 min)');
+    expect(text).toContain('**last send:** none yet');
+    expect(text).toContain('**today:** **0** sent, cap 20');
+    expect(text).toContain('**last refusal:** quiet_hours at 13:25 IST (5 min ago)');
     expect(text).toContain('**LinkedIn**: on');
-    expect(text).toMatch(/invites 0\/\d+, messages 0\/\d+/);
+    expect(text).toMatch(/invites \*\*0\/\d+\*\*, messages \*\*0\/\d+\*\*/);
   });
   it('shows OFF reasons, dry run and a waiting request', () => {
     const db = openDb(dbFile);
     const text = renderDripStatus(db, { LINKEDIN_DRIP: 'false', EMAIL_DRIP_MIN_BATCH: 'x', JOBBER_DRY_RUN: '1' }, NOW);
     db.close();
     expect(text).toContain('Dry run is ON');
+    expect(text).toContain('⏸ **Mail**');
     expect(text).toMatch(/\*\*Mail\*\*: OFF \(bad config/);
     expect(text).toContain('**LinkedIn**: OFF (LINKEDIN_DRIP=false)');
   });

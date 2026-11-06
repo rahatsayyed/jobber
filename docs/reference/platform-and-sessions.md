@@ -31,7 +31,7 @@ section is the reference for what exists.
   under `windows` in `.jobber/telegram-topics.json`, `wake-*` use `wakes`, `drip-*` use `drips`). `/drip`
   (`src/telegram/drip.ts`, `src/scheduler/dripRequest.ts`) asks for one drip tick with a 2-minute single-use
   confirm and only skips the random wait. The scheduler sends the wake summary to `wakes`, failures to `alerts`
-  and one masked line per drip action to `drips` (`src/scheduler/dripNotice.ts`). The `chat` topic talks to the
+  and one notice per drip action to `drips` (addresses in full, owner-only chat; HTML built by `src/platform/tgHtml.ts`) (`src/scheduler/dripNotice.ts`). The `chat` topic talks to the
   long-running `chat` window (`src/telegram/chatwin/`, session id in `.jobber/chat-session.json`, replies read
   from the Claude transcript; `/clear`, `/compact`, `/chat restart` chat-only; `TELEGRAM_CHAT_FALLBACK=print`
   re-enables `claude -p`, default off), `read_only`, never skip-permissions. Unverified live: `editMessageText`

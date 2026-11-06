@@ -17,14 +17,14 @@ import { countDue } from './due.js';
 import { linkedinActiveNow } from '../linkedin/activeHours.js';
 import { JOBBER_TMUX_SESSION } from '../platform/tmux.js';
 import type { LaunchHandle, Launcher } from './launch.js';
-import { sourcesNotice } from '../status/sources.js';
+import { buildSourceRows, sourcesNotice } from '../status/sources.js';
 import type { Notice, Notifier } from './notify.js';
 import { loadPlanKnobs, planWake, stepOrder, type Assignment, type DiscoverSearches, type Step, type WakeDecision } from './plan.js';
 import { targetRegionsLine, type CodePassResult } from './pipeline.js';
 import { jdReportLine } from '../jdStore.js';
 import { buildContinuationPrompt, buildWakePrompt } from './prompt.js';
 import { describeStep, MAX_CONTINUATIONS, StreamInspector, unprovenSteps, type WakeCounts } from './stream.js';
-import { notifyTg, wakeNotice, type TgPost } from './dripNotice.js';
+import { notifyTg, wakeNotice, type TgPost, type WakeNotice } from './dripNotice.js';
 import { dripLoop } from './mailDrip.js';
 import type { WindowDispatcher } from './windowDispatch.js';
 import { linkedinDripEnabled, linkedinDripLoop } from './linkedinDrip.js';
@@ -722,6 +722,32 @@ function countSince(d: DriverDeps, sql: string, sinceIso: string): number | null
   }
 }
 
+/** The grouped numbers of one wake for its Telegram summary (each optional; a failing query just leaves the group out). */
+function wakeGroups(d: DriverDeps, sinceIso: string): Partial<WakeNotice> {
+  const out: Partial<WakeNotice> = {};
+  const threshold = boundedEnvInt(d.env.MATCH_THRESHOLD, 0, 100, 60);
+  try {
+    const rows = buildSourceRows(d.db, sinceIso).filter((r) => r.ran);
+    if (rows.length) {
+      out.sources = {
+        ran: rows.length, fetched: rows.reduce((n, r) => n + r.fetched, 0), fresh: rows.reduce((n, r) => n + r.new, 0),
+        errors: rows.reduce((n, r) => n + r.errors, 0), fallbacks: rows.filter((r) => r.fallback_used).length,
+      };
+    }
+  } catch { /* leave the group out */ }
+  const q = (sql: string, ...args: unknown[]): number | null => {
+    try { const row = d.db.prepare(sql).get(...args) as { n: number } | undefined; return typeof row?.n === 'number' ? row.n : null; } catch { return null; }
+  };
+  out.scored = q("SELECT COUNT(*) AS n FROM jobs WHERE score IS NOT NULL AND datetime(created_at) >= datetime(?)", sinceIso);
+  out.matched = q("SELECT COUNT(*) AS n FROM jobs WHERE score >= ? AND excluded_reason IS NULL AND datetime(created_at) >= datetime(?)", threshold, sinceIso);
+  out.prepared = q("SELECT COUNT(DISTINCT job_id) AS n FROM outreach_queue WHERE datetime(created_at) >= datetime(?)", sinceIso);
+  out.emailsQueued = q("SELECT COUNT(*) AS n FROM outreach_queue WHERE email_to IS NOT NULL AND datetime(created_at) >= datetime(?)", sinceIso);
+  out.connectsQueued = q("SELECT COUNT(*) AS n FROM outreach_queue WHERE connect_profile_url IS NOT NULL AND datetime(created_at) >= datetime(?)", sinceIso);
+  out.appliesQueued = q("SELECT COUNT(*) AS n FROM outreach_queue WHERE apply_platform IS NOT NULL AND apply_platform <> 'none' AND datetime(created_at) >= datetime(?)", sinceIso);
+  out.followups = q("SELECT COUNT(*) AS n FROM followups WHERE datetime(created_at) >= datetime(?)", sinceIso);
+  return out;
+}
+
 /** One Telegram message for a wake that ran (zero LLM). Never throws. */
 async function wakeFinishedNotice(
   d: DriverDeps,
@@ -733,6 +759,7 @@ async function wakeFinishedNotice(
       runId: w.runId, trigger: w.trigger, status: w.status, reason: w.stopReason, durationSec: sec, counts: w.counts, dry: w.dry,
       newJobs: w.startAt ? countSince(d, 'SELECT COUNT(*) AS n FROM jobs WHERE datetime(created_at) >= datetime(?)', w.startAt) : null,
       queued: w.startAt ? countSince(d, 'SELECT COUNT(*) AS n FROM outreach_queue WHERE datetime(created_at) >= datetime(?)', w.startAt) : null,
+      ...(w.startAt ? wakeGroups(d, w.startAt) : {}),
     });
     try { setState(d.db, 'wake_skip_notified', '', d.now()); } catch { /* ignore */ }
     if (n) await notifyTg(d, n.topic, n.text);

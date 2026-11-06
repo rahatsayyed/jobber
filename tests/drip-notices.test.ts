@@ -8,7 +8,7 @@ import { openDb } from '../src/db.js';
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
 import { upsertPerson } from '../src/outreach/people.js';
-import { markdownToHtmlChunks } from '../src/telegram/format.js';
+import { htmlToPlain } from '../src/platform/tgHtml.js';
 import type { TopicName } from '../src/telegram/topics.js';
 import type { DriverDeps } from '../src/scheduler/driver.js';
 import { wakeOnce } from '../src/scheduler/driver.js';
@@ -18,7 +18,7 @@ import { dripTick } from '../src/scheduler/mailDrip.js';
 import { LI_STATE_INBOX_AT, linkedinDripTick } from '../src/scheduler/linkedinDrip.js';
 import { setState } from '../src/scheduler/runLog.js';
 import {
-  formatLinkedinNotice, formatMailNotice, maskAddress, notifyTg, tidy, wakeNotice, type TgPost,
+  formatDripFailure, formatLinkedinNotice, formatMailNotice, formatQuarantineNotice, notifyTg, tidy, wakeNotice, type TgPost,
 } from '../src/scheduler/dripNotice.js';
 
 const NOON_IST = new Date('2026-10-15T08:00:00.000Z'); // 13:30 IST: inside the send window and the LinkedIn active hours
@@ -27,38 +27,65 @@ afterEach(() => { while (dirs.length) rmSync(dirs.pop() as string, { recursive: 
 const sqlTime = (d: Date): string => d.toISOString().slice(0, 19).replace('T', ' ');
 
 describe('formatting', () => {
-  it('masks an address as j***@domain and never shows the local part', () => {
-    expect(maskAddress('jane.doe@acme.example')).toBe('j***@acme.example');
-    expect(maskAddress('x')).toBe('***');
-    expect(maskAddress(null)).toBe('***');
-    expect(maskAddress('a@b@evil.example<script>')).not.toMatch(/[<>]/);
+  it('mail notice golden HTML: full address as a link, company and role, subject in italics, outcome', () => {
+    const cold = formatMailNotice({ kind: 'cold', company: 'Acme', title: 'React Dev', address: 'jane@acme.example', subject: 'Hello <b>there</b>', dry: false });
+    expect(cold).toBe([
+      '✅ <b>Cold email sent</b>',
+      '<b>To:</b> <a href="mailto:jane@acme.example">jane@acme.example</a>',
+      '<b>Job:</b> <b>Acme</b> · React Dev',
+      '<b>Subject:</b> <i>Hello &lt;b&gt;there&lt;/b&gt;</i>',
+      '<b>Result:</b> sent',
+    ].join('\n'));
+    expect(htmlToPlain(cold)).toContain('jane@acme.example');
+    expect(cold).not.toContain('***');
   });
 
-  it('mail notice: cold vs follow-up, masked address, dry run wording', () => {
-    const cold = formatMailNotice({ kind: 'cold', company: 'Acme', title: 'React Dev', address: 'jane@acme.example', dry: false });
-    expect(cold).toBe('Mail sent: cold email to Acme, React Dev (j***@acme.example)');
-    expect(formatMailNotice({ kind: 'followup', company: 'Acme', title: 'React Dev', address: 'jane@acme.example', dry: false })).toMatch(/follow-up/);
+  it('mail notice: follow-up wording and dry run wording', () => {
+    expect(formatMailNotice({ kind: 'followup', company: 'Acme', title: 'React Dev', address: 'jane@acme.example', dry: false })).toMatch(/^✅ <b>Follow-up sent<\/b>/);
     const dry = formatMailNotice({ kind: 'cold', company: 'Acme', title: 'React Dev', address: 'jane@acme.example', dry: true });
-    expect(dry).toMatch(/^dry run: would send/);
-    expect(dry).not.toMatch(/Mail sent/);
-    expect(cold + dry).not.toContain('jane@');
+    expect(dry).toMatch(/^⏸ <b>Dry run: Cold email not sent<\/b>/);
+    expect(dry).toContain('nothing was sent (dry run)');
   });
 
-  it('third-party text loses markdown marks and is HTML-escaped by the format layer', () => {
+  it('hostile third-party text is cleaned, escaped and bounded; secrets are redacted', () => {
+    const text = formatMailNotice({
+      kind: 'cold', company: '<b>Evil</b> & Co', title: '*bold* `code`\n<script>x</script>', address: 'a@b.example',
+      subject: `sk-ant-api03-${'A'.repeat(40)} ${'long '.repeat(100)}`, dry: false,
+    });
+    expect(text).toContain('&lt;b&gt;Evil&lt;/b&gt; &amp; Co');
+    expect(text).not.toContain('<script>');
+    expect(text).not.toContain('<b>Evil');
+    expect(text).not.toContain('sk-ant-api03');
+    expect(text.length).toBeLessThan(1500);
     expect(tidy('A*cme_ `x` [y]\n<b>z</b>')).toBe('Acme x y <b>z</b>');
-    const text = formatMailNotice({ kind: 'cold', company: '<b>Evil</b> & Co', title: '*bold* `code`', address: 'a@b.example', dry: false });
-    const html = markdownToHtmlChunks(text).join('');
-    expect(html).toContain('&lt;b&gt;Evil&lt;/b&gt; &amp; Co');
-    expect(html).not.toContain('<b>Evil');
-    expect(html).not.toContain('<code>');
-    expect(html).not.toContain('<i>');
   });
 
-  it('LinkedIn notice: label, person and company, dry run and failure', () => {
-    expect(formatLinkedinNotice({ kind: 'invite', name: 'Jane Roe', company: 'Acme', dry: false, ok: true })).toBe('LinkedIn invite: Jane Roe, Acme');
-    expect(formatLinkedinNotice({ kind: 'accept_recent', dry: false, ok: true })).toBe('LinkedIn accept check');
-    expect(formatLinkedinNotice({ kind: 'dm', name: 'Jane', dry: true, ok: true })).toMatch(/^dry run: LinkedIn DM: Jane; nothing was sent/);
-    expect(formatLinkedinNotice({ kind: 'dm', name: 'Jane', dry: false, ok: false, reason: 'exit 1' })).toMatch(/did not end cleanly/);
+  it('LinkedIn notice: label, person link, company, job, dry run and failure', () => {
+    const ok = formatLinkedinNotice({ kind: 'invite', name: 'Jane Roe', company: 'Acme', jobTitle: 'React Dev', profileUrl: 'https://www.linkedin.com/in/jane', dry: false, ok: true });
+    expect(ok).toBe([
+      '✅ <b>LinkedIn invite</b>',
+      '<b>Person:</b> <a href="https://www.linkedin.com/in/jane">Jane Roe</a>',
+      '<b>Company:</b> Acme',
+      '<b>Job:</b> React Dev',
+      '<b>Result:</b> done',
+    ].join('\n'));
+    expect(formatLinkedinNotice({ kind: 'accept_recent', dry: false, ok: true })).toBe('✅ <b>LinkedIn accept check</b>\n<b>Result:</b> done');
+    expect(formatLinkedinNotice({ kind: 'dm', name: 'Jane', dry: true, ok: true })).toMatch(/^⏸ <b>Dry run: LinkedIn DM not sent<\/b>/);
+    const bad = formatLinkedinNotice({ kind: 'dm', name: 'Jane', dry: false, ok: false, reason: 'exit 1' });
+    expect(bad).toMatch(/^⚠️ <b>LinkedIn DM did not end cleanly<\/b>/);
+    expect(bad).toContain('<i>Check LinkedIn before this is repeated.</i>');
+    expect(formatLinkedinNotice({ kind: 'dm', name: 'x', profileUrl: 'javascript:alert(1)', dry: false, ok: true })).not.toContain('<a ');
+  });
+
+  it('quarantine and failure notices use code for ids', () => {
+    expect(formatQuarantineNotice(7, 'job-1', 'exit 1')).toBe([
+      '🔔 <b>Mail held: check Gmail Sent</b>',
+      '<b>Row:</b> <code>7</code>',
+      '<b>Job:</b> <code>job-1</code>',
+      '<b>Why:</b> exit 1',
+      '<i>The run ended without a recorded send. Check Gmail Sent before releasing the row.</i>',
+    ].join('\n'));
+    expect(formatDripFailure('mail', 'cold:3', '<x>')).toBe('❌ <b>Mail drip run failed</b>\n<b>Item:</b> <code>cold:3</code>\n<b>Reason:</b> &lt;x&gt;');
   });
 });
 
@@ -67,9 +94,35 @@ describe('wake notice routing', () => {
   it('ok wake: wakes topic with id, trigger, status, duration, counts and extras', () => {
     const n = wakeNotice({ ...base, status: 'ok', durationSec: 125, counts: { done: 4, skipped: 1, escalated: 0, stopped: 0 }, newJobs: 12, queued: 3 });
     expect(n?.topic).toBe('wakes');
-    expect(n?.text).toContain('Wake abcdef01 ok (scheduled), 2m 5s');
-    expect(n?.text).toContain('done 4, skipped 1, escalated 0, stopped 0');
-    expect(n?.text).toContain('new jobs 12, queued outreach 3');
+    expect(n?.text).toContain('✅ <b>Wake ok</b>');
+    expect(n?.text).toContain('<b>Run:</b> <code>abcdef01</code>');
+    expect(n?.text).toContain('<b>Trigger:</b> scheduled');
+    expect(n?.text).toContain('<b>Time:</b> 2m 5s');
+    expect(n?.text).toContain('<b>Operators</b>\n• done 4, skipped 1');
+    expect(n?.text).toContain('<b>Matches</b>\n• new jobs 12');
+    expect(n?.text).toContain('<b>Outreach</b>\n• queued 3');
+    expect(n?.text).not.toContain('<b>Problems</b>'); // nothing escalated or stopped
+  });
+  it('ok wake: grouped sections with only the non-zero groups, problems listed', () => {
+    const n = wakeNotice({
+      ...base, status: 'ok', durationSec: 30, counts: { done: 2, skipped: 0, escalated: 1, stopped: 0 },
+      sources: { ran: 3, fetched: 50, fresh: 7, errors: 1, fallbacks: 1 }, newJobs: 7, scored: 7, matched: 2, prepared: 2, emailsQueued: 2, connectsQueued: 0, appliesQueued: 1, followups: 0,
+    });
+    const t = n?.text ?? '';
+    expect(t).toContain('<b>Sources</b>\n• 3 ran, fetched 50, new 7\n• errors 1\n• fallback 1');
+    expect(t).toContain('<b>Prepared</b>');
+    expect(t).toContain('<b>Emails queued</b>');
+    expect(t).toContain('<b>Applies</b>');
+    expect(t).not.toContain('<b>Connects</b>');
+    expect(t).not.toContain('<b>Follow-ups</b>');
+    expect(t).toContain('<b>Problems</b>\n• escalated 1\n• source errors 1');
+    expect(t.length).toBeLessThan(1500);
+  });
+  it('wake notice escapes the reason and marks a dry run', () => {
+    const n = wakeNotice({ ...base, status: 'failed', reason: '<b>boom</b> & more', dry: true });
+    expect(n?.text).toContain('❌ <b>Wake failed</b>');
+    expect(n?.text).toContain('&lt;b&gt;boom&lt;/b&gt; &amp; more');
+    expect(n?.text).toContain('<i>dry run</i>');
   });
   it('failure statuses go to alerts with the reason', () => {
     for (const status of ['failed', 'budget_exceeded', 'usage_limit', 'incomplete', 'crashed']) {
@@ -152,7 +205,7 @@ function setup(opts: { env?: NodeJS.ProcessEnv; tg?: TgPost; sends?: boolean; st
 }
 
 describe('mail drip lane notices', () => {
-  it('one drips line per real send, address masked, third-party text cleaned', async () => {
+  it('one drips notice per real send, full address shown, third-party text cleaned and escaped', async () => {
     const s = setup();
     s.queue(5);
     const r = await dripTick(s.d);
@@ -160,8 +213,7 @@ describe('mail drip lane notices', () => {
     expect(s.posts).toHaveLength(r.runs?.length ?? -1);
     for (const p of s.posts) {
       expect(p.topic).toBe('drips');
-      expect(p.text).toMatch(/^Mail sent: cold email to <b>Acme\d<\/b>, Dev\d x \(p\*\*\*@co\d\.example\)$/);
-      expect(p.text).not.toContain('person');
+      expect(p.text).toMatch(/^✅ <b>Cold email sent<\/b>\n<b>To:<\/b> <a href="mailto:person\d@co\d\.example">person\d@co\d\.example<\/a>\n<b>Job:<\/b> <b>&lt;b&gt;Acme\d&lt;\/b&gt;<\/b> · Dev_\d \*x\*\n<b>Subject:<\/b> <i>s<\/i>\n<b>Result:<\/b> sent$/);
     }
   });
 
@@ -178,7 +230,7 @@ describe('mail drip lane notices', () => {
     expect(s.posts.length).toBeGreaterThan(0);
     for (const p of s.posts) {
       expect(p.topic).toBe('drips');
-      expect(p.text).toMatch(/^dry run: would send/);
+      expect(p.text).toMatch(/^⏸ <b>Dry run: Cold email not sent<\/b>/);
     }
   });
 
@@ -188,8 +240,8 @@ describe('mail drip lane notices', () => {
     await dripTick(s.d);
     expect(s.posts).toHaveLength(1);
     expect(s.posts[0]).toMatchObject({ topic: 'drips' });
-    expect(s.posts[0]?.text).toMatch(/is held/);
-    expect(s.posts[0]?.text).not.toMatch(/Mail sent/);
+    expect(s.posts[0]?.text).toMatch(/Mail held: check Gmail Sent/);
+    expect(s.posts[0]?.text).not.toMatch(/sent<\/b>/);
   });
 
   it('a failed run that did record a send goes to alerts', async () => {
@@ -228,7 +280,10 @@ describe('LinkedIn drip lane notices', () => {
     dmDue(s);
     const r = await linkedinDripTick(s.d);
     expect(r.status).toBe('ran');
-    expect(s.posts).toEqual([{ topic: 'drips', text: 'LinkedIn DM: Jane Roe, Acme' }]);
+    expect(s.posts).toEqual([{
+      topic: 'drips',
+      text: '✅ <b>LinkedIn DM</b>\n<b>Person:</b> <a href="https://www.linkedin.com/in/jane">Jane *Roe*</a>\n<b>Company:</b> Acme\n<b>Result:</b> done',
+    }]);
   });
 
   it('a failed run goes to alerts, a dry run says dry run, a throwing notice changes nothing', async () => {
@@ -240,7 +295,7 @@ describe('LinkedIn drip lane notices', () => {
     const dry = setup({ env: { JOBBER_DRY_RUN: '1' } });
     dmDue(dry);
     await linkedinDripTick(dry.d);
-    expect(dry.posts[0]?.text).toMatch(/^dry run: LinkedIn DM/);
+    expect(dry.posts[0]?.text).toMatch(/^⏸ <b>Dry run: LinkedIn DM not sent<\/b>/);
     const boom = setup({ tg: async () => { throw new Error('down'); } });
     dmDue(boom);
     expect((await linkedinDripTick(boom.d)).status).toBe('ran');
@@ -264,6 +319,6 @@ describe('wake notices from the driver', () => {
     expect(r2.status).toBe('skipped');
     const told = killed.posts.filter((p) => p.topic === 'wakes');
     expect(told).toHaveLength(1);
-    expect(told[0]?.text).toMatch(/^Wake n0000001 skipped \(forced\): killed/);
+    expect(told[0]?.text).toMatch(/^⏸ <b>Wake skipped<\/b>\n<b>Run:<\/b> <code>n0000001<\/code>\n<b>Trigger:<\/b> forced\n<b>Reason:<\/b> <code>killed<\/code>/);
   });
 });

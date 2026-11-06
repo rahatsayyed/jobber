@@ -10,6 +10,7 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { listHandoff, type HandoffEntry } from '../platform/handoff.js';
+import { E, clean, code, headline, html, i as ital, join, line, lines, section, type Html } from '../platform/tgHtml.js';
 import { formatAge, loadManagerConfig, recycleWindow, type ManagerConfig } from '../platform/manager.js';
 import { sendToWindow } from '../platform/managerTyping.js';
 import type { Run } from '../platform/tmux.js';
@@ -59,27 +60,26 @@ export function dueEntries(entries: HandoffEntry[], state: Record<string, string
   });
 }
 
-const short = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 3)}...` : s);
-
 /** ONE notice for all due entries, grouped by window. */
 export function composeReminder(due: HandoffEntry[], now: number): string {
   const byWindow = new Map<string, HandoffEntry[]>();
   for (const e of due) byWindow.set(e.window, [...(byWindow.get(e.window) ?? []), e]);
-  const lines = [`Handoff: ${due.length} pending item${due.length === 1 ? '' : 's'} need attention`];
+  const out: Array<Html | string> = [headline(E.you, `Handoff: ${due.length} pending item${due.length === 1 ? '' : 's'} need attention`)];
   let shown = 0;
   for (const [win, list] of byWindow) {
     if (shown >= NOTICE_LINES) break;
-    lines.push(`${win}:`);
+    const rows: Html[] = [];
     for (const e of list) {
       if (shown >= NOTICE_LINES) break;
       const age = formatAge(Math.max(0, now - Date.parse(e.since)));
-      lines.push(`- ${short(`${e.what} (${e.why})`, NOTICE_LINE_MAX)} [${e.id}, ${age}]`);
+      rows.push(join(['•', clean(`${e.what} (${e.why})`, NOTICE_LINE_MAX), ital(`[${e.id}, ${age}]`)]));
       shown++;
     }
+    out.push(section(`${win}:`, rows));
   }
-  if (due.length > shown) lines.push(`... and ${due.length - shown} more`);
-  lines.push('List: npx tsx scripts/handoff.ts list');
-  return lines.join('\n');
+  if (due.length > shown) out.push(ital(`... and ${due.length - shown} more`));
+  out.push(join(['List:', code('npx tsx scripts/handoff.ts list')]));
+  return html(lines(out));
 }
 
 export interface WindowTickDeps {
@@ -90,7 +90,7 @@ export interface WindowTickDeps {
   config: () => ManagerConfig | null;
   killed: () => boolean;
   inQuiet: () => boolean;
-  /** Sends one text to the `alerts` topic. */
+  /** Sends one Telegram HTML text (built with src/platform/tgHtml.ts) to the `alerts` topic. */
   alert: (text: string) => Promise<{ ok: boolean }>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -140,7 +140,12 @@ export async function windowUpkeep(d: WindowTickDeps): Promise<{ reminded: strin
       const r = await recycleWindow(d.run, cfg, d.env, name, { root: d.root, killed: d.killed, now: d.now, startup: d.sleep ? { sleep: d.sleep } : undefined });
       if (r.status === 'recycled') {
         out.recycled.push(name);
-        await d.alert(`recycled window ${name} (${formatAge(r.ageMs)})${r.startup === 'typed' ? '' : `, startup line ${r.startup}`}`);
+        await d.alert(html(lines([
+          headline(E.ok, 'Window recycled'),
+          line('Window', code(name)),
+          line('Age', formatAge(r.ageMs)),
+          r.startup === 'typed' ? '' : line('Startup line', ital(String(r.startup))),
+        ])));
       }
     } catch {
       // a failing window never stops the others

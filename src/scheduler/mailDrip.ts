@@ -682,7 +682,14 @@ async function mailRunNotice(d: DriverDeps, item: DripItem, r: OneRun): Promise<
     }
     if (!sent) return; // ok run that sent nothing: no notice
     const job = d.db.prepare('SELECT company, title FROM jobs WHERE id = ?').get(item.job_id) as { company: string | null; title: string | null } | undefined;
-    await notifyTg(d, 'drips', formatMailNotice({ kind: item.kind, company: job?.company ?? null, title: job?.title ?? null, address: item.address, dry }));
+    let subject: string | null = null;
+    try {
+      const s = item.kind === 'cold'
+        ? d.db.prepare('SELECT email_subject AS s FROM outreach_queue WHERE id = ?').get(item.id) as { s: string | null } | undefined
+        : d.db.prepare('SELECT subject AS s FROM followups WHERE id = ?').get(item.id) as { s: string | null } | undefined;
+      subject = s?.s ?? null;
+    } catch { /* the subject is optional */ }
+    await notifyTg(d, 'drips', formatMailNotice({ kind: item.kind, company: job?.company ?? null, title: job?.title ?? null, address: item.address, subject, dry }));
   } catch {
     // a notice never breaks the lane
   }

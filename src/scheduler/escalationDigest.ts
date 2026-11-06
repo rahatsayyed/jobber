@@ -1,5 +1,5 @@
 // src/scheduler/escalationDigest.ts
-// The owner's Telegram digest of new escalations: composed by code (zero LLM calls), plain text, at most one message per 15 minutes.
+// The owner's Telegram digest of new escalations: composed by code (zero LLM calls), Telegram HTML (src/platform/tgHtml.ts), at most one message per 15 minutes.
 // "New" means an open, not snoozed row with an id above the last one reported (scheduler_state `esc_digest_last_id`). The digest never
 // carries any way to answer a third party: the owner replies on the platform and marks the row handled in the dashboard Inbox tab.
 import type BetterSqlite3 from 'better-sqlite3';
@@ -7,7 +7,8 @@ import { GROUP_ORDER, listEscalations, type EscItem } from '../outreach/escalati
 import { inQuietHours, type QuietConfig } from '../outreach/quiet.js';
 import { buildManualQueue, manualApplyLine } from '../manual/manualApply.js';
 import { telegramNotifier } from '../platform/notify.js';
-import { itemBlock } from '../status/escalations.js';
+import { ageText } from '../status/escalations.js';
+import { BLANK, E, b, clean, code, excerpt, headline, html, i as ital, join, line, lines, link, type Html } from '../platform/tgHtml.js';
 import { getState, setState } from './runLog.js';
 
 type Db = BetterSqlite3.Database;
@@ -34,30 +35,50 @@ export type DigestResult =
   | { sent: true; count: number }
   | { sent: false; reason: 'nothing_new' | 'only_flagged' | 'too_soon' | 'send_failed' };
 
+/** One escalation as a short HTML block: bold id, platform and reason, then who and job, a quote in italics, the next step. */
+function itemHtml(it: EscItem, now: Date): Html {
+  const who = it.senderName ? `${clean(it.senderName, 60)}${it.senderHeadline ? ` (${clean(it.senderHeadline, 60)})` : ''}` : '';
+  const label = it.group === 'human' ? it.label : `${it.label}: ${clean(it.reason, 70)}`;
+  const head = join(['•', b(`#${it.id}${it.updates > 1 ? ` x${it.updates}` : ''}`), clean(it.platform ?? '-', 20), clean(label, 120)]);
+  const sub = [who, it.jobTitle ? clean(it.jobTitle, 70) : '', ageText(it.last_at, now)].filter(Boolean).join(' · ');
+  const quote = it.excerpt ? excerpt(it.excerpt, 120) : it.detail ? excerpt(it.detail, 120) : '';
+  const ind = (...p: Array<Html | string>): Html => join(['   ', ...p], '');
+  return lines([
+    head,
+    sub && ind(sub),
+    quote && ind(ital(`"${quote}"`)),
+    it.group === 'human' && it.platform !== 'apply' && it.todo && ind(ital(`next: ${clean(it.todo, 140)}`)),
+    it.assistCommand && ind('run: ', code(clean(it.assistCommand, 140))),
+    it.questions.length > 0 && ind(ital(`${it.questions.length} question${it.questions.length === 1 ? '' : 's'} need your answer`), ': ', code('npm run answers -- list')),
+    it.count > 1 && ind('ids ', code([...it.ids].sort((x, y) => x - y).join(','))),
+  ]);
+}
+
+/** The digest as Telegram HTML (at most MAX_CHARS; items that do not fit are summarised as "and N more"). */
 function compose(fresh: EscItem[], rowCount: number, url: string | null, now: Date, manualLine: string | null = null): string {
-  const rows = (g: EscItem['group']): number => fresh.filter((i) => i.group === g).reduce((n, i) => n + i.count, 0);
-  const lines = [
-    `Jobber: ${rowCount} new escalation${rowCount === 1 ? '' : 's'} need a look`,
-    `${rows('human')} reply/needs you, ${rows('platform')} platform, ${rows('noise')} flagged`,
-    '',
-  ];
+  const rows = (g: EscItem['group']): number => fresh.filter((x) => x.group === g).reduce((n, x) => n + x.count, 0);
+  const head = lines([
+    headline(E.you, `${rowCount} new escalation${rowCount === 1 ? '' : 's'} need a look`),
+    ital(`${rows('human')} reply/needs you, ${rows('platform')} platform, ${rows('noise')} flagged`),
+  ]);
   const shown: EscItem[] = [];
-  for (const g of GROUP_ORDER) if (g !== 'noise') shown.push(...fresh.filter((i) => i.group === g));
-  const tail = ['', ...(manualLine ? [manualLine] : []), 'Full list: /escalations'];
-  if (url) tail.push(`Dashboard Inbox: ${url}`);
-  let used = lines.join('\n').length + tail.join('\n').length + 40;
-  let n = 0;
-  for (const i of shown) {
-    if (n >= TOP_LINES) break;
-    const block = itemBlock(i, now, 120).join('\n');
-    if (used + block.length + 1 > MAX_CHARS) break;
-    lines.push(block);
-    used += block.length + 1;
-    n += 1;
+  for (const g of GROUP_ORDER) if (g !== 'noise') shown.push(...fresh.filter((x) => x.group === g));
+  const tail = lines([
+    manualLine ? clean(manualLine, 300) : '',
+    join(['Full list:', code('/escalations')]),
+    url ? line('Dashboard Inbox', link(url, url)) : '',
+  ]);
+  const blocks: Html[] = [];
+  let used = head.s.length + tail.s.length + 60;
+  for (const it of shown) {
+    if (blocks.length >= TOP_LINES) break;
+    const block = itemHtml(it, now);
+    if (used + block.s.length + 2 > MAX_CHARS) break;
+    blocks.push(block);
+    used += block.s.length + 2;
   }
-  const hidden = fresh.length - n;
-  if (hidden > 0) lines.push(`... and ${hidden} more`);
-  return [...lines, ...tail].join('\n');
+  const hidden = fresh.length - blocks.length;
+  return html(lines([head, BLANK, ...blocks, hidden > 0 ? ital(`... and ${hidden} more`) : '', BLANK, tail]));
 }
 
 /** The manual-apply nudge, or null when nothing waits or the tables are unreadable (the digest must never fail on it). */
@@ -90,7 +111,7 @@ export function escalationDigestTick(db: Db, env: NodeJS.ProcessEnv, quiet: Quie
   return async () => {
     try {
       if (inQuietHours(now(), quiet)) return;
-      await runEscalationDigest(db, { send: (t) => tg.send(t, { topic: 'inbox' }), now: now(), url: dashboardInboxUrl(env) });
+      await runEscalationDigest(db, { send: (t) => tg.send(t, { topic: 'inbox', html: true }), now: now(), url: dashboardInboxUrl(env) });
     } catch {
       // the digest is a convenience: a failure must never stop the scheduler
     }

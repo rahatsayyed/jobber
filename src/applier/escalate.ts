@@ -41,7 +41,7 @@ export const DEFAULT_NOTIFY_PATH = path.join(ROOT, '.jobber', 'notify.jsonl');
 /** The apply:assist ping goes to the `assist` Telegram topic. */
 function assistTelegram(env: NodeJS.ProcessEnv): AssistNotifier {
   const tg = telegramNotifier(env);
-  return { send: (text) => tg.send(text, { topic: 'assist' }) };
+  return { send: (text) => tg.send(text, { topic: 'assist', html: true }) };
 }
 const DETAIL_CAP = 700;
 

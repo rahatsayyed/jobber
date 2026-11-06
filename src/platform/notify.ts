@@ -4,6 +4,8 @@ import type { TopicName } from '../telegram/topics.js';
 export interface SendNotifyOpts {
   /** Telegram forum topic. Text-only calls go to `alerts`. */
   topic?: TopicName;
+  /** The text is HTML built by src/platform/tgHtml.ts (already escaped): sent as is, not converted from markdown. */
+  html?: boolean;
 }
 
 export interface Notifier {
@@ -17,7 +19,7 @@ export interface Notifier {
 export function telegramNotifier(env: NodeJS.ProcessEnv, fetchFn: typeof fetch = fetch, root?: string): Notifier {
   return {
     async send(text, opts) {
-      return sendToTopic(opts?.topic ?? 'alerts', text, { env, fetchFn, root });
+      return sendToTopic(opts?.topic ?? 'alerts', text, { env, fetchFn, root, ...(opts?.html ? { html: true } : {}) });
     },
   };
 }

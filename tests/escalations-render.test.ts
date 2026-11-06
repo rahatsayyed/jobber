@@ -150,7 +150,11 @@ describe('runEscalationDigest', () => {
     expect(t).toMatch(/1 flagged/);
     expect(t.split('\n')[3]).toContain('Recruiter inquiry');
     expect(t).toMatch(/and \d+ more/);
-    expect(t).not.toMatch(/[<>]/);
+    expect(t).toContain('🔔 <b>63 new escalations need a look</b>');
+    expect(t).not.toContain('<script');
+    expect(t).toContain('&lt;script&gt;');
+    // only the builders' own tags: b, i, code, a
+    expect((t.match(/<\/?[a-z]+/gi) ?? []).every((x) => /^<\/?(b|i|code|a)$/i.test(x))).toBe(true);
     expect(t.length).toBeLessThanOrEqual(3500);
   });
 

@@ -14,9 +14,9 @@ export function htmlEscape(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-const attrEscape = (s: string): string => htmlEscape(s).replace(/"/g, '&quot;');
+export const attrEscape = (s: string): string => htmlEscape(s).replace(/"/g, '&quot;');
 
-const SAFE_URL = /^(https?:\/\/|mailto:|tg:\/\/)[^\s<>"]+$/i;
+export const SAFE_URL = /^(https?:\/\/|mailto:|tg:\/\/)[^\s<>"]+$/i;
 
 function inline(raw: string): string {
   const codes: string[] = [];
@@ -42,6 +42,9 @@ function inline(raw: string): string {
 // Works on already escaped text. Bold before italic; underscores only count at word edges (snake_case stays plain).
 function inlineEmphasis(s: string): string {
   return s
+    // Bold plus italic first (one properly nested pair), then strike-through, then the single marks.
+    .replace(/\*\*\*(?=[^\s*])([^\n*]*?[^\s*])\*\*\*/g, '<b><i>$1</i></b>')
+    .replace(/~~(?=\S)([^\n]*?\S)~~/g, '<s>$1</s>')
     .replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, '<b>$1</b>')
     .replace(/(^|[^\w])__(?=\S)([^\n]*?\S)__(?![\w])/g, '$1<b>$2</b>')
     .replace(/(^|[^\w*])\*(?=[^\s*])([^\n*]*?[^\s*])\*(?![\w*])/g, '$1<i>$2</i>')
@@ -81,7 +84,17 @@ function toSegments(markdown: string): Segment[] {
   };
   const lines = markdown.replace(/\r\n?/g, '\n').split('\n');
   let inFence = false;
+  // Markdown tables are collected and shown as one aligned code block (Telegram has no table markup).
+  let table: string[][] = [];
+  const flushTable = (): void => {
+    if (!table.length) return;
+    const widths = table[0]!.map((_c, ci) => Math.max(...table.map((r) => (r[ci] ?? '').length)));
+    for (const r of table) push('pre', htmlEscape(r.map((c, ci) => c.padEnd(widths[ci] ?? 0)).join('  ').trimEnd()));
+    table = [];
+  };
   for (const line of lines) {
+    const isTableRow = !inFence && /^\s*\|.*\|\s*$/.test(line);
+    if (!isTableRow) flushTable();
     if (/^\s*```/.test(line)) {
       inFence = !inFence;
       continue;
@@ -109,8 +122,8 @@ function toSegments(markdown: string): Segment[] {
       }
       if (/^\s*\|.*\|\s*$/.test(part)) {
         if (/^\s*\|[\s:|-]+\|\s*$/.test(part)) continue; // table separator row
-        const cells = part.trim().slice(1, -1).split('|').map((c) => c.trim()).filter(Boolean);
-        push('none', inline(cells.join(' | ')));
+        // Cells are plain text in the code block: emphasis marks are dropped, code ticks removed.
+        table.push(part.trim().slice(1, -1).split('|').map((c) => c.trim().replace(/\*\*|__|~~|`/g, '')));
         continue;
       }
       const li = /^(\s*)[-*+]\s+(.*)$/.exec(part);
@@ -121,6 +134,7 @@ function toSegments(markdown: string): Segment[] {
       push('none', inline(part));
     }
   }
+  flushTable();
   return segs;
 }
 

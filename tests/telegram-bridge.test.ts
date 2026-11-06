@@ -45,7 +45,7 @@ describe('owner filter (real grammY Bot, fake api)', () => {
     expect(spawned).toEqual([{ cmd: 'npx', args: ['tsx', 'scripts/status.ts', 'limits'] }]);
     const sends = api.filter((c) => c.method === 'sendMessage');
     expect(sends).toHaveLength(1);
-    expect(String(sends[0]!.payload.text)).toBe('<pre>limits output</pre>');
+    expect(String(sends[0]!.payload.text)).toBe('<b>📏 Limits</b>\n<pre>limits output</pre>');
     expect(api.some((c) => c.method === 'sendChatAction')).toBe(true);
   });
 

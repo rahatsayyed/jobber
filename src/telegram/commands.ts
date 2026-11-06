@@ -103,7 +103,12 @@ export function dripIo(deps: BridgeDeps): DripIo {
   };
 }
 
-export const codeBlock = (s: string): string => `\`\`\`\n${s.replace(/```/g, "'''").slice(-3500)}\n\`\`\``;
+/** Bold heading above the code block of each status command. */
+const COMMAND_HEADING: Record<string, string> = {
+  limits: '📏 Limits', working: '⚙️ Working', health: '🩺 Health', sources: '🌐 Sources', escalations: '🔔 Escalations',
+};
+
+export const codeBlock =(s: string): string => `\`\`\`\n${s.replace(/```/g, "'''").slice(-3500)}\n\`\`\``;
 
 const HELP = [
   '**Jobber commands**',
@@ -187,7 +192,7 @@ async function handleCommand(name: string, rest: string, deps: BridgeDeps): Prom
   if (name === 'report' && argv && !('error' in argv)) {
     const r = await runChild(deps, argv);
     const file = r.out.split('\n').map((l) => l.trim()).filter(Boolean).pop() ?? '';
-    if (!r.ok || !/^reports\/funnel-[0-9-]+\.html$/.test(file)) return deps.reply(`Report failed:\n${codeBlock(r.out)}`);
+    if (!r.ok || !/^reports\/funnel-[0-9-]+\.html$/.test(file)) return deps.reply(`❌ **Report failed**\n${codeBlock(r.out)}`);
     await deps.sendDocument(path.join(deps.root, file), 'Funnel report');
     return;
   }
@@ -195,33 +200,37 @@ async function handleCommand(name: string, rest: string, deps: BridgeDeps): Prom
     await deps.reply('Wake started. I will post the result line when it ends.');
     const r = await runChild(deps, argv);
     const line = r.out.split('\n').map((l) => l.trim()).filter(Boolean).filter((l) => /^run\s/i.test(l)).pop() ?? r.out.split('\n').pop() ?? '';
-    return deps.reply(r.ok ? codeBlock(line) : `Wake failed:\n${codeBlock(r.out)}`);
+    return deps.reply(r.ok ? `✅ **Wake finished**\n${codeBlock(line)}` : `❌ **Wake failed**\n${codeBlock(r.out)}`);
   }
   if (argv) {
     const r = await runChild(deps, argv);
-    return deps.reply(r.ok ? codeBlock(r.out) : `/${name} failed:\n${codeBlock(r.out)}`);
+    // The script text is printed unchanged inside a code block (columns line up); only the bold heading is added.
+    return deps.reply(r.ok ? `**${COMMAND_HEADING[name] ?? `/${name}`}**\n${codeBlock(r.out)}` : `❌ **/${name} failed**\n${codeBlock(r.out)}`);
   }
 
   if (name === 'status') {
     const f = await withDb(deps, (db) => funnelStats(db, Number(deps.env.MATCH_THRESHOLD) || 60));
     return deps.reply([
-      '**Funnel**',
-      `discovered ${f.discovered} -> matched ${f.matched} -> contacted ${f.contacted} -> replied ${f.replied} -> interview ${f.interview} -> offer ${f.offer}`,
-      `reply ${pct(f.rates.reply)} (typical 3%, 2-13%), interview ${pct(f.rates.interview)}, rejection ${pct(f.rates.rejection)}`,
-      `median days to first response: ${f.first_response_days_median ?? 'n/a'}`,
+      '📈 **Funnel**',
+      `discovered **${f.discovered}** → matched **${f.matched}** → contacted **${f.contacted}** → replied **${f.replied}** → interview **${f.interview}** → offer **${f.offer}**`,
+      '',
+      `- **reply rate:** ${pct(f.rates.reply)} _(typical 3%, 2-13%)_`,
+      `- **interview rate:** ${pct(f.rates.interview)}`,
+      `- **rejection rate:** ${pct(f.rates.rejection)}`,
+      `- **median days to first response:** ${f.first_response_days_median ?? 'n/a'}`,
     ].join('\n'));
   }
   if (name === 'outcome') {
     const [jobId, outcome, ...note] = rest.split(/\s+/).filter(Boolean);
     if (!jobId || !outcome || !(OUTCOMES as readonly string[]).includes(outcome)) return deps.reply(`usage: /outcome <job_id> <${OUTCOMES.join('|')}> [note]`);
     const r = await withDb(deps, (db) => recordOutcomeChecked(db, jobId, outcome as Outcome, note.join(' ') || undefined));
-    return deps.reply(`Outcome \`${outcome}\` recorded for job ${jobId}${r.warning ? ` (${r.warning})` : ''}.`);
+    return deps.reply(`✅ **Outcome recorded**\n- **job:** \`${jobId}\`\n- **outcome:** \`${outcome}\`${r.warning ? `\n- _${r.warning}_` : ''}`);
   }
   if (name === 'include') {
     const jobId = rest.replace(/^#/, '').trim();
     if (!jobId || /\s/.test(jobId)) return deps.reply('usage: /include <job_id>');
     const r = await withDb(deps, (db) => unexcludeJob(db, jobId));
-    return deps.reply(r.ok ? `Job ${jobId} is included again. Previous reason: ${r.previous_reason}` : `Not changed: ${r.error}`);
+    return deps.reply(r.ok ? `✅ **Job included again**\n- **job:** \`${jobId}\`\n- **previous reason:** ${r.previous_reason}` : `⚠️ **Not changed**\n${r.error}`);
   }
   if (name === 'calibrate') {
     const c = await withDb(deps, (db) => calibrate(getCalibrationRows(db)));

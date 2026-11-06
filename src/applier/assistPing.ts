@@ -4,7 +4,7 @@
 // A page screenshot is attached ONLY when the notifier can send an image (the shipped Telegram sender is text only, so it is skipped);
 // a failing screenshot never blocks the park or the text.
 import type BetterSqlite3 from 'better-sqlite3';
-import { cleanUntrusted } from '../manual/report.js';
+import { E, clean, code, headline, html, i as ital, line, lines } from '../platform/tgHtml.js';
 import { isDryRun } from '../safety/dryRun.js';
 import { getState, setState } from '../scheduler/runLog.js';
 
@@ -29,13 +29,16 @@ export async function pingAssist(
   const last = Date.parse(getState(db, key) ?? '');
   if (Number.isFinite(last) && p.now.getTime() - last < ASSIST_PING_GAP_MS) return 'deduped';
   const job = db.prepare('SELECT title, company FROM jobs WHERE id = ?').get(p.jobId) as { title: string | null; company: string | null } | undefined;
-  const what = [cleanUntrusted(job?.title ?? '', 80), cleanUntrusted(job?.company ?? '', 60)].filter(Boolean).join(' at ') || p.jobId;
-  const text = [
-    `Jobber needs you on ${cleanUntrusted(p.host, 80)} (${cleanUntrusted(p.reason, 30)}).`,
-    `Parked: ${what}. Other jobs on this site wait too.`,
-    `Run: npm run apply:assist -- ${cleanUntrusted(p.jobId, 100)}`,
-    'It opens the page in Chrome; log in or finish the check by hand, press Enter, and the job retries.',
-  ].join('\n');
+  const what = [clean(job?.title ?? '', 80), clean(job?.company ?? '', 60)].filter(Boolean).join(' at ') || clean(p.jobId, 100);
+  // Telegram HTML (src/platform/tgHtml.ts); the notifier is handed it with html: true.
+  const text = html(lines([
+    headline(E.you, `Jobber needs you on ${clean(p.host, 80)}`),
+    line('Reason', clean(p.reason, 30)),
+    line('Parked', what),
+    ital('Other jobs on this site wait too.'),
+    line('Run', code(`npm run apply:assist -- ${clean(p.jobId, 100)}`)),
+    ital('It opens the page in Chrome; log in or finish the check by hand, press Enter, and the job retries.'),
+  ]));
   let res: { ok: boolean; detail: string };
   try {
     let png: Buffer | Uint8Array | null = null;

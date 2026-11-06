@@ -394,8 +394,10 @@ describe('reminder tick', () => {
     const long = 'w'.repeat(400);
     const es = Array.from({ length: 20 }, (_, i) => ({ id: `h${i}abc`, window: 'mail', what: long, why: long, since: new Date(T0 - 3 * HOUR).toISOString() }));
     const text = composeReminder(es, T0);
-    expect(text.split('\n').filter((l) => l.startsWith('- ')).length).toBe(12);
+    expect(text.split('\n').filter((l) => l.startsWith('• ')).length).toBe(12);
     expect(text).toContain('and 8 more');
+    expect(text).toContain('🔔 <b>Handoff: 20 pending items need attention</b>');
+    expect(text).toContain('<b>mail:</b>');
     expect(Math.max(...text.split('\n').map((l) => l.length))).toBeLessThan(160);
   });
 });
@@ -500,7 +502,7 @@ describe('recycle', () => {
       root, env: {}, run: f.run, config: () => cfg(), killed: () => false, inQuiet: () => true,
       alert: async (t) => { alerts.push(t); return { ok: true }; }, now: () => NOW, sleep,
     });
-    expect(alerts).toEqual(['recycled window boards (9h 30m)']);
+    expect(alerts).toEqual(['✅ <b>Window recycled</b>\n<b>Window:</b> <code>boards</code>\n<b>Age:</b> 9h 30m']);
   });
 });
 

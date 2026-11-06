@@ -116,7 +116,7 @@ paste the token into it.
 
 - `wakes`: after each wake the scheduler sends a short summary, written by code (never by the model).
 - `alerts`: failures.
-- `drips`: one line per mail or LinkedIn drip action; email addresses are masked.
+- `drips`: one short notice per mail or LinkedIn drip action; email addresses are shown in full (the chat is owner-only).
 - Window topics are created on demand the first time you open a window view and are stored under `windows` in
   `.jobber/telegram-topics.json`. Each worker window (`mail`, `linkedin`, `boards`, `sources`, `pipeline`,
   `apply`) and `manager` gets its own topic, named exactly like the window. `wake-*` windows (the headless

@@ -6,7 +6,7 @@ import { openDb, listQueuedOutreach, listUnscoredJobs, saveJob, MANUAL_PRIORITY_
 import { classifyManualUrl, validateManualUrl } from '../src/manual/url.js';
 import { createManualRequest, getManualRequest, jobIdsOf, listManualRequests, manualRequestsPending, MANUAL_MAX_JOBS_PER_REQUEST } from '../src/manual/requests.js';
 import { ingestManualRequests } from '../src/manual/ingest.js';
-import { cleanUntrusted, composeManualReport, finalizeManualRequests } from '../src/manual/report.js';
+import { cleanUntrusted, composeManualReport, composeManualReportHtml, finalizeManualRequests } from '../src/manual/report.js';
 import { countDue, type DueCounts } from '../src/scheduler/due.js';
 import { planWake, stepOrder, type PlanKnobs } from '../src/scheduler/plan.js';
 import { buildWakePrompt } from '../src/scheduler/prompt.js';
@@ -428,9 +428,12 @@ describe('report', () => {
   });
   it('escapes untrusted text: no angle brackets, bidi or control characters, bounded length', () => {
     const { db, id } = seed();
-    const text = composeManualReport(db, getManualRequest(db, id)!).join('\n');
-    expect(text).not.toMatch(/[<>`]/);
-    expect(text).not.toContain('‮');
+    // The Telegram report is HTML: untrusted text is escaped, so no raw tag from a posting survives, and no bidi or control characters.
+    const text = composeManualReportHtml(db, getManualRequest(db, id)!).join('\n');
+    const tags = (text.match(/<\/?[a-z][^>]*>/gi) ?? []).map((t) => /^<\/?(b|i|code|a)(\s|>)/i.exec(t)?.[1]).filter((x) => !x);
+    expect(tags).toEqual([]);
+    expect(text).not.toMatch(/<script|<img|<iframe/i);
+    expect(text).not.toMatch(/[‮\u0000-\u0008]/);
     expect(cleanUntrusted('a\u0000b\n<script>c​', 50)).toBe('a b scriptc');
     expect(cleanUntrusted('x'.repeat(500), 40).length).toBe(40);
   });

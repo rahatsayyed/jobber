@@ -480,9 +480,9 @@ describe('the wake lane through the driver', () => {
     expect(row?.trigger).toBe('scheduled');
     // the same Telegram wakes-topic message as a headless wake: id, status, trigger, counts line, new jobs line
     const n = s.tg.find((x) => x.topic === 'wakes');
-    expect(n?.text).toMatch(/^Wake wk000000 ok \(scheduled\)/);
-    expect(n?.text).toMatch(/operators: done \d+, skipped 0, escalated 0, stopped 0/);
-    expect(n?.text).toMatch(/new jobs \d+/);
+    expect(n?.text).toMatch(/^✅ <b>Wake ok<\/b>\n<b>Run:<\/b> <code>wk000000<\/code>/);
+    expect(n?.text).toContain('<b>Trigger:</b> scheduled');
+    expect(n?.text).toMatch(/<b>Operators<\/b>\n• done \d+, skipped 0/);
     // the owner's instructions were claimed for the pipeline item only
     expect(disp.inputs[0].promptText).toContain('Pipeline stage (');
     expect(disp.inputs[1].promptText).not.toContain('Pipeline stage (');
@@ -636,7 +636,7 @@ describe('the wake lane with the real dispatcher over a fake window', () => {
     expect(typedLines.filter((l) => l.startsWith('Work item '))).toHaveLength(2);
     expect(typedLines.filter((l) => l === '/clear')).toHaveLength(2);
     const n = s.tg.find((x) => x.topic === 'wakes');
-    expect(n?.text).toMatch(/operators: done 3/);
+    expect(n?.text).toMatch(/<b>Operators<\/b>\n• done 3/);
   });
 });
 

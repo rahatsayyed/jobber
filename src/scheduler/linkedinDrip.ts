@@ -709,7 +709,11 @@ async function linkedinRunNotice(d: DriverDeps, item: LiItem, run: OneRun): Prom
     const company = 'company' in item ? item.company : null;
     const jobTitle = item.kind === 'invite' ? item.job_title : item.kind === 'easy_apply' ? item.title : null;
     const ok = run.status === 'ok';
-    const text = formatLinkedinNotice({ kind: item.kind, name: name ?? jobTitle, company, dry: isDryRun(d.env), ok, reason: run.reason ?? run.status });
+    const profileUrl = 'profile_url' in item ? item.profile_url : null;
+    const text = formatLinkedinNotice({
+      kind: item.kind, name, company, jobTitle, profileUrl,
+      dry: isDryRun(d.env), ok, reason: run.reason ?? run.status,
+    });
     if (ok) await notifyTg(d, 'drips', text);
     else await notifyTg(d, 'alerts', formatDripFailure('linkedin', item.kind, run.reason ?? run.status));
   } catch {

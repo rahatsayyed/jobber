@@ -91,8 +91,8 @@ function nextTick(iso: string | null, now: Date): string {
 
 /** The status text, from SQLite and the env only. Every value is built in code; nothing third-party is shown. */
 export function renderDripStatus(db: BetterSqlite3.Database, env: NodeJS.ProcessEnv, now: Date): string {
-  const L: string[] = ['**Drip lanes**'];
-  if (isDryRun(env)) L.push('Dry run is ON: ticks record what they would do and send nothing.');
+  const L: string[] = ['🚰 **Drip lanes**'];
+  if (isDryRun(env)) L.push('⏸ **Dry run is ON:** _ticks record what they would do and send nothing._');
   const safe = <T>(f: () => T, dflt: T): T => { try { return f(); } catch { return dflt; } };
 
   // mail
@@ -100,11 +100,11 @@ export function renderDripStatus(db: BetterSqlite3.Database, env: NodeJS.Process
   const mailOff = mc.problems.length > 0 ? `OFF (bad config: ${mc.problems[0]?.slice(0, 80)})` : emailBrakeOn(env) ? 'OFF (SEND_LIMIT_PER_RUN=0 brake)' : 'on';
   const mailLast = safe(() => lastSendAt(db), null);
   const mailToday = safe(() => sentToday(db), 0);
-  L.push('', `**Mail**: ${mailOff}`);
-  L.push(`- next tick: ${nextTick(safe(() => getState(db, STATE_NEXT_AT), null), now)}`);
-  L.push(`- last send: ${mailLast ? when(mailLast.toISOString(), now) : 'none yet'}`);
-  L.push(`- today: ${mailToday} sent, cap ${mc.maxPerDay > 0 ? mc.maxPerDay : 'none'}`);
-  L.push(`- send window: ${String(Math.floor(mc.windowStartMin / 60)).padStart(2, '0')}:${String(mc.windowStartMin % 60).padStart(2, '0')} to ${String(Math.floor(mc.windowEndMin / 60)).padStart(2, '0')}:${String(mc.windowEndMin % 60).padStart(2, '0')} IST`);
+  L.push('', `${mailOff === 'on' ? '✅' : '⏸'} **Mail**: ${mailOff}`);
+  L.push(`- **next tick:** ${nextTick(safe(() => getState(db, STATE_NEXT_AT), null), now)}`);
+  L.push(`- **last send:** ${mailLast ? when(mailLast.toISOString(), now) : 'none yet'}`);
+  L.push(`- **today:** **${mailToday}** sent, cap ${mc.maxPerDay > 0 ? mc.maxPerDay : 'none'}`);
+  L.push(`- **send window:**${String(Math.floor(mc.windowStartMin / 60)).padStart(2, '0')}:${String(mc.windowStartMin % 60).padStart(2, '0')} to ${String(Math.floor(mc.windowEndMin / 60)).padStart(2, '0')}:${String(mc.windowEndMin % 60).padStart(2, '0')} IST`);
   L.push(...refusalLines(db, 'mail', now));
 
   // linkedin
@@ -115,10 +115,10 @@ export function renderDripStatus(db: BetterSqlite3.Database, env: NodeJS.Process
     return raw ? (JSON.parse(raw) as { at?: string; kind?: string }) : null;
   }, null);
   const c = safe(() => ceilings(db, loadOutreachConfig(env), now), null);
-  L.push('', `**LinkedIn**: ${liOff}`);
-  L.push(`- next tick: ${nextTick(safe(() => getState(db, LI_STATE_NEXT_AT), null), now)}`);
-  L.push(`- last action: ${last?.at ? `${String(last.kind ?? 'action').replace(/[^a-z_]/gi, '').slice(0, 20)} ${when(last.at, now)}` : 'none yet'}`);
-  L.push(c ? `- today (rolling 24 h): invites ${c.linkedin_invite.used}/${c.linkedin_invite.limit}, messages ${c.linkedin_message.used}/${c.linkedin_message.limit}` : '- today: unknown');
+  L.push('', `${liOff === 'on' ? '✅' : '⏸'} **LinkedIn**: ${liOff}`);
+  L.push(`- **next tick:** ${nextTick(safe(() => getState(db, LI_STATE_NEXT_AT), null), now)}`);
+  L.push(`- **last action:** ${last?.at ? `${String(last.kind ?? 'action').replace(/[^a-z_]/gi, '').slice(0, 20)} ${when(last.at, now)}` : 'none yet'}`);
+  L.push(c ? `- **today (rolling 24 h):** invites **${c.linkedin_invite.used}/${c.linkedin_invite.limit}**, messages **${c.linkedin_message.used}/${c.linkedin_message.limit}**` : '- **today:** unknown');
   L.push(...refusalLines(db, 'linkedin', now));
   return L.join('\n');
 }
@@ -128,7 +128,7 @@ function refusalLines(db: BetterSqlite3.Database, lane: DripLane, now: Date): st
   const req = readFreshRequest(db, lane, now);
   if (req) out.push(`- a "run now" request is waiting for the daemon (id ${req.id})`);
   const r = readRefusal(db, lane);
-  out.push(r ? `- last refusal: ${r.reason} at ${when(r.at, now)}` : '- last refusal: none');
+  out.push(r ? `- **last refusal:** ${r.reason} at ${when(r.at, now)}` : '- **last refusal:** none');
   return out;
 }
 

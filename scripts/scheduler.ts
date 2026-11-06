@@ -146,7 +146,7 @@ async function main(): Promise<void> {
     launcher: tmuxLauncher(defaultRun, undefined, runWindowKeepMin(env)),
     notifier,
     // Code-sent notices to the wakes, alerts and drips topics (zero LLM); a missing Telegram setup just returns not ok.
-    tg: async (topic, text) => { await telegramNotifier(env).send(text, { topic }); },
+    tg: async (topic, text, opts) => { await telegramNotifier(env).send(text, { topic, ...(opts?.html ? { html: true } : {}) }); },
     newRunId: () => randomBytes(8).toString('hex'),
     session: env.SCHEDULER_TMUX_SESSION || undefined,
     discoverSearches: discoverNames(),
@@ -166,7 +166,7 @@ async function main(): Promise<void> {
       root: projectRoot, env, run: defaultRun, config: configReader(projectRoot),
       killed: () => stopActive(projectRoot, env).stopped,
       inQuiet: () => inQuietHours(now(), quietFromConfig(cfg)),
-      alert: (text) => telegramNotifier(env).send(text, { topic: 'alerts' }),
+      alert: (text) => telegramNotifier(env).send(text, { topic: 'alerts', html: true }),
     }) : undefined,
     manualIngest: (runId) => ingestManualRequests(db, { runId, now }),
     manualReport: async (runStatus) => {
@@ -175,7 +175,7 @@ async function main(): Promise<void> {
         now,
         matchThreshold: Number.isInteger(Number(env.MATCH_THRESHOLD)) && env.MATCH_THRESHOLD ? Number(env.MATCH_THRESHOLD) : 60,
         send: async (text) => {
-          const sent = await tg.send(text, { topic: 'inbox' });
+          const sent = await tg.send(text, { topic: 'inbox', html: true });
           // The text is always kept in the request row; the notify file gets only a title so a missing Telegram setup is visible.
           if (!sent.ok) {
             await notifier.notify({ level: 'warn', title: 'manual request report not delivered to Telegram', detail: sent.detail });

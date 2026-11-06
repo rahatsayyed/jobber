@@ -5,6 +5,7 @@
 import { fetchApi, type TelegramApi } from './api.js';
 import { loadTelegramConfig, PROJECT_ROOT } from './config.js';
 import { htmlEscape, isParseError, markdownToHtmlChunks, plainChunks } from './format.js';
+import { htmlToPlain, splitHtml } from '../platform/tgHtml.js';
 import { ensureTopics, isThreadGoneError, readTopicState, writeTopicState, type TopicName } from './topics.js';
 
 export interface SendResult {
@@ -21,17 +22,12 @@ export interface SendOpts {
   api?: TelegramApi;
   /** Send the text as given (escaped only, no markdown conversion). */
   plain?: boolean;
+  /** The text is already safe Telegram HTML built by src/platform/tgHtml.ts: split on line boundaries only, no markdown conversion. */
+  html?: boolean;
   silent?: boolean;
 }
 
-export function htmlToPlain(html: string): string {
-  return html
-    .replace(/<\/?[a-z][^>]*>/gi, '')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&');
-}
+export { htmlToPlain };
 
 /** Send already-converted HTML chunks to one chat and thread. Per chunk: HTML first, plain text when Telegram rejects the markup. */
 export async function postChunks(
@@ -61,7 +57,8 @@ export async function postChunks(
   return { ok: true, detail: 'sent' };
 }
 
-export function chunksFor(text: string, plain: boolean | undefined): string[] {
+export function chunksFor(text: string, plain: boolean | undefined, html?: boolean): string[] {
+  if (html) return splitHtml(text);
   // Plain: characters as typed, escaped only. 800 raw characters escape to at most 4000.
   return plain ? plainChunks(text, 800).map(htmlEscape) : markdownToHtmlChunks(text);
 }
@@ -85,7 +82,7 @@ export async function sendToTopic(topic: TopicName, markdown: string, opts: Send
       return st.forum ? st.topics[topic] : undefined;
     };
     threadId = await resolve(false);
-    const chunks = chunksFor(markdown, opts.plain);
+    const chunks = chunksFor(markdown, opts.plain, opts.html);
     return await postChunks(api, { chatId, threadId, silent: opts.silent }, chunks, () => resolve(true));
   } catch (e) {
     return { ok: false, detail: `telegram send failed (${e instanceof Error ? e.name : 'error'})` };

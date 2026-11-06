@@ -184,8 +184,8 @@ The bridge uses topics in the bot's own private chat (BotFather Threaded Mode; `
 with its own markdown to Telegram HTML formatter (`src/telegram/format.ts`, always escapes). Code-sent
 notifications route by topic through `src/platform/notify.ts` (escalation digest and manual-request
 reports go to `inbox`, the `apply:assist` ping to `assist`; the scheduler sends the wake summary to `wakes`,
-failures to `alerts` and one line per mail or LinkedIn drip action to `drips`, addresses masked, from
-`src/scheduler/dripNotice.ts`). The `chat` topic talks to ONE long-running interactive `claude` window named
+failures to `alerts` and one short notice per mail or LinkedIn drip action to `drips`, email addresses shown in full because the chat is owner-only, from
+`src/scheduler/dripNotice.ts`). Every code-sent notice is Telegram HTML built with `src/platform/tgHtml.ts` (bold headline with a status emoji, label/value lines, `code` for ids and commands; untrusted text is always escaped and secret shapes redacted; sent with `html: true`, plain-text fallback when Telegram rejects the markup); status command outputs are shown unchanged in a code block under a bold heading. The `chat` topic talks to ONE long-running interactive `claude` window named
 `chat` in the `Jobber` session (started by `npm run up`, session id kept in `.jobber/chat-session.json`); the
 bridge types the text into it and reads the reply from Claude's transcript under `~/.claude/projects`. In
 that topic `/clear` (also best-effort deletes the logged Telegram messages, 48 h limit), `/compact` and
