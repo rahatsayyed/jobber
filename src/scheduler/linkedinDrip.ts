@@ -42,6 +42,7 @@ import { getState, setState, type RunStatus } from './runLog.js';
 import { withDripRequest } from './dripRequest.js';
 import { formatDripFailure, formatLinkedinNotice, linkedinNoticeKind, notifyTg } from './dripNotice.js';
 import { linkedinEasyEnabled } from '../apply/easyFlag.js';
+import { matchThresholdFromEnv } from '../matchRubric.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -367,8 +368,7 @@ export async function pickLinkedinItem(d: DriverDeps, now: Date, cfg: LinkedinDr
       if (!q.profile_url || unhandled.has(q.personId) || gone.has(`invite:${q.personId}`)) continue;
       return { item: { kind: 'invite', person_id: q.personId, profile_url: q.profile_url, name: q.name, company: q.company, company_key: q.company_key, category: q.category, job_id: q.job_id, job_title: q.job_title, queue_id: q.queue_id } };
     }
-    const raw = Number(d.env.MATCH_THRESHOLD);
-    const minScore = d.env.MATCH_THRESHOLD && Number.isFinite(raw) ? raw : 60;
+    const minScore = matchThresholdFromEnv(d.env);
     for (const p of nextPosterContacts(db, ocfg, 'linkedin', { limit: 10, minScore, now })) {
       if (!p.profile_url || unhandled.has(p.personId) || gone.has(`invite:${p.personId}`)) continue;
       return { item: { kind: 'invite', person_id: p.personId, profile_url: p.profile_url, name: p.name, company: p.company, company_key: '', category: p.category, job_id: p.job_id, job_title: p.job_title, queue_id: null, post_text: p.post_text } };

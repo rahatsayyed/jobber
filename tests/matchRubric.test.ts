@@ -5,7 +5,7 @@ import { ENV_CATALOG } from '../src/settings/envCatalog.js';
 import { validateEnvValue } from '../src/settings/valueCheck.js';
 import {
   DEFAULT_DIM_MINIMUMS, DEFAULT_MATCH_THRESHOLD, LEGACY_MATCH_THRESHOLD, dimMinimumsFromEnv, dimsKind, dimsLabel, failedDims, decisionOf,
-  globalOfScore, matchThresholdFromEnv, matchedBinds, parseCareerOpsDims, parseDimMinimums, parseStoredDims, passRule, rubricOfStored, scaleGlobal, thresholdForKind,
+  globalOfScore, matchThresholdFromEnv, matchedBinds, parseCareerOpsDims, parseDimMinimums, parseMatchThreshold, parseStoredDims, passRule, rubricOfStored, scaleGlobal, thresholdForKind,
 } from '../src/matchRubric.js';
 import { normalizeMatchRow } from '../src/score.js';
 import { openDb, saveJob, saveMatchResultsChecked, listUnscoredJobs } from '../src/db.js';
@@ -34,6 +34,23 @@ describe('the career-ops go line and the scale', () => {
     expect(matchThresholdFromEnv({ MATCH_THRESHOLD: '70' })).toBe(70);
     expect(matchThresholdFromEnv({ MATCH_THRESHOLD: 'abc' })).toBe(80);
     expect(matchThresholdFromEnv({ MATCH_THRESHOLD: '101' })).toBe(80);
+  });
+  it('MATCH_THRESHOLD takes either scale: 0 < v <= 5 is multiplied by 20, anything else is a 0..100 value ("4.0 and 80 mean the same")', () => {
+    const t = (v: string | undefined) => matchThresholdFromEnv({ MATCH_THRESHOLD: v });
+    expect([t('3.5'), t('4'), t('4.0'), t('4.5'), t('5'), t('60'), t('80'), t('0.5'), t('0')]).toEqual([70, 80, 80, 90, 100, 60, 80, 10, 0]);
+    expect(t('5.1')).toBe(5); // above 5 means a 0..100 value, so 5.1 rounds to 5
+    expect(t('100')).toBe(100);
+    expect([t(undefined), t(''), t('   ')]).toEqual([80, 80, 80]); // blank = default
+    expect([t('junk'), t('-4'), t('-1.5'), t('4,5'), t('1e1'), t('101'), t('4.')]).toEqual([80, 80, 80, 80, 80, 80, 80]);
+  });
+  it('parseMatchThreshold: blank has no error, junk and out-of-range values say why', () => {
+    expect(parseMatchThreshold('')).toEqual({ value: 80 });
+    expect(parseMatchThreshold(undefined)).toEqual({ value: 80 });
+    expect(parseMatchThreshold('4.0')).toEqual({ value: 80 });
+    expect(parseMatchThreshold('junk').invalid).toContain('not a number');
+    expect(parseMatchThreshold('-4').invalid).toContain('not a number');
+    expect(parseMatchThreshold('101').invalid).toContain('above 100');
+    expect(parseMatchThreshold('junk').value).toBe(80);
   });
   it('career-ops Score interpretation bands: 4.5+ apply now, 4.0-4.4 apply, 3.5-3.9 consider (recommend against), below 3.5 skip', () => {
     expect([5, 4.5, 4.4, 4.0, 3.9, 3.5, 3.4, 1].map(decisionOf)).toEqual(['apply_now', 'apply_now', 'apply', 'apply', 'consider', 'consider', 'skip', 'skip']);
@@ -234,6 +251,17 @@ describe('MATCH_THRESHOLD catalog and example', () => {
     expect(String(spec.default)).toBe('80');
     expect(spec.about).toContain('4.0 of 5');
     expect(readFileSync(new URL('../.env.example', import.meta.url), 'utf8')).toMatch(/^MATCH_THRESHOLD=80$/m);
+  });
+  it('the settings editor and the doctor accept either scale, reject junk, negatives and above 100', async () => {
+    const spec = ENV_CATALOG.find((s) => s.key === 'MATCH_THRESHOLD')!;
+    for (const ok of ['3.5', '4', '4.0', '4.5', '60', '80', '0.5', '5.1']) expect(validateEnvValue(spec, ok), ok).toBeNull();
+    for (const bad of ['junk', '-4', '101', '1e1']) expect(validateEnvValue(spec, bad), bad).not.toBeNull();
+    expect(spec.about).toContain('4.0 and 80 mean the same');
+    const check = setupToolingChecks.find((c) => c.id === 'env-limits')!;
+    const run = (t: string) => check.run({ root: '/r', env: {}, fs: { exists: () => true, read: () => t } } as never);
+    expect((await run('MATCH_THRESHOLD=4.0\n')).status).toBe('pass');
+    expect((await run('MATCH_THRESHOLD=\n')).status).toBe('pass'); // blank = default
+    expect((await run('MATCH_THRESHOLD=junk\n')).status).toBe('fail');
   });
 });
 

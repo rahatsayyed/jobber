@@ -19,7 +19,6 @@ const fail = (detail: string, fix?: string): CheckResult => ({ status: 'fail', d
 
 // Read by Number(process.env.KEY ?? default): an empty value becomes 0 and a comment NaN.
 const DIRECT_READERS = new Set([
-  'MATCH_THRESHOLD',
   'SEND_LIMIT_PER_RUN',
   'MAX_APPLIES_PER_DAY',
   'MAX_LINKEDIN_SEARCHES_PER_DAY',

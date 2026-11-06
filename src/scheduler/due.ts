@@ -2,6 +2,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT } from '../db.js';
 import { planPipelineWork, QUEUE_NOT_REPREP_SQL } from '../pipelineWork.js';
+import { matchThresholdFromEnv } from '../matchRubric.js';
 import { inSendWindow, loadDripConfig } from './mailDrip.js';
 import { followupMode, listApprovedFollowups, listFollowupCandidates } from '../followups.js';
 import { countAcceptCandidates, hasOpenInvites } from '../linkedin/acceptCheck.js';
@@ -158,8 +159,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
   let unmatchedJobs = 0;
   let matchedAwaitingPrepare = 0;
   try {
-    const raw = env.MATCH_THRESHOLD?.trim();
-    const matchThreshold = raw && /^\d+$/.test(raw) && Number(raw) <= 100 ? Number(raw) : 60;
+    const matchThreshold = matchThresholdFromEnv(env);
     const work = planPipelineWork(db, { now, failLimit: MATCH_FAIL_LIMIT, matchThreshold });
     unmatchedJobs = work.offer.length;
     matchedAwaitingPrepare = work.matchedOffer.length;

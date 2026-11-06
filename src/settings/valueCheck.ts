@@ -3,7 +3,7 @@
 // Reasons never echo the rejected value for secret specs.
 import { normaliseEmail } from '../dash/account.js';
 import { validatePairs } from '../setup/limitsCatalog.js';
-import { parseDimMinimums } from '../matchRubric.js';
+import { parseDimMinimums, parseMatchThreshold } from '../matchRubric.js';
 import { isSecret, type EnvSpec } from './types.js';
 
 const DEFAULT_MAX_LEN = 2000;
@@ -57,6 +57,7 @@ export function validateEnvValue(spec: EnvSpec, raw: string): string | null {
       return ok.includes(raw) ? null : `must be one of: ${ok.join(', ')}`;
     }
     case 'int':
+      if (spec.key === 'MATCH_THRESHOLD') return raw.trim() === '' ? 'value is empty' : (parseMatchThreshold(raw).invalid ?? null); // 4.0 and 80 mean the same
       return intIn(spec, raw);
     case 'enum':
       if (!spec.allowed) return 'enum spec has no allowed values';

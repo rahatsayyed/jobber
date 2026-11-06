@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import BetterSqlite3 from 'better-sqlite3';
 import { openDb } from '../src/db.js';
+import { matchThresholdFromEnv } from '../src/matchRubric.js';
 import { dbPath } from '../src/dbPath.js';
 import { parseEnv } from '../src/platform/envFile.js';
 import { defaultRun, JOBBER_TMUX_SESSION } from '../src/platform/tmux.js';
@@ -184,7 +185,7 @@ async function main(): Promise<void> {
       const tg = telegramNotifier(env);
       const r = await finalizeManualRequests(db, runStatus, {
         now,
-        matchThreshold: Number.isInteger(Number(env.MATCH_THRESHOLD)) && env.MATCH_THRESHOLD ? Number(env.MATCH_THRESHOLD) : 60,
+        matchThreshold: matchThresholdFromEnv(env),
         send: async (text) => {
           const sent = await tg.send(text, { topic: 'inbox', html: true, silent: false }); // the owner should look: loud
           // The text is always kept in the request row; the notify file gets only a title so a missing Telegram setup is visible.

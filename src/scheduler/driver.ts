@@ -18,7 +18,7 @@ import { linkedinActiveNow } from '../linkedin/activeHours.js';
 import { buildSourceRows, sourcesNotice } from '../status/sources.js';
 import type { Notice, Notifier } from './notify.js';
 import { loadPlanKnobs, planWake, stepOrder, type Assignment, type DiscoverSearches, type Step, type WakeDecision } from './plan.js';
-import { targetRegionsLine, type CodePassResult } from './pipeline.js';
+import { northStarPromptLine, targetRegionsLine, type CodePassResult } from './pipeline.js';
 import { jdReportLine } from '../jdStore.js';
 import type { WakeCounts } from './stream.js';
 import { noticeUrgency } from '../telegram/silent.js';
@@ -31,6 +31,7 @@ import type { StyleConfig } from '../safety/styleGate.js';
 import { linkedinDripEnabled, linkedinDripLoop } from './linkedinDrip.js';
 import { groupWakeSteps, runWakeThroughWindows } from './wakeWindows.js';
 import { recordWakeResult, takeWakeRequest, type WakeRequest } from './wakeRequest.js';
+import { matchThresholdFromEnv } from '../matchRubric.js';
 import { finishRun, getState, markOrphans, setState, startRun, type RunStatus } from './runLog.js';
 
 type Db = BetterSqlite3.Database;
@@ -294,9 +295,10 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
     const order = decision.stages?.length ? stepOrder(decision) : undefined;
     const steps: Step[] = order ?? legacySteps(decision.tasks);
     const pipelineInput = order ? {
-      matchThreshold: boundedEnvInt(d.env.MATCH_THRESHOLD, 0, 100, 60),
+      matchThreshold: matchThresholdFromEnv(d.env),
       sendLimit: boundedEnvInt(d.env.SEND_LIMIT_PER_RUN, 0, 100, 1),
       targetRegions: targetRegionsLine(d.projectRoot),
+      northStar: northStarPromptLine(d.env, d.projectRoot),
       followupsAutonomous: d.env.FOLLOWUPS_AUTONOMOUS === 'true',
       codePass,
       jdLine: ((): string => { try { return jdReportLine(d.db, startAt); } catch { return ''; } })(),
@@ -389,7 +391,7 @@ function countSince(d: DriverDeps, sql: string, sinceIso: string): number | null
 /** The grouped numbers of one wake for its Telegram summary (each optional; a failing query just leaves the group out). */
 function wakeGroups(d: DriverDeps, sinceIso: string): Partial<WakeNotice> {
   const out: Partial<WakeNotice> = {};
-  const threshold = boundedEnvInt(d.env.MATCH_THRESHOLD, 0, 100, 60);
+  const threshold = matchThresholdFromEnv(d.env);
   try {
     const rows = buildSourceRows(d.db, sinceIso).filter((r) => r.ran);
     if (rows.length) {

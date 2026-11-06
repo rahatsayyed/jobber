@@ -12,7 +12,7 @@ import type { ControlState } from '../src/scheduler/control.js';
 import { countDue, SCRIPT_DISCOVER_KEY, type DueCounts } from '../src/scheduler/due.js';
 import { planWake, stepOrder, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_WINDOW_HOURS, PIPELINE_MAX_PREPARE_PER_WAKE, PIPELINE_LIST_PAGE, type PlanKnobs, type WakeDecision } from '../src/scheduler/plan.js';
 import { buildWakePrompt } from '../src/scheduler/prompt.js';
-import { runCodePass, statusLines, pipelineLines, targetRegionsLine, loadHuntPreferences, DEFAULT_HUNT_ROLE, DEFAULT_HUNT_LOCATION, type CodePassResult } from '../src/scheduler/pipeline.js';
+import { runCodePass, statusLines, pipelineLines, targetRegionsLine, northStarPromptLine, loadHuntPreferences, DEFAULT_HUNT_ROLE, DEFAULT_HUNT_LOCATION, type CodePassResult } from '../src/scheduler/pipeline.js';
 import { wakeOnce, type DriverDeps } from '../src/scheduler/driver.js';
 import { launcherAsWindows, type LaunchHandle, type LaunchPlan, type Launcher, type PollResult } from './helpers/fakeWindows.js';
 import { getState } from '../src/scheduler/runLog.js';
@@ -245,6 +245,33 @@ describe('prompt', () => {
   });
   it('target regions line says so for a missing file', () => {
     expect(targetRegionsLine(join(tmpdir(), 'jobber-no-such-dir'))).toContain('missing or invalid');
+  });
+  it('the matcher prompt carries the North Star line after the target regions line', () => {
+    const line = 'North Star: archetypes=x (primary); require=none; deprioritize_if_absent=false; dealbreakers=none; comp=unknown';
+    const t = pipelineLines({ ...pipe, targetRegions: 'Target regions: x', northStar: line }).join('\n');
+    expect(t).toContain(`Target regions: x\n${line}`);
+    expect(pipelineLines({ ...pipe, targetRegions: 'Target regions: x' }).join('\n')).not.toContain('North Star:');
+  });
+  it('northStarPromptLine: a valid profile section is listed; a missing or invalid profile still gives the default line', () => {
+    const d = mkdtempSync(join(tmpdir(), 'pipe-ns-'));
+    try {
+      const env = { JOBAPPLIER_USER_DATA: d } as NodeJS.ProcessEnv;
+      const dflt = northStarPromptLine(env, d); // no profile.json
+      expect(dflt).toMatch(/^North Star: archetypes=.*\(from config\/role-families\.json, all primary\)/);
+      writeFileSync(join(d, 'profile.json'), '{ not json');
+      expect(northStarPromptLine(env, d)).toBe(dflt);
+      writeFileSync(join(d, 'profile.json'), JSON.stringify({ north_star: { archetypes: 'bad' } }));
+      expect(northStarPromptLine(env, d)).toBe(dflt);
+      writeFileSync(join(d, 'profile.json'), JSON.stringify({ north_star: { archetypes: [{ name: 'Platform Zebra', fit: 'primary', title_patterns: ['zebra'] }], require: [], deprioritize_if_absent: false, dealbreakers: [], comp: { currency: '', target_range: '', minimum: '' } } }));
+      expect(northStarPromptLine(env, d)).toContain('Platform Zebra (primary)');
+    } finally { rmSync(d, { recursive: true, force: true }); }
+  });
+  it('P2c states the career-ops pass rule and no longer tells the session to apply dimension minimums', () => {
+    const t = pipelineLines(pipe).join('\n');
+    expect(t).toContain('STORED score is at least MATCH_THRESHOLD');
+    expect(t).toContain('rubric_v2 rows');
+    expect(t).not.toContain('below ANY dimension minimum');
+    expect(t).not.toContain('dim_min:role_fit');
   });
 });
 

@@ -36,7 +36,7 @@ career-ops reads the Global score like this, and so does the code:
 
 career-ops also says to strongly discourage applying below 4.0 of 5. So the go line is 4.0.
 
-We keep a stored score from 0 to 100 because many parts of Jobber read it. The code stores `score = round(Global x 20)`, so 3.9 is 78, 4.0 is 80 and 4.5 is 90. The setting `MATCH_THRESHOLD` is the go line on that scale and now defaults to 80 (4.0 of 5). Lowering it to 70 lets 3.5 to 3.9 matches through, which career-ops recommends against.
+We keep a stored score from 0 to 100 because many parts of Jobber read it. The code stores `score = round(Global x 20)`, so 3.9 is 78, 4.0 is 80 and 4.5 is 90. The setting `MATCH_THRESHOLD` is the go line on that scale and now defaults to 80 (4.0 of 5). You can write it on either scale: a value from above 0 up to 5 (for example `4.0` or `3.5`) is multiplied by 20, and a value above 5 is used as is (0 to 100). So `4.0` and `80` mean the same. A blank value is the default; a junk or negative value, or one above 100, falls back to 80 and the doctor reports it. Lowering it to 70 lets 3.5 to 3.9 matches through, which career-ops recommends against.
 
 "Moves ahead" means the job is prepared (tailored resume, contact search, drafted outreach) and queued for sending or applying, under the usual daily limits. The best-scored jobs are prepared first. Code adds three safety rules that career-ops does not have, and they stay: a location FAIL stops the job, a hard stop (a verified critical requirement you do not meet) stops the job, and the evidence ceiling can only lower a score when the model cannot back its claims with quotes from the posting. A posting that talks to an AI screener is capped at 89, so it can never be a 4.5 "apply immediately" match.
 

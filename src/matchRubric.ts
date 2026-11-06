@@ -143,12 +143,24 @@ export function parseDimMinimums(raw: string | undefined | null): DimMinimums {
 
 export const dimMinimumsFromEnv = (env: Record<string, string | undefined> = process.env): DimMinimums => parseDimMinimums(env.MATCH_DIM_MINIMUMS);
 
-/** MATCH_THRESHOLD as the loaders read it: a whole number 0..100, default 80 (career-ops 4.0 of 5). */
-export function matchThresholdFromEnv(env: Record<string, string | undefined> = process.env): number {
-  const t = env.MATCH_THRESHOLD?.trim();
-  if (!t || !/^\d+$/.test(t)) return DEFAULT_MATCH_THRESHOLD;
+/**
+ * Parse a MATCH_THRESHOLD value. Either scale works: a number above 0 and up to 5 is the career-ops 1..5 Global and is multiplied by 20
+ * (`4.0` and `80` mean the same); anything above 5 is a 0..100 stored score as is; `0` stays 0. Plain decimal digits only (no sign, no
+ * exponent), at most 100. Blank = the default, no error. Anything else = the default plus `invalid` (the doctor shows it).
+ */
+export function parseMatchThreshold(raw: string | undefined | null): { value: number; invalid?: string } {
+  const t = (raw ?? '').trim();
+  if (t === '') return { value: DEFAULT_MATCH_THRESHOLD };
+  if (!/^\d+(\.\d+)?$/.test(t)) return { value: DEFAULT_MATCH_THRESHOLD, invalid: `"${t.slice(0, 40)}" is not a number (use 4.0 or 80)` };
   const n = Number(t);
-  return n >= 0 && n <= 100 ? n : DEFAULT_MATCH_THRESHOLD;
+  const v = n > 0 && n <= 5 ? n * 20 : n;
+  if (!Number.isFinite(v) || v > 100) return { value: DEFAULT_MATCH_THRESHOLD, invalid: `${t.slice(0, 40)} is above 100` };
+  return { value: Math.round(v) };
+}
+
+/** MATCH_THRESHOLD as the loaders read it: 0..100 (a 1..5 value is scaled by 20), default 80 (career-ops 4.0 of 5). */
+export function matchThresholdFromEnv(env: Record<string, string | undefined> = process.env): number {
+  return parseMatchThreshold(env.MATCH_THRESHOLD).value;
 }
 
 /** The rubric_v2 dimensions below their minimum, in rubric order. */
