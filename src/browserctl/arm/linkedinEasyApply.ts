@@ -19,6 +19,7 @@ import { normName, EASY_APPLY_OPEN_RE } from '../guard.js';
 import { bindTouchRelease } from '../intent.js';
 import { canonicalJobPage, clearEasyApplyState, jobNumericIdOfUrl, jobShowsApplied } from '../easyApply.js';
 import type { ArmDeps, ArmResult } from './linkedin.js';
+import { linkedinEasyEnabled } from '../../apply/easyFlag.js';
 
 export const JOB_ID_RE = /^[\w.:@-]{1,200}$/;
 const DEFAULT_MAX_APPLIES_PER_DAY = 5;
@@ -60,7 +61,7 @@ export async function armEasyApply(deps: ArmDeps, a: { job_id?: string }): Promi
   if (h !== null) return fail('halted', 'halted', `linkedin halted: ${h}`);
   // Easy Apply is a LinkedIn drip lane action only: never in a wake and never in an interactive session (the lane marks its run).
   if (deps.env.JOBBER_RUN_LANE !== 'linkedin_drip') return fail('refused', 'drip_lane_only', 'Easy Apply runs only in the LinkedIn drip lane');
-  if (deps.env.APPLY_LINKEDIN_EASY !== 'true') return fail('refused', 'easy_apply_off', 'APPLY_LINKEDIN_EASY is not true; the owner applies to these jobs by hand');
+  if (!linkedinEasyEnabled(deps.env)) return fail('refused', 'easy_apply_off', 'APPLY_LINKEDIN_EASY is false; the owner applies to these jobs by hand');
 
   // Pre-flight from SQLite, before any browser use.
   const job = db.prepare('SELECT id, source, url, apply_url, external_apply_url, company FROM jobs WHERE id = ?').get(a.job_id) as JobRow | undefined;

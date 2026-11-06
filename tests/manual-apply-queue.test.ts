@@ -13,7 +13,7 @@ import { renderWorking } from '../src/status/render.js';
 import { renderEscalations } from '../src/status/escalations.js';
 import { run as manualCli } from '../scripts/apply-manual.js';
 
-const OFF: NodeJS.ProcessEnv = {};
+const OFF: NodeJS.ProcessEnv = { APPLY_LINKEDIN_EASY: 'false' };
 const ON: NodeJS.ProcessEnv = { APPLY_LINKEDIN_EASY: 'true' };
 const NOW = new Date('2026-11-02T10:00:00.000Z');
 

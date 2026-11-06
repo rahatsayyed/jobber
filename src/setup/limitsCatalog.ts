@@ -100,7 +100,7 @@ export const LIMITS: LimitSpec[] = [
     what: 'LinkedIn direct messages sent per day.',
     raiseNote: 'Many messages to people you just met look like spam.' },
   { key: 'LINKEDIN_MAX_EASY_APPLIES_PER_DAY', group: 'daily-caps', default: 5, min: 0, max: 100000, unit: 'per day',
-    what: 'LinkedIn Easy Apply applications submitted per day by the LinkedIn drip lane (only when APPLY_LINKEDIN_EASY is true). 0 means none.',
+    what: 'LinkedIn Easy Apply applications submitted per day by the LinkedIn drip lane (Easy Apply is on by default; set APPLY_LINKEDIN_EASY=false to turn it off). 0 means none.',
     raiseNote: 'Many Easy Apply submissions in a day look automated to LinkedIn; keep it low.' },
   { key: 'NAUKRI_MAX_APPLIES_PER_DAY', group: 'daily-caps', default: 30, min: 0, max: 100000, unit: 'per day',
     what: 'Naukri applications per day.' },

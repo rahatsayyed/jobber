@@ -34,7 +34,8 @@ function pdf(rel: string, body: string | Buffer = '%PDF-1.4 fake'): void {
   fs.writeFileSync(abs, body);
 }
 
-async function setup(env: NodeJS.ProcessEnv = {}) {
+const OFFENV: NodeJS.ProcessEnv = { APPLY_LINKEDIN_EASY: 'false' };
+async function setup(env: NodeJS.ProcessEnv = OFFENV) {
   h = await makeHarness({
     env,
     manualApply: { write: (fn) => fn(h!.data), resumeName: () => 'Rahat Sayyed', root },
@@ -58,7 +59,7 @@ describe('manual-apply API: auth, CSRF and validation', () => {
     expect((await h!.call('GET', '/api/manual-apply')).status).toBe(401);
     expect((await h!.call('GET', `/api/manual-apply/${q}/resume`)).status).toBe(401);
     for (const p of ['done', 'skip']) expect((await h!.call('POST', `/api/manual-apply/${p}`, { headers: hdr, body: JSON.stringify({ ids: [q] }) })).status).toBe(401);
-    expect(buildManualQueue(h!.data, {}).count).toBe(1);
+    expect(buildManualQueue(h!.data, OFFENV).count).toBe(1);
   });
 
   it('writes need the CSRF token and a same-origin Origin', async () => {
@@ -69,7 +70,7 @@ describe('manual-apply API: auth, CSRF and validation', () => {
     expect((await h!.call('POST', '/api/manual-apply/done', { headers: { ...base, origin: s.origin }, body })).status).toBe(403);
     expect((await h!.call('POST', '/api/manual-apply/done', { headers: { ...base, 'x-csrf-token': 'wrong', origin: s.origin }, body })).status).toBe(403);
     expect((await h!.call('POST', '/api/manual-apply/skip', { headers: { ...base, 'x-csrf-token': s.csrf, origin: 'http://evil.example' }, body })).status).toBeGreaterThanOrEqual(400);
-    expect(buildManualQueue(h!.data, {}).count).toBe(1);
+    expect(buildManualQueue(h!.data, OFFENV).count).toBe(1);
   });
 
   it('rejects bad bodies and audits the reject without the content', async () => {
@@ -81,19 +82,19 @@ describe('manual-apply API: auth, CSRF and validation', () => {
       expect((await s.post('/api/manual-apply/skip', body)).status).toBe(400);
     }
     expect((await h!.call('POST', '/api/manual-apply/done', { headers: { cookie: s.cookie, 'x-csrf-token': s.csrf, origin: s.origin, 'content-type': 'text/plain' }, body: 'ids=1' })).status).toBe(415);
-    expect(buildManualQueue(h!.data, {}).count).toBe(1);
+    expect(buildManualQueue(h!.data, OFFENV).count).toBe(1);
     expect(auditRows().some((a) => a.kind === 'manual_apply_reject')).toBe(true);
   });
 
   it('answers a write failure when no writer is configured', async () => {
-    h = await makeHarness({ env: {} });
+    h = await makeHarness({ env: OFFENV });
     const { cookie } = await h.login();
     const s = JSON.parse((await h.call('GET', '/api/session', { headers: { cookie } })).body) as { csrf: string };
     job(h.data, '1'); const q = queue(h.data, '1');
     const r = await h.call('POST', '/api/manual-apply/done', { headers: { cookie, 'x-csrf-token': s.csrf, origin: `http://127.0.0.1:${h.port}`, 'content-type': 'application/json' }, body: JSON.stringify({ ids: [q] }) });
     expect(r.status).toBe(422);
     expect(j(r).error).toBe('write failed');
-    expect(buildManualQueue(h.data, {}).count).toBe(1);
+    expect(buildManualQueue(h.data, OFFENV).count).toBe(1);
   });
 });
 
@@ -166,7 +167,7 @@ describe('manual-apply API: done and skip parity with the CLI', () => {
     expect(app('1')).toEqual(app('2'));
     expect(app('3')).toEqual([]);
     expect(app('4')).toEqual([]);
-    expect(buildManualQueue(h!.data, {}).count).toBe(0);
+    expect(buildManualQueue(h!.data, OFFENV).count).toBe(0);
   });
 
   it('bulk skip handles every id, reports a stale id and audits ids only', async () => {

@@ -246,7 +246,7 @@ A LinkedIn job card carries about 20 characters, so a job from `linkedin-jobs` w
 
 ## LinkedIn Easy Apply (drip lane, main account)
 
-Off by default (`APPLY_LINKEDIN_EASY`, exactly `true` turns it on). It is one action of the LinkedIn drip lane
+On by default (`APPLY_LINKEDIN_EASY`: unset, blank or anything but exactly `false` means on; exactly `false` turns it off; owner decision 2026-11-06). Every other gate is unchanged: drip lane only (`JOBBER_RUN_LANE=linkedin_drip`), the `LINKEDIN_MAX_EASY_APPLIES_PER_DAY` ceiling (5), `LINKEDIN_ACTIVE_HOURS`, `MAX_APPLIES_PER_DAY`, `APPLY_MAX_ATTEMPTS_PER_DAY`, vetoes, the fact and output gates, dry run, the kill switch and the answer book (an unanswerable question parks the job `needs_answer`). It is one action of the LinkedIn drip lane
 (`src/scheduler/linkedinDrip.ts`), never a wake step and never the `applier` MCP, so the single LinkedIn session and its lock are
 never contended. Order inside one tick: inbox read, owner-approved reply, accept check, DM to a newly connected person (and the other
 due follow-ups), then ONE Easy Apply application, then new invites. Scheduler code picks the job (`easyApplyRows`: a queue row with a

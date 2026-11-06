@@ -10,7 +10,7 @@ import { renderEscalations } from '../src/status/escalations.js';
 import { makeHarness, START, type Harness } from './helpers/webHarness.js';
 
 const NOW = new Date('2026-11-02T10:00:00.000Z');
-const OFF: NodeJS.ProcessEnv = {};
+const OFF: NodeJS.ProcessEnv = { APPLY_LINKEDIN_EASY: 'false' };
 const ON: NodeJS.ProcessEnv = { APPLY_LINKEDIN_EASY: 'true' };
 let db: BetterSqlite3.Database;
 beforeEach(() => { db = openDb(':memory:'); migrateOutreachTables(db); });

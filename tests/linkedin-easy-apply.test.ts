@@ -103,6 +103,21 @@ describe('arm kind easy_apply', () => {
     expect(w.page.log.filter((l) => l.startsWith('goto'))).toEqual([`goto ${JOB_URL}`]);
     expect(countSince(w.db, 'linkedin_profile_view', new Date(0))).toBe(1);
   });
+  it('is on by default: an unset or blank APPLY_LINKEDIN_EASY arms, only exactly false refuses; the other gates still apply', async () => {
+    for (const v of [undefined, '', ' ', 'yes']) {
+      const { w } = setup({ env: { APPLY_LINKEDIN_EASY: v } as unknown as Record<string, string> });
+      expect(await w.arm({ kind: 'easy_apply', job_id: JOB }), String(v)).toMatchObject({ status: 'armed', dry_run: false });
+    }
+    const off = setup({ env: { APPLY_LINKEDIN_EASY: 'false' } });
+    expect(await off.w.arm({ kind: 'easy_apply', job_id: JOB })).toMatchObject({ status: 'refused', code: 'easy_apply_off' });
+    // flag unset does not open the lane gate, the ceiling or the dry run
+    const lane = setup({ env: { APPLY_LINKEDIN_EASY: undefined, JOBBER_RUN_LANE: 'wake' } as unknown as Record<string, string> });
+    expect(await lane.w.arm({ kind: 'easy_apply', job_id: JOB })).toMatchObject({ status: 'refused', code: 'drip_lane_only' });
+    const cap = setup({ env: { APPLY_LINKEDIN_EASY: undefined, LINKEDIN_MAX_EASY_APPLIES_PER_DAY: '0' } as unknown as Record<string, string> });
+    expect(await cap.w.arm({ kind: 'easy_apply', job_id: JOB })).toMatchObject({ status: 'rate_limited' });
+    const dry = setup({ env: { APPLY_LINKEDIN_EASY: undefined, JOBBER_DRY_RUN: 'true' } as unknown as Record<string, string> });
+    expect(await dry.w.arm({ kind: 'easy_apply', job_id: JOB })).toMatchObject({ status: 'armed', dry_run: true });
+  });
   it('works only inside the LinkedIn drip lane run (a wake or an interactive session is refused)', async () => {
     const { w } = setup({ env: { JOBBER_RUN_LANE: '' } });
     expect(await w.arm({ kind: 'easy_apply', job_id: JOB })).toMatchObject({ status: 'refused', code: 'drip_lane_only' });

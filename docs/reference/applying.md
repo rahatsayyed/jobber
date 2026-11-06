@@ -17,7 +17,7 @@ answer as `apply_platform` and `apply_tier`. `none` (never applied to) covers: a
 `gen:*` source (see "Sources and operators"), no or a bad `apply_url`, a look-alike host (such as
 `evil-greenhouse.io`), credentials in the URL, a non-http(s) scheme, an unknown host while
 `APPLY_ALLOW_UNKNOWN_HOSTS` is not `true` (when `true`, the platform is `browser`), and a LinkedIn URL
-while `APPLY_LINKEDIN_EASY` is not `true`. A naukri.com URL is class `naukri`. A wellfound.com URL is
+while `APPLY_LINKEDIN_EASY` is exactly `false` (Easy Apply is on by default since 2026-11-06). A naukri.com URL is class `naukri`. A wellfound.com URL is
 class `wellfound` (tier `wellfound_agent`, apply-capable; Wellfound is not a discover-only source): the
 `apply-operator` opens the job with `wellfound_open`, calls `wellfound_arm_apply({job_id})` (code gates:
 veto, the `wellfound_apply` ceiling beside the shared `MAX_APPLIES_PER_DAY`, dry run, halts, a live
@@ -69,7 +69,7 @@ tool); the owner manages them with `npm run site:account` (`add`, `list`, `remov
 never runs it). Email verification is owner assist by default (`SITE_MAIL_VERIFY=owner_assist`); `gmail`
 mode needs a non-empty `SITE_MAIL_SENDERS`, and a verification link is opened only by `site_open_link`
 under host and path rules in code. A LinkedIn Easy Apply row (`linkedin_easy`) is never driven by the
-`applier` MCP or the `apply-operator`: with `APPLY_LINKEDIN_EASY=true` the LinkedIn drip lane applies to it on
+`applier` MCP or the `apply-operator`: with Easy Apply on (the default; only exactly `APPLY_LINKEDIN_EASY=false` turns it off) the LinkedIn drip lane applies to it on
 the main account through the LinkedIn engine (`linkedin_arm_send` kind `easy_apply`); otherwise it waits for
 the owner in the manual apply queue.
 
@@ -242,13 +242,13 @@ these jobs and retries `no_popup` / `no_external_control` once after a fresh sna
 `manual_review` with no note: `npm run apply:requeue-company-site [-- --dry]` (Naukri rows, empty note, no resolved URL; idempotent).
 
 **Manual apply queue.** `src/manual/manualApply.ts` lists what the owner must apply to by hand: LinkedIn job pages that are Easy Apply jobs
-while `APPLY_LINKEDIN_EASY` is not `true` (reason `easy_apply_off`), and any queue row the machine gave up on (`apply_status` `needs_owner` or
+while `APPLY_LINKEDIN_EASY` is `false` (reason `easy_apply_off`), and any queue row the machine gave up on (`apply_status` `needs_owner` or
 `manual_review`, not `needs_answer` or `needs_human`, which have `npm run answers` and `npm run apply:assist`) that has a usable https address
 (reasons `easy_apply_failed`, `company_site_form`, `listing_page`, `no_relevant_role`). Each entry: `id` (queue row), `job_id`, `title`, `company`, `platform`,
 `open_url` (validated with `validateManualUrl`), `resume_pdf` (the tailored PDF, re-rendered on demand by the attachment resolver), `ats_note`,
 `reason`, `since`. `npm run apply:manual -- list`, `done <id>` (apply_status `submitted_by_owner`, one `applications` row with method `manual`,
 so the funnel counts it and follow-ups see it as applied) and `skip <id>` (`skipped_by_owner`). It also shows as `manualApply {count, easyApplyOff,
-items[]}` in the status snapshot JSON, as a line in `status working`, `/escalations` and the Telegram digest. Turning `APPLY_LINKEDIN_EASY` on
+items[]}` in the status snapshot JSON, as a line in `status working`, `/escalations` and the Telegram digest. Turning Easy Apply on (removing `APPLY_LINKEDIN_EASY=false`)
 moves the Easy Apply rows from this list to the LinkedIn drip lane (see "LinkedIn Easy Apply" in `connecting.md`); a row the lane gives up on comes back here.
 
 The same queue is in the dashboard Inbox as "Apply by hand" (`src/web/manualApplyRoutes.ts`; the Inbox badge counts it, `GET /api/escalations/count`
@@ -260,3 +260,39 @@ for every dashboard write; the audit log stores the action and ids only; a note 
 takes only the row id: the file is what `resolveJobIdResume` returns (a `.pdf` inside `renderer/automation`, real path checked, at most 2 MB, starts
 with `%PDF`), sent as `application/pdf` with `Content-Disposition: attachment`. The web process never re-renders a missing PDF (the CLI does that), so
 a missing file gives 404 and no download button.
+
+
+## Host hops (careers page to the real form)
+
+Owner decision 2026-11-06. A careers or listing page often sits on one host and the application form on another (a Greenhouse board that sends you to
+`persistent.com`, `careers.acme.com` to `boards.greenhouse.io`, `www.acme.com` to `apply.acme.com`). A hop is never a model action: no tool takes a URL
+(`apply_open` reads it from SQLite; the page moves only by its own redirect or by a click on a control the state listed). Code (`src/applier/hostHop.ts`,
+`hostGuard.ts`) judges ONLY the page the session is on now, before any tool touches it; redirect chains and interstitials get a moment to settle first
+(`settleTransit`), so an unknown host in the middle of a chain that ends on an allowed host is fine.
+
+| Final host | Verdict |
+|---|---|
+| same host as the open job | go on |
+| known ATS vendor host (registry: greenhouse.io, lever.co, ashbyhq.com, workable.com, smartrecruiters.com, myworkdayjobs.com, recruitee.com, personio.de/.com; hop-only list: icims, bamboohr, teamtailor, jobvite, breezy.hr, applytojob, taleo, successfactors, pinpointhq, comeet, join.com, dayforcehcm, paylocity, rippling, gem) | hop; the registry platform (and its recipe and `APPLY_MAX_PER_HOST_<ID>`) is used from then on |
+| same registrable domain (eTLD+1) as the host the job is on now (multi-tenant hosting such as github.io counts per tenant) | hop |
+| the hiring company's official site, tied to the job's company in code: (a) the domain label matches the normalised company name (legal words such as Inc, Ltd, Pvt, Private, Limited, Technologies, Systems, Solutions, LLP stripped; exact label, or the name plus one suffix word such as `persistentsystems.com`; name of at least 4 characters, so `Sage` never matches `sage-evil.com` or `message.com`), or (b) a company domain already on file (verified contact email domains, hosts of company-site apply links of the company's other jobs), or (c) a host the owner approved in `user-data/apply-hosts.json` | hop |
+| anything else: unknown domain, look-alike of a vendor (`greenhouse.io.evil.com`), punycode or mixed-script label, IP, port, `http`, credentials in the URL | refused `host_changed` with reason `unknown_apply_host: <host>`; the job is parked `needs_owner` (note `unknown_apply_host:<host>`, one quiet info notice, one inbox escalation, listed in the manual apply queue); not retried in this run |
+
+At most 4 hops per application. Every hop writes one log line `host_hop <from> -> <to>` (host names only); a hop is not an alert, not a notice and not an
+error. After a hop the final page is also judged: a form that asks for a payment card, a government ID number (Aadhaar, PAN, SSN, passport, national id) or
+bank details parks the job as `unsafe_apply_page`. A login wall, CAPTCHA, MFA or sign-up on the new host follows the usual rules (`needs_human`), and a pure
+listing the `apply_list_roles` path. The page text is never used for the decision, only field labels and names.
+
+Caps follow the host where the form really is: `APPLY_MAX_PER_HOST` and `APPLY_MAX_PER_HOST_<ID>` count the host (and registry platform) of the final form, the
+per-host gap is stamped for it, and a hop to a host that is already at its cap answers `rate_limited host_cap`. `site_open_link` verification links are checked
+against the hosts of the new location.
+
+**Allow a host yourself:** put its registrable domain in `user-data/apply-hosts.json` (`{ "hosts": ["persistent.com"] }`, git-ignored, example in
+`user-data.example/apply-hosts.json`); every subdomain of it is then allowed for any job. A missing or bad file allows nothing.
+
+**Release jobs parked for a host change:** `npm run apply:release-held -- --reason host_changed [--dry]`. It looks at `needs_owner` queue rows with the note
+`unknown_apply_host:<host>` or an old `host_unknown` / `host_changed` escalation, re-runs the classification in code against the stored apply URL and company
+(no browser, no network), and puts back the ones that pass (`apply_status` NULL, note cleared; never marks anything applied). Vetoed jobs, rows that are no
+longer apply-capable and hosts the policy still refuses stay parked and are listed with their host. Every other gate (vetoes, hard stops, caps, dedupe, the
+90-day repeat-contact guard, already applied or attempted) runs again in `apply_open`, and a host that is still untrusted is parked again. Idempotent. It sends one
+quiet Telegram line to the `inbox` topic (`released N held jobs`), never to `alerts`.

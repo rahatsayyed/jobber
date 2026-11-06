@@ -33,11 +33,12 @@ describe('classifyApplyUrl', () => {
     expect(c(null).platform).toBe('none');
   });
 
-  it('linkedin is none while APPLY_LINKEDIN_EASY is not exactly true', () => {
+  it('linkedin Easy Apply is on by default and off only with exactly false', () => {
     const u = 'https://www.linkedin.com/jobs/view/123';
-    expect(c(u, 'linkedin')).toMatchObject({ platform: 'none', tier: 'never', reason: 'easy_apply_off' });
-    for (const v of ['TRUE', '1', 'yes', ' true']) expect(c(u, 'linkedin', { APPLY_LINKEDIN_EASY: v }).platform).toBe('none');
-    expect(c(u, 'linkedin', { APPLY_LINKEDIN_EASY: 'true' })).toMatchObject({ platform: 'linkedin_easy', tier: 'agent' });
+    expect(c(u, 'linkedin')).toMatchObject({ platform: 'linkedin_easy', tier: 'agent' });
+    for (const v of ['', ' ', 'true', 'TRUE', '1', 'yes']) expect(c(u, 'linkedin', { APPLY_LINKEDIN_EASY: v }).platform).toBe('linkedin_easy');
+    expect(c(u, 'linkedin', { APPLY_LINKEDIN_EASY: ' false ' }).platform).toBe('none');
+    expect(c(u, 'linkedin', { APPLY_LINKEDIN_EASY: 'false' })).toMatchObject({ platform: 'none', tier: 'never', reason: 'easy_apply_off' });
   });
 
   it('naukri url is naukri', () => {
@@ -71,5 +72,20 @@ describe('classifyApplyUrl', () => {
     const t = Object.fromEntries(ATS_REGISTRY.map((a) => [a.id, a.tier]));
     expect(t).toMatchObject({ greenhouse: 'fast', lever: 'fast', ashby: 'fast', workable: 'fast', smartrecruiters: 'fast', workday: 'agent', recruitee: 'agent', personio: 'agent' });
     expect(ATS_REGISTRY.find((a) => a.id === 'workday')?.accountRequired).toBe(true);
+  });
+});
+
+describe('linkedinEasyEnabled (APPLY_LINKEDIN_EASY default on)', () => {
+  it('is on unless exactly false after trim', async () => {
+    const { linkedinEasyEnabled } = await import('../src/apply/easyFlag.js');
+    const { easyApplyOn } = await import('../src/scheduler/linkedinDrip.js');
+    for (const v of [undefined, '', '  ', 'true', 'TRUE', '0', 'no']) {
+      expect(linkedinEasyEnabled({ APPLY_LINKEDIN_EASY: v })).toBe(true);
+      expect(easyApplyOn({ APPLY_LINKEDIN_EASY: v } as NodeJS.ProcessEnv)).toBe(true);
+    }
+    for (const v of ['false', ' false ']) {
+      expect(linkedinEasyEnabled({ APPLY_LINKEDIN_EASY: v })).toBe(false);
+      expect(easyApplyOn({ APPLY_LINKEDIN_EASY: v } as NodeJS.ProcessEnv)).toBe(false);
+    }
   });
 });

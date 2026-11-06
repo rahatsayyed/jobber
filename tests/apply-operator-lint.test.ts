@@ -68,7 +68,7 @@ describe('apply-operator', () => {
     expect(body).toMatch(/never check/i);
     expect(body).toMatch(/unchecked/i);
     expect(body).toMatch(/one application at a time/i);
-    expect(body).toContain('APPLY_LINKEDIN_EASY=true');
+    expect(body).toContain('APPLY_LINKEDIN_EASY');
     expect(body).toContain('untrusted');
     expect(body).toContain('quota');
     expect(body).toContain('injection_suspected');

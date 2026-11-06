@@ -44,15 +44,19 @@ export interface OpenOptions {
   allowedHosts: string[];
   /** Budgets are counted per job id; a new id resets them. */
   jobId: string;
+  /** The applier only: let a REDIRECT of this first navigation end on any http(s) host. The caller judges the final host in code right after (host hops) and closes the session when it is not trusted; nothing is typed in between. Never widens later navigations. */
+  redirectAny?: boolean;
   /** Host whose saved session file (secrets/site-sessions/<host>.json) is loaded; default: the URL host. */
   sessionHost?: string;
 }
 
-export type NavResult = { ok: true; url: string } | { ok: false; code: string; reason: string };
+export type NavResult = { ok: true; url: string } | { ok: false; code: string; reason: string; /** refused: host name the page ended on, when known. */ host?: string };
 
 export interface WebRuntime {
   open(url: string, opts: OpenOptions): Promise<NavResult>;
   navigate(url: string): Promise<NavResult>;
+  /** Replace the host set that later navigations are checked against (the applier calls it after an allowed host hop). */
+  setAllowedHosts?(hosts: string[]): void;
   page(): LiPage | null;
   context(): LiContext | null;
   close(): Promise<boolean>;
@@ -83,6 +87,7 @@ export function hostAllowed(url: string, allowedHosts: string[]): boolean {
 const logErr = (where: string, e: unknown) =>
   console.error(`[webcore] ${where}: ${String((e as Error)?.message ?? e).slice(0, 160)}`);
 
+const safeProtocol = (url: string): string => { try { return new URL(url).protocol; } catch { return ''; } };
 const hostOf = (url: string): string => { try { return new URL(url).hostname.toLowerCase(); } catch { return ''; } };
 
 interface Session {
@@ -164,7 +169,7 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
     return null;
   }
 
-  async function go(page: LiPage, url: string, allowedHosts: string[]): Promise<NavResult> {
+  async function go(page: LiPage, url: string, allowedHosts: string[], redirectAny = false): Promise<NavResult> {
     job!.calls++;
     lastNav.set(hostOf(url), now().getTime());
     if (session?.shared) recordSharedNav(hostOf(url), now().getTime(), navFile);
@@ -176,9 +181,9 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
       return fail('failed', 'navigation failed');
     }
     const finalUrl = page.url();
-    if (!hostAllowed(finalUrl, allowedHosts)) {
+    if (!hostAllowed(finalUrl, allowedHosts) && !(redirectAny && /^https?:$/.test(safeProtocol(finalUrl)))) {
       await closeSession();
-      return fail('refused', 'host_change');
+      return { ok: false, code: 'refused', reason: 'host_change', host: hostOf(finalUrl) };
     }
     return { ok: true, url: finalUrl };
   }
@@ -206,7 +211,7 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
           session = { browser: r.browser, context: r.context, page, lock: { release() { /* no web lock on the shared host */ } }, idle: null, allowedHosts: opts.allowedHosts, shared: true };
           process.once('beforeExit', onExit);
           touch();
-          const res = await go(page, url, opts.allowedHosts);
+          const res = await go(page, url, opts.allowedHosts, opts.redirectAny);
           if (!res.ok) await closeSession();
           return res;
         } catch (e) {
@@ -255,7 +260,7 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
       session = { browser, context, page, lock: lock.handle, idle: null, allowedHosts: opts.allowedHosts, shared: false };
       process.once('beforeExit', onExit);
       touch();
-      const r = await go(page, url, opts.allowedHosts);
+      const r = await go(page, url, opts.allowedHosts, opts.redirectAny);
       if (!r.ok) await closeSession(); // never leave the lock and idle timer behind a failed open
       return r;
     } catch (e) {
@@ -277,6 +282,7 @@ export function createWebRuntime(deps: WebRuntimeDeps): WebRuntime {
   return {
     open: (url, opts) => serial(() => open(url, opts)),
     navigate: (url) => serial(() => navigate(url)),
+    setAllowedHosts: (hosts) => { if (session) session.allowedHosts = [...hosts]; },
     page: () => session?.page ?? null,
     context: () => session?.context ?? null,
     close: () => enqueue(() => closeSession()),

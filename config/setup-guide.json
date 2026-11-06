@@ -273,7 +273,7 @@
         {
           "name": "APPLY_LINKEDIN_EASY",
           "secret": false,
-          "purpose": "whether LinkedIn Easy Apply on the main account (LinkedIn drip lane) is allowed (ships false)",
+          "purpose": "whether LinkedIn Easy Apply on the main account (LinkedIn drip lane) is allowed (ships on; exactly false turns it off)",
           "where": ".env.example",
           "entered_in": "owner edits .env"
         },

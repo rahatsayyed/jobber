@@ -67,10 +67,11 @@ function easyJob(s: S, n: string, o: { status?: string | null; note?: string | n
 const inboxRead = (s: S): void => setState(s.db, LI_STATE_INBOX_AT, new Date(s.now().getTime() - 5 * 60_000).toISOString(), s.now());
 const pick = async (s: S) => (await pickLinkedinItem(s.d, s.now(), loadLinkedinDripConfig(s.d.env))).item;
 const ON = { APPLY_LINKEDIN_EASY: 'true' };
+const OFF = { APPLY_LINKEDIN_EASY: 'false' };
 
 describe('picker', () => {
-  it('picks an Easy Apply job only when APPLY_LINKEDIN_EASY is true', async () => {
-    const off = setup();
+  it('picks an Easy Apply job unless APPLY_LINKEDIN_EASY is false (on by default)', async () => {
+    const off = setup(OFF);
     easyJob(off, '4011111111');
     inboxRead(off);
     expect(await pick(off)).toBeNull();
@@ -142,18 +143,18 @@ describe('picker', () => {
 
 describe('manual queue <-> drip lane hand-over', () => {
   it('turning APPLY_LINKEDIN_EASY on moves the rows from the manual queue to the lane without losing any', async () => {
-    const s = setup();
+    const s = setup(OFF);
     const ids = ['4011111111', '4022222222', '4033333333'].map((n) => easyJob(s, n));
-    const offList = buildManualQueue(s.db, {});
+    const offList = buildManualQueue(s.db, OFF);
     expect(offList.items.map((i) => i.job_id).sort()).toEqual([...ids].sort());
     expect(offList.items.every((i) => i.reason === 'easy_apply_off')).toBe(true);
-    expect(easyApplyRows(s.db, {})).toEqual([]); // flag off: the lane owns none of them
+    expect(easyApplyRows(s.db, OFF)).toEqual([]); // flag off: the lane owns none of them
     const lane = easyApplyRows(s.db, ON).map((r) => r.job_id);
     const onList = buildManualQueue(s.db, ON).items.map((i) => i.job_id);
     expect(onList).toEqual([]); // the owner list no longer holds them
     expect([...lane, ...onList].sort()).toEqual([...ids].sort()); // nothing lost: every job is in exactly one of the two
     // and back
-    expect(buildManualQueue(s.db, {}).items.map((i) => i.job_id).sort()).toEqual([...ids].sort());
+    expect(buildManualQueue(s.db, OFF).items.map((i) => i.job_id).sort()).toEqual([...ids].sort());
   });
 
   it('a row the lane gave up on (needs_owner) shows in the manual queue whatever the flag says', () => {
@@ -196,9 +197,9 @@ describe('prompt, run environment and status', () => {
     const sOn = linkedinDripStatus(on.db, ON, { now: on.now(), tuning: on.d.tuning });
     expect(sOn.waiting.easy_applies_ready).toBe(1);
     expect(renderLinkedinDripLines(sOn, on.now()).join('\n')).toContain('Easy Apply ready 1');
-    const off = setup();
+    const off = setup(OFF);
     easyJob(off, '4011111111');
-    const sOff = linkedinDripStatus(off.db, {}, { now: off.now(), tuning: off.d.tuning });
+    const sOff = linkedinDripStatus(off.db, OFF, { now: off.now(), tuning: off.d.tuning });
     expect(sOff.waiting.easy_applies_ready).toBe(0);
     expect(renderLinkedinDripLines(sOff, off.now()).join('\n')).toContain('npm run apply:manual -- list');
   });

@@ -28,7 +28,7 @@ export interface ChannelContext {
   hnCheck?: 'matched' | 'unmatched' | 'no_domain_in_posting' | 'unknown_job' | 'not_applicable';
   /** A recruiter thread already verified server-side on Naukri for this job. */
   naukriThread?: boolean;
-  /** APPLY_LINKEDIN_EASY (ships false). */
+  /** APPLY_LINKEDIN_EASY (ships on; exactly false turns it off). */
   linkedinEasy?: boolean;
   /** APPLY_ALLOW_UNKNOWN_HOSTS (Task 16). */
   allowUnknownHosts?: boolean;

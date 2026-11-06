@@ -3,9 +3,9 @@
 // verified unchecked), then ONE transaction for MAX_APPLIES_PER_DAY (`easy_apply`) and the per-host daily
 // counter, then the click, then confirmation. Only a confirmed page writes applications.status='submitted'.
 import { z } from 'zod';
-import { FIXED_FAIL, clickControl, hostOfUrl, readPage } from '../../webcore/login.js';
+import { FIXED_FAIL, clickControl, readPage } from '../../webcore/login.js';
+import { judgeHost, settleHost } from '../hostGuard.js';
 import { acceptLegalRequired, enforceCheckboxGate } from '../../webcore/signup.js';
-import { hostAllowed } from '../../webcore/runtime.js';
 import { loadWebConfig } from '../../webcore/config.js';
 import { detectConfirmation } from '../confirm.js';
 import {
@@ -65,7 +65,8 @@ export async function handleSubmit(_input: z.infer<typeof SubmitInput>, deps: Ap
       const subs = m.controls.filter((c) => c.kind === 'submit');
       if (subs.length === 0) return refuse('no_submit_control', 'no submit control on this page');
       if (subs.length > 1) return refuse('ambiguous_submit', 'more than one submit control on this page');
-      if (hostOfUrl(page.url()) !== j.host) return refuse('host_changed', 'the page moved to another host; nothing was submitted');
+      const hop = settleHost(deps, j, page.url());
+      if (hop) return hop;
 
       const used = consumeSubmitCounters(deps.db, env, j.platform, j.host);
       if (used === 'daily_cap') return { status: 'rate_limited', code: 'daily_cap', reason: 'MAX_APPLIES_PER_DAY reached' };
@@ -86,7 +87,8 @@ export async function handleSubmit(_input: z.infer<typeof SubmitInput>, deps: Ap
         deps.recipes?.noteOutcome({ platform: j.platform, jobId: j.jobId, outcome: 'failed' });
         return { status: 'failed', code: 'error', reason: FIXED_FAIL };
       }
-      if (!hostAllowed(page.url(), j.allowedHosts)) {
+      // After the click the confirmation page may sit on another trusted host (vendor or same domain); only an untrusted host is "left the host".
+      if (judgeHost(deps, j, page.url()).kind === 'refused') {
         recordApplication(deps.db, j, 'manual_review', 'left the application host after submit', now);
         deps.recipes?.noteOutcome({ platform: j.platform, jobId: j.jobId, outcome: 'unconfirmed' });
         return { status: 'unconfirmed', code: 'left_host', reason: 'the page left the application host; check it by hand' };

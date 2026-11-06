@@ -1,7 +1,7 @@
 // apply_upload({field}): attaches the prepared PDF (outreach_queue.resume_pdf_path, inside the output
 // directory, .pdf) to the resume field. Cover letters are never uploaded (D12).
 import { z } from 'zod';
-import { hostOfUrl } from '../../webcore/login.js';
+import { settleHost } from '../hostGuard.js';
 import { FieldIdSchema } from '../refs.js';
 import { DEFAULT_RESUME_ROOT, findPreparedResumePath, validateResumePath } from '../resume.js';
 import { dryRunResult, findField, inPage, noteFilled, refuse, type ApplierDeps, type ApplyResult } from './common.js';
@@ -27,7 +27,8 @@ export async function handleUpload(input: UploadInputT, deps: ApplierDeps): Prom
     const dry = dryRunResult(deps, 'apply_upload', { job_id: job.jobId, field: f.id });
     if (dry) return dry;
     // Same re-check as a typed value: nothing is attached once the page left the host.
-    if (hostOfUrl(page.url()) !== job.host) return refuse('host_changed', 'the page moved to another host; nothing was uploaded');
+    const hop = settleHost(deps, job, page.url());
+    if (hop) return hop;
     const loc = page.locator(`[data-jf="${Number(f.id.slice(1)) - 1}"]`).first();
     if (!loc.setInputFiles) return { status: 'failed', code: 'error', reason: 'page interaction failed' };
     try {

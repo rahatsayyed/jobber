@@ -144,8 +144,8 @@ describe('storage and routing', () => {
     const cls = classifyApplyUrl('https://jobs.lever.co/acme/1', 'naukri', {});
     expect(setExternalApply(s.db, JOB, 'https://jobs.lever.co/acme/1', cls)).toBe(1);
     expect(row(s.db)).toMatchObject({ p: 'lever', u: 'https://jobs.lever.co/acme/1', s: null });
-    expect(classifyApplyUrl('https://www.linkedin.com/jobs/view/1/', 'linkedin-jobs', {})).toMatchObject({ platform: 'linkedin', reason: 'external_resolve' });
-    expect(classifyApplyUrl('https://www.linkedin.com/jobs/view/1/', 'remotive', {}).platform).toBe('none');
+    expect(classifyApplyUrl('https://www.linkedin.com/jobs/view/1/', 'linkedin-jobs', { APPLY_LINKEDIN_EASY: 'false' })).toMatchObject({ platform: 'linkedin', reason: 'external_resolve' });
+    expect(classifyApplyUrl('https://www.linkedin.com/jobs/view/1/', 'remotive', { APPLY_LINKEDIN_EASY: 'false' }).platform).toBe('none');
   });
   it('submitted rows are left alone', () => {
     const s = setup();

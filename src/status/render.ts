@@ -3,6 +3,7 @@ import { manualApplyLine } from '../manual/manualApply.js';
 import type { Snapshot } from './snapshot.js';
 import type { LimitKey } from '../outreach/limits.js';
 import { inActiveHours, loadActiveHours } from '../linkedin/activeHours.js';
+import { linkedinEasyEnabled } from '../apply/easyFlag.js';
 
 export interface WindowInfo {
   name: string;
@@ -63,9 +64,9 @@ export function renderLimits(s: Snapshot, opts: { env?: NodeJS.ProcessEnv; now?:
     lines.push(`linkedin active hours ${hm(h.startMin)}-${hm(h.endMin)} IST (${inActiveHours(now, h) ? 'open now' : 'closed now, no LinkedIn work'})${h.problem ? ` WARNING: ${h.problem}` : ''}`);
   }
   if (opts.env) {
-    lines.push(opts.env.APPLY_LINKEDIN_EASY === 'true'
-      ? 'linkedin easy apply: ON (APPLY_LINKEDIN_EASY=true): one application per LinkedIn drip tick, main account'
-      : 'linkedin easy apply: off (APPLY_LINKEDIN_EASY): you apply by hand, see npm run apply:manual -- list');
+    lines.push(linkedinEasyEnabled(opts.env)
+      ? 'linkedin easy apply: ON (default; APPLY_LINKEDIN_EASY=false turns it off): one application per LinkedIn drip tick, main account'
+      : 'linkedin easy apply: off (APPLY_LINKEDIN_EASY=false): you apply by hand, see npm run apply:manual -- list');
   }
   for (const key of Object.keys(PERIOD) as LimitKey[]) {
     const c = s.ceilings[key];

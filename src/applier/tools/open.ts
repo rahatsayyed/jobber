@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { getExcludedReason, getFirstHardStop } from '../../db.js';
 import { classifyApplyUrl, ATS_REGISTRY } from '../../apply/registry.js';
 import { hostMatches } from '../../lib/hostClass.js';
+import { hostAllowed } from '../../webcore/runtime.js';
+import { guardHopPage, settleHost, settleTransit, parkUnknownHost } from '../hostGuard.js';
 import { APPLY_HOST_PLATFORM_IDS, resolveHostCap } from '../../webcore/hostCaps.js';
 import { loadWebConfig } from '../../webcore/config.js';
 import { loadOutreachConfig } from '../../outreach/config.js';
@@ -13,7 +15,7 @@ import { hostCoolingDown, hostOfUrl, readPage } from '../../webcore/login.js';
 import { hostCooledDown } from '../cooldown.js';
 import { findPreparedResumePath, validateResumePath, DEFAULT_RESUME_ROOT } from '../resume.js';
 import {
-  blockedResult, envOf, failedResult, hostDayCount, nowOf, preflight, refuse, type ApplierDeps, type ApplyResult,
+  blockedResult, envOf, failedResult, hostDayCount, nowOf, preflight, refuse, type ApplierDeps, type ApplyResult, type OpenJob,
 } from './common.js';
 import { screenedState } from './state.js';
 
@@ -102,12 +104,33 @@ async function open(input: OpenInputT, deps: ApplierDeps): Promise<ApplyResult> 
 
   const entry = ATS_REGISTRY.find((a) => a.id === platform);
   const allowedHosts = entry ? entry.apexes.filter((a) => hostMatches(url, a)) : [host];
-  const nav = await deps.runtime.open(url, { allowedHosts: allowedHosts.length ? allowedHosts : [host], jobId });
+  const baseHosts = allowedHosts.length ? allowedHosts : [host];
+  // A redirect of the stored URL may end on another host (vendor, same domain, the company site); settleHost judges the final host in code right after.
+  const nav = await deps.runtime.open(url, { allowedHosts: baseHosts, jobId, redirectAny: true });
   if (!nav.ok) {
     deps.state.cur = null;
     if (nav.code === 'halted') return refuse('halted', nav.reason);
-    if (nav.code === 'refused') return refuse('host_changed', nav.reason);
+    if (nav.code === 'refused') {
+      // The session is already closed by the runtime. A final host is known: it is not trusted, park the job (no retry loop).
+      if (nav.host) { const parked = parkUnknownHost(deps, { jobId }, nav.host, 'redirect'); deps.state.pendingClose = false; return parked; }
+      return refuse('host_changed', nav.reason);
+    }
     return { status: 'failed', code: nav.code, reason: nav.reason };
+  }
+  const candidate: OpenJob = {
+    jobId, platform, host: hostAllowed(nav.url, baseHosts) ? hostOfUrl(nav.url) : host, url, allowedHosts: baseHosts,
+    location: firstLocation(job.description), steps: 0, submitted: false,
+  };
+  if (!hostAllowed(nav.url, baseHosts)) {
+    const pg = deps.runtime.page();
+    if (pg) await deps.runtime.serial(() => settleTransit(deps, pg, candidate));
+    const hop = settleHost(deps, candidate, pg ? pg.url() : nav.url);
+    if (hop) {
+      deps.state.pendingClose = false;
+      await deps.runtime.close();
+      deps.state.cur = null;
+      return hop;
+    }
   }
 
   const read = await deps.runtime.serial(async () => {
@@ -121,15 +144,19 @@ async function open(input: OpenInputT, deps: ApplierDeps): Promise<ApplyResult> 
     deps.state.cur = null;
     return r;
   }
+  const unsafe = guardHopPage(deps, candidate, read.raw);
+  if (unsafe) {
+    deps.state.pendingClose = false;
+    await deps.runtime.close();
+    deps.state.cur = null;
+    return unsafe;
+  }
   const s = await screenedState(read.model, 'read', deps);
   if (!s.ok) {
     await deps.runtime.close();
     deps.state.cur = null;
     return s.result;
   }
-  deps.state.cur = {
-    jobId, platform, host: hostOfUrl(nav.url), url, allowedHosts: allowedHosts.length ? allowedHosts : [host],
-    location: firstLocation(job.description), steps: 0, submitted: false,
-  };
-  return { status: 'ok', code: 'opened', platform, host: deps.state.cur.host, state: s.state };
+  deps.state.cur = candidate;
+  return { status: 'ok', code: 'opened', platform: candidate.platform, host: candidate.host, state: s.state };
 }

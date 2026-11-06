@@ -1,9 +1,9 @@
 // apply_next({control}): next, back or save only (submit has its own gated tool). Enforces
 // APPLY_MAX_STEPS and re-runs the checkbox gate (marketing unchecked and verified) before leaving a step.
 import { z } from 'zod';
-import { clickControl, hostOfUrl, readPage } from '../../webcore/login.js';
+import { clickControl, readPage } from '../../webcore/login.js';
+import { guardHopPage, settleHost, settleTransit } from '../hostGuard.js';
 import { enforceCheckboxGate, acceptLegalRequired } from '../../webcore/signup.js';
-import { hostAllowed } from '../../webcore/runtime.js';
 import { loadWebConfig } from '../../webcore/config.js';
 import { ControlIdSchema } from '../refs.js';
 import {
@@ -47,17 +47,19 @@ export async function handleNext(input: NextInputT, deps: ApplierDeps): Promise<
       if (!same) return refuse('page_changed', 'the page changed; read the state again');
       clickId = same.id;
     }
-    if (hostOfUrl(page.url()) !== job.host) return refuse('host_changed', 'the page moved to another host; nothing was clicked');
+    const before = settleHost(deps, job, page.url());
+    if (before) { closeAfter = true; return before; }
     await clickControl(page, clickId);
     job.steps++;
     await page.waitForTimeout(loadWebConfig(env).settleMs).catch(() => undefined);
-    if (!hostAllowed(page.url(), job.allowedHosts)) {
-      closeAfter = true;
-      deps.state.cur = null;
-      return refuse('host_changed', 'the click left the application host; the session was closed');
-    }
+    // The click may have moved the page to the real application host (careers site to ATS vendor): an allowed hop goes on, any other host is parked.
+    await settleTransit(deps, page, job);
+    const after0 = settleHost(deps, job, page.url());
+    if (after0) { closeAfter = true; return after0; }
     const after = await readPage(page);
     if (after.model.block) return blockedResult(deps, after.model);
+    const unsafeAfter = guardHopPage(deps, job, after.raw);
+    if (unsafeAfter) { closeAfter = true; return unsafeAfter; }
     const s = await screenedState(after.model, 'read', deps);
     if (!s.ok) return s.result;
     return { status: 'ok', code: 'moved', state: s.state };
