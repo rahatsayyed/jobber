@@ -9,6 +9,7 @@ import { cleanJobTitle } from './lib/jobTitle.js';
 import { isApplyBlockedSource, isHeldSource } from './lib/discoverOnly.js';
 import { classifyApplyUrl } from './apply/registry.js';
 import { channelsFor, type ChannelVerdict } from './lib/channels.js';
+import { checkRole, sweepRoleGate, type RoleGateConfig } from './roleGate.js';
 import { applyPipelineSkips, applyPriorityRepeats, JOB_STATUS_JD_PENDING, JOB_STATUS_REPEAT_CONTACT, planPipelineWork, QUEUE_NOT_REPREP_SQL, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_SKIP_SQL, PIPELINE_WINDOW_HOURS, PREP_OFFER_LIMIT, PREP_OFFER_LIMIT_APPLY, prepOfferLimitFor, sqlTime } from './pipelineWork.js';
 import { laneOrder } from './promoted.js';
 import { UNVERIFIED_ADDRESS, isVerifiedAddress } from './lib/verifiedAddress.js';
@@ -1228,6 +1229,8 @@ export interface UnscoredJob extends Job {
   promoted?: boolean;
   /** Set on an owner-submitted job whose request is forced: P2c does not drop it for a score below the threshold (vetoes still apply). */
   force_prepare?: true;
+  /** The role gate could not clearly place the title in a target family: the matcher is told to be strict on role_fit. */
+  role_gate?: 'borderline';
 }
 
 /** Most owner-submitted (priority) jobs one wake's pipeline takes; the rest stay pending for the next wake. */
@@ -1244,7 +1247,7 @@ export { PREP_OFFER_LIMIT, PREP_OFFER_LIMIT_APPLY } from './pipelineWork.js';
  */
 export function listUnscoredJobs(
   db: BetterSqlite3.Database,
-  opts: { limit?: number; matchThreshold?: number; kind?: 'all' | 'matched' | 'unscored'; offset?: number; now?: Date; oncePerRun?: boolean } = {},
+  opts: { limit?: number; matchThreshold?: number; kind?: 'all' | 'matched' | 'unscored'; offset?: number; now?: Date; oncePerRun?: boolean; roleGate?: RoleGateConfig } = {},
 ): UnscoredJob[] {
   const limit = Math.max(1, Math.min(100, Math.floor(opts.limit ?? 25)));
   const kind = opts.kind ?? 'all';
@@ -1258,6 +1261,9 @@ export function listUnscoredJobs(
   const now = opts.now ?? new Date();
   applyPipelineSkips(db, planPipelineWork(db, { now, failLimit: MATCH_FAIL_LIMIT, matchThreshold: opts.matchThreshold }).skips);
   const windowStart = sqlTime(new Date(now.getTime() - PIPELINE_WINDOW_HOURS * 3600_000));
+  // ROLE GATE (src/roleGate.ts, config/role-families.json): a job whose title is not a target role is marked role_mismatch and excluded here,
+  // before any matcher call. Opt-in per caller (the db MCP tool passes the config). Manual requests are NOT exempt (Safety rule 18: vetoes apply, even forced).
+  if (opts.roleGate) sweepRoleGate(db, { cfg: opts.roleGate, windowStart, matchThreshold: opts.matchThreshold });
   const pendingLimit = kind === 'matched' ? limit : Math.max(1, Math.floor(limit / 2));
   type Row = Record<string, string | number | null>;
   const cols = 'id, source, title, company, url, apply_url, description, posted_at, score, prep_offers, COALESCE(promoted, 0) AS promoted, poster_url, apply_email, company_confidence';
@@ -1343,6 +1349,7 @@ export function listUnscoredJobs(
       ...(r.promoted === 1 ? { promoted: true as const } : {}),
       ...(manual ? { priority: 1 as const } : {}),
       ...(manual && r.forced ? { force_prepare: true as const } : {}),
+      ...(opts.roleGate && checkRole(job, opts.roleGate).verdict === 'borderline' ? { role_gate: 'borderline' as const } : {}),
     };
   };
   return [

@@ -7,6 +7,7 @@ import { assessLegitimacy, type Legitimacy } from './legitimacy.js';
 import { mentionedTargetRegion, specificTargets, targetRegionEvidence, type TargetRegions } from './targetRegions.js';
 import { hasRequirementSignal, POST_EMPTY_REASON, POST_SOURCE, POST_THIN_FLAG, POST_TITLE_FALLBACK_PREFIX } from './lib/postSignals.js';
 import { NO_COMPANY_FLAG, NO_COMPANY_REASON, WELLFOUND_SOURCE } from './wellfound/company.js';
+import { checkRole, type RoleGateConfig } from './roleGate.js';
 import { findRestriction, isRemotePosting, REGION_WORD } from './remotePolicy.js';
 
 // Why a model location FAIL may be shown as a FLAG, or null (FAIL stays). Never when a restriction marker (src/remotePolicy.ts) is in the
@@ -39,6 +40,8 @@ export interface VetoExtras {
   facts?: JobFacts; now?: Date; languages?: LanguageConfig | null; languagesInvalid?: string;
   // Target regions (config/target-regions.json). undefined = caller does not use them; null (+ targetRegionsInvalid) = the file is invalid: no downgrade, a flag.
   targetRegions?: TargetRegions | null; targetRegionsInvalid?: string;
+  // Role gate (src/roleGate.ts). undefined = caller does not use it. `roleGateInvalid` = the config file is invalid and the built-in defaults ran: a flag.
+  roleGate?: RoleGateConfig; roleGateInvalid?: string;
 }
 /** `gate_flags` (excluded jobs only): the soft flags computed anyway, persisted by saveGateResults while `flags` stays empty. */
 export interface VetoResult { excluded: boolean; reason?: string; flags: string[]; gate_flags?: string[]; legitimacy?: Legitimacy; language_note?: string | null }
@@ -93,6 +96,14 @@ export function applyVetoes(
   const out = (r: Omit<VetoResult, 'legitimacy' | 'language_note'>): VetoResult =>
     ({ ...r, ...more, ...(extras && r.excluded ? { gate_flags: soft } : {}) });
 
+  // Role gate: the title is not a target role, or a deny word / pay-model phrase hit. It runs here too so a manual or already-matched job
+  // cannot skip it (the listing sweep in db.listUnscoredJobs normally excludes such a job before the matcher). A borderline title is a flag.
+  if (extras?.roleGate) {
+    const role = checkRole(job, extras.roleGate);
+    if (role.verdict === 'reject') return out({ excluded: true, reason: role.reason, flags });
+    if (role.verdict === 'borderline') soft.push(`role gate borderline: ${role.note}`);
+  }
+  if (extras && 'roleGateInvalid' in extras && extras.roleGateInvalid) soft.push(`role gate config invalid: ${extras.roleGateInvalid}`);
   if (locationVerdict === 'FAIL') return out({ excluded: true, reason: 'location FAIL', flags });
   if (m.language_gate === 'FAIL') return out({ excluded: true, reason: 'language FAIL', flags });
   if (ts?.verdict === 'FAIL') return out({ excluded: true, reason: `language FAIL: ${ts.note}`, flags });
@@ -134,13 +145,13 @@ export function vetoResults(
   results: { job_id: string; score: number; location_verdict?: Verdict; language_gate?: Verdict }[],
   jobs: { id: string; title: string; description?: string | null; location?: string | null; remote?: boolean | null }[],
   keywords?: string[],
-  ctx?: { facts?: Map<string, JobFacts>; now?: Date; languages?: LanguageConfig | null; languagesInvalid?: string; targetRegions?: TargetRegions | null; targetRegionsInvalid?: string },
+  ctx?: { facts?: Map<string, JobFacts>; now?: Date; languages?: LanguageConfig | null; languagesInvalid?: string; targetRegions?: TargetRegions | null; targetRegionsInvalid?: string; roleGate?: RoleGateConfig; roleGateInvalid?: string },
 ): Array<{ job_id: string } & VetoResult> {
   const dealBreakers = (keywords ?? loadDealBreakers()).map((k) => k.trim()).filter(Boolean);
   const byId = new Map(jobs.map((j) => [j.id, { title: j.title, description: j.description ?? '', location: j.location ?? null, remote: j.remote ?? undefined }]));
   return results.map((r) => {
     const job = byId.get(r.job_id) ?? { title: '', description: '' };
-    const extras = ctx ? { facts: ctx.facts?.get(r.job_id), now: ctx.now, languages: ctx.languages, languagesInvalid: ctx.languagesInvalid, targetRegions: ctx.targetRegions, targetRegionsInvalid: ctx.targetRegionsInvalid } : undefined;
+    const extras = ctx ? { facts: ctx.facts?.get(r.job_id), now: ctx.now, languages: ctx.languages, languagesInvalid: ctx.languagesInvalid, targetRegions: ctx.targetRegions, targetRegionsInvalid: ctx.targetRegionsInvalid, roleGate: ctx.roleGate, roleGateInvalid: ctx.roleGateInvalid } : undefined;
     return { job_id: r.job_id, ...applyVetoes(r, job, dealBreakers, extras) };
   });
 }

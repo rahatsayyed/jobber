@@ -3,6 +3,7 @@
 // Reasons never echo the rejected value for secret specs.
 import { normaliseEmail } from '../dash/account.js';
 import { validatePairs } from '../setup/limitsCatalog.js';
+import { parseDimMinimums } from '../matchRubric.js';
 import { isSecret, type EnvSpec } from './types.js';
 
 const DEFAULT_MAX_LEN = 2000;
@@ -83,6 +84,12 @@ export function validateEnvValue(spec: EnvSpec, raw: string): string | null {
     case 'path':
       return singleLine(spec, raw, PATH_MAX);
     case 'string':
+      if (spec.key === 'MATCH_DIM_MINIMUMS') {
+        const line = singleLine(spec, raw, spec.maxLen ?? DEFAULT_MAX_LEN);
+        if (line) return line;
+        return raw.trim() === '' ? null : (parseDimMinimums(raw).invalid ?? null);
+      }
+      return singleLine(spec, raw, spec.maxLen ?? DEFAULT_MAX_LEN);
     case 'secret':
       return singleLine(spec, raw, spec.maxLen ?? DEFAULT_MAX_LEN);
     default:

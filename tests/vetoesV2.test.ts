@@ -52,7 +52,7 @@ describe('vetoResults ctx + db facts', () => {
   it('reads hard stops and dates from the db and persists gate results', () => {
     const db = openDb(':memory:');
     saveJob(db, { id: 'j1', source: 'remotive', title: 'React Developer', company: 'Acme', url: 'https://remotive.com/1', apply_url: 'https://boards.greenhouse.io/a/jobs/1', description: long, posted_at: '2026-10-01' });
-    saveMatchResultsChecked(db, [{ job_id: 'j1', score: 0, reasons: '', missing_keywords: [], score_dims: { skills: 20, seniority: 20, domain: 10, location: 25 },
+    saveMatchResultsChecked(db, [{ job_id: 'j1', score: 0, reasons: '', missing_keywords: [], score_dims: { role_fit: 15, skills: 15, seniority_comp: 15, location: 15, flags: 15 },
       // AE1: a hard stop needs a verified stated quote (this row was structural before AE1, which no longer creates one).
       requirements: [{ req: 'Go', importance: 'critical', evidence: 'stated', jd_quote: 'We build developer tools', match: 'missing' }] } as any]);
     const f = jobFactsFromDb(db, 'j1');
