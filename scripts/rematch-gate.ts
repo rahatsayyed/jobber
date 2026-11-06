@@ -1,6 +1,6 @@
 // One-off, idempotent migration (owner runs it; never a wake): re-runs the ROLE GATE (config/role-families.json) and, for rows that carry
 // the old five-key rubric (rubric_v2) the per-dimension minimums, and for rows saved with the career-ops rubric (career_ops_v1) the cutoff
-// (stored score below MATCH_THRESHOLD, default 80 = 4.0 of 5), on jobs that are scored and have a QUEUED outreach row that has not gone out.
+// (stored score below MATCH_THRESHOLD, default 4.0 of 5), on jobs that are scored and have a QUEUED outreach row that has not gone out.
 // Rows that fail are parked: outreach_queue.status = 'skipped' and the job gets excluded_reason ('role: <word>', 'dim_min:<dim>' or 'below_cutoff:<score>') and
 // status 'role_mismatch' (role) so no lane picks it up. An old 4-key row (legacy: skills, seniority, domain, location) has neither: only the
 // TITLE gate applies to it, and its old stored score is never judged against the new cutoff. Sent, applied, connected, sending and any other advanced rows are never touched.

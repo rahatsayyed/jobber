@@ -11,22 +11,22 @@
   set, never invented) and `culture` (company culture, growth, stability, remote policy; a contradicted
   `north_star.require` criterion caps it at 2), plus `red_flags`, a negative adjustment from 0 down to -3.0, and the
   holistic `global` (1.0 to 5.0, "no arithmetic formula"). `score_dims` also carries `archetype`, a short `evidence`
-  text per dimension and a `decision` derived in code. The stored `score` stays 0 to 100 for every old consumer:
-  `score = round(global x 20)` (3.9 -> 78, 4.0 -> 80, 4.5 -> 90); code keeps `global` from exceeding the best dimension.
+  text per dimension and a `decision` derived in code. The stored `score` is the `global` itself on the 1 to 5 scale, one decimal (3.9, 4.0, 4.5; the db was converted once from
+  0 to 100, see `docs/matching.md`); code keeps `global` from exceeding the best dimension.
   Bands (career-ops "Score interpretation"): 4.5+ apply immediately, 4.0 to 4.4 worth applying, 3.5 to 3.9 decent but
-  recommend against, below 3.5 recommend against. The pass rule: the stored score reaches `MATCH_THRESHOLD`, default 80 (4.0 of 5,
+  recommend against, below 3.5 recommend against. The pass rule: the stored score reaches `MATCH_THRESHOLD`, default 4.0 (1 to 5 scale,
   career-ops "Ethical Use": below 4.0 is recommended against), AND `location_verdict` is not FAIL AND there is no hard stop (the
   last two are our own gates). A job that fails the location or hard-stop gate is saved with its dimensions and a stored score
-  of at most `MATCH_THRESHOLD` minus 1 (`score_cap_reason` `location_fail` or `hard_stop`). The evidence ceiling
-  (59 + 41 x the evidence-weighted share of critical/high/meaningful rows met; an empty table is 70) and the injection cap
-  (89, below 4.5) still apply; the lowest cap wins. A role with `global` 4.5+ and `culture` 2 or less carries the career-ops
+  of at most `MATCH_THRESHOLD` minus 0.1 (`score_cap_reason` `location_fail` or `hard_stop`). The evidence ceiling
+  ((59 + 41 x the evidence-weighted share of critical/high/meaningful rows met) / 20, one decimal; an empty table is 3.5) and the injection cap
+  (4.4, below 4.5) still apply; the lowest cap wins. A role with `global` 4.5+ and `culture` 2 or less carries the career-ops
   warning "High technical fit, unconfirmed/poor culture fit - verify before applying." in its reasons. The archetypes,
   culture criteria, dealbreakers and comp come from the optional `north_star` section of `user-data/profile.json`
   (`src/northStar.ts`, example in `user-data.example/profile.json`) and are turned into a `North Star:` line for the matcher by `northStarLine` (the wake prompt appends it next to the `Target regions` line; until then the skill's built-in default families apply); the code role
   gate takes its allowed families from the same archetypes. Older rows stay readable: `rubric_v2` (keys `role_fit`, `skills`,
   `seniority_comp`, `location`, `flags`, each 0 to 20, summed; minimums `MATCH_DIM_MINIMUMS` are now read only by
-  `npm run matches:regate`) and `legacy` (keys `skills`, `seniority`, `domain`, `location`, each 0 to 25). They keep their score
-  and the old line of 60 (`min(MATCH_THRESHOLD, 60)`) in the matched lists; a new save in an older shape is rejected.
+  `npm run matches:regate`) and `legacy` (keys `skills`, `seniority`, `domain`, `location`, each 0 to 25). Their stored score was divided by 20
+  like every other, and those already matched (or queued) before the conversion are `grandfathered` (still counted as matched); a new save in an older shape is rejected.
 
 - **Role gate** (`src/roleGate.ts`, `config/role-families.json`, runs on the job title before the matcher and again in
   `gates.apply_vetoes`): a title with a deny word (reviewer, evaluator, rater, annotator, tutor, trainer, coach, QA,

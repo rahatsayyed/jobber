@@ -463,7 +463,7 @@
         {
           "name": "MATCH_THRESHOLD",
           "secret": false,
-          "purpose": "minimum score for a job to be pursued (80 = 4.0 of 5, the career-ops go line)",
+          "purpose": "minimum score for a job to be pursued (1 to 5 scale; 4 = 4.0 of 5, the career-ops go line)",
           "where": "src/setup/limitsCatalog.ts",
           "entered_in": "wizard"
         },

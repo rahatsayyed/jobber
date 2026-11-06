@@ -269,6 +269,20 @@ describe('MATCH_THRESHOLD catalog and example', () => {
   });
 });
 
+describe('doctor check match-threshold-scale', () => {
+  const check = () => setupToolingChecks.find((c) => c.id === 'match-threshold-scale')!;
+  const ctx = (env: Record<string, string>) => ({ root: '/p', env, run: async () => ({ stdout: '', code: 1 }), fs: { exists: () => false, read: () => { throw new Error('x'); }, mode: () => null, list: () => [] } }) as any;
+  it('passes on the 1..5 scale and on blank, warns on an old 0..100 value (naming the new value) and on junk', async () => {
+    expect((await check().run(ctx({ MATCH_THRESHOLD: '4' }))).status).toBe('pass');
+    expect((await check().run(ctx({}))).status).toBe('pass');
+    const old = await check().run(ctx({ MATCH_THRESHOLD: '60' }));
+    expect(old.status).toBe('warn');
+    expect(JSON.stringify(old)).toContain('MATCH_THRESHOLD=3.0');
+    expect((await check().run(ctx({ MATCH_THRESHOLD: '80' }))).status).toBe('warn');
+    expect((await check().run(ctx({ MATCH_THRESHOLD: 'junk' }))).status).toBe('warn');
+  });
+});
+
 describe('text and wiring', () => {
   const skill = () => readFileSync(new URL('../.claude/skills/match-jobs/SKILL.md', import.meta.url), 'utf8');
   it('the matcher agent tools line is byte-identical', () => {

@@ -110,7 +110,8 @@ describe('README', () => {
   it('keeps the stale claims out', () => {
     expect(readme).not.toMatch(/bypassPermissions/);
     expect(readme).not.toMatch(/MATCH_THRESHOLD[^\n]*\b70\b/);
-    expect(readme).toMatch(/MATCH_THRESHOLD[^\n]*\b80\b/);
+    expect(readme).not.toMatch(/MATCH_THRESHOLD[^\n]*\b80\b/);
+    expect(readme).toMatch(/MATCH_THRESHOLD=4\b/);
   });
 
   it('has the required headings', () => {

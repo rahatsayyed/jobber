@@ -143,10 +143,11 @@ change for day-to-day tuning.
   `full-stack-react-india-remote`, in `config/wellfound-discovery.json` (`role`, `location`,
   `remote`, `limit` 1 to 40, default 20); it is planned only when `secrets/wellfound-state.json`
   exists (see "Wellfound").
-- **MATCH_THRESHOLD**: `80` (env var; jobs scoring below this are skipped — see `.env`). The stored score is the
-  career-ops Global score (1 to 5) times 20, so 80 is 4.0 of 5, the career-ops "worth applying" line; below 4.0 it
-  recommends against applying (see "Running a wake", P2 and `docs/matching.md`). Jobs scored before the career-ops
-  rubric keep the old line of 60 (never above this value).
+- **MATCH_THRESHOLD**: `4` (env var, 1 to 5 scale; jobs scoring below this are skipped — see `.env`). The stored score is the
+  career-ops Global score itself (1 to 5, one decimal), so 4.0 is the career-ops "worth applying" line; below 4.0 it
+  recommends against applying (see "Running a wake", P2 and `docs/matching.md`). An old 0 to 100 value above 5 (60, 80) is
+  still read and divided by 20 (the doctor warns). The database was converted once from 0 to 100 to this scale by
+  `src/scoreScale.ts` (backup copy first); jobs that were already matched, queued or prepared then are `grandfathered`.
 - **North Star**: the optional `north_star` section of `user-data/profile.json` (target role archetypes with fit
   primary, secondary or adjacent, culture criteria, dealbreakers, comp; empty comp is unknown and is never invented).
   `northStarLine` (`src/northStar.ts`) builds the `North Star:` line for the matcher prompt; the wake prompt must append it
@@ -546,7 +547,7 @@ never skipped.
   owner's target archetypes; an unmatched role scores 1), `comp` (salary vs market), `culture` (company culture,
   growth, stability, remote policy), each 1.0 to 5.0 with one decimal, `red_flags` (a negative adjustment, 0 to -3.0)
   and the holistic `global` (1.0 to 5.0, no arithmetic formula), with `archetype` and a short `evidence` text per
-  dimension; the stored score is `round(global x 20)`. The older shapes (`rubric_v2`, `legacy`) are rejected for a new
+  dimension; the stored score is the `global` itself (1 to 5, one decimal). The older shapes (`rubric_v2`, `legacy`) are rejected for a new
   save and stay readable when stored. Before the
   matcher, code runs the ROLE GATE (`src/roleGate.ts`, `config/role-families.json`) on the title: a deny word or a
   title in no target family is marked `role_mismatch` and excluded as `role: <word>` (never matched, manual
@@ -558,15 +559,15 @@ never skipped.
   - **P2a** `db.save_match_result` with the full result array. It validates per row and never fails
     the whole call for one bad row: report every `errors` entry as "match rows rejected: <job_id>:
     <error>" and treat those jobs as unscored. The score is capped by the evidence in the requirement
-    table, and the PASS RULE is applied in code: a job moves ahead only if the stored score (Global x 20)
-    reaches `MATCH_THRESHOLD` (default 80 = 4.0 of 5; career-ops bands: 4.5+ apply immediately, 4.0 to 4.4 worth
+    table, and the PASS RULE is applied in code: a job moves ahead only if the stored score (the Global, 1 to 5)
+    reaches `MATCH_THRESHOLD` (default 4.0; career-ops bands: 4.5+ apply immediately, 4.0 to 4.4 worth
     applying, 3.5 to 3.9 recommend against, below 3.5 recommend against), `location_verdict` is not FAIL and there is
     no hard stop. A FAIL verdict or a hard stop is saved with its dimensions and a
     `score_cap_reason` (`location_fail`, `hard_stop`) and a stored score of at most
     `MATCH_THRESHOLD` minus 1, so P2c and every other consumer reject it; the Global score stays in `score_dims`
     and in the reasons. Rows stored before this rubric keep their score, are read as `rubric_v2` or `legacy`, and keep
     the old line of 60. If `injection_suspects` is non-empty (the posting contained phrases aimed at an AI
-    screener; score capped at 89, below the 4.5 band, with `score_cap_reason` "injection-suspect"), report those job ids;
+    screener; score capped at 4.4, below the 4.5 band, with `score_cap_reason` "injection-suspect"), report those job ids;
     it is a warning, the job still proceeds. The result's `scores` array
     (`[{job_id, score, score_cap_reason, confidence}]`) holds the STORED scores after the evidence
     ceiling and injection cap: from here on use ONLY these values. A job with no entry was not saved
@@ -588,7 +589,7 @@ never skipped.
     the apply tools skip the job (skip the call if nothing was excluded). If `db.save_match_result`,
     `gates.apply_vetoes` or `db.mark_excluded` errors twice, STOP the pipeline for this wake and
     report it (an explicit exception to Safety rule 4's "continue with the next job").
-  - **P2c** Keep only jobs whose STORED score is at least `MATCH_THRESHOLD` (default 80), plus every
+  - **P2c** Keep only jobs whose STORED score is at least `MATCH_THRESHOLD` (default 4.0), plus every
     surviving priority job marked `force_prepare: true` (it still passed the vetoes); the rest
     are not contacted, tailored or drafted.
 - **P3 Contacts**: after the last wave, dispatch `contact-finder` with the matched jobs (every wave's
