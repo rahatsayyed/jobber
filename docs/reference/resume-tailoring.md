@@ -120,7 +120,7 @@ is not measured by it.
 11. Browser apply (plan 8G): follow the owner live checks in `docs/apply.md`. Keep `JOBBER_DRY_RUN`
     `true` and `APPLY_SUBMIT_MODE=hold` until a supervised check, and
     keep `APPLY_ALLOW_ACCOUNT_CREATION`, `SCOUT_ALLOW_SIGNUP`, `APPLY_ALLOW_UNKNOWN_HOSTS` and
-    `APPLY_LINKEDIN_EASY` off until you decide otherwise.
+    `APPLY_LINKEDIN_EASY=false` until you decide otherwise (it is on by default now).
 12. Sessions: run `npm run linkedin:login` and `npm run naukri:login` (neither takes a flag), then
     `npm run doctor`.
 13. Browserctl rebuild (LinkedIn, Naukri, scout; all live-unverified): (a) fully quit and restart every

@@ -165,7 +165,7 @@ the wakes, one tiny `mail_drip` run per email with random spacing inside a send 
 ## Which account does what
 
 The `linkedin` MCP (ref-based page tools on the shared browserctl engine, the arm tool for connects, messages and accepts, named searches, layout telemetry) uses
-the main account only, in one locked headless session; LinkedIn Easy Apply (`APPLY_LINKEDIN_EASY`, off by default)
+the main account only, in one locked headless session; LinkedIn Easy Apply (`APPLY_LINKEDIN_EASY`, on by default)
 also runs on it, as a LinkedIn drip lane action, never through the `applier` MCP. There is no second LinkedIn identity. Authority:
 CLAUDE.md, "Safety" rule 6. Session setup: [linkedin-sessions-setup.md](linkedin-sessions-setup.md).
 

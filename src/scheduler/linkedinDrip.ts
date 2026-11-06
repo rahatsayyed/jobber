@@ -43,6 +43,7 @@ import type { LaunchHandle } from './launch.js';
 import { finishRun, getState, setRunLogPath, setState, startRun, type RunStatus } from './runLog.js';
 import { withDripRequest } from './dripRequest.js';
 import { formatDripFailure, formatLinkedinNotice, linkedinNoticeKind, notifyTg } from './dripNotice.js';
+import { linkedinEasyEnabled } from '../apply/easyFlag.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -142,9 +143,9 @@ export function itemKey(i: LiItem): string {
   }
 }
 
-/** APPLY_LINKEDIN_EASY: exactly `true` turns the lane's Easy Apply action on; anything else (the default) leaves those jobs to the owner (manual queue). */
+/** APPLY_LINKEDIN_EASY: on by default (unset, blank or anything but exactly `false`); exactly `false` leaves those jobs to the owner (manual queue). */
 export function easyApplyOn(env: NodeJS.ProcessEnv): boolean {
-  return env.APPLY_LINKEDIN_EASY === 'true';
+  return linkedinEasyEnabled(env);
 }
 
 export interface EasyApplyPick { queue_id: number; job_id: string; title: string | null; company: string | null }

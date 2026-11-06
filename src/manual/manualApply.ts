@@ -1,7 +1,7 @@
 // src/manual/manualApply.ts
 // The MANUAL APPLY QUEUE: jobs the machine will not (or cannot) finish and the owner applies to by hand. Read-only builder for the status snapshot,
 // the Telegram digest, `npm run status -- working` and `npm run apply:manual`; the only writers are markDone and markSkip (owner CLI).
-// Entries: (1) LinkedIn Easy Apply jobs while APPLY_LINKEDIN_EASY is not `true` (with it on they belong to the LinkedIn drip lane);
+// Entries: (1) LinkedIn Easy Apply jobs while APPLY_LINKEDIN_EASY is `false` (with it on they belong to the LinkedIn drip lane);
 // (2) any row with apply_status needs_owner or manual_review that has a usable https address (needs_answer and needs_human have their own commands).
 import path from 'node:path';
 import type BetterSqlite3 from 'better-sqlite3';
@@ -12,6 +12,7 @@ import { PROJECT_ROOT } from '../layout/config.js';
 import { lexicallyAllowed, resolveJobIdResume, type ResolveDeps } from '../linkedin/attachment.js';
 import { validateManualUrl } from './url.js';
 import { resolveApplyEscalationsForJob } from '../outreach/applyEscalations.js';
+import { linkedinEasyEnabled } from '../apply/easyFlag.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -70,7 +71,7 @@ const clean = (v: string | null | undefined, max: number): string => String(v ??
 
 function reasonOf(r: Row, linkedinPage: boolean, url: string, env: NodeJS.ProcessEnv): ManualReason {
   // The failed-lane reason only means something while the lane is on; while LinkedIn Easy Apply is off the banner says "off", so the chip says it too.
-  if (linkedinPage) return env.APPLY_LINKEDIN_EASY === 'true' && (r.apply_status === 'needs_owner' || r.apply_status === 'manual_review') ? 'easy_apply_failed' : 'easy_apply_off';
+  if (linkedinPage) return linkedinEasyEnabled(env) && (r.apply_status === 'needs_owner' || r.apply_status === 'manual_review') ? 'easy_apply_failed' : 'easy_apply_off';
   const p = r.apply_platform ?? '';
   // A careers listing the apply-operator read and found no role for the resume on (apply_escalate reason no_relevant_role).
   if ((r.apply_note ?? '') === 'no_relevant_role') return 'no_relevant_role';
@@ -107,7 +108,7 @@ export function buildManualQueue(db: Db, env: NodeJS.ProcessEnv = process.env, o
     let candidate: string | null = null;
     if (isLinkedInEasyApplyCandidate(row, env)) {
       // Easy Apply on: the drip lane owns it. Off: the owner applies by hand.
-      if (env.APPLY_LINKEDIN_EASY === 'true') continue;
+      if (linkedinEasyEnabled(env)) continue;
       candidate = linkedinJobPageUrl(row);
     } else if ((MANUAL_STATUSES as readonly string[]).includes(status)) {
       candidate = (r.external_apply_url ?? '').trim() || (r.apply_url ?? '').trim() || (r.job_apply_url ?? '').trim() || (r.url ?? '').trim() || null;

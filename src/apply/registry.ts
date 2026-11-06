@@ -2,6 +2,7 @@
 // The model never decides the apply platform: enqueue_outreach calls classifyApplyUrl and stores its answer.
 import { hostMatches, lookAlikeAtsHost } from '../lib/hostClass.js';
 import { isApplyBlockedSource } from '../lib/discoverOnly.js';
+import { linkedinEasyEnabled } from './easyFlag.js';
 
 export type ApplyTier = 'fast' | 'agent' | 'never';
 
@@ -45,7 +46,7 @@ export function classifyApplyUrl(url: string | null, source: string | null, env:
   if (u.username || u.password) return none('credentials_in_url');
 
   if (hostMatches(url, 'linkedin.com')) {
-    if (env.APPLY_LINKEDIN_EASY === 'true') return { platform: 'linkedin_easy', tier: 'agent' };
+    if (linkedinEasyEnabled(env)) return { platform: 'linkedin_easy', tier: 'agent' };
     // A job from our own LinkedIn discovery may send its Apply to the company site: `linkedin_resolve_external` finds that site in code and
     // setExternalApply re-routes the row to the generic applier. apply_open never drives this class itself (not in APPLY_HOST_PLATFORM_IDS).
     if (isLinkedInJobSource(source) && /^\/jobs\/view\//i.test(u.pathname)) return { platform: 'linkedin', tier: 'agent', reason: 'external_resolve' };

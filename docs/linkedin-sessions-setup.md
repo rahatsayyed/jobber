@@ -4,7 +4,7 @@ The `linkedin` MCP (`linkedin_find_profiles`, connection requests, messages, inv
 saved session for the MAIN account at `secrets/linkedin-main-state.json`, in one locked headless
 Chrome session at a time. The path is hardcoded, which is a structural safeguard.
 
-There is no second LinkedIn identity. LinkedIn Easy Apply (`APPLY_LINKEDIN_EASY`, off by default) also
+There is no second LinkedIn identity. LinkedIn Easy Apply (`APPLY_LINKEDIN_EASY`, on by default) also
 uses the main account, through the LinkedIn drip lane and the same locked session, never the `applier` MCP.
 
 ## One-time login procedure

@@ -70,7 +70,8 @@ const halted: Snapshot = {
 
 describe('renderLimits: Easy Apply mode', () => {
   it('says whether LinkedIn Easy Apply is a lane action or left to the owner', () => {
-    expect(renderLimits(base, { env: {} })).toContain('linkedin easy apply: off (APPLY_LINKEDIN_EASY): you apply by hand');
+    expect(renderLimits(base, { env: { APPLY_LINKEDIN_EASY: 'false' } })).toContain('linkedin easy apply: off (APPLY_LINKEDIN_EASY=false): you apply by hand');
+    expect(renderLimits(base, { env: {} })).toContain('linkedin easy apply: ON');
     expect(renderLimits(base, { env: { APPLY_LINKEDIN_EASY: 'true' } })).toContain('linkedin easy apply: ON');
     expect(renderLimits(base)).not.toContain('easy apply:');
   });

@@ -17,7 +17,7 @@ answer as `apply_platform` and `apply_tier`. `none` (never applied to) covers: a
 `gen:*` source (see "Sources and operators"), no or a bad `apply_url`, a look-alike host (such as
 `evil-greenhouse.io`), credentials in the URL, a non-http(s) scheme, an unknown host while
 `APPLY_ALLOW_UNKNOWN_HOSTS` is not `true` (when `true`, the platform is `browser`), and a LinkedIn URL
-while `APPLY_LINKEDIN_EASY` is not `true`. A naukri.com URL is class `naukri`. A wellfound.com URL is
+while `APPLY_LINKEDIN_EASY` is exactly `false` (Easy Apply is on by default since 2026-11-06). A naukri.com URL is class `naukri`. A wellfound.com URL is
 class `wellfound` (tier `wellfound_agent`, apply-capable; Wellfound is not a discover-only source): the
 `apply-operator` opens the job with `wellfound_open`, calls `wellfound_arm_apply({job_id})` (code gates:
 veto, the `wellfound_apply` ceiling beside the shared `MAX_APPLIES_PER_DAY`, dry run, halts, a live
@@ -69,7 +69,7 @@ tool); the owner manages them with `npm run site:account` (`add`, `list`, `remov
 never runs it). Email verification is owner assist by default (`SITE_MAIL_VERIFY=owner_assist`); `gmail`
 mode needs a non-empty `SITE_MAIL_SENDERS`, and a verification link is opened only by `site_open_link`
 under host and path rules in code. A LinkedIn Easy Apply row (`linkedin_easy`) is never driven by the
-`applier` MCP or the `apply-operator`: with `APPLY_LINKEDIN_EASY=true` the LinkedIn drip lane applies to it on
+`applier` MCP or the `apply-operator`: with Easy Apply on (the default; only exactly `APPLY_LINKEDIN_EASY=false` turns it off) the LinkedIn drip lane applies to it on
 the main account through the LinkedIn engine (`linkedin_arm_send` kind `easy_apply`); otherwise it waits for
 the owner in the manual apply queue.
 
@@ -242,13 +242,13 @@ these jobs and retries `no_popup` / `no_external_control` once after a fresh sna
 `manual_review` with no note: `npm run apply:requeue-company-site [-- --dry]` (Naukri rows, empty note, no resolved URL; idempotent).
 
 **Manual apply queue.** `src/manual/manualApply.ts` lists what the owner must apply to by hand: LinkedIn job pages that are Easy Apply jobs
-while `APPLY_LINKEDIN_EASY` is not `true` (reason `easy_apply_off`), and any queue row the machine gave up on (`apply_status` `needs_owner` or
+while `APPLY_LINKEDIN_EASY` is `false` (reason `easy_apply_off`), and any queue row the machine gave up on (`apply_status` `needs_owner` or
 `manual_review`, not `needs_answer` or `needs_human`, which have `npm run answers` and `npm run apply:assist`) that has a usable https address
 (reasons `easy_apply_failed`, `company_site_form`, `listing_page`, `no_relevant_role`). Each entry: `id` (queue row), `job_id`, `title`, `company`, `platform`,
 `open_url` (validated with `validateManualUrl`), `resume_pdf` (the tailored PDF, re-rendered on demand by the attachment resolver), `ats_note`,
 `reason`, `since`. `npm run apply:manual -- list`, `done <id>` (apply_status `submitted_by_owner`, one `applications` row with method `manual`,
 so the funnel counts it and follow-ups see it as applied) and `skip <id>` (`skipped_by_owner`). It also shows as `manualApply {count, easyApplyOff,
-items[]}` in the status snapshot JSON, as a line in `status working`, `/escalations` and the Telegram digest. Turning `APPLY_LINKEDIN_EASY` on
+items[]}` in the status snapshot JSON, as a line in `status working`, `/escalations` and the Telegram digest. Turning Easy Apply on (removing `APPLY_LINKEDIN_EASY=false`)
 moves the Easy Apply rows from this list to the LinkedIn drip lane (see "LinkedIn Easy Apply" in `connecting.md`); a row the lane gives up on comes back here.
 
 The same queue is in the dashboard Inbox as "Apply by hand" (`src/web/manualApplyRoutes.ts`; the Inbox badge counts it, `GET /api/escalations/count`

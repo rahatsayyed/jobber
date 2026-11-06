@@ -408,9 +408,9 @@ const hand: EnvSpec[] = [
     ...tier('safety', R_SEND, 'true'),
   }),
   e('APPLY_LINKEDIN_EASY', 'apply', 'browser apply', 'bool', {
-    default: 'false',
+    default: 'true',
     exampleActive: true,
-    about: 'LinkedIn Easy Apply on the main account, done by the LinkedIn drip lane through the LinkedIn engine (one application per tick, never the applier). When false, Easy Apply jobs wait in the manual apply queue.',
+    about: 'LinkedIn Easy Apply on the main account, done by the LinkedIn drip lane through the LinkedIn engine (one application per tick, never the applier). On by default (unset, blank or anything but exactly false means on). Set exactly false to turn it off: Easy Apply jobs then wait in the manual apply queue.',
     ...tier('safety', R_SEND, 'true'),
   }),
   e('APPLY_SUBMIT_MODE', 'apply', 'browser apply', 'enum', {

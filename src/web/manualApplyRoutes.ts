@@ -11,6 +11,7 @@ import { audit, type AuthDb } from '../dash/authStore.js';
 import { ATTACH_MAX_BYTES, resolveJobIdResume, type ResolveDeps } from '../linkedin/attachment.js';
 import { buildManualQueue, manualReasonLabel, markDone, markSkip, MANUAL_NOTE_MAX, type ManualApplyItem, type MarkResult } from '../manual/manualApply.js';
 import { json, readJson, type Ctx } from './router.js';
+import { linkedinEasyEnabled } from '../apply/easyFlag.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -118,7 +119,7 @@ export function createManualApplyRoutes(
             ats_note: it.ats_note, reason: it.reason, reason_label: manualReasonLabel(it.reason), since: it.since,
           });
         }
-        json(c.res, 200, { count: v.count, easyApplyOff: v.easyApplyOff, easyApplyEnabled: penv().APPLY_LINKEDIN_EASY === 'true', items });
+        json(c.res, 200, { count: v.count, easyApplyOff: v.easyApplyOff, easyApplyEnabled: linkedinEasyEnabled(penv()), items });
       },
     },
     {

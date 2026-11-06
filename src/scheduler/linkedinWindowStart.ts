@@ -17,6 +17,8 @@ export const LINKEDIN_START_KEYS = [
 export function linkedinStartValues(env: Record<string, string | undefined>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const k of LINKEDIN_START_KEYS) out[k] = (env[k] ?? '').trim();
+  // Easy Apply is on unless exactly `false`: unset and `true` are the same state.
+  out.APPLY_LINKEDIN_EASY = out.APPLY_LINKEDIN_EASY === 'false' ? 'false' : 'true';
   return out;
 }
 
