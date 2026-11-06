@@ -36,6 +36,11 @@ section is the reference for what exists.
   from the Claude transcript; `/clear`, `/compact`, `/chat restart` chat-only; `TELEGRAM_CHAT_FALLBACK=print`
   re-enables `claude -p`, default off), `read_only`, never skip-permissions. Unverified live: `editMessageText`
   rate limits, `/clear` creating a new transcript file, `--session-id` support. The doctor check `telegram-bridge` covers it.
+  Code-sent notices carry Telegram's `disable_notification` (silent, no sound) by topic: `drips` and `wakes` silent,
+  `alerts`, `assist`, `inbox` and plain chat loud, changed by `TELEGRAM_SILENT_TOPICS` (default `drips,wakes`; `none`
+  = nothing silent); `Notifier.send(text, {silent})` overrides per call (`src/telegram/silent.ts`: `resolveSilent`,
+  `noticeUrgency`), the owner-facing ones (handoff reminder, manual-request report, assist ping, escalation digest,
+  applier escalation) are forced loud, bridge replies to commands and buttons are never silent.
   Setup runbook: `docs/telegram-bot-setup.md`.
 - **One tmux session**: everything runs in the session `Jobber`. Old session names (`jobber-stack`, `jobber-runs`) no longer
   exist. If your `.env` still has `STACK_TMUX_SESSION=jobber-stack` (or another old name), remove it so the default `Jobber` applies.

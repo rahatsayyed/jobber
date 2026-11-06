@@ -11,6 +11,8 @@ export interface Notice {
   title: string;
   detail?: string;
   runId?: string;
+  /** Whether the matching Telegram notice goes without sound; logged as the boolean `silent`. */
+  silent?: boolean;
 }
 export interface Notifier {
   notify(n: Notice): Promise<void>;
@@ -28,6 +30,7 @@ export function fileNotifier(path: string, now: () => Date, runCmd?: Run, cmd?: 
         const rec: Record<string, unknown> = { ts: now().toISOString(), level: n.level, title };
         if (n.detail) rec.detail = redactPane(String(n.detail)).slice(0, DETAIL_MAX);
         if (n.runId) rec.run_id = n.runId;
+        if (typeof n.silent === 'boolean') rec.silent = n.silent;
         mkdirSync(dirname(path), { recursive: true });
         appendFileSync(path, JSON.stringify(rec) + '\n', { mode: 0o600 });
       } catch {

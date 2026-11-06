@@ -6,6 +6,7 @@ import { fetchApi, type TelegramApi } from './api.js';
 import { loadTelegramConfig, PROJECT_ROOT } from './config.js';
 import { htmlEscape, isParseError, markdownToHtmlChunks, plainChunks } from './format.js';
 import { htmlToPlain, splitHtml } from '../platform/tgHtml.js';
+import { resolveSilent } from './silent.js';
 import { ensureTopics, isThreadGoneError, readTopicState, writeTopicState, type TopicName } from './topics.js';
 
 export interface SendResult {
@@ -24,6 +25,7 @@ export interface SendOpts {
   plain?: boolean;
   /** The text is already safe Telegram HTML built by src/platform/tgHtml.ts: split on line boundaries only, no markdown conversion. */
   html?: boolean;
+  /** true: no sound or vibration (disable_notification); false: always notify; unset: the topic default (see silent.ts). */
   silent?: boolean;
 }
 
@@ -83,7 +85,7 @@ export async function sendToTopic(topic: TopicName, markdown: string, opts: Send
     };
     threadId = await resolve(false);
     const chunks = chunksFor(markdown, opts.plain, opts.html);
-    return await postChunks(api, { chatId, threadId, silent: opts.silent }, chunks, () => resolve(true));
+    return await postChunks(api, { chatId, threadId, silent: resolveSilent(topic, opts.silent, opts.env) }, chunks, () => resolve(true));
   } catch (e) {
     return { ok: false, detail: `telegram send failed (${e instanceof Error ? e.name : 'error'})` };
   }

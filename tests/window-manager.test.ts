@@ -342,6 +342,15 @@ describe('reminder tick', () => {
     expect(f.typed.find((t) => t.window === 'mail')?.text).toContain('2 pending handoff items');
   });
 
+  it('the handoff reminder is forced loud (silent: false)', async () => {
+    const f = fake([{ name: 'mail' }]);
+    addAt('mail', 'skipped: x', 90);
+    const seen: Array<{ silent?: boolean } | undefined> = [];
+    const d = mk(f, { alert: async (_t, o) => { seen.push(o); return { ok: true }; } });
+    await windowUpkeep(d);
+    expect(seen).toEqual([{ silent: false }]);
+  });
+
   it('reminds each entry at most once per interval, then again after it', async () => {
     const f = fake([{ name: 'mail' }]);
     const id = addAt('mail', 'skipped: x', 90);

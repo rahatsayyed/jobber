@@ -155,6 +155,17 @@ paste the token into it.
 - Chat-topic only commands: `/clear` (types Claude's `/clear` and best-effort deletes the Telegram messages the
   bridge logged; Telegram only allows deleting messages younger than 48 hours), `/compact` and `/chat restart`.
 - `TELEGRAM_CHAT_FALLBACK=print` switches back to the old `claude -p` path. Default off.
+
+### Silent versus loud notices
+
+Code-sent notices use Telegram's `disable_notification` flag: a silent one still appears (and counts as unread) but
+makes no sound or vibration. By default `drips` and `wakes` are silent; `alerts`, `assist`, `inbox` and plain-chat
+messages notify. `TELEGRAM_SILENT_TOPICS` (comma list of topic names, default `drips,wakes`, the word `none` for
+nothing silent, unknown names ignored) changes the set; restart the scheduler daemon after a change. Some notices
+force a choice: the handoff reminder, the manual-request report, the assist ping, the escalation digest and an
+applier escalation are always loud (they ask for you), the window-recycle notice is always silent, and every reply
+to a command or button press you sent is loud. As an extra you can also mute a topic on the phone (long-press the
+topic, Mute); that is client side and hides loud notices too. Not seen on a real client yet.
 - Unverified live: that `/clear` creates a new transcript file the bridge then follows, and that the installed
   `claude` accepts `--session-id` as expected. If replies stop after `/clear`, use `/chat restart`.
 

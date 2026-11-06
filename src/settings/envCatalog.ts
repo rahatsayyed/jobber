@@ -886,6 +886,13 @@ const hand: EnvSpec[] = [
     ...never('Types into a running agent session: only the owner, by hand in .env, can change it.'),
   }),
 
+  e('TELEGRAM_SILENT_TOPICS', 'telegram', 'Telegram bridge', 'string', {
+    default: 'drips,wakes',
+    maxLen: 80,
+    about: 'Comma-separated topic names (alerts, wakes, drips, inbox, assist, chat) whose code-sent notices arrive silent (no sound or vibration; the message still appears). Blank (the default): drips and wakes. The word none: nothing is silent. An unknown name is ignored. A notice that asks for the owner (handoff reminder, manual-request report, assist ping, escalation digest) is always loud, and replies to your own commands are never silent.',
+    ...never('Decides which Telegram notices make a sound: only the owner, by hand in .env, can change it.'),
+  }),
+
   e('TELEGRAM_CHAT_FALLBACK', 'telegram', 'Telegram bridge', 'enum', {
     default: 'off',
     allowed: ['off', 'print'],

@@ -91,7 +91,7 @@ export interface WindowTickDeps {
   killed: () => boolean;
   inQuiet: () => boolean;
   /** Sends one Telegram HTML text (built with src/platform/tgHtml.ts) to the `alerts` topic. */
-  alert: (text: string) => Promise<{ ok: boolean }>;
+  alert: (text: string, opts?: { silent?: boolean }) => Promise<{ ok: boolean }>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -111,7 +111,7 @@ export async function windowUpkeep(d: WindowTickDeps): Promise<{ reminded: strin
     const state = readRemindState(d.root);
     const due = dueEntries(entries, state, now, handoffRemindEveryMin(d.env));
     if (due.length > 0) {
-      const sent = await d.alert(composeReminder(due, now));
+      const sent = await d.alert(composeReminder(due, now), { silent: false }); // it asks for the owner: always loud
       if (sent.ok) {
         const next: Record<string, string> = {};
         for (const e of entries) if (state[e.id]) next[e.id] = state[e.id];
@@ -145,7 +145,7 @@ export async function windowUpkeep(d: WindowTickDeps): Promise<{ reminded: strin
           line('Window', code(name)),
           line('Age', formatAge(r.ageMs)),
           r.startup === 'typed' ? '' : line('Startup line', ital(String(r.startup))),
-        ])));
+        ])), { silent: true }); // routine: no sound
       }
     } catch {
       // a failing window never stops the others

@@ -190,7 +190,9 @@ failures to `alerts` and one short notice per mail or LinkedIn drip action to `d
 bridge types the text into it and reads the reply from Claude's transcript under `~/.claude/projects`. In
 that topic `/clear` (also best-effort deletes the logged Telegram messages, 48 h limit), `/compact` and
 `/chat restart` are chat-only. The old `claude -p` path runs only with `TELEGRAM_CHAT_FALLBACK=print`
-(default off). Typed text goes in as one line (max 2000 chars, newlines become spaces) and a leading `!`,
+(default off). Routine code-sent notices arrive silent (Telegram `disable_notification`, by topic: `drips` and `wakes`
+silent, `alerts`, `assist`, `inbox` loud; env `TELEGRAM_SILENT_TOPICS`, default `drips,wakes`); notices that ask for
+the owner and every reply to a typed command or button press are loud. Typed text goes in as one line (max 2000 chars, newlines become spaces) and a leading `!`,
 `#` or `&` is prefixed with "Owner says: ". `/windows` and `/window <name>` show live views of the
 allowlisted tmux windows (session `Jobber` plus `WEB_TERMINAL_SESSIONS`) with Refresh, Pause and Close buttons; the list shows
 workers first (`mail`, `linkedin`, `boards`, `sources`, `pipeline`, `apply`, each with a role label), then `manager` and `chat`, then temporary

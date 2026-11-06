@@ -111,7 +111,7 @@ export function escalationDigestTick(db: Db, env: NodeJS.ProcessEnv, quiet: Quie
   return async () => {
     try {
       if (inQuietHours(now(), quiet)) return;
-      await runEscalationDigest(db, { send: (t) => tg.send(t, { topic: 'inbox', html: true }), now: now(), url: dashboardInboxUrl(env) });
+      await runEscalationDigest(db, { send: (t) => tg.send(t, { topic: 'inbox', html: true, silent: false }), now: now(), url: dashboardInboxUrl(env) });
     } catch {
       // the digest is a convenience: a failure must never stop the scheduler
     }
