@@ -25,7 +25,7 @@ import { armNaukriMessage } from '../src/browserctl/arm/naukri.js';
 import { NAUKRI_POLICY } from '../src/browserctl/policy.js';
 import { threadHtml, refOf as nkRefOf } from './helpers/nkWorld.js';
 import { daemonLoop, wakeOnce, type DriverDeps } from '../src/scheduler/driver.js';
-import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
+import { launcherAsWindows, type LaunchHandle, type LaunchPlan, type Launcher, type PollResult } from './helpers/fakeWindows.js';
 import type { Notice } from '../src/scheduler/notify.js';
 import { getState, listRuns, setState } from '../src/scheduler/runLog.js';
 
@@ -222,17 +222,15 @@ function harness(o: { start: Date; env?: NodeJS.ProcessEnv; stop?: boolean }) {
     env,
     lockRoot: join(dir, 'locks'),
     stopFile: join(dir, 'STOP'),
-    runDir: join(dir, 'runs'),
+   
     projectRoot: dir,
-    launcher,
-    verifyCompletion: false, // the scripted launcher writes no stream-json
+    windows: launcherAsWindows(launcher, () => d),
     notifier: { notify: async (n) => void notices.push(n) },
     newRunId: (() => {
       let i = 0;
       return () => `e2erun${String(++i).padStart(6, '0')}`;
     })(),
     control: o.stop ? { exists: () => true, read: () => 'owner stop' } : undefined,
-    pollMs: 1000,
   };
   return { d, db, world, launcher, notices };
 }
@@ -259,7 +257,7 @@ describe('scheduler end-to-end dry run', () => {
     expect(h.launcher.starts[0].dryRun).toBe(true);
     expect(h.launcher.starts[0].dryRun).toBe(isDryRun(DRY_ENV));
 
-    const run = listRuns(h.db, 5)[0];
+    const run = listRuns(h.db, 50).find((x) => x.id === r.runId);
     expect(run).toMatchObject({ id: r.runId, status: 'ok', dry_run: 1 });
 
     // nothing real happened, on either platform
@@ -282,7 +280,7 @@ describe('scheduler end-to-end dry run', () => {
     // typing in a dry run is recorded too (no person); the arm and send records carry the person
     const dry = all.filter((x) => x.platform === 'naukri' && x.person_id !== null);
     expect([...new Set(dry.map((x) => x.person_id))].sort()).toEqual([h.world.pidDue, h.world.pidPlain].sort());
-    expect(dry.every((x) => x.run_id === r.runId && ['naukri_arm_send', 'naukri_send'].includes(x.action))).toBe(true);
+    expect(dry.every((x) => String(x.run_id).startsWith('w-') && ['naukri_arm_send', 'naukri_send'].includes(x.action))).toBe(true);
     for (const pid of [h.world.pidDue, h.world.pidPlain]) {
       expect(dry.filter((x) => x.person_id === pid).map((x) => x.action).sort()).toEqual(['naukri_arm_send', 'naukri_send']);
     }

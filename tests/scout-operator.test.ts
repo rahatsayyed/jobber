@@ -22,17 +22,4 @@ describe('source-operator definition', () => {
     expect(tools.some((t) => t.endsWith('_type'))).toBe(false);
     for (const s of ['untrusted', 'escalate', 'quota', 'halted', 'rate_limited', 'killed', 'never apply']) expect(m[2]).toContain(s);
   });
-  it('config/worker-tools.json lists the same tools, and the wake profile allows every one of them', () => {
-    const cfg = JSON.parse(readFileSync('config/worker-tools.json', 'utf8')) as Record<string, string[]>;
-    expect(cfg['source-operator']).toEqual(tools);
-    const wake = loadProfiles('config/run-profiles.json', 'config/permission-sets.json').outreach_wake;
-    for (const t of tools) expect(wake.allow, t).toContain(t);
-  });
-  it('the wake profile passes the scout flags and search budgets through, but no Serper key or credentials', () => {
-    const p = JSON.parse(readFileSync('config/run-profiles.json', 'utf8')).profiles.outreach_wake as { env_keys: string[]; env_prefixes: string[] };
-    for (const k of ['WEB_', 'SCOUT_', 'DORK_', 'SEARCH_']) expect(p.env_prefixes).toContain(k);
-    expect(p.env_keys).toContain('JOBBER_DRY_RUN');
-    expect(p.env_keys).not.toContain('APPLY_DRY_RUN');
-    expect(p.env_keys.concat(p.env_prefixes).some((k) => /SERPER|PASSWORD|TOKEN|SECRET/.test(k))).toBe(false);
-  });
 });

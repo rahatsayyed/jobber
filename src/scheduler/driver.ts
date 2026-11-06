@@ -11,19 +11,16 @@ import { ceilings } from '../outreach/limits.js';
 import { inQuietHours, nextWake, quietFromConfig, retryWake, type Rng } from '../outreach/quiet.js';
 import { claimPending, type OwnerInstruction } from '../owner/instructions.js';
 import { manualRequestsPending } from '../manual/requests.js';
-import { BudgetTracker, budgetEnvWarnings, loadBudget, loadStallSec, type StopReason } from './budget.js';
+import { budgetEnvWarnings, loadBudget } from './budget.js';
 import { readControl, statExists, type ControlDeps, type ControlState } from './control.js';
 import { countDue } from './due.js';
 import { linkedinActiveNow } from '../linkedin/activeHours.js';
-import { JOBBER_TMUX_SESSION } from '../platform/tmux.js';
-import type { LaunchHandle, Launcher } from './launch.js';
 import { buildSourceRows, sourcesNotice } from '../status/sources.js';
 import type { Notice, Notifier } from './notify.js';
 import { loadPlanKnobs, planWake, stepOrder, type Assignment, type DiscoverSearches, type Step, type WakeDecision } from './plan.js';
 import { targetRegionsLine, type CodePassResult } from './pipeline.js';
 import { jdReportLine } from '../jdStore.js';
-import { buildContinuationPrompt, buildWakePrompt } from './prompt.js';
-import { describeStep, MAX_CONTINUATIONS, StreamInspector, unprovenSteps, type WakeCounts } from './stream.js';
+import type { WakeCounts } from './stream.js';
 import { noticeUrgency } from '../telegram/silent.js';
 import { notifyTg, wakeNotice, type TgPost, type WakeNotice } from './dripNotice.js';
 import { dripLoop } from './mailDrip.js';
@@ -32,9 +29,9 @@ import type { ReplyFactsState } from '../outreach/replyFacts.js';
 import type { FactCheckFn } from '../outreach/emailReplies.js';
 import type { StyleConfig } from '../safety/styleGate.js';
 import { linkedinDripEnabled, linkedinDripLoop } from './linkedinDrip.js';
-import { laneUsesWindow } from './windowLanes.js';
-import { enabledWakeWindows, groupWakeSteps, runWakeThroughWindows, WAKE_LANE, type HeadlessResult } from './wakeWindows.js';
-import { finishRun, getState, markOrphans, setRunLogPath, setRunSession, setState, startRun, type RunStatus } from './runLog.js';
+import { groupWakeSteps, runWakeThroughWindows } from './wakeWindows.js';
+import { recordWakeResult, takeWakeRequest, type WakeRequest } from './wakeRequest.js';
+import { finishRun, getState, markOrphans, setState, startRun, type RunStatus } from './runLog.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -48,16 +45,13 @@ export interface DriverDeps {
   env: NodeJS.ProcessEnv;
   lockRoot: string;
   stopFile: string;
-  runDir: string;
   projectRoot: string;
-  launcher: Launcher;
   notifier: Notifier;
   /** Code-sent Telegram notices (topics wakes, alerts, mail, linkedin). Absent: none. Never throws and never blocks long (src/scheduler/dripNotice.ts). */
   tg?: TgPost;
   newRunId: () => string;
   lockDeps?: LockDeps;
   control?: Pick<ControlDeps, 'exists' | 'read'>;
-  pollMs?: number; // default 5000
   session?: string; // tmux session for wake windows, default 'Jobber'
   /** Named LinkedIn discovery searches (config/linkedin-discovery.json); absent plans no discover task. */
   discoverSearches?: DiscoverSearches;
@@ -67,8 +61,10 @@ export interface DriverDeps {
   mailDrip?: boolean;
   /** Test seams of the email auto reply path (src/outreach/emailReplies.ts): the reply facts, the fact gate and the owner name. Absent: the real files. */
   emailReply?: { facts?: () => ReplyFactsState; factCheck?: FactCheckFn; ownerName?: string | null; styleCfg?: StyleConfig };
-  /** Hands one work item to a long-lived worker window (src/scheduler/windowDispatch.ts). Used by a lane only when WINDOW_LANES lists it (today: `mail`); absent means the old headless path. */
+  /** Hands one work item to a long-lived worker window (src/scheduler/windowDispatch.ts): the ONLY way work reaches a model (mail drip, LinkedIn drip, reply check and every wake step). Absent: nothing is dispatched. */
   windows?: WindowDispatcher;
+  /** One-time cleanup at daemon start of the retired headless design: kills leftover tmux windows named wake-* / drip-*. Never throws. Absent: none. */
+  cleanupLegacyWindows?: () => Promise<void>;
   /** Run the LinkedIn drip lane (src/scheduler/linkedinDrip.ts) beside the wakes in the daemon loop. Absent or false: no LinkedIn drip. */
   linkedinDrip?: boolean;
   /** One tick of the owner's escalation digest (src/scheduler/escalationDigest.ts), run every 30 seconds beside the wakes in the daemon loop. Never throws. Absent: no digest. */
@@ -82,10 +78,6 @@ export interface DriverDeps {
   heartbeat?: () => void; // called on every poll tick (the daemon lock heartbeat)
   /** Seam for 7D hooks. Called AFTER the run lock is released; errors are swallowed and noticed. */
   afterWake?: (r: WakeResult) => Promise<void>;
-  /** Check the stream-json log of a session that exited 0 for proof that the wake finished (default true; false only in tests of other things). */
-  verifyCompletion?: boolean;
-  /** Most `claude --resume` continuations of a wake that ended incomplete; default and ceiling MAX_CONTINUATIONS. */
-  maxContinuations?: number;
 }
 export interface WakeResult {
   runId: string;
@@ -94,33 +86,13 @@ export interface WakeResult {
   nextWakeAt: string;
 }
 
-const DEFAULT_POLL_MS = 5000;
 const SLICE_MS = 30_000;
-const DEFAULT_SESSION = JOBBER_TMUX_SESSION;
-const PASS_KEYS = new Set([
-  'TZ', 'QUIET_HOURS_START', 'QUIET_HOURS_END', 'COMPANY_CONTACT_LIMIT', 'SPECULATIVE_COMPANY_LIMIT',
-]);
-const PASS_PREFIXES = ['COOLDOWN_', 'CADENCE_', 'LINKEDIN_MAX_', 'NAUKRI_MAX_', 'WELLFOUND_MAX_', 'CLASSIFIER_'];
 
 /**
  * A wake is dry only when JOBBER_DRY_RUN is `1` or `true`; unset or anything else is live.
  */
 export function wakeIsDry(env: NodeJS.ProcessEnv): boolean {
   return isDryRun(env);
-}
-
-/**
- * The explicit child env. JOBBER_* and SCHEDULER_* are reserved by the launcher (buildRunnerArgv
- * emits JOBBER_DRY_RUN from dryRun), so nothing dry-run related is put in this env.
- */
-export function childEnv(env: NodeJS.ProcessEnv, dry: boolean): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(env)) {
-    if (typeof v !== 'string' || /[\r\n\0]/.test(v)) continue;
-    if (PASS_KEYS.has(k) || PASS_PREFIXES.some((p) => k.startsWith(p))) out[k] = v;
-  }
-  void dry; // the master flag is emitted last by buildRunnerArgv from the plan's dryRun; it is a reserved key here
-  return out;
 }
 
 function boundedEnvInt(v: string | undefined, lo: number, hi: number, fallback: number): number {
@@ -156,48 +128,19 @@ function controlDeps(d: DriverDeps): ControlDeps {
   };
 }
 
-function stopMap(r: StopReason): { status: RunStatus; reason: string } {
-  if (r === 'usage_limit') return { status: 'usage_limit', reason: 'usage_limit' };
-  if (r === 'stalled') return { status: 'failed', reason: 'stalled' };
-  return { status: 'budget_exceeded', reason: r };
-}
-
 /** The steps of a wake planned without stages (legacy prompt): one Agent call per operator, proven by the final report or a completed call. */
 function legacySteps(tasks: Assignment[]): Step[] {
   return tasks.map((a) => ({ operator: a.operator, platform: a.platform, kind: a.tasks[0]?.kind ?? 'inbox', quota: a.tasks[0]?.quota ?? 0 }));
 }
 
-function handleFor(runId: string, session: string, window?: string | null): LaunchHandle {
-  return { runId, session, window: window || `wake-${runId}`, logPath: '', exitPath: '', promptPath: '' };
-}
-
-// Kill through the launcher; a throw is a failed kill: warn and record the window so the next wake refuses to launch.
-async function killChecked(d: DriverDeps, h: LaunchHandle, runId: string): Promise<boolean> {
-  try {
-    await d.launcher.kill(h);
-    return true;
-  } catch (e) {
-    try {
-      setState(d.db, 'unkilled_window', JSON.stringify({ runId: h.runId, session: h.session, window: h.window }), d.now());
-    } catch {
-      // ignore
-    }
-    await say(d, { level: 'warn', title: 'kill failed, window may still be running', detail: safeMsg(e), runId });
-    return false;
-  }
-}
-
-// Minutes until the next wake after a run was killed as stalled (a network blip), instead of the normal interval.
-const STALL_RETRY_MIN = 2;
 
 async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boolean }): Promise<WakeResult> {
   const quiet = quietFromConfig(d.cfg);
   const runId = d.newRunId();
   const dry = wakeIsDry(d.env);
   const trigger = opts.force ? 'forced' : 'scheduled';
-  let stallNote = null as string | null; // set when the last run was killed as stalled (network): retry soon
   const drawNext = (): string => {
-    const t = (stallNote ? retryWake(d.now(), quiet, STALL_RETRY_MIN) : nextWake(d.now(), quiet)).toISOString();
+    const t = nextWake(d.now(), quiet).toISOString();
     try {
       setState(d.db, 'next_wake_at', t, d.now());
     } catch {
@@ -259,20 +202,6 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
     return await skip('control_error', safeMsg(e));
   }
 
-  // a window we failed to kill earlier blocks launching until a retried kill succeeds
-  try {
-    const raw = getState(d.db, 'unkilled_window');
-    if (raw) {
-      const u = JSON.parse(raw) as { runId?: unknown; session?: unknown; window?: unknown };
-      if (typeof u.runId !== 'string' || typeof u.session !== 'string') throw new Error('bad unkilled_window state');
-      await d.launcher.kill(handleFor(u.runId, u.session, typeof u.window === 'string' ? u.window : null));
-      setState(d.db, 'unkilled_window', '', d.now());
-    }
-  } catch (e) {
-    await say(d, { level: 'warn', title: 'kill failed, window may still be running', detail: safeMsg(e), runId });
-    return await skip('unkilled_window');
-  }
-
   // usage backoff
   try {
     const until = getState(d.db, 'usage_backoff_until');
@@ -292,16 +221,10 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
   }
   if (!lock) return await skip('locked');
 
-  // `as` casts: runSession (a closure) assigns these, and TS must not narrow them to their initial values.
   let status = 'running' as RunStatus;
   let stopReason = null as string | null;
-  let exitCode = null as number | null;
-  let activeRunId = runId; // the run row being worked on: the wake itself, then each continuation
   let started = false;
-  let launchTried = false;
   let inboxPlanned = false;
-  let handle = null as LaunchHandle | null;
-  let tracker = null as BudgetTracker | null;
   let nextWakeAt = '';
   let skippedResult: WakeResult | null = null;
   let wakeStartIso = '';
@@ -378,305 +301,40 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       codePass,
       jdLine: ((): string => { try { return jdReportLine(d.db, startAt); } catch { return ''; } })(),
     } : undefined;
-    // Phase 3c: with the `wake` lane in WINDOW_LANES the steps go to the long-lived windows (src/scheduler/wakeWindows.ts). A forced wake
-    // (--once, --now, /runhunt) never does: its dispatcher is absent and `force` is checked here too, so it stays the old headless wake.
-    const useWindows = !!order && !opts.force && !!d.windows && laneUsesWindow(WAKE_LANE, d.env);
+    // The steps go to the long-lived windows (src/scheduler/wakeWindows.ts). There is no headless path: a forced wake (a /runhunt request read by
+    // this daemon) takes exactly the same road, only the recorded trigger differs.
     const claimInstructions = (): OwnerInstruction[] => { try { return claimPending(d.db, startAt); } catch { return []; } };
-    const prompt = useWindows ? '' : buildWakePrompt({
-      runId, dryRun: dry, tasks: decision.tasks, budget, allowed: control.allowed, now: startAt,
-      order,
-      pipeline: pipelineInput,
-      instructions: claimInstructions(),
-    });
-    const pollMs = d.pollMs ?? DEFAULT_POLL_MS;
-
-    // One claude session (the original wake, or a `--resume` continuation of it) from launch to exit, stop or kill.
-    // It sets status, stopReason and exitCode, and returns what the stream-json log showed.
-    const runSession = async (id: string, promptText: string, resume?: string): Promise<StreamInspector> => {
-      status = 'running';
-      stopReason = null;
-      exitCode = null;
-      // The wall budget starts after the code pass: that time is not the model session's.
-      const t = new BudgetTracker(budget, d.now(), loadStallSec(d.env));
-      tracker = t;
-      const insp = new StreamInspector();
-      launchTried = true;
-      handle = await d.launcher.start({
-        runId: id, dryRun: dry, prompt: promptText,
-        session: d.session ?? DEFAULT_SESSION,
-        runDir: d.runDir,
-        projectRoot: d.projectRoot,
-        noClassifier: d.env.SCHEDULER_NO_CLASSIFIER === 'true' && dry,
-        env: childEnv(d.env, dry),
-        ...(resume !== undefined ? { resumeSessionId: resume } : {}),
-      });
-      const h = handle;
-      if (h.logPath) {
-        try {
-          setRunLogPath(d.db, id, h.logPath);
-        } catch {
-          // the log path is only a convenience for later measurement
-        }
-      }
-      let killFailed = false;
-      const kill = async (): Promise<void> => {
-        if (!(await killChecked(d, h, id))) killFailed = true;
-      };
-      for (;;) {
-        const r = await d.launcher.poll(h);
-        const now = d.now();
-        t.feed(r.newOutput, now);
-        insp.feed(r.newOutput);
+    const r = await runWakeThroughWindows({
+      d, runId, dry, budget, now: startAt, allowed: control.allowed,
+      items: groupWakeSteps(steps),
+      pipelineInput, claimInstructions,
+      stopCheck: () => {
+        if (opts.abort?.()) return 'shutdown';
+        let ctl: ControlState | null = null;
+        try { ctl = readControl(d.db, controlDeps(d)); } catch { ctl = null; }
+        if (!ctl || ctl.killed) return 'kill_switch';
+        if (inQuietHours(d.now(), quiet)) return 'quiet_hours';
+        return null;
+      },
+      heartbeat: () => {
         lock.heartbeat();
-        try {
-          d.heartbeat?.();
-        } catch {
-          // ignore
-        }
-        const stop = t.check(now);
-        if (stop) {
-          if (!r.exited) await kill();
-          const m = stopMap(stop);
-          status = m.status;
-          stopReason = m.reason;
-          exitCode = r.exitCode;
-          if (stop === 'stalled') {
-            stallNote = t.stallSummary(now);
-            await say(d, { level: 'warn', title: 'scheduler run stalled (network?), retrying soon', detail: stallNote, runId: id });
-          }
-          if (stop === 'usage_limit') {
-            const until = new Date(now.getTime() + backoffMin(d.env) * 60000).toISOString();
-            try {
-              setState(d.db, 'usage_backoff_until', until, now);
-            } catch {
-              // ignore
-            }
-            await say(d, { level: 'warn', title: 'scheduler usage limit reached, backing off', detail: `until ${until}`, runId: id });
-          }
-          break;
-        }
-        if (r.exited) {
-          exitCode = r.exitCode;
-          status = r.exitCode === 0 ? 'ok' : 'failed';
-          if (status === 'failed') stopReason = `exit ${r.exitCode}`;
-          break;
-        }
-        if (opts.abort?.()) {
-          await kill();
-          status = 'killed';
-          stopReason = 'shutdown';
-          break;
-        }
-        let ctl: ControlState | null = null;
-        try {
-          ctl = readControl(d.db, controlDeps(d));
-        } catch {
-          ctl = null; // unreadable means kill
-        }
-        if (!ctl || ctl.killed) {
-          await kill();
-          status = 'killed';
-          stopReason = 'kill_switch';
-          break;
-        }
-        if (inQuietHours(now, quiet)) {
-          await kill();
-          status = 'killed';
-          stopReason = 'quiet_hours';
-          break;
-        }
-        await d.sleep(pollMs);
-      }
-      if (killFailed) stopReason = 'kill_failed';
-      insp.finish();
-      if (insp.sessionId) {
-        try {
-          setRunSession(d.db, id, insp.sessionId);
-        } catch {
-          // the session id is a convenience for the chain; the continuation reads it from the inspector
-        }
-      }
-      return insp;
-    };
-
-    // A wake that exits 0 without proof that it finished (no final report line, a subagent still pending, a step with no
-    // completed operator call) is `incomplete`, not `ok`, and is continued (at most maxCont times) with `claude --resume`.
-    // `runHeadless` is the whole old path: one headless session for `hSteps` plus its continuations. The windows path calls it for the
-    // residual steps of a window that is not usable; `rootId` is the run row that session belongs to.
-    const runHeadless = async (hSteps: Step[], hPrompt: string, rootId: string): Promise<void> => {
-      const verify = d.verifyCompletion !== false;
-      const maxCont = Math.max(0, Math.min(d.maxContinuations ?? MAX_CONTINUATIONS, MAX_CONTINUATIONS));
-      const settled = new Set<number>(); // proven done, or dropped because the platform is halted now
-      const dropped = new Set<number>();
-      const chainIds = [rootId];
-      let chain = 0;
-      let curPrompt = hPrompt;
-      let resumeId: string | undefined;
-      for (;;) {
-        const insp = await runSession(activeRunId, curPrompt, resumeId);
-        try {
-          const rep = insp.report(chainIds);
-          if (rep) reportCounts = rep.counts;
-        } catch {
-          // counts are a convenience for the Telegram notice
-        }
-        if (status === 'ok' && verify) {
-          const proof = unprovenSteps(hSteps, insp, chainIds, settled);
-          for (const i of proof.proven) settled.add(i);
-          const hasReport = insp.report(chainIds) !== null;
-          const stuck = insp.pending();
-          if (!insp.resultSeen || !hasReport || stuck.length > 0 || proof.unproven.length > 0) {
-            status = 'incomplete';
-            const why: string[] = [];
-            if (!insp.resultSeen) why.push('no result event in the log');
-            else if (!hasReport) why.push('no final report line');
-            if (stuck.length > 0) why.push(`${stuck.length} subagent(s) did not return (${stuck.slice(0, 4).map((x) => x.subagent || 'agent').join(', ')})`);
-            const list = proof.unproven.map((i) => describeStep(hSteps[i], i));
-            stopReason = `incomplete: ${why.join('; ') || 'steps unproven'}; unproven steps: ${list.length > 0 ? list.join(', ') : 'none listed'}`.slice(0, 500);
-          }
-        }
-        if (status !== 'incomplete') break;
-        await say(d, { level: 'warn', title: 'scheduler run incomplete', detail: stopReason ?? undefined, runId: activeRunId });
-        const noGo = async (why: string): Promise<void> => {
-          stopReason = `${stopReason ?? 'incomplete'}; not continued: ${why}`.slice(0, 600);
-        };
-        if (chain >= maxCont) {
-          await noGo(maxCont === 0 ? 'continuation off' : 'continuation limit reached');
-          break;
-        }
-        const sid = insp.sessionId;
-        if (!sid) {
-          await noGo('no session id in the log');
-          break;
-        }
-        // Same gates as a new wake: shutdown, kill switch, halts, quiet hours, usage backoff. Dry-run handling is the wake's own flag.
-        let ctl: ControlState | null = null;
-        try {
-          ctl = readControl(d.db, controlDeps(d));
-        } catch {
-          ctl = null;
-        }
-        let block: string | null = null;
-        if (opts.abort?.()) block = 'shutdown';
-        else if (!ctl) block = 'control unreadable';
-        else if (ctl.killed) block = 'kill switch';
-        else if (ctl.allowed.length === 0) block = 'all platforms halted';
-        else if (inQuietHours(d.now(), quiet)) block = 'quiet hours';
-        else {
-          try {
-            const until = getState(d.db, 'usage_backoff_until');
-            if (until && Date.parse(until) > d.now().getTime()) block = 'usage backoff';
-          } catch {
-            block = 'state unreadable';
-          }
-        }
-        if (block || !ctl) {
-          await noGo(block ?? 'control unreadable');
-          break;
-        }
-        // A step of a platform halted since the wake began is not worked on in the continuation.
-        hSteps.forEach((s, i) => {
-          if (!settled.has(i) && s.platform && !ctl.allowed.includes(s.platform)) {
-            settled.add(i);
-            dropped.add(i);
-          }
-        });
-        const nextId = d.newRunId();
-        const snap = tracker?.snapshot();
-        try {
-          finishRun(d.db, activeRunId, {
-            at: d.now(), status: 'incomplete', stopReason: `${stopReason ?? 'incomplete'}; continued by ${nextId}`.slice(0, 600), exitCode,
-            toolCalls: snap?.toolCalls, tokensApprox: snap?.tokensApprox,
-            summary: snap ? redactPane(snap.lastLines.join('\n')).slice(0, 2000) : null,
-          });
-          startRun(d.db, {
-            id: nextId, at: d.now(), trigger: 'continuation', dryRun: dry, tasks: decision.tasks,
-            status: 'running', parentRunId: activeRunId,
-          });
-        } catch (e) {
-          await say(d, { level: 'warn', title: 'scheduler continuation row not written, not continuing', detail: safeMsg(e), runId: activeRunId });
-          stopReason = `${stopReason ?? 'incomplete'}; not continued: run log unwritable`.slice(0, 600);
-          break;
-        }
-        chain++;
-        await say(d, { level: 'info', title: `scheduler continuing wake ${runId} (${chain} of ${maxCont})`, detail: `run ${nextId} resumes session ${sid}`, runId: nextId });
-        chainIds.push(nextId);
-        activeRunId = nextId;
-        resumeId = sid;
-        curPrompt = buildContinuationPrompt({
-          rootRunId: rootId, runId: nextId, n: chain, max: maxCont, dryRun: dry, budget, allowed: ctl.allowed, now: d.now(),
-          order: hSteps, proven: settled, dropped,
-          pending: insp.pending().map((p) => ({ subagent: p.subagent, description: p.description })),
-          pipeline: pipelineInput,
-        });
-        status = 'running';
-        stopReason = null;
-      }
-    };
-
-    if (!useWindows) await runHeadless(steps, prompt, runId);
-    else {
-      const enabled = enabledWakeWindows(d.projectRoot, d.env);
-      let residuals = 0;
-      const r = await runWakeThroughWindows({
-        d, runId, dry, budget, now: startAt, allowed: control.allowed,
-        items: groupWakeSteps(steps, (w) => enabled.has(w)),
-        pipelineInput, claimInstructions,
-        headless: async (hSteps, hPrompt): Promise<HeadlessResult> => {
-          // The first residual session is the wake's own row; a later one gets its own row (child of the wake) so log and window names stay unique.
-          let rowId = runId;
-          if (residuals++ > 0) {
-            rowId = d.newRunId();
-            try { startRun(d.db, { id: rowId, at: d.now(), trigger: 'wake', dryRun: dry, tasks: [], status: 'running', parentRunId: runId }); } catch { /* the session still runs */ }
-          }
-          reportCounts = null;
-          activeRunId = rowId;
-          await runHeadless(hSteps, hPrompt, rowId);
-          const res: HeadlessResult = { status, stopReason, counts: reportCounts };
-          if (activeRunId !== runId) {
-            try { finishRun(d.db, activeRunId, { at: d.now(), status, stopReason, exitCode }); } catch { /* ignore */ }
-          }
-          activeRunId = runId;
-          return res;
-        },
-        stopCheck: () => {
-          if (opts.abort?.()) return 'shutdown';
-          let ctl: ControlState | null = null;
-          try { ctl = readControl(d.db, controlDeps(d)); } catch { ctl = null; }
-          if (!ctl || ctl.killed) return 'kill_switch';
-          if (inQuietHours(d.now(), quiet)) return 'quiet_hours';
-          return null;
-        },
-        heartbeat: () => {
-          lock.heartbeat();
-          try { d.heartbeat?.(); } catch { /* ignore */ }
-        },
-      });
-      status = r.status;
-      stopReason = r.stopReason;
-      reportCounts = r.counts;
-      windowsRan = r.sessionRan;
-      if (status === 'incomplete') await say(d, { level: 'warn', title: 'scheduler run incomplete', detail: stopReason ?? undefined, runId });
-    }
+        try { d.heartbeat?.(); } catch { /* ignore */ }
+      },
+    });
+    status = r.status;
+    stopReason = r.stopReason;
+    reportCounts = r.counts;
+    windowsRan = r.sessionRan;
+    if (status === 'incomplete') await say(d, { level: 'warn', title: 'scheduler run incomplete', detail: stopReason ?? undefined, runId });
   } catch (e) {
     status = 'failed';
     stopReason = `error: ${safeMsg(e)}`;
-    if (launchTried) {
-      // the window may exist even when start() threw: kill it by its deterministic name
-      const ok = await killChecked(d, handle ?? handleFor(activeRunId, d.session ?? DEFAULT_SESSION), activeRunId);
-      if (!ok) stopReason = 'kill_failed';
-    }
   } finally {
     // (6) always: finish the row, release the lock, draw the next wake
     if (started) {
       try {
-        const snap = tracker?.snapshot();
         if (status === 'running') status = 'failed';
-        finishRun(d.db, activeRunId, {
-          at: d.now(), status, stopReason, exitCode,
-          toolCalls: snap?.toolCalls, tokensApprox: snap?.tokensApprox,
-          summary: stallNote ?? (snap ? redactPane(snap.lastLines.join('\n')).slice(0, 2000) : null),
-        });
+        finishRun(d.db, runId, { at: d.now(), status, stopReason });
       } catch {
         // ignore
       }
@@ -697,7 +355,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
   }
   if (skippedResult) return skippedResult;
   // Owner-submitted requests whose jobs are all settled get their report now (code composes and sends it; never fatal).
-  if (started && (launchTried || windowsRan) && d.manualReport) {
+  if (started && windowsRan && d.manualReport) {
     try {
       await d.manualReport(status);
     } catch (e) {
@@ -868,19 +526,9 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     // Orphans from a previous daemon: kill their windows BEFORE marking them crashed, unless a live
     // run lock shows another process owns a run right now (then leave its rows untouched).
     if (peekLock(d.lockRoot, 'run', d.lockDeps) === null) {
-      let rows: { id: string; window: string | null }[] = [];
-      try {
-        rows = d.db
-          .prepare("SELECT id, window FROM scheduler_runs WHERE status IN ('running', 'planned')")
-          .all() as { id: string; window: string | null }[];
-      } catch {
-        rows = [];
-      }
-      for (const r of rows) {
-        // A row written by the window dispatcher names a LONG-LIVED worker window (mail, linkedin, boards ...): never kill that one here.
-        if (r.window && !/^(wake|drip)-/.test(r.window)) continue;
-        await killChecked(d, handleFor(r.id, d.session ?? DEFAULT_SESSION, r.window), r.id);
-      }
+      // One-time cleanup of the retired headless design: leftover wake-* / drip-* tmux windows and the old unkilled_window marker.
+      try { await d.cleanupLegacyWindows?.(); } catch { /* best effort */ }
+      try { if (getState(d.db, 'unkilled_window')) setState(d.db, 'unkilled_window', '', d.now()); } catch { /* ignore */ }
       markOrphans(d.db, d.now());
     } else {
       await say(d, { level: 'warn', title: 'run lock is live at daemon start, leaving running rows untouched' });
@@ -925,7 +573,16 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     while (!stop.stopped) {
       let woke = false;
       let manualWake = false;
+      let requested = null as WakeRequest | null;
       while (!stop.stopped) {
+        // An owner `/runhunt` (or `./run-hunt.sh`) request: one forced wake through the windows, taken before the clock; every wake gate still applies.
+        const wakeReq = takeWakeRequest(d.db, d.now());
+        if (wakeReq) {
+          requested = wakeReq;
+          woke = true;
+          manualWake = true;
+          break;
+        }
         if (manualWakeDue()) {
           woke = true;
           manualWake = true;
@@ -947,7 +604,11 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
         if (!present) stopSeen = false;
       }
       if (!woke || stop.stopped) break;
-      const r = await wakeOnce(deps, { abort: () => stop.stopped });
+      const r = await wakeOnce(deps, { abort: () => stop.stopped, ...(requested ? { force: true } : {}) });
+      if (requested) {
+        recordWakeResult(d.db, requested, { status: r.status, reason: r.reason, runId: r.runId }, d.now());
+        requested = null;
+      }
       if (manualWake) {
         // Keep the regular schedule: the wake drew a new next_wake_at, put the old one back.
         manualBackoffUntil = d.now().getTime() + (r.status === 'ok' ? 60_000 : 300_000);

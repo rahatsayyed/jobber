@@ -92,7 +92,7 @@ describe('up with skipped features', () => {
     const f = fake();
     const d = deps(f);
     expect(await runUp(d, { status: false })).toBe(0);
-    expect(created(f)).toEqual(['bridge', 'manager','chat', 'scheduler', 'web']);
+    expect(created(f)).toEqual(['bridge', 'mail', 'linkedin', 'sources', 'pipeline', 'boards', 'apply', 'manager', 'chat', 'scheduler', 'web']);
     expect(d.out.join('\n')).not.toContain('(setup)');
     expect(d.out.join('\n')).not.toContain('STACK');
   });
@@ -117,7 +117,7 @@ describe('up with skipped features', () => {
     const probes: string[] = [];
     const d = deps(f, probes);
     expect(await runUp(d, { status: false })).toBe(0);
-    expect(created(f)).toEqual(['bridge', 'manager','chat', 'scheduler']);
+    expect(created(f)).toEqual(['bridge', 'mail', 'linkedin', 'sources', 'pipeline', 'boards', 'apply', 'manager', 'chat', 'scheduler']);
     expect(probes).toEqual([]);
     const t = d.out.join('\n');
     expect(t).toMatch(/web\s+skipped \(setup\)\s+npm run setup -- --step dashboard/);
@@ -142,7 +142,7 @@ describe('up with skipped features', () => {
     const d = deps(f);
     expect(await runUp(d, { status: false })).toBe(0);
     expect(created(f)).toContain('bridge');
-    expect(created(f)).toEqual(['bridge', 'manager','chat', 'scheduler', 'web']);
+    expect(created(f)).toEqual(['bridge', 'mail', 'linkedin', 'sources', 'pipeline', 'boards', 'apply', 'manager', 'chat', 'scheduler', 'web']);
     expect(d.out.join('\n')).not.toContain('skipped (setup)');
   });
 

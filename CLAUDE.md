@@ -7,10 +7,11 @@ platform registry (`config/platforms.json`), scores each one against a base resu
 resume for good matches, finds a verified contact email and LinkedIn people at the hiring company,
 drafts cold outreach, and then sends email, LinkedIn connects and messages, and browser
 applications, all within strict safety limits (see "Safety"). There is no separate batch hunt any
-more: the scheduler plans a wake in code, runs the script providers itself, and launches one
-restricted `claude` run that dispatches the stage subagents and operators (see "Running a wake",
-"Sources and operators" and "Scheduler"). `/runhunt` and `./run-hunt.sh` are shims for one forced
-wake.
+more: the scheduler plans a wake in code, runs the script providers itself, and types the steps as work
+items into the long-lived interactive `claude` worker windows of the tmux session `Jobber`, which dispatch the
+stage subagents and operators (see "Running a wake", "Sources and operators" and "Scheduler"). There is no
+headless (`claude -p`) method anywhere: everything runs in regular interactive windows. `/runhunt` and
+`./run-hunt.sh` only ask the running scheduler daemon for one forced wake.
 
 It runs as a Claude Code agent using MCP tools (`job-fetch`, `resume`, `contacts`, `gmail`, `gates`,
 `db`, `outreach`, `linkedin`, `naukri`, `wellfound`, `scout`, `applier`; `.mcp.json` is the list of
@@ -23,14 +24,14 @@ contact-finder's company resolution for a LinkedIn hiring post, see "Connecting"
 exposes `list_new_jobs`, `search_jobs` and the read-only `source_status` (`board_status` is kept as
 its alias for the boards).
 
-The wake session does not call the `job-fetch`/`contacts`/`resume`/`gmail`/`linkedin`/`naukri`/
+A wake window does not call the `job-fetch`/`contacts`/`resume`/`gmail`/`linkedin`/`naukri`/
 `wellfound`/`scout`/`applier` tools for the pipeline itself. It dispatches one subagent per stage via
 the Agent tool (defined in `.claude/agents/`) and only sees each stage's compact JSON result. Pipeline
 subagents: `matcher`, `contact-finder`, `outreach-preparer`, `reply-watcher`, `followup-drafter`.
 Operators (one Agent call each, exact tool lists in `config/worker-tools.json`):
 `linkedin-operator`, `naukri-operator`, `wellfound-operator`, `source-operator`, `mail-operator`,
-`apply-operator`. `mail-operator` runs only in the mail drip lane (one email per run, profile
-`mail_drip`, see "Running a wake" and "Scheduler"), never as a wake step. `hook-probe` is a throwaway
+`apply-operator`. `mail-operator` runs only in the mail drip lane (one email per item, in the `mail` window,
+see "Running a wake" and "Scheduler"), never as a wake step. `hook-probe` is a throwaway
 probe and is never used in a pipeline. Owner-submitted job URLs and careers pages (`/apply <url>`,
 `npm run apply:request`, the dashboard Apply tab) are stored as `manual_requests` rows and run
 through the same pipeline at priority (see "Running a wake" and "Sources and operators"); the three
@@ -108,9 +109,11 @@ fallbacks, the `hunt` run profile, the old LinkedIn discovery config and the `co
 refers to them any more. The API job sources are Remotive and RemoteOK (the optional keys in the setup are
 Serper and Hunter, which are contact-finding tools, not job sources).
 
-Run profiles (`config/run-profiles.json`): `outreach_wake` (every wake), `mail_drip` (the mail drip
-lane: one tiny run per email, only the `mail-operator` tools of `config/worker-tools.json`, the `db`
-and `gmail` servers and an allowlisted environment with no secrets) and `setup_guide` (interactive).
+Run profiles (`config/run-profiles.json`): only `setup_guide` (interactive, started by `npm run setup` through
+`scripts/run-claude.ts --interactive`). The old headless profiles (`outreach_wake`, `mail_drip`, `linkedin_drip`,
+`mail_reply_check`) are gone with the headless runner. The worker windows (`mail`, `linkedin`, `boards`, `sources`,
+`pipeline`, `apply`) start through `scripts/claude-window.sh` with an allowlisted environment and the hooks of
+`.claude/hooks/window-guard.cjs` (see `docs/reference/safety-layers.md`).
 Owner commands added with the manual-request, Wellfound and LinkedIn-post work: `npm run
 apply:request -- <https url> [--force]`, `npm run wellfound:login` (headed login that saves
 `secrets/wellfound-state.json`) and the one-off, idempotent maintenance script `npx tsx
@@ -205,8 +208,7 @@ failures to `alerts` and one short notice per mail drip action to `mail` and per
 `chat` in the `Jobber` session (started by `npm run up`, session id kept in `.jobber/chat-session.json`); the
 bridge types the text into it and reads the reply from Claude's transcript under `~/.claude/projects`. In
 that topic `/clear` (also best-effort deletes the logged Telegram messages, 48 h limit), `/compact` and
-`/chat restart` are chat-only. The old `claude -p` path runs only with `TELEGRAM_CHAT_FALLBACK=print`
-(default off). Routine code-sent notices arrive silent (Telegram `disable_notification`, by topic: `mail`, `linkedin`, `wakes` and the old `drips`
+`/chat restart` are chat-only. There is no `claude -p` fallback: when the chat window is not running the bridge says so. Routine code-sent notices arrive silent (Telegram `disable_notification`, by topic: `mail`, `linkedin`, `wakes` and the old `drips`
 silent, `alerts`, `assist`, `inbox` loud; env `TELEGRAM_SILENT_TOPICS`, default `drips,wakes,mail,linkedin`); notices that ask for
 the owner and every reply to a typed command or button press are loud. Typed text goes in as one line (max 2000 chars, newlines become spaces) and a leading `!`,
 `#` or `&` is prefixed with "Owner says: ". `/windows` and `/window <name>` show live views of the
@@ -260,7 +262,7 @@ When a message arrives (Telegram or CLI), match it against this table first. **T
 
 | Trigger | Action |
 |---------|--------|
-| `/runhunt` or "run hunt", "find jobs" | Run one forced wake: execute `./run-hunt.sh` (a shim for `npm run scheduler -- --once --now`, see "Running a wake"), wait for it and post its one-line result (`run <id>: <status> ...`) to Telegram; a skipped wake is reported with its reason (`killed`, `halted`, `quiet_hours`, `ceilings_exhausted`, `nothing_due`). The wake itself runs headless under the scheduler and does the discovery, matching, outreach and apply work; point to `/working` and `/sources` for details. It is always the headless wake, never a window lane. Whether the read-only permission set lets the `chat` or `manager` window run the script is unverified. |
+| `/runhunt` or "run hunt", "find jobs" | Ask the running scheduler daemon for one forced wake: the bridge (or `./run-hunt.sh`, a shim for `npm run scheduler -- --once --now`) writes one `scheduler_state` request (`src/scheduler/wakeRequest.ts`), and the daemon runs the wake through the worker windows within about 30 seconds. If no daemon is running it answers "start the stack with npm run up" (the CLI exits 3) and runs nothing. Nothing headless. The wake still goes through `planWake`, so the kill switch, halts, quiet hours, ceilings and a `nothing_due` skip apply; the wake summary comes to the `wakes` topic from code. Point to `/working` and `/sources` for details. |
 | `/status` or "status", "summary" | Call `db.get_job_stats`, `db.get_outreach_stats` and `db.get_funnel`. Show the funnel line `discovered N -> matched N -> contacted N -> replied N -> interview N -> offer N`, reply rate and interview rate with the benchmark in brackets (`reply 15% (typical 3%, 2-13%)`), median days to first response, and the rejection rate. Benchmarks are context, not targets. |
 | `/followups` | Two modes, chosen by `FOLLOWUPS_AUTONOMOUS` (code, `followupMode`): **legacy** (flag off, the shipped default) and **autonomous** (flag exactly `true`). Common start: 0) Dispatch `reply-watcher` FIRST for a fresh reply check (on success it records the check with `db.record_reply_check`) and handle its results exactly like `/checkreplies` before going on. 1) `db.list_stale` -> if any, post the table and ask 'all / ids / skip'; call `db.resolve_stale` with the approved ids. 2) Dispatch `followup-drafter`. **Legacy mode:** max 2 follow-ups per job, 10+ days quiet; post each draft it returns (numbered, the STORED subject and body, plus any `warnings`); wait for 'send all' / 'send 1,3' / 'skip'; call `db.set_followup_approval` (approve the listed ids, skip the rest); dispatch `reply-watcher` AGAIN right before sending (approval can take hours), then dispatch `mail-operator` with `SEND_LIMIT_PER_RUN=<n>` and the line "pre-send reply check completed with no errors" (it sends queued cold emails first, then runs its follow-up pass). Never send a follow-up the user did not approve in this mode. **Autonomous mode:** up to 4 messages per job (three follow-ups, then a feedback request), gaps 3, 4, 5, 7 days (`EMAIL_FOLLOWUP_GAPS_DAYS`); there is no Telegram approval step: drafts are approved by code (`db.approve_drafted_followups`, which skips any job with an outcome, reply or bounce) and `mail-operator` claims each one with `db.claim_followup_for_send`, which in one transaction refuses unless the row is approved and not blocked, the newest clean reply check is at most `FOLLOWUP_CHECK_MAX_AGE_MIN` old (default 30, clamp 5..240), and the shared daily `send_email` counter (`SEND_LIMIT_PER_RUN`) has room. Refusals: `not_approved`, `blocked`, `no_clean_reply_check` (stop the pass, re-run `reply-watcher`), `cap` (the row stays approved). Every draft also passes the fact gate in `db.save_followup_draft`. Dispatch `mail-operator` with `SEND_LIMIT_PER_RUN=<n>`. In both modes the follow-up counts under the same daily `send_email` counter as cold emails, and the claim happens right before `gmail.send_email`. Final step: report sent/failed/capped/not_claimed, any `late_block` entries from `mail-operator` ("sent, but a reply/outcome arrived meanwhile"), and any `stuck_sending` rows (claimed by an earlier run but never confirmed sent or failed: the email may or may not have gone out; they are never re-sent automatically, the user decides). **Stop rule:** if `reply-watcher` fails, or returns a non-empty `errors` (including any "possible truncation"), do NOT dispatch `mail-operator`: report it to Telegram and stop (drafts may still be shown, nothing is sent). Email follow-ups are sent only by `mail-operator` (one follow-up per run in the mail drip lane, or its follow-up pass from `/followups`; in legacy mode only drafts you approved; the drip lane sends only approved rows, so in legacy mode it sends no follow-up until `/followups` approved it). A wake has no mail stage. LinkedIn and Naukri follow-ups are the platform operators' `followups` task. |
 | `/apply <https url> [--force]` | Priority run on one job URL or one company careers page (`.claude/commands/apply.md`). The session runs exactly `npm run apply:request -- <url> [--force]` (`scripts/apply-request.ts`) and prints its output unchanged; it only validates the URL in code (`src/manual/url.ts`: https, no credentials or port, no IP or look-alike ATS host, at most 500 characters; a LinkedIn, Naukri or Wellfound URL must be a job page) and writes one pending `manual_requests` row. It fetches nothing and never opens the URL. The scheduler daemon (not a `--once` run) checks for a pending row every 30 seconds and wakes early, outside quiet hours (an early wake then waits 60 seconds when it ended `ok`, 5 minutes otherwise, and the regular wake schedule is left alone), runs a wake whose first step is `manual`, takes the jobs through the whole pipeline first (match, vetoes, contacts, prepare, outreach, apply) and sends the owner a per-request report from code (never from the model). `--force` also prepares a job scored below `MATCH_THRESHOLD` and lifts the 90-day repeat-contact mark; vetoes, hard stops, the fact gate and every cap still apply: a manual request never skips a gate. Running the command needs the rule `Bash(npm run apply:request:*)` (the command file declares it in `allowed-tools`; whether that alone is honoured under the `read_only` permission set is unverified, so the owner adds the rule to the hunt window's permissions if it prompts). The same request can be made from the dashboard Apply tab (see "Platform and sessions"). |
@@ -391,17 +393,16 @@ the steps in exactly that order, one Agent call per operator step (a sending ste
 
 There is no mail stage in a wake: a wake only ENQUEUES email (P4). Cold emails and email follow-ups go
 out through the mail drip lane (below), never from a wake, and the wake prompt tells the
-session not to dispatch `mail-operator`. (The `outreach_wake` profile itself still lists
-`gmail.send_email`, because its main thread holds the same tools as before, so that rule is the plan
-and the prompt, not a missing tool; the kill-switch and dry-run hooks still apply to every send.)
+session not to dispatch `mail-operator`. (The wake windows hold the same tools as any window, so that
+rule is the plan and the prompt, not a missing tool; the kill-switch and dry-run hooks still apply to every send.)
 The planner also pulls work in for the stage it plans: when the pipeline is planned and the
 daily `linkedin_invite` ceiling has room (its quota is the room left), a LinkedIn `new_outreach` task is added even if its due
 count was 0 at plan time (never Naukri: cold Naukri outreach is not possible by design), and an
 `apply` task is added when `apply_attempt` and `MAX_APPLIES_PER_DAY` have room; both operators read
 their real queue and report done 0 when nothing is ready.
 
-`/runhunt`, "run hunt" and `./run-hunt.sh` run one forced wake: the script is a shim that execs
-`npm run scheduler -- --once --now`, and `--now` implies `--once`. `force` only changes the recorded
+`/runhunt`, "run hunt" and `./run-hunt.sh` ask the running daemon for one forced wake (a shim for
+`npm run scheduler -- --once --now`; `--now` implies `--once`). `force` only changes the recorded
 trigger (`forced` instead of `scheduled`); the wake still goes through `planWake`, so the kill
 switch, halts, quiet hours, ceilings and a `nothing_due` skip apply as for any wake, and the
 dry-run flags decide whether anything real happens. The wake takes the shared run lock. There is no random burst size and no `PACING_*` setting: a wake plans every due task, each
@@ -410,16 +411,22 @@ task's quota being what is due bounded by the room left under the real ceiling o
 messages); the sending steps (LinkedIn and Naukri `followups` and `new_outreach`, `apply`) are split by code into chunks of at most
 `CHUNK_SIZE` (5, a constant in `src/scheduler/plan.ts`) and the prompt lists them (`new_outreach quota 12 -> calls of 5, 5, 2`): the
 session makes separate sequential Agent calls, each a fresh subagent context, until the quota is spent or a call reports done 0,
-stopped, halted or limit reached, and such a step counts as proven for a continuation only when all its calls returned; the
+stopped, halted or limit reached, and such a step counts as proven only when the item's final report names it; an incomplete item is never continued (the plan is DB-driven, so unfinished work is due again at the next wake); the
 daemon starts the next wake a fixed 10 minutes after the last one (`WAKE_INTERVAL_MIN`, a constant, moved to the end of quiet hours
 when it would land inside them). A pending
 manual request does not wait for the next scheduled wake: the daemon (`--daemon` only) checks for one
 every 30 seconds and runs an early wake outside quiet hours (the regular wake schedule is left alone; after
 an early wake the next one waits 60 seconds when it ended `ok`, 5 minutes otherwise).
 
-The default path is headless: unless `WINDOW_LANES` (`mail`, `linkedin`, `wake`; empty by default) lists the lane, a wake and every drip tick is one restricted `claude` run. `--once`, `--now`, `/runhunt` and `./run-hunt.sh` are always headless. See `docs/window-rollout.md` to turn a lane on.
-
-**Optional wake through windows** (`WINDOW_LANES` lists `wake`, off by default): the scheduled wake keeps its planning, code pass, gates and locks in the scheduler, but types each window's steps as work items into the long-lived `sources`, `pipeline`, `boards`, `apply` (and `linkedin`) windows instead of one headless session; `--once`, `--now` and `/runhunt` always stay headless. Details: `docs/reference/scheduler.md`.
+**Windows are the only path** (owner decision 2026-11-06, no flag): the planning, the code pass, the gates and the locks stay in
+the scheduler, and every model step is typed as a work item into a long-lived interactive worker window of the tmux session `Jobber`
+(`src/scheduler/windowDispatch.ts`): `sources` (discover_agent), `pipeline` (the pipeline stage), `boards` (Naukri and Wellfound steps), `apply`,
+`linkedin` (LinkedIn wake steps and the LinkedIn drip) and `mail` (mail drip and reply check). `npm run up` always starts all of them plus
+`manager` and `chat`. If a window is missing or is not a claude pane at dispatch time, the scheduler starts it through the manager path
+(`src/scheduler/windowReady.ts`, startup line included), waits a bounded time (60 s) for a claude pane and only then types the item; if it still
+cannot, the item is SKIPPED (nothing runs anywhere else), a handoff entry is written and the owner gets one loud `alerts` notice per hour per window.
+A busy window is waited for (wake: 10 minutes), a window stuck in a permission prompt is stopped as `stalled` and handed to the owner. Details:
+`docs/reference/scheduler.md`; what is still unverified live: `docs/window-rollout.md`.
 
 **The mail drip lane** (`src/scheduler/mailDrip.ts`) runs beside the wakes, in the scheduler daemon
 only (never `--once` or `--now`), under its own lock name `mail` so a long wake never pauses it.
@@ -430,9 +437,9 @@ LinkedIn, Naukri or Wellfound halt does not stop email), outside quiet hours, in
 stops the lane), the stored next-tick time and the minimum gap since the last real send have passed,
 `EMAIL_MAX_PER_DAY` (when set) has room, and a sendable item exists. A due tick draws a batch of
 `EMAIL_DRIP_MIN_BATCH` to `EMAIL_DRIP_MAX_BATCH` emails (cut to the room left under the daily cap) and
-sends them one after another: each email is ONE tiny restricted `claude` run (profile `mail_drip`,
-trigger `mail_drip` in `scheduler_runs`) that dispatches `mail-operator` in DRIP MODE for exactly one
-item chosen in code, with a random `EMAIL_DRIP_INTRA_PAUSE_MIN_SEC` to `_MAX_SEC` pause between runs;
+sends them one after another: each email is ONE work item typed into the `mail` window (trigger `mail_drip` in
+`scheduler_runs`) that dispatches `mail-operator` in DRIP MODE for exactly one item chosen in code, with a random
+`EMAIL_DRIP_INTRA_PAUSE_MIN_SEC` to `_MAX_SEC` pause between items;
 afterwards the next tick is pushed out by a random `EMAIL_DRIP_MIN_GAP_MIN` to `_MAX_GAP_MIN`
 (the state lives in `scheduler_state`, so a restart never resets the spacing). Item choice: automatic
 email replies first, only while `EMAIL_AUTO_REPLY` is exactly `true` (ships false, tier never; see "Email auto reply" below), then
@@ -442,14 +449,15 @@ queued cold emails (queue row not excluded, with an address, never the same exac
 "pre-send reply check completed with no errors" line only then; in autonomous mode code approves the
 drafts first). A cold row whose run ended without a recorded send is quarantined (never picked again
 automatically) and the owner is notified to check Gmail Sent first. The drip run is handed `DAILY_SEND_LIMIT`
-(`EMAIL_MAX_PER_DAY`, or 100000 when unset) as the limit of the shared `send_email` counter. Dry runs
-follow the master flag: the run records and sends nothing. Replies come first: a `reply_check` item (profile `mail_reply_check`, only the
-`reply-watcher` tools, no `gmail.send_email`) runs at daemon start and then every `REPLY_CHECK_EVERY_MIN` minutes (default 60, clamp 10 to 1440); it sends nothing,
+(`EMAIL_MAX_PER_DAY`, or 100000 when unset) as the limit of the shared `send_email` counter (the window's own
+`SEND_LIMIT_PER_RUN` is fixed at window start from the same value, `scripts/window-env.ts`). Dry runs
+follow the master flag: the item records and sends nothing, and a dry scheduler never types into a window that started live. Replies come first: a `reply_check` item (typed into the same `mail` window; the work file names only
+`reply-watcher`, whose tool list has no send tool, see the known weakness in `docs/reference/safety-layers.md`) runs at daemon start and then every `REPLY_CHECK_EVERY_MIN` minutes (default 60, clamp 10 to 1440); it sends nothing,
 so the send window, the daily cap and the send spacing do not apply, but the kill switch, an `all` halt, quiet hours, the usage backoff, the lane lock and the dry run (no
 check, no notice) do. Code then tells the owner on the Telegram `inbox` topic about each new reply (one grouped message; a reply that asks for a test, link, time,
 salary, documents, references or personal data is flagged 🔔 `needs you` and is never answered by the agent). Before each follow-up code also runs a `reply-watcher` check of
 THAT Gmail thread (and a fresh mailbox check when the last clean one is older than `FOLLOWUP_CHECK_MAX_AGE_MIN`); the claim needs both, and a failed check holds the follow-up
-(owner notice at most hourly). The reply check is headless only, even with `WINDOW_LANES=mail`. Optional (`WINDOW_LANES` lists `mail`, off by default): the same prompt goes to the long-lived `mail` window through `WindowDispatcher` instead of a headless run, with every gate still in code before any text is typed (`docs/reference/scheduler.md`).
+(owner notice at most hourly). Every gate stays in code before any text is typed (`docs/reference/scheduler.md`).
 
 **Email auto reply** (owner decision 2026-11-06; owner howto `docs/email-auto-reply.md`; `src/outreach/emailReplyClass.ts`,
 `emailReplies.ts`, `replyFacts.ts`). Off unless `EMAIL_AUTO_REPLY=true` (only the owner sets it, by hand in `.env`; tier never). The mail
@@ -472,11 +480,11 @@ reply and then silence, through the normal follow-up machinery (`nudgeEligible` 
 shared counter). That is a controlled exception to the follow-up block list of Safety rule 10; the owner must amend rule 10's wording
 before turning the nudge on (see `docs/email-auto-reply.md`).
 
-**The LinkedIn drip lane** (`src/scheduler/linkedinDrip.ts`, daemon only, lock `linkedin`, profile and trigger `linkedin_drip`, `LINKEDIN_DRIP` default true): one LinkedIn
+**The LinkedIn drip lane** (`src/scheduler/linkedinDrip.ts`, daemon only, lock `linkedin`, trigger `linkedin_drip`, `LINKEDIN_DRIP` default true): one LinkedIn
 action per tick, `LINKEDIN_DRIP_MIN_GAP_MIN` to `_MAX_GAP_MIN` (8 to 20) apart, inside `LINKEDIN_ACTIVE_HOURS`, chosen in code: inbox (due at daemon start and every `REPLY_CHECK_EVERY_MIN` unless `LINKEDIN_INBOX_MIN_GAP_MIN` is set; it alone ignores the 8 to 20 minute
 spacing, every other gate stays; new threads and queued replies are announced on Telegram `inbox`, the reply with its `npm run replies -- skip <id>` hint), a reply draft that passed
 the gates (auto-approved; `npm run replies`, kind `reply`, optional resume via `linkedin_attach_file`), accept check, DM, invite; an unanswered inbound pauses that person. While on, wakes plan no LinkedIn inbox,
-accept check, follow-up or new outreach. With `WINDOW_LANES=linkedin` the same items go to the long-lived `linkedin` window (same prompt and gates; off by default). Details: `docs/reference/scheduler.md` and `connecting.md`.
+accept check, follow-up or new outreach. The items go to the long-lived `linkedin` window (its start environment carries the fixed lane marker `JOBBER_RUN_LANE=linkedin_drip` that Easy Apply checks). Details: `docs/reference/scheduler.md` and `connecting.md`.
 
 ### The pipeline stage
 
@@ -664,7 +672,7 @@ wake-report, preferences-detail); `docs/reference/CLAUDE-full.md` is the unsplit
 
 ## Platform and sessions
 
-the one tmux session `Jobber`, the Telegram bridge, permission sets, the npm scripts, the dashboard and its Apply tab, bring-up commands, setup modes, the one credentials file and auto-update and backup. Details: `docs/reference/platform-and-sessions.md` (read it before working in this area). The `manager` window drives worker windows only through `scripts/manager.ts` `send`, `clear`, `restart` and `handoff` (guards in `src/platform/manager.ts`), and the scheduler daemon sends the handoff reminders and recycles idle old windows (`src/scheduler/windowTick.ts`). Layout of the session `Jobber`: daemons `bridge`, `scheduler`, `web`; `manager`; six worker windows `mail`, `linkedin`, `boards`, `sources`, `pipeline`, `apply` (`scripts/claude-window.sh`, role files `config/windows/*.md`); `chat`. The headless path is the default; a lane uses its window(s) only when `WINDOW_LANES` lists it (`mail`, `linkedin`, `wake`; default empty), through the `WindowDispatcher` (one work item typed per turn, `/clear` after it), with the handoff file `.jobber/handoff.md` (written by code only) for what a lane could not finish and the manager recycle for old idle windows. Guards that stay: the allowlisted window environment, `window-guard.cjs` (kill switch, tamper guard, argument screens), the kill switch and dry run checked in the scheduler before typing, and the tool lists of the subagents. Honest weaknesses: the window main thread has the full tool set, there is no `dontAsk` mode (a tool outside the allow list waits on a prompt and stalls the item), hooks inside subagents are unverified, and the environment is fixed when the window starts. Turn-on and roll-back: `docs/window-rollout.md`.
+the one tmux session `Jobber`, the Telegram bridge, permission sets, the npm scripts, the dashboard and its Apply tab, bring-up commands, setup modes, the one credentials file and auto-update and backup. Details: `docs/reference/platform-and-sessions.md` (read it before working in this area). The `manager` window drives worker windows only through `scripts/manager.ts` `send`, `clear`, `restart` and `handoff` (guards in `src/platform/manager.ts`), and the scheduler daemon sends the handoff reminders and recycles idle old windows (`src/scheduler/windowTick.ts`). Layout of the session `Jobber`: daemons `bridge`, `scheduler`, `web`; `manager`; six worker windows `mail`, `linkedin`, `boards`, `sources`, `pipeline`, `apply` (`scripts/claude-window.sh`, role files `config/windows/*.md`); `chat`. Windows are the only path (no headless run, no flag); `npm run up` starts all of them and the scheduler starts a missing one itself; every item goes through the `WindowDispatcher` (one work item typed per turn, `/clear` after it), with the handoff file `.jobber/handoff.md` (written by code only) for what a lane could not finish and the manager recycle for old idle windows. Guards that stay: the allowlisted window environment, `window-guard.cjs` (kill switch, tamper guard, argument screens), the kill switch and dry run checked in the scheduler before typing, and the tool lists of the subagents. Honest weaknesses: the window main thread has the full tool set, there is no `dontAsk` mode (a tool outside the allow list waits on a prompt and stalls the item), hooks inside subagents are unverified, and the environment is fixed when the window starts. Turn-on and roll-back: `docs/window-rollout.md`.
 
 ## Layout memory and platform operators
 
@@ -672,7 +680,7 @@ Layout memory as telemetry, how to read `layout=`, drift handling, the platform 
 
 ## Outreach safety layers
 
-The layered safety design: restricted runner, PreToolUse hooks, input gate, injection classifier, output gate, ceilings, halts, kill switch and dry run (the numbered Safety rules stay in CLAUDE.md). Details: `docs/reference/safety-layers.md` (read it before working in this area).
+The layered safety design: worker windows with an allowlisted environment, PreToolUse hooks, input gate, injection classifier, output gate, ceilings, halts, kill switch and dry run (the numbered Safety rules stay in CLAUDE.md). Details: `docs/reference/safety-layers.md` (read it before working in this area).
 
 ## Scheduler
 

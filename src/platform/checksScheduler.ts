@@ -10,7 +10,6 @@ import { budgetEnvWarnings } from '../scheduler/budget.js';
 import { loadDripConfig } from '../scheduler/mailDrip.js';
 import { loadActiveHours } from '../linkedin/activeHours.js';
 import { loadLinkedinDripConfig } from '../scheduler/linkedinDrip.js';
-import { parseWindowLanes } from '../scheduler/windowLanes.js';
 import { mailDailyLimit } from '../scheduler/mailLimit.js';
 import { linkedinStartDiff } from '../scheduler/linkedinWindowStart.js';
 import { wakeStartDiff } from '../scheduler/wakeWindowStart.js';
@@ -117,7 +116,7 @@ export function schedulerChecks(): Check[] {
     },
     {
       id: 'run-budget-config',
-      title: 'run budgets (RUN_MAX_WALL_SEC, RUN_MAX_TOKENS_APPROX, RUN_STALL_SEC) are inside their allowed range',
+      title: 'run budgets (RUN_MAX_WALL_SEC, RUN_STALL_SEC) are inside their allowed range',
       async run(ctx) {
         const w = budgetEnvWarnings(mergedEnv(ctx));
         return w.length === 0 ? pass('run budget values are valid or unset') : warn(w.join('; '), 'fix the value in .env, or remove the line to use the default');
@@ -239,18 +238,17 @@ export function schedulerChecks(): Check[] {
         const files = ['scripts/claude-window.sh', 'scripts/window-env.ts', '.claude/hooks/window-guard.cjs'];
         const missing = files.filter((f) => !ctx.fs.exists(join(ctx.root, f)));
         if (missing.length > 0) return fail(`missing: ${missing.join(', ')}`, 'restore the files from git');
-        const { lanes, invalid } = parseWindowLanes(mergedEnv(ctx));
-        if (invalid.length > 0) return warn(`WINDOW_LANES has entries that are not lane names: ${invalid.join(', ')}`, 'use lowercase names separated by commas');
         const note =
           'UNVERIFIED with the installed claude: (1) --session-id for an interactive session, (2) a first positional prompt (the startup line is typed with sendText instead)';
+        const env = mergedEnv(ctx);
         // The mail window's SEND_LIMIT_PER_RUN marker is fixed at window start (scripts/window-env.ts records it). A later change of
         // EMAIL_MAX_PER_DAY does not reach the running window until it is restarted: warn when the two differ.
-        if (lanes.includes('mail')) {
+        {
           const rec = join(ctx.root, '.jobber', 'window-start', 'mail.json');
           if (ctx.fs.exists(rec)) {
             try {
               const started = (JSON.parse(ctx.fs.read(rec)) as { SEND_LIMIT_PER_RUN?: string }).SEND_LIMIT_PER_RUN;
-              const now = String(mailDailyLimit(mergedEnv(ctx)));
+              const now = String(mailDailyLimit(env));
               if (started !== undefined && started !== now) {
                 return warn(`the mail window started with SEND_LIMIT_PER_RUN=${started} but EMAIL_MAX_PER_DAY now gives ${now}`, 'restart the mail window: npx tsx scripts/manager.ts restart mail');
               }
@@ -262,11 +260,11 @@ export function schedulerChecks(): Check[] {
         // The linkedin window reads the dry-run flag, the Easy Apply switch and the daily limits once at window start
         // (scripts/window-env.ts records them): warn when .env differs now. A dry-run difference matters most (the lane refuses to type
         // when the scheduler is dry but the window started live).
-        if (lanes.includes('linkedin')) {
+        {
           const rec = join(ctx.root, '.jobber', 'window-start', 'linkedin.json');
           if (ctx.fs.exists(rec)) {
             try {
-              const diff = linkedinStartDiff(JSON.parse(ctx.fs.read(rec)) as Record<string, unknown>, mergedEnv(ctx));
+              const diff = linkedinStartDiff(JSON.parse(ctx.fs.read(rec)) as Record<string, unknown>, env);
               if (diff.length > 0) {
                 return warn(`the linkedin window started with different values of: ${diff.join(', ')} (.env changed since)`, 'restart the linkedin window: npx tsx scripts/manager.ts restart linkedin');
               }
@@ -275,40 +273,36 @@ export function schedulerChecks(): Check[] {
             }
           }
         }
-        // The `wake` lane (Phase 3c): the wake's steps go to the sources, pipeline, boards and apply windows (and the linkedin window when its lane is
-        // listed too). Warn when a window's start record differs from .env, when a required window is not in the config or not running, or
-        // when the dispatcher code is missing. --once and --now always stay headless.
-        if (lanes.includes('wake')) {
-          const need = [...WAKE_WINDOWS, ...(lanes.includes('linkedin') ? [LINKEDIN_WINDOW] : [])];
-          const cfgFile = join(ctx.root, 'config', 'manager-windows.json');
-          let configured: string[] = [];
-          try { configured = Object.keys((JSON.parse(ctx.fs.read(cfgFile)) as { windows?: Record<string, unknown> }).windows ?? {}); } catch { configured = need; }
-          const noCfg = WAKE_WINDOWS.filter((w) => !configured.includes(w));
-          if (noCfg.length > 0) return warn(`the wake lane is on but config/manager-windows.json has no window: ${noCfg.join(', ')} (their steps run in a headless session)`, 'restore config/manager-windows.json from git');
-          if (!ctx.fs.exists(join(ctx.root, 'src', 'scheduler', 'windowDispatch.ts'))) return warn('the wake lane is on but the window dispatcher (src/scheduler/windowDispatch.ts) is missing', 'restore the file from git');
-          const diffs: string[] = [];
-          for (const w of need) {
-            const rec = join(ctx.root, '.jobber', 'window-start', `${w}.json`);
-            if (!ctx.fs.exists(rec)) continue;
-            try {
-              const diff = wakeStartDiff(JSON.parse(ctx.fs.read(rec)) as Record<string, unknown>, mergedEnv(ctx));
-              if (diff.length > 0) diffs.push(`${w} (${diff.join(', ')})`);
-            } catch {
-              // unreadable record: nothing to compare
-            }
-          }
-          if (diffs.length > 0) return warn(`wake windows started with different values than .env gives now: ${diffs.join('; ')}`, 'restart those windows: npx tsx scripts/manager.ts restart <window>');
-          const listed = await ctx.run('tmux', ['list-windows', '-t', '=Jobber', '-F', '#{window_name}']);
-          if (listed.code === 0) {
-            const running = new Set(listed.stdout.split('\n').map((l) => l.trim()).filter(Boolean));
-            const down = need.filter((w) => !running.has(w));
-            if (down.length > 0) return warn(`the wake lane is on but these windows are not running: ${down.join(', ')} (their steps run in a headless session each wake)`, 'start them: npm run up');
+        // The wake's steps go to the sources, pipeline, boards and apply windows (and the linkedin window). Warn when a window's start record
+        // differs from .env, when a required window is not in the config or not running, or when the dispatcher code is missing.
+        const need = [...WAKE_WINDOWS, LINKEDIN_WINDOW, 'mail'];
+        const cfgFile = join(ctx.root, 'config', 'manager-windows.json');
+        let configured: string[] = [];
+        try { configured = Object.keys((JSON.parse(ctx.fs.read(cfgFile)) as { windows?: Record<string, unknown> }).windows ?? {}); } catch { configured = need; }
+        const noCfg = need.filter((w) => !configured.includes(w));
+        if (noCfg.length > 0) return warn(`config/manager-windows.json has no window: ${noCfg.join(', ')} (their items are skipped, nothing runs headless)`, 'restore config/manager-windows.json from git');
+        if (!ctx.fs.exists(join(ctx.root, 'src', 'scheduler', 'windowDispatch.ts'))) return warn('the window dispatcher (src/scheduler/windowDispatch.ts) is missing', 'restore the file from git');
+        const diffs: string[] = [];
+        for (const w of WAKE_WINDOWS) {
+          const rec = join(ctx.root, '.jobber', 'window-start', `${w}.json`);
+          if (!ctx.fs.exists(rec)) continue;
+          try {
+            const diff = wakeStartDiff(JSON.parse(ctx.fs.read(rec)) as Record<string, unknown>, env);
+            if (diff.length > 0) diffs.push(`${w} (${diff.join(', ')})`);
+          } catch {
+            // unreadable record: nothing to compare
           }
         }
-        if (lanes.length === 0) return skip(`WINDOW_LANES is empty, no lane uses a window yet. ${note}`);
+        if (diffs.length > 0) return warn(`wake windows started with different values than .env gives now: ${diffs.join('; ')}`, 'restart those windows: npx tsx scripts/manager.ts restart <window>');
+        const listed = await ctx.run('tmux', ['list-windows', '-t', '=Jobber', '-F', '#{window_name}']);
+        if (listed.code === 0) {
+          const running = new Set(listed.stdout.split('\n').map((l) => l.trim()).filter(Boolean));
+          const down = need.filter((w) => !running.has(w));
+          if (down.length > 0) return warn(`these worker windows are not running: ${down.join(', ')} (the scheduler starts a missing window itself when an item is due; if it cannot, the item is skipped, never run headless)`, 'start them: npm run up');
+        }
         const help = await ctx.run('claude', ['--help']);
-        const listed = /--session-id/.test(help.stdout) ? '--session-id is listed in claude --help' : '--session-id is NOT listed in claude --help';
-        return warn(`lanes through windows: ${lanes.join(', ')}. ${note}. ${listed}`, 'run one item of the lane in dry run and watch the window before going live');
+        const sid = /--session-id/.test(help.stdout) ? '--session-id is listed in claude --help' : '--session-id is NOT listed in claude --help';
+        return warn(`all work goes through the worker windows. ${note}. ${sid}`, 'watch the first ticks of each window before relying on them (docs/window-rollout.md)');
       },
     },
   ];

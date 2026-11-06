@@ -92,7 +92,7 @@ describe('up', () => {
         const n = c.indexOf('-n');
         return n >= 0 ? c[n + 1] : c[c.indexOf('-s') + 1];
       });
-    expect(order).toEqual(['bridge', 'manager','chat', 'scheduler', 'web']);
+    expect(order).toEqual(['bridge', 'mail', 'linkedin', 'sources', 'pipeline', 'boards', 'apply', 'manager', 'chat', 'scheduler', 'web']);
     f.calls.length = 0;
     expect(await runUp(deps(f), { status: false })).toBe(0);
     expect(starts(f).filter((c) => c[1] === 'new-window' || c[1] === 'new-session')).toEqual([]);
@@ -266,7 +266,7 @@ describe('up', () => {
     expect(bridge.slice(bridge.indexOf('-s'), bridge.indexOf('-s') + 2)).toEqual(['-s', 'Jobber']);
     expect(bridge.join(' ')).toContain('telegram:bridge');
     expect(bridge.join(' ')).not.toContain(SECRET);
-    expect(f.sessions.get('Jobber')).toEqual(['bridge', 'manager','chat', 'scheduler', 'web']);
+    expect(f.sessions.get('Jobber')).toEqual(['bridge', 'mail', 'linkedin', 'sources', 'pipeline', 'boards', 'apply', 'manager', 'chat', 'scheduler', 'web']);
     expect(d.out.some((l) => /^\s*bridge\s+running\s/.test(l))).toBe(true);
     // a second run finds it and starts nothing
     const again = deps(f);
@@ -295,62 +295,18 @@ describe('up', () => {
     expect([...f.sessions.keys()]).toEqual(['Jobber']);
   });
 
-  it('the mail worker window is started only when `mail` is in WINDOW_LANES', async () => {
-    const off = fake();
-    const dOff = deps(off);
-    await runUp(dOff, { status: false });
-    expect(off.sessions.get('Jobber')).not.toContain('mail');
-    expect(dOff.out).toContain('window mail: skipped (lane mail is not in WINDOW_LANES)');
-    setEnvFile('WINDOW_LANES=mail\n');
-    const on = fake();
-    const dOn = deps(on);
-    await runUp(dOn, { status: false });
-    expect(on.sessions.get('Jobber')).toContain('mail');
-    expect(dOn.out.some((l) => l.startsWith('window mail: skipped'))).toBe(false);
-  });
-
-  it('the linkedin worker window is started only when `linkedin` is in WINDOW_LANES', async () => {
-    const off = fake();
-    const dOff = deps(off);
-    await runUp(dOff, { status: false });
-    expect(off.sessions.get('Jobber')).not.toContain('linkedin');
-    expect(dOff.out).toContain('window linkedin: skipped (lane linkedin is not in WINDOW_LANES)');
-    setEnvFile('WINDOW_LANES=mail\n');
-    const mailOnly = fake();
-    await runUp(deps(mailOnly), { status: false });
-    expect(mailOnly.sessions.get('Jobber')).not.toContain('linkedin');
-    setEnvFile('WINDOW_LANES=linkedin\n');
-    const on = fake();
-    const dOn = deps(on);
-    await runUp(dOn, { status: false });
-    expect(on.sessions.get('Jobber')).toContain('linkedin');
-    expect(dOn.out.some((l) => l.startsWith('window linkedin: skipped'))).toBe(false);
-  });
-
-  it('the four wake windows are started only when `wake` is in WINDOW_LANES; the linkedin window still needs `linkedin`', async () => {
-    const wakeWins = ['sources', 'pipeline', 'boards', 'apply'];
-    const off = fake();
-    const dOff = deps(off);
-    await runUp(dOff, { status: false });
-    for (const w of wakeWins) {
-      expect(off.sessions.get('Jobber')).not.toContain(w);
-      expect(dOff.out).toContain(`window ${w}: skipped (lane wake is not in WINDOW_LANES)`);
-    }
-    setEnvFile('WINDOW_LANES=mail,linkedin\n');
-    const noWake = fake();
-    await runUp(deps(noWake), { status: false });
-    for (const w of wakeWins) expect(noWake.sessions.get('Jobber')).not.toContain(w);
-    setEnvFile('WINDOW_LANES=wake\n');
-    const on = fake();
-    await runUp(deps(on), { status: false });
-    for (const w of wakeWins) expect(on.sessions.get('Jobber')).toContain(w);
-    expect(on.sessions.get('Jobber')).not.toContain('linkedin');
-    expect(on.sessions.get('Jobber')).not.toContain('mail');
-    setEnvFile('WINDOW_LANES=wake,linkedin\n');
-    const both = fake();
-    await runUp(deps(both), { status: false });
-    expect(both.sessions.get('Jobber')).toContain('linkedin');
-    for (const w of wakeWins) expect(both.sessions.get('Jobber')).toContain(w);
+  it('npm run up always starts every worker window (mail, linkedin, boards, sources, pipeline, apply), manager and chat; no flag, nothing skipped', async () => {
+    const f = fake();
+    const d = deps(f);
+    await runUp(d, { status: false });
+    const wins = f.sessions.get('Jobber') ?? [];
+    for (const w of ['mail', 'linkedin', 'boards', 'sources', 'pipeline', 'apply', 'manager', 'chat']) expect(wins, w).toContain(w);
+    expect(d.out.some((l) => /skipped \(lane/.test(l))).toBe(false);
+    expect(d.out.join('\n')).not.toMatch(new RegExp('WINDOW_' + 'LANES'));
+    // a second run starts nothing new
+    const again = deps(f);
+    await runUp(again, { status: false });
+    expect(again.out.filter((l) => /: started/.test(l) && l.startsWith('window'))).toEqual([]);
   });
 
   it('a manager window failure is a warning, not a failure', async () => {

@@ -1,19 +1,17 @@
 // scripts/run-claude.ts
-// Restricted claude launcher: renders per-profile settings and policy, builds a scrubbed env and
-// a fail-closed argv (all guards live in src/platform/runner.ts), then spawns claude with the
-// prompt on stdin only.
-// Usage: tsx scripts/run-claude.ts <profile> [prompt] [--print-args] [--no-classifier]
+// Interactive claude launcher for the setup guide (profile setup_guide, `--interactive`): renders the per-profile settings and policy, builds a
+// scrubbed env and a fail-closed argv (all guards live in src/platform/runner.ts), then starts an INTERACTIVE claude on the terminal.
+// There is no headless (`claude -p`) path any more: a profile that is not interactive is refused. Work for the agent runs in the worker windows.
+// Usage: tsx scripts/run-claude.ts <profile> --interactive [prompt] [--print-args] [--no-classifier]
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, chmodSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   assertSafeArgs,
-  buildClaudeArgs,
   buildInteractiveArgs,
   buildEnv,
   loadProfiles,
-  SESSION_ID_RE,
   renderPolicy,
   renderSettings,
 } from '../src/platform/runner.js';
@@ -32,20 +30,12 @@ function die(code: number, msg: string): never {
   process.exit(code);
 }
 
-async function readStdin(): Promise<string> {
-  if (process.stdin.isTTY) return '';
-  const chunks: Buffer[] = [];
-  for await (const c of process.stdin) chunks.push(c as Buffer);
-  return Buffer.concat(chunks).toString('utf8');
-}
-
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const profileName = argv[0];
   if (!profileName) die(2, 'usage: run-claude <profile> [flags] [--] [prompt]');
   // Launcher flags are honoured only before the prompt; "--" ends them.
   const flags = new Set<string>();
-  let resumeSessionId: string | undefined;
   let i = 1;
   for (; i < argv.length; i++) {
     const a = argv[i];
@@ -54,11 +44,7 @@ async function main(): Promise<void> {
       break;
     }
     if (a === '--print-args' || a === '--no-classifier' || a === '--interactive') flags.add(a);
-    else if (a.startsWith('--resume=')) {
-      // The scheduler's continuation of a wake: same profile, same restrictions, only the session is resumed.
-      resumeSessionId = a.slice('--resume='.length);
-      if (!SESSION_ID_RE.test(resumeSessionId)) die(2, 'invalid session id for --resume');
-    } else break;
+    else break;
   }
   const promptParts = argv.slice(i);
 
@@ -97,14 +83,12 @@ async function main(): Promise<void> {
   const tty = printOnly || (Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY));
   const useErr = checkInteractiveUse(profile, flags.has('--interactive'), tty);
   if (useErr) die(2, useErr);
-  if (resumeSessionId !== undefined && interactive) die(2, '--resume is for non-interactive profiles only');
+  if (!interactive) die(2, `profile ${profileName} is not interactive: the headless runner is gone, work runs in the worker windows (npm run up)`);
 
   const initialPrompt = promptParts.join(' ').trim();
   let args: string[];
   try {
-    args = interactive
-      ? buildInteractiveArgs(profileName, profile, { settingsPath }, initialPrompt)
-      : buildClaudeArgs(profileName, profile, { settingsPath }, { resumeSessionId });
+    args = buildInteractiveArgs(profileName, profile, { settingsPath }, initialPrompt);
   } catch (e) {
     die(2, (e as Error).message);
   }
@@ -127,13 +111,6 @@ async function main(): Promise<void> {
     die(2, '--no-classifier is only allowed with JOBBER_DRY_RUN=true');
   }
 
-  let prompt = '';
-  if (!interactive) {
-    prompt = promptParts.length > 0 ? promptParts.join(' ') : await readStdin();
-    prompt = prompt.trim();
-    if (!prompt) die(2, 'empty prompt');
-  }
-
   if (profile.classifier === 'not_required') {
     // Only reachable for a profile that loadProfiles validated as having no MCP tools.
     process.stderr.write(`${CLASSIFIER_SKIP_LINE}\n`);
@@ -147,18 +124,9 @@ async function main(): Promise<void> {
     if (!check.ok) die(3, `classifier not ready: ${check.problems.join('; ')}`);
   }
 
-  if (interactive) {
-    const ichild = spawnInteractive(spawn, args, env, root);
-    ichild.on('error', (e) => die(1, `cannot start claude: ${e.message}`));
-    ichild.on('close', (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
-    return;
-  }
-
-  const child = spawn('claude', args, { env, stdio: ['pipe', 'inherit', 'inherit'], cwd: root });
-  child.on('error', (e) => die(1, `cannot start claude: ${e.message}`));
-  child.on('close', (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
-  child.stdin.on('error', () => undefined);
-  child.stdin.end(prompt);
+  const ichild = spawnInteractive(spawn, args, env, root);
+  ichild.on('error', (e) => die(1, `cannot start claude: ${e.message}`));
+  ichild.on('close', (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
 }
 
 main().catch((e) => die(1, (e as Error).message));

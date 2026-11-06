@@ -22,12 +22,12 @@ flowchart LR
   subgraph WAKE["One scheduler wake (npm run scheduler; /runhunt and run-hunt.sh run one now)"]
     PLAN["Plan: kill switch, halts, quiet hours, ceilings, run lock"]
     CODE["Code pass: script providers, no model"]
-    SESS["One restricted claude run, profile outreach_wake"]
+    SESS["Work items typed into the long-lived worker windows"]
     AG["Agents: matcher, contact-finder, outreach-preparer, reply-watcher, followup-drafter"]
     OPS["Operators: source, linkedin, naukri, wellfound, apply"]
   end
   subgraph DRIP["Mail drip lane (scheduler daemon, beside the wakes)"]
-    MD["code tick every 30 s, then one tiny claude run per email: profile mail_drip, mail-operator"]
+    MD["code tick every 30 s, then one work item per email typed into the mail window: mail-operator"]
   end
   subgraph SRC["Job sources"]
     S1["Boards, APIs, feeds: config/platforms.json, config/portals.json"]
@@ -94,7 +94,7 @@ ASCII twin (same content, readable in a terminal):
    |                  (no mail step: a wake only queues email)
    |
    |                MAIL DRIP LANE (scheduler daemon only, own lock `mail`)
-   |                tick every 30 s in code -> one tiny run per email (profile mail_drip)
+   |                tick every 30 s in code -> one work item per email (mail window)
    |                window, spacing, batches of 2 to 3; cold email, then follow-ups
    |
    |                MCP SERVERS
@@ -118,13 +118,13 @@ Everything runs as a scheduler wake; there is no separate hunt path. The schedul
 scheduler`) runs outside the model: each wake reads the kill switch and halts, skips quiet hours,
 takes the shared run lock named `run`, plans work from due counts and ceilings, runs the code
 pass over the script providers itself, then launches one bounded, restricted `claude` run
-(profile `outreach_wake`). That session dispatches the agents and operators in a fixed order and
+(the worker windows `sources`, `pipeline`, `boards`, `apply` and `linkedin`). Those sessions dispatch the agents and operators in a fixed order and
 sees only compact JSON back. `/runhunt` and `./run-hunt.sh` run one wake now (`npm run scheduler
 -- --once --now`); the plan, the caps and the dry-run flags are the same as for a scheduled
 wake. The run lock keeps two wakes from overlapping, but an interactive session and a wake can
 still collide on the single LinkedIn session (`session_locked`). A wake only queues email: cold
 emails and email follow-ups are sent by the mail drip lane (`src/scheduler/mailDrip.ts`), which runs in the daemon beside
-the wakes, one tiny `mail_drip` run per email with random spacing inside a send window. A priority request
+the wakes, one work item per email in the `mail` window with random spacing inside a send window. A priority request
 (`/apply <url>`) makes the daemon run an early wake whose first step, `manual`, ingests it in code. Stage order and names: CLAUDE.md, "Running a wake" and
 "Scheduler". Owner procedures: [operations.md](operations.md), [rollout.md](rollout.md),
 [scheduler-install.md](scheduler-install.md), [sources-and-platforms.md](sources-and-platforms.md),

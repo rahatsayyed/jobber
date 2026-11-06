@@ -15,7 +15,7 @@ import { ceilings } from '../src/outreach/limits.js';
 import { DEFAULT_STYLE_CONFIG } from '../src/safety/styleGate.js';
 import { acquireLock } from '../src/platform/lock.js';
 import type { DriverDeps } from '../src/scheduler/driver.js';
-import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
+import { launcherAsWindows, type LaunchHandle, type LaunchPlan, type Launcher, type PollResult } from './helpers/fakeWindows.js';
 import type { Notice } from '../src/scheduler/notify.js';
 import { readControl } from '../src/scheduler/control.js';
 import { getState, listRuns, setState, startRun } from '../src/scheduler/runLog.js';
@@ -57,11 +57,10 @@ function setup(opts: { start?: Date; env?: NodeJS.ProcessEnv; rng?: () => number
   const d: DriverDeps = {
     db, now: () => new Date(t), rng: opts.rng ?? (() => 0), sleep: async (ms) => { t += ms; },
     cfg: loadOutreachConfig(env), tuning: loadTuning(env), env,
-    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), runDir: join(dir, 'runs'), projectRoot: dir,
-    launcher, notifier: { notify: async (n) => void notices.push(n) },
+    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), projectRoot: dir,
+    windows: launcherAsWindows(launcher, () => d), notifier: { notify: async (n) => void notices.push(n) },
     newRunId: (() => { let i = 0; return () => `lidrip${String(++i).padStart(6, '0')}`; })(),
     control: opts.stopExists ? { exists: opts.stopExists, read: () => 'stop it' } : undefined,
-    pollMs: 5000,
   };
   return { d, db, launcher, notices, advance: (ms: number) => void (t += ms), setNow: (x: Date) => void (t = x.getTime()), now: () => new Date(t) };
 }
@@ -230,8 +229,6 @@ describe('tick gating: nothing happens unless every gate is open and there is wo
     setState(s.db, 'usage_backoff_until', new Date(s.now().getTime() + 3600_000).toISOString(), s.now());
     expect(await linkedinDripTick(s.d)).toMatchObject({ reason: 'usage_backoff' });
     setState(s.db, 'usage_backoff_until', new Date(s.now().getTime() - 1000).toISOString(), s.now());
-    setState(s.db, 'unkilled_window', '{}', s.now());
-    expect(await linkedinDripTick(s.d)).toMatchObject({ reason: 'unkilled_window' });
     expect(s.launcher.starts).toHaveLength(0);
   });
 
@@ -268,23 +265,19 @@ describe('tick gating: nothing happens unless every gate is open and there is wo
     expect(s.launcher.starts).toHaveLength(0);
   });
 
-  it('runs exactly ONE tiny restricted run per due tick, then holds the next tick back by the random gap and survives a restart', async () => {
+  it('types exactly ONE item into the linkedin window per due tick, then holds the next tick back by the random gap and survives a restart', async () => {
     const s = setup({ rng: () => 0 });
     work(s);
     const r = await linkedinDripTick(s.d);
     expect(r).toMatchObject({ status: 'ran', item: 'inbox', run: { status: 'ok' } });
     expect(s.launcher.starts).toHaveLength(1);
     const plan = s.launcher.starts[0];
-    expect(plan).toMatchObject({ profile: 'linkedin_drip', dryRun: false });
-    expect(plan.session).toBe('Jobber');
-    expect(plan.windowName).toBe(`drip-linkedin-${plan.runId}`);
+    expect(plan).toMatchObject({ trigger: 'linkedin_drip', window: 'linkedin', lane: 'linkedin', dryRun: false });
     expect(plan.prompt.match(/Drip item:/g)).toHaveLength(1);
     expect(plan.prompt).toMatch(/DRIP MODE/);
-    expect(plan.env).toBeDefined();
-    expect(Object.keys(plan.env ?? {}).every((k) => !/KEY|SECRET|TOKEN|PASSWORD|GMAIL|HUNTER|SERPER/.test(k))).toBe(true);
     const row = listRuns(s.db)[0];
     expect(row).toMatchObject({ trigger: 'linkedin_drip', status: 'ok' });
-    expect(JSON.parse(row.tasks)).toEqual([{ operator: 'linkedin-operator', kind: 'inbox', quota: 1, item: 'inbox' }]);
+    expect(JSON.parse(row.tasks)).toEqual([{ lane: 'linkedin', item: { operator: 'linkedin-operator', kind: 'inbox', quota: 1, item: 'inbox' } }]);
     // the next tick is pushed out by LINKEDIN_DRIP_MIN_GAP_MIN (rng 0 draws the minimum)
     expect(Date.parse(getState(s.db, LI_STATE_NEXT_AT) as string)).toBe(s.now().getTime() + 8 * 60_000);
     expect(JSON.parse(getState(s.db, LI_STATE_LAST_ACTION) as string)).toMatchObject({ kind: 'inbox', status: 'ok' });

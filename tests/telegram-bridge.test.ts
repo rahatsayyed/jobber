@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Bot } from 'grammy';
+import { openDb } from '../src/db.js';
 import { createBridgeBot } from '../src/telegram/bridge.js';
 import { applyArgv, commandArgv, handleOwnerMessage, instructionArgv, parseCommand, type BridgeDeps } from '../src/telegram/commands.js';
-import { buildChatArgv, createChatRunner, readChatSessions } from '../src/telegram/chat.js';
 import { childEnv, type ProcResult, type SpawnFn } from '../src/telegram/spawn.js';
 import { loadTelegramConfig } from '../src/telegram/config.js';
 import { topicsPath } from '../src/telegram/topics.js';
@@ -77,7 +77,7 @@ describe('command argv', () => {
 
   it('status commands, runhunt, instruction', () => {
     expect(commandArgv('health', '')).toMatchObject({ cmd: 'npx', args: ['tsx', 'scripts/status.ts', 'health'] });
-    expect(commandArgv('runhunt', '')).toMatchObject({ cmd: 'npm', args: ['run', 'scheduler', '--', '--once', '--now'] });
+    expect(commandArgv('runhunt', '')).toBeNull(); // no child process: /runhunt is a request to the scheduler daemon
     expect(instructionArgv('add call Acme --job 5')).toMatchObject({ args: ['run', 'instructions', '--', 'add', 'call', 'Acme', '--job', '5'] });
     expect(instructionArgv('done 3 sent it')).toMatchObject({ args: ['run', 'instructions', '--', 'done', '3', 'sent it'] });
     expect('error' in (instructionArgv('done x') as object)).toBe(true);
@@ -98,7 +98,6 @@ describe('kill switch and free chat', () => {
     const spawn: SpawnFn = async (cmd, args) => { spawned.push([cmd, ...args]); return ok('{"result":"chat answer","session_id":"' + SID + '"}'); };
     const d: BridgeDeps = {
       root, env: { TELEGRAM_BOT_TOKEN: TOKEN, HOME: '/h' } as NodeJS.ProcessEnv, spawn,
-      chat: createChatRunner({ root, env: { TELEGRAM_BOT_TOKEN: TOKEN, HOME: '/h' } as NodeJS.ProcessEnv, spawn }),
       killed: () => ({ stopped: false, reason: '' }),
       openDb: () => { throw new Error('no db'); },
       reply: async (t) => { replies.push(t); },
@@ -121,26 +120,20 @@ describe('kill switch and free chat', () => {
     expect(spawned).toEqual([['npx', 'tsx', 'scripts/status.ts', 'limits']]);
   });
 
-  it('free chat spawns claude with no token, no bypass flag, prompt after --, and keeps the session id', async () => {
+  it('no claude -p anywhere: free text never spawns claude, it points at the chat window', async () => {
     const { d, replies, spawned } = deps();
-    await handleOwnerMessage({ text: 'what is up' }, d); // private chat (no topics file)
-    expect(replies).toEqual(['chat answer']);
-    const argv = spawned[0]!;
-    expect(argv[0]).toBe('claude');
-    expect(argv).toEqual(['claude', '-p', '--output-format', 'json', '--', 'what is up']);
-    expect(argv.join(' ')).not.toMatch(/dangerously|bypass/i);
-    expect(readChatSessions(root).private).toBe(SID);
-    await handleOwnerMessage({ text: 'and now' }, d);
-    expect(spawned[1]).toEqual(['claude', '-p', '--output-format', 'json', '--resume', SID, '--', 'and now']);
+    await handleOwnerMessage({ text: 'what is up' }, d); // private chat (no topics file); the chat window takes it before this point
+    expect(spawned).toHaveLength(0);
+    expect(replies).toHaveLength(1);
+    expect(replies[0]).toMatch(/chat window/);
   });
 
-  it('free chat env is a small allowlist without the token', async () => {
-    let seen: Record<string, string> = {};
-    const spawn: SpawnFn = async (_c, _a, o) => { seen = o.env; return ok('{"result":"x"}'); };
-    const r = createChatRunner({ root, env: { TELEGRAM_BOT_TOKEN: TOKEN, HOME: '/h', PATH: '/p', SECRET: 's' } as NodeJS.ProcessEnv, spawn });
-    await r.ask('private', 'hi');
-    expect(Object.keys(seen).sort()).toEqual(['HOME', 'PATH']);
-    expect(() => buildChatArgv('x', 'not-a-uuid')).toThrow();
+  it('/runhunt only asks the running scheduler daemon: no child process, a clear message when the daemon is not running', async () => {
+    const { d, replies, spawned } = deps({ openDb: () => openDb(':memory:') });
+    await handleOwnerMessage({ text: '/runhunt' }, d);
+    expect(spawned).toHaveLength(0);
+    expect(replies[0]).toMatch(/No wake requested/);
+    expect(replies[0]).toMatch(/npm run up/);
   });
 
   it('free text outside the chat topic is refused; inside it is answered', async () => {
@@ -151,8 +144,7 @@ describe('kill switch and free chat', () => {
     expect(replies[0]).toContain('chat');
     expect(spawned).toHaveLength(0);
     await handleOwnerMessage({ text: 'hi', threadId: 11 }, d);
-    expect(spawned).toHaveLength(1);
-    expect(readChatSessions(root)['topic:11']).toBe(SID);
+    expect(spawned).toHaveLength(0); // never claude -p; the chat window answers in the chat topic
   });
 });
 

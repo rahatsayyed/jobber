@@ -50,7 +50,7 @@ async function main(): Promise<void> {
     try {
       const p = resolve(ROOT, '.jobber', 'window-start', `${name}.json`);
       mkdirSync(dirname(p), { recursive: true });
-      writeFileSync(p, `${JSON.stringify({ SEND_LIMIT_PER_RUN: launch.env.SEND_LIMIT_PER_RUN, at: new Date().toISOString() })}\n`, { mode: 0o600 });
+      writeFileSync(p, `${JSON.stringify({ SEND_LIMIT_PER_RUN: launch.env.SEND_LIMIT_PER_RUN, JOBBER_DRY_RUN: (launch.env.JOBBER_DRY_RUN ?? '').trim(), at: new Date().toISOString() })}\n`, { mode: 0o600 });
     } catch { /* the record is only for the doctor */ }
   }
   // The linkedin window also reads these once at start (dry run, Easy Apply switch, daily limits): record them for the doctor and for

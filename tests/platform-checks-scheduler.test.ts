@@ -79,66 +79,54 @@ describe('scheduler doctor checks', () => {
     ]);
   });
 
-  it('window-foundation warns when the mail window started with another daily limit than EMAIL_MAX_PER_DAY now gives', async () => {
-    const base: Files = {
-      '/p/scripts/claude-window.sh': { text: '' }, '/p/scripts/window-env.ts': { text: '' }, '/p/.claude/hooks/window-guard.cjs': { text: '' },
-    };
-    const rec = (v: string): Files => ({ ...base, '/p/.jobber/window-start/mail.json': { text: JSON.stringify({ SEND_LIMIT_PER_RUN: v }) } });
-    const stale = (await run(ctxWith(rec('100000'), { env: { WINDOW_LANES: 'mail', EMAIL_MAX_PER_DAY: '20' } })))['window-foundation'];
+  const WIN_BASE: Files = {
+    '/p/scripts/claude-window.sh': { text: '' }, '/p/scripts/window-env.ts': { text: '' }, '/p/.claude/hooks/window-guard.cjs': { text: '' },
+    '/p/src/scheduler/windowDispatch.ts': { text: '' },
+    '/p/config/manager-windows.json': { text: JSON.stringify({ windows: { mail: {}, linkedin: {}, sources: {}, pipeline: {}, boards: {}, apply: {} } }) },
+  };
+
+  it('window-foundation warns when the mail window started with another daily limit than EMAIL_MAX_PER_DAY now gives (no lane flag: windows are always on)', async () => {
+    const rec = (v: string): Files => ({ ...WIN_BASE, '/p/.jobber/window-start/mail.json': { text: JSON.stringify({ SEND_LIMIT_PER_RUN: v }) } });
+    const stale = (await run(ctxWith(rec('100000'), { env: { EMAIL_MAX_PER_DAY: '20' } })))['window-foundation'];
     expect(stale.status).toBe('warn');
     expect(stale.detail).toMatch(/EMAIL_MAX_PER_DAY/);
-    const same = (await run(ctxWith(rec('20'), { env: { WINDOW_LANES: 'mail', EMAIL_MAX_PER_DAY: '20' } })))['window-foundation'];
+    const same = (await run(ctxWith(rec('20'), { env: { EMAIL_MAX_PER_DAY: '20' } })))['window-foundation'];
     expect(same.detail).not.toMatch(/started with/);
-    const off = (await run(ctxWith(rec('100000'), { env: { EMAIL_MAX_PER_DAY: '20' } })))['window-foundation'];
-    expect(off.status).toBe('skip');
+    expect(same.detail).toMatch(/all work goes through the worker windows/);
   });
 
   it('window-foundation warns when the linkedin window started with another dry-run flag, Easy Apply switch or limit than .env gives now', async () => {
-    const base: Files = {
-      '/p/scripts/claude-window.sh': { text: '' }, '/p/scripts/window-env.ts': { text: '' }, '/p/.claude/hooks/window-guard.cjs': { text: '' },
-    };
-    const rec = (o: Record<string, string>): Files => ({ ...base, '/p/.jobber/window-start/linkedin.json': { text: JSON.stringify(o) } });
-    const stale = (await run(ctxWith(rec({ JOBBER_DRY_RUN: 'true', APPLY_LINKEDIN_EASY: '' }), { env: { WINDOW_LANES: 'linkedin', JOBBER_DRY_RUN: 'false' } })))['window-foundation'];
+    const rec = (o: Record<string, string>): Files => ({ ...WIN_BASE, '/p/.jobber/window-start/linkedin.json': { text: JSON.stringify(o) } });
+    const stale = (await run(ctxWith(rec({ JOBBER_DRY_RUN: 'true', APPLY_LINKEDIN_EASY: '' }), { env: { JOBBER_DRY_RUN: 'false' } })))['window-foundation'];
     expect(stale.status).toBe('warn');
     expect(stale.detail).toMatch(/JOBBER_DRY_RUN/);
     expect(stale.detail).toMatch(/restart the linkedin window|started with/);
-    const same = (await run(ctxWith(rec({ JOBBER_DRY_RUN: 'true' }), { env: { WINDOW_LANES: 'linkedin', JOBBER_DRY_RUN: 'true' } })))['window-foundation'];
+    const same = (await run(ctxWith(rec({ JOBBER_DRY_RUN: 'true' }), { env: { JOBBER_DRY_RUN: 'true' } })))['window-foundation'];
     expect(same.detail).not.toMatch(/started with/);
-    const off = (await run(ctxWith(rec({ JOBBER_DRY_RUN: 'true' }), { env: { JOBBER_DRY_RUN: 'false' } })))['window-foundation'];
-    expect(off.status).toBe('skip');
   });
 
-  it('window-foundation, wake lane: warns on a changed start value, a missing config window, a missing dispatcher or a window that is not running', async () => {
-    const base: Files = {
-      '/p/scripts/claude-window.sh': { text: '' }, '/p/scripts/window-env.ts': { text: '' }, '/p/.claude/hooks/window-guard.cjs': { text: '' },
-      '/p/src/scheduler/windowDispatch.ts': { text: '' },
-      '/p/config/manager-windows.json': { text: JSON.stringify({ windows: { sources: {}, pipeline: {}, boards: {}, apply: {} } }) },
-    };
-    const env = { WINDOW_LANES: 'wake' };
-    const fine = (await run(ctxWith(base, { env })))['window-foundation'];
+  it('window-foundation: warns on a changed start value, a missing config window or a missing dispatcher; never mentions the old lane flag', async () => {
+    const env = {};
+    const fine = (await run(ctxWith(WIN_BASE, { env })))['window-foundation'];
     expect(fine.status).toBe('warn');
-    expect(fine.detail).toMatch(/lanes through windows: wake/);
-    const stale = (await run(ctxWith({ ...base, '/p/.jobber/window-start/boards.json': { text: JSON.stringify({ JOBBER_DRY_RUN: 'true', MAX_APPLIES_PER_DAY: '5' }) } }, { env: { ...env, JOBBER_DRY_RUN: 'false' } })))['window-foundation'];
+    expect(fine.detail).toMatch(/all work goes through the worker windows/);
+    expect(fine.detail).not.toMatch(new RegExp('WINDOW_' + 'LANES'));
+    const stale = (await run(ctxWith({ ...WIN_BASE, '/p/.jobber/window-start/boards.json': { text: JSON.stringify({ JOBBER_DRY_RUN: 'true', MAX_APPLIES_PER_DAY: '5' }) } }, { env: { JOBBER_DRY_RUN: 'false' } })))['window-foundation'];
     expect(stale.detail).toMatch(/boards \(JOBBER_DRY_RUN/);
-    const noCfg = (await run(ctxWith({ ...base, '/p/config/manager-windows.json': { text: JSON.stringify({ windows: { sources: {} } }) } }, { env })))['window-foundation'];
-    expect(noCfg.detail).toMatch(/no window: pipeline, boards, apply/);
-    const { '/p/src/scheduler/windowDispatch.ts': _gone, ...noDisp } = base;
+    const noCfg = (await run(ctxWith({ ...WIN_BASE, '/p/config/manager-windows.json': { text: JSON.stringify({ windows: { sources: {} } }) } }, { env })))['window-foundation'];
+    expect(noCfg.detail).toMatch(/no window: pipeline, boards, apply, linkedin, mail/);
+    expect(noCfg.detail).toMatch(/nothing runs headless/);
+    const { '/p/src/scheduler/windowDispatch.ts': _gone, ...noDisp } = WIN_BASE;
     expect((await run(ctxWith(noDisp, { env })))['window-foundation'].detail).toMatch(/dispatcher .* is missing/);
-    // the lane off: the wake windows are not looked at
-    expect((await run(ctxWith(base, { env: {} })))['window-foundation'].status).toBe('skip');
   });
 
-  it('window-foundation, wake lane: a required window that tmux does not list is reported', async () => {
-    const files: Files = {
-      '/p/scripts/claude-window.sh': { text: '' }, '/p/scripts/window-env.ts': { text: '' }, '/p/.claude/hooks/window-guard.cjs': { text: '' },
-      '/p/src/scheduler/windowDispatch.ts': { text: '' },
-      '/p/config/manager-windows.json': { text: JSON.stringify({ windows: { sources: {}, pipeline: {}, boards: {}, apply: {}, linkedin: {} } }) },
-    };
-    const ctx = ctxWith(files, { env: { WINDOW_LANES: 'wake,linkedin' } });
+  it('window-foundation: a required window that tmux does not list is reported (the scheduler starts it itself when an item is due)', async () => {
+    const ctx = ctxWith(WIN_BASE, { env: {} });
     ctx.run = async (cmd, args) => (cmd === 'tmux' && args[0] === 'list-windows' ? { stdout: 'sources\npipeline\nboards\n', code: 0 } : { stdout: '', code: 1 });
     const r = (await run(ctx))['window-foundation'];
     expect(r.status).toBe('warn');
-    expect(r.detail).toMatch(/not running: apply, linkedin/);
+    expect(r.detail).toMatch(/not running: apply, linkedin, mail/);
+    expect(r.detail).toMatch(/never run headless/);
   });
 
   it('tmux version gate', async () => {

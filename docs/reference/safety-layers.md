@@ -7,18 +7,21 @@ revised by the browserctl design `.superpowers/sdd/linkedin-arch-design.md`): th
 snapshot ref, and anything irreversible needs an armed intent that the arm tool created after the code
 gates and that the engine re-verifies against the live page. Layers, outermost first:
 
-1. **Restricted runner**: `scripts/run-claude.sh|ts <profile>` builds the `claude` argv from
-   `config/run-profiles.json`: exact allowlisted tool names (wildcards rejected), allowlisted
-   child environment, `--strict-mcp-config`, no bypassPermissions, no skip-permissions. Profile
-   `outreach_wake` (scheduler, and `./run-hunt.sh` through it) has the platform (LinkedIn, Naukri,
-   Wellfound), pipeline, mail and applier tools plus the db tools they need (since the owner decision of
-   2026-10-26 every tool of every `.mcp.json` server except `db.raw_query`), and the FULL built-in tool set
-   (`Skill`, `Agent`, `Task`, `Read`, `Grep`, `Glob`, `Bash`, `BashOutput`, `KillShell`, `Edit`, `Write`,
-   `NotebookEdit`, `WebFetch`, `WebSearch`, `TodoWrite`) behind the tamper guard described below. Its main
-   thread holds the send tools (only subagents are narrowed by the hook). Profile `mail_drip` (the mail drip lane, one run per email, wall and token budget only) holds
-   only the `mail-operator` tools of `config/worker-tools.json` (the `db` and `gmail` servers, `Agent` and `Task`),
-   an allowlisted environment without secrets and `gmail.send_email` as a screened argument surface; it is
-   launched by the scheduler daemon, never by a session.
+1. **Worker windows** (since 2026-11-06 there is no headless runner and no restricted run profile; windows are the only path): every model step runs in a long-lived interactive
+   `claude` window of the tmux session `Jobber` (`mail`, `linkedin`, `boards`, `sources`, `pipeline`, `apply`), started by `scripts/claude-window.sh <window>`. The launcher gives claude an
+   ALLOWLISTED environment only (`scripts/window-env.ts`, `src/platform/windowEnv.ts`: a fixed list of keys and prefixes per window, never the Telegram bot token, never a secret that window does not
+   need), a per-window `--settings` file with the hooks below (no permissions block: the allow list is the top-level permission set in `.claude/settings.local.json`), no bypassPermissions and no
+   skip-permissions (the launcher refuses both), and records the start-time dry-run flag and caps in `.jobber/window-start/<window>.json`. The scheduler types ONE line per work item
+   (`Work item <id>: read .jobber/work/<id>.md ...`); the work file names the operator and the item. Each operator subagent is narrowed by its agent file's `tools:` line (checked against
+   `config/worker-tools.json` by tests). **What was lost with the headless runner** (honest list): the per-profile exact tool allow lists of `outreach_wake`, `mail_drip`, `linkedin_drip` and
+   `mail_reply_check` (a window's main thread holds the full tool set of the permission set; only subagents are narrowed), the `dontAsk` permission mode (a tool outside the allow list now waits on a
+   permission prompt: the dispatcher stops the item as `stalled` and the owner is told), `--max-turns`, the per-run `--strict-mcp-config` MCP file per lane (each window loads the project's `.mcp.json`),
+   and the separate no-send reply-check run: the reply check is now an item in the `mail` window, which also holds `gmail.send_email`. KNOWN WEAKNESS: that check "reads only" because the work file
+   names only `reply-watcher`, whose tool list has no send tool, plus the kill switch and `window-guard.cjs`; nothing in code stops a confused or injected main thread from calling `send_email` in
+   that turn. **What remains:** the allowlisted environment, `window-guard.cjs` (kill switch on every tool, the tamper denylist on the built-in tools, the secret-path screens and the `send_email`
+   attachment screen), `block-outside-project.cjs`, `settings-guard.cjs`, `prompt-secret-guard.cjs`, the subagent tool lists, the claims (`claim_cold_for_send`, `claim_followup_for_send`,
+   `claim_email_reply_for_send`), the daily counters and ceilings, the per-item dry-run guard (a dry scheduler never types into a window that started live), the kill switch and halts, quiet hours and
+   the send window, and the fact, style and output gates in code.
    Interactive profiles (`setup_guide`, `interactive: true`) take only an allowlisted env, list
    Bash commands as exact strings in `bash_exact` (no wildcard), may declare `classifier:
    not_required` only when validated to have no MCP tools, and are covered by the
@@ -92,8 +95,7 @@ gates and that the engine re-verifies against the live page. Layers, outermost f
    written completes; hook propagation into subagents is unverified in real `claude`;
    interactive sessions outside this project directory; sends done through Bash; the Gmail dry
    run is the same single `JOBBER_DRY_RUN` flag;
-   `JOBBER_KILL` is not in the `outreach_wake` profile's `env_keys`, so inside restricted runs
-   the hook's `JOBBER_KILL` path is inert (the STOP file and the launcher cover it).
+   `JOBBER_KILL` is not in the allowlisted window environment, so inside a window the hook's `JOBBER_KILL` path is inert (the STOP file and the scheduler cover it).
 7. **Dry run**: ONE master flag, `JOBBER_DRY_RUN` (`src/safety/dryRun.ts` `isDryRun`, copied into the
    hook `.claude/hooks/kill-switch.cjs`, parity test `tests/dryrun-parity.test.ts`). Dry iff the trimmed,
    lowercased value is `1` or `true`; unset, empty, `false`, `0` or anything else is LIVE (the default).
@@ -133,17 +135,12 @@ kill-switch scope.
 
 ## The wake's full session and the tamper guard
 
-Owner decision (2026-10-26, explicit): the scheduled wake (profile `outreach_wake`) runs like a regular
-Claude session so that it can diagnose and fix problems itself. It lists the full built-in tool set and every
-exact tool of every `.mcp.json` server (no wildcards; `db.raw_query` stays out because the loader refuses it;
-`apply_screenshot` stays out because that tool is off by default). The profile carries
-`unrestricted_builtins: true`, which `loadProfiles` accepts ONLY for the profile named `outreach_wake`, and the
-hook honours only when it is run with that profile name. `mail_drip` and every other profile are unchanged and
-still list no Bash, Edit, Write or web tool. The prompt block that tells the session what this is for is
-`DIAGNOSTIC_RULES` in `src/scheduler/prompt.ts` (guidance only; the hook is the enforcement).
+Owner decision (2026-10-26, explicit; carried over to the windows on 2026-11-06): the wake windows run like a regular
+Claude session so that they can diagnose and fix problems themselves. The `pipeline` window gets the self-repair rules (`DIAGNOSTIC_RULES` in `src/scheduler/prompt.ts`, guidance only; the hooks are the
+enforcement); the other windows get the short `ITEM_RULES` (retry once, escalate, no file changes).
 
 **What enforces it.** Every tool call still goes through `.claude/hooks/tool-allowlist.cjs`: kill switch first
-(`.jobber/STOP` and `JOBBER_KILL` deny every tool, Bash, Read, Write and the web tools included), then the
+(`.jobber/STOP` and `JOBBER_KILL` deny every tool, Bash, Read, Write and the web tools included), then (for the setup guide profile only) the
 profile allowlist, then, for Read, Grep, Glob, Bash, Edit, Write, NotebookEdit, WebFetch and WebSearch, the
 tamper guard `.claude/hooks/tamper-guard.cjs` (pure, fails closed, unit-tested in
 `tests/hook-tamper-guard.test.ts`). `block-outside-project.cjs` also runs on these tools (for this profile also

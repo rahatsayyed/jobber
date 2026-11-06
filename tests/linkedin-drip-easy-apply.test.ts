@@ -1,7 +1,7 @@
 // LinkedIn Easy Apply in the drip lane (src/scheduler/linkedinDrip.ts): the picker, the prompt line, the run environment, and the hand-over between
 // the manual apply queue (Easy Apply off) and the lane (on). Fake clock, fake launcher, in-memory db. Nothing touches LinkedIn.
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, saveJob } from '../src/db.js';
@@ -12,7 +12,7 @@ import { recordEvent } from '../src/outreach/limits.js';
 import { upsertPerson } from '../src/outreach/people.js';
 import { buildManualQueue } from '../src/manual/manualApply.js';
 import type { DriverDeps } from '../src/scheduler/driver.js';
-import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
+import { launcherAsWindows, type LaunchHandle, type LaunchPlan, type Launcher, type PollResult } from './helpers/fakeWindows.js';
 import { setState } from '../src/scheduler/runLog.js';
 import {
   buildLinkedinDripPrompt, describeItem, easyApplyRows, itemKey, linkedinDripStatus, linkedinDripTick, loadLinkedinDripConfig, pickLinkedinItem,
@@ -45,10 +45,9 @@ function setup(env: NodeJS.ProcessEnv = {}) {
   const d: DriverDeps = {
     db, now: () => new Date(t), rng: () => 0, sleep: async (ms) => { t += ms; },
     cfg: loadOutreachConfig(env), tuning: loadTuning(env), env,
-    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), runDir: join(dir, 'runs'), projectRoot: dir,
-    launcher, notifier: { notify: async () => undefined },
+    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), projectRoot: dir,
+    windows: launcherAsWindows(launcher, () => d), notifier: { notify: async () => undefined },
     newRunId: (() => { let i = 0; return () => `liea${String(++i).padStart(6, '0')}`; })(),
-    pollMs: 5000,
   };
   return { d, db, launcher, now: () => new Date(t) };
 }
@@ -179,15 +178,17 @@ describe('prompt, run environment and status', () => {
     expect(p).toContain('Task: easy_apply quota 1');
   });
 
-  it('a due tick launches one run for the application with the lane marker and the flag in its environment', async () => {
+  it('a due tick launches one run for the application into the linkedin window (the lane marker is fixed in the window env)', async () => {
     const s = setup({ ...ON, MAX_APPLIES_PER_DAY: '3' });
     easyJob(s, '4011111111');
     inboxRead(s);
     const r = await linkedinDripTick(s.d);
     expect(r).toMatchObject({ status: 'ran', item: 'easy_apply:li-job:4011111111' });
     const plan = s.launcher.starts[0];
-    expect(plan.profile).toBe('linkedin_drip');
-    expect(plan.env).toMatchObject({ JOBBER_RUN_LANE: 'linkedin_drip', APPLY_LINKEDIN_EASY: 'true', MAX_APPLIES_PER_DAY: '3' });
+    expect(plan).toMatchObject({ trigger: 'linkedin_drip', window: 'linkedin' });
+    // The lane marker is fixed in the window's start environment (config/manager-windows.json), not passed per item.
+    const cfg = JSON.parse(readFileSync('config/manager-windows.json', 'utf8')) as { windows: Record<string, { env?: Record<string, string> }> };
+    expect(cfg.windows.linkedin.env?.JOBBER_RUN_LANE).toBe('linkedin_drip');
     expect(plan.prompt).toContain('Drip item: easy_apply');
   });
 

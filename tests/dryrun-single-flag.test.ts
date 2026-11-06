@@ -7,8 +7,7 @@ import { join } from 'node:path';
 import { isDryRun, parseDryFlag, LEGACY_DRY_RUN_KEYS } from '../src/safety/dryRun.js';
 import { loadLinkedinConfig } from '../src/linkedin/config.js';
 import { loadWebConfig } from '../src/webcore/config.js';
-import { wakeIsDry, childEnv } from '../src/scheduler/driver.js';
-import { buildRunnerArgv } from '../src/scheduler/launch.js';
+import { wakeIsDry } from '../src/scheduler/driver.js';
 import { buildEnv, loadProfiles } from '../src/platform/runner.js';
 import { currentUse } from '../src/safety/classifierSelect.js';
 import { currentMode } from '../src/stack/mode.js';
@@ -69,12 +68,6 @@ describe('every path follows the single flag', () => {
       expect(currentMode(env).mode).toBe(want ? 'DRY RUN' : 'LIVE');
     }
   });
-  it('the scheduler launcher emits only the master flag, and the child env carries no dry key', () => {
-    const base = { runId: 'abcd1234', promptPath: '/r/p', logPath: '/r/l', exitPath: '/r/e' };
-    expect(buildRunnerArgv({ ...base, dryRun: true })).toContain('JOBBER_DRY_RUN=true');
-    expect(buildRunnerArgv({ ...base, dryRun: false })).toContain('JOBBER_DRY_RUN=false');
-    expect(Object.keys(childEnv({ JOBBER_DRY_RUN: 'true', SCHEDULER_DRY_RUN: 'true' }, true)).filter((k) => /DRY_RUN/.test(k))).toEqual([]);
-  });
   it('no source file reads a retired *_DRY_RUN key', () => {
     const hits: string[] = [];
     const walk = (d: string): void => {
@@ -95,12 +88,6 @@ describe('every path follows the single flag', () => {
 
 describe('JOBBER_DRY_RUN reaches wake runs and every MCP child', () => {
   const profiles = loadProfiles('config/run-profiles.json', 'config/permission-sets.json');
-  it('the outreach_wake profile passes it through buildEnv', () => {
-    const p = profiles.outreach_wake;
-    expect(p.env_keys).toContain('JOBBER_DRY_RUN');
-    for (const v of ['true', 'false', '1']) expect(buildEnv(p, { JOBBER_DRY_RUN: v, SOME_API_KEY: 's' }, {}).JOBBER_DRY_RUN).toBe(v);
-    for (const k of LEGACY_DRY_RUN_KEYS) expect(p.env_keys).not.toContain(k);
-  });
   it('no server in .mcp.json overrides or drops it (children inherit the launcher env)', () => {
     const servers = JSON.parse(readFileSync('.mcp.json', 'utf8')).mcpServers as Record<string, { env?: Record<string, string>; args?: string[] }>;
     expect(Object.keys(servers).length).toBeGreaterThanOrEqual(11);

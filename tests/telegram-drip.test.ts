@@ -8,7 +8,6 @@ import { openDb } from '../src/db.js';
 import { createBridgeBot } from '../src/telegram/bridge.js';
 import { handleOwnerMessage, type BridgeDeps } from '../src/telegram/commands.js';
 import { ConfirmStore, DripController, MAX_CALLBACK_BYTES, renderDripStatus, STATUS_BUTTONS, CONFIRM_TTL_MS, type Button, type DripIo } from '../src/telegram/drip.js';
-import { createChatRunner, isAuthFailure, LOGIN_EXPIRED_MESSAGE } from '../src/telegram/chat.js';
 import { loadTelegramConfig } from '../src/telegram/config.js';
 import type { ProcResult, SpawnFn } from '../src/telegram/spawn.js';
 import { readFreshRequest, recordRefusal } from '../src/scheduler/dripRequest.js';
@@ -235,27 +234,5 @@ describe('bridge wiring (real grammY Bot, fake api)', () => {
     expect(btns).toHaveLength(1);
     await handleOwnerMessage({ text: '/drip mail now' }, deps); // a request does not
     expect(replies.at(-1)).toMatch(/Kill switch is on/);
-  });
-});
-
-describe('chat: expired login', () => {
-  const run = (r: Partial<ProcResult>) => createChatRunner({
-    root, env: {}, spawn: (async () => ({ code: 1, stdout: '', stderr: '', timedOut: false, ...r })) as SpawnFn,
-  }).ask('private', 'hi');
-
-  it('recognises the login failures and not normal answers', () => {
-    expect(isAuthFailure('Failed to authenticate. API Error: 401')).toBe(true);
-    expect(isAuthFailure('OAuth token has expired. Please run /login')).toBe(true);
-    expect(isAuthFailure('Your login expired')).toBe(true);
-    expect(isAuthFailure('Here is how OAuth works with PKCE')).toBe(false);
-  });
-  it('answers with the clear message from stderr or from the result, once, without retrying', async () => {
-    let calls = 0;
-    const runner = createChatRunner({ root, env: {}, spawn: (async () => { calls++; return { code: 1, stdout: '', stderr: 'Failed to authenticate', timedOut: false }; }) as SpawnFn });
-    expect(await runner.ask('private', 'hi')).toBe(LOGIN_EXPIRED_MESSAGE);
-    expect(calls).toBe(1);
-    expect(await run({ code: 0, stdout: JSON.stringify({ is_error: true, result: 'OAuth token has expired. Please run /login' }) })).toBe(LOGIN_EXPIRED_MESSAGE);
-    expect(await run({ code: 1, stderr: 'boom' })).toBe('The chat run failed (exit 1).');
-    expect(await run({ code: 0, stdout: JSON.stringify({ result: 'We discussed OAuth expired tokens' }) })).toBe('We discussed OAuth expired tokens');
   });
 });

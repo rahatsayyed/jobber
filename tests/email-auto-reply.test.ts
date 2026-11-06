@@ -19,7 +19,7 @@ import { checkTextWithNormalized, EMPTY_FACT_GATE } from '../src/resumeFacts.js'
 import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
 import type { DriverDeps } from '../src/scheduler/driver.js';
-import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
+import { launcherAsWindows, type LaunchHandle, type LaunchPlan, type Launcher, type PollResult } from './helpers/fakeWindows.js';
 import { buildDripPrompt, dripTick, pickDripItem } from '../src/scheduler/mailDrip.js';
 import { loadBudget } from '../src/scheduler/budget.js';
 import { markReplyCheckDueAtStart, STATE_RC_AT } from '../src/scheduler/replyCheck.js';
@@ -415,11 +415,10 @@ function lane(opts: Opts = {}) {
   const d: DriverDeps = {
     db: w.db, now: clock, rng: () => 0, sleep: async (ms) => { t += ms; },
     cfg: loadOutreachConfig(env), tuning: loadTuning(env), env,
-    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), runDir: join(dir, 'runs'), projectRoot: dir,
-    launcher, notifier: { notify: async () => undefined },
+    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), projectRoot: dir,
+    windows: launcherAsWindows(launcher, () => d), notifier: { notify: async () => undefined },
     tg: async (topic, text, o) => void posts.push({ topic, text, silent: o?.silent }),
     newRunId: (() => { let i = 0; return () => `er${String(++i).padStart(8, '0')}`; })(),
-    pollMs: 5000,
   };
   const queueCold = (): void => {
     w.db.prepare("INSERT INTO contacts (company, email, type, verified, source, confidence) VALUES ('C', 'p1@co1.example', 'hr', 1, 't', 0.9)").run();
@@ -474,10 +473,9 @@ describe('mail drip: automatic replies', () => {
     expect(r).toEqual({ status: 'ran', runs: expect.anything() });
     expect(l.launcher.starts).toHaveLength(1);
     const plan = l.launcher.starts[0];
-    expect(plan.profile).toBe('mail_drip');
+    expect(plan.trigger).toBe('mail_drip');
     expect(plan.prompt).toContain('REPLY MODE');
     expect(plan.prompt).toContain(`email reply id ${rid}`);
-    expect(plan.env?.EMAIL_AUTO_REPLY).toBe('true');
     expect(l.db.prepare('SELECT status, reply_message_id FROM email_replies').get()).toEqual({ status: 'sent', reply_message_id: 'gmail-reply-1' });
     const note = l.posts.find((p) => p.topic === 'mail');
     expect(note?.silent).toBe(true);
@@ -703,21 +701,8 @@ describe('nudge after our own automatic reply', () => {
 });
 
 describe('static wiring', () => {
-  it('mail-operator, worker-tools and the mail_drip profile list the three reply tools; the agent file has a REPLY MODE', () => {
-    const tools = ['mcp__db__claim_email_reply_for_send', 'mcp__db__mark_email_reply_sent', 'mcp__db__mark_email_reply_failed'];
-    const wt = JSON.parse(read('config/worker-tools.json', 'utf8'))['mail-operator'] as string[];
-    const rp = JSON.parse(read('config/run-profiles.json', 'utf8')).profiles?.mail_drip ?? JSON.parse(read('config/run-profiles.json', 'utf8')).mail_drip;
-    const agent = read('.claude/agents/mail-operator.md', 'utf8');
-    for (const t of tools) {
-      expect(wt).toContain(t);
-      expect(rp.allow).toContain(t);
-      expect(agent.split('\n').find((l) => l.startsWith('tools:'))).toContain(t);
-    }
-    expect(agent).toContain('REPLY MODE');
-    expect(agent).toMatch(/NO attachment/);
-  });
-  it('the drip env passes only the flags it needs and no secrets', () => {
+  it('the mail window gets no headless env: the drip hands items to the window and has no dripEnv', () => {
     const src = read('src/scheduler/mailDrip.ts', 'utf8');
-    expect(src).toContain("k === 'EMAIL_AUTO_REPLY'");
+    expect(src).not.toContain('dripEnv');
   });
 });

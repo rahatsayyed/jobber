@@ -196,9 +196,8 @@ above, not this flag.
 ## Logs
 
 - Service output: `.jobber/logs/scheduler.log`.
-- Wake runs: the wake windows live in the tmux session named by `SCHEDULER_TMUX_SESSION`
-  (default `Jobber`, the one session for everything; the windows are `wake-<runId>`,
-  `drip-mail-<runId>` and `drip-linkedin-<runId>`, kept for `RUN_WINDOW_KEEP_MIN` minutes after a run,
+- Wake and drip work: it runs in the long-lived worker windows (`mail`, `linkedin`, `boards`, `sources`, `pipeline`, `apply`) of the tmux session named by
+  `SCHEDULER_TMUX_SESSION` (default `Jobber`, the one session for everything). There are no per-run windows any more. `tmux attach -t Jobber` to watch them.
   default 0). `tmux attach -t Jobber` to watch one.
 - Run history and status: `npm run scheduler -- --status`.
 - Notifications and escalations: `.jobber/notify.jsonl` and the `escalations` table.

@@ -171,13 +171,6 @@ describe('sending', () => {
     expect(tmux.calls.some((c) => c[0] === 'new-window' || c[0] === 'send-keys')).toBe(false);
   });
 
-  it('the print fallback is off by default and only the exact value print lets the old path run', async () => {
-    tmux.windows = [];
-    expect(await make().win.handle(msg('hi'))).toBe(true);
-    expect(await make({ env: { TELEGRAM_CHAT_FALLBACK: 'off' } }).win.handle(msg('hi'))).toBe(true);
-    expect(await make({ env: { TELEGRAM_CHAT_FALLBACK: 'print' } }).win.handle(msg('hi'))).toBe(false);
-  });
-
   it('a window that does not run claude is refused', async () => {
     tmux.windows = [{ name: 'chat', command: 'zsh' }];
     const { win, calls } = make();

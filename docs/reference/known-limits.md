@@ -98,3 +98,9 @@ resume is far shorter than a page. The list of known failures, mirrored in
 together if one ever appears.
 
 - External resolve: Naukri path proven by probe structure (a plain button with `company-site` in its class, no href) but never run live; Wellfound and LinkedIn untested live (no external-apply example page was found); the popup wait, pacing and unknown-host outcomes are unmeasured.
+
+## Worker windows (windows are the only path)
+
+- Real claude windows have never run a tick. Everything about them is tested with fakes only: transcript completion detection, `/clear` finding the new transcript, the pane text of a usage limit and of a permission prompt, `--session-id` and a first positional prompt, the bounded 60 second start of a missing window, `linkedin_close` from the main thread, and hooks inside subagents. Watch the first ticks: `docs/window-rollout.md`.
+- The reply check runs in the `mail` window, which also holds `gmail.send_email`. It reads only because its work file names only `reply-watcher` (no send tool) plus the kill switch and `window-guard.cjs`; there is no per-item tool list any more (`docs/reference/safety-layers.md`).
+- Three one-shot, tool-less helpers still call `claude -p` and are not part of the agent runtime: the setup wizard's login probe and resume conversion (`src/setup/steps/claude.ts`, `resume.ts`) and the offline eval harness (`scripts/eval/`). `tests/no-headless-lint.test.ts` allow-lists exactly these; the owner decides whether they go too.

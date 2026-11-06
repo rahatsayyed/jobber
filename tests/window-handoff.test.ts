@@ -10,7 +10,6 @@ import type { Run } from '../src/platform/tmux.js';
 import {
   readWindowSession, typeStartupLine, windowSessionFile, windowTranscript, writeWindowSession,
 } from '../src/platform/windowSession.js';
-import { laneUsesWindow, parseWindowLanes } from '../src/scheduler/windowLanes.js';
 
 let root: string;
 beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), 'wh-')); });
@@ -122,18 +121,3 @@ describe('typeStartupLine (fallback for the unverified positional prompt)', () =
   });
 });
 
-describe('WINDOW_LANES flag', () => {
-  it('is empty by default: no lane uses a window', () => {
-    expect(parseWindowLanes({})).toEqual({ lanes: [], invalid: [] });
-    expect(parseWindowLanes({ WINDOW_LANES: '' }).lanes).toEqual([]);
-    expect(laneUsesWindow('mail_drip', {})).toBe(false);
-  });
-
-  it('parses a comma list, lowercases, dedupes and reports invalid names', () => {
-    const r = parseWindowLanes({ WINDOW_LANES: ' mail_drip, Linkedin_Drip ,mail_drip,bad name,' });
-    expect(r.lanes).toEqual(['mail_drip', 'linkedin_drip']);
-    expect(r.invalid).toEqual(['bad name']);
-    expect(laneUsesWindow('mail_drip', { WINDOW_LANES: 'mail_drip' })).toBe(true);
-    expect(laneUsesWindow('apply', { WINDOW_LANES: 'mail_drip' })).toBe(false);
-  });
-});

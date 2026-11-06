@@ -12,8 +12,8 @@ import { htmlToPlain } from '../src/platform/tgHtml.js';
 import type { TopicName } from '../src/telegram/topics.js';
 import type { DriverDeps } from '../src/scheduler/driver.js';
 import { wakeOnce } from '../src/scheduler/driver.js';
-import { StreamInspector } from '../src/scheduler/stream.js';
-import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
+import { reportFromText } from '../src/scheduler/stream.js';
+import { launcherAsWindows, type LaunchHandle, type LaunchPlan, type Launcher, type PollResult } from './helpers/fakeWindows.js';
 import { dripTick } from '../src/scheduler/mailDrip.js';
 import { LI_STATE_INBOX_AT, linkedinDripTick } from '../src/scheduler/linkedinDrip.js';
 import { setState } from '../src/scheduler/runLog.js';
@@ -136,14 +136,11 @@ describe('wake notice routing', () => {
     for (const reason of ['quiet_hours', 'nothing_due', 'locked', 'usage_backoff']) expect(wakeNotice({ ...base, status: 'skipped', reason })).toBeNull();
   });
   it('the stream inspector sums the done, skipped, escalated and stopped counts of the final line', () => {
-    const i = new StreamInspector();
-    const line = JSON.stringify({ type: 'result', result: `done\n${JSON.stringify({ run_id: 'r1', operators: [
+    const text = `done\n${JSON.stringify({ run_id: 'r1', operators: [
       { operator: 'a', tasks: [{ kind: 'x', done: 2, skipped: 1, escalated: 0, stopped: false }, { kind: 'y', done: 1, skipped: 0, escalated: 1, stopped: true }] },
       { operator: 'b', tasks: [{ kind: 'z', done: 3 }] },
-    ] })}` });
-    i.feed(`${line}\n`);
-    i.finish();
-    expect(i.report(['r1'])?.counts).toEqual({ done: 6, skipped: 1, escalated: 1, stopped: 1 });
+    ] })}`;
+    expect(reportFromText(text, ['r1'])?.counts).toEqual({ done: 6, skipped: 1, escalated: 1, stopped: 1 });
   });
 });
 
@@ -186,11 +183,10 @@ function setup(opts: { env?: NodeJS.ProcessEnv; tg?: TgPost; sends?: boolean; st
   const d: DriverDeps = {
     db, now: clock, rng: () => 0, sleep: async (ms) => { t += ms; },
     cfg: loadOutreachConfig(env), tuning: loadTuning(env), env,
-    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), runDir: join(dir, 'runs'), projectRoot: dir,
-    launcher, notifier: { notify: async () => undefined },
+    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), projectRoot: dir,
+    windows: launcherAsWindows(launcher, () => d), notifier: { notify: async () => undefined },
     tg: opts.tg ?? (async (topic, text) => { posts.push({ topic, text }); }),
     newRunId: (() => { let i = 0; return () => `n${String(++i).padStart(7, '0')}`; })(),
-    pollMs: 5000,
   };
   const queue = (n: number): number[] => {
     const ids: number[] = [];

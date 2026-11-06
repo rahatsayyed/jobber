@@ -204,37 +204,6 @@ export function loadProfiles(
 /** A claude session id: a UUID. The only value `--resume` ever gets from this launcher. */
 export const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/**
- * `opts.resumeSessionId` continues an earlier session of the same profile (the scheduler's continuation of a wake that ended
- * incomplete). Every other argument is unchanged, so the same allowlists, MCP config, settings and permission mode apply.
- */
-export function buildClaudeArgs(
-  name: string,
-  p: ResolvedProfile,
-  paths: { settingsPath: string },
-  opts: { resumeSessionId?: string } = {},
-): string[] {
-  void name;
-  if (opts.resumeSessionId !== undefined && !SESSION_ID_RE.test(opts.resumeSessionId)) throw new Error('invalid session id for --resume');
-  const args = [
-    '-p',
-    ...(opts.resumeSessionId !== undefined ? ['--resume', opts.resumeSessionId] : []),
-    '--output-format', p.output_format === 'stream-json' ? 'stream-json' : 'json',
-    ...(p.output_format === 'stream-json' ? ['--verbose'] : []),
-    '--permission-mode', 'dontAsk',
-    '--permission-prompts', 'none',
-    '--strict-mcp-config', '--mcp-config', p.mcp_config,
-    '--settings', paths.settingsPath,
-    '--setting-sources', 'project',
-    '--tools', p.builtin_tools.join(','),
-    '--allowedTools', [...p.allow, ...p.builtin_tools].join(','),
-    ...(disallowedBuiltins(p).length > 0 ? ['--disallowedTools', disallowedBuiltins(p).join(',')] : []),
-    '--max-turns', String(p.max_turns),
-  ];
-  assertSafeArgs(args, {});
-  return args;
-}
-
 // Interactive argv: no -p, no --output-format, no --max-turns. Bash enters only as exact
 // Bash(<command>) entries from bash_exact; builtin_tools still may not list it.
 export function buildInteractiveArgs(

@@ -13,7 +13,7 @@ export interface WindowFields extends WindowEnvSpec {
   kind?: WindowKind;
   /** Path under config/windows/ of the role prompt the startup line points at. */
   role_prompt?: string;
-  /** Scheduler lane name this window serves (matched against WINDOW_LANES). */
+  /** Scheduler lane name this window serves (descriptive; also read by scripts/window-env.ts for the start-time records). */
   lane?: string;
   /** Per-window override of WINDOW_RECYCLE_HOURS (1..72). */
   recycle_hours?: number;

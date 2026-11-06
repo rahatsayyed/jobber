@@ -9,7 +9,7 @@ import { loadOutreachConfig } from '../src/outreach/config.js';
 import { loadTuning } from '../src/outreach/tuning.js';
 import { acquireLock } from '../src/platform/lock.js';
 import type { DriverDeps } from '../src/scheduler/driver.js';
-import type { LaunchHandle, LaunchPlan, Launcher, PollResult } from '../src/scheduler/launch.js';
+import { launcherAsWindows, type LaunchHandle, type LaunchPlan, type Launcher, type PollResult } from './helpers/fakeWindows.js';
 import { dripTick } from '../src/scheduler/mailDrip.js';
 import {
   formatReplyNotice, markReplyCheckDueAtStart, notifyNewReplies, pickReplyCheck, replyCheckEveryMin, STATE_RC_AT, STATE_RC_NOTICE_AT,
@@ -63,12 +63,11 @@ function setup(opts: Opts = {}) {
   const d: DriverDeps = {
     db, now: clock, rng: () => 0, sleep: async (ms) => { t += ms; },
     cfg: loadOutreachConfig(env), tuning: loadTuning(env), env,
-    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), runDir: join(dir, 'runs'), projectRoot: dir,
-    launcher, notifier: { notify: async () => undefined },
+    lockRoot: join(dir, 'locks'), stopFile: join(dir, 'STOP'), projectRoot: dir,
+    windows: launcherAsWindows(launcher, () => d), notifier: { notify: async () => undefined },
     tg: async (topic, text) => void posts.push({ topic, text }),
     newRunId: (() => { let i = 0; return () => `rp${String(++i).padStart(8, '0')}`; })(),
     control: opts.stopExists ? { exists: opts.stopExists, read: () => 'stop' } : undefined,
-    pollMs: 5000,
   };
   const queueCold = (n: number): void => {
     for (let i = 1; i <= n; i++) {
@@ -158,12 +157,6 @@ describe('mail reply_check: gates', () => {
     await dripTick(b.d);
     expect(b.launcher.starts).toHaveLength(0);
 
-    const w = setup();
-    markReplyCheckDueAtStart(w.db, w.now());
-    setState(w.db, 'unkilled_window', '{}', w.now());
-    await dripTick(w.d);
-    expect(w.launcher.starts).toHaveLength(0);
-
     const l = setup();
     markReplyCheckDueAtStart(l.db, l.now());
     const held = acquireLock(l.d.lockRoot, 'mail', 'other', l.d.lockDeps);
@@ -177,16 +170,6 @@ describe('mail reply_check: gates', () => {
     await dripTick(dry.d);
     expect(dry.launcher.starts.filter((p) => p.profile === 'mail_reply_check')).toHaveLength(0);
     expect(dry.posts).toHaveLength(0);
-  });
-  it('the profile has the reply-watcher tools and NO gmail.send_email, no Bash', () => {
-    const p = JSON.parse(readFileSync('config/run-profiles.json', 'utf8')).profiles.mail_reply_check;
-    expect(p.allow).not.toContain('mcp__gmail__send_email');
-    expect(p.allow.some((e: string) => /send|draft|delete|modify|label/.test(e))).toBe(false);
-    expect(p.builtin_tools).not.toContain('Bash');
-    const agent = readFileSync('.claude/agents/reply-watcher.md', 'utf8');
-    const tools = /^tools: (.*)$/m.exec(agent)![1].split(',').map((x) => x.trim());
-    for (const t of tools) expect(p.allow, t).toContain(t);
-    expect(tools).not.toContain('mcp__gmail__send_email');
   });
 });
 

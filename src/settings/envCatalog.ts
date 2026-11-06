@@ -221,12 +221,6 @@ const hand: EnvSpec[] = [
     about: 'Active classifier profile id (config/classifier-models.json). Required for live LinkedIn and Naukri reads and sends: unset, unpinned, unfitted or erroring means live calls fail closed, dry runs continue unscreened. There is no implicit default and no fallback chain. Fetch, pin and fit the model first (docs/classifier-models.md), then restart every MCP server and session.',
     ...tier('safety', 'Selects the input screen for third-party text. Clearing it makes live calls refuse (safe) but switching profiles changes what is screened.', 'cleared'),
   }),
-  e('SCHEDULER_NO_CLASSIFIER', 'classifier', 'prompt-injection screen', 'bool', {
-    default: 'false',
-    exampleActive: true,
-    about: 'Skip the input classifier in scheduler runs. Honoured for dry runs only; a live run still needs a ready classifier.',
-    ...never('Disables a safety layer (the injection screen).'),
-  }),
   e('DOCTOR_SKIP_SMOKE', 'classifier', 'doctor', 'bool', {
     exampleValue: '1',
     allowed: ['1'],
@@ -511,16 +505,8 @@ const hand: EnvSpec[] = [
     default: 'Jobber',
     maxLen: 64,
     exampleActive: true,
-    about: 'tmux session that holds the wake and drip run windows. Letters, digits, underscore and hyphen. Default Jobber, the one session for everything.',
+    about: 'tmux session that holds the worker windows (mail, linkedin, boards, sources, pipeline, apply) the scheduler dispatches to. Letters, digits, underscore and hyphen. Default Jobber, the one session for everything.',
     ...never(R_SESSION),
-  }),
-  e('RUN_WINDOW_KEEP_MIN', 'scheduler', 'scheduler', 'int', {
-    default: '0',
-    min: 0,
-    max: 120,
-    about: 'Minutes a finished run window (wake or drip run) stays open in the Jobber tmux session so you can read it. 0 closes it at once. A run that is still going is always killed at once.',
-    restart: 'scheduler',
-    restartEvidence: 'src/scheduler/launch.ts',
   }),
   e('EMAIL_SEND_WINDOW_START', 'scheduler', 'mail drip lane', 'string', {
     default: '09:30',
@@ -537,13 +523,6 @@ const hand: EnvSpec[] = [
     ...tier('guarded', 'A wider window lets email go out at more hours of the day.', 'any'),
     restart: 'scheduler',
     restartEvidence: 'src/scheduler/mailDrip.ts',
-  }),
-  e('WINDOW_LANES', 'scheduler', 'scheduler', 'string', {
-    maxLen: 200,
-    about: 'Comma-separated scheduler lane names that run through a long-lived claude window (src/scheduler/windowDispatch.ts) instead of the old headless run. Blank (the default) means no lane: every lane stays on the headless path. Read today: `mail`, `linkedin` (the drip lanes) and `wake` (the scheduled wake goes through the `sources`, `pipeline`, `boards` and `apply` windows; `--once` and `--now` stay headless); restart the scheduler after a change and run `npm run up` so the window exists.',
-    ...never('Chooses which lanes send, apply or connect through an interactive window with its own permission handling. Edit .env by hand.'),
-    restart: 'scheduler',
-    restartEvidence: 'src/scheduler/windowLanes.ts',
   }),
   e('WINDOW_RECYCLE_HOURS', 'scheduler', 'scheduler', 'int', {
     default: '8',
@@ -566,7 +545,7 @@ const hand: EnvSpec[] = [
     min: 30,
     max: 7200,
     exampleActive: true,
-    about: 'Wall clock budget per wake, in seconds.',
+    about: 'Wall clock limit per dispatched window item (a mail or LinkedIn drip item, a reply check, or the steps of one wake window), in seconds. The item is stopped as a timeout after this.',
     ...tier('guarded', 'A longer budget lets one unattended run work longer before it is stopped.', 'increase'),
     restart: 'scheduler',
     restartEvidence: 'src/scheduler/budget.ts',
@@ -575,18 +554,8 @@ const hand: EnvSpec[] = [
     default: '600',
     min: 60,
     max: 3600,
-    about: 'Seconds without any new log output after which a run is killed as stalled (a network outage), so the next wake starts in about 2 minutes.',
+    about: 'Seconds without any new transcript activity (while a tool call is pending and the window does not show "esc to interrupt") after which a dispatched window item is stopped as stalled and handed to the owner via the handoff list. Unset keeps the built-in 60 seconds for a permission-prompt stall.',
     ...tier('guarded', 'A longer window waits longer on a silent run before it is stopped.', 'increase'),
-    restart: 'scheduler',
-    restartEvidence: 'src/scheduler/budget.ts',
-  }),
-  e('RUN_MAX_TOKENS_APPROX', 'scheduler', 'scheduler', 'int', {
-    default: '1000000',
-    min: 1000,
-    max: 2000000,
-    exampleActive: true,
-    about: 'Approximate token budget per wake (stream characters divided by 4). Max turns is owned by the run profile and has no env override.',
-    ...tier('guarded', 'A larger budget lets one unattended run use more of the subscription before it is stopped.', 'increase'),
     restart: 'scheduler',
     restartEvidence: 'src/scheduler/budget.ts',
   }),
@@ -903,13 +872,6 @@ const hand: EnvSpec[] = [
     maxLen: 80,
     about: 'Comma-separated topic names (alerts, wakes, mail, linkedin, drips, inbox, assist, chat; drips is the old shared drip topic) whose code-sent notices arrive silent (no sound or vibration; the message still appears). Blank (the default): drips, wakes, mail and linkedin. The word none: nothing is silent. An unknown name is ignored. A notice that asks for the owner (handoff reminder, manual-request report, assist ping, escalation digest) is always loud, and replies to your own commands are never silent.',
     ...never('Decides which Telegram notices make a sound: only the owner, by hand in .env, can change it.'),
-  }),
-
-  e('TELEGRAM_CHAT_FALLBACK', 'telegram', 'Telegram bridge', 'enum', {
-    default: 'off',
-    allowed: ['off', 'print'],
-    about: 'What the chat topic does when the long-running chat window is not running. off (the default): it answers that the window is not running. print: it falls back to a one-shot claude -p run per message under the project permission set.',
-    ...never('Starts a model run for every owner message when the chat window is missing: only the owner, by hand in .env, can change it.'),
   }),
 
   // ---- Matching: per-dimension minimums of the OLD five-key rubric (rubric_v2, src/matchRubric.ts). The career-ops rubric has none.

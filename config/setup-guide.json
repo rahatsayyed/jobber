@@ -559,13 +559,6 @@
           "entered_in": "owner edits .env"
         },
         {
-          "name": "RUN_MAX_TOKENS_APPROX",
-          "secret": false,
-          "purpose": "token budget per wake",
-          "where": "src/setup/limitsCatalog.ts",
-          "entered_in": "owner edits .env"
-        },
-        {
           "name": "INBOX_EVERY_MIN",
           "secret": false,
           "purpose": "minutes between inbox sweeps",
@@ -770,13 +763,6 @@
           "purpose": "profile id of the one active injection classifier; live LinkedIn and Naukri calls fail closed without it",
           "where": "docs/classifier-models.md, section 4",
           "entered_in": "wizard"
-        },
-        {
-          "name": "SCHEDULER_NO_CLASSIFIER",
-          "secret": false,
-          "purpose": "skips the classifier for dry runs only",
-          "where": "docs/classifier-models.md",
-          "entered_in": "owner edits .env"
         }
       ],
       "explain": "Text from LinkedIn and Naukri is screened by a local model before the agent sees it. The model is downloaded once, pinned and fitted. Without it, live reads and sends are refused by design.",

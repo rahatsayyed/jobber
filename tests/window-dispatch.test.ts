@@ -258,9 +258,9 @@ describe('refusals', () => {
     none(await h.disp.dispatch(h.input()), 'usage_backoff');
     setState(h.db, 'usage_backoff_until', new Date(h.clock - 1000).toISOString(), new Date(h.clock));
     h.windows = [];
-    none(await h.disp.dispatch(h.input()), 'window_missing');
+    none(await h.disp.dispatch(h.input()), 'window_unavailable:window_missing');
     h.windows = [{ name: 'mail', command: 'zsh' }];
-    none(await h.disp.dispatch(h.input()), 'not_claude');
+    none(await h.disp.dispatch(h.input()), 'window_unavailable:not_claude');
     expect(h.typed()).toEqual([]);
   });
 

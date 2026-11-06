@@ -172,15 +172,15 @@ Add an allow entry only for a fact you confirmed, and add that fact to `user-dat
 |---|---|---|---|---|
 | `config/ai-tells.json` | Style gate for outbound LinkedIn and Naukri text: banned phrases, dash bans, markdown ban, word limits per kind | `src/safety/styleGate.ts` (`loadStyleConfigSafe`), cached by `src/mcp/linkedin.ts` and `src/mcp/naukri.ts` | restart | a bad value falls back to the built-in default and a note is logged; Naukri sends refuse with `style_config_unavailable` when a note exists |
 | `config/permission-sets.json` | The three permission sets `read_only`, `outreach_send`, `full` | `scripts/permissions.ts`, launchers | read when the command or launcher starts | `npm run permissions -- --status` |
-| `config/run-profiles.json` | Restricted-run profiles: `outreach_wake` (every wake), `mail_drip` (one run per email in the mail drip lane), `setup_guide` (tools, env, turn limits) | `scripts/run-claude.ts`, `src/platform/checks.ts` | read at each launch | `npm run doctor` |
+| `config/run-profiles.json` | Run profiles: only `setup_guide` (interactive setup coach; the headless wake and drip profiles are gone, work runs in the worker windows) | `scripts/run-claude.ts`, `src/platform/checks.ts` | read at each launch | `npm run doctor` |
 | `config/worker-tools.json` | Exact tool list per operator agent (`linkedin-operator`, `naukri-operator`, `wellfound-operator`, `source-operator`, `mail-operator`, `apply-operator`) | `src/platform/checksScheduler.ts` (doctor check `agents-worker-tools`) | read at launch and by doctor | `npm run doctor` |
 | `config/manager-windows.json` | Named tmux windows the manager can start (`hunt`, `followups`) and the protected ones | `scripts/manager.ts`, `src/stack/up.ts`, `src/stack/down.ts` | read when the command runs | `npm run doctor` |
 | `config/setup-guide.json` | Step text for the guided setup session | the `setup-guide` skill (`.claude/skills/setup-guide/SKILL.md`); shape checked by `tests/setup-guide.test.ts` | read by the guide session when it starts (from the skill text) | `npm run doctor` check `setup_guide_ready` covers the profile and skill, not this file |
 | `config/update-known-failures.json` | Known failing test files and counts for the auto-update test gate | `scripts/auto-update.ts` | read per update run | keep in step with the test baseline in `CLAUDE.md` |
-| `config/runner/` | MCP config files for restricted runs (`mcp.platform.json`, `mcp.mail.json` for the drip lane, `mcp.none.json`) and a probe settings file | `src/platform/runner.ts`, `src/platform/checks.ts` | read at launch | `npm run doctor` |
+| `config/runner/` | MCP config files for the setup guide (`mcp.none.json`) and a probe settings file | `src/platform/runner.ts`, `src/platform/checks.ts` | read at launch | `npm run doctor` |
 
 Notes:
-- The `outreach_wake` tool list must stay a subset of `config/worker-tools.json` and the servers in `config/runner/mcp.platform.json`; the doctor warns on an unconfigured server. Wildcards are rejected.
+- The operator agents' `tools:` lines must match `config/worker-tools.json` (tests check it). Wildcards are rejected.
 - A permission set applies to the git-ignored `.claude/settings.local.json`. Changing which set is active is an owner action, never an agent action (see "Platform and sessions" in `CLAUDE.md`).
 - A sample edit that only touches the style gate (text limits) needs one restart, because the MCP servers cache the parsed file.
 
@@ -222,7 +222,7 @@ Groups in `.env.example` (one line each):
 - Dashboard: `WEB_PORT`, `WEB_AUTH_MODE` and the other `WEB_*` keys; see `docs/dashboard-exposure.md`. `WEB_TERMINAL_INPUT` (default `true`, commented out in `.env.example`, restart the dashboard after a change) lets the Sessions page type into the live tmux terminal. Typing is allowed unless you set it to `false`; the page also has an Input switch that is Off on every load. Keep the target window on the `read_only` permission set, or set `false` for a view-only terminal.
 - LinkedIn tools: accept limits, allow-lists for URLs and emails, idle time, and the on-by-default (set `false` to disable) `LINKEDIN_SCREENSHOT`, `NAUKRI_SCREENSHOT`, `WELLFOUND_SCREENSHOT` and `SCOUT_SCREENSHOT` flags (screenshot and pointer-click tools; the pixels are not screened by the classifier).
 - Dry run: the single flag `JOBBER_DRY_RUN` (`true` or `1` = dry; unset, `false` or anything else = LIVE). The old per-area dry-run keys (one each for the scheduler, LinkedIn, web, apply and scout) are ignored.
-- Scheduler: enable flag, run budgets (`RUN_MAX_WALL_SEC` and `RUN_MAX_TOKENS_APPROX`, defaults 3600 s and 1000000 approximate tokens; the number of tool calls is reported, never limited), inbox, Naukri and Wellfound search cadence (`INBOX_EVERY_MIN`, `NAUKRI_DISCOVER_EVERY_HOURS`, `WELLFOUND_DISCOVER_EVERY_HOURS`), `USAGE_LIMIT_BACKOFF_MIN`, kill switch `JOBBER_KILL`.
+- Scheduler: enable flag, run limits per window item (`RUN_MAX_WALL_SEC`, default 3600 s, and `RUN_STALL_SEC`; the number of tool calls is reported, never limited), inbox, Naukri and Wellfound search cadence (`INBOX_EVERY_MIN`, `NAUKRI_DISCOVER_EVERY_HOURS`, `WELLFOUND_DISCOVER_EVERY_HOURS`), `USAGE_LIMIT_BACKOFF_MIN`, kill switch `JOBBER_KILL`.
 - Auto-update and backup: `AUTO_UPDATE*` and `BACKUP_*`; see `docs/backup-and-restore.md`.
 - Layout memory: `LAYOUT_ENFORCE` and the other `LAYOUT_*` keys, all optional and commented.
 - Stack and bootstrap: `STACK_TMUX_SESSION`, `STACK_DOWN_WAIT_SEC`, `BOOTSTRAP_MODEL_PROFILE`.

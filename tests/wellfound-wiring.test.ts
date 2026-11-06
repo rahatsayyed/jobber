@@ -162,20 +162,6 @@ describe('permission sets, run profile, MCP registration and the kill-switch mat
     expect(resolveSet(sets, 'full')).toContain('mcp__wellfound');
   });
 
-  it('the wake profile allows the wellfound tools, screens typed and armed text, passes the flag and the ceiling prefix', () => {
-    const wake = loadProfiles('config/run-profiles.json', 'config/permission-sets.json').outreach_wake;
-    for (const n of [...ENGINE, 'arm_send', 'arm_apply', 'discover', 'inbox', 'read_thread', 'layout', 'close']) expect(wake.allow, n).toContain(WF(n));
-    for (const n of ['arm_send', 'arm_apply', 'type']) expect(wake.screen_args, n).toContain(WF(n));
-    expect(wake.env_keys).toContain('WELLFOUND_SCREENSHOT');
-    expect(wake.env_prefixes).toContain('WELLFOUND_MAX_');
-    expect(wake.unrestricted_builtins).toBe(true); // the full session: Bash sits behind the tamper guard (tests/hook-tamper-guard.test.ts)
-  });
-
-  it('.mcp.json and the wake MCP config both start src/mcp/wellfound.ts', () => {
-    expect(json<{ mcpServers: Record<string, { args: string[] }> }>('.mcp.json').mcpServers.wellfound.args).toContain('src/mcp/wellfound.ts');
-    expect(json<{ mcpServers: Record<string, { args: string[] }> }>('config/runner/mcp.platform.json').mcpServers.wellfound.args).toContain('src/mcp/wellfound.ts');
-  });
-
   it('the kill-switch matcher covers the acting wellfound tools and wellfound_discover but not the read tools', () => {
     const settings = json<{ hooks: { PreToolUse: Array<{ matcher: string; hooks: Array<{ command: string }> }> } }>('.claude/settings.json');
     const entry = settings.hooks.PreToolUse.find((e) => e.hooks.some((h) => h.command.includes('kill-switch.cjs')))!;
@@ -418,10 +404,10 @@ describe('planner: wellfound discover and inbox tasks', () => {
   it('the wake prompt names the wellfound searches and quota meaning, after linkedin and naukri', () => {
     const d = plan({ due: due({ wellfoundDiscoverLastHoursAgo: null, inboxLastCheckedMinAgo: null }) });
     if (d.kind !== 'run') throw new Error('expected a run');
-    const p = buildWakePrompt({ runId: 'r1', dryRun: false, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 }, allowed: ['linkedin', 'naukri', 'wellfound'], now: NOW, order: stepOrder(d) });
+    const p = buildWakePrompt({ runId: 'r1', dryRun: false, tasks: d.tasks, budget: { maxWallSec: 900 }, allowed: ['linkedin', 'naukri', 'wellfound'], now: NOW, order: stepOrder(d) });
     expect(p).toContain('Dispatch `wellfound-operator` for platform wellfound with task: discover quota 5 (searches: full-stack-react-india-remote; quota is the job pages you may open for descriptions).');
     expect(p).toContain('Dispatch `wellfound-operator` for platform wellfound with task: inbox quota 5.');
-    const legacy = buildWakePrompt({ runId: 'r1', dryRun: false, tasks: d.tasks, budget: { maxWallSec: 900, maxTokensApprox: 150000 }, allowed: ['wellfound'], now: NOW });
+    const legacy = buildWakePrompt({ runId: 'r1', dryRun: false, tasks: d.tasks, budget: { maxWallSec: 900 }, allowed: ['wellfound'], now: NOW });
     expect(legacy).toContain('Dispatch operator `wellfound-operator` for platform wellfound with tasks: ');
     expect(legacy).toContain('discover quota 5 (searches: full-stack-react-india-remote; quota is the job pages you may open for descriptions)');
   });

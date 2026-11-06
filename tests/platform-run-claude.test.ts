@@ -42,99 +42,26 @@ const invoked = (): boolean => existsSync(join(dir, 'invoked'));
 const DRY = { JOBBER_DRY_RUN: '1' };
 
 describe('run-claude spawn path (fake claude)', () => {
-  it('(a) argv is restricted, never has the prompt; stdin is the prompt exactly', { timeout: T }, () => {
-    const r = run(['outreach_wake','--no-classifier', 'the prompt'], DRY);
-    expect(r.status, r.stderr).toBe(0);
-    const argv = read('argv').split('\n').filter(Boolean);
-    expect(argv).toContain('dontAsk');
-    expect(argv).toContain('--strict-mcp-config');
-    expect(argv.join(' ')).not.toContain('the prompt');
-    expect(read('stdin')).toBe('the prompt');
-  });
-
-  it('(b) propagates the child exit code', { timeout: T }, () => {
-    writeFileSync(join(dir, 'exit'), '7');
-    const r = run(['outreach_wake','--no-classifier', 'the prompt'], DRY);
-    expect(r.status, r.stderr).toBe(7);
-  });
-
-  it('(c) empty prompt exits 2 without invoking claude', { timeout: T }, () => {
-    const r = run(['outreach_wake','   ']);
-    expect(r.status).toBe(2);
-    expect(invoked()).toBe(false);
-  });
-
-  it('(c2) kill switch active: hunt exits 4 and claude is not invoked', { timeout: T }, () => {
-    const r = run(['outreach_wake','--no-classifier', 'the prompt'], { ...DRY, JOBBER_KILL: '1' });
-    expect(r.status, r.stderr).toBe(4);
-    expect(r.stderr).toContain('kill switch active');
-    expect(invoked()).toBe(false);
-  });
-
-  it('(d) --no-classifier without JOBBER_DRY_RUN=1 exits 2', { timeout: T }, () => {
-    const r = run(['outreach_wake', '--no-classifier', 'hello']);
-    expect(r.status).toBe(2);
-    expect(invoked()).toBe(false);
-  });
-
-  it('(e) outreach_wake with an unknown classifier profile exits 3, claude not invoked', { timeout: T }, () => {
-    const r = run(['outreach_wake', 'hello'], { CLASSIFIER_MODEL: 'no-such-profile' });
-    expect(r.status, r.stderr).toBe(3);
-    expect(invoked()).toBe(false);
-  });
-
-  it('(f) rendered files are private and contain both hooks and no set reference', { timeout: T }, () => {
-    const r = run(['outreach_wake','--no-classifier', 'the prompt'], DRY);
-    expect(r.status, r.stderr).toBe(0);
-    const out = join(root, 'debug', 'runner');
-    expect(statSync(out).mode & 0o777).toBe(0o700);
-    for (const f of ['outreach_wake.settings.json', 'outreach_wake.policy.json']) {
-      expect(statSync(join(out, f)).mode & 0o777, f).toBe(0o600);
+  it('the retired headless profiles are unknown: they exit 2 and claude is not invoked', { timeout: T }, () => {
+    for (const p of ['outreach_wake', 'mail_drip', 'mail_reply_check', 'linkedin_drip']) {
+      const r = run([p, '--print-args']);
+      expect(r.status, p).toBe(2);
+      expect(r.stderr).toMatch(/unknown profile/);
     }
-    const policy = readFileSync(join(out, 'outreach_wake.policy.json'), 'utf8');
-    expect(policy).not.toContain('allow_from_permission_set');
-    const settings = readFileSync(join(out, 'outreach_wake.settings.json'), 'utf8');
-    expect(settings).toContain('tool-allowlist.cjs');
-    expect(settings).toContain('block-outside-project.cjs');
-  });
-
-  it('(g) child env for outreach_wake is scrubbed and has JOBBER_RUN_PROFILE', { timeout: T }, () => {
-    const r = run(['outreach_wake', '--no-classifier', 'hello'], {
-      JOBBER_DRY_RUN: '1',
-      GMAIL_APP_PASSWORD: 'synthetic-secret-value-123',
-    });
-    expect(r.status, r.stderr).toBe(0);
-    const keys = read('envkeys').split('\n');
-    expect(keys).not.toContain('GMAIL_APP_PASSWORD');
-    expect(keys).toContain('JOBBER_RUN_PROFILE');
-  });
-
-  it('--interactive on a non-interactive profile exits 2, claude not invoked', { timeout: T }, () => {
-    const r = run(['outreach_wake','--interactive', '--no-classifier', 'p'], DRY);
-    expect(r.status, r.stderr).toBe(2);
-    expect(r.stderr).toContain('--interactive');
     expect(invoked()).toBe(false);
   });
 
-  it('kill switch exits 4 before the --interactive check', { timeout: T }, () => {
-    const r = run(['outreach_wake','--interactive', '--no-classifier', 'p'], { ...DRY, JOBBER_KILL: '1' });
-    expect(r.status, r.stderr).toBe(4);
+  it('a profile that is not interactive is refused: there is no headless runner', { timeout: T }, () => {
+    const r = run(['setup_guide', 'hello']);
+    expect(r.status).toBe(2);
     expect(invoked()).toBe(false);
   });
 
-  it('outreach_wake --print-args prints the golden argv and env key names only', { timeout: T }, () => {
-    const r = run(['outreach_wake','--print-args'], { GMAIL_APP_PASSWORD: 'synthetic-secret-value-123' });
-    expect(r.status, r.stderr).toBe(0);
-    const golden = JSON.parse(readFileSync(join(root, 'tests/fixtures/runner-golden.json'), 'utf8')) as any;
-    const printed = JSON.parse(r.stdout.split('\n')[0]) as string[];
-    expect(printed).toEqual(['claude', ...golden.outreach_wake.args.map((a: string) => (a.startsWith('debug/runner/') ? join(root, a) : a))]);
-    expect(r.stdout).toContain('env keys: ');
-    expect(r.stdout).not.toContain('synthetic-secret-value-123');
-  });
-
-  it('flags after "--" are prompt text', { timeout: T }, () => {
-    const r = run(['outreach_wake','--no-classifier', '--', '--print-args'], DRY);
-    expect(r.status, r.stderr).toBe(0);
-    expect(read('stdin')).toBe('--print-args');
+  it('setup_guide --interactive --print-args prints an interactive argv: no -p, no --output-format, no bypass flag', { timeout: T }, () => {
+    const r = run(['setup_guide', '--interactive', '--print-args']);
+    expect(r.status).toBe(0);
+    expect(r.stdout).not.toMatch(/(^|\s)(-p|--print|--output-format)(\s|$)/);
+    expect(r.stdout).not.toMatch(/bypass|skip-permissions|dangerously/i);
+    expect(invoked()).toBe(false);
   });
 });

@@ -135,11 +135,4 @@ describe('wiring', () => {
   it('db.update_job_company is registered', () => {
     expect(dbMcp).toMatch(/registerTool\(\s*'update_job_company'/);
   });
-  it('is allowed in the wake profile and the send permission set, and for no operator', () => {
-    const t = 'mcp__db__update_job_company';
-    expect(readFileSync('config/run-profiles.json', 'utf8')).toContain(t);
-    expect(readFileSync('config/permission-sets.json', 'utf8')).toContain(t);
-    const workers = JSON.parse(readFileSync('config/worker-tools.json', 'utf8')) as Record<string, string[]>;
-    for (const [name, tools] of Object.entries(workers)) expect(tools, name).not.toContain(t);
-  });
 });

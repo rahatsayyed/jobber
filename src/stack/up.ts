@@ -15,7 +15,6 @@ import { nodeAtomicFs, type AtomicFs } from '../settings/atomic.js';
 import { clearForScopes } from '../settings/pendingRestart.js';
 import type { RestartScope } from '../settings/types.js';
 import { currentMode, fileFlags, shellDivergence } from './mode.js';
-import { laneUsesWindow } from '../scheduler/windowLanes.js';
 import { cleanEnvArgv, DEFAULT_STACK_SESSION, BRIDGE_CMD, SCHEDULER_CMD, WEB_CMD, type UpPlan } from './plan.js';
 
 export { currentMode } from './mode.js';
@@ -222,12 +221,6 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
         if (r.code !== 0) warnings.push(`could not create tmux session ${csession}`);
       }
       for (const name of Object.keys(cfg.windows)) {
-        // A worker window whose lane is not listed in WINDOW_LANES has nothing to do: the lane still runs headless. Not started.
-        const lane = cfg.windows[name].lane;
-        if (cfg.windows[name].kind === 'worker' && lane && !laneUsesWindow(lane, env)) {
-          say(`window ${name}: skipped (lane ${lane} is not in WINDOW_LANES)`);
-          continue;
-        }
         try {
           // A worker window also gets its startup line (reads the handoff file and its role file).
           const s = await startWindowWithMemory(deps.run, cfg, env, name, deps.root, { sleep: deps.sleep });
@@ -323,11 +316,6 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
   } else {
     rows.push(['bridge', stackNames.has('bridge') ? 'running' : 'not running', `tmux attach -t ${session}`]);
     for (const n of [...Object.keys(cfg?.windows ?? {}), 'manager', 'chat']) {
-      const w = cfg?.windows[n];
-      if (!cNames.has(n) && w?.kind === 'worker' && w.lane && !laneUsesWindow(w.lane, env)) {
-        rows.push([n, 'off (lane not in WINDOW_LANES)', 'add the lane to WINDOW_LANES']);
-        continue;
-      }
       rows.push([n, cNames.has(n) ? 'running' : 'not running', `tmux attach -t ${csess}`]);
     }
   }
