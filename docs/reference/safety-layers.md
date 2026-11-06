@@ -119,6 +119,11 @@ gates and that the engine re-verifies against the live page. Layers, outermost f
    Only `src/linkedin/browser.ts` imports the browser library, only `src/webcore/hostServer.ts` launches
    the host Chrome and only `src/webcore/hostClient.ts` attaches (`tests/browser-launch-lint.test.ts`).
 
+9. **Applier host hops** (`src/applier/hostHop.ts`, `hostGuard.ts`; table in `docs/reference/applying.md`, "Host hops"): a host change after a page's own redirect or
+   click is judged in code on the final page only: known ATS vendor host, same registrable domain, or the hiring company's official domain (name match, a domain on
+   file, or `user-data/apply-hosts.json`); https only, no credentials, port, IP, punycode or vendor look-alike; at most 4 hops. Any other final host parks the job
+   `needs_owner` (`unknown_apply_host`), and a final page asking for payment, government ID or bank details parks it as `unsafe_apply_page`. No tool takes a URL.
+
 Not covered by code: `gmail.send_email` has the kill-switch and `JOBBER_DRY_RUN` hook only (no
 `halt_flags` read). The
 browserctl actions do check halts and the kill switch themselves, but the semantic guard is a word

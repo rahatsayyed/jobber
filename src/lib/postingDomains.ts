@@ -73,6 +73,12 @@ export function registrableDomain(host: string): string {
   return SECOND_LEVEL.has(lastTwo) || MULTI_TENANT.has(lastTwo) ? labels.slice(-3).join('.') : lastTwo;
 }
 
+// True when the host sits under a multi-tenant hosting suffix (github.io, vercel.app, ...): the registrable domain there belongs to a tenant, not to one company.
+export function isMultiTenantHost(host: string): boolean {
+  const labels = normHost(host).split('.').filter(Boolean);
+  return labels.length >= 2 && MULTI_TENANT.has(labels.slice(-2).join('.'));
+}
+
 function excluded(host: string): boolean {
   return EXCLUDED_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
 }

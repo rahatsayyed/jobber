@@ -3,7 +3,8 @@
 // for self-identification only the explicit decline option is ever chosen, marketing boxes are never
 // checked (a pre-checked one is unchecked by code and verified), and consent follows D12.
 import { z } from 'zod';
-import { clickField, hostOfUrl, readPage } from '../../webcore/login.js';
+import { clickField, readPage } from '../../webcore/login.js';
+import { settleHost } from '../hostGuard.js';
 import { acceptLegalRequired } from '../../webcore/signup.js';
 import type { AnswerRef } from '../../apply/answers.js';
 import type { LiPage } from '../../webcore/launch.js';
@@ -84,7 +85,8 @@ export async function handleChoose(input: ChooseInputT, deps: ApplierDeps): Prom
 
     const dry = dryRunResult(deps, 'apply_choose', { job_id: job.jobId, field: f.id, role: f.role });
     if (dry) return dry;
-    if (hostOfUrl(page.url()) !== job.host) return refuse('host_changed', 'the page moved to another host; nothing was chosen');
+    const hop = settleHost(deps, job, page.url());
+    if (hop) return hop;
     if (!(await doChoose(page, f, chosen))) return failedResult();
     return { status: 'ok', code: 'chosen' };
   });

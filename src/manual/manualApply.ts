@@ -22,7 +22,7 @@ export const SKIPPED_BY_OWNER = 'skipped_by_owner';
 export const MANUAL_STATUSES = ['needs_owner', 'manual_review'] as const;
 export const MANUAL_ITEMS_CAP = 30;
 
-export type ManualReason = 'easy_apply_off' | 'company_site_form' | 'listing_page' | 'easy_apply_failed' | 'no_relevant_role' | 'company_site_unresolved';
+export type ManualReason = 'easy_apply_off' | 'company_site_form' | 'listing_page' | 'easy_apply_failed' | 'no_relevant_role' | 'company_site_unresolved' | 'unknown_apply_host' | 'unsafe_apply_page';
 
 export interface ManualApplyItem {
   /** outreach_queue row id (the one `apply:manual done|skip` takes). */
@@ -49,6 +49,8 @@ export const MANUAL_REASON_LABELS: Record<ManualReason, string> = {
   listing_page: 'Careers listing page',
   easy_apply_failed: 'Easy Apply could not finish',
   no_relevant_role: 'No relevant role on this careers page',
+  unknown_apply_host: 'The form is on a host not trusted yet',
+  unsafe_apply_page: 'The page asks for payment, ID or bank details',
 };
 export const manualReasonLabel = (r: ManualReason): string => MANUAL_REASON_LABELS[r] ?? 'Apply by hand';
 
@@ -75,6 +77,8 @@ function reasonOf(r: Row, linkedinPage: boolean, url: string, env: NodeJS.Proces
   const p = r.apply_platform ?? '';
   // A careers listing the apply-operator read and found no role for the resume on (apply_escalate reason no_relevant_role).
   if ((r.apply_note ?? '') === 'no_relevant_role') return 'no_relevant_role';
+  if ((r.apply_note ?? '').startsWith('unknown_apply_host:')) return 'unknown_apply_host';
+  if ((r.apply_note ?? '').startsWith('unsafe_apply_page:')) return 'unsafe_apply_page';
   // external:<code> from the resolver: a code that means the company link could not be read is company_site_unresolved; a host or form the applier cannot drive stays company_site_form.
   const note = r.apply_note ?? '';
   if (note.startsWith('external:')) return UNRESOLVED_CODES.has(note.slice('external:'.length)) ? 'company_site_unresolved' : 'company_site_form';

@@ -122,7 +122,8 @@ describe('apply_fill', () => {
     urlRef.value = 'https://evil.example.test/apply';
     expect(await fill(x, 'f1', P('name.first'))).toMatchObject({ status: 'refused', code: 'host_changed' });
     expect(x.site.fills).toEqual([]);
-    expect(await handleUpload({ field: 'f5' }, x.deps)).toMatchObject({ status: 'refused', code: 'host_changed' });
+    // the unknown host parked the job: it is closed for this run, not retried
+    expect(await handleUpload({ field: 'f5' }, x.deps)).toMatchObject({ status: 'refused', code: 'no_job' });
     expect(x.site.uploads).toEqual([]);
   });
 

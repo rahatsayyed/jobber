@@ -23,6 +23,7 @@ import type { ConfirmSignals } from '../confirm.js';
 import { sameRef } from '../refs.js';
 import { resolveHostCap } from '../../webcore/hostCaps.js';
 import { checkAndIncrement } from '../../lib/rateLimit.js';
+import { guardHopPage, settleHost, settleTransit } from '../hostGuard.js';
 import { agentHandleAllowed, recordQuestion, storedAnswer, type QuestionKind } from '../../apply/questions.js';
 
 export type Db = BetterSqlite3.Database;
@@ -79,8 +80,11 @@ export interface RoleSession {
 export interface OpenJob {
   jobId: string;
   platform: string;
-  /** Host of the page after the first navigation; every later action must still be on it. */
+  /** Host the form is on now: the page after the first navigation, then the host of every allowed hop (hostGuard.ts). Every action is checked against it. */
   host: string;
+  /** Allowed host hops made so far (at most HOP_MAX) and their `from>to` host names, for the log. */
+  hops?: number;
+  hopLog?: string[];
   url: string;
   allowedHosts: string[];
   location?: string;
@@ -98,6 +102,8 @@ export interface ApplierSessionState {
   draftAttempts?: Map<number, number>;
   /** The last careers listing read by apply_list_roles. */
   roles?: RoleSession | null;
+  /** Set by settleHost when the page must be closed but the caller is inside the runtime queue; inPage and apply_open close it afterwards. */
+  pendingClose?: boolean;
 }
 export const createApplierState = (): ApplierSessionState => ({ cur: null, lastOpen: new Map(), escalated: new Set(), draftAttempts: new Map(), roles: null });
 
@@ -196,16 +202,25 @@ export async function inPage(deps: ApplierDeps, fn: (c: PageCtx) => Promise<Appl
   if (!job) return refuse('no_job', 'call apply_open first');
   if (job.submitted) return refuse('already_submitted', 'this application was already submitted');
   try {
-    return await deps.runtime.serial(async (): Promise<ApplyResult> => {
+    const out = await deps.runtime.serial(async (): Promise<ApplyResult> => {
       const page = deps.runtime.page();
       if (!page) { deps.state.cur = null; return refuse('no_session', 'the page is closed; call apply_open again'); }
-      if (hostOfUrl(page.url()) !== job.host) return refuse('host_changed', 'the page moved to another host; nothing was done');
+      await settleTransit(deps, page, job);
+      const hop = settleHost(deps, job, page.url());
+      if (hop) return hop;
       const { raw, model } = await readPage(page);
       if (model.block) return blockedResult(deps, model);
+      const unsafe = guardHopPage(deps, job, raw);
+      if (unsafe) return unsafe;
       let layout: Verdict | null = null;
       try { layout = deps.layoutGuard?.observe(job.platform, model) ?? null; } catch { console.error('[applier] layout observe failed'); }
       return fn({ page, job, model, raw, layout });
     });
+    if (deps.state.pendingClose) {
+      deps.state.pendingClose = false;
+      try { await deps.runtime.close(); } catch { console.error('[applier] close failed'); }
+    }
+    return out;
   } catch (e) {
     if (e instanceof HostChanged) return refuse('host_changed', 'the page moved to another host; nothing was typed');
     console.error('[applier] tool failed');
