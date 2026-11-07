@@ -38,6 +38,7 @@ import { buildConfigView } from '../dash/configView.js';
 import { createSettingsRoutes, type SettingsDeps } from './settingsRoutes.js';
 import { createApplyRoutes, type ApplyDeps } from './applyRoutes.js';
 import { createEscalationRoutes, type EscalationDeps } from './escalationRoutes.js';
+import { createNoticeRoutes } from './noticeRoutes.js';
 import { createInstructionRoutes, type InstructionDeps } from './instructionRoutes.js';
 import { createQuestionRoutes, type QuestionDeps } from './questionRoutes.js';
 import { createManualApplyRoutes, type ManualApplyDeps } from './manualApplyRoutes.js';
@@ -582,6 +583,8 @@ export function createWebServer(deps: WebDeps): http.Server {
   for (const r of createEscalationRoutes(deps.escalations ?? { resolve: noWriter, snooze: noWriter }, { auth: deps.auth, data: deps.data, now, processEnv: deps.env ?? process.env })) {
     add(r.method, r.pattern, false, r.fn);
   }
+
+  for (const r of createNoticeRoutes({ root: deps.root ?? process.cwd() })) add(r.method, r.pattern, false, r.fn);
 
   for (const r of createManualApplyRoutes(deps.manualApply ?? { write: noWriter }, { auth: deps.auth, data: deps.data, now, processEnv: deps.env ?? process.env })) {
     add(r.method, r.pattern, false, r.fn);

@@ -7,6 +7,7 @@ import { loadTelegramConfig, PROJECT_ROOT } from './config.js';
 import { htmlEscape, isParseError, markdownToHtmlChunks, plainChunks } from './format.js';
 import { htmlToPlain, splitHtml } from '../platform/tgHtml.js';
 import { resolveSilent } from './silent.js';
+import { recordNotice } from '../platform/noticeLog.js';
 import { ensureTopics, isThreadGoneError, readTopicState, writeTopicState, type TopicName } from './topics.js';
 
 export interface SendResult {
@@ -67,6 +68,8 @@ export function chunksFor(text: string, plain: boolean | undefined, html?: boole
 
 /** Post markdown text to a named topic of the Jobber chat (or to the owner's private chat when no group is set). Never throws. */
 export async function sendToTopic(topic: TopicName, markdown: string, opts: SendOpts): Promise<SendResult> {
+  // Dashboard copy first: kept even when Telegram is not configured or the send fails. Never throws.
+  recordNotice(opts.root ?? PROJECT_ROOT, { topic, text: markdown, silent: resolveSilent(topic, opts.silent, opts.env), html: opts.html });
   try {
     const cfg = loadTelegramConfig(opts.env);
     if (!cfg || !cfg.chatId) return { ok: false, detail: 'telegram not configured' };

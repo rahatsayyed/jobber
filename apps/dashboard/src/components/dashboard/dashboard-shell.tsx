@@ -1,11 +1,12 @@
 "use client";
 
-import { ArchiveIcon, BellIcon, DotsThreeOutlineIcon, BriefcaseIcon, ChartLineUpIcon, ClipboardTextIcon, EnvelopeSimpleIcon, GearSixIcon, HouseIcon, ListChecksIcon, SignOutIcon, UsersThreeIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { ArchiveIcon, BellIcon, BellRingingIcon, DotsThreeOutlineIcon, BriefcaseIcon, ChartLineUpIcon, ClipboardTextIcon, EnvelopeSimpleIcon, GearSixIcon, HouseIcon, ListChecksIcon, SignOutIcon, UsersThreeIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { InboxView } from "@/components/dashboard/inbox-view";
+import { NoticesView } from "@/components/dashboard/notices-view";
 import { LoadingLines } from "@/components/dashboard/list-kit";
 import { AuditView, OutcomesView, RunsView, SettingsView } from "@/components/dashboard/record-views";
 import { JobsView, MailView, PeopleView, renderPanel } from "@/components/dashboard/linked-views";
@@ -18,6 +19,7 @@ type Section = { id: string; label: string; icon: typeof HouseIcon; description:
 const sections: Section[] = [
   { id: "overview", label: "Overview", icon: HouseIcon, description: "Pipeline health, limits, and the next owner decision." },
   { id: "inbox", label: "Inbox", icon: BellIcon, description: "One list of everything that needs you: replies, problems and flagged text. Filter by type, platform and status." },
+  { id: "notices", label: "Notices", icon: BellRingingIcon, description: "A copy of everything the code sent to Telegram. Filter by topic; loud ones are marked." },
   { id: "jobs", label: "Jobs", icon: BriefcaseIcon, description: "Every discovered job with its score, source and state. Open a row for the full picture." },
   { id: "people", label: "People", icon: UsersThreeIcon, description: "Recruiters and peers the agent found, with connection state and message history." },
   { id: "mail", label: "Mail", icon: EnvelopeSimpleIcon, description: "Cold emails that were sent. Open one to read the message." },
@@ -66,6 +68,7 @@ function getSection(id: string) { const key = id === "archive" ? "audit" : id; r
 function SectionBody({ id }: { id: string }) {
   switch (id) {
     case "inbox": return <InboxView />;
+    case "notices": return <NoticesView />;
     case "jobs": return <JobsView />;
     case "people": return <PeopleView />;
     case "mail": return <MailView />;
