@@ -160,16 +160,23 @@ export function asyncAgentEvents(line: string): { launched: string[]; finished: 
   const out = { launched: [] as string[], finished: [] as string[] };
   let j: unknown;
   try { j = JSON.parse(line); } catch { return out; }
-  if (!isObj(j) || j.isSidechain === true || j.type !== 'user' || !isObj(j.message)) return out;
-  const c = j.message.content;
-  if (typeof c === 'string') {
-    if (c.includes('<task-notification>')) {
-      for (const m of c.matchAll(/<(?:tool-use-id|task-id)>([A-Za-z0-9_-]{1,80})<\/(?:tool-use-id|task-id)>/g)) out.finished.push(m[1] as string);
+  if (!isObj(j) || j.isSidechain === true) return out;
+  // A hand-back or completion notice reaches the transcript as a `user` string, as an `attachment` of type queued_command
+  // (attachment.prompt) or as a `queue-operation` entry. The model's own lines (assistant) and tool results never count.
+  let notice = '';
+  if (j.type === 'attachment' && isObj(j.attachment) && typeof j.attachment.prompt === 'string') notice = j.attachment.prompt;
+  else if (j.type === 'queue-operation' && typeof j.content === 'string') notice = j.content;
+  else if (j.type === 'user' && isObj(j.message) && typeof j.message.content === 'string') notice = j.message.content;
+  if (notice !== '') {
+    if (notice.includes('<task-notification>')) {
+      for (const m of notice.matchAll(/<(?:tool-use-id|task-id)>([A-Za-z0-9_-]{1,80})<\/(?:tool-use-id|task-id)>/g)) out.finished.push(m[1] as string);
     }
     // the subagent's final report delivered to the main thread (a completion notice may or may not follow it)
-    for (const m of c.matchAll(/<agent-message from="([A-Za-z0-9_-]{1,80})"/g)) out.finished.push(m[1] as string);
+    for (const m of notice.matchAll(/<agent-message from="([A-Za-z0-9_-]{1,80})"/g)) out.finished.push(m[1] as string);
     return out;
   }
+  if (j.type !== 'user' || !isObj(j.message)) return out;
+  const c = j.message.content;
   for (const b of Array.isArray(c) ? c : []) {
     if (!isObj(b) || b.type !== 'tool_result' || typeof b.tool_use_id !== 'string') continue;
     const inner = b.content;

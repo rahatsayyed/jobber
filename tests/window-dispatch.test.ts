@@ -178,6 +178,23 @@ describe('happy path', () => {
     expect(r.summary).toBe('Inbox read. {"run_id":"r2"}');
   });
 
+  it('a hand-back that arrives as a queued_command attachment also counts, and a Monitor wait does not hold the item', async () => {
+    const launched = (id: string, agent: string): string => line({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: [{ type: 'text', text: `Async agent launched successfully.\nagentId: ${agent} (internal)` }] }] },
+    });
+    const back = (agent: string): string => line({ type: 'attachment', attachment: { type: 'queued_command', prompt: `<agent-message from="${agent}">\n[Subagent hand-back] ...` } });
+    h.steps[1] = () => h.append(launched('toolu_C1', 'agentone'));
+    h.steps[2] = () => h.append(asst('Waiting.', 'end_turn'));
+    h.steps[3] = () => h.append(back('agentone'));
+    h.steps[4] = () => h.append(launched('toolu_C2', 'agenttwo'));
+    h.steps[5] = () => h.append(back('agenttwo'));
+    h.steps[6] = () => h.append(asst('{"run_id":"r3"}', 'end_turn'));
+    const r = await h.disp.dispatch(h.input());
+    expect(h.tick).toBe(6);
+    expect(r.status).toBe('ok');
+  });
+
   it('max_tokens and an API error entry end the item as failed', async () => {
     h.steps[1] = () => h.append(asst('cut', 'max_tokens'));
     const a = await h.disp.dispatch(h.input());
