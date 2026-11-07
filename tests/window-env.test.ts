@@ -252,9 +252,9 @@ describe('scripts/claude-window.sh refusals', () => {
 
   it('passes the documented flags and nothing that skips permissions (static check of the script)', () => {
     const t = readFileSync(script, 'utf8');
-    expect(t).toMatch(/exec env -i .*"\$CLAUDE_BIN" "\$@" --settings "\$SETTINGS" --setting-sources project,local/);
+    expect(t).toMatch(/exec env -i .*"\$CLAUDE_BIN" "\$@" --settings "\$SETTINGS" --setting-sources project,local --mcp-config "\$ROOT\/\.mcp\.json" --strict-mcp-config/);
     expect(t).toMatch(/unset TELEGRAM_BOT_TOKEN/);
     expect(t).toMatch(/scripts\/window-env\.ts/);
-    expect(t).not.toMatch(/--permission-mode|dontAsk|--max-turns|--strict-mcp-config|--allowedTools|tool-allowlist/);
+    expect(t).not.toMatch(/--permission-mode|dontAsk|--max-turns|--allowedTools|tool-allowlist/);
   });
 });

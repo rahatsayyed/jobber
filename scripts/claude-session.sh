@@ -60,4 +60,9 @@ shopt -u nocasematch
 cd "$ROOT"
 # The bot token must never reach a Claude window, even when the parent environment carries it.
 unset TELEGRAM_BOT_TOKEN
+# Project MCP servers only: the owner's user-level servers (for example a python code-review-graph server) would start in the chat
+# and manager windows and eat memory and CPU.
+if [ -f "$ROOT/.mcp.json" ]; then
+  exec claude "$@" --mcp-config "$ROOT/.mcp.json" --strict-mcp-config
+fi
 exec claude "$@"

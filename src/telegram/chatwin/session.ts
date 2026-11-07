@@ -55,6 +55,7 @@ export function projectTranscriptDir(root: string, claudeHome: string): string {
 export const transcriptFile = (dir: string, sessionId: string): string => path.join(dir, `${sessionId}.jsonl`);
 
 const TAIL_SCAN_BYTES = 400_000;
+const HEAD_SCAN_BYTES = 3_000_000;
 
 function userTextOf(line: string): string | null {
   try {
@@ -90,27 +91,39 @@ export function findTranscriptByTypedText(dir: string, typed: string, sinceMs: n
     } catch { /* gone */ }
   }
   cands.sort((a, b) => b.mtime - a.mtime);
-  for (const { f, size } of cands.slice(0, 8)) {
-    const start = Math.max(0, size - TAIL_SCAN_BYTES);
-    const buf = Buffer.alloc(size - start);
+  // A new session file holds the typed line near its START and a huge `api-request-blob` (the whole system prompt) right after it,
+  // so after one second the line can be far more than TAIL_SCAN_BYTES from the end. Scan the tail first (long-lived session: the
+  // line is recent) and then the head (fresh session after /clear).
+  const scan = (f: string, start: number, end: number): number | null => {
+    if (end <= start) return null;
+    const buf = Buffer.alloc(end - start);
     let fd = -1;
     try {
       fd = openSync(f, 'r');
       readSync(fd, buf, 0, buf.length, start);
     } catch {
-      continue;
+      return null;
     } finally {
       if (fd >= 0) closeSync(fd);
     }
-    let pos = start;
     let hit: number | null = null;
-    for (const raw of buf.toString('utf8').split('\n')) {
+    const parts = buf.toString('utf8').split('\n');
+    // a region that does not begin at a line start has a cut first line: skip it
+    let pos = start > 0 ? start + Buffer.byteLength(parts[0]) + 1 : start;
+    for (let k = start > 0 ? 1 : 0; k < parts.length; k++) {
+      const raw = parts[k];
       const lineStart = pos;
       pos += Buffer.byteLength(raw) + 1;
       if (!raw.includes('"user"')) continue;
       const t = userTextOf(raw);
       if (t !== null && t.includes(needle)) hit = lineStart;
     }
+    return hit;
+  };
+  for (const { f, size } of cands.slice(0, 16)) {
+    const tailStart = Math.max(0, size - TAIL_SCAN_BYTES);
+    let hit = scan(f, tailStart, size);
+    if (hit === null && tailStart > 0) hit = scan(f, 0, Math.min(tailStart + 4096, HEAD_SCAN_BYTES));
     if (hit !== null) return { file: f, offset: hit };
   }
   return null;

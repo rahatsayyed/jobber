@@ -143,6 +143,24 @@ describe('happy path', () => {
     expect(r.summary).toBe('We hit the rate limit reached on the site, retrying\nFinal answer');
   });
 
+  it('a "waiting for the background agent" end_turn is not the end: the item ends at the turn after the completion notice', async () => {
+    const launched = line({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_AAA', content: [{ type: 'text', text: 'Async agent launched successfully.' }] }] },
+    });
+    const notice = line({ type: 'user', message: { role: 'user', content: '<task-notification>\n<tool-use-id>toolu_AAA</tool-use-id>\n<status>completed</status>\n</task-notification>' } });
+    h.steps[1] = () => h.append(toolUse());
+    h.steps[2] = () => h.append(launched);
+    h.steps[3] = () => h.append(asst('Waiting for the agent notice.', 'end_turn'));
+    // real order: the model's final turn first, the completion notice after it
+    h.steps[8] = () => h.append(asst('{"run_id":"r1","operators":[]}', 'end_turn'));
+    h.steps[9] = () => h.append(notice);
+    const r = await h.disp.dispatch(h.input());
+    expect(h.tick).toBe(13); // notice at 9, then 4 s of settle with no new turn
+    expect(r.status).toBe('ok');
+    expect(r.summary).toBe('{"run_id":"r1","operators":[]}');
+  });
+
   it('max_tokens and an API error entry end the item as failed', async () => {
     h.steps[1] = () => h.append(asst('cut', 'max_tokens'));
     const a = await h.disp.dispatch(h.input());

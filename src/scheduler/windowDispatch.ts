@@ -72,6 +72,8 @@ export interface WindowDispatchDeps {
   claudeHome?: string;
   pollMs?: number;
   stallMs?: number;
+  /** Quiet time allowed while a background subagent of the window is still running (default 10 minutes). */
+  asyncStallMs?: number;
   settleMs?: number;
   paneEveryMs?: number;
   discoverAfterMs?: number;
@@ -88,6 +90,9 @@ export const MAX_PROMPT_CHARS = 100_000;
 export const SUMMARY_MAX = 2000;
 export const WORK_FILE_MAX_AGE_MS = 24 * 3600_000;
 const PANE_LINES = 40;
+const ASYNC_QUIET_MS = 600_000;
+/** After the last background agent's notice, wait this long for the model to start another turn before the item is closed. */
+const ASYNC_SETTLE_MS = 4000;
 const PANE_TAIL = 12;
 /** A running claude shows "esc to interrupt" in its footer: a quiet transcript then is a slow tool, not a permission prompt. UNVERIFIED. */
 const BUSY_PANE_RE = /esc to interrupt/i;
@@ -143,6 +148,33 @@ function inspectLine(line: string): LineInfo {
   const apiError = j.isApiErrorMessage === true || (j.error !== undefined && j.error !== null && j.error !== false);
   // Only an API error entry may report a usage limit: the model's own text can say "rate limit reached" about anything.
   return { limit: apiError && LIMIT_RE.test(text), stopReason: typeof msg.stop_reason === 'string' ? msg.stop_reason : null, apiError, chars };
+}
+
+/**
+ * Background subagents of the window's main thread. A model that starts an Agent call "in the background" ends its first turn with
+ * "waiting for the completion notice" and the harness opens a NEW turn when the notice arrives. That first end_turn is not the end
+ * of the item: the result (the final report line) comes in the second turn. `launched` are the tool_use ids whose Agent result said
+ * "Async agent launched", `finished` the ids of a `<task-notification>` that came back.
+ */
+export function asyncAgentEvents(line: string): { launched: string[]; finished: string[] } {
+  const out = { launched: [] as string[], finished: [] as string[] };
+  let j: unknown;
+  try { j = JSON.parse(line); } catch { return out; }
+  if (!isObj(j) || j.isSidechain === true || j.type !== 'user' || !isObj(j.message)) return out;
+  const c = j.message.content;
+  if (typeof c === 'string') {
+    if (c.includes('<task-notification>')) {
+      for (const m of c.matchAll(/<tool-use-id>([A-Za-z0-9_-]{1,80})<\/tool-use-id>/g)) out.finished.push(m[1] as string);
+    }
+    return out;
+  }
+  for (const b of Array.isArray(c) ? c : []) {
+    if (!isObj(b) || b.type !== 'tool_result' || typeof b.tool_use_id !== 'string') continue;
+    const inner = b.content;
+    const text = typeof inner === 'string' ? inner : Array.isArray(inner) ? inner.map((x) => (isObj(x) && typeof x.text === 'string' ? x.text : '')).join('\n') : '';
+    if (/Async agent launched/i.test(text)) out.launched.push(b.tool_use_id);
+  }
+  return out;
 }
 
 function paneHasLimit(text: string): boolean {
@@ -287,6 +319,11 @@ export class WindowDispatcher {
     let lastGrowAt = this.now();
     let lastPaneAt = this.now();
     let escaped = false;
+    const asyncOut = new Set<string>();
+    let heldDone = false; // an end_turn was held back because a background agent was out, and nothing happened since
+    let emptiedAt = 0;
+    let lastHeldText = '';
+    const asyncQuietMs = this.d.asyncStallMs ?? ASYNC_QUIET_MS;
 
     const conclude = (status: DispatchStatus, stopReason: string): DispatchResult => {
       const summary = redactPane(curText.trim()).slice(-SUMMARY_MAX);
@@ -334,11 +371,23 @@ export class WindowDispatcher {
           const info = inspectLine(line);
           chars += info.chars;
           if (info.limit && !outcome) outcome = { status: 'usage_limit', reason: 'usage_limit' };
+          const ae = asyncAgentEvents(line);
+          for (const id of ae.launched) asyncOut.add(id);
+          for (const id of ae.finished) asyncOut.delete(id);
+          if (ae.finished.length > 0 && asyncOut.size === 0) emptiedAt = t;
           for (const ev of parseTranscriptLine(line)) {
-            if (ev.kind === 'tool') { toolCalls++; toolSince = t; curText = ''; }
+            if (ev.kind === 'tool') { toolCalls++; toolSince = t; curText = ''; heldDone = false; }
             else if (ev.kind === 'tool_result') toolSince = null;
-            else if (ev.kind === 'text') { toolSince = null; curText += `${curText ? '\n' : ''}${ev.text}`; }
-            else if (ev.kind === 'done' && !outcome) {
+            else if (ev.kind === 'text') { toolSince = null; curText += `${curText ? '\n' : ''}${ev.text}`; heldDone = false; }
+            else if (ev.kind === 'done' && !outcome && !info.apiError && asyncOut.size > 0 && info.stopReason === 'end_turn') {
+              // "waiting for the background agent": the real result usually comes in the next turn. Keep watching. The completion
+              // notice arrives AFTER the model's reaction turn, so when it empties the set with no new activity since the last
+              // end_turn, that last turn was the final one (see the check below).
+              toolSince = t;
+              heldDone = true;
+              if (curText.trim() !== '') lastHeldText = curText;
+              curText = '';
+            } else if (ev.kind === 'done' && !outcome) {
               if (info.apiError) outcome = { status: 'failed', reason: 'api_error' };
               else if (info.stopReason !== null && DONE_FAIL.has(info.stopReason)) outcome = { status: 'failed', reason: info.stopReason };
               else outcome = { status: 'ok', reason: info.stopReason !== null && DONE_OK.has(info.stopReason) ? info.stopReason : 'end_turn' };
@@ -348,11 +397,15 @@ export class WindowDispatcher {
         const size = tailer.size();
         if (size !== lastSize) { lastSize = size; lastGrowAt = t; }
       }
+      if (!outcome && heldDone && asyncOut.size === 0 && t - emptiedAt >= ASYNC_SETTLE_MS) {
+        curText = lastHeldText; // the held turn was the final one: the agents are back and the model did not go on
+        outcome = { status: 'ok', reason: 'end_turn' };
+      }
       if (outcome) return conclude(outcome.status, outcome.reason);
 
       let pane: string | null = null;
       const needPane = t - lastPaneAt >= paneEveryMs;
-      const quiet = t - lastGrowAt >= stallMs;
+      const quiet = t - lastGrowAt >= (asyncOut.size > 0 ? Math.max(stallMs, asyncQuietMs) : stallMs);
       if (needPane || quiet || t - sentAt >= i.deadlineMs) {
         lastPaneAt = t;
         try { pane = await this.paneText(i.window); } catch { pane = null; }

@@ -77,4 +77,6 @@ done <<< "$ENV_LINES"
 
 # UNVERIFIED against the installed claude: --session-id with an interactive session, and a first positional prompt
 # (the sh caller types the startup line instead, see src/platform/windowSession.ts typeStartupLine).
-exec env -i ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} "$CLAUDE_BIN" "$@" --settings "$SETTINGS" --setting-sources project,local
+# Only the project's own MCP servers (.mcp.json) load: without --strict-mcp-config the owner's user-level servers (for example a
+# python code-review-graph server) start in EVERY worker window and eat memory and CPU for nothing.
+exec env -i ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} "$CLAUDE_BIN" "$@" --settings "$SETTINGS" --setting-sources project,local --mcp-config "$ROOT/.mcp.json" --strict-mcp-config
