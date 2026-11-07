@@ -117,6 +117,27 @@ export async function assertClaudePane(run: Run, session: string, window: string
   if (!CLAUDE_COMMAND_RE.test(w.command)) throw new Error('tmux window is not running claude');
 }
 
+const nap = (ms: number): Promise<void> => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
+/** Real delays outside the tests (the unit tests drive a fake tmux and must not wait). */
+const ENTER_DELAY_MS = process.env.VITEST !== undefined ? 0 : 250;
+const VERIFY_WAIT_MS = process.env.VITEST !== undefined ? 0 : 1000;
+const RULE_RE = /^[\s]*[─━-]{20,}\s*$/;
+
+/**
+ * True when `needle` is still sitting in the input box of a claude pane: the box is the area between the LAST two horizontal rules
+ * (a submitted prompt is echoed higher up with the same "❯" mark, so the mark alone proves nothing). Pane unreadable or no box: false.
+ */
+export function textStillInInputBox(pane: string, needle: string): boolean {
+  const n = needle.trim().slice(0, 40);
+  if (n === '') return false;
+  const lines = pane.split('\n');
+  const rules: number[] = [];
+  lines.forEach((l, i) => { if (RULE_RE.test(l)) rules.push(i); });
+  if (rules.length < 2) return false;
+  const box = lines.slice((rules[rules.length - 2] as number) + 1, rules[rules.length - 1] as number).join('\n');
+  return box.includes(n);
+}
+
 export async function sendText(run: Run, session: string, window: string, text: string): Promise<void> {
   assertName(session);
   assertName(window);
@@ -124,8 +145,22 @@ export async function sendText(run: Run, session: string, window: string, text: 
   const target = `=${session}:=${window}`;
   const lit = await run('tmux', ['send-keys', '-t', target, '-l', '--', text]);
   if (lit.code !== 0) throw new Error('tmux send-keys failed');
+  // Enter as its own key a moment after the text, so the TUI has taken the text in before it is asked to submit.
+  await nap(ENTER_DELAY_MS);
   const enter = await run('tmux', ['send-keys', '-t', target, 'Enter']);
   if (enter.code !== 0) throw new Error('tmux send-keys Enter failed');
+  // Verify: a line that is still in the input box was not submitted (a swallowed Enter, an autocomplete menu). Press Enter again, up to 3 times.
+  for (let k = 0; k < 3; k++) {
+    await nap(VERIFY_WAIT_MS);
+    let pane = '';
+    try {
+      const cap = await run('tmux', ['capture-pane', '-p', '-J', '-t', target, '-S', '-15']);
+      pane = cap.code === 0 ? cap.stdout : '';
+    } catch { pane = ''; }
+    if (!textStillInInputBox(pane, text)) return;
+    const again = await run('tmux', ['send-keys', '-t', target, 'Enter']);
+    if (again.code !== 0) return;
+  }
 }
 
 function assertArgv(argv: string[]): void {

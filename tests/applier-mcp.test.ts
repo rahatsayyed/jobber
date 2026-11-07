@@ -63,7 +63,7 @@ describe('applier MCP surface', () => {
   });
 
   it('is registered in .mcp.json and package.json', () => {
-    expect(JSON.parse(fs.readFileSync('.mcp.json', 'utf8')).mcpServers.applier).toEqual({ command: 'npx', args: ['tsx', 'src/mcp/applier.ts'] });
+    expect(JSON.parse(fs.readFileSync('.mcp.json', 'utf8')).mcpServers.applier).toEqual({ command: 'node', args: ['--import', 'tsx', 'src/mcp/applier.ts'] });
     expect(JSON.parse(fs.readFileSync('package.json', 'utf8')).scripts['mcp:applier']).toBe('tsx src/mcp/applier.ts');
   });
 });

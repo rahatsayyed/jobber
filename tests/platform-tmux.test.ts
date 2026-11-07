@@ -95,6 +95,8 @@ describe('sendText', () => {
     expect(calls).toEqual([
       { cmd: 'tmux', args: ['send-keys', '-t', '=Jobber:=hunt', '-l', '--', 'hello world'] },
       { cmd: 'tmux', args: ['send-keys', '-t', '=Jobber:=hunt', 'Enter'] },
+      // then one pane read to verify the line left the input box (see tests/tmux-send-verify.test.ts)
+      { cmd: 'tmux', args: ['capture-pane', '-p', '-J', '-t', '=Jobber:=hunt', '-S', '-15'] },
     ]);
   });
 

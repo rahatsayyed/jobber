@@ -721,7 +721,7 @@ Everything built and tested only with fakes or not yet checked against a real si
    (no one is asked during a run; the cap is not raised from inside a run). Follow-up emails count under the
    same `send_email` counter (there is no separate follow-up cap).
 3. Cold email and email follow-ups are sent automatically by the mail drip lane (`mail-operator`, one email
-   per run, or per work item when the `mail` window lane is on; scheduler daemon only, inside the send window and outside quiet hours; a wake never sends email),
+   per work item typed into the `mail` window; scheduler daemon only, inside the send window and outside quiet hours; a wake never sends email),
    and a scheduled wake sends LinkedIn connection requests (`linkedin-operator`) automatically, per the
    "Connecting" section: an explicit, informed design decision, not an oversight. Since the agent-driven runtime (ADR 2026-10-13) LinkedIn and Naukri
    messages are also allowed, but only through the arm tools (`linkedin_arm_send` with a required `kind`,
@@ -741,7 +741,7 @@ Everything built and tested only with fakes or not yet checked against a real si
 6. One LinkedIn session at a time on the main account (`secrets/linkedin-main-state.json`; `secrets/linkedin.lock`
    stops a second session; an interactive session and a wake can collide as `session_locked`). Easy Apply
    also uses the main account, through the LinkedIn engine (the LinkedIn drip lane, `linkedin_arm_send` kind
-   `easy_apply`, `APPLY_LINKEDIN_EASY`, ships off), never through the `applier` MCP. There is no second
+   `easy_apply`, `APPLY_LINKEDIN_EASY`, on by default since 2026-11-06 and off only with exactly `false`), never through the `applier` MCP. There is no second
    LinkedIn identity.
 7. Respect `MAX_APPLIES_PER_DAY`, `APPLY_MAX_ATTEMPTS_PER_DAY`, the per-host apply caps
    (`APPLY_MAX_PER_HOST`, `APPLY_MAX_PER_HOST_<ID>`) and the LinkedIn daily ceilings (`LINKEDIN_MAX_INVITES_PER_DAY`,
@@ -800,7 +800,7 @@ Everything built and tested only with fakes or not yet checked against a real si
 14. The kill switch always wins: `.jobber/STOP`, `JOBBER_KILL=1` or a `halt_flags` row for `all`,
     `linkedin` or `naukri` stops the LinkedIn and Naukri tools and the scheduler for that
     scope; `.jobber/STOP` and `JOBBER_KILL=1` are additionally enforced by the PreToolUse hook
-    on every tool in restricted runs and in the worker windows (`window-guard.cjs`), and on the irreversible tools (Gmail send, the applier's acting tools, the scout tools, typed
+    on every tool in the worker windows (`window-guard.cjs`), and on the irreversible tools (Gmail send, the applier's acting tools, the scout tools, typed
     LinkedIn and Naukri sends and discovery) everywhere in this project, and by the launcher (exit 4); see
     "Outreach safety layers" layer 6 for what is not covered. Never clear a halt, delete STOP or
     flip a dry-run flag on your own; only the owner does (`jobber:control resume`,
@@ -816,7 +816,11 @@ Everything built and tested only with fakes or not yet checked against a real si
 17. The scout and the applier (including `site_login` and `site_signup`) drive company, job and ATS
     sites only through typed tools: no tool types a model-supplied string into a page or navigates to a
     model-supplied URL (`scout_open` is limited to search-result, registry and task hosts, `apply_open`
-    reads the URL from SQLite, `site_open_link` follows host and path rules in code); no tool returns a
+    reads the URL from SQLite, `site_open_link` follows host and path rules in code; a job board or careers
+    page may hand over to another host, at most 4 hops and https only, and code judges the FINAL page's host:
+    a known ATS vendor, the same registrable domain, the hiring company's official domain or an entry of the
+    owner list `user-data/apply-hosts.json` is allowed, any other host parks the job for the owner, and a page
+    that asks for payment, a government ID or bank details parks it too); no tool returns a
     credential; CAPTCHA, MFA, phone verification and bot walls are never solved or waited out; marketing
     boxes are never checked; accounts are created only by `site_signup` under
     `APPLY_ALLOW_ACCOUNT_CREATION` / `SCOUT_ALLOW_SIGNUP` and `SITE_MAX_ACCOUNTS_PER_DAY`; a generated
