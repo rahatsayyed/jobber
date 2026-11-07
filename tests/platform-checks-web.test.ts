@@ -27,6 +27,34 @@ describe('web_flags', () => {
   });
 });
 
+describe('reply_facts (start time check of the email auto reply facts)', () => {
+  const put = (root: string, o: unknown) => {
+    mkdirSync(join(root, 'user-data'), { recursive: true });
+    writeFileSync(join(root, 'user-data/reply-facts.json'), JSON.stringify(o));
+  };
+  it('passes when auto reply is off, warns when the file is missing, unconfirmed or invalid', async () => {
+    expect((await run('reply_facts', on(tempRoot(), { EMAIL_AUTO_REPLY: 'false' }))).status).toBe('pass');
+    expect((await run('reply_facts', on(tempRoot()))).detail).toMatch(/missing/);
+    const a = tempRoot();
+    put(a, { confirmed: false, current_ctc: '9 LPA' });
+    const ra = await run('reply_facts', on(a));
+    expect(ra.status).toBe('warn');
+    expect(ra.detail).toMatch(/not confirmed/);
+    expect(ra.detail).not.toMatch(/9 LPA/);
+    const b = tempRoot();
+    put(b, { confirmed: true, current_ctc: 'see https://x.test' });
+    expect((await run('reply_facts', on(b))).detail).toMatch(/invalid/);
+  });
+  it('passes when confirmed and names the fields with no answer, never their values', async () => {
+    const root = tempRoot();
+    put(root, { confirmed: true, current_ctc: '9 LPA', expected_ctc: '18 LPA', notice_period: '60 days' });
+    const r = await run('reply_facts', on(root));
+    expect(r.status).toBe('pass');
+    expect(r.detail).toMatch(/current_location/);
+    expect(r.detail).not.toMatch(/9 LPA/);
+  });
+});
+
 describe('site_accounts', () => {
   const secrets = (root: string, dirMode = 0o700) => {
     mkdirSync(join(root, 'secrets'), { recursive: true });

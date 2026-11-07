@@ -1,8 +1,8 @@
 // scripts/stack.ts
 // `npm run up` / `npm run down`. Real dependencies only; the logic is in src/stack.
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { allDoctorChecks } from '../src/platform/checkLists.js';
@@ -11,6 +11,7 @@ import { readAuthAccount, readAuthToken } from '../src/dash/authRead.js';
 import { defaultRun } from '../src/platform/tmux.js';
 import { runDown, type DownOpts } from '../src/stack/down.js';
 import { runUp } from '../src/stack/up.js';
+import { userDataDir, userDataPath } from '../src/lib/userData.js';
 import { initTerm } from '../src/ui/term.js';
 
 export type Parsed =
@@ -83,7 +84,24 @@ async function main(): Promise<number> {
       return runChecks(allDoctorChecks(), ctx);
     },
   };
-  if (p.cmd === 'up') return runUp(base, { status: p.status });
+  if (p.cmd === 'up') {
+    // Start time: the email auto reply facts file is created from the template when it is missing (never overwritten; the template has
+    // confirmed false, so nothing is answered until the owner fills it in). The doctor check `reply_facts` then says what is left.
+    if (!p.status) {
+      try {
+        const to = userDataPath('reply-facts.json', process.env, root);
+        const from = resolve(root, 'user-data.example', 'reply-facts.json');
+        if (!existsSync(to) && existsSync(from)) {
+          mkdirSync(userDataDir(process.env, root), { recursive: true, mode: 0o700 });
+          mkdirSync(dirname(to), { recursive: true });
+          copyFileSync(from, to);
+          chmodSync(to, 0o600);
+          console.log('user-data/reply-facts.json created from the template: fill it in and set "confirmed": true');
+        }
+      } catch { /* the doctor check reports a missing file */ }
+    }
+    return runUp(base, { status: p.status });
+  }
   return runDown(
     {
       ...base,

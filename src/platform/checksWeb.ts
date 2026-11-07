@@ -13,6 +13,9 @@ import { APPLY_HOST_PLATFORM_IDS, hostCapWarnings, resolveHostCap } from '../web
 import { callsScreen, SCREENED_SURFACES } from '../safety/screen.js';
 import { validateRecipe } from '../applier/recipes/schema.js';
 import { checkClassifierForLaunch } from './launchCheck.js';
+import { emailAutoReplyOn } from '../outreach/emailReplyFlags.js';
+import { FACT_FIELDS, validateReplyFacts } from '../outreach/replyFacts.js';
+import { userDataDir } from '../lib/userData.js';
 import { LAUNCH_HOME, legacyAllowlist, scanLaunches } from '../lib/launchLint.js';
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
@@ -179,6 +182,22 @@ export function webChecks(deps: WebCheckDeps = {}): Check[] {
         const learned = check('.jobber/ats-recipes');
         if (learned.bad.length) return warn(`${shipped.ok} shipped recipes valid; learned recipe invalid: ${learned.bad.join(', ')}`, 'delete the file in .jobber/ats-recipes; it is relearned');
         return pass(`${shipped.ok} shipped and ${learned.ok} learned recipes validate`);
+      },
+    },
+    {
+      id: 'reply_facts',
+      title: 'email auto reply facts are ready',
+      async run(ctx) {
+        if (!emailAutoReplyOn(ctx.env)) return pass('EMAIL_AUTO_REPLY=false: automatic email replies are off');
+        const file = join(userDataDir(ctx.env, ctx.root), 'reply-facts.json');
+        if (!ctx.fs.exists(file)) return warn('auto reply is on but user-data/reply-facts.json is missing: nothing is answered', 'npm run up creates it from the template; fill it in and set "confirmed": true');
+        let state;
+        try { state = validateReplyFacts(JSON.parse(ctx.fs.read(file))); } catch { state = { status: 'invalid', problem: 'file is not valid JSON' } as const; }
+        if (state.status === 'invalid') return warn(`user-data/reply-facts.json is invalid: ${state.problem}; nothing is answered`, 'fix the file');
+        const empty = FACT_FIELDS.filter((f) => !((state.status === 'ready' || state.status === 'unconfirmed') && (state.facts[f] ?? '') !== ''));
+        if (state.status === 'unconfirmed') return warn(`user-data/reply-facts.json is not confirmed: nothing is answered${empty.length ? `; empty: ${empty.join(', ')}` : ''}`, 'read every value, then set "confirmed": true');
+        if (state.status !== 'ready') return warn('user-data/reply-facts.json is missing: nothing is answered');
+        return pass(empty.length ? `auto reply ready; no answer for: ${empty.join(', ')} (those asks go to you)` : 'auto reply ready, all facts filled');
       },
     },
     {
