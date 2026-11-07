@@ -164,15 +164,20 @@ export function asyncAgentEvents(line: string): { launched: string[]; finished: 
   const c = j.message.content;
   if (typeof c === 'string') {
     if (c.includes('<task-notification>')) {
-      for (const m of c.matchAll(/<tool-use-id>([A-Za-z0-9_-]{1,80})<\/tool-use-id>/g)) out.finished.push(m[1] as string);
+      for (const m of c.matchAll(/<(?:tool-use-id|task-id)>([A-Za-z0-9_-]{1,80})<\/(?:tool-use-id|task-id)>/g)) out.finished.push(m[1] as string);
     }
+    // the subagent's final report delivered to the main thread (a completion notice may or may not follow it)
+    for (const m of c.matchAll(/<agent-message from="([A-Za-z0-9_-]{1,80})"/g)) out.finished.push(m[1] as string);
     return out;
   }
   for (const b of Array.isArray(c) ? c : []) {
     if (!isObj(b) || b.type !== 'tool_result' || typeof b.tool_use_id !== 'string') continue;
     const inner = b.content;
     const text = typeof inner === 'string' ? inner : Array.isArray(inner) ? inner.map((x) => (isObj(x) && typeof x.text === 'string' ? x.text : '')).join('\n') : '';
-    if (/Async agent launched/i.test(text)) out.launched.push(b.tool_use_id);
+    if (/Async agent launched/i.test(text)) {
+      const agent = /agentId:\s*([A-Za-z0-9_-]{1,80})/.exec(text)?.[1] ?? '';
+      out.launched.push(`${b.tool_use_id}|${agent}`);
+    }
   }
   return out;
 }
@@ -373,7 +378,7 @@ export class WindowDispatcher {
           if (info.limit && !outcome) outcome = { status: 'usage_limit', reason: 'usage_limit' };
           const ae = asyncAgentEvents(line);
           for (const id of ae.launched) asyncOut.add(id);
-          for (const id of ae.finished) asyncOut.delete(id);
+          for (const id of ae.finished) for (const k of [...asyncOut]) if (k.split('|').includes(id)) asyncOut.delete(k);
           if (ae.finished.length > 0 && asyncOut.size === 0) emptiedAt = t;
           for (const ev of parseTranscriptLine(line)) {
             if (ev.kind === 'tool') { toolCalls++; toolSince = t; curText = ''; heldDone = false; }

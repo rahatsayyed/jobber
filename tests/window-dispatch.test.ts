@@ -161,6 +161,23 @@ describe('happy path', () => {
     expect(r.summary).toBe('{"run_id":"r1","operators":[]}');
   });
 
+  it('a subagent hand-back counts as the agent being back even when no completion notice ever follows', async () => {
+    const launched = line({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_BBB', content: [{ type: 'text', text: 'Async agent launched successfully.\nagentId: abc123def (internal)' }] }] },
+    });
+    const handBack = line({ type: 'user', message: { role: 'user', content: 'Another Claude session sent a message:\n<agent-message from="abc123def">\n[Subagent hand-back] ...' } });
+    h.steps[1] = () => h.append(toolUse());
+    h.steps[2] = () => h.append(launched);
+    h.steps[3] = () => h.append(asst('Waiting for the agent.', 'end_turn'));
+    h.steps[6] = () => h.append(handBack);
+    h.steps[8] = () => h.append(asst('Inbox read. {"run_id":"r2"}', 'end_turn'));
+    const r = await h.disp.dispatch(h.input());
+    expect(h.tick).toBe(8); // the final turn ends the item at once: nothing is out any more
+    expect(r.status).toBe('ok');
+    expect(r.summary).toBe('Inbox read. {"run_id":"r2"}');
+  });
+
   it('max_tokens and an API error entry end the item as failed', async () => {
     h.steps[1] = () => h.append(asst('cut', 'max_tokens'));
     const a = await h.disp.dispatch(h.input());
