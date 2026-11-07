@@ -783,6 +783,12 @@ Everything built and tested only with fakes or not yet checked against a real si
     `db.set_followup_approval` only changes `drafted` rows, so it cannot do this; recording an
     outcome for the job (`db.record_outcome`) cancels its `approved` rows, otherwise the owner
     must set them to `cancelled` in SQLite by hand before the flag is flipped.
+    One owner-approved exception (2026-11-07), only while `EMAIL_REPLY_NUDGE` is not `false`: when the
+    recruiter's one mail was answered by our own automatic reply (`EMAIL_AUTO_REPLY`) and nothing came after,
+    ONE nudge may go on that thread after `EMAIL_REPLY_NUDGE_DAYS`, through the normal follow-up claim (fresh
+    clean mailbox and thread check, fact gate, shared daily counter), and then silence. It never applies to a
+    job with an outcome, a bounce, an owner-only mail in the thread, or an address that replied to another
+    job; every other condition of this rule stays.
 11. Reply outcomes are auto-recorded only when auto-record is enabled in `config/replies.json`
     (OFF by default; leave it off, see `/checkreplies`; otherwise proposed), and then only for a thread/sender-matched `interview` or `rejected` on a
     strong phrase; they never downgrade the latest outcome, and `replied` and `offer` always need
