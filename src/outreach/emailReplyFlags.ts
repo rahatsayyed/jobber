@@ -1,12 +1,13 @@
 // src/outreach/emailReplyFlags.ts
-// The two owner-only switches of the email auto reply path (decision 2026-11-06). Both ship false and are tier `never`: the agent and the
-// dashboard never set them, the owner edits .env by hand. Exactly the string `true` turns one on.
+// The two switches of the email auto reply path. Owner decision 2026-11-07: both are ON by default and off only with the exact word
+// `false` (like Easy Apply, see src/apply/easyFlag.ts). They stay tier `never`: the agent and the dashboard never set them. With no
+// confirmed facts in user-data/reply-facts.json nothing is ever answered, so "on" alone sends nothing.
 export function emailAutoReplyOn(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.EMAIL_AUTO_REPLY === 'true';
+  return (env.EMAIL_AUTO_REPLY ?? '').trim().toLowerCase() !== 'false';
 }
 
 export function emailReplyNudgeOn(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.EMAIL_REPLY_NUDGE === 'true';
+  return (env.EMAIL_REPLY_NUDGE ?? '').trim().toLowerCase() !== 'false';
 }
 
 export const EMAIL_REPLY_NUDGE_DAYS_DEFAULT = 3;

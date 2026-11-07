@@ -443,7 +443,7 @@ sends them one after another: each email is ONE work item typed into the `mail` 
 `EMAIL_DRIP_INTRA_PAUSE_MIN_SEC` to `_MAX_SEC` pause between items;
 afterwards the next tick is pushed out by a random `EMAIL_DRIP_MIN_GAP_MIN` to `_MAX_GAP_MIN`
 (the state lives in `scheduler_state`, so a restart never resets the spacing). Item choice: automatic
-email replies first, only while `EMAIL_AUTO_REPLY` is exactly `true` (ships false, tier never; see "Email auto reply" below), then
+email replies first, unless `EMAIL_AUTO_REPLY` is exactly `false` (on by default since 2026-11-07, tier never; it answers nothing until `user-data/reply-facts.json` is confirmed; see "Email auto reply" below), then
 queued cold emails (queue row not excluded, with an address, never the same exact address twice, an address a
 `contacts` row marks unverified is skipped), then approved follow-ups, and a follow-up only while a clean
 `reply-watcher` check younger than `FOLLOWUP_CHECK_MAX_AGE_MIN` is on record (the run prompt carries the
@@ -461,7 +461,7 @@ THAT Gmail thread (and a fresh mailbox check when the last clean one is older th
 (owner notice at most hourly). Every gate stays in code before any text is typed (`docs/reference/scheduler.md`).
 
 **Email auto reply** (owner decision 2026-11-06; owner howto `docs/email-auto-reply.md`; `src/outreach/emailReplyClass.ts`,
-`emailReplies.ts`, `replyFacts.ts`). Off unless `EMAIL_AUTO_REPLY=true` (only the owner sets it, by hand in `.env`; tier never). The mail
+`emailReplies.ts`, `replyFacts.ts`). On by default since 2026-11-07 and off only with `EMAIL_AUTO_REPLY=false` (tier never: the agent and the dashboard never set it); with no confirmed `user-data/reply-facts.json` it answers nothing. The mail
 `reply_check` still only reads Gmail and tells the owner on Telegram `inbox`; `triage_replies` now also stores a deterministic verdict per
 inbound mail (`processed_messages.auto_class`, no model). With the flag on, a mail that asks only for plain facts the owner pre-answered in
 `user-data/reply-facts.json` (current and expected CTC, notice period, location, relocation, availability to join, work authorization; English
@@ -476,7 +476,7 @@ send window, quiet hours, kill switch, halts, usage backoff and dry run apply): 
 clean mailbox check, the shared daily `send_email` counter), sends plain text with `threadId` and no attachment, then
 `db.mark_email_reply_sent`. A row stuck in `sending` is never re-sent (the owner is told, `npm run email-replies -- resolve <id>`). The
 owner cancels a reply with `npm run email-replies -- skip <id>`. A sent reply is announced silently on `inbox` with the exact text.
-`EMAIL_REPLY_NUDGE=true` (ships false, tier never; `EMAIL_REPLY_NUDGE_DAYS`, default 3) allows ONE nudge per thread after our own automatic
+`EMAIL_REPLY_NUDGE` (on by default since 2026-11-07, off only with `false`, tier never; `EMAIL_REPLY_NUDGE_DAYS`, default 3) allows ONE nudge per thread after our own automatic
 reply and then silence, through the normal follow-up machinery (`nudgeEligible` in `src/followups.ts`, fresh clean mailbox and thread check,
 shared counter). That is a controlled exception to the follow-up block list of Safety rule 10; the owner must amend rule 10's wording
 before turning the nudge on (see `docs/email-auto-reply.md`).

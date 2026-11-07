@@ -44,16 +44,19 @@ const FACTS: ReplyFacts = {
 };
 const READY: ReplyFactsState = { status: 'ready', facts: FACTS };
 const ON = { EMAIL_AUTO_REPLY: 'true' } as NodeJS.ProcessEnv;
+const OFF = { EMAIL_AUTO_REPLY: 'false', EMAIL_REPLY_NUDGE: 'false' } as NodeJS.ProcessEnv;
 const gate = makeReplyFactCheck(FACTS, () => BASE);
 
 describe('flags', () => {
-  it('EMAIL_AUTO_REPLY and EMAIL_REPLY_NUDGE are on only for the exact string true', () => {
-    for (const v of [undefined, '', 'false', 'TRUE', '1', 'yes', ' true']) {
+  it('EMAIL_AUTO_REPLY and EMAIL_REPLY_NUDGE are on by default and off only for the word false (owner decision 2026-11-07)', () => {
+    for (const v of [undefined, '', 'true', 'TRUE', '1', 'yes', ' true']) {
+      expect(emailAutoReplyOn({ EMAIL_AUTO_REPLY: v })).toBe(true);
+      expect(emailReplyNudgeOn({ EMAIL_REPLY_NUDGE: v })).toBe(true);
+    }
+    for (const v of ['false', 'FALSE', ' false ']) {
       expect(emailAutoReplyOn({ EMAIL_AUTO_REPLY: v })).toBe(false);
       expect(emailReplyNudgeOn({ EMAIL_REPLY_NUDGE: v })).toBe(false);
     }
-    expect(emailAutoReplyOn({ EMAIL_AUTO_REPLY: 'true' })).toBe(true);
-    expect(emailReplyNudgeOn({ EMAIL_REPLY_NUDGE: 'true' })).toBe(true);
   });
   it('EMAIL_REPLY_NUDGE_DAYS defaults to 3 and clamps to 1..30', () => {
     expect(emailReplyNudgeDays({})).toBe(3);
@@ -62,12 +65,12 @@ describe('flags', () => {
     expect(emailReplyNudgeDays({ EMAIL_REPLY_NUDGE_DAYS: '99' })).toBe(30);
     expect(emailReplyNudgeDays({ EMAIL_REPLY_NUDGE_DAYS: '5' })).toBe(5);
   });
-  it('both flags ship false and are tier never in the env catalog and in .env.example', () => {
+  it('both flags ship true (owner decision 2026-11-07) and are tier never in the env catalog and in .env.example', () => {
     for (const k of ['EMAIL_AUTO_REPLY', 'EMAIL_REPLY_NUDGE']) {
       const s = ENV_CATALOG.find((x) => x.key === k)!;
-      expect(s.default).toBe('false');
+      expect(s.default).toBe('true');
       expect(s.tier).toBe('never');
-      expect(read('.env.example', 'utf8')).toMatch(new RegExp(`^${k}=false$`, 'm'));
+      expect(read('.env.example', 'utf8')).toMatch(new RegExp(`^${k}=true$`, 'm'));
     }
     expect(read('.env.example', 'utf8')).toMatch(/EMAIL_REPLY_NUDGE_DAYS=3/);
   });
@@ -204,7 +207,7 @@ describe('draftEmailReply', () => {
   it('refuses with the flag off, with unconfirmed facts, for an owner-only mail and for an empty field', () => {
     const w = world();
     const safe = w.inbound('Please share your notice period.');
-    expect(draftEmailReply(w.db, safe, deps(NOON_IST, {}))).toMatchObject({ ok: false, code: 'flag_off' });
+    expect(draftEmailReply(w.db, safe, deps(NOON_IST, OFF))).toMatchObject({ ok: false, code: 'flag_off' });
     expect(draftEmailReply(w.db, safe, deps(NOON_IST, ON, { status: 'unconfirmed', facts: FACTS }))).toMatchObject({ ok: false, code: 'facts_not_ready' });
     expect(draftEmailReply(w.db, safe, deps(NOON_IST, ON, { status: 'missing' }))).toMatchObject({ ok: false, code: 'facts_not_ready' });
     expect(draftEmailReply(w.db, safe, deps(NOON_IST, ON, { status: 'ready', facts: { current_ctc: '12 LPA' } }))).toMatchObject({ ok: false, code: 'fact_missing' });
@@ -253,7 +256,7 @@ describe('processAutoReplies (after a reply check, before the owner notice)', ()
   it('flag off: nothing is drafted and no note is set', () => {
     const w = world();
     const id = w.inbound('Please share your notice period.');
-    const r = processAutoReplies(w.db, deps(NOON_IST, {}));
+    const r = processAutoReplies(w.db, deps(NOON_IST, OFF));
     expect(r).toMatchObject({ drafted: 0, owner: 0 });
     expect(w.row(id).auto_note).toBeNull();
     expect(w.db.prepare('SELECT COUNT(*) AS n FROM email_replies').get()).toEqual({ n: 0 });
@@ -324,7 +327,7 @@ describe('claimEmailReplyForSend: one send, ever', () => {
   });
   it('refuses without the flag, without a fresh clean check, over the cap; none of these use up the counter', () => {
     const w = ready();
-    expect(claimEmailReplyForSend(w.db, w.replyId, g({ env: {} }))).toMatchObject({ claimed: false, reason: 'flag_off' });
+    expect(claimEmailReplyForSend(w.db, w.replyId, g({ env: OFF }))).toMatchObject({ claimed: false, reason: 'flag_off' });
     expect(claimEmailReplyForSend(w.db, w.replyId, g({ now: new Date(NOON_IST.getTime() + 3 * 3600_000) }))).toMatchObject({ claimed: false, reason: 'no_clean_reply_check' });
     expect(claimEmailReplyForSend(w.db, w.replyId, g({ sendLimit: 0 }))).toMatchObject({ claimed: false, reason: 'cap' });
     expect(w.db.prepare("SELECT count(*) AS n FROM daily_counters WHERE key = 'send_email' AND count > 0").get()).toEqual({ n: 0 });
@@ -450,7 +453,7 @@ describe('mail drip: automatic replies', () => {
     const l = lane();
     l.queueCold();
     l.approvedReply();
-    expect(pickDripItem(l.db, l.now(), {}).item).toMatchObject({ kind: 'cold' });
+    expect(pickDripItem(l.db, l.now(), OFF).item).toMatchObject({ kind: 'cold' });
   });
   it('without a fresh clean check the pick asks for one (replies wait) unless the on-demand check is held', () => {
     const l = lane();
@@ -565,7 +568,7 @@ describe('mail drip: automatic replies', () => {
     l.approvedReply();
     await dripTick(l.d);
     expect(renderDripStatus(l.db, l.env, l.now())).toContain('auto replies today');
-    expect(renderDripStatus(l.db, {}, l.now())).not.toContain('auto replies today');
+    expect(renderDripStatus(l.db, OFF, l.now())).not.toContain('auto replies today');
   });
 });
 
@@ -615,8 +618,8 @@ describe('nudge after our own automatic reply', () => {
   it('without the flag the job stays blocked and has no candidate (rule 10 unchanged)', () => {
     const w = answered();
     expect(blockedJobIds(w.db).has('j1')).toBe(true);
-    expect(listFollowupCandidates(w.db, now(), { mode: 'autonomous', env: { EMAIL_AUTO_REPLY: 'true' } })).toEqual([]);
-    expect(nudgeEligible(w.db, { mode: 'candidate', env: { EMAIL_AUTO_REPLY: 'true' } }).size).toBe(0);
+    expect(listFollowupCandidates(w.db, now(), { mode: 'autonomous', env: { EMAIL_AUTO_REPLY: 'true', EMAIL_REPLY_NUDGE: 'false' } })).toEqual([]);
+    expect(nudgeEligible(w.db, { mode: 'candidate', env: { EMAIL_AUTO_REPLY: 'true', EMAIL_REPLY_NUDGE: 'false' } }).size).toBe(0);
   });
   it('with the flag and N days of silence the job is a nudge candidate carrying our reply', () => {
     const w = answered(4);

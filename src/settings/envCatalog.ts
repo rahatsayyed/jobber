@@ -197,13 +197,13 @@ const hand: EnvSpec[] = [
     ...tier('safety', 'Removes the per-draft human approval step for follow-up emails.', 'true'),
   }),
   e('EMAIL_AUTO_REPLY', 'safety', 'email auto reply', 'bool', {
-    default: 'false',
+    default: 'true',
     exampleActive: true,
     about: 'Automatic answers to simple email replies (current and expected CTC, notice period, location, relocation, availability, work authorization), written in code from user-data/reply-facts.json and sent by the mail drip lane. Anything about an interview time, a test or link, documents, references, a phone call, an offer or anything unclear is never answered: you get a Telegram notice instead. Needs reply-facts.json with "confirmed": true. See docs/email-auto-reply.md.',
-    ...never('Lets the agent send email replies on its own about your pay and availability. Only the owner turns it on, by editing .env by hand.'),
+    ...never('Lets the agent send email replies on its own about your pay and availability. On by default since 2026-11-07; set false to stop it. Nothing is answered until user-data/reply-facts.json is confirmed.'),
   }),
   e('EMAIL_REPLY_NUDGE', 'safety', 'email auto reply', 'bool', {
-    default: 'false',
+    default: 'true',
     exampleActive: true,
     about: 'One follow-up nudge for an email thread where the agent sent an automatic reply and the recruiter then stayed silent for EMAIL_REPLY_NUDGE_DAYS. It goes through the normal follow-up machinery (fact gate, fresh clean reply check of the mailbox and the thread, shared daily send cap) and needs EMAIL_AUTO_REPLY. At most one nudge per thread.',
     ...never('Allows a follow-up to a thread that already has a reply from the recruiter (an exception to the follow-up block list). Only the owner turns it on, by editing .env by hand.'),
