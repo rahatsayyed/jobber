@@ -72,7 +72,7 @@ export interface WindowDispatchDeps {
   claudeHome?: string;
   pollMs?: number;
   stallMs?: number;
-  /** Quiet time allowed while a background subagent of the window is still running (default 10 minutes). */
+  /** Quiet time allowed while a background subagent of the window is still running (default 30 minutes; a running agent row in the pane extends it). */
   asyncStallMs?: number;
   settleMs?: number;
   paneEveryMs?: number;
@@ -90,12 +90,12 @@ export const MAX_PROMPT_CHARS = 100_000;
 export const SUMMARY_MAX = 2000;
 export const WORK_FILE_MAX_AGE_MS = 24 * 3600_000;
 const PANE_LINES = 40;
-const ASYNC_QUIET_MS = 600_000;
+const ASYNC_QUIET_MS = 1_800_000;
 /** After the last background agent's notice, wait this long for the model to start another turn before the item is closed. */
 const ASYNC_SETTLE_MS = 10_000;
 const PANE_TAIL = 12;
 /** A running claude shows "esc to interrupt" in its footer: a quiet transcript then is a slow tool, not a permission prompt. UNVERIFIED. */
-const BUSY_PANE_RE = /esc to interrupt/i;
+const BUSY_PANE_RE = /esc to interrupt|^\s*◯\s+\S.*\d+s\b/im; // the second form is a running background agent row ("◯ contact-finder ... 13m 14s")
 const DONE_OK = new Set(['end_turn', 'stop_sequence']);
 const DONE_FAIL = new Set(['max_tokens', 'refusal']);
 
