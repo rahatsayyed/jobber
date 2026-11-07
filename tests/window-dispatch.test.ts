@@ -156,7 +156,7 @@ describe('happy path', () => {
     h.steps[8] = () => h.append(asst('{"run_id":"r1","operators":[]}', 'end_turn'));
     h.steps[9] = () => h.append(notice);
     const r = await h.disp.dispatch(h.input());
-    expect(h.tick).toBe(13); // notice at 9, then 4 s of settle with no new turn
+    expect(h.tick).toBe(19); // notice at 9, then 10 s of settle with no new turn
     expect(r.status).toBe('ok');
     expect(r.summary).toBe('{"run_id":"r1","operators":[]}');
   });

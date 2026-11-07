@@ -92,7 +92,7 @@ export const WORK_FILE_MAX_AGE_MS = 24 * 3600_000;
 const PANE_LINES = 40;
 const ASYNC_QUIET_MS = 600_000;
 /** After the last background agent's notice, wait this long for the model to start another turn before the item is closed. */
-const ASYNC_SETTLE_MS = 4000;
+const ASYNC_SETTLE_MS = 10_000;
 const PANE_TAIL = 12;
 /** A running claude shows "esc to interrupt" in its footer: a quiet transcript then is a slow tool, not a permission prompt. UNVERIFIED. */
 const BUSY_PANE_RE = /esc to interrupt/i;
@@ -410,8 +410,14 @@ export class WindowDispatcher {
         if (size !== lastSize) { lastSize = size; lastGrowAt = t; }
       }
       if (!outcome && heldDone && asyncOut.size === 0 && t - emptiedAt >= ASYNC_SETTLE_MS) {
-        curText = lastHeldText; // the held turn was the final one: the agents are back and the model did not go on
-        outcome = { status: 'ok', reason: 'end_turn' };
+        // The transcript is written a few seconds late, so a quiet file is not proof: look at the pane before closing the item.
+        let busy = false;
+        try { busy = BUSY_PANE_RE.test(await this.paneText(i.window)); } catch { /* unreadable: go by the transcript */ }
+        if (busy) emptiedAt = t;
+        else {
+          curText = lastHeldText; // the held turn was the final one: the agents are back and the model did not go on
+          outcome = { status: 'ok', reason: 'end_turn' };
+        }
       }
       if (outcome) return conclude(outcome.status, outcome.reason);
 
