@@ -66,3 +66,15 @@ Safety rule 10 in `CLAUDE.md` carries this exception since 2026-11-07 (written a
 ## Not verified live
 
 Classifier word lists were tested on written phrasings, not on your real mail. The Gmail `send_email` call with `threadId` was not run against a real mailbox. `inReplyTo` is not used (Gmail MCP does not expose the RFC Message-ID), so threading relies on `threadId` and the `Re:` subject. Read the first few automatic replies in Gmail Sent yourself.
+
+## Claude improves the wording (revise step)
+
+The code still drafts the reply from your facts, but it no longer goes out exactly as the template wrote it. Before the claim, `mail-operator` (REPLY MODE) reads the draft with `db.get_email_reply_for_revision` and may store a better wording with `db.revise_email_reply`. Then the normal claim sends exactly the stored text. The Telegram notice of a sent reply shows the exact text and says "Wording: improved by Claude inside the code gates" when it was revised. The original code draft is kept in `email_replies.draft_body` (see it with `npm run email-replies -- show <id>` or in SQLite); `revisions` counts the rewrites.
+
+What Claude sees: the draft, which asks were made, YOUR fact values for those asks only, and a short cleaned excerpt (max 600 characters) of the recruiter's mail, labelled untrusted. It has no Gmail read tool.
+
+What Claude may change: typos and grammar in the fact wording, politeness and tone, sentence order, a short greeting and closing, how the answer reads.
+
+What Claude may never change (code checks every point on the new text, a failure keeps the code draft): the asked fact values (each must stay exactly as in your file), adding a fact that was not asked, any number that is not one of the asked values, links, email addresses, phone numbers, markdown or lists, non-English text, anything over 700 characters, promises or mentions of calls, meetings, dates, attachments or resume. It also re-runs the style rules, the fact gate with your reply facts and the output gate. At most 2 accepted rewrites per reply, only while the reply is still `approved` and `EMAIL_AUTO_REPLY` is not `false`.
+
+Fallback: if a rewrite is refused, or the draft was already fine, the code draft is sent unchanged. A refusal never blocks the send. The claim, the recipient check, the daily counter and every other gate are unchanged.

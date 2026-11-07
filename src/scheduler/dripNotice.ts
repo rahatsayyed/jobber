@@ -79,6 +79,8 @@ export interface EmailReplyNotice {
   dry: boolean;
   outcome: 'sent' | 'cancelled';
   note?: string | null;
+  /** The wording was improved by Claude (db.revise_email_reply) inside the code gates. */
+  revised?: boolean;
 }
 
 const KIND_WORDS: Record<string, string> = {
@@ -105,6 +107,7 @@ export function formatEmailReplyNotice(n: EmailReplyNotice): string {
     line('Subject', clean(n.subject, 120) ? i(clean(n.subject, 120)) : ''),
     line('Job', job.s ? job : 'unknown job'),
     line('Answered', answered || 'plain asks'),
+    ...(n.revised ? [line('Wording', 'improved by Claude inside the code gates')] : []),
     n.dry ? i('nothing was sent (dry run). The text would be:') : i('Exactly what was sent:'),
     pre(n.body),
   ]));

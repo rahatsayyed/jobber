@@ -13,7 +13,7 @@ const MAIL_TOOLS = [
   'mcp__db__list_queued_outreach', 'mcp__db__list_skipped_outreach', 'mcp__db__update_outreach_status', 'mcp__db__record_email_sent', 'mcp__db__release_email_send',
   'mcp__db__check_and_increment', 'mcp__gmail__send_email', 'mcp__db__approve_drafted_followups', 'mcp__db__list_followup_candidates',
   'mcp__db__list_approved_followups', 'mcp__db__claim_followup_for_send', 'mcp__db__mark_followup_sent', 'mcp__db__mark_followup_failed',
-  'mcp__db__claim_cold_for_send', 'mcp__db__claim_email_reply_for_send', 'mcp__db__mark_email_reply_sent', 'mcp__db__mark_email_reply_failed',
+  'mcp__db__claim_cold_for_send', 'mcp__db__get_email_reply_for_revision', 'mcp__db__revise_email_reply', 'mcp__db__claim_email_reply_for_send', 'mcp__db__mark_email_reply_sent', 'mcp__db__mark_email_reply_failed',
 ];
 
 // The committed wake tool list (plan 8G task 13). Changing the wake profile means changing this list on purpose.
@@ -56,7 +56,7 @@ const WAKE_ALLOW = [
   'mcp__db__list_skipped_outreach', 'mcp__db__record_email_sent', 'mcp__db__release_email_send', 'mcp__db__check_and_increment',
   'mcp__db__approve_drafted_followups', 'mcp__db__list_followup_candidates', 'mcp__db__list_approved_followups',
   'mcp__db__claim_followup_for_send', 'mcp__db__claim_cold_for_send', 'mcp__db__mark_followup_sent', 'mcp__db__mark_followup_failed',
-  'mcp__db__claim_email_reply_for_send', 'mcp__db__mark_email_reply_sent', 'mcp__db__mark_email_reply_failed', 'mcp__db__save_followup_draft',
+  'mcp__db__get_email_reply_for_revision', 'mcp__db__revise_email_reply', 'mcp__db__claim_email_reply_for_send', 'mcp__db__mark_email_reply_sent', 'mcp__db__mark_email_reply_failed', 'mcp__db__save_followup_draft',
   // apply-operator (8G-2 task 21): the applier tools, and Naukri click/type for naukri rows
   'mcp__applier__apply_open', 'mcp__applier__apply_state', 'mcp__applier__apply_autofill', 'mcp__applier__apply_fill', 'mcp__applier__apply_choose',
   'mcp__applier__apply_upload', 'mcp__applier__apply_next', 'mcp__applier__apply_submit', 'mcp__applier__apply_escalate', 'mcp__applier__apply_recipe',

@@ -27,6 +27,11 @@ export function migrateEmailReplies(db: BetterSqlite3.Database): void {
     CREATE INDEX IF NOT EXISTS idx_email_replies_status ON email_replies(status);
     CREATE INDEX IF NOT EXISTS idx_email_replies_thread ON email_replies(thread_id);
   `);
+  // Claude's revision step (db.revise_email_reply): draft_body keeps the code-built draft, revisions counts accepted rewrites (max 2), revised_at is the last one.
+  const rcols = new Set((db.prepare('PRAGMA table_info(email_replies)').all() as { name: string }[]).map((c) => c.name));
+  if (!rcols.has('draft_body')) db.exec('ALTER TABLE email_replies ADD COLUMN draft_body TEXT');
+  if (!rcols.has('revisions')) db.exec('ALTER TABLE email_replies ADD COLUMN revisions INTEGER NOT NULL DEFAULT 0');
+  if (!rcols.has('revised_at')) db.exec('ALTER TABLE email_replies ADD COLUMN revised_at TEXT');
   // followups.nudge = 1 marks the one nudge after our own automatic reply (EMAIL_REPLY_NUDGE); see nudgeEligible in src/followups.ts.
   const fcols = new Set((db.prepare('PRAGMA table_info(followups)').all() as { name: string }[]).map((c) => c.name));
   if (fcols.size > 0 && !fcols.has('nudge')) db.exec('ALTER TABLE followups ADD COLUMN nudge INTEGER NOT NULL DEFAULT 0');

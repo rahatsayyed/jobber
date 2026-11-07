@@ -115,6 +115,8 @@
     "mcp__db__mark_followup_sent",
     "mcp__db__mark_followup_failed",
     "mcp__db__claim_cold_for_send",
+    "mcp__db__get_email_reply_for_revision",
+    "mcp__db__revise_email_reply",
     "mcp__db__claim_email_reply_for_send",
     "mcp__db__mark_email_reply_sent",
     "mcp__db__mark_email_reply_failed"

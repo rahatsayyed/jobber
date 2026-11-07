@@ -358,7 +358,7 @@ export function buildDripPrompt(i: {
   L.push(`Budget: at most ${i.budget.maxWallSec} seconds.`);
   if (i.item.kind === 'email_reply') {
     L.push('Dispatch `mail-operator` exactly once, in REPLY MODE (an automatic answer to a simple email reply): send exactly ONE reply, then stop. Do not do its work yourself and call no other tool.');
-    L.push(`Drip item: email reply id ${i.item.id} (job ${i.item.job_id}). Send only this reply, exactly as db.claim_email_reply_for_send returns it.`);
+    L.push(`Drip item: email reply id ${i.item.id} (job ${i.item.job_id}). First improve its wording with db.get_email_reply_for_revision and db.revise_email_reply (the code gates re-check the new text; if refused or already good, keep the code draft; skip this in a dry run), then send only this reply, exactly as db.claim_email_reply_for_send returns it.`);
   } else {
     L.push('Dispatch `mail-operator` exactly once, in DRIP MODE: send exactly ONE email, then stop. Do not do its work yourself and call no other tool.');
     L.push(i.item.kind === 'cold'
@@ -560,11 +560,11 @@ async function runOne(
  * a reply the claim cancelled (a newer message arrived, the sender is no longer safe) is a loud "answer by hand" notice. Never throws.
  */
 async function emailReplyRunNotice(d: DriverDeps, item: Extract<DripItem, { kind: 'email_reply' }>, dry: boolean): Promise<void> {
-  const row = d.db.prepare('SELECT status, to_addr, subject, body, kind, note FROM email_replies WHERE id = ?').get(item.id) as
-    | { status: string; to_addr: string; subject: string; body: string; kind: string; note: string | null } | undefined;
+  const row = d.db.prepare('SELECT status, to_addr, subject, body, kind, note, COALESCE(revisions, 0) AS revisions FROM email_replies WHERE id = ?').get(item.id) as
+    | { status: string; to_addr: string; subject: string; body: string; kind: string; note: string | null; revisions: number } | undefined;
   if (!row) return;
   const job = d.db.prepare('SELECT company, title FROM jobs WHERE id = ?').get(item.job_id) as { company: string | null; title: string | null } | undefined;
-  const base = { address: row.to_addr, subject: row.subject, body: row.body, kinds: row.kind.split(',').filter(Boolean), company: job?.company ?? null, title: job?.title ?? null };
+  const base = { address: row.to_addr, subject: row.subject, body: row.body, kinds: row.kind.split(',').filter(Boolean), company: job?.company ?? null, title: job?.title ?? null, revised: row.revisions > 0 };
   if (dry) {
     await notifyTg(d, 'mail', formatEmailReplyNotice({ ...base, dry: true, outcome: 'sent' }), undefined, true);
   } else if (row.status === 'sent') {
