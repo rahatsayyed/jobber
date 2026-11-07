@@ -61,7 +61,7 @@ A reply that is stuck in `sending` (a run ended without confirming) is never sen
 
 This is the only exception to the rule that a job with a reply on file gets no follow-up (Safety rule 10). It applies only when the recruiter's one mail was answered by our own automatic reply and nothing came after: no outcome, no bounce, no owner-only mail in the thread, no reply to another job from the same address. Every other condition of rule 10 stays. At most one nudge per thread.
 
-Owner action needed: Safety rule 10 in `CLAUDE.md` still says that a follow-up never goes to a job "with any recorded outcome, any reply on file, a bounce, or whose address replied, bounced or rejected another job". The wording must be amended by you to mention this exception before you turn `EMAIL_REPLY_NUDGE` on. The numbered rules were not edited by the agent.
+Safety rule 10 in `CLAUDE.md` carries this exception since 2026-11-07 (written at the owner's request). Both `EMAIL_AUTO_REPLY` and `EMAIL_REPLY_NUDGE` are on by default and off only with the word `false`; nothing is answered until `user-data/reply-facts.json` is confirmed.
 
 ## Not verified live
 
