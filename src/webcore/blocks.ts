@@ -11,8 +11,12 @@ const LOGIN_WALL = /(please )?(sign|log) ?in to (apply|continue|view)|you must (
 const CONSENT = /we use cookies|cookie (consent|preferences|settings)|manage cookies|accept (all )?cookies/i;
 const CODE_LABEL = /(verification|security|one-time|confirmation|sms|authenticator) code|\botp\b/i;
 
+// The footer line of every page with an invisible reCAPTCHA / hCaptcha ("This site is protected by reCAPTCHA and the Google Privacy Policy
+// and Terms of Service apply.") is a disclosure, not a challenge: it must not read as a captcha wall.
+const CAPTCHA_DISCLOSURE = /(?:this (?:site|page|form|website) is )?protected by (?:google )?(?:re)?captcha[^\n]*/gi;
+
 export function detectBlock(raw: RawFormSnapshot): BlockKind | null {
-  const text = `${raw.title ?? ''}\n${raw.text ?? ''}`.slice(0, 20000);
+  const text = `${raw.title ?? ''}\n${raw.text ?? ''}`.replace(CAPTCHA_DISCLOSURE, ' ').slice(0, 20000);
   const vis = (raw.fields ?? []).filter((f) => !f.hidden);
   if (BOT_WALL.test(text)) return 'bot_wall';
   if (raw.captchaWidget || CAPTCHA.test(text)) return 'captcha';

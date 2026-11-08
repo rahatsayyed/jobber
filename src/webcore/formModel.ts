@@ -74,7 +74,14 @@ export const FORM_SNAPSHOT_SCRIPT = `(() => {
   const lel = Array.from(document.querySelectorAll('a[href]')).filter(vis).map((e) => ({ e, href: e.href, label: (e.textContent || e.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim().slice(0, 160), context: ((e.closest('li,article,tr,[class*=job],[class*=position],[class*=opening]') || e.parentElement || e).textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 240), blank: e.target === '_blank' })).filter((l) => l.label && /^https?:/i.test(l.href)).slice(0, 150);
   const links = lel.map((l) => ({ label: l.label, href: l.href, context: l.context, blank: l.blank }));
   const notices = Array.from(document.querySelectorAll('[role=alert],.error,.errors,[aria-invalid=true]')).filter(vis).map((e) => (e.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 200)).filter(Boolean).slice(0, 10);
-  const captchaWidget = !!document.querySelector('.g-recaptcha,.h-captcha,.cf-turnstile,iframe[src*=recaptcha],iframe[src*=hcaptcha],iframe[src*=turnstile]');
+  // Only a VISIBLE challenge widget counts. The invisible reCAPTCHA badge ("protected by reCAPTCHA", bottom corner, an iframe with
+  // size=invisible inside .grecaptcha-badge) is on most Greenhouse forms and is not a wall.
+  const captchaWidget = Array.from(document.querySelectorAll('.g-recaptcha,.h-captcha,.cf-turnstile,iframe[src*=recaptcha],iframe[src*=hcaptcha],iframe[src*=turnstile]')).some((e) => {
+    if (e.closest('.grecaptcha-badge')) return false;
+    const src = e.getAttribute('src') || '';
+    if (/size=invisible/.test(src) || e.getAttribute('data-size') === 'invisible') return false;
+    return vis(e) && e.getBoundingClientRect().height >= 40;
+  });
   return { url: location.href, title: document.title, text: (document.body ? document.body.innerText : '').slice(0, 20000), fields, controls, notices, captchaWidget, links };
 })()`;
 

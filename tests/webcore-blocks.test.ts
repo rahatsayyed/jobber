@@ -24,6 +24,14 @@ describe('detectBlock', () => {
   it('widget-only captcha (no text) is detected', () => {
     expect(detectBlock(loadFixture('captcha-widget-only.html'))).toBe('captcha');
   });
+  it('the "protected by reCAPTCHA" footer of an invisible reCAPTCHA is not a captcha wall', () => {
+    const s = snapshotFromHtml('<html><body><h1>Apply</h1><form><label for="n">Name</label><input id="n"><button type="submit">Submit application</button></form><p>This site is protected by reCAPTCHA and the Google Privacy Policy and Terms of Service apply.</p></body></html>');
+    expect(detectBlock(s)).toBeNull();
+  });
+  it('a real challenge sentence still reads as a captcha wall', () => {
+    const s = snapshotFromHtml('<html><body><p>Please solve the captcha to continue. This site is protected by reCAPTCHA.</p></body></html>');
+    expect(detectBlock(s)).toBe('captcha');
+  });
   it('phone + postal code + promo code form is not a verification block', () => {
     expect(detectBlock(loadFixture('form-codes.html'))).toBeNull();
     expect(extractFormModel(loadFixture('form-codes.html')).stepKind).toBe('form');
