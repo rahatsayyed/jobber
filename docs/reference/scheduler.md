@@ -9,8 +9,8 @@ model (`src/scheduler/`). Each wake: read the kill switch and halts, skip quiet 
 (`planWake`: skip reasons `killed`, `halted`, `quiet_hours`, `ceilings_exhausted`,
 `nothing_due`), run the code pass over the script providers, and type the planned steps as work items into the long-lived worker windows (below). Each item is watched through its transcript
 against the wall-clock budget only (`RUN_MAX_WALL_SEC` 3600 s by default; `RUN_STALL_SEC` sets the stall limit; tool calls are counted and
-reported, never a stop condition, and there is no `RUN_MAX_TOOL_CALLS` or token budget; the transcript path is stored in `scheduler_runs.log_path`, and `npm run status -- runs` prints the runs), then finish the run in the `scheduler_runs` log. A run whose log gets no new bytes for `RUN_STALL_SEC` (default 600, 60..3600) is killed as a network stall: status `failed`, stop reason `stalled`, summary `no output for N s (last event: ...)`; it never sets `usage_backoff`, and the next wake starts after 2 minutes instead of 10 (the drip runs get the status only). A value set outside its range (for example `RUN_MAX_WALL_SEC=24000`) falls back to the default and is warned about at daemon start and by the doctor. Wakes start a fixed
-10 minutes apart (`WAKE_INTERVAL_MIN`, moved past quiet hours); there is no random burst size: each task's quota is what is due bounded by the room left under its real
+reported, never a stop condition, and there is no `RUN_MAX_TOOL_CALLS` or token budget; the transcript path is stored in `scheduler_runs.log_path`, and `npm run status -- runs` prints the runs), then finish the run in the `scheduler_runs` log. A run whose log gets no new bytes for `RUN_STALL_SEC` (default 600, 60..3600) is killed as a network stall: status `failed`, stop reason `stalled`, summary `no output for N s (last event: ...)`; it never sets `usage_backoff`, and the next wake starts after 2 minutes instead of 10 (the drip runs get the status only). A value set outside its range (for example `RUN_MAX_WALL_SEC=24000`) falls back to the default and is warned about at daemon start and by the doctor. Wakes start 10 minutes apart
+(`WAKE_INTERVAL_MIN`, the base, moved past quiet hours) while there is work, and the wait grows after empty wakes (below); there is no random burst size: each task's quota is what is due bounded by the room left under its real
 ceiling (daily caps). A usage-limit hit (the run ends `usage_limit`,
 in a wake or a drip run) records `usage_backoff_until` and pauses wakes AND the mail drip lane for
 `USAGE_LIMIT_BACKOFF_MIN` (default 300) rather than retrying. In `--daemon` mode the scheduler also runs the mail drip lane
@@ -92,6 +92,21 @@ unchanged. **Unanswered messages pause a person.** A person with an inbound mess
 or an inbound row never escalated, noise excepted) gets no DM, follow-up or invite from any pick until the escalation is resolved; only the approved
 reply to that very message may go. `npm run status -- working` and `limits` show the lane (next tick, last action, what is waiting, drafts waiting for
 approval); `npm run scheduler -- --status` prints `next linkedin drip not before`.
+
+### Adaptive wake delay (`WAKE_IDLE_MAX_MIN`)
+
+Code in `src/scheduler/adaptiveWake.ts`, used by `src/scheduler/driver.ts`; zero LLM, no gate, cap or code pass cadence changes. A wake that ended `ok` and
+made no progress is an EMPTY wake. Progress means any of: the final report counts a task `done` or `escalated`, or the row counts of `jobs`,
+scored `jobs`, excluded `jobs`, `outreach_queue` or `followups` differ between the start and the end of the wake (so new jobs from the code pass, a
+match, a veto, a prepared job or a drafted follow-up all count). When the report is missing or a count query fails the wake counts as progress
+(unsure never lengthens the wait). The streak of consecutive empty wakes is stored in `scheduler_state` key `empty_wake_streak`. The wait after a wake
+is `10 * 2^streak` minutes, capped by `WAKE_IDLE_MAX_MIN` (default 60, range 10 to 240, read at daemon start; 10 turns it off and keeps the fixed 10
+minutes): 10, 20, 40, 60. Quiet-hours push-out is applied on top as before. Skipped wakes (`nothing_due`, ceilings, halts) and failed, killed or
+incomplete wakes leave the streak as it is.
+The streak resets to 0, and a stretched `next_wake_at` is pulled back to 10 minutes, when: a wake makes progress; the daemon starts; an owner
+`/runhunt` wake or a pending manual request starts a wake (the manual and forced wakes never leave a later `next_wake_at` than their own draw); or the
+daemon sees the `jobs` row count rise while the streak is above 0 (checked every 30 seconds, for example jobs saved by a drip lane or an import).
+Reply and inbox checks are not affected: they run in the mail and LinkedIn drip lanes on `REPLY_CHECK_EVERY_MIN`.
 
 ### Windows are the only path (no headless `claude -p`, no flag)
 

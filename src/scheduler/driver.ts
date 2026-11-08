@@ -32,6 +32,9 @@ import { linkedinDripEnabled, linkedinDripLoop } from './linkedinDrip.js';
 import { groupWakeSteps, runWakeThroughWindows } from './wakeWindows.js';
 import { recordWakeResult, takeWakeRequest, type WakeRequest } from './wakeRequest.js';
 import { matchThresholdFromEnv } from '../matchRubric.js';
+import {
+  adaptiveIntervalMin, readEmptyStreak, wakeIdleMaxMin, wakeMadeProgress, workFingerprint, writeEmptyStreak, type WorkFingerprint,
+} from './adaptiveWake.js';
 import { finishRun, getState, markOrphans, setState, startRun, type RunStatus } from './runLog.js';
 
 type Db = BetterSqlite3.Database;
@@ -141,7 +144,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
   const dry = wakeIsDry(d.env);
   const trigger = opts.force ? 'forced' : 'scheduled';
   const drawNext = (): string => {
-    const t = nextWake(d.now(), quiet).toISOString();
+    const t = nextWake(d.now(), quiet, adaptiveIntervalMin(readEmptyStreak(d.db), wakeIdleMaxMin(d.env))).toISOString();
     try {
       setState(d.db, 'next_wake_at', t, d.now());
     } catch {
@@ -232,6 +235,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
   let codePassNote: string | undefined;
   let reportCounts = null as WakeCounts | null;
   let windowsRan = false;
+  let fpBefore = null as WorkFingerprint | null;
 
   try {
     // (4) plan
@@ -266,6 +270,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
       id: runId, at: startAt, trigger, dryRun: dry, tasks: decision.tasks, status: 'running',
     });
     started = true;
+    fpBefore = workFingerprint(d.db);
     wakeStartIso = startAt.toISOString();
     // Stage 0 (manual requests) and stage 1 run in code, before the model session: failures are noticed but never stop the wake.
     // Ingest and the code pass can outlast the lock TTL (120 s): keep the lock fresh while they run.
@@ -339,6 +344,11 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
         finishRun(d.db, runId, { at: d.now(), status, stopReason });
       } catch {
         // ignore
+      }
+      // Adaptive delay: an ok wake with no progress lengthens the next wait, any progress resets it; other endings leave the streak alone.
+      if (status === 'ok') {
+        const progress = wakeMadeProgress(reportCounts, fpBefore, workFingerprint(d.db));
+        writeEmptyStreak(d.db, progress ? 0 : readEmptyStreak(d.db) + 1, d.now());
       }
       if (inboxPlanned && status === 'ok') {
         try {
@@ -543,6 +553,16 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     } catch {
       next = null;
     }
+    // Daemon start is new work: the idle streak resets and a wake time that was only stretched by that streak is pulled in to the base interval.
+    const streakAtStart = readEmptyStreak(d.db);
+    writeEmptyStreak(d.db, 0, d.now());
+    if (next && streakAtStart > 0) {
+      const soonest = nextWake(d.now(), quiet);
+      if (soonest.getTime() < next.getTime()) {
+        next = soonest;
+        try { setState(d.db, 'next_wake_at', soonest.toISOString(), d.now()); } catch { /* ignore */ }
+      }
+    }
     if (!next) {
       next = nextWake(d.now(), quiet);
       try {
@@ -551,6 +571,20 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
         // ignore
       }
     }
+    // New jobs saved by anything while the wake wait is stretched (a drip lane, an owner import) end the stretch: wake at the base interval.
+    let jobsSeen = workFingerprint(d.db).jobs;
+    const pullInOnNewJobs = (): void => {
+      const j = workFingerprint(d.db).jobs;
+      const prev = jobsSeen;
+      if (j !== null) jobsSeen = j;
+      if (j === null || prev === null || j <= prev || readEmptyStreak(d.db) === 0) return;
+      writeEmptyStreak(d.db, 0, d.now());
+      const soonest = nextWake(d.now(), quiet);
+      if (next && soonest.getTime() < next.getTime()) {
+        next = soonest;
+        try { setState(d.db, 'next_wake_at', soonest.toISOString(), d.now()); } catch { /* ignore */ }
+      }
+    };
     let stopSeen = stopPresent();
     // The mail drip lane runs beside the wakes (its own `mail` lock), so a long wake never pauses the slow email trickle.
     drip = deps.mailDrip ? dripLoop(deps, stop) : null;
@@ -590,6 +624,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
           manualWake = true;
           break;
         }
+        pullInOnNewJobs();
         const remaining = next.getTime() - d.now().getTime();
         if (remaining <= 0) {
           woke = true;
@@ -606,6 +641,9 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
         if (!present) stopSeen = false;
       }
       if (!woke || stop.stopped) break;
+      // An owner request or a pending manual request is new work: reset the idle streak before the wake plans.
+      const wasStretched = manualWake && readEmptyStreak(d.db) > 0;
+      if (manualWake) writeEmptyStreak(d.db, 0, d.now());
       const r = await wakeOnce(deps, { abort: () => stop.stopped, ...(requested ? { force: true } : {}) });
       if (requested) {
         recordWakeResult(d.db, requested, { status: r.status, reason: r.reason, runId: r.runId }, d.now());
@@ -614,6 +652,9 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
       if (manualWake) {
         // Keep the regular schedule: the wake drew a new next_wake_at, put the old one back.
         manualBackoffUntil = d.now().getTime() + (r.status === 'ok' ? 60_000 : 300_000);
+        // When the old wait was only stretched by the idle streak, take the wake's own draw if it is sooner (the owner work reset the streak).
+        const drawn = Date.parse(r.nextWakeAt);
+        if (wasStretched && Number.isFinite(drawn) && drawn < next.getTime()) next = new Date(drawn);
         try {
           setState(d.db, 'next_wake_at', next.toISOString(), d.now());
         } catch {

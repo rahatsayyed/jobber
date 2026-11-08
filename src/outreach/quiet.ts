@@ -12,7 +12,7 @@ export interface QuietConfig {
 
 export const IST_OFFSET_MINUTES = 330;
 
-/** Minutes between two scheduler wakes: a fixed poll interval, not a throttle. Each wake plans every due task up to the real caps; the run lock stops two wakes overlapping. */
+/** Base minutes between two scheduler wakes (src/scheduler/adaptiveWake.ts lengthens it after empty wakes, never below it). Each wake plans every due task up to the real caps; the run lock stops two wakes overlapping. */
 export const WAKE_INTERVAL_MIN = 10;
 
 export function quietFromConfig(cfg: OutreachConfig): QuietConfig {
@@ -49,9 +49,9 @@ function quietEnd(at: Date, cfg: QuietConfig): Date {
   return new Date(end.getTime() - cfg.tzOffsetMinutes * 60000);
 }
 
-/** The next wake: a fixed interval after `now`, moved to the end of quiet hours when it would land inside them. */
-export function nextWake(now: Date, cfg: QuietConfig): Date {
-  const t = new Date(now.getTime() + WAKE_INTERVAL_MIN * 60000);
+/** The next wake: `intervalMin` after `now` (default the base WAKE_INTERVAL_MIN; the scheduler passes a longer one after empty wakes), moved to the end of quiet hours when it would land inside them. */
+export function nextWake(now: Date, cfg: QuietConfig, intervalMin: number = WAKE_INTERVAL_MIN): Date {
+  const t = new Date(now.getTime() + intervalMin * 60000);
   return inQuietHours(t, cfg) ? quietEnd(t, cfg) : t;
 }
 

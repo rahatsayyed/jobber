@@ -19,6 +19,7 @@ import { loadTuning } from '../src/outreach/tuning.js';
 import { loadLayoutConfig } from '../src/layout/config.js';
 import { validateRunnerConfig } from '../src/web/env.js';
 import { replyCheckEveryMin } from '../src/scheduler/replyCheck.js';
+import { wakeIdleMaxMin } from '../src/scheduler/adaptiveWake.js';
 import { dimMinimumsFromEnv } from '../src/matchRubric.js';
 
 const guard = installNoRealEnv();
@@ -347,6 +348,7 @@ describe('blankMeansDefault (real loaders)', () => {
     ...DRIP_KEYS.map((k): [string, Loader] => [k, (e) => loadDripConfig(e)]),
     ...LI_DRIP_KEYS.map((k): [string, Loader] => [k, (e) => loadLinkedinDripConfig(e)]),
     ['REPLY_CHECK_EVERY_MIN', (e) => replyCheckEveryMin(e)],
+    ['WAKE_IDLE_MAX_MIN', (e) => wakeIdleMaxMin(e)],
     ['MATCH_DIM_MINIMUMS', (e) => dimMinimumsFromEnv(e)],
   ];
 
