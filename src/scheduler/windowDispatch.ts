@@ -432,6 +432,12 @@ export class WindowDispatcher {
 
       if (t - sentAt >= i.deadlineMs) return conclude('timeout', 'wall_clock');
       if (!tailer && t - sentAt >= stallMs) return conclude('stalled', 'no_transcript');
+      // A tailer on the OLD session file that never grew: the typed line never reached any transcript (a menu or dialog ate it, the
+      // window is idle). Without this the item ran until its full deadline. A busy pane still gets the benefit of the doubt.
+      if (tailer && !gotLine && quiet) {
+        if (pane !== null && BUSY_PANE_RE.test(pane)) lastGrowAt = t;
+        else return conclude('stalled', 'no_transcript');
+      }
       if (tailer && toolSince !== null && quiet) {
         if (pane !== null && BUSY_PANE_RE.test(pane)) lastGrowAt = t; // still running a slow tool
         else return conclude('stalled', 'stalled');

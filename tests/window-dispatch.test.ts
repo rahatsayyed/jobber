@@ -245,6 +245,14 @@ describe('stall, timeout, limits, kill switch', () => {
     expect(r.stopReason).toBe('no_transcript');
   });
 
+  it('stalls with no_transcript when the old session file never grows and the pane is idle (the typed line was eaten by a dialog)', async () => {
+    h.pane = '\n\n❯ \n';
+    const r = await h.disp.dispatch(h.input({ deadlineMs: 600_000 }));
+    expect(r.status).toBe('stalled');
+    expect(r.stopReason).toBe('no_transcript');
+    expect(h.tick).toBeLessThan(200);
+  });
+
   it('usage limit from an API error entry in the transcript', async () => {
     h.steps[2] = () => h.append(asst('Claude usage limit reached|1760000000', 'stop_sequence', { isApiErrorMessage: true }));
     const r = await h.disp.dispatch(h.input());
