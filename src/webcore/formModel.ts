@@ -36,6 +36,8 @@ export interface RawFormSnapshot {
   controls: RawControl[];
   notices: string[];
   captchaWidget?: boolean;
+  /** A captcha response field (g-recaptcha, h-captcha, cf-turnstile) holds a non-empty token. Read only; used by the owner-solve wait. */
+  captchaSolved?: boolean;
   links?: RawLink[];
 }
 
@@ -75,7 +77,8 @@ export const FORM_SNAPSHOT_SCRIPT = `(() => {
   const links = lel.map((l) => ({ label: l.label, href: l.href, context: l.context, blank: l.blank }));
   const notices = Array.from(document.querySelectorAll('[role=alert],.error,.errors,[aria-invalid=true]')).filter(vis).map((e) => (e.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 200)).filter(Boolean).slice(0, 10);
   const captchaWidget = !!document.querySelector('.g-recaptcha,.h-captcha,.cf-turnstile,iframe[src*=recaptcha],iframe[src*=hcaptcha],iframe[src*=turnstile]');
-  return { url: location.href, title: document.title, text: (document.body ? document.body.innerText : '').slice(0, 20000), fields, controls, notices, captchaWidget, links };
+  const captchaSolved = captchaWidget && Array.from(document.querySelectorAll('[name="g-recaptcha-response"],[name="h-captcha-response"],[name="cf-turnstile-response"]')).some((e) => !!String(e.value || '').trim());
+  return { url: location.href, title: document.title, text: (document.body ? document.body.innerText : '').slice(0, 20000), fields, controls, notices, captchaWidget, captchaSolved, links };
 })()`;
 
 const STEP_RE = /step\s+(\d+)\s+of\s+(\d+)/i;

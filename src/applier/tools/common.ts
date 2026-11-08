@@ -14,7 +14,9 @@ import type { RecipeService } from '../recipes/learn.js';
 import type { AtsLayoutGuard } from '../recipes/layoutGuard.js';
 import { addEscalation } from '../../outreach/service.js';
 import { resolveApplyEscalationsForJob } from '../../outreach/applyEscalations.js';
-import { FIXED_FAIL, HostChanged, haltedWeb, hostOfUrl, noteBlock, readPage } from '../../webcore/login.js';
+import { FIXED_FAIL, HostChanged, haltedWeb, hostOfUrl, noteBlock } from '../../webcore/login.js';
+import { captchaTelegram, noticeCaptchaWait, readPageWaitingForCaptcha } from '../captchaWait.js';
+import type { AssistNotifier } from '../assistPing.js';
 import { isDryRun, recordDryRun } from '../../safety/dryRun.js';
 import type { ClassifierPort } from '../../safety/inputGate.js';
 import type { StyleConfig } from '../../safety/styleGate.js';
@@ -127,6 +129,8 @@ export interface ApplierDeps {
   layoutGuard?: AtsLayoutGuard;
   /** Test seams for apply_draft_answer: the style config (default config/ai-tells.json) and the base resume (default user-data/resume.json). */
   draft?: { styleCfg?: StyleConfig; baseResume?: () => Record<string, unknown> };
+  /** Test seams for the owner-solve captcha wait (src/applier/captchaWait.ts): poll sleep, clock, and the `assist` notice sender. */
+  captcha?: { sleep?: (ms: number) => Promise<void>; now?: () => number; notifier?: AssistNotifier };
   state: ApplierSessionState;
 }
 
@@ -160,6 +164,21 @@ export function dryRunResult(deps: ApplierDeps, action: string, payload: Record<
   if (!isDryRun(env)) return null;
   recordDryRun(deps.db, { runId: null, action, platform: 'web', payload }, nowOf(deps), env);
   return { status: 'dry_run', code: 'dry_run' };
+}
+
+/**
+ * readPage for the open job. If the page shows a CAPTCHA, code waits up to APPLY_CAPTCHA_WAIT_SEC for the OWNER to solve it by hand and
+ * re-reads; the result is the fresh read when it is gone, otherwise the first read (parked as before). Runs inside the runtime queue.
+ */
+export function readPageForJob(deps: ApplierDeps, page: LiPage, jobId: string): Promise<{ raw: RawFormSnapshot; model: FormModel }> {
+  const env = envOf(deps);
+  return readPageWaitingForCaptcha(page, {
+    env, jobId,
+    stopped: () => preflight(deps) !== null,
+    notify: (host, waitSec) => noticeCaptchaWait(deps.db, { host, jobId, waitSec, notifier: deps.captcha?.notifier ?? captchaTelegram(env), now: nowOf(deps), env }),
+    sleep: deps.captcha?.sleep,
+    now: deps.captcha?.now,
+  });
 }
 
 export function blockedResult(deps: ApplierDeps, model: FormModel): ApplyResult {
@@ -208,7 +227,7 @@ export async function inPage(deps: ApplierDeps, fn: (c: PageCtx) => Promise<Appl
       await settleTransit(deps, page, job);
       const hop = settleHost(deps, job, page.url());
       if (hop) return hop;
-      const { raw, model } = await readPage(page);
+      const { raw, model } = await readPageForJob(deps, page, job.jobId);
       if (model.block) return blockedResult(deps, model);
       const unsafe = guardHopPage(deps, job, raw);
       if (unsafe) return unsafe;

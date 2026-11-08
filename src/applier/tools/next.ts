@@ -1,13 +1,13 @@
 // apply_next({control}): next, back or save only (submit has its own gated tool). Enforces
 // APPLY_MAX_STEPS and re-runs the checkbox gate (marketing unchecked and verified) before leaving a step.
 import { z } from 'zod';
-import { clickControl, readPage } from '../../webcore/login.js';
+import { clickControl } from '../../webcore/login.js';
 import { guardHopPage, settleHost, settleTransit } from '../hostGuard.js';
 import { enforceCheckboxGate, acceptLegalRequired } from '../../webcore/signup.js';
 import { loadWebConfig } from '../../webcore/config.js';
 import { ControlIdSchema } from '../refs.js';
 import {
-  blockedResult, dryRunResult, envOf, inPage, refuse, type ApplierDeps, type ApplyResult,
+  blockedResult, dryRunResult, envOf, inPage, readPageForJob, refuse, type ApplierDeps, type ApplyResult,
 } from './common.js';
 import { screenedState } from './state.js';
 
@@ -56,7 +56,7 @@ export async function handleNext(input: NextInputT, deps: ApplierDeps): Promise<
     await settleTransit(deps, page, job);
     const after0 = settleHost(deps, job, page.url());
     if (after0) { closeAfter = true; return after0; }
-    const after = await readPage(page);
+    const after = await readPageForJob(deps, page, job.jobId);
     if (after.model.block) return blockedResult(deps, after.model);
     const unsafeAfter = guardHopPage(deps, job, after.raw);
     if (unsafeAfter) { closeAfter = true; return unsafeAfter; }
