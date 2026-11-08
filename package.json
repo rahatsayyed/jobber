@@ -36,6 +36,8 @@
     "user-data": "tsx scripts/user-data.ts",
     "site:account": "tsx scripts/site-account.ts",
     "providers": "tsx scripts/providers.ts",
+    "portals:discover": "tsx scripts/portals-discover.ts",
+    "portals:validate": "tsx scripts/validate-portals.ts",
     "apply:request": "tsx scripts/apply-request.ts",
     "apply:release-held": "tsx scripts/apply-release-held.ts",
     "apply:requeue-company-site": "tsx scripts/apply-requeue-company-site.ts",

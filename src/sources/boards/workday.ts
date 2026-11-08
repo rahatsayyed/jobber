@@ -9,7 +9,7 @@
 // left, inside the board's own deadline. A posting without a detail document is NOT returned (it would be saved description-less and never
 // re-fetched); it is retried on the next run. Returned jobs are discover-only (src/lib/discoverOnly.ts): Workday applications are account-gated.
 import { toIsoDay } from '../../db.js';
-import { assertVendorSlug, htmlToPlain, SITE_RE, WD_RE, type TrackedCompany } from './filters.js';
+import { assertVendorSlug, htmlToPlain, postingTooOld, SITE_RE, WD_RE, type TrackedCompany } from './filters.js';
 import { boardUrl, capDescription, clip, MAX_ID_CHARS, MAX_JOBS_PER_BOARD, type BoardJob, type FetchCtx } from './greenhouse.js';
 import { exactHosts, getJson, postJson } from './transport.js';
 import { pastDeadline, shortHash } from './util.js';
@@ -87,6 +87,11 @@ export async function fetchWorkday(c: TrackedCompany, ctx: FetchCtx = {}): Promi
     }
     // Some tenants clamp the offset and serve the same page again: no new posting on a page means the list is exhausted.
     if (fresh === 0) { notes.push(`list stopped at page ${page} (page repeated, offset ceiling)`); break; }
+    // Freshness early stop (opt-in): the list is newest first, so a page where EVERY posting has a date older than the limit ends the paging.
+    if (ctx.earlyStopAgeDays !== undefined) {
+      const dates = postings.map((q) => parsePostedOn(q?.postedOn));
+      if (dates.length && dates.every((d) => d !== undefined && postingTooOld(d, ctx.earlyStopAgeDays))) { notes.push(`list stopped at page ${page} (older than ${ctx.earlyStopAgeDays} days)`); break; }
+    }
     if (candidates.length >= MAX_JOBS_PER_BOARD || postings.length < WORKDAY_PAGE_SIZE) break;
     if (typeof json.total === 'number' && (page + 1) * WORKDAY_PAGE_SIZE >= json.total) break;
   }

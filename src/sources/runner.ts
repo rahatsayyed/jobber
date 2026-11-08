@@ -12,7 +12,7 @@ import { IMPORTED_LOADERS } from './providers/index.js';
 import { loadRegistry } from './registry.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadPortals, titlePasses } from './boards/filters.js';
+import { loadPortals, postingTooOld, titlePasses } from './boards/filters.js';
 import { createGeneratedProvider, type TextFetcher } from './generated/engine.js';
 import type { ProviderSpec } from './generated/spec.js';
 import { loadRunnable, recordProviderRun } from './generated/store.js';
@@ -103,6 +103,10 @@ export async function runScriptSources(db: Db | null, opts: RunOptions): Promise
   const prevOf = (id: string): Prev | undefined => (db ? (db.prepare('SELECT kept, streak_fail, shape_hash FROM platform_status WHERE id = ?').get(id) as Prev | undefined) : undefined);
   const timeoutMs = opts.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
 
+  // Freshness (opt-in, config/portals.json max_posting_age_days): API/feed jobs with a date older than the limit are dropped; undated pass.
+  const maxAge = loadPortals(opts.portalsPath).config?.max_posting_age_days;
+  const fresh = <T extends Job>(list: T[]): T[] => (maxAge === undefined ? list : list.filter((j) => !postingTooOld(j.posted_at, maxAge)));
+
   const jobs: Job[] = [];
   const outcomes: SourceOutcome[] = [];
   const failures: Failure[] = [];
@@ -127,9 +131,10 @@ export async function runScriptSources(db: Db | null, opts: RunOptions): Promise
       failures.push({ platform: id, company: null, reason: 'error' });
       continue;
     }
-    jobs.push(...x.r.jobs);
+    const keptApi = fresh(x.r.jobs);
+    jobs.push(...keptApi);
     const shape = checkShape(x.provider.shapeSpec, x.r.sample);
-    const o: SourceOutcome = { id, fetched: x.r.jobs.length, kept: x.r.jobs.length };
+    const o: SourceOutcome = { id, fetched: x.r.jobs.length, kept: keptApi.length };
     if (!shape.ok) {
       o.error = redactError(shapeText(shape)); o.fallback_used = true;
       failures.push({ platform: id, company: null, reason: 'shape' });
@@ -173,7 +178,7 @@ export async function runScriptSources(db: Db | null, opts: RunOptions): Promise
         outcomes.push({ id: x.id, fetched: 0, kept: 0, error: x.error, fallback_used: true, note: 'generated' });
         failures.push({ platform, company: null, reason: 'error' });
       } else {
-        const kept = portals ? x.r.jobs.filter((j) => titlePasses(j.title, portals.title_filter)) : x.r.jobs;
+        const kept = fresh(portals ? x.r.jobs.filter((j) => titlePasses(j.title, portals.title_filter)) : x.r.jobs);
         jobs.push(...kept);
         const shape = checkShape(x.provider.shapeSpec, x.r.sample);
         const o: SourceOutcome = { id: x.id, fetched: x.r.jobs.length, kept: kept.length, note: 'generated' };
