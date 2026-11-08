@@ -3,7 +3,7 @@
 // This module never opens the database (src/mcp/job-fetch.ts does the db-side dedupe).
 import type { Job } from '../../db.js';
 import { companyKey, titleIdentityKey } from '../../reposts.js';
-import { AGGREGATOR_ATS, COMPANY_ATS, loadPortals, locationAllowed, titlePasses, type Ats, type TrackedCompany } from './filters.js';
+import { AGGREGATOR_ATS, COMPANY_ATS, loadPortals, locationAllowed, postingTooOld, seniorityRank, titlePasses, type Ats, type TrackedCompany } from './filters.js';
 import { settleBoard, type BoardJob, type FetchCtx } from './greenhouse.js';
 import { FETCHERS } from './registry.js';
 import { BOARD_PROVIDERS } from './providers.js';
@@ -98,6 +98,7 @@ async function runBoards(opts: FetchBoardsOptions): Promise<BoardsResult> {
         titleOk: (title) => titlePasses(title, config.title_filter),
         isKnown: opts.isKnown,
         deadlineAt: Date.now() + Math.max(0, budget - 2000),
+        ...(config.max_posting_age_days !== undefined && config.early_stop_by_age === true ? { earlyStopAgeDays: config.max_posting_age_days } : {}),
         // Collected here (not only inside settleBoard) so warnings survive a per-board timeout or a thrown error.
         warn: (m) => { if (collected.length < 20) collected.push(String(m).slice(0, 300)); },
       };
@@ -124,9 +125,16 @@ async function runBoards(opts: FetchBoardsOptions): Promise<BoardsResult> {
     if (s.error || s.sample?.length) out.samples!.push({ ats: s.c.ats, company: s.c.name, slug: s.c.slug, sample: s.sample ?? [], ...(s.error ? { error: s.error } : {}) });
     if (s.error) { out.errors.push(s.error); continue; }
     const fetched = s.jobs ?? [];
-    const kept = fetched
-      .filter((j) => titlePasses(j.title, config.title_filter) && locationAllowed(j.locations, j.remote, config.location_filter))
-      .slice(0, max);
+    let matching = fetched
+      .filter((j) => titlePasses(j.title, config.title_filter) && locationAllowed(j.locations, j.remote, config.location_filter));
+    // Freshness (opt-in): an undated posting always passes.
+    if (config.max_posting_age_days !== undefined) matching = matching.filter((j) => !postingTooOld(j.posted_at, config.max_posting_age_days));
+    // Seniority boost (opt-in) only orders: boosted titles first (stable), so they survive the per-company cap.
+    if (config.title_filter.seniority_boost?.length) {
+      const rank = new Map(matching.map((j) => [j, seniorityRank(j.title, config.title_filter)] as const));
+      matching = matching.map((j, i) => ({ j, i })).sort((a, b) => (rank.get(b.j)! - rank.get(a.j)!) || a.i - b.i).map((x) => x.j);
+    }
+    const kept = matching.slice(0, max);
     for (const { locations, remote, ...job } of kept) {
       if (seen.has(job.id)) continue;
       seen.add(job.id);

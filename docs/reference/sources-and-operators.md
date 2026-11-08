@@ -120,3 +120,23 @@ only agent that sends email, one item per run in the mail drip lane, or both pas
 cold emails and follow-ups under the shared daily `send_email` counter) and
 `apply-operator` (see "Applying"). Each wake gives an operator a list of tasks with a `kind` and a
 `quota`; a typed-tool refusal is final for that item.
+
+## Scan helpers (career-ops techniques, all opt-in)
+
+Ideas taken from career-ops (MIT) for the board/feed scan. Everything below is off or empty by default: with none of these keys set, the scan behaves exactly as before.
+
+**Company seeding / ATS auto-discovery** (`npm run portals:discover`, `scripts/portals-discover.ts`, `src/sources/portalsDiscover.ts`). Owner tool, live network, never run by the scheduler or an agent.
+- `npm run portals:discover -- "Razorpay" "https://jobs.lever.co/meesho"` probes Greenhouse, Lever, Ashby, Workable, Recruitee, SmartRecruiters and Personio (de and com) with slug guesses from the name (or the slug read from an ATS URL), through the normal board providers (https only, vendor host allow-lists, size caps), one request per `--delay-ms` (default 1000). A hit means the board answered with at least one posting; nothing else is ever printed as an entry.
+- Default is a preview. `--write` appends the found entries to `config/portals.json` as one-line objects (`enabled: true`, a `note`), after the vendor slug rule and a dedupe (same vendor and slug, or same name). The rest of the file is left byte-identical and a file that would not parse is never written.
+- `--seed [--region india|gulf|remote] [--limit N]` probes `config/portals-seed.json` (names, optional slug hints, all unverified; edit freely). `--ats a,b` limits vendors, `--all` keeps probing after the first hit. Afterwards run `npx tsx scripts/check-portal.ts <ats> <slug>` to see how many jobs pass your filters.
+
+**Freshness** (`config/portals.json`, top level). `"max_posting_age_days": 30` drops a board or feed job whose `posted_at` is older than that; a job with no date always passes (an old date is not proof the role is closed). Applies to company boards, aggregators, the API/feed providers and generated providers. `"early_stop_by_age": true` (needs the max age) lets a date-ordered paginated source stop paging once a whole page is older: only Workday today (list is newest first); other paginated sources are not stopped. Absent, 0 or negative = off; a non-number is ignored with a warning.
+
+**Title and location layer** (`title_filter` and `location_filter` in `config/portals.json`). The base grammar already had `word:`, `stem:`, `lead:` and `a + b` combos. New optional keys, which can only EXCLUDE more or ORDER, never admit a title the base filter or the role gate refuses:
+- `title_filter.exclude`: more negative keywords (same grammar, combos allowed).
+- `title_filter.skip_tiers`: `intern`, `entry`, `junior` (or any keyword) to skip.
+- `title_filter.use_role_gate`: `true` also drops a title that `config/role-families.json` rejects (`src/roleGate.ts`, `checkRole`). `config/role-families.json` is not changed.
+- `title_filter.seniority_boost`: keywords (for example `senior`, `lead`) that only put matching jobs first inside one company, so they survive the per-company cap. Never required.
+- `location_filter.exclude`: place words that veto a job location.
+
+**Audit** (`npm run portals:validate [-- --strict] [--json]`, `src/sources/portalsAudit.ts`). Offline check of `config/portals.json`, `config/platforms.json` and `config/portals-seed.json`: bad or duplicate slugs and names, unknown vendors, placeholder slugs, enabled-but-unverified entries, keyword grammar (unknown prefix, empty part), positive/negative overlap, bad freshness values, missing provider modules, duplicate platform ids. Exit 1 on errors (or on warnings with `--strict`).

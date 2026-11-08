@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hostMatches } from '../../lib/hostClass.js';
 import { findRestriction, LOCATION_ONSITE, REGION_WORD, REMOTE_WORD } from '../../remotePolicy.js';
+import { checkRole, loadRoleGateConfig, type RoleGateConfig } from '../../roleGate.js';
 
 // Company-board vendors: one board per tracked company. Each vendor has a provider in src/sources/boards/ and an entry in registry.ts.
 export const COMPANY_ATS = ['greenhouse', 'lever', 'ashby', 'workable', 'recruitee', 'personio', 'workday', 'smartrecruiters'] as const;
@@ -27,10 +28,30 @@ export interface TrackedCompany {
   // smartrecruiters and workday: most posting detail requests per fetch; workday and himalayas: most list pages per fetch
   max_detail?: number; max_pages?: number;
 }
+/**
+ * Optional extra layer of the title filter (career-ops style). It can only EXCLUDE more or ORDER; it never admits a title the base filter
+ * or the role gate refuses. All keys are optional; with none set the behaviour is exactly the plain positive/negative filter.
+ */
+export interface TitleLayer {
+  /** Extra exclusion keywords (same grammar as `negative`: word:, stem:, lead:, "a + b" combos). */
+  exclude?: string[];
+  /** Seniority tiers to skip: "intern", "entry", "junior", or any keyword of the same grammar. */
+  skip_tiers?: string[];
+  /** Keywords that only ORDER kept jobs (boosted titles first); never required, never admit anything. */
+  seniority_boost?: string[];
+  /** When true a title the code role gate (config/role-families.json) rejects is excluded here too. Default false. */
+  use_role_gate?: boolean;
+}
+export type TitleFilter = { positive: string[]; negative: string[] } & TitleLayer;
 export interface PortalsConfig {
   tracked_companies: TrackedCompany[];
-  title_filter: { positive: string[]; negative: string[] };
-  location_filter: { allow: string[]; global: string[]; remote_anywhere?: boolean };
+  title_filter: TitleFilter;
+  /** `exclude`: extra place words that veto a job's location (never admits). */
+  location_filter: { allow: string[]; global: string[]; remote_anywhere?: boolean; exclude?: string[] };
+  /** Drop a posting whose date is older than this many days; a posting without a date always passes. Absent = off. */
+  max_posting_age_days?: number;
+  /** With max_posting_age_days: a date-ordered paginated source (Workday) stops listing once a whole page is older. Default false. */
+  early_stop_by_age?: boolean;
 }
 
 const fold = (s: string) => String(s ?? '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
@@ -109,12 +130,46 @@ function keywordMatches(title: string, raw: string): boolean {
   return title.includes(k);
 }
 
-export function titlePasses(title: string, f: { positive: string[]; negative: string[] }): boolean {
+const TIER_WORDS: Record<string, string[]> = {
+  intern: ['word:intern', 'word:interns', 'word:internship', 'word:trainee'],
+  entry: ['word:graduate', 'entry level', 'entry-level', 'word:fresher', 'word:freshers'],
+  junior: ['word:junior', 'word:jr'],
+};
+/** Expands tier names (intern, entry, junior) to keywords; any other entry is used as a keyword itself. */
+export const tierKeywords = (tiers: string[] | undefined): string[] => (tiers ?? []).flatMap((x) => TIER_WORDS[fold(x).trim()] ?? [x]);
+
+let roleCfg: RoleGateConfig | null = null;
+function roleGateRejects(title: string): boolean {
+  try { roleCfg ??= loadRoleGateConfig().config; return checkRole({ title }, roleCfg).verdict === 'reject'; } catch { return false; }
+}
+
+export function titlePasses(title: string, f: TitleFilter): boolean {
   const t = fold(title);
   if (f.negative.some((n) => keywordMatches(t, n))) return false;
+  // Layer keywords also accept "a + b" combos (all parts must match), like positive.
+  const combo = (k: string) => k.split('+').map((x) => x.trim()).filter(Boolean).every((part) => keywordMatches(t, part)) && k.trim() !== '';
+  if (f.exclude?.some(combo)) return false;
+  if (f.skip_tiers?.length && tierKeywords(f.skip_tiers).some(combo)) return false;
+  if (f.use_role_gate === true && roleGateRejects(title)) return false;
   const pos = f.positive.filter((p) => p.trim());
   if (!pos.length) return true;
   return pos.some((p) => p.split('+').map((x) => x.trim()).filter(Boolean).every((part) => keywordMatches(t, part)));
+}
+
+/** 1 when the title matches a `seniority_boost` keyword, else 0. Used only to order kept jobs. */
+export function seniorityRank(title: string, f: { seniority_boost?: string[] }): number {
+  const t = fold(title);
+  return f.seniority_boost?.some((k) => keywordMatches(t, k)) ? 1 : 0;
+}
+
+// ---- freshness ----
+const DAY_MS = 86_400_000;
+/** True only when `postedAt` (YYYY-MM-DD or ISO) is a valid date older than maxDays. No limit or no/invalid date = false (passes). */
+export function postingTooOld(postedAt: string | null | undefined, maxDays: number | undefined, now: number = Date.now()): boolean {
+  if (maxDays === undefined || !(maxDays > 0) || !postedAt) return false;
+  const ms = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(postedAt) ? `${postedAt}T00:00:00Z` : postedAt);
+  if (!Number.isFinite(ms)) return false;
+  return now - ms > maxDays * DAY_MS;
 }
 
 // ---- location filter: allow term, or a bare/global remote segment ----
@@ -137,7 +192,11 @@ const INDIA_EXCLUDER = /(?<![a-z])(?:(?:other than|no|not|excluding)\s+india|not
  * `f.remote_anywhere` (default false): a remote posting (the `remote` flag or a remote word in the segment) based in any other place passes
  * unless the segment carries a restriction marker (src/remotePolicy.ts, shared with the veto backstop). Off = the plan 4 behaviour exactly.
  */
-export function locationAllowed(locations: string[] | null | undefined, remote: boolean, f: { allow: string[]; global: string[]; remote_anywhere?: boolean }): boolean {
+export function locationAllowed(locations: string[] | null | undefined, remote: boolean, f: { allow: string[]; global: string[]; remote_anywhere?: boolean; exclude?: string[] }): boolean {
+  if (f.exclude?.length) {
+    const all = fold((Array.isArray(locations) ? locations : []).join(' ; '));
+    if (f.exclude.some((x) => x.trim() && wordIn(all, x))) return false;
+  }
   let segs = (Array.isArray(locations) && locations.length ? locations : ['']).flatMap((l) => fold(l).split(';')).map((s) => s.trim()).filter(Boolean);
   if (!segs.length) segs = [''];
   if (f.remote_anywhere !== true) {
@@ -253,6 +312,12 @@ export function loadPortals(file: string = defaultPath): { config: PortalsConfig
     if (!strs(raw.location_filter.allow).some((x) => x.trim())) return bad('location_filter.allow must not be empty');
     if (raw.location_filter.global !== undefined && !Array.isArray(raw.location_filter.global)) return bad('location_filter.global must be an array');
     const warnings: string[] = [];
+    let maxAge: number | undefined;
+    if (raw.max_posting_age_days !== undefined && raw.max_posting_age_days !== null) {
+      const n = raw.max_posting_age_days;
+      if (typeof n === 'number' && Number.isFinite(n) && n > 0 && n <= 3650) maxAge = n;
+      else if (!(typeof n === 'number' && n <= 0)) warnings.push('config/portals.json: max_posting_age_days must be a positive number, ignored');
+    }
     const tracked = (Array.isArray(raw?.tracked_companies) ? raw.tracked_companies : [])
       .filter((c: any, i: number) => {
         const label = `config/portals.json: tracked_companies[${i}]${c && typeof c.name === 'string' ? ` (${c.name.slice(0, 60)})` : ''} skipped`;
@@ -293,13 +358,22 @@ export function loadPortals(file: string = defaultPath): { config: PortalsConfig
     return {
       config: {
         tracked_companies: [...tracked, ...aggs],
-        title_filter: { positive: strs(raw?.title_filter?.positive), negative: strs(raw?.title_filter?.negative) },
+        title_filter: {
+          positive: strs(raw?.title_filter?.positive), negative: strs(raw?.title_filter?.negative),
+          ...(strs(raw.title_filter.exclude).length ? { exclude: strs(raw.title_filter.exclude) } : {}),
+          ...(strs(raw.title_filter.skip_tiers).length ? { skip_tiers: strs(raw.title_filter.skip_tiers) } : {}),
+          ...(strs(raw.title_filter.seniority_boost).length ? { seniority_boost: strs(raw.title_filter.seniority_boost) } : {}),
+          ...(raw.title_filter.use_role_gate === true ? { use_role_gate: true } : {}),
+        },
         location_filter: {
           allow: strs(raw?.location_filter?.allow),
           global: Array.isArray(raw?.location_filter?.global) ? strs(raw.location_filter.global) : DEFAULT_GLOBAL,
           // only the boolean true turns it on; absent or invalid = false
           remote_anywhere: raw?.location_filter?.remote_anywhere === true,
+          ...(strs(raw.location_filter.exclude).length ? { exclude: strs(raw.location_filter.exclude) } : {}),
         },
+        ...(maxAge !== undefined ? { max_posting_age_days: maxAge } : {}),
+        ...(maxAge !== undefined && raw.early_stop_by_age === true ? { early_stop_by_age: true } : {}),
       },
       error: null,
       warnings,
