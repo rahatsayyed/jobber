@@ -24,6 +24,7 @@ describe('isDiscoverOnlySource', () => {
       // second pass vendors (keka, darwinbox, hibob, zohorecruit)
       'darwinbox', 'hibob', 'keka', 'zohorecruit',
       'teamtailor', 'jobvite', 'icims', 'jazzhr', 'join', 'softgarden', 'avature', 'applitrack', 'neogov', 'pageup', 'eploy'];
+    base.push('bamboohr', 'breezy', 'pinpoint', 'gem', 'comeet', 'eightfold', 'oraclecloud', 'successfactors', 'taleo', 'ultipro'); // career-ops tenant boards, batch 2
     // The feeds imported from career-ops (src/sources/providers) are discover-only too.
     expect([...DISCOVER_ONLY_SOURCES].sort()).toEqual([...base, ...IMPORTED_IDS].sort());
     for (const s of IMPORTED_IDS) expect(isDiscoverOnlySource(s)).toBe(true);

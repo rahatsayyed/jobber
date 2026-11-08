@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hostMatches } from '../../lib/hostClass.js';
+import { vendorParamsProblem, type VendorParams } from './vendorParams.js';
 import { findRestriction, LOCATION_ONSITE, REGION_WORD, REMOTE_WORD } from '../../remotePolicy.js';
 import { checkRole, loadRoleGateConfig, type RoleGateConfig } from '../../roleGate.js';
 
@@ -12,7 +13,8 @@ export const COMPANY_ATS = ['greenhouse', 'lever', 'ashby', 'workable', 'recruit
   'keka', 'darwinbox', 'hibob', 'zohorecruit',
   // RSS / HTML-list vendors adapted from career-ops (teamtailor, jobvite, icims, jazzhr, join, softgarden, avature, applitrack, neogov, pageup, eploy)
   'teamtailor', 'jobvite', 'icims', 'jazzhr', 'join', 'softgarden', 'avature', 'applitrack', 'neogov', 'pageup', 'eploy',
-] as const;
+  // tenant boards ported from career-ops (second batch)
+  'bamboohr', 'breezy', 'pinpoint', 'gem', 'comeet', 'eightfold', 'oraclecloud', 'successfactors', 'taleo', 'ultipro'] as const;
 export type CompanyAts = (typeof COMPANY_ATS)[number];
 // Aggregators: one board-wide feed with many employers. They are configured in the "aggregators" object of portals.json (not in
 // tracked_companies), run through the same fetch loop, caps, filters and board_status, but are never part of BOARD_SOURCES (index.ts).
@@ -34,6 +36,8 @@ export interface TrackedCompany {
   max_detail?: number; max_pages?: number;
   // darwinbox: the company id in /ms/candidatev2/<company_id>/careers; zohorecruit: regional domain (default "com")
   company_id?: string; tld?: string;
+  // tenant vendors that need more than a slug (comeet, eightfold, oraclecloud, successfactors, taleo, ultipro): see vendorParams.ts
+  params?: VendorParams;
 }
 /**
  * Optional extra layer of the title filter (career-ops style). It can only EXCLUDE more or ORDER; it never admits a title the base filter
@@ -83,6 +87,16 @@ const TOKEN_SLUG_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/;
 const VENDOR_SLUG_RULES: Record<string, { re: RegExp; hint: string; max?: number }> = {
   workable: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-"' },
   smartrecruiters: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-"' },
+  bamboohr: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain)' },
+  breezy: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain)' },
+  pinpoint: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain)' },
+  eightfold: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain)' },
+  taleo: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain)' },
+  gem: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-" (the board id)' },
+  comeet: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-" (a label for the company)' },
+  oraclecloud: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-" (a label for the company)' },
+  successfactors: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-" (a label for the company)' },
+  ultipro: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-" (the tenant)' },
   recruitee: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-", not starting or ending with "-" (the tenant subdomain)' },
   personio: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-", not starting or ending with "-" (the tenant subdomain)' },
   workday: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-", not starting or ending with "-" (the tenant), at most 40 characters', max: 40 },
@@ -136,6 +150,8 @@ export function extraConfigProblem(c: any): string | null {
   for (const [k, max] of [['max_detail', 100], ['max_pages', 50]] as const) {
     if (c[k] !== undefined && (!Number.isInteger(c[k]) || c[k] < 1 || c[k] > max)) return `${k} must be an integer from 1 to ${max}`;
   }
+  const vp = vendorParamsProblem(c.ats, c.params);
+  if (vp) return vp;
   return null;
 }
 /** Keep a response-supplied URL only if it is https and on the vendor's own domain; otherwise use the canonical one. */
@@ -365,6 +381,7 @@ export function loadPortals(file: string = defaultPath): { config: PortalsConfig
         ...(c.domain === 'de' || c.domain === 'com' ? { domain: c.domain as 'de' | 'com' } : {}),
         ...(typeof c.wd === 'string' ? { wd: c.wd } : {}),
         ...(typeof c.site === 'string' ? { site: c.site } : {}),
+        ...(c.params && typeof c.params === 'object' ? { params: { ...c.params } as VendorParams } : {}),
         ...(typeof c.search === 'string' && c.search.trim() ? { search: c.search.trim() } : {}),
         ...(Number.isInteger(c.max_detail) ? { max_detail: c.max_detail as number } : {}),
         ...(Number.isInteger(c.max_pages) ? { max_pages: c.max_pages as number } : {}),

@@ -8,9 +8,12 @@ const row = (id: string, source: string | null, company = 'Acme', title = 'Front
 
 describe('source sets', () => {
   it('company vendors are board sources, aggregators are their own set, and the two never overlap', () => {
+    const tenantBatch2 = ['bamboohr', 'breezy', 'pinpoint', 'gem', 'comeet', 'eightfold', 'oraclecloud', 'successfactors', 'taleo', 'ultipro']; // career-ops batch 2
     expect([...BOARD_SOURCES].sort()).toEqual([
       'ashby', 'greenhouse', 'lever', 'personio', 'recruitee', 'smartrecruiters', 'workable', 'workday',
+      'keka', 'darwinbox', 'hibob', 'zohorecruit',
       'teamtailor', 'jobvite', 'icims', 'jazzhr', 'join', 'softgarden', 'avature', 'applitrack', 'neogov', 'pageup', 'eploy',
+      ...tenantBatch2,
     ].sort());
     expect([...AGGREGATOR_SOURCES].sort()).toEqual(['hackernews', 'himalayas', 'weworkremotely']);
     for (const s of AGGREGATOR_SOURCES) expect(BOARD_SOURCES.has(s)).toBe(false);

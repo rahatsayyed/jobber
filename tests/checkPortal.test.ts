@@ -13,7 +13,7 @@ describe('scripts/check-portal.ts (offline smoke)', () => {
     expect(r.stderr).toMatch(/usage: npx tsx scripts\/check-portal\.ts/);
   });
   it('an unknown ATS exits 2', () => {
-    const r = run('taleo', 'acme');
+    const r = run('notavendor', 'acme');
     expect(r.status).toBe(2);
     expect(r.stderr).toMatch(/usage/);
   });

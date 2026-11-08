@@ -10,6 +10,9 @@ export const DISCOVER_ONLY_SOURCES: ReadonlySet<string> = new Set([
   'keka', 'darwinbox', 'hibob', 'zohorecruit',
   // RSS / HTML-list vendors adapted from career-ops (src/sources/boards): no apply recipe, discover-only.
   'teamtailor', 'jobvite', 'icims', 'jazzhr', 'join', 'softgarden', 'avature', 'applitrack', 'neogov', 'pageup', 'eploy',
+  'workable', 'recruitee', 'personio', 'workday', 'smartrecruiters',
+  'bamboohr', 'breezy', 'pinpoint', 'gem', 'comeet', 'eightfold', 'oraclecloud', 'successfactors', 'taleo', 'ultipro',
+  'hackernews', 'himalayas', 'weworkremotely',
   ...IMPORTED_IDS,
 ]);
 

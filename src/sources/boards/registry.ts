@@ -27,6 +27,16 @@ import { fetchAppliTrack } from './applitrack.js';
 import { fetchNeogov } from './neogov.js';
 import { fetchPageup } from './pageup.js';
 import { fetchEploy } from './eploy.js';
+import { fetchBambooHr } from './bamboohr.js';
+import { fetchBreezy } from './breezy.js';
+import { fetchPinpoint } from './pinpoint.js';
+import { fetchGem } from './gem.js';
+import { fetchComeet } from './comeet.js';
+import { fetchEightfold } from './eightfold.js';
+import { fetchOracleCloud } from './oraclecloud.js';
+import { fetchSuccessFactors } from './successfactors.js';
+import { fetchTaleo } from './taleo.js';
+import { fetchUltipro } from './ultipro.js';
 
 export const FETCHERS: Record<Ats, BoardFetcher> = {
   greenhouse: fetchGreenhouse,
@@ -55,4 +65,14 @@ export const FETCHERS: Record<Ats, BoardFetcher> = {
   neogov: fetchNeogov,
   pageup: fetchPageup,
   eploy: fetchEploy,
+  bamboohr: fetchBambooHr,
+  breezy: fetchBreezy,
+  pinpoint: fetchPinpoint,
+  gem: fetchGem,
+  comeet: fetchComeet,
+  eightfold: fetchEightfold,
+  oraclecloud: fetchOracleCloud,
+  successfactors: fetchSuccessFactors,
+  taleo: fetchTaleo,
+  ultipro: fetchUltipro,
 };

@@ -28,7 +28,7 @@ describe('auditPortals', () => {
       tracked_companies: [
         { name: 'A', ats: 'greenhouse', slug: 'a', enabled: true },
         { name: 'A2', ats: 'greenhouse', slug: 'A', enabled: true },
-        { name: 'B', ats: 'taleo', slug: 'b', enabled: true },
+        { name: 'B', ats: 'notavendor', slug: 'b', enabled: true },
         { name: 'C', ats: 'recruitee', slug: 'Bad_Slug', enabled: true },
         { name: 'D', ats: 'lever', slug: 'example', enabled: true },
         { name: 'E', ats: 'workday', slug: 'e', enabled: true },
@@ -39,7 +39,7 @@ describe('auditPortals', () => {
     }));
     const msgs = r.findings.map((x) => `${x.level}|${x.where}|${x.message}`).join('\n');
     expect(msgs).toMatch(/error\|.*tracked_companies\[1\].*duplicate/);
-    expect(msgs).toMatch(/unknown ats "taleo"/);
+    expect(msgs).toMatch(/unknown ats "notavendor"/);
     expect(msgs).toMatch(/tracked_companies\[3\].*invalid slug/);
     expect(msgs).toMatch(/warning\|.*tracked_companies\[4\].*placeholder/);
     expect(msgs).toMatch(/tracked_companies\[5\].*workday needs wd/);

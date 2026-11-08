@@ -163,9 +163,9 @@ describe('loadPortals', () => {
   });
   it('rejects unknown ATS values and keeps valid entries', () => {
     const f = path.join(dir, 'ok.json');
-    writeFileSync(f, JSON.stringify({ tracked_companies: [{ name: 'A', ats: 'greenhouse', slug: 'a', enabled: true }, { name: 'B', ats: 'taleo', slug: 'b', enabled: true }], title_filter: { positive: ['react'], negative: [] }, location_filter: { allow: ['india'], global: [] } }));
+    writeFileSync(f, JSON.stringify({ tracked_companies: [{ name: 'A', ats: 'greenhouse', slug: 'a', enabled: true }, { name: 'B', ats: 'notavendor', slug: 'b', enabled: true }], title_filter: { positive: ['react'], negative: [] }, location_filter: { allow: ['india'], global: [] } }));
     expect(loadPortals(f).config!.tracked_companies).toEqual([{ name: 'A', ats: 'greenhouse', slug: 'a', enabled: true }]);
-    expect(loadPortals(f).warnings).toEqual(['config/portals.json: tracked_companies[1] (B) skipped: unknown ats "taleo"']);
+    expect(loadPortals(f).warnings).toEqual(['config/portals.json: tracked_companies[1] (B) skipped: unknown ats "notavendor"']);
   });
   it('reports each dropped invalid slug as a warning', () => {
     const f = path.join(dir, 'warn.json');

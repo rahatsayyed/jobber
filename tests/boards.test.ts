@@ -168,7 +168,7 @@ describe('board_status extras', () => {
     await fetchBoards({ configPath: path.join(tmpdir(), 'definitely-missing-portals.json') });
     expect(boardStatusPayload()).toMatchObject({ ran: true, errors: [], note: 'config/portals.json not found' });
     await fetchBoards({ configPath: config([
-      { name: 'Bad', ats: 'taleo', slug: 'x', enabled: true },
+      { name: 'Bad', ats: 'notavendor', slug: 'x', enabled: true },
       { name: 'Slug', ats: 'greenhouse', slug: '..', enabled: true },
       { name: 'A', ats: 'greenhouse', slug: 'a', enabled: true },
     ]) });

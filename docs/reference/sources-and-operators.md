@@ -95,6 +95,21 @@ source inherits the discover-only and apply rules of `<kind>` (`manual:workday` 
 `workday`; `manual:wellfound` follows `wellfound`); the title and company parsed from a platform page are
 best-effort rules that no live page has verified.
 
+**Tenant boards ported from career-ops, batch 2** (`src/sources/boards/<vendor>.ts`, line 1 of each file is the MIT attribution; all
+discover-only, registry stability `fixture`: written from the career-ops code and tested with fixtures, no live call has been made).
+`bamboohr`, `breezy`, `pinpoint` (slug = tenant subdomain), `gem` (slug = board id), and the vendors whose endpoint needs more than a slug
+and take a `params` object in the `tracked_companies` entry (checked by `src/sources/boards/vendorParams.ts`, every value a strict pattern):
+`comeet` (`uid`, `token`), `eightfold` (`domain`), `oraclecloud` (`host`, optional `site`, `lang`), `successfactors` (`host`, optional `locale`;
+only the JSON "CSB" flavour, the HTML tile flavour is not ported), `taleo` (`section`, optional `lang`) and `ultipro` (`board`, optional `host`).
+Example: `{ "name": "Acme", "ats": "oraclecloud", "slug": "acme", "enabled": true, "params": { "host": "abc.fa.us2.oraclecloud.com", "site": "CX_1" } }`.
+Check one before adding it: `npx tsx scripts/check-portal.ts oraclecloud acme --param host=abc.fa.us2.oraclecloud.com` (`--param key=value`, repeatable).
+Every request is https only on the vendor host through the shared transport (no redirects, size cap, timeout); a posting URL is kept only on
+the vendor host (Safety rule 8), otherwise a canonical vendor URL is built. NOT ported from the same career-ops list: phenom (needs an arbitrary
+branded origin, no vendor host to pin), mokahr (China, AES-encrypted answer), redrover (US K-12, GraphQL query text not available), solidjobs and
+remotli (board-wide feeds for Poland and Switzerland, not tenants), and, judged by name as not relevant to the India, Gulf and remote target:
+radancy, jibeapply, beesite, collage, prevueaps, schoolspring, tkms, amazon, tencent, meituan, garena, feishu-jobs, alibaba, glints, jobstreet,
+kalibrr, nofluffjobs. No tracked company of the ported vendors is shipped (none could be verified without a network call).
+
 **Discover-only rule** (`src/lib/discoverOnly.ts`). Jobs from Workable, Recruitee, Personio, Workday,
 SmartRecruiters, the aggregators, every imported feed and every `gen:*` source (and their `manual:` twins)
 are matched, get contacts and
