@@ -36,22 +36,22 @@ describe('reply_facts (start time check of the email auto reply facts)', () => {
     expect((await run('reply_facts', on(tempRoot(), { EMAIL_AUTO_REPLY: 'false' }))).status).toBe('pass');
     expect((await run('reply_facts', on(tempRoot()))).detail).toMatch(/missing/);
     const a = tempRoot();
-    put(a, { confirmed: false, current_ctc: '9 LPA' });
+    put(a, { confirmed: false, current_ctc: '12 LPA' });
     const ra = await run('reply_facts', on(a));
     expect(ra.status).toBe('warn');
     expect(ra.detail).toMatch(/not confirmed/);
-    expect(ra.detail).not.toMatch(/9 LPA/);
+    expect(ra.detail).not.toMatch(/12 LPA/);
     const b = tempRoot();
     put(b, { confirmed: true, current_ctc: 'see https://x.test' });
     expect((await run('reply_facts', on(b))).detail).toMatch(/invalid/);
   });
   it('passes when confirmed and names the fields with no answer, never their values', async () => {
     const root = tempRoot();
-    put(root, { confirmed: true, current_ctc: '9 LPA', expected_ctc: '18 LPA', notice_period: '60 days' });
+    put(root, { confirmed: true, current_ctc: '12 LPA', expected_ctc: '20 LPA', notice_period: '30 days' });
     const r = await run('reply_facts', on(root));
     expect(r.status).toBe('pass');
     expect(r.detail).toMatch(/current_location/);
-    expect(r.detail).not.toMatch(/9 LPA/);
+    expect(r.detail).not.toMatch(/12 LPA/);
   });
 });
 
