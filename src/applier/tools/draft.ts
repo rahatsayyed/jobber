@@ -21,7 +21,7 @@ import {
 } from '../../apply/questions.js';
 import { FieldIdSchema } from '../refs.js';
 import {
-  dryRunResult, envOf, inPage, nowOf, refuse, type ApplierDeps, type ApplyResult,
+  companyOf, dryRunResult, envOf, inPage, nowOf, refuse, type ApplierDeps, type ApplyResult,
 } from './common.js';
 import { questionText, screenText } from './state.js';
 
@@ -96,7 +96,7 @@ export async function handleDraftAnswer(input: DraftInputT, deps: ApplierDeps): 
     if (!agentHandleAllowed(q.label, q.kind)) return refuse('not_draftable', 'only a motivational or descriptive question is drafted; factual questions come from the answer book or the owner');
     if (storedAnswer(db, job.jobId, job.host, q.label) !== null) return refuse('already_answered', 'this question already has an answer; use apply_fill');
     const s = deps.answers.suggest(q.label);
-    if (s.ref && deps.answers.has(s.ref)) return refuse('answer_book_has_it', 'the answer book answers this question; use apply_fill');
+    if (s.ref && deps.answers.has(s.ref, { question: q.label, company: companyOf(deps, job.jobId) })) return refuse('answer_book_has_it', 'the answer book answers this question; use apply_fill');
     db.prepare('INSERT OR IGNORE INTO apply_question_jobs (question_id, job_id) VALUES (?, ?)').run(q.id, job.jobId);
 
     const cap = Math.min(DRAFT_DEFAULT_MAX, field.maxLength ?? q.max_length ?? DRAFT_DEFAULT_MAX);

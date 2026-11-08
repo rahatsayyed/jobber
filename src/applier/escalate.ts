@@ -18,7 +18,7 @@ import { hostOfUrl, noteBlock, readPage } from '../webcore/login.js';
 import { fileNotifier, type Notice } from '../scheduler/notify.js';
 import { resolveRunId } from '../layout/runtime.js';
 import { recordHostBlock } from './cooldown.js';
-import { envOf, failedResult, nowOf, refuse, type ApplierDeps, type ApplyResult } from './tools/common.js';
+import { companyOf, envOf, failedResult, nowOf, refuse, type ApplierDeps, type ApplyResult } from './tools/common.js';
 
 export const ESCALATE_REASONS = [
   'captcha', 'mfa', 'phone_verification', 'email_verification', 'account_needed', 'question', 'consent',
@@ -61,7 +61,7 @@ async function recordPageQuestions(deps: ApplierDeps, jobId: string, host: strin
     if (f.role === 'eeo' || f.role === 'consent' || f.role === 'marketing' || f.role === 'otp') continue;
     const s = deps.answers.suggest(f.label);
     if (s.cls === 'consent' || s.cls === 'legal_attestation') continue;
-    if (s.ref && deps.answers.has(s.ref)) continue;
+    if (s.ref && deps.answers.has(s.ref, { question: f.label, options: f.options, company: companyOf(deps, jobId) })) continue;
     if (storedAnswer(deps.db, jobId, host, f.label) !== null) continue;
     try {
       recordQuestion(deps.db, {

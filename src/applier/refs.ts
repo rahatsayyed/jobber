@@ -13,7 +13,7 @@ const FIXED_ANSWER_KEYS = [
   'notice_period_days', 'expected_salary', 'phone', 'linkedin_profile_url', 'current_location', 'skills',
 ];
 // A custom key names an entry that must already exist in the answer book; code checks it.
-const ANSWER_KEY = new RegExp(`^(?:${FIXED_ANSWER_KEYS.join('|')}|custom:.{1,200})$`);
+const ANSWER_KEY = new RegExp(`^(?:${FIXED_ANSWER_KEYS.join('|')}|custom:.{1,200}|intent:[a-z_]{1,40})$`);
 
 export const FieldIdSchema = z.string().regex(FIELD_ID);
 export const ControlIdSchema = z.string().regex(CONTROL_ID);

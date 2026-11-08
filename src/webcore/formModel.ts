@@ -108,8 +108,10 @@ export function classifyControl(label: string): ControlKind {
 }
 
 function roleOf(f: RawField): FieldRole {
-  const label = f.label || '';
-  const key = `${label} ${f.name}`;
+  // An id-like label ("your-fullname", "first_name", "yourCity") is read as words: separators and camelCase humps become spaces.
+  const unId = (s: string): string => (/^[\w.:-]+$/.test(s) && /[-_.:]|[a-z][A-Z]/.test(s) ? s.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[-_.:]+/g, ' ') : s);
+  const label = unId(f.label || '');
+  const key = `${label} ${unId(f.name || '')} ${f.name || ''}`;
   if (f.type === 'password') return /verify|confirm|re-?enter|repeat/i.test(key) ? 'password_confirm' : 'password';
   if (f.type === 'checkbox') {
     const c = classifyCheckbox(label, f.required);
@@ -128,7 +130,9 @@ function roleOf(f: RawField): FieldRole {
   if (short) {
     if (/first.?name|given name/i.test(key)) return 'name.first';
     if (/last.?name|surname|family name/i.test(key)) return 'name.last';
-    if (/^\s*(full )?name\b|your name/i.test(label)) return 'name.full';
+    if (/^\s*(full )?name\b|your name|full ?name|^\s*(?:enter |your )+(?:full )?name\b/i.test(label)) return 'name.full';
+    // A placeholder shown as the label ("Sarah Johnson") on a field whose name or id says it is the person's name.
+    if (/^[A-Z][a-z'’.-]+(?: [A-Z][a-z'’.-]+){1,2}$/.test(label) && /(?:^|[^a-z])(?:full ?)?name$|^name|fullname|your.?name/i.test(`${unId(f.name || '')} ${unId(f.id || '')}`) && !/company|org|user|job|file|business|first|last|sur|family|given/i.test(`${f.name || ''} ${f.id || ''}`)) return 'name.full';
     if (/location|city|where .* (based|located)/i.test(key)) return 'location';
   }
   if (f.type === 'textarea' || f.type === 'select' || f.type === 'radio' || label.includes('?')) return 'question';

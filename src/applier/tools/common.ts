@@ -249,6 +249,14 @@ export async function inPage(deps: ApplierDeps, fn: (c: PageCtx) => Promise<Appl
 
 export const findField = (m: FormModel, id: string): FormField | undefined => m.fields.find((f) => f.id === id);
 
+// The job's company from SQLite (for "worked at <company>" questions). Null when unknown.
+export function companyOf(deps: ApplierDeps, jobId: string): string | null {
+  try {
+    const r = deps.db.prepare('SELECT company FROM jobs WHERE id = ?').get(jobId) as { company: string | null } | undefined;
+    return r?.company?.trim() || null;
+  } catch { return null; }
+}
+
 export type Resolved = { ok: true; value: AnswerValue } | { ok: false; result: ApplyResult };
 
 /**
@@ -273,10 +281,11 @@ export async function resolveQuestion(
     return { ok: true, value: v };
   };
   // 1. The answer book (answer file, profile, values derived from the resume): its own suggestion decides which ref answers this field.
-  if (s.ref && deps.answers.has(s.ref)) {
+  const qctx = { jobLocation: job.location, question: f.label, options: f.options, company: companyOf(deps, job.jobId) };
+  if (s.ref && deps.answers.has(s.ref, qctx)) {
     if (!ref) return ask('ref_required');
     if (!sameRef(ref, s.ref)) return { ok: false, result: refuse('role_ref_mismatch', 'that answer does not belong to this question') };
-    const v = deps.answers.resolve(s.ref, { jobLocation: job.location });
+    const v = deps.answers.resolve(s.ref, qctx);
     if (v !== null && v !== undefined && v !== '') return checkLen(v);
   }
   // 2. An answer the owner gave for this very question (`once` for this job, `always` for this host and label). Code picks it from the

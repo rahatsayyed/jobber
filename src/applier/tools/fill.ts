@@ -40,6 +40,11 @@ export async function handleFill(input: FillInputT, deps: ApplierDeps): Promise<
       if (value === null || value === undefined || value === '') {
         return needsAnswer(deps, job, f, 'missing_answer', (l) => questionText(l, deps));
       }
+      // A field labeled for the CITY only gets the city part of the stored location ("Pune, India" -> "Pune").
+      if (f.role === 'location' && /\bcity\b/i.test(f.label) && !/location|address|country/i.test(f.label)) {
+        const city = String(value).split(',')[0].trim();
+        if (city) value = city;
+      }
     }
     if (typeof value === 'boolean') return refuse('type_mismatch', 'a yes/no answer belongs to a choice field');
 

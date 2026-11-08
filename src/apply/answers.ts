@@ -1,6 +1,10 @@
 import { chmodSync, existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { userDataPath } from '../lib/userData.js';
-import { deriveFromResume } from './derive.js';
+import { deriveFromResume, monthsFromExperience } from './derive.js';
+import { answerIntent, classifyIntent, INTENT_NAMES, intentHasFacts, sponsorNegated, type IntentName, type OwnerFacts } from './intents.js';
+
+const YES_NO_OPT = (v: boolean, options?: string[]): AnswerValue | null =>
+  !options || options.length === 0 ? v : (options.find((o) => o.trim().toLowerCase() === (v ? 'yes' : 'no')) ?? null);
 
 // Answer book for the browser apply flow. The matching logic is COPIED from
 // the removed scripted Easy Apply (deleted in Task 23). Values are only
@@ -26,15 +30,24 @@ export interface EasyApplyAnswers {
 
 export type AnswerRef =
   | { kind: 'profile'; field: 'name.first' | 'name.last' | 'name.full' | 'email' | 'phone' | 'linkedin_url' | 'location' }
-  | { kind: 'answer'; key: keyof EasyApplyAnswers | `custom:${string}` }
+  | { kind: 'answer'; key: keyof EasyApplyAnswers | `custom:${string}` | `intent:${string}` }
   | { kind: 'resume_pdf' }
   | { kind: 'cover_letter' };
 
 export type QuestionClass = 'known' | 'custom' | 'consent' | 'legal_attestation' | 'free_text' | 'unknown';
 
+/** Context of one question: the job's location and, for `intent:` refs, the question text, the page's listed options and the job's company. */
+export interface ResolveCtx {
+  jobLocation?: string;
+  question?: string;
+  options?: string[];
+  company?: string | null;
+}
+
 export interface AnswerBook {
-  has(ref: AnswerRef): boolean;
-  resolve(ref: AnswerRef, ctx: { jobLocation?: string }): string | number | boolean | null;
+  /** With `ctx.question` an `intent:` ref is judged completely (the answer must be computable); without it only the facts are checked. */
+  has(ref: AnswerRef, ctx?: ResolveCtx): boolean;
+  resolve(ref: AnswerRef, ctx: ResolveCtx): string | number | boolean | null;
   suggest(question: string): { ref: AnswerRef | null; cls: QuestionClass };
 }
 
@@ -195,10 +208,35 @@ export function loadAnswerBook(deps: { answersPath?: string; profilePath?: strin
     return c[hit] === '' ? undefined : c[hit];
   };
 
-  function resolve(ref: AnswerRef, ctx: { jobLocation?: string }): AnswerValue | null {
+  const experience = Array.isArray(profileRaw?.experience) ? (profileRaw!.experience as unknown[]) : [];
+  const months = monthsFromExperience(experience, new Date());
+  const stated = typeof answers.years_experience === 'number' && Number.isFinite(answers.years_experience) ? Math.floor(answers.years_experience) : null;
+  const rs = (answers as Record<string, unknown>).requires_sponsorship;
+  const rsObj = rs as Partial<SponsorshipByRegion> | null | undefined;
+  const facts: OwnerFacts = {
+    // The owner's own number wins unless the resume dates agree with it (then the exact months decide). An empty fact stays null.
+    experienceMonths: months !== null && (stated === null || Math.floor(months / 12) === stated) ? months : null,
+    statedYears: stated ?? (months !== null ? Math.floor(months / 12) : null),
+    location: str(answers.current_location) ?? str(profileRaw?.location),
+    requiresSponsorship: typeof rs === 'boolean' ? rs
+      : rsObj && typeof rsObj === 'object' && typeof rsObj.india === 'boolean' && typeof rsObj.other === 'boolean' ? { india: rsObj.india, other: rsObj.other } : null,
+    employers: experience.map((e) => str((e as { company?: unknown })?.company)).filter((x): x is string => x !== null),
+  };
+  const intentOf = (key: string): IntentName | null => (key.startsWith('intent:') && (INTENT_NAMES as readonly string[]).includes(key.slice(7)) ? (key.slice(7) as IntentName) : null);
+
+  function resolve(ref: AnswerRef, ctx: ResolveCtx): AnswerValue | null {
     if (ref.kind === 'profile') return profile[ref.field] ?? null;
     if (ref.kind !== 'answer') return null;
     const key = ref.key as string;
+    if (key.startsWith('intent:')) {
+      const intent = intentOf(key);
+      if (!intent || !ctx.question) return null;
+      const v = answerIntent(intent, facts, { question: ctx.question, options: ctx.options, company: ctx.company });
+      if (v !== null || intent !== 'visa_sponsorship' || sponsorNegated(ctx.question)) return v;
+      // The old job-location rule for the {india, other} form stays as the fallback.
+      const legacy = resolveSponsorship(answers.requires_sponsorship, ctx.jobLocation);
+      return legacy === null ? null : (YES_NO_OPT(legacy, ctx.options));
+    }
     if (key.startsWith('custom:')) return customValue(key.slice(7)) ?? null;
     if (!FIXED_KEYS.has(key)) return null;
     if (key === 'requires_sponsorship') return resolveSponsorship(answers.requires_sponsorship, ctx.jobLocation);
@@ -207,10 +245,15 @@ export function loadAnswerBook(deps: { answersPath?: string; profilePath?: strin
   }
 
   return {
-    has(ref) {
+    has(ref, ctx) {
       if (ref.kind === 'profile') return profile[ref.field] != null;
       if (ref.kind !== 'answer') return false;
       const key = ref.key as string;
+      if (key.startsWith('intent:')) {
+        const intent = intentOf(key);
+        if (!intent) return false;
+        return ctx?.question ? resolve(ref, ctx) !== null : intentHasFacts(intent, facts);
+      }
       if (key.startsWith('custom:')) return customValue(key.slice(7)) !== undefined;
       return FIXED_KEYS.has(key) && (key === 'requires_sponsorship' ? (answers as Record<string, unknown>)[key] != null : fixedValue(key) != null);
     },
@@ -226,6 +269,10 @@ export function loadAnswerBook(deps: { answersPath?: string; profilePath?: strin
           if (normalizeQuestion(key) === n) return { ref: { kind: 'answer', key: `custom:${key}` }, cls: 'custom' };
         }
       }
+      // Intent classes (src/apply/intents.ts) run BEFORE the literal patterns: "require sponsorship ... in your current location" is a
+      // sponsorship question, not a current-location one.
+      const intent = classifyIntent(question);
+      if (intent) return { ref: { kind: 'answer', key: `intent:${intent}` }, cls: 'known' };
       if (!NOT_EXPECTED_SALARY.test(question)) {
         for (const { pattern, key } of QUESTION_PATTERNS) {
           if (pattern.test(question)) return { ref: { kind: 'answer', key }, cls: 'known' };

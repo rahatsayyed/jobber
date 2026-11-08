@@ -66,7 +66,7 @@ export function planFields(step: RecipeStep, model: FormModel, book: AnswerBook)
     if (f.role === 'question') {
       if (!f.required) continue;
       const s = book.suggest(f.label);
-      if (s.ref && book.has(s.ref)) out.push({ id: f.id, action: 'fill', ref: s.ref });
+      if (s.ref && book.has(s.ref, { question: f.label, options: f.options })) out.push({ id: f.id, action: 'fill', ref: s.ref });
       continue;
     }
     const rf = step.fields.find((x) => x.role === f.role);

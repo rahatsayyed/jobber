@@ -19,6 +19,12 @@ function monthIndex(s: unknown): number | null {
 
 /** Whole years of work: the union of the experience date ranges (overlaps and gaps are not double counted), rounded DOWN. An open end means `now`. */
 export function yearsFromExperience(experience: unknown, now: Date): number | null {
+  const months = monthsFromExperience(experience, now);
+  return months === null ? null : Math.floor(months / 12);
+}
+
+/** Months of work (union of the date ranges, an open end means `now`); the exact figure behind "over N years" questions. */
+export function monthsFromExperience(experience: unknown, now: Date): number | null {
   if (!Array.isArray(experience)) return null;
   const nowIdx = now.getUTCFullYear() * 12 + now.getUTCMonth();
   const spans: Array<[number, number]> = [];
@@ -39,7 +45,7 @@ export function yearsFromExperience(experience: unknown, now: Date): number | nu
     else { months += ce - cs; cs = s; ce = e; }
   }
   months += ce - cs;
-  return Math.floor(months / 12);
+  return months;
 }
 
 export function skillsFromResume(skills: unknown, maxChars = 400): string | null {

@@ -109,6 +109,26 @@ Location", CTC, links and open text are therefore asked of the owner once. Match
 normalized question first (lowercase, one space, no trailing `*`), then the existing role patterns;
 nothing is fuzzy. Consent and attestation questions are never answered from any book.
 
+**Intent classes** (`src/apply/intents.ts`, ref key `intent:<name>`). Between the exact-label match and the
+literal patterns the book recognizes the INTENT of a plain factual question in several phrasings (English,
+a little Hinglish) and computes the answer from the owner's facts: `years_threshold` ("over/more than/at
+least/N+ years ... experience": Yes/No from the resume months, or from the owner's integer when the dates
+disagree; an equal integer for "over N" is ambiguous and parks; only generic experience wording counts, a
+named skill such as "experience with Kubernetes" parks), `visa_sponsorship` ("require sponsorship/visa to
+remain in your current location": No for an owner who lives there, the answer file's `requires_sponsorship`
+and its india/other split otherwise; negated wording and "do you hold a visa" never match),
+`country_of_residence`, `city`, `region_residence` ("do you currently live in the US or Canada": Yes/No by
+comparing the owner's country with the countries and regions named; an unknown place parks) and
+`prior_employer` ("have you worked at or consulted for X": Yes only when X matches an employer in the
+resume, otherwise No; "us/this company" uses the job's company). The owner's country comes from the last
+part of the location (or a known Indian city). An empty fact or an uncomputable question is never guessed:
+it parks as `needs_answer` exactly as before. On a select or radio the answer is the page's own option
+(Yes/No or the country name); no clean option parks it. The model still only names the ref; code computes
+the value and checks that the ref is the one the book suggests. Form roles also read id-like labels
+(`your-fullname`, `first_name`) as words, a person-looking placeholder label on a name field as the full
+name, and a city-only field gets the city part of the stored location. Still owner-only: self-ratings, time
+splits, employment-agreement and post-employment restrictions, salary, and motivational text.
+
 **`needs_answer` and `apply_questions`.** A tool that meets a required question nothing reliable answers
 writes ONE row per distinct question (normalized label plus host; label cleaned, kind text/select/radio/
 checkbox, options, the field's maxlength) and returns `needs_answer` with the question and `question_id`.
