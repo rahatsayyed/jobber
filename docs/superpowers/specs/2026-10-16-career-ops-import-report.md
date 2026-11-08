@@ -53,21 +53,21 @@ Scope: 47 board-wide, 62 per-company (tenant). Classification is a code heuristi
 | Provider | Lines | Class | Scope | Status | Reason |
 |---|---|---|---|---|---|
 | 4dayweek | 159 | json_api | board_wide | imported | ported as src/sources/providers/4dayweek.ts, disabled, discover-only |
-| a16z-speedrun-talent | 215 | json_api | board_wide | skipped | board-wide feed, not ported in this pass (candidate for a later batch) |
-| adp-workforcenow | 472 | json_api | board_wide | skipped | board-wide feed, not ported in this pass (candidate for a later batch) |
-| agentic-jobs | 186 | json_api | board_wide | skipped | board-wide feed, not ported in this pass (candidate for a later batch) |
+| a16z-speedrun-talent | 215 | json_api | board_wide | imported | ported as src/sources/providers/a16z-speedrun-talent.ts, disabled, discover-only |
+| adp-workforcenow | 472 | json_api | board_wide | skipped | per-company ADP tenant (cid and ccId), not a board-wide feed |
+| agentic-jobs | 186 | json_api | board_wide | imported | ported as src/sources/providers/agentic-jobs.ts, disabled, discover-only |
 | alibaba | 194 | needs_login | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | amazon | 138 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | applitrack | 155 | html_list | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | arbeitnow | 128 | json_api | board_wide | imported | ported as src/sources/providers/arbeitnow.ts, disabled, discover-only |
-| arbeitsagentur | 266 | needs_login | board_wide | skipped | looks like it needs credentials, a token or a session (heuristic); agent tier, no script provider |
+| arbeitsagentur | 266 | needs_login | board_wide | skipped | needs an API key or session (not allowed: no login, no keys) |
 | ashby | 539 | json_api | tenant | already_present | already ported earlier (plan 4/5 boards or the Adzuna/Remotive/RemoteOK sources) |
 | avature | 282 | html_list | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | bamboohr | 235 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | beesite | 188 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | breezy | 165 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| builtin | 535 | html_list | board_wide | skipped | HTML scraping with no stable machine shape; left to the agent tier or a later declarative generated provider |
-| careerviet | 335 | html_list | board_wide | skipped | HTML scraping with no stable machine shape; left to the agent tier or a later declarative generated provider |
+| builtin | 535 | html_list | board_wide | skipped | regex over HTML cards, needs queries or categories, no default; moderate and fragile parse |
+| careerviet | 335 | html_list | board_wide | skipped | regex over HTML cards with card windowing; only HCM verified upstream; moderate and fragile parse |
 | collage | 106 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | comeet | 151 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | consider | 217 | needs_login | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
@@ -75,7 +75,7 @@ Scope: 47 board-wide, 62 per-company (tenant). Classification is a code heuristi
 | csod | 274 | needs_login | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | dassault | 189 | html_list | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | deutschebahn | 296 | html_list | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| echojobs | 141 | unclear | board_wide | skipped | could not classify automatically; needs a manual read |
+| echojobs | 141 | unclear | board_wide | skipped | unclear class and upstream retired; skipped |
 | eightfold | 481 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | eploy | 261 | rss | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | feishu-jobs | 224 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
@@ -84,22 +84,22 @@ Scope: 47 board-wide, 62 per-company (tenant). Classification is a code heuristi
 | gem | 345 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | generalist-world | 336 | html_list | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | getonbrd | 198 | json_api | board_wide | imported | ported as src/sources/providers/getonbrd.ts, disabled, discover-only |
-| getro | 294 | json_api | board_wide | skipped | board-wide feed, not ported in this pass (candidate for a later batch) |
+| getro | 294 | json_api | board_wide | skipped | POST search plus a per-host collection id from the page; the feed engine only does GET |
 | glints | 251 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| google | 146 | html_list | board_wide | skipped | HTML scraping with no stable machine shape; left to the agent tier or a later declarative generated provider |
+| google | 146 | html_list | board_wide | skipped | regex over Google HTML keyed on a generated class name (l103df); brittle |
 | greenhouse | 281 | json_api | tenant | already_present | already ported earlier (plan 4/5 boards or the Adzuna/Remotive/RemoteOK sources) |
-| gupy | 470 | json_api | board_wide | skipped | board-wide feed, not ported in this pass (candidate for a later batch) |
+| gupy | 470 | json_api | board_wide | imported | ported as src/sources/providers/gupy.ts, disabled, discover-only |
 | hackernews | 186 | json_api | board_wide | already_present | already ported earlier (plan 4/5 boards or the Adzuna/Remotive/RemoteOK sources) |
 | hecklerkoch | 101 | html_list | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| higheredjobs | 146 | rss | board_wide | skipped | board-wide feed, not ported in this pass (candidate for a later batch) |
+| higheredjobs | 146 | rss | board_wide | imported | ported as src/sources/providers/higheredjobs.ts, disabled, discover-only |
 | himalayas | 130 | json_api | board_wide | already_present | already ported earlier (plan 4/5 boards or the Adzuna/Remotive/RemoteOK sources) |
 | hiringroom | 194 | html_list | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| ibm | 125 | json_api | board_wide | skipped | board-wide feed, not ported in this pass (candidate for a later batch) |
+| ibm | 125 | json_api | board_wide | skipped | search API is a POST with an Elasticsearch-style body; the feed engine only does GET |
 | icims | 267 | html_list | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| itviec | 304 | html_list | board_wide | skipped | HTML scraping with no stable machine shape; left to the agent tier or a later declarative generated provider |
+| itviec | 304 | html_list | board_wide | skipped | regex over Stimulus data attributes, relative dates, HTTP 429 on sweeps; fragile parse |
 | jazzhr | 239 | html_list | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | jibeapply | 150 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| jobbankca | 298 | html_list | board_wide | skipped | HTML scraping with no stable machine shape; left to the agent tier or a later declarative generated provider |
+| jobbankca | 298 | html_list | board_wide | skipped | Atom feed with regex-parsed summary HTML and a 5 second crawl delay per request; engine reads RSS only |
 | jobicy | 84 | json_api | board_wide | imported | ported as src/sources/providers/jobicy.ts, disabled, discover-only |
 | jobspresso | 128 | rss | board_wide | imported | ported as src/sources/providers/jobspresso.ts, disabled, discover-only |
 | jobstreet | 259 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
@@ -115,18 +115,18 @@ Scope: 47 board-wide, 62 per-company (tenant). Classification is a code heuristi
 | manfred | 223 | json_api | board_wide | imported | ported as src/sources/providers/manfred.ts, disabled, discover-only |
 | meituan | 190 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | mokahr | 308 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| mycareersfuture | 224 | json_api | board_wide | skipped | board-wide feed, not ported in this pass (candidate for a later batch) |
+| mycareersfuture | 224 | json_api | board_wide | skipped | search API is a POST with a JSON body; the feed engine only does GET |
 | neogov | 189 | html_list | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | nodesk | 137 | rss | board_wide | imported | ported as src/sources/providers/nodesk.ts, disabled, discover-only |
 | nofluffjobs | 168 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| occ | 281 | html_list | board_wide | skipped | HTML scraping with no stable machine shape; left to the agent tier or a later declarative generated provider |
+| occ | 281 | html_list | board_wide | skipped | Cloudflare challenge for non-Mexican IPs and class-name regex; fragile |
 | oraclecloud | 274 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | pageup | 295 | needs_login | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | peoplesoft | 946 | needs_login | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | personio | 528 | html_list | tenant | already_present | already ported earlier (plan 4/5 boards or the Adzuna/Remotive/RemoteOK sources) |
 | phenom | 273 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | pinpoint | 158 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| platsbanken | 359 | json_api | board_wide | skipped | board-wide feed, not ported in this pass (candidate for a later batch) |
+| platsbanken | 359 | json_api | board_wide | imported | ported as src/sources/providers/platsbanken.ts, disabled, discover-only |
 | prevueaps | 254 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | pythonorg | 176 | rss | board_wide | imported | ported as src/sources/providers/pythonorg.ts, disabled, discover-only |
 | radancy | 525 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
@@ -136,9 +136,9 @@ Scope: 47 board-wide, 62 per-company (tenant). Classification is a code heuristi
 | remotive | 43 | json_api | board_wide | already_present | already ported earlier (plan 4/5 boards or the Adzuna/Remotive/RemoteOK sources) |
 | remotli | 327 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | rheinmetall | 152 | html_list | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| rippling | 231 | json_api | board_wide | skipped | board-wide feed, not ported in this pass (candidate for a later batch) |
+| rippling | 231 | json_api | board_wide | skipped | per-company ATS tenant (slug from careers_url), not a board-wide feed |
 | schoolspring | 203 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| senjob | 232 | html_list | board_wide | skipped | HTML scraping with no stable machine shape; left to the agent tier or a later declarative generated provider |
+| senjob | 232 | html_list | board_wide | skipped | regex over table rows, employer not on the listing page (empty company); fragile |
 | smartrecruiters | 257 | json_api | tenant | already_present | already ported earlier (plan 4/5 boards or the Adzuna/Remotive/RemoteOK sources) |
 | softgarden | 147 | html_list | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | solidjobs | 83 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
@@ -146,20 +146,20 @@ Scope: 47 board-wide, 62 per-company (tenant). Classification is a code heuristi
 | successfactors | 461 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | taleo | 305 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | teamtailor | 180 | rss | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| techinasia | 447 | needs_login | board_wide | skipped | looks like it needs credentials, a token or a session (heuristic); agent tier, no script provider |
-| telegram-channel | 445 | html_list | board_wide | skipped | HTML scraping with no stable machine shape; left to the agent tier or a later declarative generated provider |
+| techinasia | 447 | needs_login | board_wide | skipped | needs login or keys (not allowed: no login, no keys) |
+| telegram-channel | 445 | html_list | board_wide | skipped | heuristic employer extraction over t.me HTML, high complexity, low coverage |
 | tencent | 148 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
 | thehub | 184 | json_api | board_wide | imported | ported as src/sources/providers/thehub.ts, disabled, discover-only |
 | themuse | 179 | json_api | board_wide | imported | ported as src/sources/providers/themuse.ts, disabled, discover-only |
 | tkms | 192 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| torre | 235 | unclear | board_wide | skipped | could not classify automatically; needs a manual read |
+| torre | 235 | unclear | board_wide | skipped | unclear class and upstream retired; skipped |
 | ultipro | 480 | json_api | tenant | skipped | per-company ATS (needs a tracked_companies entry): the ats union, slug rules and fetchBoards wiring belong to the boards code, not the feed engine |
-| vdab | 323 | json_api | board_wide | skipped | board-wide feed, not ported in this pass (candidate for a later batch) |
+| vdab | 323 | json_api | board_wide | skipped | POST search with a rotating frontend key read from a live JS bundle; the feed engine only does GET |
 | weworkremotely | 135 | rss | board_wide | already_present | already ported earlier (plan 4/5 boards or the Adzuna/Remotive/RemoteOK sources) |
 | workable | 346 | json_api | tenant | already_present | already ported earlier (plan 4/5 boards or the Adzuna/Remotive/RemoteOK sources) |
 | workday | 1266 | json_api | tenant | already_present | already ported earlier (plan 4/5 boards or the Adzuna/Remotive/RemoteOK sources) |
 | workingnomads | 41 | json_api | board_wide | imported | ported as src/sources/providers/workingnomads.ts, disabled, discover-only |
-| wttj | 250 | needs_login | board_wide | skipped | looks like it needs credentials, a token or a session (heuristic); agent tier, no script provider |
+| wttj | 250 | needs_login | board_wide | skipped | needs login or keys (not allowed: no login, no keys) |
 | yourator | 212 | json_api | board_wide | imported | ported as src/sources/providers/yourator.ts, disabled, discover-only |
 
 ## What the imported providers are and are not

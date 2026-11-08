@@ -29,6 +29,8 @@ export interface Case {
   descHas?: string;
   /** Dotted path inside one raw sample item that the provider requires; renaming it must fail the shape check. */
   breakKey: string;
+  /** Apex host of the kept posting URLs when it differs from the API host (default: host). */
+  jobHost?: string;
   /** Requests the fixture replay may make (default 1). */
   requests?: number;
 }
@@ -68,7 +70,7 @@ export function describeProvider(c: Case): void {
         expect(j.id).toMatch(new RegExp(`^${c.id}:[0-9a-f]{16}$`));
         expect(j.source).toBe(c.id);
         expect(j.apply_url).toBe(j.url);
-        expect(hostMatches(j.url, c.host), j.url).toBe(true);
+        expect(hostMatches(j.url, c.jobHost ?? c.host), j.url).toBe(true);
         expect(j.url.startsWith('https://')).toBe(true);
         expect(j.title.length).toBeGreaterThan(0);
         expect(j.company.length).toBeGreaterThan(0);

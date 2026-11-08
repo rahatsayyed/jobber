@@ -1,0 +1,5 @@
+{ "data": [
+  { "name": "Desenvolvedor React", "jobUrl": "https://acme.gupy.io/jobs/1", "careerPageName": "Acme", "workplaceType": "remote", "city": "", "state": "SP", "country": "Brasil", "publishedDate": "2025-10-02T10:00:00Z", "description": "Vaga invented" },
+  { "name": "Confidential Role", "jobUrl": "https://x.gupy.io/jobs/2", "careerPageName": "Empresa confidencial" },
+  { "name": "Hidden", "jobUrl": "https://y.gupy.io/jobs/3", "careerPageName": "Y", "isConfidentialCareerPage": true }
+], "pagination": { "total": 3 } }

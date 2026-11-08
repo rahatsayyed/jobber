@@ -50,6 +50,7 @@ export const SOURCE_POLICY: Readonly<Record<string, SourcePolicy>> = {
   yourator: { apply: 'none' }, getonbrd: { apply: 'none' }, justjoin: { apply: 'none' }, manfred: { apply: 'none' },
   cryptocurrencyjobs: { apply: 'none' }, jobspresso: { apply: 'none' }, larajobs: { apply: 'none' }, nodesk: { apply: 'none' },
   pythonorg: { apply: 'none' }, 'startup-jobs': { apply: 'none' },
+  'a16z-speedrun-talent': { apply: 'none' }, 'agentic-jobs': { apply: 'none' }, 'gupy': { apply: 'none' }, 'platsbanken': { apply: 'none' }, 'higheredjobs': { apply: 'none' },
   naukri: { apply: 'url' },
   // Wellfound has its own MCP and a native Apply (apply-operator), so it is an apply target like Naukri.
   wellfound: { apply: 'url' },

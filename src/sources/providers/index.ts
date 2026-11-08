@@ -9,6 +9,7 @@ type Loader = () => Promise<{ provider: Provider }>;
 export const IMPORTED_IDS = [
   '4dayweek', 'arbeitnow', 'jobicy', 'workingnomads', 'themuse', 'landingjobs', 'thehub', 'flowxtra', 'yourator', 'getonbrd',
   'justjoin', 'manfred', 'cryptocurrencyjobs', 'jobspresso', 'larajobs', 'nodesk', 'pythonorg', 'startup-jobs',
+  'a16z-speedrun-talent', 'agentic-jobs', 'gupy', 'platsbanken', 'higheredjobs',
 ] as const;
 
 export const IMPORTED_LOADERS: Record<string, Loader> = {
@@ -30,4 +31,9 @@ export const IMPORTED_LOADERS: Record<string, Loader> = {
   'providers/nodesk': () => import('./nodesk.js'),
   'providers/pythonorg': () => import('./pythonorg.js'),
   'providers/startup-jobs': () => import('./startup-jobs.js'),
+  'providers/a16z-speedrun-talent': () => import('./a16z-speedrun-talent.js'),
+  'providers/agentic-jobs': () => import('./agentic-jobs.js'),
+  'providers/gupy': () => import('./gupy.js'),
+  'providers/platsbanken': () => import('./platsbanken.js'),
+  'providers/higheredjobs': () => import('./higheredjobs.js'),
 };

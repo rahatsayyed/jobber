@@ -1,0 +1,4 @@
+{ "hits": [
+  { "id": "29000001", "headline": "React Developer", "employer": { "name": "Fjord AB" }, "workplace_address": { "municipality": "Malmo", "region": "Skane", "country": "Sverige" }, "publication_date": "2025-10-02T10:00:00", "description": { "text": "Invented text." } },
+  { "id": "bad id/..", "headline": "Bad", "employer": { "name": "Z" } }
+] }
