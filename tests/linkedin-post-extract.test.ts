@@ -45,6 +45,32 @@ describe('classifyPost', () => {
   });
 });
 
+describe('classifyPost: referral, send-resume and immediate-joiner phrasing', () => {
+  it('accepts referral, DM-for-reference, send-resume and immediate-joiner posts that name a target role', () => {
+    expect(classifyPost('Opening for MERN stack developer in Pune. DM me for referral.').hiring).toBe(true);
+    expect(classifyPost('Referral available for Full Stack Developer (React + Node), Bangalore. Share your profile.').hiring).toBe(true);
+    expect(classifyPost('Referrals are provided for React developers at our Hyderabad office.').hiring).toBe(true);
+    expect(classifyPost('DM me for reference. React.js developer, 3+ years, Noida.').hiring).toBe(true);
+    expect(classifyPost('Node.js backend role open. Send your resume to jobs@acme.example').hiring).toBe(true);
+    expect(classifyPost('Immediate joiners preferred: Full stack engineer (MERN), remote.').hiring).toBe(true);
+    expect(classifyPost('Hiring for React Native developer, Dubai. Immediate joiner needed.').hiring).toBe(true);
+    expect(classifyPost('Vacancy for a frontend developer. Email your CV.').hiring).toBe(true);
+  });
+  it('still rejects seekers who use the same words', () => {
+    expect(classifyPost('I am an immediate joiner. Open to work as a React developer.')).toEqual({ hiring: false, reason: 'seeker' });
+    expect(classifyPost("I'm an immediate joiner, React developer, 3 years. DM me.")).toEqual({ hiring: false, reason: 'seeker' });
+    expect(classifyPost('Immediate joiner available for MERN stack developer roles. Please refer me.')).toEqual({ hiring: false, reason: 'seeker' });
+    expect(classifyPost('Looking for a referral for React developer roles, please DM me.')).toEqual({ hiring: false, reason: 'seeker' });
+    expect(classifyPost('Need referral for full stack developer openings. My resume is attached.')).toEqual({ hiring: false, reason: 'seeker' });
+    expect(classifyPost('#opentowork Node.js developer, send me referrals')).toEqual({ hiring: false, reason: 'seeker' });
+  });
+  it('rejects promotion and chatter that has the phrase but no role', () => {
+    expect(classifyPost('Referral available for everyone who joins our webinar. DM me for referral.')).toEqual({ hiring: false, reason: 'no_role' });
+    expect(classifyPost('Send your resume to our newsletter and immediate joiners get a gift!')).toEqual({ hiring: false, reason: 'no_role' });
+    expect(classifyPost('Our referral program turned 5 today.')).toEqual({ hiring: false, reason: 'not_hiring' });
+  });
+});
+
 describe('field extraction', () => {
   it('company: text pattern, then headline, else empty', () => {
     expect(extractCompany('We are hiring at Acme Robotics. React dev.', '')).toEqual({ company: 'Acme Robotics', from: 'text' });

@@ -86,7 +86,7 @@ describe('discovery config and URL building', () => {
   it('the shipped config migrates every usable old entry and builds a code-made url', () => {
     const cfg = loadDiscoveryConfig();
     expect(cfg.jobs.map((j) => j.name)).toEqual(['full-stack-remote-india']);
-    expect(cfg.posts.map((p) => p.name)).toEqual(['default']);
+    expect(cfg.posts.map((p) => p.name)).toContain('default');
     const u = new URL(buildJobsSearchUrl(cfg.jobs[0]));
     expect(u.origin + u.pathname).toBe('https://www.linkedin.com/jobs/search/');
     expect(u.searchParams.get('keywords')).toBe('full stack developer react');

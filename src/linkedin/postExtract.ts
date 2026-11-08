@@ -57,19 +57,25 @@ const STRONG_HIRING = /\b(?:we(?:'|’)?re hiring|we are hiring|is hiring|are hi
 const WEAK_HIRING = /\b(?:looking for|join our team|join us|open position|opening)\b/i;
 const APPLY_CUE = /\b(?:apply|send (?:your |me your )?(?:cv|resume|profile)|email|e-mail|dm me|comment (?:below|interested)|share your (?:cv|resume)|interested candidates|drop (?:your|a))\b/i;
 const SEEKER =
-  /(?:#?open ?to ?work|\bi(?:'|’)?m (?:currently )?(?:looking|searching|seeking)|\bi am (?:currently )?(?:looking|searching|seeking)|\blooking for (?:my next|a new) (?:role|opportunit|job|position|challenge)|\bseeking (?:a )?(?:new )?(?:role|opportunit|position|job)|\bavailable (?:for hire|immediately|to join)|\bactively looking\b|\blaid off\b|\blost my job\b|\bplease refer me\b|\bif you(?:'|’)?re hiring\b|\bif you are hiring\b|#hireme|\bmy resume\b|\bkindly refer\b)/i;
+  /(?:#?open ?to ?work|\bi(?:'|’)?m (?:currently )?(?:looking|searching|seeking)|\bi am (?:currently )?(?:looking|searching|seeking)|\blooking for (?:my next|a new) (?:role|opportunit|job|position|challenge)|\bseeking (?:a )?(?:new )?(?:role|opportunit|position|job)|\bavailable (?:for hire|immediately|to join)|\bactively looking\b|\blaid off\b|\blost my job\b|\bplease refer me\b|\bif you(?:'|’)?re hiring\b|\bif you are hiring\b|#hireme|\bmy resume\b|\bkindly refer\b|\bi(?:'|’)?m an? (?:immediate|early) joiner|\bi am an? (?:immediate|early) joiner|\b(?:immediate|early) joiners? available\b|\b(?:looking for|need|needs|seeking|request(?:ing)?|require|want|any) (?:a |an |any |some )?(?:job )?referrals?\b|\bsend me referrals?\b)/i;
 const ROLE_WORD = new RegExp(`\\b${ROLE_NOUN}\\b`, 'i');
+// Referral-style hiring wording: a recruiter or employee offering a referral, asking for a resume, or wanting an immediate joiner.
+// Counts as a hiring cue only together with a role (below) and never when a seeker pattern also matches.
+const REFERRAL_HIRING =
+  /\b(?:dm (?:me )?(?:for|to get) (?:a |the )?(?:referral|reference)s?|referrals? (?:is |are )?(?:available|possible|offered|provided)|(?:can|will) (?:provide|give|offer|do) (?:a )?referrals?|happy to refer|(?:send|share|drop|forward|mail|email) (?:your |ur )?(?:resume|cv|profile)s? (?:to|at|on)|immediate joiners?|early joiners?|openings? for|vacanc(?:y|ies) for)\b/i;
+// A tech role named without a job noun ("MERN stack", "React", "Node.js"): enough for the role test, not for extracting a title.
+const TECH_ROLE = /\b(?:full[- ]?stack|mern|mean stack|react(?:\.?js| native)?|node(?:\.?js)?|front[- ]?end|back[- ]?end|sde|swe|devs?)\b/i;
 
 export type PostVerdict = { hiring: true } | { hiring: false; reason: 'seeker' | 'not_hiring' | 'no_role' };
 
 /** Conservative keyword rules: reject job-seeker posts, posts with no hiring cue, and promotional posts that name no role. */
 export function classifyPost(text: string): PostVerdict {
   const t = String(text ?? '');
-  const strong = STRONG_HIRING.test(t);
+  const strong = STRONG_HIRING.test(t) || REFERRAL_HIRING.test(t);
   if (SEEKER.test(t) && !/\bwe(?:'|’)?re hiring\b|\bwe are hiring\b|\bis hiring\b/i.test(t)) return { hiring: false, reason: 'seeker' };
   const weak = !strong && WEAK_HIRING.test(t) && APPLY_CUE.test(t);
   if (!strong && !weak) return { hiring: false, reason: 'not_hiring' };
-  if (!ROLE_WORD.test(t)) return { hiring: false, reason: 'no_role' };
+  if (!ROLE_WORD.test(t) && !TECH_ROLE.test(t)) return { hiring: false, reason: 'no_role' };
   return { hiring: true };
 }
 

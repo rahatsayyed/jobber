@@ -26,6 +26,7 @@ import { killLegacyWindows, makeEnsureReady } from '../src/scheduler/windowReady
 import { readWakeResult, requestWake } from '../src/scheduler/wakeRequest.js';
 import { fileNotifier } from '../src/scheduler/notify.js';
 import { loadPlanKnobs, planWake, type DiscoverSearches } from '../src/scheduler/plan.js';
+import { rotateNames } from '../src/linkedin/discoverRotation.js';
 import { loadDiscoveryConfig } from '../src/linkedin/discoveryConfig.js';
 import { loadNaukriDiscoveryConfig } from '../src/naukri/discover.js';
 import { loadWellfoundDiscoveryConfig } from '../src/wellfound/discover.js';
@@ -87,10 +88,12 @@ function status(env: NodeJS.ProcessEnv): void {
 }
 
 /** Search names only (never definitions) from config/linkedin-discovery.json and config/naukri-discovery.json, for the discover tasks. */
-function discoverNames(): DiscoverSearches {
+function discoverNames(db: Parameters<typeof rotateNames>[0]): DiscoverSearches {
   const c = loadDiscoveryConfig();
   return {
-    jobs: c.jobs.map((j) => j.name), posts: c.posts.map((p) => p.name),
+    // Least recently tried first, so a small per-wake quota rotates through every named search.
+    jobs: rotateNames(db, 'search_jobs', c.jobs.map((j) => j.name)),
+    posts: rotateNames(db, 'search_posts', c.posts.map((p) => p.name)),
     naukri: loadNaukriDiscoveryConfig().searches.map((s) => s.name),
     // Wellfound is planned only once its owner login exists (secrets/wellfound-state.json): no session, no dispatch.
     wellfound: existsSync(WELLFOUND_STATE_PATH) ? loadWellfoundDiscoveryConfig().searches.map((s) => s.name) : [],
@@ -110,7 +113,7 @@ function dryRunPlan(env: NodeJS.ProcessEnv): void {
     ceilings: ceilings(db, cfg, now),
     due: countDue(db, now, tuning, env),
     knobs: loadPlanKnobs(env),
-    discoverSearches: discoverNames(),
+    discoverSearches: discoverNames(db),
     codePassEnabled: true,
     linkedinDrip: linkedinDripEnabled(env),
   });
@@ -156,7 +159,7 @@ async function main(): Promise<void> {
     },
     newRunId: () => randomBytes(8).toString('hex'),
     session: env.SCHEDULER_TMUX_SESSION || undefined,
-    discoverSearches: discoverNames(),
+    discoverSearches: () => discoverNames(db),
     codePass: () => runCodePass({ db, now, projectRoot }),
     // The slow email lane beside the wakes (src/scheduler/mailDrip.ts); only the daemon runs it, never --once or --now.
     mailDrip: args.mode === 'daemon',

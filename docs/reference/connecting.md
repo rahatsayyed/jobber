@@ -123,6 +123,24 @@ the author profile as url and no company are marked `status: bad_extraction` (wi
 queued outreach rows skipped) by the one-off owner script `npx tsx scripts/fix-linkedin-posts.ts [--dry]`; re-discovery
 then stores the same posts under their permalink ids.
 
+What counts as a hiring post (`classifyPost`): the "we're hiring / hiring for / now hiring / vacancy" family, or the weak
+"looking for / join our team / opening" words with an apply cue, or (added 2026-11-08) referral-style wording: "DM me for
+referral/reference", "referral available", "send your resume/CV to", "immediate/early joiner", "opening for", "vacancy
+for". A role must be named: a job noun (developer, engineer, ...) or a tech role (full stack, MERN, React, Node.js,
+frontend, backend, SDE). A seeker pattern always wins over these cues ("open to work", "please refer me", "looking
+for a referral", "I am an immediate joiner", "immediate joiner available"), and a promotional post without a role is
+dropped as `no_role`.
+
+Post searches: `config/linkedin-discovery.json` `posts[]` has several NAMED searches (`default`, `referral-dm-india`,
+`hiring-mern-node-india`, `hiring-react-frontend-india`, `hiring-fullstack-gulf`, `hiring-fullstack-remote`). Each has
+`role` (an OR group is fine), `geo`, `limit` (1 to 50) and an optional `phrases` list (ORed and quoted by code; default is
+the old four hiring phrases). The ceilings did not change: `LINKEDIN_MAX_DISCOVER_PER_DAY` (6) and
+`MAX_LINKEDIN_SEARCHES_PER_DAY` (10). So one wake runs at most `LINKEDIN_DISCOVER_MAX_PER_WAKE` (2) searches, picked
+alternately post then job, and each list is ordered least recently tried first (`src/linkedin/discoverRotation.ts`,
+state key `linkedin_discover_try:<tool>:<name>` in `scheduler_state`, written when a search starts, so a failing search
+does not block the rotation). Over a few wakes all named searches get their turn. Live-unverified: how many results
+each query really returns on LinkedIn, and whether the quoted OR groups are read as intended.
+
 **Poster outreach.** The author of a matched hiring post is contacted directly, with or without a known company.
 `outreach.next_contacts` has three modes: `company_key` (the people of one company, per-company limit), `job_id` (the
 author of one hiring post) and `posters: true` (the authors of every `linkedin-posts` job that has a `poster_url`, is not

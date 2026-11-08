@@ -22,7 +22,9 @@ const jobDef = z.object({
 const postDef = z.object({
   name,
   role: z.string().min(1).max(150),
-  geo: z.string().max(60).default(''),
+  geo: z.string().max(100).default(''),
+  /** Optional hiring phrases ORed together (each is quoted unless it already is); absent means the default four. */
+  phrases: z.array(z.string().min(2).max(60).regex(/^[^"()]+$/)).max(8).optional(),
   limit: z.number().int().min(1).max(50).default(25),
 });
 export const discoveryConfigSchema = z.object({ jobs: z.array(jobDef).default([]), posts: z.array(postDef).default([]) });
@@ -60,7 +62,8 @@ export function buildJobsSearchUrl(d: JobSearchDef): string {
 }
 
 export function buildPostsSearchUrl(d: PostSearchDef): string {
-  const keywords = `(hiring OR "we're hiring" OR "we are hiring" OR "join our team") (${d.role}) ${d.geo}`.trim();
+  const phrases = d.phrases?.length ? d.phrases.map((x) => `"${x.trim()}"`).join(' OR ') : `hiring OR "we're hiring" OR "we are hiring" OR "join our team"`;
+  const keywords = `(${phrases}) (${d.role}) ${d.geo}`.trim();
   const p = new URLSearchParams({ keywords, origin: 'GLOBAL_SEARCH_HEADER', sortBy: '"date_posted"' });
   return `https://www.linkedin.com/search/results/content/?${p.toString()}`;
 }
