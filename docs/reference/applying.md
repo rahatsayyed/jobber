@@ -230,6 +230,17 @@ escalated as `account_needed`); CAPTCHA, MFA and phone verification are never so
 Easy Apply. Hold mode is unchanged: with `APPLY_SUBMIT_MODE` not `submit` these jobs end `held`; after setting `submit`, run
 `npm run apply:release-held [-- --dry]` to put held generic rows back in the queue (idempotent).
 
+**Requeue rows parked with no note:** rows parked under the older policy (unknown company host -> `manual_review` / `needs_owner`, empty `apply_note`)
+are not touched by `apply:release-held` (it needs a note or an escalation as evidence). After setting `APPLY_SUBMIT_MODE=submit` and
+`APPLY_ALLOW_UNKNOWN_HOSTS=true`, run `npm run apply:requeue-parked [-- --platform browser,greenhouse,lever,smartrecruiters,workday,wellfound] [-- --limit N]`.
+The default is a DRY run (counts per platform and host, nothing written); `--yes` writes. Eligible: queue row `queued`, `apply_status` `manual_review` or
+`needs_owner`, empty note, job not excluded, no recorded outcome, no `applications` row `submitted` or `manual_review`, and the stored apply URL still passes
+`classifyApplyUrl` with the CURRENT env (a row that would be parked again, for example a discover-only source or an unknown host while
+`APPLY_ALLOW_UNKNOWN_HOSTS` is not `true`, is listed as "would be parked again" and left alone). Rows with any note (captcha, login, needs_answer,
+no_relevant_role, unsafe_apply_page, unknown_apply_host) are never touched. At most `--limit` rows per run (default 25, oldest first), so a release is
+gradual. It sets `apply_status` and `apply_note` to NULL and closes the open apply escalations of those jobs; it submits nothing: the next wake's apply stage
+does, inside every cap, gate, quiet hour and the dry-run flag. Idempotent.
+
 Click outcomes and notes: after the one code-owned click the resolver watches the popups AND the tab's own URL. A popup or a same-tab
 redirect to a company host is taken once its URL is stable. A same-tab move to another Naukri path (an interstitial such as
 `/myapply/showAcp`) is read from the Naukri page itself (screened, link `href` first, else one more code click on a "company site"

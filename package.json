@@ -41,6 +41,7 @@
     "apply:request": "tsx scripts/apply-request.ts",
     "apply:release-held": "tsx scripts/apply-release-held.ts",
     "apply:requeue-company-site": "tsx scripts/apply-requeue-company-site.ts",
+    "apply:requeue-parked": "tsx scripts/apply-requeue-parked.ts",
     "escalations:clean-noise": "tsx scripts/escalations-clean-noise.ts",
     "apply:resolve-stale-escalations": "tsx scripts/apply-resolve-stale-escalations.ts",
     "apply:assist": "tsx scripts/apply-assist.ts",
