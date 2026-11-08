@@ -180,6 +180,20 @@ describe('queue readers: needs_reprep and jd_pending are not sendable and not ap
     expect(due.applyQueued).toBe(1);
   });
 
+  it('a LinkedIn apply row is not apply work outside LINKEDIN_ACTIVE_HOURS (no empty apply step every wake at night)', () => {
+    const db = openDb(':memory:');
+    add(db, 'li', { desc: FULL_JD });
+    add(db, 'nk', { desc: FULL_JD });
+    enqueueOutreach(db, item('li', { apply_platform: 'linkedin', apply_url: 'https://www.linkedin.com/jobs/view/1/' }));
+    enqueueOutreach(db, item('nk'));
+    const night = new Date('2026-11-08T01:30:00Z'); // 07:00 IST, before 09:30
+    const day = new Date('2026-11-08T05:00:00Z'); // 10:30 IST
+    expect(countDue(db, night, loadTuning({}), {}).applyQueued).toBe(1);
+    expect(countDue(db, day, loadTuning({}), {}).applyQueued).toBe(2);
+    db.prepare("DELETE FROM outreach_queue WHERE job_id = 'nk'").run();
+    expect(countDue(db, night, loadTuning({}), {}).applyQueued).toBe(0);
+  });
+
   it('a needs_reprep row does not count as an outreach row: the matched job is handed back again, and enqueue rebuilds that row in place', () => {
     const db = openDb(':memory:');
     add(db, 'job', { desc: FULL_JD, score: 82 });

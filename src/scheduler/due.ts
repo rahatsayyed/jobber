@@ -6,6 +6,7 @@ import { matchThresholdFromEnv } from '../matchRubric.js';
 import { inSendWindow, loadDripConfig } from './mailDrip.js';
 import { followupMode, listApprovedFollowups, listFollowupCandidates } from '../followups.js';
 import { countAcceptCandidates, hasOpenInvites } from '../linkedin/acceptCheck.js';
+import { linkedinActiveNow } from '../linkedin/activeHours.js';
 import { ACCEPT_RECENT_EVERY_HOURS, hoursSinceRecentCheck } from '../linkedin/acceptRecent.js';
 import { pendingInstructionCount } from '../owner/instructions.js';
 import { manualPlatformTasks, manualRequestsPending } from '../manual/requests.js';
@@ -123,6 +124,9 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
     )
     .all() as { url: string }[];
   for (const r of rows) add('linkedin', normalizeProfileKey(r.url));
+  // Outside LINKEDIN_ACTIVE_HOURS a LinkedIn row cannot be worked (the tools refuse `outside_active_hours`), so it does not count as apply
+  // work: otherwise every wake of the night plans an apply step that stops at once (done 0, stopped) and costs a model turn for nothing.
+  const linkedinOpen = linkedinActiveNow(env, now);
   const applyQueued = (
     db
       .prepare(
@@ -130,10 +134,11 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
           WHERE q.status = 'queued'
             AND q.apply_platform IS NOT NULL AND q.apply_platform <> 'none'
             AND q.apply_platform <> 'linkedin_easy'
+            AND (? = 1 OR q.apply_platform <> 'linkedin')
             AND (q.apply_status IS NULL OR q.apply_status = 'queued')
             AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = q.job_id AND j.excluded_reason IS NULL AND COALESCE(j.status, '') <> 'jd_pending')`,
       )
-      .get() as { n: number }
+      .get(linkedinOpen ? 1 : 0) as { n: number }
   ).n;
   const usedToday =
     (
