@@ -171,9 +171,12 @@ describe('apply:assist', () => {
     fs.rmSync(stopFile);
     const broken = fake({ stateCookies: undefined });
     broken.launcher = { ...(broken.launcher as object), launchPersistentContext: async () => ({ newPage: async () => ({ goto: async () => undefined }), storageState: async () => null, close: async () => undefined }) } as unknown as LiLauncher;
+    // In the persistent profile Chrome keeps the session itself, so an unreadable storage state no longer fails the command
+    // (src/webcore/headed.ts interact: the per-host file is only a fallback). No cookies are counted and the job is requeued.
     const r = await assist(['j1'], { ...base, launcher: broken.launcher });
-    expect(r.code).toBe(1);
-    expect((db.prepare("SELECT apply_status FROM outreach_queue WHERE job_id = 'j1'").get() as { apply_status: string }).apply_status).toBe('needs_human');
+    expect(r.code).toBe(0);
+    expect(r.lines.join('\n')).toContain('0 cookies, in the browser profile');
+    expect((db.prepare("SELECT apply_status FROM outreach_queue WHERE job_id = 'j1'").get() as { apply_status: string | null }).apply_status).toBeNull();
   });
 
   it('falls back to the per-host session file when the launcher has no persistent profile', async () => {
@@ -192,7 +195,8 @@ describe('browser:open and browser:history', () => {
     expect(r.code).toBe(0);
     expect(f.persistentCalls[0].opts.headless).toBe(false);
     expect((await browserOpen(['http://x.example.com'], { io: io().io, launcher: f.launcher })).code).toBe(2);
-    expect((await browserOpen(['https://www.naukri.com/x'], { io: io().io, launcher: f.launcher })).code).toBe(1);
+    // A platform address is no longer refused: it opens in the profile the platform tools use (see scripts/browser-open.ts).
+    expect((await browserOpen(['https://www.naukri.com/x'], { io: io().io, launcher: f.launcher, lockPath: l.lockPath, sessionDir: l.sessionDir, profileDir: l.profileDir, root: l.root })).code).toBe(0);
   });
 
   it('browser:history copies Chrome\'s History file, filters by host, newest first, strips query strings, and says so when there is no profile', () => {
