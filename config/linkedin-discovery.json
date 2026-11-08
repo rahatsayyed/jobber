@@ -17,6 +17,41 @@
       "role": "full stack developer / react",
       "geo": "in",
       "limit": 25
+    },
+    {
+      "name": "referral-dm-india",
+      "role": "(\"full stack\" OR MERN OR React OR \"Node.js\")",
+      "geo": "(India OR Pune OR Bangalore OR Hyderabad OR Noida OR Mumbai)",
+      "phrases": ["DM me for referral", "referral available", "send your resume", "send your CV", "immediate joiner"],
+      "limit": 30
+    },
+    {
+      "name": "hiring-mern-node-india",
+      "role": "(MERN OR \"MERN stack\" OR \"Node.js\" OR Nodejs OR \"full stack\")",
+      "geo": "(India OR Remote)",
+      "phrases": ["we're hiring", "we are hiring", "hiring for", "opening for", "immediate joiner"],
+      "limit": 30
+    },
+    {
+      "name": "hiring-react-frontend-india",
+      "role": "(React OR ReactJS OR \"React.js\" OR \"Next.js\" OR frontend)",
+      "geo": "(India OR Pune OR Bangalore OR Hyderabad)",
+      "phrases": ["we're hiring", "hiring for", "opening for", "referral available", "send your resume"],
+      "limit": 30
+    },
+    {
+      "name": "hiring-fullstack-gulf",
+      "role": "(\"full stack\" OR React OR Node.js OR MERN)",
+      "geo": "(Dubai OR UAE OR \"Abu Dhabi\" OR Riyadh OR Saudi OR Qatar OR Doha)",
+      "phrases": ["we're hiring", "hiring for", "opening for", "send your CV", "immediate joiner"],
+      "limit": 30
+    },
+    {
+      "name": "hiring-fullstack-remote",
+      "role": "(\"full stack\" OR React OR Node.js OR MERN)",
+      "geo": "(remote OR \"work from home\" OR WFH)",
+      "phrases": ["we're hiring", "hiring for", "opening for", "DM me for referral", "referral available"],
+      "limit": 30
     }
   ]
 }

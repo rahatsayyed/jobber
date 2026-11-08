@@ -9,6 +9,7 @@ import { checkAndIncrement } from '../lib/rateLimit.js';
 import { recordDryRun } from '../safety/dryRun.js';
 import { gateField } from '../safety/fieldGate.js';
 import { setState } from '../scheduler/runLog.js';
+import { markSearchTried } from './discoverRotation.js';
 import { layoutGate } from './layoutGuard.js';
 import { classifyUrl } from './urls.js';
 import type { PageKind, RawSnapshot } from './types.js';
@@ -84,6 +85,7 @@ export async function runDiscovery(o: {
   if (searchesUsedToday(deps) >= deps.cfg.maxSearchesPerDay) return empty('rate_limited', 'search_limit');
   if (!ceilings(db, loadOutreachConfig(env), now()).linkedin_discover.ok) return empty('rate_limited', 'discover_limit');
 
+  markSearchTried(db, tool, o.searchName, now());
   const r = await deps.rt.open(o.url);
   if (!r.ok) return r.code === 'halted' ? empty('halted', 'halted') : empty('failed', r.code);
   const snap = r.snapshot;

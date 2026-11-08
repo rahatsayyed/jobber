@@ -60,6 +60,23 @@ export const NAUKRI_DETAIL_QUOTA = 5;
 export const WELLFOUND_DETAIL_QUOTA = 5;
 export const WELLFOUND_DISCOVER_EVERY_HOURS_DEFAULT = 6;
 export const LINKEDIN_DISCOVER_EVERY_HOURS = 6;
+/** Most LinkedIn searches one wake may run (spreads the daily LINKEDIN_MAX_DISCOVER_PER_DAY ceiling over several wakes; never raises it). */
+export const LINKEDIN_DISCOVER_MAX_PER_WAKE = 2;
+
+/**
+ * The names a discover task carries: at most `quota`, taken alternately from posts then jobs (each list is already ordered
+ * least recently tried first by the caller). When everything fits, both lists are returned unchanged.
+ */
+export function pickDiscoverNames(names: DiscoverSearches, quota: number): DiscoverSearches {
+  if (names.jobs.length + names.posts.length <= quota) return names;
+  const posts: string[] = [];
+  const jobs: string[] = [];
+  for (let k = 0; posts.length + jobs.length < quota; k++) {
+    if (k < names.posts.length && posts.length + jobs.length < quota) posts.push(names.posts[k]);
+    if (k < names.jobs.length && posts.length + jobs.length < quota) jobs.push(names.jobs[k]);
+  }
+  return { ...names, jobs, posts };
+}
 /** Hours between code passes over the script providers (a constant, no env key). */
 export const SCRIPT_DISCOVER_EVERY_HOURS = 6;
 /** The pipeline stage considers every unscored job saved in the last PIPELINE_WINDOW_HOURS hours (no fixed count), read in pages of PIPELINE_LIST_PAGE (one list_unscored_jobs result must stay one tool result: 22KB passed, 54KB did not), up to a hard ceiling. Defined in src/pipelineWork.ts beside the window and dedupe rules. */
@@ -245,7 +262,8 @@ export function planWake(i: {
   const discoverDue = discoverAge === null || (discoverAge !== undefined && discoverAge >= discoverEvery);
   const discoverRoom = ceilings.linkedin_discover ? ceilings.linkedin_discover.limit - ceilings.linkedin_discover.used : 0;
   if (allowed.has('linkedin') && discoverDue && nameCount > 0 && ceilings.linkedin_discover?.ok && discoverRoom > 0) {
-    byPlatform.linkedin.push({ kind: 'discover', quota: Math.min(nameCount, discoverRoom), searches: names });
+    const quota = Math.min(nameCount, discoverRoom, LINKEDIN_DISCOVER_MAX_PER_WAKE);
+    byPlatform.linkedin.push({ kind: 'discover', quota, searches: pickDiscoverNames(names, quota) });
   }
 
   // Non-platform stages. Absent due fields mean "not tracked": nothing is planned from them.

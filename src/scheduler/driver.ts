@@ -55,7 +55,7 @@ export interface DriverDeps {
   control?: Pick<ControlDeps, 'exists' | 'read'>;
   session?: string; // tmux session for wake windows, default 'Jobber'
   /** Named LinkedIn discovery searches (config/linkedin-discovery.json); absent plans no discover task. */
-  discoverSearches?: DiscoverSearches;
+  discoverSearches?: DiscoverSearches | (() => DiscoverSearches);
   /** The zero-LLM code pass over the script providers (runCodePass); absent means the stage is planned but not run. Never throws. */
   codePass?: () => Promise<CodePassResult>;
   /** Run the mail drip lane (src/scheduler/mailDrip.ts) beside the wakes in the daemon loop. Absent or false: no drip. */
@@ -243,7 +243,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
         ceilings: ceilings(d.db, d.cfg, now),
         due: countDue(d.db, now, d.tuning, d.env),
         knobs: loadPlanKnobs(d.env),
-        discoverSearches: d.discoverSearches,
+        discoverSearches: typeof d.discoverSearches === 'function' ? d.discoverSearches() : d.discoverSearches,
         codePassEnabled: !!d.codePass,
         linkedinActive: linkedinActiveNow(d.env, now),
         linkedinDrip: linkedinDripEnabled(d.env),
