@@ -828,7 +828,7 @@ Everything built and tested only with fakes or not yet checked against a real si
     a known ATS vendor, the same registrable domain, the hiring company's official domain or an entry of the
     owner list `user-data/apply-hosts.json` is allowed, any other host parks the job for the owner, and a page
     that asks for payment, a government ID or bank details parks it too); no tool returns a
-    credential; CAPTCHA, MFA, phone verification and bot walls are never solved or waited out; marketing
+    credential; CAPTCHA, MFA, phone verification and bot walls are never solved by the agent, and MFA, phone verification and bot walls are never waited out; one owner-approved exception (2026-11-08), CAPTCHA only: code (never the model) waits up to `APPLY_CAPTCHA_WAIT_SEC` seconds (default 25, `0` turns it off, at most 60) for the OWNER to solve it by hand, re-reads the page and goes on only if the captcha is gone, otherwise the job is parked for the owner (`needs_human`, `assist:captcha`) with a notice, exactly as before; marketing
     boxes are never checked; accounts are created only by `site_signup` under
     `APPLY_ALLOW_ACCOUNT_CREATION` / `SCOUT_ALLOW_SIGNUP` and `SITE_MAX_ACCOUNTS_PER_DAY`; a generated
     provider's outreach stays held until the owner approves it (`npm run providers -- approve <id>`).
