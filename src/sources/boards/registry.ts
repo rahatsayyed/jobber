@@ -12,6 +12,16 @@ import { fetchHackerNews } from './hackernews.js';
 import { fetchHimalayas } from './himalayas.js';
 import { fetchWeWorkRemotely } from './weworkremotely.js';
 import { fetchSmartRecruiters } from './smartrecruiters.js';
+import { fetchBambooHr } from './bamboohr.js';
+import { fetchBreezy } from './breezy.js';
+import { fetchPinpoint } from './pinpoint.js';
+import { fetchGem } from './gem.js';
+import { fetchComeet } from './comeet.js';
+import { fetchEightfold } from './eightfold.js';
+import { fetchOracleCloud } from './oraclecloud.js';
+import { fetchSuccessFactors } from './successfactors.js';
+import { fetchTaleo } from './taleo.js';
+import { fetchUltipro } from './ultipro.js';
 
 export const FETCHERS: Record<Ats, BoardFetcher> = {
   greenhouse: fetchGreenhouse,
@@ -25,4 +35,14 @@ export const FETCHERS: Record<Ats, BoardFetcher> = {
   himalayas: fetchHimalayas,
   weworkremotely: fetchWeWorkRemotely,
   smartrecruiters: fetchSmartRecruiters,
+  bamboohr: fetchBambooHr,
+  breezy: fetchBreezy,
+  pinpoint: fetchPinpoint,
+  gem: fetchGem,
+  comeet: fetchComeet,
+  eightfold: fetchEightfold,
+  oraclecloud: fetchOracleCloud,
+  successfactors: fetchSuccessFactors,
+  taleo: fetchTaleo,
+  ultipro: fetchUltipro,
 };

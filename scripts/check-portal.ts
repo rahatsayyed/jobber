@@ -8,14 +8,22 @@
 import { AGGREGATOR_DEFAULTS, AGGREGATOR_ATS, COMPANY_ATS, extraConfigProblem, loadPortals, locationAllowed, slugProblem, titlePasses, type Ats, type TrackedCompany } from '../src/sources/boards/filters.js';
 import { FETCHERS } from '../src/sources/boards/registry.js';
 
-const USAGE = `usage: npx tsx scripts/check-portal.ts <${COMPANY_ATS.join('|')}> <slug> [--eu] [--domain de|com] [--wd wdN --site <site>] [--search <text>]\n       npx tsx scripts/check-portal.ts <${AGGREGATOR_ATS.join('|')}>`;
-const VALUE_FLAGS = new Set(['--domain', '--wd', '--site', '--search', '--max-detail', '--max-pages']);
+const USAGE = `usage: npx tsx scripts/check-portal.ts <${COMPANY_ATS.join('|')}> <slug> [--eu] [--domain de|com] [--wd wdN --site <site>] [--search <text>] [--param key=value ...]\n       npx tsx scripts/check-portal.ts <${AGGREGATOR_ATS.join('|')}>`;
+const VALUE_FLAGS = new Set(['--param', '--domain', '--wd', '--site', '--search', '--max-detail', '--max-pages']);
 
 const args = process.argv.slice(2);
 const positional: string[] = [];
 const flags = new Map<string, string>();
+const params: Record<string, string> = {}; // --param key=value (repeatable): vendor settings of the tenant boards, see src/sources/boards/vendorParams.ts
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
+  if (a === '--param') {
+    const kv = args[++i] ?? '';
+    const eq = kv.indexOf('=');
+    if (eq < 1) { console.error('--param needs key=value'); process.exit(2); }
+    params[kv.slice(0, eq)] = kv.slice(eq + 1);
+    continue;
+  }
   if (VALUE_FLAGS.has(a)) { flags.set(a, args[++i] ?? ''); continue; }
   if (a.startsWith('--')) { flags.set(a, ''); continue; }
   positional.push(a);
@@ -33,6 +41,7 @@ const company: TrackedCompany = isAggregator
       name: slug as string, ats, slug: slug as string, enabled: true,
       ...(flags.has('--eu') ? { region: 'eu' as const } : {}),
       ...(flags.has('--domain') ? { domain: flags.get('--domain') as 'de' | 'com' } : {}),
+      ...(Object.keys(params).length ? { params } : {}),
       ...(flags.has('--wd') ? { wd: flags.get('--wd') } : {}),
       ...(flags.has('--site') ? { site: flags.get('--site') } : {}),
       ...(flags.has('--search') ? { search: flags.get('--search') } : {}),

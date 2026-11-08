@@ -3,10 +3,13 @@ import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hostMatches } from '../../lib/hostClass.js';
+import { vendorParamsProblem, type VendorParams } from './vendorParams.js';
 import { findRestriction, LOCATION_ONSITE, REGION_WORD, REMOTE_WORD } from '../../remotePolicy.js';
 
 // Company-board vendors: one board per tracked company. Each vendor has a provider in src/sources/boards/ and an entry in registry.ts.
-export const COMPANY_ATS = ['greenhouse', 'lever', 'ashby', 'workable', 'recruitee', 'personio', 'workday', 'smartrecruiters'] as const;
+export const COMPANY_ATS = ['greenhouse', 'lever', 'ashby', 'workable', 'recruitee', 'personio', 'workday', 'smartrecruiters',
+  // tenant boards ported from career-ops (second batch)
+  'bamboohr', 'breezy', 'pinpoint', 'gem', 'comeet', 'eightfold', 'oraclecloud', 'successfactors', 'taleo', 'ultipro'] as const;
 export type CompanyAts = (typeof COMPANY_ATS)[number];
 // Aggregators: one board-wide feed with many employers. They are configured in the "aggregators" object of portals.json (not in
 // tracked_companies), run through the same fetch loop, caps, filters and board_status, but are never part of BOARD_SOURCES (index.ts).
@@ -26,6 +29,8 @@ export interface TrackedCompany {
   wd?: string; site?: string; search?: string;
   // smartrecruiters and workday: most posting detail requests per fetch; workday and himalayas: most list pages per fetch
   max_detail?: number; max_pages?: number;
+  // tenant vendors that need more than a slug (comeet, eightfold, oraclecloud, successfactors, taleo, ultipro): see vendorParams.ts
+  params?: VendorParams;
 }
 export interface PortalsConfig {
   tracked_companies: TrackedCompany[];
@@ -55,6 +60,16 @@ const TOKEN_SLUG_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/;
 const VENDOR_SLUG_RULES: Record<string, { re: RegExp; hint: string; max?: number }> = {
   workable: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-"' },
   smartrecruiters: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-"' },
+  bamboohr: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain)' },
+  breezy: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain)' },
+  pinpoint: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain)' },
+  eightfold: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain)' },
+  taleo: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain)' },
+  gem: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-" (the board id)' },
+  comeet: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-" (a label for the company)' },
+  oraclecloud: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-" (a label for the company)' },
+  successfactors: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-" (a label for the company)' },
+  ultipro: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-" (the tenant)' },
   recruitee: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-", not starting or ending with "-" (the tenant subdomain)' },
   personio: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-", not starting or ending with "-" (the tenant subdomain)' },
   workday: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-", not starting or ending with "-" (the tenant), at most 40 characters', max: 40 },
@@ -86,6 +101,8 @@ export function extraConfigProblem(c: any): string | null {
   for (const [k, max] of [['max_detail', 100], ['max_pages', 50]] as const) {
     if (c[k] !== undefined && (!Number.isInteger(c[k]) || c[k] < 1 || c[k] > max)) return `${k} must be an integer from 1 to ${max}`;
   }
+  const vp = vendorParamsProblem(c.ats, c.params);
+  if (vp) return vp;
   return null;
 }
 /** Keep a response-supplied URL only if it is https and on the vendor's own domain; otherwise use the canonical one. */
@@ -271,6 +288,7 @@ export function loadPortals(file: string = defaultPath): { config: PortalsConfig
         ...(c.domain === 'de' || c.domain === 'com' ? { domain: c.domain as 'de' | 'com' } : {}),
         ...(typeof c.wd === 'string' ? { wd: c.wd } : {}),
         ...(typeof c.site === 'string' ? { site: c.site } : {}),
+        ...(c.params && typeof c.params === 'object' ? { params: { ...c.params } as VendorParams } : {}),
         ...(typeof c.search === 'string' && c.search.trim() ? { search: c.search.trim() } : {}),
         ...(Number.isInteger(c.max_detail) ? { max_detail: c.max_detail as number } : {}),
         ...(Number.isInteger(c.max_pages) ? { max_pages: c.max_pages as number } : {}),

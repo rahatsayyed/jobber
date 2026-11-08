@@ -6,7 +6,9 @@ import { IMPORTED_IDS } from '../sources/providers/index.js';
 // aggregator page or an arbitrary host that must never reach the ATS bootstrap. Recruitee apply support is future work.
 // Imported feeds (src/sources/providers, adapted from career-ops) are discover-only too.
 export const DISCOVER_ONLY_SOURCES: ReadonlySet<string> = new Set([
-  'workable', 'recruitee', 'personio', 'workday', 'smartrecruiters', 'hackernews', 'himalayas', 'weworkremotely',
+  'workable', 'recruitee', 'personio', 'workday', 'smartrecruiters',
+  'bamboohr', 'breezy', 'pinpoint', 'gem', 'comeet', 'eightfold', 'oraclecloud', 'successfactors', 'taleo', 'ultipro',
+  'hackernews', 'himalayas', 'weworkremotely',
   ...IMPORTED_IDS,
 ]);
 

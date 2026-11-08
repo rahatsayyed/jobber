@@ -12,7 +12,18 @@ import { provider as hackernews } from './hackernews.js';
 import { provider as himalayas } from './himalayas.js';
 import { provider as weworkremotely } from './weworkremotely.js';
 import { provider as smartrecruiters } from './smartrecruiters.js';
+import { provider as bamboohr } from './bamboohr.js';
+import { provider as breezy } from './breezy.js';
+import { provider as pinpoint } from './pinpoint.js';
+import { provider as gem } from './gem.js';
+import { provider as comeet } from './comeet.js';
+import { provider as eightfold } from './eightfold.js';
+import { provider as oraclecloud } from './oraclecloud.js';
+import { provider as successfactors } from './successfactors.js';
+import { provider as taleo } from './taleo.js';
+import { provider as ultipro } from './ultipro.js';
 
 export const BOARD_PROVIDERS: Record<Ats, BoardProvider> = {
   greenhouse, lever, ashby, workable, recruitee, personio, workday, hackernews, himalayas, weworkremotely, smartrecruiters,
+  bamboohr, breezy, pinpoint, gem, comeet, eightfold, oraclecloud, successfactors, taleo, ultipro,
 };
