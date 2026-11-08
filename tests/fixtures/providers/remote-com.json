@@ -1,0 +1,7 @@
+{
+  "jobs": [
+    { "public_id": "abc123", "title": "Senior React Engineer", "location": "APAC, EMEA", "workplace": "remote", "opened_at": "2026-10-20T09:00:00Z", "status": "open", "accepting_applications": true, "description": "." },
+    { "public_id": "closed1", "title": "Closed Role", "location": "EMEA", "workplace": "remote", "opened_at": "2026-10-01T09:00:00Z", "status": "closed", "accepting_applications": false },
+    { "public_id": "bad/id", "title": "Unsafe Id Role", "location": "APAC", "workplace": "remote" }
+  ]
+}

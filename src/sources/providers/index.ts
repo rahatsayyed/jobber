@@ -9,6 +9,8 @@ type Loader = () => Promise<{ provider: Provider }>;
 export const IMPORTED_IDS = [
   '4dayweek', 'arbeitnow', 'jobicy', 'workingnomads', 'themuse', 'landingjobs', 'thehub', 'flowxtra', 'yourator', 'getonbrd',
   'justjoin', 'manfred', 'cryptocurrencyjobs', 'jobspresso', 'larajobs', 'nodesk', 'pythonorg', 'startup-jobs',
+  // second pass (career-ops providers added after c3230d12)
+  'remote-com',
 ] as const;
 
 export const IMPORTED_LOADERS: Record<string, Loader> = {
@@ -30,4 +32,5 @@ export const IMPORTED_LOADERS: Record<string, Loader> = {
   'providers/nodesk': () => import('./nodesk.js'),
   'providers/pythonorg': () => import('./pythonorg.js'),
   'providers/startup-jobs': () => import('./startup-jobs.js'),
+  'providers/remote-com': () => import('./remote-com.js'),
 };

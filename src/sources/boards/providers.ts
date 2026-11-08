@@ -12,7 +12,12 @@ import { provider as hackernews } from './hackernews.js';
 import { provider as himalayas } from './himalayas.js';
 import { provider as weworkremotely } from './weworkremotely.js';
 import { provider as smartrecruiters } from './smartrecruiters.js';
+import { provider as keka } from './keka.js';
+import { provider as darwinbox } from './darwinbox.js';
+import { provider as hibob } from './hibob.js';
+import { provider as zohorecruit } from './zohorecruit.js';
 
 export const BOARD_PROVIDERS: Record<Ats, BoardProvider> = {
   greenhouse, lever, ashby, workable, recruitee, personio, workday, hackernews, himalayas, weworkremotely, smartrecruiters,
+  keka, darwinbox, hibob, zohorecruit,
 };
