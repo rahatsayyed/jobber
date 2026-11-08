@@ -22,6 +22,8 @@ import {
 
 export interface HostServerDeps {
   mode: HostMode;
+  // Debug (BROWSER_HOST_HEADED=true): a task host (mode headless) still shows its Chrome window. Mode label, handover and idle rules do not change.
+  visible?: boolean;
   profileDir?: string;
   pidPath?: string;
   leaseDir?: string;
@@ -111,7 +113,7 @@ export async function startHost(deps: HostServerDeps): Promise<StartResult> {
 
   let ctx: HostContext;
   try {
-    ctx = await (deps.launch ?? ((o) => launchHostChrome({ ...o, launcher: deps.launcher })))({ userDataDir: profileDir, headed: deps.mode === 'headed' });
+    ctx = await (deps.launch ?? ((o) => launchHostChrome({ ...o, launcher: deps.launcher })))({ userDataDir: profileDir, headed: deps.mode === 'headed' || deps.visible === true });
   } catch {
     stopPreBeat();
     removeHostFile(pid, pidPath);
@@ -209,7 +211,7 @@ export async function startHost(deps: HostServerDeps): Promise<StartResult> {
   if (deps.heartbeatMs && deps.heartbeatMs > 0) {
     timer = setInterval(() => { void tick(); }, deps.heartbeatMs);
   }
-  log(`ready (${deps.mode})`);
+  log(`ready (${deps.mode}${deps.visible && deps.mode !== 'headed' ? ', window visible' : ''})`);
   return { ok: true, handle: { tick, handover, shutdown, done, clients: () => clients, tabs } };
 }
 

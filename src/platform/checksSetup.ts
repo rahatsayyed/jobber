@@ -9,6 +9,7 @@ import { parseEnv } from './envFile.js';
 import { validateSets, type RawSets } from './permissions.js';
 import { userDataDir } from '../lib/userData.js';
 import { hostStatus } from '../webcore/hostFile.js';
+import { loadHostConfig } from '../webcore/config.js';
 import { LIMITS, validateLimit, validatePairs } from '../setup/limitsCatalog.js';
 import { parseDimMinimums, parseMatchThreshold } from '../matchRubric.js';
 import { validateProfile } from '../setup/profile.js';
@@ -593,6 +594,17 @@ export const setupAccountChecks: Check[] = [
       const s = hostStatus(join(ctx.root, 'secrets', 'browser-host.json'));
       if (s.stale) return { status: 'warn', detail: s.line, fix: 'npm run browser:host -- status (removes the stale pidfile)' };
       return pass(s.line);
+    },
+  },
+  {
+    // Informational: BROWSER_HOST_HEADED=true makes the shared browser host show a window for agent work (owner debug knob).
+    id: 'browser-host-headed',
+    title: 'Shared browser host window',
+    async run(ctx) {
+      const env: Record<string, string> = { ...dotEnv(ctx) };
+      for (const [k, v] of Object.entries(ctx.env)) if (v !== undefined) env[k] = v; // process env wins, as at runtime
+      if (!loadHostConfig(env).headed) return pass('headless (default)');
+      return warn('browser host headed: windows will appear', 'set BROWSER_HOST_HEADED back to false (or remove it), then npm run browser:host -- stop');
     },
   },
   placeholder('mcp-connect', 'MCP servers connect', 'skipped: needs a live launch, run the owner checklist in plan 7B'),

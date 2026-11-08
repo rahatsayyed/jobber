@@ -379,6 +379,13 @@ const hand: EnvSpec[] = [
     restart: 'mcp',
     restartEvidence: 'src/webcore/config.ts',
   }),
+  e('BROWSER_HOST_HEADED', 'web-core', 'shared web browser', 'bool', {
+    default: 'false',
+    about: 'Debug: show the shared Chrome window while the agent works, to watch where the apply agent goes wrong. Only the exact value true turns it on. The host reads it when it starts, so stop it after a change (npm run browser:host -- stop). Owner window commands (browser:open, apply:assist, logins) still work. Tabs may take focus.',
+    restart: 'mcp',
+    restartEvidence: 'src/webcore/config.ts',
+    ...never('Owner-only debug switch: it opens a visible window on your screen and must not be flipped from the dashboard or by the agent.'),
+  }),
   e('BROWSER_HOST_IDLE_MIN', 'web-core', 'shared web browser', 'int', {
     default: '10',
     min: 1,

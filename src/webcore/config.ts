@@ -19,12 +19,14 @@ function int(raw: string | undefined, def: number, min: number, max: number): nu
 }
 
 /** The shared browser host (src/webcore/hostServer.ts). BROWSER_HOST=false goes back to one browser per MCP process. */
-export interface HostConfig { enabled: boolean; idleMs: number }
+// headed: BROWSER_HOST_HEADED=true, the task host shows its Chrome window (owner debug knob).
+export interface HostConfig { enabled: boolean; idleMs: number; headed: boolean }
 
 export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): HostConfig {
   return {
     enabled: (env.BROWSER_HOST ?? '').trim().toLowerCase() !== 'false',
     idleMs: int(env.BROWSER_HOST_IDLE_MIN, 10, 1, 240) * 60_000,
+    headed: (env.BROWSER_HOST_HEADED ?? '').trim() === 'true',
   };
 }
 
