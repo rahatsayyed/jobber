@@ -40,6 +40,11 @@ Prints one URL of the form `http://127.0.0.1:<port>/#token=<token>`, once. The t
 stored in readable form anywhere (only a hash is kept in the auth database, `WEB_AUTH_DB`).
 It exits with code 3 if a token already exists; use `rotate` then.
 
+`npm run up` does this for you: at the end it makes a NEW token and prints the sign-in URL
+(`http://127.0.0.1:<port>/#token=...`), only in token mode and only on a terminal. Because the token
+is stored as a hash, it cannot be shown again, so every `npm run up` replaces the token and signs out
+all sessions (`npm run dashboard -- login` does the same by hand, with no question asked).
+
 ```bash
 npm run web
 ```

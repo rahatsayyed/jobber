@@ -18,11 +18,11 @@ export type Parsed =
   | { ok: true; cmd: 'status' }
   | { ok: true; cmd: 'google-url' }
   | { ok: true; cmd: 'audit'; n: number }
-  | { ok: true; cmd: 'token' | 'rotate'; port: number | null; print: boolean }
+  | { ok: true; cmd: 'token' | 'rotate' | 'login'; port: number | null; print: boolean }
   | { ok: false; error: string };
 
 const USAGE =
-  'usage: dashboard allow <email> | status | audit [n] | token [--port N] [--print] | rotate [--port N] [--print] | google-url';
+  'usage: dashboard allow <email> | status | audit [n] | token [--port N] [--print] | rotate [--port N] [--print] | login [--port N] | google-url';
 
 export function parseArgs(argv: string[]): Parsed {
   const [cmd, ...rest] = argv;
@@ -30,7 +30,7 @@ export function parseArgs(argv: string[]): Parsed {
     if (rest.length !== 1) return { ok: false, error: USAGE };
     return { ok: true, cmd: 'allow', email: rest[0] };
   }
-  if (cmd === 'token' || cmd === 'rotate') {
+  if (cmd === 'token' || cmd === 'rotate' || cmd === 'login') {
     let port: number | null = null;
     let print = false;
     for (let i = 0; i < rest.length; i++) {
@@ -132,7 +132,13 @@ export async function main(argv: string[], io: CliIo = {}): Promise<number> {
   const db = openAuthStore(authDbPathFromEnv(env));
   try {
     const now = io.now ? io.now() : new Date();
-    if (p.cmd === 'token' || p.cmd === 'rotate') {
+    if (p.cmd === 'token' || p.cmd === 'rotate' || p.cmd === 'login') {
+      // `login` is what `npm run up` runs: a fresh token every start, no confirm. It prints only in token mode and only on a terminal.
+      if (p.cmd === 'login') {
+        const mode = resolveAuthMode(env);
+        if ('error' in mode || mode.mode !== 'token') return 0;
+        if (!isTTY) return 0;
+      }
       if (!isTTY && !p.print) { err('run this in a terminal; the token is shown once'); return 1; }
       let port = p.port;
       if (port === null) {
@@ -150,7 +156,7 @@ export async function main(argv: string[], io: CliIo = {}): Promise<number> {
       }
       const token = generateToken(io.random);
       setToken(db, token, now);
-      audit(db, p.cmd === 'token' ? 'token_created' : 'token_rotated', { note: 'owner cli' }, now);
+      audit(db, exists ? 'token_rotated' : 'token_created', { note: p.cmd === 'login' ? 'npm run up' : 'owner cli' }, now);
       out('Next.js dashboard access token (shown once, not stored anywhere readable):');
       out(`http://127.0.0.1:${port}/#token=${token}`);
       out('This command does not start the Next.js dashboard. Start it with: npm run web (or npm run up)');

@@ -166,3 +166,33 @@ describe('dashboard token / rotate / status', () => {
     expect(dump).not.toContain(token2);
   });
 });
+
+describe('dashboard login (run by npm run up)', () => {
+  it('creates a token the first time and replaces it on the next start without asking', async () => {
+    const h = harness();
+    expect(await h.run(['login'])).toBe(0);
+    const first = h.tokenFrom(h.out);
+    expect(first).not.toBeNull();
+    h.out.length = 0;
+    expect(await h.run(['login'], { yes: false })).toBe(0);
+    const second = h.tokenFrom(h.out);
+    expect(second).not.toBeNull();
+    expect(second).not.toBe(first);
+    const db = openAuthStore(h.dbPath);
+    expect(verifyToken(db, second)).toBe(true);
+    expect(verifyToken(db, first)).toBe(false);
+    const actions = listAudit(db, 10).map((a) => a.kind);
+    expect(actions).toContain('token_created');
+    expect(actions).toContain('token_rotated');
+    db.close();
+  });
+  it('prints nothing without a terminal and in a non-token auth mode', async () => {
+    const h = harness();
+    expect(await h.run(['login'], { isTTY: false })).toBe(0);
+    expect(h.out).toEqual([]);
+    expect(h.errs).toEqual([]);
+    const g = harness({ WEB_AUTH_MODE: 'google_desktop' });
+    expect(await g.run(['login'])).toBe(0);
+    expect(g.out).toEqual([]);
+  });
+});

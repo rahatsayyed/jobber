@@ -100,7 +100,18 @@ async function main(): Promise<number> {
         }
       } catch { /* the doctor check reports a missing file */ }
     }
-    return runUp(base, { status: p.status });
+    const code = await runUp(base, { status: p.status });
+    // Owner decision 2026-11-08: every `npm run up` prints a fresh dashboard sign-in URL (token mode, terminal only).
+    // The token is stored only as a hash, so a new one is made each start; every old session is signed out.
+    if (!p.status && code === 0) {
+      try {
+        const { main: dashboardCli } = await import('./dashboard.js');
+        await dashboardCli(['login']);
+      } catch (e) {
+        console.log(`dashboard sign-in URL not created: ${e instanceof Error ? e.message : 'error'}`);
+      }
+    }
+    return code;
   }
   return runDown(
     {
