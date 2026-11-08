@@ -10,6 +10,8 @@ import { checkRole, loadRoleGateConfig, type RoleGateConfig } from '../../roleGa
 export const COMPANY_ATS = ['greenhouse', 'lever', 'ashby', 'workable', 'recruitee', 'personio', 'workday', 'smartrecruiters',
   // second pass (career-ops providers added after c3230d12)
   'keka', 'darwinbox', 'hibob', 'zohorecruit',
+  // RSS / HTML-list vendors adapted from career-ops (teamtailor, jobvite, icims, jazzhr, join, softgarden, avature, applitrack, neogov, pageup, eploy)
+  'teamtailor', 'jobvite', 'icims', 'jazzhr', 'join', 'softgarden', 'avature', 'applitrack', 'neogov', 'pageup', 'eploy',
 ] as const;
 export type CompanyAts = (typeof COMPANY_ATS)[number];
 // Aggregators: one board-wide feed with many employers. They are configured in the "aggregators" object of portals.json (not in
@@ -88,6 +90,18 @@ const VENDOR_SLUG_RULES: Record<string, { re: RegExp; hint: string; max?: number
   darwinbox: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the <tenant>.darwinbox.in subdomain)' },
   hibob: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the <tenant>.careers.hibob.com subdomain)' },
   zohorecruit: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the <tenant>.zohorecruit.<tld> subdomain)' },
+  // RSS / HTML-list vendors (teamtailor ... eploy): the slug is a tenant host label (<slug>.<vendor domain>) or a path/token segment.
+  teamtailor: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain of teamtailor.com)' },
+  icims: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the whole tenant host label of icims.com, for example careers-acme)' },
+  jazzhr: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain of applytojob.com)' },
+  softgarden: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain of softgarden.io)' },
+  avature: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain of avature.net)' },
+  eploy: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the tenant subdomain of eploy.net)' },
+  jobvite: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-" (the name in jobs.jobvite.com/<name>)' },
+  join: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-" (the name in join.com/companies/<name>)' },
+  neogov: { re: TOKEN_SLUG_RE, hint: 'letters, digits, "_" and "-" (the agency name on schooljobs.com)' },
+  applitrack: { re: /^[a-z0-9][a-z0-9_-]{0,63}$/, hint: 'lowercase letters, digits, "_" and "-" (the district name in applitrack.com/<name>)' },
+  pageup: { re: /^\d{1,10}$/, hint: 'digits only (the numeric tenant id in careers.pageuppeople.com/<id>/...)' },
 };
 /** null when the slug is fine for this vendor, else a short reason. */
 export function slugProblem(ats: string, slug: unknown): string | null {

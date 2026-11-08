@@ -8,6 +8,8 @@ import { IMPORTED_IDS } from '../sources/providers/index.js';
 export const DISCOVER_ONLY_SOURCES: ReadonlySet<string> = new Set([
   'workable', 'recruitee', 'personio', 'workday', 'smartrecruiters', 'hackernews', 'himalayas', 'weworkremotely',
   'keka', 'darwinbox', 'hibob', 'zohorecruit',
+  // RSS / HTML-list vendors adapted from career-ops (src/sources/boards): no apply recipe, discover-only.
+  'teamtailor', 'jobvite', 'icims', 'jazzhr', 'join', 'softgarden', 'avature', 'applitrack', 'neogov', 'pageup', 'eploy',
   ...IMPORTED_IDS,
 ]);
 

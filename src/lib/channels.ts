@@ -42,6 +42,8 @@ export const SOURCE_POLICY: Readonly<Record<string, SourcePolicy>> = {
   greenhouse: { apply: 'url' }, lever: { apply: 'url' }, ashby: { apply: 'url' },
   workable: { apply: 'none' }, recruitee: { apply: 'none' }, personio: { apply: 'none' },
   smartrecruiters: { apply: 'none' }, workday: { apply: 'none' },
+  teamtailor: { apply: 'none' }, jobvite: { apply: 'none' }, icims: { apply: 'none' }, jazzhr: { apply: 'none' }, join: { apply: 'none' },
+  softgarden: { apply: 'none' }, avature: { apply: 'none' }, applitrack: { apply: 'none' }, neogov: { apply: 'none' }, pageup: { apply: 'none' }, eploy: { apply: 'none' },
   hackernews: { hn: true, apply: 'none' }, himalayas: { apply: 'none' }, weworkremotely: { apply: 'none' },
   remotive: { apply: 'url' }, remoteok: { apply: 'url' },
   // Imported feeds (career-ops providers): discover-only, so email and LinkedIn contact are allowed and apply never.

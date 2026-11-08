@@ -17,7 +17,20 @@ import { provider as darwinbox } from './darwinbox.js';
 import { provider as hibob } from './hibob.js';
 import { provider as zohorecruit } from './zohorecruit.js';
 
+import { provider as teamtailor } from './teamtailor.js';
+import { provider as jobvite } from './jobvite.js';
+import { provider as icims } from './icims.js';
+import { provider as jazzhr } from './jazzhr.js';
+import { provider as join } from './join.js';
+import { provider as softgarden } from './softgarden.js';
+import { provider as avature } from './avature.js';
+import { provider as applitrack } from './applitrack.js';
+import { provider as neogov } from './neogov.js';
+import { provider as pageup } from './pageup.js';
+import { provider as eploy } from './eploy.js';
+
 export const BOARD_PROVIDERS: Record<Ats, BoardProvider> = {
   greenhouse, lever, ashby, workable, recruitee, personio, workday, hackernews, himalayas, weworkremotely, smartrecruiters,
   keka, darwinbox, hibob, zohorecruit,
+  teamtailor, jobvite, icims, jazzhr, join, softgarden, avature, applitrack, neogov, pageup, eploy,
 };
