@@ -413,8 +413,9 @@ messages); the sending steps (LinkedIn and Naukri `followups` and `new_outreach`
 `CHUNK_SIZE` (5, a constant in `src/scheduler/plan.ts`) and the prompt lists them (`new_outreach quota 12 -> calls of 5, 5, 2`): the
 session makes separate sequential Agent calls, each a fresh subagent context, until the quota is spent or a call reports done 0,
 stopped, halted or limit reached, and such a step counts as proven only when the item's final report names it; an incomplete item is never continued (the plan is DB-driven, so unfinished work is due again at the next wake); the
-daemon starts the next wake a fixed 10 minutes after the last one (`WAKE_INTERVAL_MIN`, a constant, moved to the end of quiet hours
-when it would land inside them). A pending
+daemon starts the next wake 10 minutes after the last one (`WAKE_INTERVAL_MIN`, the base), doubling per consecutive empty wake up to
+`WAKE_IDLE_MAX_MIN` (default 60; 10 turns it off) and resetting on progress, a manual or forced wake, new jobs or daemon start; moved to the
+end of quiet hours when it would land inside them. A pending
 manual request does not wait for the next scheduled wake: the daemon (`--daemon` only) checks for one
 every 30 seconds and runs an early wake outside quiet hours (the regular wake schedule is left alone; after
 an early wake the next one waits 60 seconds when it ended `ok`, 5 minutes otherwise).
