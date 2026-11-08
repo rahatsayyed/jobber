@@ -10,6 +10,8 @@ export const IMPORTED_IDS = [
   '4dayweek', 'arbeitnow', 'jobicy', 'workingnomads', 'themuse', 'landingjobs', 'thehub', 'flowxtra', 'yourator', 'getonbrd',
   'justjoin', 'manfred', 'cryptocurrencyjobs', 'jobspresso', 'larajobs', 'nodesk', 'pythonorg', 'startup-jobs',
   'a16z-speedrun-talent', 'agentic-jobs', 'gupy', 'platsbanken', 'higheredjobs',
+  // second pass (career-ops providers added after c3230d12)
+  'remote-com',
 ] as const;
 
 export const IMPORTED_LOADERS: Record<string, Loader> = {
@@ -36,4 +38,5 @@ export const IMPORTED_LOADERS: Record<string, Loader> = {
   'providers/gupy': () => import('./gupy.js'),
   'providers/platsbanken': () => import('./platsbanken.js'),
   'providers/higheredjobs': () => import('./higheredjobs.js'),
+  'providers/remote-com': () => import('./remote-com.js'),
 };

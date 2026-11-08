@@ -51,6 +51,8 @@ export const SOURCE_POLICY: Readonly<Record<string, SourcePolicy>> = {
   cryptocurrencyjobs: { apply: 'none' }, jobspresso: { apply: 'none' }, larajobs: { apply: 'none' }, nodesk: { apply: 'none' },
   pythonorg: { apply: 'none' }, 'startup-jobs': { apply: 'none' },
   'a16z-speedrun-talent': { apply: 'none' }, 'agentic-jobs': { apply: 'none' }, 'gupy': { apply: 'none' }, 'platsbanken': { apply: 'none' }, 'higheredjobs': { apply: 'none' },
+  // Second pass (career-ops providers added after c3230d12): discover-only too.
+  keka: { apply: 'none' }, darwinbox: { apply: 'none' }, hibob: { apply: 'none' }, zohorecruit: { apply: 'none' }, 'remote-com': { apply: 'none' },
   naukri: { apply: 'url' },
   // Wellfound has its own MCP and a native Apply (apply-operator), so it is an apply target like Naukri.
   wellfound: { apply: 'url' },

@@ -121,7 +121,8 @@ export function describeProvider(c: Case): void {
       expect(typeof IMPORTED_LOADERS[`providers/${c.id}`]).toBe('function');
       expect(isDiscoverOnlySource(c.id)).toBe(true);
       const src = readFileSync(path.join(ROOT, 'src', 'sources', 'providers', `${c.id}.ts`), 'utf8');
-      expect(src.split('\n')[0]).toContain(`Adapted from career-ops-hq/career-ops providers/${c.id}.mjs (MIT, (c) 2026 Santiago Fernandez de Valderrama), commit c3230d12`);
+      // c3230d12 is the first import; the second pass (providers added after it) names the upstream commit it was read at.
+      expect(src.split('\n')[0]).toMatch(new RegExp(`Adapted from career-ops-hq/career-ops providers/${c.id}\\.mjs \\(MIT, \\(c\\) 2026 Santiago Fernandez de Valderrama\\), commit (c3230d12|abefa6db)`));
     });
 
     it('loads through the registry loader to the same provider', async () => {

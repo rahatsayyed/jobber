@@ -7,7 +7,10 @@ import { findRestriction, LOCATION_ONSITE, REGION_WORD, REMOTE_WORD } from '../.
 import { checkRole, loadRoleGateConfig, type RoleGateConfig } from '../../roleGate.js';
 
 // Company-board vendors: one board per tracked company. Each vendor has a provider in src/sources/boards/ and an entry in registry.ts.
-export const COMPANY_ATS = ['greenhouse', 'lever', 'ashby', 'workable', 'recruitee', 'personio', 'workday', 'smartrecruiters'] as const;
+export const COMPANY_ATS = ['greenhouse', 'lever', 'ashby', 'workable', 'recruitee', 'personio', 'workday', 'smartrecruiters',
+  // second pass (career-ops providers added after c3230d12)
+  'keka', 'darwinbox', 'hibob', 'zohorecruit',
+] as const;
 export type CompanyAts = (typeof COMPANY_ATS)[number];
 // Aggregators: one board-wide feed with many employers. They are configured in the "aggregators" object of portals.json (not in
 // tracked_companies), run through the same fetch loop, caps, filters and board_status, but are never part of BOARD_SOURCES (index.ts).
@@ -27,6 +30,8 @@ export interface TrackedCompany {
   wd?: string; site?: string; search?: string;
   // smartrecruiters and workday: most posting detail requests per fetch; workday and himalayas: most list pages per fetch
   max_detail?: number; max_pages?: number;
+  // darwinbox: the company id in /ms/candidatev2/<company_id>/careers; zohorecruit: regional domain (default "com")
+  company_id?: string; tld?: string;
 }
 /**
  * Optional extra layer of the title filter (career-ops style). It can only EXCLUDE more or ORDER; it never admits a title the base filter
@@ -79,6 +84,10 @@ const VENDOR_SLUG_RULES: Record<string, { re: RegExp; hint: string; max?: number
   recruitee: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-", not starting or ending with "-" (the tenant subdomain)' },
   personio: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-", not starting or ending with "-" (the tenant subdomain)' },
   workday: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-", not starting or ending with "-" (the tenant), at most 40 characters', max: 40 },
+  keka: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the <tenant>.keka.com subdomain)' },
+  darwinbox: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the <tenant>.darwinbox.in subdomain)' },
+  hibob: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the <tenant>.careers.hibob.com subdomain)' },
+  zohorecruit: { re: HOST_LABEL_RE, hint: 'lowercase letters, digits and inner "-" (the <tenant>.zohorecruit.<tld> subdomain)' },
 };
 /** null when the slug is fine for this vendor, else a short reason. */
 export function slugProblem(ats: string, slug: unknown): string | null {
@@ -92,10 +101,16 @@ export function assertVendorSlug(c: { ats: string; slug: string }): void {
   if (slugProblem(c.ats, c.slug)) throw new Error(`invalid board slug ${JSON.stringify(c.slug)}`);
 }
 
-export const WD_RE = /^wd\d{1,3}$/;
+export const COMPANY_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+export const ZOHO_TLDS: readonly string[] = ['com', 'ca', 'eu', 'in', 'com.au', 'jp', 'sa', 'com.cn'];
+export const WD_RE =/^wd\d{1,3}$/;
 export const SITE_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
 /** Validates the optional vendor fields of one tracked_companies entry; null when fine. */
 export function extraConfigProblem(c: any): string | null {
+  if (c.ats === 'darwinbox' || c.company_id !== undefined) {
+    if (typeof c.company_id !== 'string' || !COMPANY_ID_RE.test(c.company_id)) return c.ats === 'darwinbox' ? 'darwinbox needs company_id (letters, digits, "_" and "-", at most 64)' : 'company_id must be letters, digits, "_" and "-", at most 64';
+  }
+  if (c.tld !== undefined && (typeof c.tld !== 'string' || !ZOHO_TLDS.includes(c.tld))) return `tld must be one of ${ZOHO_TLDS.join(', ')}`;
   if (c.ats === 'workday' || c.wd !== undefined) {
     if (typeof c.wd !== 'string' || !WD_RE.test(c.wd)) return c.ats === 'workday' ? 'workday needs wd like "wd5"' : 'wd must look like "wd5"';
   }
@@ -339,6 +354,8 @@ export function loadPortals(file: string = defaultPath): { config: PortalsConfig
         ...(typeof c.search === 'string' && c.search.trim() ? { search: c.search.trim() } : {}),
         ...(Number.isInteger(c.max_detail) ? { max_detail: c.max_detail as number } : {}),
         ...(Number.isInteger(c.max_pages) ? { max_pages: c.max_pages as number } : {}),
+        ...(typeof c.company_id === 'string' ? { company_id: c.company_id } : {}),
+        ...(typeof c.tld === 'string' ? { tld: c.tld } : {}),
       }));
     // "aggregators": { "<name>": { "enabled": true, "max_pages"?: n } } becomes one pseudo company per known aggregator.
     const aggs: TrackedCompany[] = [];

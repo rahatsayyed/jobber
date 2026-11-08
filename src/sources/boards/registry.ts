@@ -12,6 +12,10 @@ import { fetchHackerNews } from './hackernews.js';
 import { fetchHimalayas } from './himalayas.js';
 import { fetchWeWorkRemotely } from './weworkremotely.js';
 import { fetchSmartRecruiters } from './smartrecruiters.js';
+import { fetchKeka } from './keka.js';
+import { fetchDarwinbox } from './darwinbox.js';
+import { fetchHibob } from './hibob.js';
+import { fetchZohoRecruit } from './zohorecruit.js';
 
 export const FETCHERS: Record<Ats, BoardFetcher> = {
   greenhouse: fetchGreenhouse,
@@ -25,4 +29,8 @@ export const FETCHERS: Record<Ats, BoardFetcher> = {
   himalayas: fetchHimalayas,
   weworkremotely: fetchWeWorkRemotely,
   smartrecruiters: fetchSmartRecruiters,
+  keka: fetchKeka,
+  darwinbox: fetchDarwinbox,
+  hibob: fetchHibob,
+  zohorecruit: fetchZohoRecruit,
 };

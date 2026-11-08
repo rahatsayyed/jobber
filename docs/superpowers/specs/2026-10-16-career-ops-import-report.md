@@ -169,3 +169,44 @@ Scope: 47 board-wide, 62 per-company (tenant). Classification is a code heuristi
 - Most feeds carry no job description (career-ops is listing-only for them): those jobs get a "Listing only" description and score on title and location only until a description fetch exists.
 - Imported sources are discover-only for apply (`src/lib/discoverOnly.ts`): email and connect outreach may run, an apply attempt never does.
 - The runner applies no title/location filter to `api` sources, so each imported provider keeps only titles that share a word with the configured role and caps the result at 200.
+
+## Second pass (providers added after c3230d12)
+
+Upstream `providers/` was listed again through the GitHub API (read at commit abefa6db): 159 entries, 137 provider modules (files not starting with `_`). The first report names 109 at import time, so 28 modules are new:
+`aldi-nord, apple, applicantpro, atlassian, bulldogjob, bwi, clearcompany, computrabajo, darwinbox, deel, dover, factorial, germantechjobs, hibob, hirehive, homerun, inrecruiting, jobscz, keka, magneto, notion, paylocity, polymer, pracecz, remote-com, sitemap, trakstar, zoho-recruit`. The older skipped ones (`bamboohr, breezy, pinpoint, gem, comeet, eightfold, teamtailor, jobvite, icims, jazzhr, getro, rippling` ...) belong to another pass and are not touched here.
+
+Imported (all `enabled: false`, `stability: fixture`, discover-only, https and allowed host only through the board transport, attribution on line 1, invented fixtures, no network in tests):
+
+| id | kind | where | notes |
+|----|------|-------|-------|
+| keka | per-company vendor | `src/sources/boards/keka.ts` | Indian ATS. GET `https://<slug>.keka.com/careers` (shell with the tenant UUID), then the `embedjobs` JSON array. Posting URL built as `/careers/jobdetails/<id>`. |
+| darwinbox | per-company vendor | `src/sources/boards/darwinbox.ts` | Indian ATS. POST `https://<slug>.darwinbox.in/ms/candidateapi/job/alljobs?companyId=<company_id>`, pages of 50, `max_pages` (default 20). New config field `company_id`. Salary not carried over. |
+| zohorecruit | per-company vendor | `src/sources/boards/zohorecruit.ts` | `https://<slug>.zohorecruit.<tld>` page `/jobs/Careers`, board read from the `id="jobs"` hidden input. New config field `tld` (default `com`, `in` for Indian data centres). The opt-in per-posting detail fetch is not ported. |
+| hibob | per-company vendor | `src/sources/boards/hibob.ts` | GET `https://<slug>.careers.hibob.com/api/job-ad` with the `companyidentifier` header, description inline. |
+| remote-com | board-wide feed | `src/sources/providers/remote-com.ts` | Remote.com's own openings (`apply.remote.com/api/public/jobs`), region codes (APAC, EMEA ...) spelled out so location filters match. Listing only. |
+
+Wiring: `COMPANY_ATS`, slug rules, `extraConfigProblem`, `loadPortals` (`company_id`, `tld`) in `filters.ts`; `registry.ts`; `boards/providers.ts`; `DISCOVER_ONLY_SOURCES` in `src/lib/discoverOnly.ts`; `SOURCE_POLICY` in `src/lib/channels.ts`; `IMPORTED_IDS` and `IMPORTED_LOADERS` in `src/sources/providers/index.ts` (remote-com only); five rows in `config/platforms.json`; `scripts/check-portal.ts` gets `--company-id` and `--tld`. Tests: `tests/boardSecondPassVendors.test.ts`, `tests/providers/remote-com.test.ts`. The shared `tests/providers/_replay.ts` attribution check now accepts commit `abefa6db` as well as `c3230d12`.
+
+### How the owner adds a tenant (no tenant is shipped, none was invented)
+
+Check the careers page from a networked shell, then add an entry to `tracked_companies` in `config/portals.json`:
+
+- Keka: careers page `https://<tenant>.keka.com/careers`. Check: `npx tsx scripts/check-portal.ts keka <tenant>`. Entry: `{ "name": "...", "ats": "keka", "slug": "<tenant>", "enabled": true }`.
+- Darwinbox: careers page looks like `https://<tenant>.darwinbox.in/ms/candidatev2/<companyId>/careers/allJobs`. Check: `npx tsx scripts/check-portal.ts darwinbox <tenant> --company-id <companyId>`. Entry: `{ "name": "...", "ats": "darwinbox", "slug": "<tenant>", "company_id": "<companyId>", "enabled": true }` (optional `max_pages`).
+- Zoho Recruit: `https://<tenant>.zohorecruit.<tld>` with the page `/jobs/Careers`. Check: `npx tsx scripts/check-portal.ts zohorecruit <tenant> --tld in`. Entry: `{ "name": "...", "ats": "zohorecruit", "slug": "<tenant>", "tld": "in", "enabled": true }`. A tenant on the legacy career site fails with a clear error.
+- HiBob: `https://<tenant-label>.careers.hibob.com/jobs` (use the label exactly as shown, suffix included). Entry: `{ "name": "...", "ats": "hibob", "slug": "<tenant-label>", "enabled": true }`.
+- The platform rows (`keka`, `darwinbox`, `hibob`, `zohorecruit`) are `enabled: false`; set them to `true` in `config/platforms.json` only after a live check passed. Shapes were read from career-ops code only (live-unverified).
+
+Skipped in this pass:
+
+| upstream | reason |
+|----------|--------|
+| homerun | Atom feed whose posting link is an XML attribute; our XML reader ignores attributes, so it needs a separate small parser. EU/NL startups, low India value. Candidate for a later batch. |
+| polymer, dover | US startup boards, per-company with an extra id (dover needs a board UUID plus company path); polymer has an unreliable pagination envelope and no description. Later batch. |
+| hirehive, paylocity, trakstar, factorial, deel, applicantpro, clearcompany | per-company vendors with no India or Gulf focus; same recipe as the ported four, add when an owner target needs one. |
+| bulldogjob, germantechjobs, pracecz, jobscz, computrabajo, magneto, inrecruiting, aldi-nord, bwi | regional (Poland, Germany, Czechia, LatAm) or single-employer boards, outside the target regions. |
+| apple, atlassian, notion, sitemap | single-employer or generic sitemap adapters. |
+
+The skip reasons for the unported rows are judged from the upstream file names and the heads of the ones read (keka, darwinbox, zoho-recruit, hibob, homerun, remote-com, polymer, dover); the rest were not opened.
+
+Counts changed: `COMPANY_ATS` 8 -> 12, `IMPORTED_IDS` 18 -> 19, `config/platforms.json` rows +5, the `DISCOVER_ONLY_SOURCES` expectation in `tests/discoverOnly.test.ts` +4.

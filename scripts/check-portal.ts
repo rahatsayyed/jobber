@@ -1,6 +1,8 @@
 // Check a company board (or an aggregator feed) before adding it to config/portals.json:
 //   npx tsx scripts/check-portal.ts <greenhouse|lever|ashby|workable|recruitee|personio|smartrecruiters> <slug> [--eu] [--domain de|com]
 //   npx tsx scripts/check-portal.ts workday <tenant> --wd <wdN> --site <site> [--search <text>]
+//   npx tsx scripts/check-portal.ts darwinbox <tenant> --company-id <id>      (tenant = <tenant>.darwinbox.in, id = /ms/candidatev2/<id>/careers)
+//   npx tsx scripts/check-portal.ts <keka|hibob> <tenant>   |   zohorecruit <tenant> [--tld in]
 //   npx tsx scripts/check-portal.ts <hackernews|himalayas|weworkremotely>
 // Prints how many jobs the board returned and how many pass the configured title + location filters.
 // For workday and smartrecruiters (one detail request per posting) only the postings that pass the filters are detailed, at most max_detail of them.
@@ -9,7 +11,7 @@ import { AGGREGATOR_DEFAULTS, AGGREGATOR_ATS, COMPANY_ATS, extraConfigProblem, l
 import { FETCHERS } from '../src/sources/boards/registry.js';
 
 const USAGE = `usage: npx tsx scripts/check-portal.ts <${COMPANY_ATS.join('|')}> <slug> [--eu] [--domain de|com] [--wd wdN --site <site>] [--search <text>]\n       npx tsx scripts/check-portal.ts <${AGGREGATOR_ATS.join('|')}>`;
-const VALUE_FLAGS = new Set(['--domain', '--wd', '--site', '--search', '--max-detail', '--max-pages']);
+const VALUE_FLAGS = new Set(['--domain', '--wd', '--site', '--search', '--max-detail', '--max-pages', '--company-id', '--tld']);
 
 const args = process.argv.slice(2);
 const positional: string[] = [];
@@ -36,6 +38,8 @@ const company: TrackedCompany = isAggregator
       ...(flags.has('--wd') ? { wd: flags.get('--wd') } : {}),
       ...(flags.has('--site') ? { site: flags.get('--site') } : {}),
       ...(flags.has('--search') ? { search: flags.get('--search') } : {}),
+      ...(flags.has('--company-id') ? { company_id: flags.get('--company-id') } : {}),
+      ...(flags.has('--tld') ? { tld: flags.get('--tld') } : {}),
       ...(num('--max-detail') !== undefined ? { max_detail: num('--max-detail') } : {}),
       ...(num('--max-pages') !== undefined ? { max_pages: num('--max-pages') } : {}),
     };
