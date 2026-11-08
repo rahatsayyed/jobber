@@ -82,7 +82,7 @@ for the owner. `apply_escalate` hands one job to the owner with a reason from th
 `marketing_checkbox`, `host_unknown`, `drift`, `blocked`, `cover_letter`, `login_failed`, `other`,
 `no_relevant_role` (a careers listing with no role that fits: parks the job `needs_owner`, `apply_note`
 `no_relevant_role`, and the manual apply queue shows it with that reason and the listing URL). CAPTCHA,
-MFA, phone verification and bot walls are never solved or waited out; `captcha`, `mfa`,
+MFA, phone verification and bot walls are never solved or waited out (a CAPTCHA is never solved by the agent; it gets the owner-solve wait described under "Captcha owner-solve wait" below); `captcha`, `mfa`,
 `phone_verification` and `blocked` are recorded against the host: two blocks within 7 days put the host
 on cooldown for `APPLY_HOST_COOLDOWN_DAYS`, and a streak of three bot walls over at least two run ids
 sets the `apply` halt (owner clears it with `npm run jobber:control -- clear-halt apply`).
@@ -188,6 +188,17 @@ waits while you log in, solve the check or complete MFA by hand, then saves the 
 puts that job and every other `needs_human` job on the host back in the queue; it also clears the
 host's captcha/mfa/login blocks (never a `bot_wall` halt). It never reads what you type and stores no
 password. `APPLY_ALLOW_ACCOUNT_CREATION` and `SITE_MAX_ACCOUNTS_PER_DAY` are unchanged.
+
+**Captcha owner-solve wait** (owner decision 2026-11-08, Safety rule 17; `src/applier/captchaWait.ts`). When a page read in `apply_open`,
+`apply_next` or any tool that goes through `inPage` shows a CAPTCHA, CODE waits up to `APPLY_CAPTCHA_WAIT_SEC` seconds (default 25, `0` = off,
+clamp 0..60, invalid -> 25) so YOU can solve it by hand in the open browser. It reads a fresh page every 3 seconds and goes on only when the
+captcha block is gone (no widget, no captcha wording; a filled `g-recaptcha-response` / `h-captcha-response` / `cf-turnstile-response` token
+counts only if nothing else blocks the page) and the page is still on the same host. If the time runs out, or the page moved to another host, the job
+is parked exactly as before (`blocked`, host block count, `apply_escalate` -> `needs_human`, `assist:captcha`). When the wait starts ONE
+Telegram notice goes to the `assist` topic (host and job title only, at most once per host per 5 minutes; none in a dry run). The wait never runs
+in a dry run, with the kill switch or a halt on, or for MFA, phone or email verification, bot walls and login walls. No tool is added: the model
+cannot trigger, shorten or extend it, and the agent never clicks, types into or solves a captcha. The read right after the final submit click does not wait (a captcha there
+parks as before). The applier MCP process reads the value at start, so restart the stack after changing it.
 
 **The one profile.** Scout, applier, the search-engine dork, `apply:assist`, `npm run browser:open
 -- <url>` and LinkedIn, Naukri and Wellfound share ONE persistent Chrome profile, `secrets/browser-profile/`

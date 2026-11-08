@@ -125,6 +125,8 @@ gates and that the engine re-verifies against the live page. Layers, outermost f
    click is judged in code on the final page only: known ATS vendor host, same registrable domain, or the hiring company's official domain (name match, a domain on
    file, or `user-data/apply-hosts.json`); https only, no credentials, port, IP, punycode or vendor look-alike; at most 4 hops. Any other final host parks the job
    `needs_owner` (`unknown_apply_host`), and a final page asking for payment, government ID or bank details parks it as `unsafe_apply_page`. No tool takes a URL.
+10. **Applier captcha wait** (`src/applier/captchaWait.ts`, `APPLY_CAPTCHA_WAIT_SEC`, Safety rule 17): on a CAPTCHA, code (no model-callable tool) waits up to 25 s by default (`0` = off, max 60)
+   for the OWNER to solve it by hand in the open browser, re-reads the page and goes on only if the captcha is gone; otherwise the job is parked as before. The agent never clicks, types into or solves it; MFA, phone or email checks, bot walls and login walls are never waited for. Kill switch, halts and dry run stop the wait.
 
 Not covered by code: `gmail.send_email` has the kill-switch and `JOBBER_DRY_RUN` hook only (no
 `halt_flags` read). The

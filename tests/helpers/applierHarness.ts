@@ -21,7 +21,7 @@ export const WHY = 'Because the product is interesting and the team ships.';
 
 export const LIVE: NodeJS.ProcessEnv = {
   JOBBER_DRY_RUN: 'false',
-  APPLY_SUBMIT_MODE: 'submit', WEB_MIN_GAP_SEC: '0',
+  APPLY_SUBMIT_MODE: 'submit', WEB_MIN_GAP_SEC: '0', APPLY_CAPTCHA_WAIT_SEC: '0',
 };
 
 export interface ApplierHarness {

@@ -414,6 +414,15 @@ const hand: EnvSpec[] = [
     about: 'LinkedIn Easy Apply on the main account, done by the LinkedIn drip lane through the LinkedIn engine (one application per tick, never the applier). On by default (unset, blank or anything but exactly false means on). Set exactly false to turn it off: Easy Apply jobs then wait in the manual apply queue.',
     ...tier('safety', R_SEND, 'true'),
   }),
+  e('APPLY_CAPTCHA_WAIT_SEC', 'apply', 'browser apply', 'int', {
+    default: '25',
+    min: 0,
+    max: 60,
+    about: 'Seconds the applier (code, never the model) waits when a page shows a CAPTCHA so YOU can solve it by hand in the open browser, then it reads the page again and goes on only if the captcha is gone. Otherwise the job is parked as before. 0 turns the wait off. MFA, phone or email checks, bot walls and login walls are never waited for. The agent never clicks, types into or solves a captcha. A Telegram notice goes to the assist topic when the wait starts.',
+    restart: 'mcp',
+    restartEvidence: 'src/applier/captchaWait.ts',
+    ...never('Decides how long a browser the owner watches stays open on a captcha page. Owner decision 2026-11-08 (Safety rule 17): the agent and the dashboard never set it. Edit .env by hand.'),
+  }),
   e('APPLY_SUBMIT_MODE', 'apply', 'browser apply', 'enum', {
     default: 'hold',
     allowed: ['hold', 'submit'],

@@ -11,11 +11,11 @@ import { APPLY_HOST_PLATFORM_IDS, resolveHostCap } from '../../webcore/hostCaps.
 import { loadWebConfig } from '../../webcore/config.js';
 import { loadOutreachConfig } from '../../outreach/config.js';
 import { ceilings, tryConsume } from '../../outreach/limits.js';
-import { hostCoolingDown, hostOfUrl, readPage } from '../../webcore/login.js';
+import { hostCoolingDown, hostOfUrl } from '../../webcore/login.js';
 import { hostCooledDown } from '../cooldown.js';
 import { findPreparedResumePath, validateResumePath, DEFAULT_RESUME_ROOT } from '../resume.js';
 import {
-  blockedResult, envOf, failedResult, hostDayCount, nowOf, preflight, refuse, type ApplierDeps, type ApplyResult, type OpenJob,
+  blockedResult, envOf, failedResult, hostDayCount, nowOf, preflight, readPageForJob, refuse, type ApplierDeps, type ApplyResult, type OpenJob,
 } from './common.js';
 import { screenedState } from './state.js';
 
@@ -135,7 +135,7 @@ async function open(input: OpenInputT, deps: ApplierDeps): Promise<ApplyResult> 
 
   const read = await deps.runtime.serial(async () => {
     const page = deps.runtime.page();
-    return page ? readPage(page) : null;
+    return page ? readPageForJob(deps, page, jobId) : null;
   });
   if (!read) { deps.state.cur = null; return failedResult(); }
   if (read.model.block) {

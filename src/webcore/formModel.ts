@@ -36,6 +36,8 @@ export interface RawFormSnapshot {
   controls: RawControl[];
   notices: string[];
   captchaWidget?: boolean;
+  /** A captcha response field (g-recaptcha, h-captcha, cf-turnstile) holds a non-empty token. Read only; used by the owner-solve wait. */
+  captchaSolved?: boolean;
   links?: RawLink[];
 }
 
@@ -82,7 +84,8 @@ export const FORM_SNAPSHOT_SCRIPT = `(() => {
     if (/size=invisible/.test(src) || e.getAttribute('data-size') === 'invisible') return false;
     return vis(e) && e.getBoundingClientRect().height >= 40;
   });
-  return { url: location.href, title: document.title, text: (document.body ? document.body.innerText : '').slice(0, 20000), fields, controls, notices, captchaWidget, links };
+  const captchaSolved = Array.from(document.querySelectorAll('[name="g-recaptcha-response"],[name="h-captcha-response"],[name="cf-turnstile-response"]')).some((e) => !!String(e.value || '').trim());
+  return { url: location.href, title: document.title, text: (document.body ? document.body.innerText : '').slice(0, 20000), fields, controls, notices, captchaWidget, captchaSolved, links };
 })()`;
 
 const STEP_RE = /step\s+(\d+)\s+of\s+(\d+)/i;
