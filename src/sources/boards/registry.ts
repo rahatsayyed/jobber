@@ -12,6 +12,17 @@ import { fetchHackerNews } from './hackernews.js';
 import { fetchHimalayas } from './himalayas.js';
 import { fetchWeWorkRemotely } from './weworkremotely.js';
 import { fetchSmartRecruiters } from './smartrecruiters.js';
+import { fetchTeamtailor } from './teamtailor.js';
+import { fetchJobvite } from './jobvite.js';
+import { fetchIcims } from './icims.js';
+import { fetchJazzhr } from './jazzhr.js';
+import { fetchJoin } from './join.js';
+import { fetchSoftgarden } from './softgarden.js';
+import { fetchAvature } from './avature.js';
+import { fetchAppliTrack } from './applitrack.js';
+import { fetchNeogov } from './neogov.js';
+import { fetchPageup } from './pageup.js';
+import { fetchEploy } from './eploy.js';
 
 export const FETCHERS: Record<Ats, BoardFetcher> = {
   greenhouse: fetchGreenhouse,
@@ -25,4 +36,15 @@ export const FETCHERS: Record<Ats, BoardFetcher> = {
   himalayas: fetchHimalayas,
   weworkremotely: fetchWeWorkRemotely,
   smartrecruiters: fetchSmartRecruiters,
+  teamtailor: fetchTeamtailor,
+  jobvite: fetchJobvite,
+  icims: fetchIcims,
+  jazzhr: fetchJazzhr,
+  join: fetchJoin,
+  softgarden: fetchSoftgarden,
+  avature: fetchAvature,
+  applitrack: fetchAppliTrack,
+  neogov: fetchNeogov,
+  pageup: fetchPageup,
+  eploy: fetchEploy,
 };
