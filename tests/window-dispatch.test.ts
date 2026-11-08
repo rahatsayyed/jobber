@@ -253,6 +253,20 @@ describe('stall, timeout, limits, kill switch', () => {
     expect(h.tick).toBeLessThan(200);
   });
 
+  it('closes an open Claude Code dialog with Escape before it types the work line', async () => {
+    h.pane = 'Teach auto mode about your environment?\n  1. Yes\n  2. Not now\n  Enter to confirm · Esc to cancel';
+    h.steps[1] = () => { h.pane = '\n❯ \n'; }; // the Escape closed it
+    h.steps[3] = () => h.append(asst('Done', 'end_turn'));
+    const r = await h.disp.dispatch(h.input());
+    expect(r.status).toBe('ok');
+    expect(h.escapes()).toBe(1);
+    const sends = h.calls.filter((c) => c[0] === 'send-keys');
+    const firstEsc = sends.findIndex((c) => c[c.length - 1] === 'Escape');
+    const firstTyped = sends.findIndex((c) => c.includes('-l'));
+    expect(firstEsc).toBeGreaterThanOrEqual(0);
+    expect(firstEsc).toBeLessThan(firstTyped);
+  });
+
   it('usage limit from an API error entry in the transcript', async () => {
     h.steps[2] = () => h.append(asst('Claude usage limit reached|1760000000', 'stop_sequence', { isApiErrorMessage: true }));
     const r = await h.disp.dispatch(h.input());

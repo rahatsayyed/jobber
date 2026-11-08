@@ -95,6 +95,7 @@ const ASYNC_QUIET_MS = 1_800_000;
 const ASYNC_SETTLE_MS = 10_000;
 const PANE_TAIL = 12;
 /** A running claude shows "esc to interrupt" in its footer: a quiet transcript then is a slow tool, not a permission prompt. UNVERIFIED. */
+const DIALOG_PANE_RE = /Enter to (?:confirm|continue) · Esc to cancel/; // a Claude Code selection dialog is open in the pane
 const BUSY_PANE_RE = /esc to interrupt|^\s*◯\s+\S.*\d+s\b/im; // the second form is a running background agent row ("◯ contact-finder ... 13m 14s")
 const DONE_OK = new Set(['end_turn', 'stop_sequence']);
 const DONE_FAIL = new Set(['max_tokens', 'refusal']);
@@ -271,6 +272,11 @@ export class WindowDispatcher {
       const rec = readWindowSession(this.d.root, i.window);
       let tailer: TranscriptTailer | null = null;
       if (rec && !rec.stale && !this.stale.has(i.window)) tailer = TranscriptTailer.atEnd(transcriptFile(this.dir, rec.session_id));
+      // A Claude Code dialog (for example the "Teach auto mode about your environment?" nudge) swallows the typed line, and the Enter
+      // that submits it would pick the highlighted answer. Close it with Escape (never an answer) before typing.
+      try {
+        if (DIALOG_PANE_RE.test(await this.paneText(i.window))) { await this.escape(i.window); await this.sleep(500); }
+      } catch { /* an unreadable pane: type as before */ }
       const sentAt = this.now();
       try {
         await sendText(this.d.run, this.d.session, i.window, line);
