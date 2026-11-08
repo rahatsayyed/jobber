@@ -85,7 +85,7 @@ describe('job id derivation (moved from the deleted src/discover/linkedin-jobs.t
 describe('discovery config and URL building', () => {
   it('the shipped config migrates every usable old entry and builds a code-made url', () => {
     const cfg = loadDiscoveryConfig();
-    expect(cfg.jobs.map((j) => j.name)).toEqual(['full-stack-remote-india']);
+    expect(cfg.jobs.map((j) => j.name)).toEqual(['full-stack-remote-india', 'react-developer-pune', 'mern-stack-india', 'full-stack-gulf']);
     expect(cfg.posts.map((p) => p.name)).toContain('default');
     const u = new URL(buildJobsSearchUrl(cfg.jobs[0]));
     expect(u.origin + u.pathname).toBe('https://www.linkedin.com/jobs/search/');
