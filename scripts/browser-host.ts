@@ -2,7 +2,9 @@
 //   npm run browser:host -- status   pid, mode, attached clients and tabs (never the endpoint); removes a stale pidfile
 //   npm run browser:host -- stop     asks the running host to close Chrome and exit
 //   (internal) browser-host.ts run --mode headless|headed   started by src/webcore/hostClient.ts, detached, on first use
+// BROWSER_HOST_HEADED=true (debug) makes the headless task host show its Chrome window; owner handover is unchanged.
 // The host exits by itself after BROWSER_HOST_IDLE_MIN minutes with no client, at once on the kill switch, and when Chrome closes.
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startHost, killSwitchOn } from '../src/webcore/hostServer.js';
@@ -12,6 +14,7 @@ import { loadHostConfig } from '../src/webcore/config.js';
 import { stopFileForRoot } from '../src/scheduler/control.js';
 import { haltReason } from '../src/outreach/limits.js';
 import { openDb } from '../src/db.js';
+import { parseEnv } from '../src/platform/envFile.js';
 import type BetterSqlite3 from 'better-sqlite3';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -25,9 +28,12 @@ async function runHost(mode: 'headless' | 'headed'): Promise<number> {
     // Fails closed: unreadable halt state refuses new tabs.
     try { db ??= openDb(); return haltReason(db, 'all') !== null; } catch { return true; }
   };
-  const cfg = loadHostConfig(env);
+  // The knob is read from the process env first (the spawner's env), then from .env, so it works whichever process started the host.
+  let dotenv: Record<string, string> = {};
+  try { dotenv = parseEnv(readFileSync(path.join(ROOT, '.env'), 'utf8')); } catch { /* no .env */ }
+  const cfg = loadHostConfig({ ...env, BROWSER_HOST_HEADED: env.BROWSER_HOST_HEADED ?? dotenv.BROWSER_HOST_HEADED });
   const r = await startHost({
-    mode, killed: () => killSwitchOn(stopFile, env), allHalted, idleMs: cfg.idleMs, heartbeatMs: 5000,
+    mode, visible: cfg.headed, killed: () => killSwitchOn(stopFile, env), allHalted, idleMs: cfg.idleMs, heartbeatMs: 5000,
   });
   if (!r.ok) { console.error(`[browser-host] not started: ${r.code}`); return r.code === 'running' ? 0 : 1; }
   const h = r.handle;

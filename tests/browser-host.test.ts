@@ -459,3 +459,64 @@ describe('web runtime on the shared host', () => {
     expect(await rt4.open('https://jobs.example.com/c', { allowedHosts: ['example.com'], jobId: 'j4' })).toMatchObject({ ok: false, code: 'session_locked' });
   });
 });
+
+describe('BROWSER_HOST_HEADED debug knob (visible task host)', () => {
+  it('reads only the exact value true', async () => {
+    const { loadHostConfig } = await import('../src/webcore/config.js');
+    expect(loadHostConfig({ BROWSER_HOST_HEADED: 'true' }).headed).toBe(true);
+    expect(loadHostConfig({ BROWSER_HOST_HEADED: ' true ' }).headed).toBe(true);
+    for (const v of [undefined, '', 'false', '1', 'TRUE', 'yes']) expect(loadHostConfig({ BROWSER_HOST_HEADED: v }).headed).toBe(false);
+  });
+
+  it('passes headed to the launcher only when visible (or in the owner headed mode)', async () => {
+    const seen: boolean[] = [];
+    const run = async (mode: 'headless' | 'headed', visible: boolean | undefined) => {
+      const fc = fakeCtx();
+      const r = await startHost(hostDeps(fc, { mode, visible, launch: async (o: { headed: boolean }) => { seen.push(o.headed); return fc.ctx as never; } }));
+      if (!r.ok) throw new Error(r.code);
+      await r.handle.shutdown('test');
+    };
+    await run('headless', undefined);
+    await run('headless', false);
+    await run('headless', true);
+    await run('headed', undefined);
+    expect(seen).toEqual([false, false, true, true]);
+  });
+
+  it('a visible task host keeps the headless label and still hands over to the owner window and back', async () => {
+    const fc = fakeCtx();
+    const handles: HostHandle[] = [];
+    const launched: Array<{ mode: string; headed: boolean }> = [];
+    const a = wiredClient(fc, handles, {
+      spawnHost: (mode) => {
+        void startHost(hostDeps(fc, { mode, visible: mode === 'headless', launch: async (o: { headed: boolean }) => { launched.push({ mode, headed: o.headed }); return fc.ctx as never; } }))
+          .then((r) => { if (r.ok) handles.push(r.handle); });
+      },
+    });
+    const task = await a.client.attach();
+    if (!task.ok) throw new Error('attach');
+    expect(task.mode).toBe('headless');
+    expect(readHostFile(paths().pidPath)!.mode).toBe('headless');
+    await task.browser.close();
+    const owner = await a.client.attach({ headed: true });
+    if (!owner.ok) throw new Error(`headed: ${JSON.stringify(owner)}`);
+    expect(await handles[0]!.done).toBe('handover');
+    expect(readHostFile(paths().pidPath)!.mode).toBe('headed');
+    await owner.browser.close();
+    expect(await handles[1]!.done).toBe('stop');
+    const again = await a.client.attach();
+    expect(again).toMatchObject({ ok: true, mode: 'headless' });
+    if (again.ok) await again.browser.close();
+    await handles[2]!.shutdown('test');
+    expect(launched).toEqual([{ mode: 'headless', headed: true }, { mode: 'headed', headed: true }, { mode: 'headless', headed: true }]);
+  });
+
+  it('a visible host still closes new tabs during a halt', async () => {
+    const fc = fakeCtx();
+    const r = await startHost(hostDeps(fc, { visible: true, allHalted: () => true }));
+    if (!r.ok) throw new Error(r.code);
+    const p = await fc.ctx.newPage();
+    expect(p.closed).toBe(true);
+    await r.handle.shutdown('test');
+  });
+});

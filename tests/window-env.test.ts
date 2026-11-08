@@ -107,6 +107,20 @@ describe('window config schema (config/manager-windows.json)', () => {
     expect(old.windows.a).toEqual({ argv: ['bash', 'x.sh'], description: 'd' });
   });
 
+  it('BROWSER_HOST_HEADED reaches only the windows that open browser tabs, as an explicit key (never a prefix)', () => {
+    const shipped = loadManagerConfig(readFileSync(path.join(ROOT, 'config/manager-windows.json'), 'utf8'));
+    const src = { ...base, BROWSER_HOST_HEADED: 'true', BROWSER_HOST_IDLE_MIN: '5', BROWSER_HOST: 'false' };
+    for (const w of ['linkedin', 'sources', 'pipeline', 'boards', 'apply']) {
+      expect(shipped.windows[w].env_keys).toContain('BROWSER_HOST_HEADED');
+      const env = buildWindowEnv(w, shipped.windows[w] as never, src);
+      expect(env.BROWSER_HOST_HEADED).toBe('true');
+      expect(env.BROWSER_HOST_IDLE_MIN).toBeUndefined();
+      expect(env.BROWSER_HOST).toBeUndefined();
+    }
+    expect(buildWindowEnv('mail', shipped.windows.mail as never, src).BROWSER_HOST_HEADED).toBeUndefined();
+    expect(buildWindowEnv('apply', shipped.windows.apply as never, base).BROWSER_HOST_HEADED).toBeUndefined();
+  });
+
   it('a worker window needs no argv and gets the worker launcher', () => {
     const c = loadManagerConfig(mk({
       mail: {

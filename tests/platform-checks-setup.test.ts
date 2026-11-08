@@ -39,7 +39,7 @@ function makeCtx(o: Opts = {}): DoctorContext {
 }
 
 async function one(id: string, ctx: DoctorContext): Promise<CheckResult> {
-  const c = setupToolingChecks.find((x) => x.id === id);
+  const c = setupChecks.find((x) => x.id === id);
   if (!c) throw new Error(`no check ${id}`);
   return c.run(ctx);
 }
@@ -524,4 +524,20 @@ describe('placeholders', () => {
       expect(r.detail).toBe(detail);
     });
   }
+});
+
+describe('browser-host-headed', () => {
+  const env = (t: string, pe: NodeJS.ProcessEnv = {}) => makeCtx({ files: { [`${R}/.env`]: { text: t } }, env: pe });
+  it('passes when the knob is unset or not exactly true', async () => {
+    expect((await one('browser-host-headed', env('FOO=1\n'))).status).toBe('pass');
+    expect((await one('browser-host-headed', env('BROWSER_HOST_HEADED=false\n'))).status).toBe('pass');
+    expect((await one('browser-host-headed', env('BROWSER_HOST_HEADED=1\n'))).status).toBe('pass');
+  });
+  it('warns when on (from .env or the process env)', async () => {
+    const a = await one('browser-host-headed', env('BROWSER_HOST_HEADED=true\n'));
+    expect(a.status).toBe('warn');
+    expect(a.detail).toBe('browser host headed: windows will appear');
+    expect((await one('browser-host-headed', env('', { BROWSER_HOST_HEADED: 'true' }))).status).toBe('warn');
+    expect((await one('browser-host-headed', env('BROWSER_HOST_HEADED=true\n', { BROWSER_HOST_HEADED: 'false' }))).status).toBe('pass');
+  });
 });

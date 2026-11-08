@@ -32,7 +32,8 @@
         "MAX_LINKEDIN_SEARCHES_PER_DAY",
         "MATCH_THRESHOLD",
         "APPLY_LINKEDIN_EASY",
-        "MAX_APPLIES_PER_DAY"
+        "MAX_APPLIES_PER_DAY",
+        "BROWSER_HOST_HEADED"
       ],
       "env_prefixes": ["LINKEDIN_", "COOLDOWN_", "CADENCE_", "CLASSIFIER_", "LAYOUT_"],
       "env": {
@@ -45,6 +46,7 @@
       "description": "Wake lane: the source-operator step of a wake (queued source tasks: owner-submitted pages, fallbacks, custom sites), typed by the scheduler",
       "lane": "wake",
       "role_prompt": "config/windows/sources.md",
+      "env_keys": ["BROWSER_HOST_HEADED"],
       "env_prefixes": ["SCOUT_", "SITE_", "SEARCH_", "DORK_", "CLASSIFIER_", "LAYOUT_"]
     },
     "pipeline": {
@@ -62,7 +64,8 @@
         "MATCH_DIM_MINIMUMS",
         "FOLLOWUPS_AUTONOMOUS",
         "EMAIL_FOLLOWUP_GAPS_DAYS",
-        "FOLLOWUP_CHECK_MAX_AGE_MIN"
+        "FOLLOWUP_CHECK_MAX_AGE_MIN",
+        "BROWSER_HOST_HEADED"
       ],
       "env_prefixes": ["LINKEDIN_", "COOLDOWN_", "CADENCE_", "SEARCH_", "DORK_", "APPLY_", "CLASSIFIER_", "LAYOUT_"]
     },
@@ -75,7 +78,8 @@
         "QUIET_HOURS_START",
         "QUIET_HOURS_END",
         "COMPANY_CONTACT_LIMIT",
-        "SPECULATIVE_COMPANY_LIMIT"
+        "SPECULATIVE_COMPANY_LIMIT",
+        "BROWSER_HOST_HEADED"
       ],
       "env_prefixes": ["NAUKRI_", "WELLFOUND_", "COOLDOWN_", "CADENCE_", "CLASSIFIER_", "LAYOUT_"]
     },
@@ -87,7 +91,8 @@
       "env_keys": [
         "QUIET_HOURS_START",
         "QUIET_HOURS_END",
-        "MAX_APPLIES_PER_DAY"
+        "MAX_APPLIES_PER_DAY",
+        "BROWSER_HOST_HEADED"
       ],
       "env_prefixes": ["APPLY_", "SITE_", "NAUKRI_", "WELLFOUND_", "LINKEDIN_", "CLASSIFIER_", "LAYOUT_"]
     }

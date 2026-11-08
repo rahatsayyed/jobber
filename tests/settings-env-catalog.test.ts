@@ -192,7 +192,7 @@ describe('rules (D22) over the whole catalog', () => {
     ];
     // Reviewed additions: a path rule hit (SITE_ACCOUNTS_FILE) and tmux session names (R_SESSION, same risk as WEB_TMUX_*).
     // EMAIL_AUTO_REPLY and EMAIL_REPLY_NUDGE (2026-11-06): owner-only switches of the email auto reply path, never settable from the dashboard.
-    const ADDED = ['SITE_ACCOUNTS_FILE', 'SCHEDULER_TMUX_SESSION', 'STACK_TMUX_SESSION', 'WEB_TERMINAL_SESSIONS', 'EMAIL_AUTO_REPLY', 'EMAIL_REPLY_NUDGE'];
+    const ADDED = ['SITE_ACCOUNTS_FILE', 'SCHEDULER_TMUX_SESSION', 'STACK_TMUX_SESSION', 'WEB_TERMINAL_SESSIONS', 'EMAIL_AUTO_REPLY', 'EMAIL_REPLY_NUDGE', 'BROWSER_HOST_HEADED'];
     for (const k of PLAN) expect(spec(k).tier, k).toBe('never');
     const never = ENV_CATALOG.filter((s) => s.tier === 'never').map((s) => s.key).sort();
     expect(never).toEqual([...PLAN, ...ADDED].sort());
