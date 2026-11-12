@@ -8,6 +8,7 @@ import type { Check, CheckResult, DoctorContext } from './doctor.js';
 import { skip } from './doctor.js';
 import { parseEnv } from './envFile.js';
 import { loadLayoutConfig, mergeLayoutEnv } from '../layout/config.js';
+import { listStreaks } from '../linkedin/discoverHealth.js';
 import { layoutFilePath, summarize, type LayoutSummary } from '../layout/summary.js';
 import type { Platform } from '../layout/types.js';
 import { CRITICAL } from '../layout/vocab.js';
@@ -141,6 +142,23 @@ export function layoutChecks(deps: LayoutCheckDeps = {}): Check[] {
         return drifting.length > 0
           ? warn(`drift streak: ${drifting.join('; ')}`, 'npm run layout -- show <platform>')
           : pass('no drift streaks');
+      },
+    },
+    {
+      // Truthful discovery health: a search page with results that gave 0 cards (see src/linkedin/discoverHealth.ts).
+      id: 'discover_parse',
+      title: 'linkedin discovery: cards read from search pages',
+      async run() {
+        let db: BetterSqlite3.Database | null = null;
+        try { db = openDb(); } catch { db = null; }
+        if (!db) return skip('no database yet');
+        const streaks = listStreaks(db);
+        return streaks.length === 0
+          ? pass('no broken parses (0 cards from a page with results) on record')
+          : warn(
+            streaks.map((s) => `${s.tool} "${s.search}" ${s.count} in a row since ${s.since.slice(0, 16)}${s.diag ? ` (${s.diag})` : ''}`).join('; '),
+            'the linkedin-operator retries it each wake; evidence files are in .jobber/diag; npm run status -- health',
+          );
       },
     },
     {

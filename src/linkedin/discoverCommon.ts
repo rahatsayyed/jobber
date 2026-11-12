@@ -11,6 +11,9 @@ import { gateField } from '../safety/fieldGate.js';
 import { setState } from '../scheduler/runLog.js';
 import { markSearchTried } from './discoverRotation.js';
 import { layoutGate } from './layoutGuard.js';
+import { telegramNotifier } from '../platform/notify.js';
+import { writeDiscoverDiag } from './discoverDiag.js';
+import { BROKEN_CODE, bumpStreak, classifyZeroCards, clearStreak, criticalAlert, maybeAlert, pageSummary, sessionAlertHtml, type PageSummary } from './discoverHealth.js';
 import { classifyUrl } from './urls.js';
 import type { PageKind, RawSnapshot } from './types.js';
 import type { ToolDeps } from './toolDeps.js';
@@ -32,6 +35,14 @@ export interface DiscoverResult {
   people?: number;
   injection_suspected?: boolean;
   layout?: string;
+  /** Which parser built the cards: the class-based one or the href-based fallback that survives a layout change. */
+  parser?: 'primary' | 'semantic';
+  /** Broken parse only: path of the evidence file under .jobber/diag. */
+  diag?: string;
+  /** Broken parse only: consecutive broken parses of this search (including this one). */
+  streak?: number;
+  /** Broken parse only: compact page summary (headings, link counts, dialog, notices, guest-wall hint) for the operator to read. */
+  summary?: PageSummary;
 }
 
 export interface ParsedAuthor { profileKey: string; name: string; headline?: string; company?: string }
@@ -96,7 +107,32 @@ export async function runDiscovery(o: {
   const layout = lay.note ? { layout: lay.note.replace(/^layout=/, '') } : { layout: 'match' };
 
   const parsed = o.parse(snap);
-  const base = { fetched: parsed.fetched, skipped: parsed.skipped, ...layout, ...(parsed.injection ? { injection_suspected: true } : {}) };
+  const base = {
+    fetched: parsed.fetched, skipped: parsed.skipped, ...layout, parser: snap.cardParser ?? ('primary' as const),
+    ...(parsed.injection ? { injection_suspected: true } : {}),
+  };
+
+  // A search page with results can never legitimately give 0 cards: tell a real empty page from a broken parse.
+  if (parsed.fetched === 0) {
+    if (classifyZeroCards(snap) === 'broken') {
+      const diag = await writeDiscoverDiag(
+        { now, page: deps.rt.page(), ...(deps.diagDir ? { diagDir: deps.diagDir } : {}) },
+        { tool, search: o.searchName, url: snap.url, snapshot: snap, layout: layout.layout, reason: BROKEN_CODE },
+      );
+      const streak = bumpStreak(db, tool, o.searchName, now(), diag);
+      const notify = deps.notify ?? (process.env.VITEST ? undefined : telegramNotifier(env));
+      // Summary for the operator (a model) to diagnose and heal first. Every text passes the input gate; a blocked one is dropped.
+      const summary = pageSummary(snap, (s, max) => { const g = gateCardField(s, max); return g.blocked ? '' : g.text; });
+      // Alerts only for CRITICAL: a guest or logged-out page at once, a streak that stayed broken for 24h. Plain drift heals first.
+      if (summary.login_wall) {
+        await criticalAlert(db, notify, 'session:guest_page', sessionAlertHtml(`guest or logged-out page (${summary.guest_hint})`, new URL(snap.url).pathname), now());
+      } else {
+        await maybeAlert(db, notify, tool, streak, layout.layout, now());
+      }
+      return empty('failed', BROKEN_CODE, { ...base, streak: streak.count, summary, ...(streak.diag ? { diag: streak.diag } : {}) });
+    }
+  }
+  clearStreak(db, tool, o.searchName);
 
   let unscreened = false;
   if (parsed.screenText) {
@@ -132,7 +168,7 @@ export async function runDiscovery(o: {
   const people = o.afterSave ? o.afterSave(parsed) : undefined;
   setState(db, LAST_RUN_KEY, now().toISOString(), now());
   return {
-    status: 'ok', code: ids.length ? 'saved' : 'no_new', ...base, new: ids.length, seen, job_ids: ids,
+    status: 'ok', code: ids.length ? 'saved' : parsed.fetched === 0 ? 'no_results' : 'no_new', ...base, new: ids.length, seen, job_ids: ids,
     ...(people !== undefined ? { people } : {}),
   };
 }

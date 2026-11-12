@@ -58,6 +58,12 @@ const WEAK_HIRING = /\b(?:looking for|join our team|join us|open position|openin
 const APPLY_CUE = /\b(?:apply|send (?:your |me your )?(?:cv|resume|profile)|email|e-mail|dm me|comment (?:below|interested)|share your (?:cv|resume)|interested candidates|drop (?:your|a))\b/i;
 const SEEKER =
   /(?:#?open ?to ?work|\bi(?:'|’)?m (?:currently )?(?:looking|searching|seeking)|\bi am (?:currently )?(?:looking|searching|seeking)|\blooking for (?:my next|a new) (?:role|opportunit|job|position|challenge)|\bseeking (?:a )?(?:new )?(?:role|opportunit|position|job)|\bavailable (?:for hire|immediately|to join)|\bactively looking\b|\blaid off\b|\blost my job\b|\bplease refer me\b|\bif you(?:'|’)?re hiring\b|\bif you are hiring\b|#hireme|\bmy resume\b|\bkindly refer\b|\bi(?:'|’)?m an? (?:immediate|early) joiner|\bi am an? (?:immediate|early) joiner|\b(?:immediate|early) joiners? available\b|\b(?:looking for|need|needs|seeking|request(?:ing)?|require|want|any) (?:a |an |any |some )?(?:job )?referrals?\b|\bsend me referrals?\b)/i;
+// More first-person job-seeker wording ("I'm looking for Full-Stack Developer roles", "open to work", "my last day", "hire me").
+const SEEKER_MORE =
+  /(?:\b(?:i(?:'|’)?m|i am|im|i(?:'|’)?ve been|i have been)\s+(?:currently\s+|now\s+|actively\s+|also\s+|still\s+)?(?:looking|searching|seeking|on the (?:lookout|hunt)|open)\b|\bopen to (?:new )?(?:work|opportunit|roles?|offers?)\b|\b(?:seeking|looking for|searching for) (?:a |an |my )?(?:new |next |full[- ]?time |remote )?(?:role|roles|job|jobs|position|opportunit\w*)\b|\bactively (?:looking|searching|seeking|interviewing)\b|\bmy last (?:day|working day)\b|\b(?:got |was |been |were )?laid[- ]off\b|\bhire me\b|\bhiring me\b|\b(?:my|our) (?:contract|layoff|notice period|job search)\b|\bjob hunt(?:ing)?\b|\bon the job market\b|\bavailable (?:for|to) (?:work|join|hire)\b|\bmy (?:cv|resume|portfolio) (?:is )?(?:attached|below|in the comments)\b)/i;
+// The poster hires for their own team: the only wording that overrides a seeker match.
+const OWN_TEAM_HIRING =
+  /\b(?:we(?:'|’)?re hiring|we are hiring|we(?:'|’)?re looking for|we are looking for|(?:my|our) team (?:is|are) hiring|(?:my|our) (?:company|team|startup) (?:is|are) (?:now )?(?:hiring|looking for)|join (?:us|our team)|we(?:'|’)?re growing(?: our team)?)\b/i;
 const ROLE_WORD = new RegExp(`\\b${ROLE_NOUN}\\b`, 'i');
 // Referral-style hiring wording: a recruiter or employee offering a referral, asking for a resume, or wanting an immediate joiner.
 // Counts as a hiring cue only together with a role (below) and never when a seeker pattern also matches.
@@ -72,7 +78,8 @@ export type PostVerdict = { hiring: true } | { hiring: false; reason: 'seeker' |
 export function classifyPost(text: string): PostVerdict {
   const t = String(text ?? '');
   const strong = STRONG_HIRING.test(t) || REFERRAL_HIRING.test(t);
-  if (SEEKER.test(t) && !/\bwe(?:'|’)?re hiring\b|\bwe are hiring\b|\bis hiring\b/i.test(t)) return { hiring: false, reason: 'seeker' };
+  // A first-person seeker post is rejected unless the poster ALSO clearly hires for their own team.
+  if ((SEEKER.test(t) || SEEKER_MORE.test(t)) && !OWN_TEAM_HIRING.test(t)) return { hiring: false, reason: 'seeker' };
   const weak = !strong && WEAK_HIRING.test(t) && APPLY_CUE.test(t);
   if (!strong && !weak) return { hiring: false, reason: 'not_hiring' };
   if (!ROLE_WORD.test(t) && !TECH_ROLE.test(t)) return { hiring: false, reason: 'no_role' };

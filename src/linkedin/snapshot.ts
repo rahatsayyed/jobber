@@ -4,6 +4,7 @@
 import type { RawSnapshot, RawProfile, RawResult, RawInvitation, RawMessage, RawJobCard, RawPostCard } from './types.js';
 import { parseHtml, findAll, visibleText, type HtmlNode } from './htmlVisible.js';
 import { extractAboutText } from './verify.js';
+import { SEMANTIC_CORE_SRC, semanticCardsFromHtml } from './semanticCards.js';
 
 /**
  * In-page expression (a string on purpose, like naukri.ts: tsx/esbuild keepNames would inject
@@ -14,6 +15,7 @@ import { extractAboutText } from './verify.js';
  * channel) its resolved background. Anything computed that cannot be read fails closed (hidden).
  */
 export const SNAPSHOT_SRC = String.raw`(function () {
+  ${SEMANTIC_CORE_SRC}
   function empty(title, url) {
     return { url: url, title: title, profile: null, results: [], invitations: [], messages: [],
       messageHeaderName: null, notices: [], dialogText: null, hasPasswordInput: false, bodyText: '' };
@@ -262,6 +264,23 @@ export const SNAPSHOT_SRC = String.raw`(function () {
       }
     }
 
+    var cardParser, linkEvidence;
+    if (jobCards !== undefined || postCards !== undefined) {
+      cardParser = 'primary';
+      if ((jobCards !== undefined && jobCards.length === 0) || (postCards !== undefined && postCards.length === 0)) try {
+        var sem = semanticCards({
+          anchors: qs(document, 'a[href]'), urnEls: qs(document, '[data-urn]'),
+          parent: function (e) { return e.parentElement; },
+          attr: function (e, n) { return e.getAttribute(n) || ''; },
+          tag: function (e) { return String(e.tagName || '').toLowerCase(); },
+          lines: function (e) { return lines(e); }
+        });
+        linkEvidence = { jobs: sem.jobLinks, posts: sem.postLinks };
+        if (jobCards !== undefined && jobCards.length === 0 && sem.jobCards.length > 0) { jobCards = sem.jobCards; cardParser = 'semantic'; }
+        if (postCards !== undefined && postCards.length === 0 && sem.postCards.length > 0) { postCards = sem.postCards; cardParser = 'semantic'; }
+      } catch (semErr) { }
+    }
+
     var rows = [], lis = qs(document, 'li');
     for (var ri = 0; ri < lis.length; ri++) {
       var btns = qs(lis[ri], 'a,button'), hasAccept = false;
@@ -321,7 +340,8 @@ export const SNAPSHOT_SRC = String.raw`(function () {
     } catch (se) { structure = undefined; }
     return { url: url, title: title, profile: profile, results: results, invitations: invitations, messages: messages,
       messageHeaderName: messageHeaderName, notices: notices, dialogText: dialogText, hasPasswordInput: pw.length > 0, bodyText: bodyText,
-      structure: structure, jobCards: jobCards, postCards: postCards };
+      structure: structure, jobCards: jobCards, postCards: postCards, cardParser: cardParser, linkEvidence: linkEvidence,
+      headings: uniq(qs(document, 'h1,h2').map(function (e) { return cap(flat(e), 80); })).slice(0, 8) };
   } catch (err) {
     return empty(title, url);
   }
@@ -438,6 +458,18 @@ export function buildSnapshotFromHtml(html: string, url: string): RawSnapshot {
       out.postCards = postCards;
     }
 
+    if (out.jobCards !== undefined || out.postCards !== undefined) {
+      out.cardParser = 'primary';
+      if (out.jobCards?.length === 0 || out.postCards?.length === 0) try {
+        const sem = semanticCardsFromHtml(root);
+        out.linkEvidence = { jobs: sem.jobLinks, posts: sem.postLinks };
+        if (out.jobCards !== undefined && out.jobCards.length === 0 && sem.jobCards.length > 0) { out.jobCards = sem.jobCards; out.cardParser = 'semantic'; }
+        if (out.postCards !== undefined && out.postCards.length === 0 && sem.postCards.length > 0) { out.postCards = sem.postCards; out.cardParser = 'semantic'; }
+      } catch {
+        // the primary result stands
+      }
+    }
+
     const rows = vq(root, tagIn('li')).filter((li) => vq(li, tagIn('a', 'button')).some((b) => flat(b).toLowerCase() === 'accept'));
     const invitations: RawInvitation[] = [];
     for (const row of rows) {
@@ -479,6 +511,7 @@ export function buildSnapshotFromHtml(html: string, url: string): RawSnapshot {
     const cnt = (pred: (n: HtmlNode) => boolean) => Math.min(vq(root, pred).length, 999);
     const role = (n: HtmlNode, r: string) => n.attrs['role'] === r;
     try {
+      out.headings = uniq(vq(root, tagIn('h1', 'h2')).map((n) => cap(flat(n), 80))).slice(0, 8);
       out.structure = {
         main: cnt(tagIn('main')), h1: cnt(tagIn('h1')), h2: cnt(tagIn('h2')),
         dialog: cnt((n) => n.tag === 'dialog' || role(n, 'dialog')),

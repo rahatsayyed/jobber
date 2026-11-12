@@ -4,6 +4,7 @@ import type { Snapshot } from './snapshot.js';
 import type { LimitKey } from '../outreach/limits.js';
 import { inActiveHours, loadActiveHours } from '../linkedin/activeHours.js';
 import { linkedinEasyEnabled } from '../apply/easyFlag.js';
+import { STREAK_ALERT_AT } from '../linkedin/discoverHealth.js';
 
 export interface WindowInfo {
   name: string;
@@ -105,6 +106,11 @@ export function renderHealth(s: Snapshot, windows: WindowInfo[]): string {
   if (!windows.length) lines.push('tmux: no windows');
   else for (const w of windows) lines.push(`window ${w.name}: ${w.command || '-'}${w.active ? ' (active)' : ''}`);
   lines.push(...haltLines(s), ...degradedLine(s));
+  for (const d of s.discoverBroken ?? []) {
+    lines.push(
+      `${d.count >= STREAK_ALERT_AT ? 'PROBLEM' : 'warning'} linkedin ${d.tool} "${d.search}": ${d.count} broken parse${d.count === 1 ? '' : 's'} in a row since ${d.since.slice(0, 16).replace('T', ' ')} UTC (page has results, 0 cards read)${d.diag ? `, evidence: ${d.diag}` : ''}`,
+    );
+  }
   lines.push('doctor: run npm run doctor');
   return lines.join('\n');
 }

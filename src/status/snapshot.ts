@@ -7,6 +7,7 @@ import { manualApplySummary, type ManualApplyItem } from '../manual/manualApply.
 import { LEGACY_REASON, missingReasonCountToday } from '../failureReason.js';
 import { openQuestionViews, type OpenQuestionView } from '../outreach/escalations.js';
 import { jdStats } from '../jdStore.js';
+import { listStreaks } from '../linkedin/discoverHealth.js';
 
 export interface Snapshot {
   generatedAt: string;
@@ -26,6 +27,8 @@ export interface Snapshot {
   jd: { waiting: number; pending: number; fetched24h: number; unavailable: number };
   /** Apply and send failures by reason code (open rows), plus the defect count of failures written without a reason today. */
   failures?: { byReason: { reason: string; count: number }[]; missingReasonToday: number };
+  /** LinkedIn searches whose last runs read 0 cards from a page that has results (a layout change). Absent in old snapshots. */
+  discoverBroken?: { tool: string; search: string; count: number; since: string; last_at: string; diag: string | null }[];
   // Sections not readable because a table is missing; their values are fallbacks, not facts.
   degraded: string[];
 }
@@ -163,6 +166,7 @@ export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, n
       const s = jdStats(db, now);
       return { waiting: s.waiting, pending: s.pending, fetched24h: s.fetched24h, unavailable: s.unavailable };
     }, { waiting: 0, pending: 0, fetched24h: 0, unavailable: 0 }),
+    discoverBroken: listStreaks(db),
     degraded,
   };
 }

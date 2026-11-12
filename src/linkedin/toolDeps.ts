@@ -6,6 +6,7 @@ import type { LinkedinConfig } from './config.js';
 import type { FactCheck } from './guard.js';
 import type { Runtime } from './runtime.js';
 import type { SearchProvider } from '../search/index.js';
+import type { Notifier } from '../platform/notify.js';
 import type { ScreenPurpose, ScreenVerdict } from '../safety/screen.js';
 
 export type Screen = (text: string, purpose: ScreenPurpose) => Promise<ScreenVerdict>;
@@ -22,6 +23,10 @@ export interface ToolDeps {
   screen: Screen;
   /** Layout memory settings (LAYOUT_ENFORCE and friends); defaults to loadLayoutConfig(env). */
   layoutCfg?: LayoutConfig;
+  /** Owner alerts of the discovery tools (a broken card parse). Default: Telegram from the env token (never under vitest). */
+  notify?: Notifier;
+  /** Directory of the discovery diag files (default <project>/.jobber/diag); tests point it at a temp dir. */
+  diagDir?: string;
   /** People discovery layers (linkedin_find_profiles): the search-engine and Serper providers. Absent: layer skipped. */
   dork?: SearchProvider;
   serper?: SearchProvider;

@@ -11,6 +11,8 @@ import { isBlockedPath, isLinkedInUrl } from './urls.js';
 import { haltPlatform, haltReason } from '../outreach/limits.js';
 import type { LayoutObserver } from '../layout/runtime.js';
 import type { NavGap } from './navGap.js';
+import { telegramNotifier, type Notifier } from '../platform/notify.js';
+import { criticalAlert, sessionAlertHtml } from './discoverHealth.js';
 import type { LiBrowser, LiContext, LiLauncher, LiPage, RawSnapshot } from './types.js';
 
 type Db = BetterSqlite3.Database;
@@ -22,6 +24,8 @@ export interface RuntimeDeps {
   profileDir?: string | null;
   /** Shared browser host (tests inject a fake; null turns it off; default on with the real launcher). */
   host?: import('../webcore/hostClient.js').HostAttach | null;
+  /** Owner alerts for a session block (logged out, bot wall); default Telegram from the env token, never under vitest. */
+  notify?: Notifier;
   /** Advisory layout observer: sees each fresh snapshot of open() and snapshot(); never fails a tool. */
   layout?: LayoutObserver;
   /** True while a tool call is in flight: the idle timer then re-arms instead of closing the session. */
@@ -120,6 +124,9 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
     const kind = detectBlock(snap);
     if (kind) {
       haltPlatform(deps.db, 'linkedin', `${kind}: ${pathOnly(snap.url)}`, now());
+      // CRITICAL: logged out, session expired, bot wall or restriction on ANY LinkedIn page: tell the owner at once (once per hour).
+      const notify = deps.notify ?? (process.env.VITEST ? undefined : telegramNotifier(deps.env ?? process.env));
+      void criticalAlert(deps.db, notify, `session:${kind}`, sessionAlertHtml(kind, pathOnly(snap.url)), now());
       // A flagged session must never overwrite the good session file: close without saving.
       pendingClose = closeSession(false);
     }
