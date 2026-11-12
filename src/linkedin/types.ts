@@ -44,6 +44,12 @@ export interface RawSnapshot {
   bodyText: string;                   // visible text of the page, capped at 60000, NEVER surfaced to the model
   jobCards?: RawJobCard[];            // only on /jobs/search pages (max 50)
   postCards?: RawPostCard[];          // only on /search/results/content pages (max 50)
+  /** Visible h1/h2 texts (max 8, 80 chars each), untrusted; part of the zero-card page summary. */
+  headings?: string[];
+  /** Which parser produced jobCards/postCards on a search page: the class-based one or the href-based fallback. */
+  cardParser?: 'primary' | 'semantic';
+  /** Distinct job and post links on a search page (numbers only): proof the page has results even when no card parsed. */
+  linkEvidence?: { jobs: number; posts: number };
   extras?: { filters?: boolean; composer?: boolean; posts?: number; inboxSearch?: boolean; conversations?: number }; // browserctl adapter only
   structure?: StructureCounts;       // counts of visible elements (each capped at 999); numbers only, ignored by formatState
 }

@@ -6,6 +6,7 @@ import { ceilings, type CeilingStatus, type LimitKey } from '../outreach/limits.
 import { manualApplySummary, type ManualApplyItem } from '../manual/manualApply.js';
 import { openQuestionViews, type OpenQuestionView } from '../outreach/escalations.js';
 import { jdStats } from '../jdStore.js';
+import { listStreaks } from '../linkedin/discoverHealth.js';
 
 export interface Snapshot {
   generatedAt: string;
@@ -23,6 +24,8 @@ export interface Snapshot {
   manualApply: { count: number; easyApplyOff: number; items: ManualApplyItem[] };
   /** Job description (JD) flow: jobs waiting for their JD, JDs fetched in the last 24 hours and jobs given up as jd_unavailable. */
   jd: { waiting: number; pending: number; fetched24h: number; unavailable: number };
+  /** LinkedIn searches whose last runs read 0 cards from a page that has results (a layout change). Absent in old snapshots. */
+  discoverBroken?: { tool: string; search: string; count: number; since: string; last_at: string; diag: string | null }[];
   // Sections not readable because a table is missing; their values are fallbacks, not facts.
   degraded: string[];
 }
@@ -152,6 +155,7 @@ export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, n
       const s = jdStats(db, now);
       return { waiting: s.waiting, pending: s.pending, fetched24h: s.fetched24h, unavailable: s.unavailable };
     }, { waiting: 0, pending: 0, fetched24h: 0, unavailable: 0 }),
+    discoverBroken: listStreaks(db),
     degraded,
   };
 }
