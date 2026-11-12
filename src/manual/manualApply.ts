@@ -6,6 +6,7 @@
 import path from 'node:path';
 import type BetterSqlite3 from 'better-sqlite3';
 import { saveApplication } from '../db.js';
+import { LEGACY_REASON } from '../failureReason.js';
 import { isLinkedInEasyApplyCandidate, linkedinJobPageUrl, type EasyApplyRow } from '../apply/easyApplyRows.js';
 import { hostMatches } from '../lib/hostClass.js';
 import { PROJECT_ROOT } from '../layout/config.js';
@@ -37,6 +38,8 @@ export interface ManualApplyItem {
   resume_pdf: string | null;
   ats_note: string | null;
   reason: ManualReason;
+  /** Why it is here: the stored machine code (apply_note), `legacy:unknown` for an old row with none. Never blank. */
+  fail_reason: string;
   since: string;
 }
 // Plain words for a reason code (the dashboard chip).
@@ -55,6 +58,7 @@ export const MANUAL_REASON_LABELS: Record<ManualReason, string> = {
 export const manualReasonLabel = (r: ManualReason): string => MANUAL_REASON_LABELS[r] ?? 'Apply by hand';
 
 export const MANUAL_NOTE_MAX = 500;
+
 
 export interface ManualApplyView { count: number; easyApplyOff: number; items: ManualApplyItem[] }
 
@@ -128,7 +132,7 @@ export function buildManualQueue(db: Db, env: NodeJS.ProcessEnv = process.env, o
     items.push({
       id: r.id, job_id: r.job_id, title: clean(r.title, 120), company: clean(r.company, 80),
       platform: linkedinPage ? 'linkedin' : (r.apply_platform && r.apply_platform !== 'none' ? r.apply_platform : 'other'),
-      open_url: v.url, resume_pdf: pdf, ats_note: r.ats_note ? clean(r.ats_note, 300) : null, reason, since: toIso(r.since),
+      open_url: v.url, resume_pdf: pdf, ats_note: r.ats_note ? clean(r.ats_note, 300) : null, reason, fail_reason: clean(r.apply_note, 300) || LEGACY_REASON, since: toIso(r.since),
     });
   }
   return { count: items.length, easyApplyOff, items };

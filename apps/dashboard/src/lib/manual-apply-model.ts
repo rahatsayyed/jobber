@@ -3,7 +3,7 @@
 
 export type ManualItem = {
   id: number; job_id: string; title: string; company: string; platform: string; open_url: string;
-  resume_pdf: string | null; resume_download: string | null; ats_note: string | null; reason: string; reason_label: string; since: string;
+  resume_pdf: string | null; resume_download: string | null; ats_note: string | null; reason: string; reason_label: string; fail_reason?: string; since: string;
 };
 export type ManualPayload = { count: number; easyApplyOff: number; easyApplyEnabled: boolean; items: ManualItem[] };
 export type ManualResult = { id: number; ok: boolean; error?: string };

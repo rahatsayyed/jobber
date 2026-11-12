@@ -29,6 +29,7 @@ export async function run(argv: string[], deps: CliDeps = {}): Promise<{ code: n
       const lines = [`${v.count} job${v.count === 1 ? '' : 's'} to apply by hand:`];
       for (const i of items) {
         lines.push(`#${i.id} ${i.title || '(no title)'} | ${i.company || '-'} | ${i.platform} | ${i.reason}`);
+        lines.push(`    why: ${i.fail_reason}`);
         lines.push(`    open: ${i.open_url}`);
         lines.push(`    resume: ${i.resume_pdf ?? '(no tailored resume on file)'}`);
         if (i.ats_note) lines.push(`    note: ${i.ats_note}`);

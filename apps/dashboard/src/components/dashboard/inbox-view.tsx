@@ -5,7 +5,7 @@ import "@/app/inbox-layout.css";
 import { api, apiPost, readableTime } from "@/lib/dashboard-api";
 import {
   ageText, applyJobText, DEFAULT_FILTERS, describeItem, parseReason, explainFlag, facetCounts, Filters, filterItems, InboxItem, inboxType, PLATFORM_LABELS, PLATFORM_ORDER,
-  platformLabel, platformUrl, SCREEN_INTRO, STATUS_LABELS, statusOf, Tone, TYPE_LABELS, TYPE_ORDER,
+  platformLabel, platformUrl, SCREEN_INTRO, SEVERITY_LABELS, severityLine, severityOfItem, STATUS_LABELS, statusOf, Tone, TYPE_LABELS, TYPE_ORDER,
 } from "@/lib/inbox-model";
 import {
   buildSummary, CardBlock, groupApplyByHost, HostGroup, openSectionCounts, pageBlocks, sectionAnchor, SECTION_LABELS, splitSections, type EscalationSection,
@@ -21,6 +21,7 @@ import { ManualApply } from "@/components/dashboard/manual-apply";
 type Payload = { items: InboxItem[]; counts: { open: number; snoozed: number; resolved: number } };
 type CountPayload = { questionJobs?: number; manualApply?: number };
 const PAGE = 20;
+const SEV_TONE: Record<"critical" | "action" | "info", "good" | "warn" | "bad" | ""> = { critical: "bad", action: "warn", info: "" };
 const TONE_BADGE: Record<string, "good" | "warn" | "bad" | ""> = { reply: "good", recruiter: "good", apply: "warn", platform: "warn", flagged: "bad", other: "" };
 
 function Todo({ tone, text }: { tone: Tone; text: string }) {
@@ -136,6 +137,7 @@ function Card({ item: i, selected, busy, csrf, onToggle, onOpen, onPanel, onRun 
     {!handled ? <label className="inbox-check-wrap"><input type="checkbox" className="inbox-check" aria-label={`Select: ${d.summary}`} checked={selected} onChange={onToggle} /></label> : <span className="inbox-check-gap" />}
     <div className="inbox-main">
       <div className="inbox-badges">
+        <Badge tone={SEV_TONE[severityOfItem(i)]}>{SEVERITY_LABELS[severityOfItem(i)]}</Badge>
         <Badge tone={TONE_BADGE[inboxType(i)]}>{TYPE_LABELS[d.type]}</Badge><Badge>{platformLabel(i)}</Badge>
         {i.updates > 1 ? <Badge>{i.updates} updates</Badge> : null}{handled ? <Badge tone="good">handled</Badge> : null}
       </div>
@@ -149,6 +151,7 @@ function Card({ item: i, selected, busy, csrf, onToggle, onOpen, onPanel, onRun 
       <ApplyJobLine item={i} />
       {i.excerpt && d.type !== "flagged" ? <p className="quote clip">{i.excerpt}</p> : null}
       {d.type === "flagged" ? <p className="muted">The held text is shown in the details, as plain text.</p> : null}
+      {i.hint ? <p className="muted">{i.hint}</p> : null}
       <Todo tone={d.tone} text={d.action} />
       {!handled ? <InstructionBox csrf={csrf} escalationId={i.id} /> : null}
       {i.resolvedNote ? <p className="muted">Note: {i.resolvedNote}</p> : null}
@@ -209,7 +212,11 @@ export function InboxView() {
 
   const items = useMemo(() => data?.items ?? [], [data]);
   const facets = useMemo(() => facetCounts(items, filters), [items, filters]);
-  const list = useMemo(() => filterItems(items, filters), [items, filters]);
+  const [showInfo, setShowInfo] = useState(false);
+  const filtered = useMemo(() => filterItems(items, filters), [items, filters]);
+  // INFO cards (counts, ok states, noise) are collapsed by default; critical and action always show.
+  const infoCount = filtered.filter((i) => severityOfItem(i) === "info" && statusOf(i) === "open").length;
+  const list = useMemo(() => (showInfo ? filtered : filtered.filter((i) => severityOfItem(i) !== "info" || statusOf(i) === "handled")), [filtered, showInfo]);
   const sections = useMemo(() => splitSections(list), [list]);
   const summary = useMemo(() => buildSummary({ ...openSectionCounts(items), needsAnswer: extra.questionJobs, manual: extra.manualApply }), [items, extra]);
   // Deep link from other panels: /inbox?item=<escalation id> opens that item once the list has loaded.
@@ -280,6 +287,7 @@ export function InboxView() {
         ? <a key={s.id} className="has-count" href={s.href} onClick={() => window.dispatchEvent(new CustomEvent("inbox-open-section", { detail: s.id }))}>{s.label} <b>{s.count}</b></a>
         : <span key={s.id} className="is-empty">{s.label} <b>0</b></span>)}
     </nav>
+    <p className="inbox-sub" role="status"><b>{severityLine(items)}</b>{infoCount > 0 ? <> · <button type="button" className="text-link" onClick={() => setShowInfo((v) => !v)}>{showInfo ? "Hide" : "Show"} {infoCount} info item{infoCount === 1 ? "" : "s"}</button></> : null}</p>
     <p className="muted">People waiting for you come first, then questions the agent needs from you, then problems to fix and jobs to apply to by hand. The agent answers safe asks by itself (a resume request, a simple question); salary, interview times, personal data, links and anything unsafe stay with you. Marking an item handled only changes its state here.</p>
     <FilterGroup activeCount={(filters.type ? 1 : 0) + (filters.platform ? 1 : 0) + (filters.status !== DEFAULT_FILTERS.status ? 1 : 0)}>
     <div className="inbox-filters">

@@ -94,6 +94,8 @@ export function renderWorking(s: Snapshot): string {
   for (const h of s.needsHuman.hosts) lines.push(`needs you: ${h.jobs} job(s) wait at ${h.host} for a login or human check (${h.command})`);
   const manual = s.manualApply ? manualApplyLine(s.manualApply) : null;
   if (manual) lines.push(manual);
+  if (s.failures && s.failures.byReason.length) lines.push(`stuck by reason: ${s.failures.byReason.map((r) => `${r.reason} x${r.count}`).join(', ')}`);
+  if (s.failures && s.failures.missingReasonToday > 0) lines.push(`DEFECT: ${s.failures.missingReasonToday} failure(s) written today without a reason (stored as unspecified:...)`);
   lines.push(...degradedLine(s));
   return lines.join('\n');
 }

@@ -377,15 +377,18 @@ server.registerTool(
 server.registerTool(
   'update_outreach_status',
   {
-    description: 'Update one status field on an outreach_queue row after attempting its action (email/connect/apply), or the overall row status once all its actions are attempted ("done"), or "skipped" for a queued row whose job was excluded (so list_skipped_outreach stops repeating it).',
+    description: 'Update one status field on an outreach_queue row after attempting its action (email/connect/apply), or the overall row status once all its actions are attempted ("done"), or "skipped" for a queued row whose job was excluded (so list_skipped_outreach stops repeating it). A failure ALWAYS carries a reason: for apply_status failed, manual_review, needs_owner, needs_human, needs_answer or closed, and for any field set to failed, pass `reason` (a machine code such as `external:no_popup`, `open_failed:nav_timeout`, `overlay_unknown:<title>`, taken from the tool result that failed) and optionally `detail` (one short human sentence). Without a reason code stores `unspecified:<operator>:<run_id>` and counts a defect, so always give one.',
     inputSchema: {
       id: z.number(),
       field: z.enum(['email_status', 'connect_status', 'apply_status', 'status']),
       value: z.string(),
+      reason: z.string().max(120).optional().describe('Machine reason code of a failure, e.g. external:no_popup. Required in practice for every failed/manual_review/needs_* /closed value.'),
+      detail: z.string().max(200).optional().describe('Optional short human detail for the owner, one sentence.'),
+      operator: z.string().max(40).optional().describe('Your agent name, e.g. apply-operator (used only for the fallback reason).'),
     },
   },
-  async ({ id, field, value }) => {
-    updateOutreachStatus(db, id, field, value);
+  async ({ id, field, value, reason, detail, operator }) => {
+    updateOutreachStatus(db, id, field, value, { reason, detail, operator, runId: process.env.JOBBER_RUN_ID ?? null });
     return { content: [{ type: 'text', text: JSON.stringify({ ok: true }) }] };
   }
 );
@@ -583,8 +586,8 @@ server.registerTool('mark_followup_sent', {
 
 server.registerTool('mark_followup_failed', {
   description: 'Mark a claimed (sending) or approved follow-up failed after a send error (after one retry).',
-  inputSchema: { id: z.number().int() },
-}, async ({ id }) => ({ content: [{ type: 'text', text: JSON.stringify({ ok: markFollowupFailed(db, id) }) }] }));
+  inputSchema: { id: z.number().int(), reason: z.string().max(120).optional().describe('Machine reason code of the failure, e.g. send_error:gmail_4xx. Always give one.'), detail: z.string().max(200).optional() },
+}, async ({ id, reason, detail }) => ({ content: [{ type: 'text', text: JSON.stringify({ ok: markFollowupFailed(db, id, { reason, detail, operator: 'mail-operator', runId: process.env.JOBBER_RUN_ID ?? null }) }) }] }));
 
 server.registerTool('list_stale', {
   description: 'Sent jobs with no outcome, no reply or bounce on file, that went silent for 60+ days, or got no reply 10+ days after the 2nd follow-up. Show them to the user before resolving.',

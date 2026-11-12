@@ -40,6 +40,7 @@ function Row({ item, selected, busy, csrf, error, onToggle, onAct }: {
         <Badge tone={reasonTone(item.reason)}>{item.reason_label}</Badge>
         <span>{item.platform}</span>{since ? <span>waiting {since}</span> : null}
       </div>
+      <p className="muted ma-note">Why: {item.fail_reason || "legacy:unknown"}</p>
       {item.ats_note ? <p className="muted ma-note">ATS: {item.ats_note}</p> : null}
     </div>
     <div className="ma-actions">

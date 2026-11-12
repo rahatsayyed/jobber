@@ -4,6 +4,7 @@ import { funnelStats } from '../funnel.js';
 import type { OutreachConfig } from '../outreach/config.js';
 import { ceilings, type CeilingStatus, type LimitKey } from '../outreach/limits.js';
 import { manualApplySummary, type ManualApplyItem } from '../manual/manualApply.js';
+import { LEGACY_REASON, missingReasonCountToday } from '../failureReason.js';
 import { openQuestionViews, type OpenQuestionView } from '../outreach/escalations.js';
 import { jdStats } from '../jdStore.js';
 
@@ -23,6 +24,8 @@ export interface Snapshot {
   manualApply: { count: number; easyApplyOff: number; items: ManualApplyItem[] };
   /** Job description (JD) flow: jobs waiting for their JD, JDs fetched in the last 24 hours and jobs given up as jd_unavailable. */
   jd: { waiting: number; pending: number; fetched24h: number; unavailable: number };
+  /** Apply and send failures by reason code (open rows), plus the defect count of failures written without a reason today. */
+  failures?: { byReason: { reason: string; count: number }[]; missingReasonToday: number };
   // Sections not readable because a table is missing; their values are fallbacks, not facts.
   degraded: string[];
 }
@@ -148,6 +151,14 @@ export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, n
       return { count: rows.length, hosts: [...byHost.values()] };
     }, { count: 0, hosts: [] }),
     manualApply: section('manualApply', () => manualApplySummary(db, env), { count: 0, easyApplyOff: 0, items: [] }),
+    failures: section('failures', () => {
+      const rows = db.prepare(
+        `SELECT COALESCE(NULLIF(TRIM(apply_note), ''), ?) AS reason, COUNT(*) AS count FROM outreach_queue
+          WHERE apply_status IN ('failed', 'manual_review', 'needs_owner', 'needs_human', 'needs_answer', 'closed')
+          GROUP BY 1 ORDER BY count DESC, reason LIMIT 8`,
+      ).all(LEGACY_REASON) as { reason: string; count: number }[];
+      return { byReason: rows, missingReasonToday: missingReasonCountToday(db) };
+    }, { byReason: [], missingReasonToday: 0 }),
     jd: section('jd', () => {
       const s = jdStats(db, now);
       return { waiting: s.waiting, pending: s.pending, fetched24h: s.fetched24h, unavailable: s.unavailable };

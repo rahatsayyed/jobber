@@ -32,8 +32,9 @@ describe('renderEscalations', () => {
     const now = at(123);
     const r = listEscalations(db, { now });
     const text = renderEscalations(r.items, r.counts, now);
-    expect(text.indexOf('Replies and needs you')).toBeLessThan(text.indexOf('Platform and tool problems'));
-    expect(text.indexOf('Platform and tool problems')).toBeLessThan(text.indexOf('Flagged'));
+    expect(text).toContain('1 critical, 0 action');
+    expect(text.indexOf('== CRITICAL (1) ==')).toBeLessThan(text.indexOf('== INFO (2) =='));
+    expect(text.indexOf('Wants a reply') > -1 || text.indexOf('Recruiter inquiry') > -1).toBe(true);
     expect(text).toContain('4 open');
     expect(text).toMatch(/#4 linkedin (Recruiter inquiry|Wants a reply)/);
     expect(text).toMatch(/#2 x2 .*Platform problem: dialog_controls_missing/);
@@ -145,12 +146,13 @@ describe('runEscalationDigest', () => {
     for (let i = 0; i < 60; i++) add(db, 3 + i, `thing_${i}_failed`, { detail: 'd'.repeat(150) });
     await runEscalationDigest(db, { send, now: at(100), url: null });
     const t = send.mock.calls[0][0];
+    // Push is for CRITICAL only: the 61 platform rows and the flagged one stay in the dashboard.
     expect(t).toMatch(/1 reply\/needs you/);
-    expect(t).toMatch(/61 platform/);
-    expect(t).toMatch(/1 flagged/);
-    expect(t.split('\n')[3]).toContain('Recruiter inquiry');
-    expect(t).toMatch(/and \d+ more/);
-    expect(t).toContain('🔔 <b>63 new escalations need a look</b>');
+    expect(t).toMatch(/0 platform/);
+    expect(t.split('\n')[4]).toContain('Recruiter inquiry');
+    expect(t).toContain('1 critical, 0 action');
+    expect(t).not.toContain('thing_');
+    expect(t).toContain('🔔 <b>1 new escalation need a look</b>');
     expect(t).not.toContain('<script');
     expect(t).toContain('&lt;script&gt;');
     // only the builders' own tags: b, i, code, a
@@ -158,14 +160,16 @@ describe('runEscalationDigest', () => {
     expect(t.length).toBeLessThanOrEqual(3500);
   });
 
-  it('does not ping for flagged noise alone, and does not lose it later', async () => {
+  it('does not ping for flagged noise or non-critical platform rows', async () => {
     const db = setup();
     const send = okSend();
     add(db, 0, '[blocked: injection_suspected]', { detail: 'x' });
-    expect(await runEscalationDigest(db, { send, now: at(1), url: null })).toEqual({ sent: false, reason: 'only_flagged' });
-    add(db, 2, 'linkedin_reply_needed', { detail: 'Recruiter inquiry' });
-    await runEscalationDigest(db, { send, now: at(3), url: null });
-    expect(send.mock.calls[0][0]).toMatch(/1 flagged/);
+    add(db, 1, 'dialog_controls_missing');
+    expect(await runEscalationDigest(db, { send, now: at(2), url: null })).toEqual({ sent: false, reason: 'nothing_new' });
+    expect(send).not.toHaveBeenCalled();
+    add(db, 3, 'linkedin_reply_needed', { detail: 'Recruiter inquiry' });
+    await runEscalationDigest(db, { send, now: at(4), url: null });
+    expect(send.mock.calls[0][0]).toMatch(/1 critical, 0 action/);
   });
 
   it('ignores resolved and snoozed rows', async () => {
