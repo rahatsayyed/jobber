@@ -2,7 +2,8 @@
 // Plain-text lines for the owner's open escalations, shared by `status escalations` (/escalations) and the Telegram digest.
 // Every field is untrusted model or third-party text: cleanUntrusted makes it one bounded line without angle brackets or control characters.
 import { cleanUntrusted } from '../manual/report.js';
-import { GROUP_LABELS, GROUP_ORDER, type EscCounts, type EscItem } from '../outreach/escalations.js';
+import type { EscCounts, EscItem } from '../outreach/escalations.js';
+import { SEVERITY_LABELS, SEVERITY_ORDER, severityCounts, severityOf, severitySummary, sortBySeverity } from './severity.js';
 
 export const STATUS_MAX_ITEMS = 30;
 
@@ -58,14 +59,17 @@ export function renderEscalations(items: EscItem[], counts: EscCounts, now: Date
   const lines = [`Escalations: ${counts.open} open${counts.snoozed ? `, ${counts.snoozed} snoozed (hidden)` : ''}. The agent replies by itself to safe asks (see the "next:" line); where a card asks you, answer on the platform itself. Mark items handled in the dashboard Inbox tab.`];
   const nq = items.reduce((n, i) => n + i.questions.length, 0);
   if (nq > 0) lines.push(`${nq} question${nq === 1 ? '' : 's'} need your answer (applications are paused until you answer): npm run answers -- list`);
+  // The same ranking as the dashboard and the Telegram digest (src/status/severity.ts): severity, then the one waiting longest first.
+  lines.push(`${severitySummary(severityCounts(items))}. CRITICAL = needs you now, ACTION = you can unblock work, INFO = noise and counts.`);
+  const ranked = sortBySeverity(items);
   let shown = 0;
-  for (const g of GROUP_ORDER) {
-    const inGroup = items.filter((i) => i.group === g);
-    if (!inGroup.length) continue;
-    lines.push('', `== ${GROUP_LABELS[g]} (${inGroup.length}) ==`);
-    for (const i of inGroup) {
+  for (const sev of SEVERITY_ORDER) {
+    const inSev = ranked.filter((i) => severityOf(i).severity === sev);
+    if (!inSev.length) continue;
+    lines.push('', `== ${SEVERITY_LABELS[sev]} (${inSev.length}) ==`);
+    for (const i of inSev) {
       if (shown >= STATUS_MAX_ITEMS) break;
-      lines.push(...itemBlock(i, now));
+      lines.push(...itemBlock(i, now), `    ${severityOf(i).hint}`);
       shown += 1;
     }
   }

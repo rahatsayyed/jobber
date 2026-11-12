@@ -3,9 +3,9 @@
 // "New" means an open, not snoozed row with an id above the last one reported (scheduler_state `esc_digest_last_id`). The digest never
 // carries any way to answer a third party: the owner replies on the platform and marks the row handled in the dashboard Inbox tab.
 import type BetterSqlite3 from 'better-sqlite3';
-import { GROUP_ORDER, listEscalations, type EscItem } from '../outreach/escalations.js';
+import { listEscalations, type EscItem } from '../outreach/escalations.js';
+import { SEVERITY_LABELS, severityCounts, severityOf, severitySummary, sortBySeverity } from '../status/severity.js';
 import { inQuietHours, type QuietConfig } from '../outreach/quiet.js';
-import { buildManualQueue, manualApplyLine } from '../manual/manualApply.js';
 import { telegramNotifier } from '../platform/notify.js';
 import { ageText } from '../status/escalations.js';
 import { BLANK, E, b, clean, code, excerpt, headline, html, i as ital, join, line, lines, link, type Html } from '../platform/tgHtml.js';
@@ -40,7 +40,8 @@ export type DigestResult =
 function itemHtml(it: EscItem, now: Date): Html {
   const who = it.senderName ? `${clean(it.senderName, 60)}${it.senderHeadline ? ` (${clean(it.senderHeadline, 60)})` : ''}` : '';
   const label = it.group === 'human' ? it.label : `${it.label}: ${clean(it.reason, 70)}`;
-  const head = join(['•', b(`#${it.id}${it.updates > 1 ? ` x${it.updates}` : ''}`), clean(it.platform ?? '-', 20), clean(label, 120)]);
+  const sev = severityOf(it);
+  const head = join(['•', b(SEVERITY_LABELS[sev.severity]), b(`#${it.id}${it.updates > 1 ? ` x${it.updates}` : ''}`), clean(it.platform ?? '-', 20), clean(label, 120)]);
   const sub = [who, it.jobTitle ? clean(it.jobTitle, 70) : '', ageText(it.last_at, now)].filter(Boolean).join(' · ');
   const quote = it.excerpt ? excerpt(it.excerpt, 120) : it.detail ? excerpt(it.detail, 120) : '';
   const ind = (...p: Array<Html | string>): Html => join(['   ', ...p], '');
@@ -51,6 +52,7 @@ function itemHtml(it: EscItem, now: Date): Html {
     it.group === 'human' && it.platform !== 'apply' && it.todo && ind(ital(`next: ${clean(it.todo, 140)}`)),
     it.assistCommand && ind('run: ', code(clean(it.assistCommand, 140))),
     it.questions.length > 0 && ind(ital(`${it.questions.length} question${it.questions.length === 1 ? '' : 's'} need your answer`), ': ', code('npm run answers -- list')),
+    sev.severity !== 'info' && ind(ital(clean(sev.hint, 200))),
     it.count > 1 && ind('ids ', code([...it.ids].sort((x, y) => x - y).join(','))),
   ]);
 }
@@ -60,10 +62,11 @@ function compose(fresh: EscItem[], rowCount: number, url: string | null, now: Da
   const rows = (g: EscItem['group']): number => fresh.filter((x) => x.group === g).reduce((n, x) => n + x.count, 0);
   const head = lines([
     headline(E.you, `${rowCount} new escalation${rowCount === 1 ? '' : 's'} need a look`),
+    b(severitySummary(severityCounts(fresh))),
     ital(`${rows('human')} reply/needs you, ${rows('platform')} platform, ${rows('noise')} flagged`),
   ]);
-  const shown: EscItem[] = [];
-  for (const g of GROUP_ORDER) if (g !== 'noise') shown.push(...fresh.filter((x) => x.group === g));
+  // The same ranking as the dashboard and `status escalations` (src/status/severity.ts): severity, then the one waiting longest first.
+  const shown: EscItem[] = sortBySeverity(fresh.filter((x) => x.group !== 'noise'));
   const tail = lines([
     manualLine ? clean(manualLine, 300) : '',
     join(['Full list:', code('/escalations')]),
@@ -82,11 +85,6 @@ function compose(fresh: EscItem[], rowCount: number, url: string | null, now: Da
   return html(lines([head, BLANK, ...blocks, hidden > 0 ? ital(`... and ${hidden} more`) : '', BLANK, tail]));
 }
 
-/** The manual-apply nudge, or null when nothing waits or the tables are unreadable (the digest must never fail on it). */
-function manualLineOf(db: Db, env: NodeJS.ProcessEnv): string | null {
-  try { return manualApplyLine(buildManualQueue(db, env)); } catch { return null; }
-}
-
 export async function runEscalationDigest(
   db: Db,
   d: { send: (text: string) => Promise<{ ok: boolean }>; now: Date; url: string | null; env?: NodeJS.ProcessEnv },
@@ -96,13 +94,13 @@ export async function runEscalationDigest(
   const lastId = Number(getState(db, KEY_LAST_ID) ?? 0) || 0;
   // Escalations the LinkedIn inbox notice already announced (linkedinNotice.ts) are not announced again.
   const done = announcedEscalations(db);
-  const fresh = listEscalations(db, { now: d.now, status: 'open' }).items.filter((i) => i.ids.some((id) => id > lastId && !done.has(id)));
+  // Push (Telegram) is for CRITICAL items only; ACTION and INFO stay in the dashboard and the status commands (src/status/severity.ts).
+  const fresh = listEscalations(db, { now: d.now, status: 'open' }).items.filter((i) => severityOf(i).severity === 'critical' && i.ids.some((id) => id > lastId && !done.has(id)));
   if (!fresh.length) return { sent: false, reason: 'nothing_new' };
-  if (fresh.every((i) => i.group === 'noise')) return { sent: false, reason: 'only_flagged' };
   const rowCount = fresh.reduce((n, i) => n + i.ids.filter((id) => id > lastId && !done.has(id)).length, 0);
   // Recorded before the send so a failing Telegram is retried at most once per gap.
   setState(db, KEY_LAST_AT, d.now.toISOString(), d.now);
-  const sent = await d.send(compose(fresh, rowCount, d.url, d.now, manualLineOf(db, d.env ?? process.env)));
+  const sent = await d.send(compose(fresh, rowCount, d.url, d.now, null));
   if (!sent.ok) return { sent: false, reason: 'send_failed' };
   setState(db, KEY_LAST_ID, String(Math.max(...fresh.flatMap((i) => i.ids))), d.now);
   return { sent: true, count: rowCount };

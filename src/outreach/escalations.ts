@@ -10,6 +10,7 @@ import { agentHandleAllowed, QUESTION_KINDS, type QuestionKind } from '../apply/
 import { jobIdOfEscalation, parseApplyDetail } from './applyEscalations.js';
 import { buildManualQueue } from '../manual/manualApply.js';
 import { validateManualUrl } from '../manual/url.js';
+import { severityOf, type Severity } from '../status/severity.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -226,6 +227,9 @@ export interface EscItem {
   questions: OpenQuestionView[];
   /** apply:needs_human cards: the exact command that opens the job's page for the owner, else null. */
   assistCommand: string | null;
+  /** How much it matters (src/status/severity.ts, the one model) and a one-line why and what to do. */
+  severity: Severity;
+  hint: string;
 }
 
 /** The job an apply:* card is about. Every field but `host` can be null for an old row that stored no job (then only the host is shown). */
@@ -394,7 +398,7 @@ export function listEscalations(
       created_at: r.created_at, first_at: r.created_at, threadRef: r.thread_ref, threadUrl: linkedinThreadUrl(r.platform, r.thread_ref),
       personId: r.pid, personName: r.pname === null ? null : cleanText(r.pname, 200), personCompany: r.pcompany === null ? null : cleanText(r.pcompany, 200),
       jobTitle: r.job_title === null ? null : `${cleanText(r.job_title, 200)}${r.job_company ? ` at ${cleanText(r.job_company, 100)}` : ''}`,
-      resolved_at: r.resolved_at, snoozed_until: r.snoozed_until, questions: [], assistCommand: null,
+      resolved_at: r.resolved_at, snoozed_until: r.snoozed_until, questions: [], assistCommand: null, severity: 'info', hint: '',
     });
   }
   // The agent's own reply for a conversation (reply_drafts, read-only) decides the line of a reply card.
@@ -428,6 +432,10 @@ export function listEscalations(
       it.label = 'Needs you: log in or human check';
       it.todo = 'A login, CAPTCHA or MFA step on this site needs a person. Run the command: it opens the page in Chrome for you, then the job retries.';
     }
+  }
+  for (const it of merged.values()) {
+    const s = severityOf(it);
+    it.severity = s.severity; it.hint = s.hint;
   }
   // Display-side dedupe (nothing is deleted): an open apply card whose job is already shown in "Apply by hand" or "Needs your answer" is not a
   // separate card, and the "needs your answer" host cards are that group itself.

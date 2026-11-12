@@ -6,6 +6,17 @@ export type InboxType = "reply" | "recruiter" | "platform" | "apply" | "flagged"
 export type InboxPlatform = "linkedin" | "naukri" | "wellfound" | "email" | "apply" | "scheduler" | "other";
 export type InboxStatus = "open" | "handled" | "all";
 export type Tone = "act" | "check" | "none";
+export type Severity = "critical" | "action" | "info";
+export const SEVERITY_LABELS: Record<Severity, string> = { critical: "Critical", action: "Action", info: "Info" };
+const SEV_RANK: Record<Severity, number> = { critical: 0, action: 1, info: 2 };
+/** The server's severity; an old server sends none, then it counts as action (never hidden). */
+export const severityOfItem = (i: Pick<InboxItem, "severity">): Severity => i.severity ?? "action";
+/** "2 critical, 5 action": open items only; info is not part of the line. */
+export function severityLine(items: Pick<InboxItem, "severity" | "resolved_at">[]): string {
+  let c = 0; let a = 0;
+  for (const i of items) { if (i.resolved_at) continue; const s = severityOfItem(i); if (s === "critical") c += 1; else if (s === "action") a += 1; }
+  return `${c} critical, ${a} action`;
+}
 
 /** The fields of one card from /api/escalations that this model reads. */
 export type InboxItem = {
@@ -15,6 +26,8 @@ export type InboxItem = {
   resolved_at: string | null; snoozed_until: string | null; senderName: string | null; senderHeadline: string | null;
   excerpt: string | null; messageAt: string | null; askKind: string; label: string; todo: string; updates: number;
   rawText: string | null; resolvedNote: string | null;
+  /** Severity and the one-line why / what to do, computed by the server with the one model (src/status/severity.ts). Absent on an old server. */
+  severity?: Severity; hint?: string;
   /** Who acts on a reply card (server): nobody, the agent (a reply is drafted or sent) or the owner. Absent on an old server. */
   todoKind?: "info" | "agent" | "owner";
   replyDraft?: { status: string; attachResume: boolean } | null;
@@ -61,9 +74,15 @@ export function inboxType(i: Pick<InboxItem, "group" | "platform" | "askKind">):
 /** Sort rank: replies and recruiter inquiries first, then apply problems, platform problems, other, flagged last. */
 const RANK: Record<InboxType, number> = { reply: 0, recruiter: 0, apply: 1, platform: 2, other: 3, flagged: 4 };
 
-export function sortItems<T extends Pick<InboxItem, "group" | "platform" | "askKind" | "last_at" | "created_at" | "id">>(items: T[]): T[] {
+export function sortItems<T extends Pick<InboxItem, "group" | "platform" | "askKind" | "last_at" | "created_at" | "id"> & { severity?: Severity }>(items: T[]): T[] {
   const at = (i: T) => i.last_at || i.created_at;
-  return [...items].sort((a, b) => RANK[inboxType(a)] - RANK[inboxType(b)] || (at(a) < at(b) ? 1 : at(a) > at(b) ? -1 : 0) || b.id - a.id);
+  // Severity first, then the one waiting longest (same ranking as the Telegram digest and `status escalations`); without severity the old order.
+  return [...items].sort((a, b) => {
+    if (a.severity && b.severity) {
+      return SEV_RANK[a.severity] - SEV_RANK[b.severity] || (at(a) < at(b) ? -1 : at(a) > at(b) ? 1 : 0) || b.id - a.id;
+    }
+    return RANK[inboxType(a)] - RANK[inboxType(b)] || (at(a) < at(b) ? 1 : at(a) > at(b) ? -1 : 0) || b.id - a.id;
+  });
 }
 
 export const statusOf = (i: Pick<InboxItem, "resolved_at">): Exclude<InboxStatus, "all"> => (i.resolved_at ? "handled" : "open");
