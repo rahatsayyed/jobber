@@ -12,6 +12,7 @@ import { buildReplyQueries, isAutomatedSender, REPLY_WINDOW_DAYS, STALE_DAYS } f
 import type { SentEmail } from './db.js';
 import { buildEmailParts, loadEmailLinks, stripMarkers } from './emailHtml.js';
 import { emailReplyNudgeDays, emailReplyNudgeOn } from './outreach/emailReplyFlags.js';
+import { composeReason, recordMissingReason, unspecifiedReason } from './failureReason.js';
 
 const DAY = 86_400_000;
 const parseSqlTime = (s: string) => Date.parse(`${s.replace(' ', 'T')}Z`);
@@ -331,8 +332,12 @@ export function markFollowupSent(db: BetterSqlite3.Database, id: number, message
   return { ok, late_block: ok && late_block };
 }
 
-export function markFollowupFailed(db: BetterSqlite3.Database, id: number): boolean {
-  return db.prepare("UPDATE followups SET status = 'failed' WHERE id = ? AND status IN ('approved', 'sending')").run(id).changes > 0;
+export function markFollowupFailed(db: BetterSqlite3.Database, id: number, opts: { reason?: string; detail?: string; operator?: string; runId?: string | null } = {}): boolean {
+  const given = composeReason(opts.reason, opts.detail);
+  const reason = given || unspecifiedReason(opts.operator ?? 'mail-operator', opts.runId);
+  const ok = db.prepare("UPDATE followups SET status = 'failed', fail_reason = ? WHERE id = ? AND status IN ('approved', 'sending')").run(reason, id).changes > 0;
+  if (ok && !given) recordMissingReason(db, `followup ${id} failed`, reason);
+  return ok;
 }
 
 /** Every sent job that is NOT blocked yet (recent, follow-up candidate, pending draft or stale), as SentEmail rows, so the reply search

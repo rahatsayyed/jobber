@@ -42,7 +42,7 @@ export interface ManualApplyWebItem {
   resume_pdf: string | null;
   /** Same-origin API URL that streams the PDF, or null. */
   resume_download: string | null;
-  ats_note: string | null; reason: string; reason_label: string; since: string;
+  ats_note: string | null; reason: string; reason_label: string; fail_reason: string; since: string;
 }
 
 const MAX_IDS = 100;
@@ -116,7 +116,7 @@ export function createManualApplyRoutes(
             id: it.id, job_id: it.job_id, title: it.title, company: it.company, platform: it.platform, open_url: it.open_url,
             resume_pdf: r.ok ? r.attachment.name : null,
             resume_download: r.ok ? `/api/manual-apply/${it.id}/resume` : null,
-            ats_note: it.ats_note, reason: it.reason, reason_label: manualReasonLabel(it.reason), since: it.since,
+            ats_note: it.ats_note, reason: it.reason, reason_label: manualReasonLabel(it.reason), fail_reason: it.fail_reason, since: it.since,
           });
         }
         json(c.res, 200, { count: v.count, easyApplyOff: v.easyApplyOff, easyApplyEnabled: linkedinEasyEnabled(penv()), items });

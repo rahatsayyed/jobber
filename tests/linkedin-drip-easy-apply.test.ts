@@ -16,7 +16,7 @@ import { launcherAsWindows, type LaunchHandle, type LaunchPlan, type Launcher, t
 import { setState } from '../src/scheduler/runLog.js';
 import {
   buildLinkedinDripPrompt, describeItem, easyApplyRows, itemKey, linkedinDripStatus, linkedinDripTick, loadLinkedinDripConfig, pickLinkedinItem,
-  renderLinkedinDripLines, LI_STATE_INBOX_AT, type LiItem,
+  renderLinkedinDripLines, LI_STATE_INBOX_AT, LI_FAIR_K, readFairStreaks, updateFairStreaks, type LiItem,
 } from '../src/scheduler/linkedinDrip.js';
 import { loadBudget } from '../src/scheduler/budget.js';
 
@@ -203,5 +203,54 @@ describe('prompt, run environment and status', () => {
     const sOff = linkedinDripStatus(off.db, OFF, { now: off.now(), tuning: off.d.tuning });
     expect(sOff.waiting.easy_applies_ready).toBe(0);
     expect(renderLinkedinDripLines(sOff, off.now()).join('\n')).toContain('npm run apply:manual -- list');
+  });
+});
+
+describe('fairness guard', () => {
+  function dueDm(s: S): void {
+    const id = upsertPerson(s.db, { platform: 'linkedin', profileKey: 'linkedin.com/in/dm1', name: 'Dee Em', headline: 'Recruiter at Acme', company: 'Acme', category: 'recruiter' });
+    s.db.prepare('UPDATE contact_state SET stage = ?, cycle_started_at = ? WHERE person_id = ?').run('active', new Date(s.now().getTime() - 30 * DAY).toISOString(), id);
+    s.db.prepare("INSERT INTO touches (person_id, kind, idempotency_key, status, sent_at) VALUES (?, 'connect', 'c-dm1', 'sent', ?)").run(id, new Date(s.now().getTime() - 10 * DAY).toISOString());
+    s.db.prepare("INSERT INTO connections (profile_url, status) VALUES ('https://www.linkedin.com/in/dm1', 'connected')").run();
+  }
+
+  it('lets a ready Easy Apply row go after K ticks of other items, then resets the streak', async () => {
+    const s = setup(ON);
+    inboxRead(s);
+    easyJob(s, '4011111111');
+    dueDm(s);
+    for (let i = 0; i < LI_FAIR_K; i++) {
+      const r = await pickLinkedinItem(s.d, s.now(), loadLinkedinDripConfig(s.d.env));
+      expect(r.item).toMatchObject({ kind: 'dm' });
+      updateFairStreaks(s.db, 'dm', 'waiting' in r && r.waiting ? r.waiting : [], s.now());
+    }
+    expect(readFairStreaks(s.db).easy_apply).toBe(LI_FAIR_K);
+    const r = await pickLinkedinItem(s.d, s.now(), loadLinkedinDripConfig(s.d.env));
+    expect(r.item).toMatchObject({ kind: 'easy_apply' });
+    updateFairStreaks(s.db, 'easy_apply', 'waiting' in r && r.waiting ? r.waiting : [], s.now());
+    expect(readFairStreaks(s.db).easy_apply).toBe(0);
+    expect(await pick(s)).toMatchObject({ kind: 'dm' });
+  });
+
+  it('never lets the guard bypass a spent ceiling or the Easy Apply flag', async () => {
+    const off = setup(OFF);
+    inboxRead(off);
+    easyJob(off, '4011111111');
+    dueDm(off);
+    setState(off.db, 'linkedin_drip_fair', JSON.stringify({ easy_apply: 9, invite: 9 }), off.now());
+    expect(await pick(off)).toMatchObject({ kind: 'dm' });
+    const spent = setup({ ...ON, LINKEDIN_MAX_EASY_APPLIES_PER_DAY: '1' });
+    inboxRead(spent);
+    easyJob(spent, '4011111111');
+    dueDm(spent);
+    recordEvent(spent.db, 'linkedin_easy_apply', new Date(spent.now().getTime() - 1000));
+    setState(spent.db, 'linkedin_drip_fair', JSON.stringify({ easy_apply: 9 }), spent.now());
+    expect(await pick(spent)).toMatchObject({ kind: 'dm' });
+  });
+
+  it('an unreadable streak state means no streak', () => {
+    const s = setup(ON);
+    setState(s.db, 'linkedin_drip_fair', 'not json', s.now());
+    expect(readFairStreaks(s.db)).toEqual({ easy_apply: 0, invite: 0 });
   });
 });

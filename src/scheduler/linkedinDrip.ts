@@ -250,7 +250,36 @@ function markTried(db: Db, key: string, now: Date): void {
   setState(db, LI_STATE_TRIED, JSON.stringify(Object.fromEntries(keep)), now);
 }
 
-export type PickResult = { item: LiItem } | { item: null; reason: string; blocked?: string[] };
+export type FairKind = 'easy_apply' | 'invite';
+export type PickResult = { item: LiItem; waiting?: FairKind[] } | { item: null; reason: string; blocked?: string[] };
+
+// Fairness: after this many consecutive ticks that picked something else while an item of a kind was ready, that kind goes next.
+export const LI_FAIR_K = 3;
+export const LI_STATE_FAIR = 'linkedin_drip_fair';
+
+// Consecutive "passed over" ticks per starvable kind (scheduler_state, so a restart keeps it).
+export function readFairStreaks(db: BetterSqlite3.Database): Record<FairKind, number> {
+  const out: Record<FairKind, number> = { easy_apply: 0, invite: 0 };
+  try {
+    const raw = getState(db, LI_STATE_FAIR);
+    const o = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    for (const k of ['easy_apply', 'invite'] as const) {
+      const n = Number(o[k]);
+      if (Number.isFinite(n) && n > 0) out[k] = Math.min(Math.floor(n), 1000);
+    }
+  } catch { /* advisory: unreadable state means no streak */ }
+  return out;
+}
+
+// After a real tick: the kind that ran resets, every other kind that was ready and passed over gets one more.
+export function updateFairStreaks(db: BetterSqlite3.Database, ran: string, waiting: readonly FairKind[], now: Date): void {
+  try {
+    const cur = readFairStreaks(db);
+    for (const k of waiting) cur[k] = k === ran ? 0 : cur[k] + 1;
+    if (ran === 'easy_apply' || ran === 'invite') cur[ran] = 0;
+    setState(db, LI_STATE_FAIR, JSON.stringify(cur), now);
+  } catch { /* advisory */ }
+}
 
 const ok = (c: Record<LimitKey, CeilingStatus>, k: LimitKey): boolean => c[k]?.ok === true;
 
@@ -320,12 +349,44 @@ export async function pickLinkedinItem(d: DriverDeps, now: Date, cfg: LinkedinDr
 
   const unhandled = unhandledInboundPersons(db);
 
+  // Candidates of the two kinds that the busier kinds used to starve; every gate of the normal order stays (ceilings, spacing, active hours,
+  // quiet hours, kill switch and dry run are checked by the tick before this picker runs).
+  const easyCand = (): LiItem | null => {
+    if (!(easyApplyOn(d.env) && ok(c, 'linkedin_easy_apply') && ok(c, 'linkedin_profile_view') && sharedApplyRoom(db, d.env))) return null;
+    for (const r of easyApplyRows(db, d.env, 20)) {
+      if (gone.has(`easy_apply:${r.job_id}`)) continue;
+      return { kind: 'easy_apply', job_id: r.job_id, queue_id: r.queue_id, title: r.title, company: r.company };
+    }
+    return null;
+  };
+  const inviteCand = (): LiItem | null => {
+    if (!(ok(c, 'linkedin_invite') && ok(c, 'linkedin_profile_view'))) return null;
+    const ocfg = loadOutreachConfig(d.env);
+    for (const q of nextQueueContacts(db, ocfg, 'linkedin', { limit: 10, now })) {
+      if (!q.profile_url || unhandled.has(q.personId) || gone.has(`invite:${q.personId}`)) continue;
+      return { kind: 'invite', person_id: q.personId, profile_url: q.profile_url, name: q.name, company: q.company, company_key: q.company_key, category: q.category, job_id: q.job_id, job_title: q.job_title, queue_id: q.queue_id };
+    }
+    const minScore = matchThresholdFromEnv(d.env);
+    for (const p of nextPosterContacts(db, ocfg, 'linkedin', { limit: 10, minScore, now })) {
+      if (!p.profile_url || unhandled.has(p.personId) || gone.has(`invite:${p.personId}`)) continue;
+      return { kind: 'invite', person_id: p.personId, profile_url: p.profile_url, name: p.name, company: p.company, company_key: '', category: p.category, job_id: p.job_id, job_title: p.job_title, queue_id: null, post_text: p.post_text };
+    }
+    return null;
+  };
+  const easy = easyCand();
+  const inv = inviteCand();
+  const waiting: FairKind[] = [...(easy ? ['easy_apply' as const] : []), ...(inv ? ['invite' as const] : [])];
+  // Fairness guard: a ready kind that was passed over LI_FAIR_K ticks in a row goes next (easy apply first).
+  const streaks = readFairStreaks(db);
+  if (easy && streaks.easy_apply >= LI_FAIR_K) return { item: easy, waiting };
+  if (inv && streaks.invite >= LI_FAIR_K) return { item: inv, waiting };
+
   // (b2) the job description of one job found without one (a job is matched, tailored, emailed and applied to only on its full JD); one page per tick
   if (ok(c, 'linkedin_jd_fetch') && ok(c, 'linkedin_profile_view')) {
     try {
       for (const j of listJdCandidates(db, 'linkedin', now, 20)) {
         if (gone.has(`jd_fetch:${j.id}`)) continue;
-        return { item: { kind: 'jd_fetch', job_id: j.id, title: j.title } };
+        return { item: { kind: 'jd_fetch', job_id: j.id, title: j.title }, waiting };
       }
     } catch {
       // advisory: an unreadable candidate list means no JD item this tick
@@ -333,10 +394,10 @@ export async function pickLinkedinItem(d: DriverDeps, now: Date, cfg: LinkedinDr
   }
 
   // (c) the accept check: one page first, then the capped per-profile fallback (one profile per tick)
-  if (!gone.has('accept_recent') && acceptRecentDue(db, now)) return { item: { kind: 'accept_recent' } };
+  if (!gone.has('accept_recent') && acceptRecentDue(db, now)) return { item: { kind: 'accept_recent' }, waiting };
   if (!gone.has('accept_check') && ok(c, 'linkedin_profile_view')) {
     try {
-      if (countAcceptCandidates(db, now) > 0) return { item: { kind: 'accept_check' } };
+      if (countAcceptCandidates(db, now) > 0) return { item: { kind: 'accept_check' }, waiting };
     } catch {
       // advisory
     }
@@ -349,31 +410,15 @@ export async function pickLinkedinItem(d: DriverDeps, now: Date, cfg: LinkedinDr
     const ordered = due.map((t, i) => ({ t, i })).sort((a, b) => firstDm(a.t) - firstDm(b.t) || a.i - b.i).map((x) => x.t);
     for (const t of ordered) {
       if (!t.profile_url || unhandled.has(t.person_id) || gone.has(`dm:${t.person_id}`)) continue;
-      return { item: { kind: 'dm', touch_kind: t.kind, person_id: t.person_id, profile_url: t.profile_url, name: t.name, company: t.company, category: t.category, job_id: t.job_id, invite_had_note: t.invite_had_note } };
+      return { item: { kind: 'dm', touch_kind: t.kind, person_id: t.person_id, profile_url: t.profile_url, name: t.name, company: t.company, category: t.category, job_id: t.job_id, invite_had_note: t.invite_had_note }, waiting };
     }
   }
 
   // (d2) one LinkedIn Easy Apply application (only with APPLY_LINKEDIN_EASY=true), after replies, the accept check and DMs, before new invites
-  if (easyApplyOn(d.env) && ok(c, 'linkedin_easy_apply') && ok(c, 'linkedin_profile_view') && sharedApplyRoom(db, d.env)) {
-    for (const r of easyApplyRows(db, d.env, 20)) {
-      if (gone.has(`easy_apply:${r.job_id}`)) continue;
-      return { item: { kind: 'easy_apply', job_id: r.job_id, queue_id: r.queue_id, title: r.title, company: r.company } };
-    }
-  }
+  if (easy) return { item: easy, waiting };
 
   // (e) a new invite for the next queued contact (the per-company contact limit is enforced by nextQueueContacts / nextPosterContacts)
-  if (ok(c, 'linkedin_invite') && ok(c, 'linkedin_profile_view')) {
-    const ocfg = loadOutreachConfig(d.env);
-    for (const q of nextQueueContacts(db, ocfg, 'linkedin', { limit: 10, now })) {
-      if (!q.profile_url || unhandled.has(q.personId) || gone.has(`invite:${q.personId}`)) continue;
-      return { item: { kind: 'invite', person_id: q.personId, profile_url: q.profile_url, name: q.name, company: q.company, company_key: q.company_key, category: q.category, job_id: q.job_id, job_title: q.job_title, queue_id: q.queue_id } };
-    }
-    const minScore = matchThresholdFromEnv(d.env);
-    for (const p of nextPosterContacts(db, ocfg, 'linkedin', { limit: 10, minScore, now })) {
-      if (!p.profile_url || unhandled.has(p.personId) || gone.has(`invite:${p.personId}`)) continue;
-      return { item: { kind: 'invite', person_id: p.personId, profile_url: p.profile_url, name: p.name, company: p.company, company_key: '', category: p.category, job_id: p.job_id, job_title: p.job_title, queue_id: null, post_text: p.post_text } };
-    }
-  }
+  if (inv) return { item: inv, waiting };
   return { item: null, reason: 'nothing_to_do', ...(rep.blocked.length ? { blocked: rep.blocked } : {}) };
 }
 
@@ -651,6 +696,7 @@ async function linkedinDripTickInner(d: DriverDeps, opts: { abort?: () => boolea
     }
     const item = pick.item;
     const key = itemKey(item);
+    const waitingKinds = 'waiting' in pick && pick.waiting ? pick.waiting : [];
     // Stamp before the launch, whatever comes out: the inbox is not read twice inside its gap, and a failing item is not retried at once.
     if (item.kind === 'inbox') setState(d.db, LI_STATE_INBOX_AT, start.toISOString(), start);
     else markTried(d.db, key, start);
@@ -666,6 +712,7 @@ async function linkedinDripTickInner(d: DriverDeps, opts: { abort?: () => boolea
       if (!inboxBypass) setState(d.db, LI_STATE_NEXT_AT, new Date(end.getTime() + gap()).toISOString(), end);
       return { status: 'ran', item: key, run };
     }
+    updateFairStreaks(d.db, item.kind, waitingKinds, end);
     await linkedinRunNotice(d, item, run);
     if (item.kind === 'inbox' && run.status === 'ok') await notifyLinkedinInbox(d);
     if (!inboxBypass) setState(d.db, LI_STATE_NEXT_AT, new Date(end.getTime() + gap()).toISOString(), end);

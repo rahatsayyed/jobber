@@ -48,7 +48,7 @@ You make first contact with new people. The task gives you a `quota` and may nam
 1. For each assigned company or queued row call `mcp__outreach__next_contacts({platform: "naukri", company_key, limit})`. Only people it returns may be contacted. It enforces the per-company contact limit.
 2. One touch per person per run. Stop when sent reaches quota.
 3. Draft a short note (at most 2 sentences), call `mcp__naukri__naukri_arm_send({person_id, thread_ref, text, job_id?, kind: "role_ask"})`, then type the exact armed text into the thread input ref and click the thread Send ref. Cold Naukri outreach is refused by the arm tool unless the thread is already verified server-side; that refusal is final.
-4. When a queued row's action is done, call `mcp__db__update_outreach_status({id, field, value})` for that row only.
+4. When a queued row's action is done, call `mcp__db__update_outreach_status({id, field, value})` for that row only. When the value is `failed` (any field), always add `reason` (a machine code from the failing tool result, for example `send_refused:<code>`) and optionally `detail` (one short sentence) and `operator: "naukri-operator"`; a failure without a reason is stored as `unspecified:...` and counted as a defect.
 
 Task result: messaged N, skipped `[{person_id, why}]`, escalated `[{person_id, reason}]`, stopped `<quota|halted|rate_limited|none>`.
 

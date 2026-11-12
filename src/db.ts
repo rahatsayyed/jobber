@@ -25,6 +25,7 @@ import { migrateApplyQuestions } from './apply/questions.js';
 import { migrateOwnerInstructions } from './owner/instructions.js';
 import { migrateEmailReplies } from './outreach/emailRepliesSchema.js';
 import { resolveApplyEscalationsForJob } from './outreach/applyEscalations.js';
+import { composeReason, needsReason, recordMissingReason, unspecifiedReason } from './failureReason.js';
 
 /** enqueue_outreach.ats_coverage: an integer percentage, or null when the final render had no keywords (tailor contract). */
 export const atsCoverageSchema = z.number().int().min(0).max(100).nullable().optional();
@@ -337,6 +338,9 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   if (!taskCols.has('request_id')) db.exec('ALTER TABLE source_tasks ADD COLUMN request_id INTEGER');
   const followupCols = new Set((db.prepare('PRAGMA table_info(followups)').all() as { name: string }[]).map(c => c.name));
   if (!followupCols.has('body_html')) db.exec('ALTER TABLE followups ADD COLUMN body_html TEXT');
+  if (!followupCols.has('fail_reason')) db.exec('ALTER TABLE followups ADD COLUMN fail_reason TEXT');
+  // Reason of a failed email, connect or overall queue status (apply failures keep theirs in apply_note), see src/failureReason.ts.
+  if (!outreachQueueColumnNames.has('status_reason')) db.exec('ALTER TABLE outreach_queue ADD COLUMN status_reason TEXT');
   // Hand-backs of a matched job without an outreach row to the wake pipeline (PREP_OFFER_LIMIT).
   if (!jobCols.has('prep_offers')) db.exec('ALTER TABLE jobs ADD COLUMN prep_offers INTEGER NOT NULL DEFAULT 0');
   // Job description (JD) flow, see src/jdComplete.ts and src/jdStore.ts: jd_note (`reprep`, `prepared_without_jd`, why a JD is unavailable),
@@ -1070,16 +1074,34 @@ export function listExcludedQueuedOutreach(
 
 const UPDATABLE_FIELDS = ['email_status', 'connect_status', 'apply_status', 'status'] as const;
 
+export type StatusReasonOpts = { reason?: string; detail?: string; operator?: string; runId?: string | null };
+
 export function updateOutreachStatus(
   db: BetterSqlite3.Database,
   id: number,
   field: (typeof UPDATABLE_FIELDS)[number],
-  value: string
+  value: string,
+  opts: StatusReasonOpts = {}
 ): void {
   if (!UPDATABLE_FIELDS.includes(field)) {
     throw new Error(`updateOutreachStatus: invalid field "${field}"`);
   }
   db.prepare(`UPDATE outreach_queue SET ${field} = ?, updated_at = datetime('now') WHERE id = ?`).run(value, id);
+  // A failure always carries a reason: the caller's code (+ detail), else a note a code path already stored, else `unspecified:<operator>:<run>` plus a defect count.
+  if (needsReason(field, value)) {
+    const given = composeReason(opts.reason, opts.detail);
+    const col = field === 'apply_status' ? 'apply_note' : 'status_reason';
+    if (given) {
+      db.prepare(`UPDATE outreach_queue SET ${col} = ? WHERE id = ?`).run(given, id);
+    } else {
+      const cur = db.prepare(`SELECT ${col} AS note FROM outreach_queue WHERE id = ?`).get(id) as { note: string | null } | undefined;
+      if (cur && !String(cur.note ?? '').trim()) {
+        const stored = unspecifiedReason(opts.operator, opts.runId);
+        db.prepare(`UPDATE outreach_queue SET ${col} = ? WHERE id = ?`).run(stored, id);
+        recordMissingReason(db, `${field}=${value} on queue row ${id}`, stored);
+      }
+    }
+  }
   // A job that left the failing apply states no longer needs its open apply escalations (the Inbox would show a card for a finished job).
   if (field === 'apply_status') {
     const row = db.prepare('SELECT job_id FROM outreach_queue WHERE id = ?').get(id) as { job_id: string } | undefined;
