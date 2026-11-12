@@ -16,7 +16,8 @@ const EXPECTED = [
   // Wellfound exactly as Naukri: the apply operator holds wellfound_arm_apply and never wellfound_arm_send
   ...['open', 'snapshot', 'click', 'type', 'press_key', 'scroll', 'wait_for', 'screenshot', 'click_at', 'arm_apply', 'resolve_external', 'layout'].map((t) => `mcp__wellfound__wellfound_${t}`),
   // External apply: the LinkedIn main account, only to open the job page, read it and resolve its company-site Apply (never arm_send, click or Easy Apply)
-  ...['open', 'snapshot', 'resolve_external'].map((t) => `mcp__linkedin__linkedin_${t}`),
+  // plus click and press_key ONLY so the operator can dismiss a blocking dialog by ref (see "Blocking dialogs"); sends and Easy Apply stay behind arm_send, which it does not hold
+  ...['open', 'snapshot', 'click', 'press_key', 'resolve_external'].map((t) => `mcp__linkedin__linkedin_${t}`),
 ];
 
 const text = readFileSync('.claude/agents/apply-operator.md', 'utf8');
@@ -55,7 +56,7 @@ describe('apply-operator', () => {
   it('no old apply MCP, no LinkedIn tool beyond the three external-apply ones, no screenshot tool', () => {
     for (const t of tools) {
       expect(t.startsWith('mcp__apply__')).toBe(false);
-      if (t.startsWith('mcp__linkedin__')) expect(['linkedin_open', 'linkedin_snapshot', 'linkedin_resolve_external']).toContain(t.replace('mcp__linkedin__', ''));
+      if (t.startsWith('mcp__linkedin__')) expect(['linkedin_open', 'linkedin_snapshot', 'linkedin_click', 'linkedin_press_key', 'linkedin_resolve_external']).toContain(t.replace('mcp__linkedin__', ''));
       expect(t).not.toBe('mcp__applier__apply_screenshot');
     }
   });

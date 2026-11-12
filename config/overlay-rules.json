@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "_doc": "Overlay READ rules for the LinkedIn engine (src/browserctl/overlay.ts). The engine only READS a blocking dialog (role dialog, alertdialog, aria-modal) and shows it to the operator (title, text, buttons with refs): the operator decides what to click (see the Blocking dialogs section of .claude/agents/linkedin-operator.md). The only thing code classifies is `human`: dialogs that only a person can solve (captcha, verification code, login wall, payment, government ID, restriction). Those are never clicked by anything and the flow is parked with the reason. Matched on accessible name and dialog text only, never class names. Every pattern is a case-insensitive regular expression string.",
+  "human": [
+    { "id": "captcha", "reason": "captcha", "text": ["captcha", "verify (?:that )?you(?:'|’)?re (?:a )?human", "quick security check", "are you a robot"] },
+    { "id": "security_verification", "reason": "verification", "text": ["security verification", "verify your identity", "verification code", "we sent (?:you )?a (?:code|text)", "two-step verification", "enter the code"] },
+    { "id": "login", "reason": "login_required", "title": ["^sign in\\b", "^log in\\b", "^join linkedin\\b", "^welcome back\\b", "^sign in to continue", "^you(?:'|’)?ve been signed out", "^session expired"] },
+    { "id": "payment", "reason": "payment", "text": ["credit card", "card number", "payment method", "billing (?:address|information)", "complete your purchase"] },
+    { "id": "government_id", "reason": "government_id", "text": ["government(?:-issued)? id", "passport", "driver(?:'|’)?s licen[cs]e", "upload (?:a |your )?id\\b"] },
+    { "id": "account_restricted", "reason": "account_restricted", "text": ["account (?:has been |is )?(?:temporarily )?(?:restricted|limited|suspended)", "unusual activity", "we(?:'|’)?ve (?:temporarily )?restricted"] }
+  ]
+}

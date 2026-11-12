@@ -4,6 +4,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { LINKEDIN_CONTEXT_OPTIONS } from './browser.js';
 import { openPlatformContext } from '../webcore/platformProfile.js';
+import { classifyOpenFailure, TRANSIENT_OPEN_CODES } from '../browserctl/openFailure.js';
 import { acquireLock, checkSessionFile, saveStateAtomic, DEFAULT_LOCK_PATH, DEFAULT_SESSION_PATH, type LockHandle } from './session.js';
 import { SNAPSHOT_SRC } from './snapshot.js';
 import { detectBlock, type BlockKind } from './state.js';
@@ -130,7 +131,8 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
   // One retry for a transient launch or navigation failure (a wake saw two `open failed` in a row that a later open did not).
   async function open(url: string): ReturnType<Runtime['open']> {
     const first = await openOnce(url);
-    if (first.ok || first.code !== 'failed' || first.reason !== 'open failed') return first;
+    const transient = !first.ok && ((first.code === 'failed' && first.reason === 'open failed') || TRANSIENT_OPEN_CODES.has(first.code));
+    if (first.ok || !transient) return first;
     await new Promise((r) => setTimeout(r, 1500));
     return openOnce(url);
   }
@@ -188,10 +190,15 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
       }
       return { ok: true, snapshot: snap };
     } catch (e) {
+      // A precise reason from the error text, the page url path and its title, read before the session is closed.
+      let urlNow = '';
+      let titleNow = '';
+      try { if (session) { urlNow = session.page.url(); titleNow = await session.page.title(); } } catch { /* the page may be gone */ }
       if (session) await closeSession();
       else { await browser.close().catch(() => undefined); lock.handle.release(); }
       logErr('open', e);
-      return { ok: false, code: 'failed', reason: 'open failed' };
+      const f = classifyOpenFailure({ error: e, url: urlNow, title: titleNow });
+      return { ok: false, code: f.code, reason: f.reason };
     }
   }
 

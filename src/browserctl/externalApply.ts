@@ -27,6 +27,7 @@ import { writeCommitDiag } from './diag.js';
 import { killReason } from './engineTypes.js';
 import { NAUKRI_OFFSITE_RE, WELLFOUND_OFFSITE_RE, normName } from './guard.js';
 import type { PlatformPolicy } from './policy.js';
+import { overlayReason, titleSlug } from './overlay.js';
 import { renderTree, type RawNode, type RawTree } from './snapshot.js';
 
 export type ExternalPlatform = 'naukri' | 'wellfound' | 'linkedin';
@@ -53,12 +54,14 @@ const APPLIED_RE = /^(?:applied|already applied)$/i;
 const EXPIRED_RE = /^(?:this job (?:has )?expired|job (?:has )?expired|expired|no longer accepting applications|this job is no longer available)\.?$/i;
 
 export interface ExternalResult {
-  status: 'resolved' | 'manual_review' | 'refused' | 'halted' | 'rate_limited' | 'dry_run' | 'failed';
+  status: 'resolved' | 'blocked_by_overlay' | 'manual_review' | 'refused' | 'halted' | 'rate_limited' | 'dry_run' | 'failed';
   code: string;
   reason?: string;
   /** resolved only: the generic apply platform and tier the row now has (never the URL). */
   platform?: string;
   tier?: string;
+  /** blocked_by_overlay only: the dialog in the way (names and refs only; the operator decides what to click, then calls resolve again). */
+  overlay?: { title: string; text: string; buttons: { name: string; ref: string | null }[] };
 }
 
 export interface ExternalState { resolves: number; lastAt: number | null }
@@ -262,7 +265,8 @@ export async function resolveExternalApply(d: ExternalDeps, platform: ExternalPl
     };
 
     const first = await clickAndWait(ctl.n, urlBefore);
-    if (first.failed) return fail('failed', 'click_failed', `the control click failed${await diag('external_click_failed')}`);
+    // A failed click on LinkedIn may be a dialog in the way: the overlay step below then reports the dialog to the operator.
+    if (first.failed && !(platform === 'linkedin' && d.engine.overlayState)) return fail('failed', 'click_failed', `the control click failed${await diag('external_click_failed')}`);
     let found = first.found;
     let popups = first.popups;
     let viaPage: string | null = null;
@@ -295,7 +299,28 @@ export async function resolveExternalApply(d: ExternalDeps, platform: ExternalPl
       } catch { /* falls through to the failure code below */ }
     }
     const landed = found ?? viaPage;
+    // LinkedIn: a dialog the page put in the way ("Share your profile?") is the usual reason no popup opened. The operator decides what to click:
+    // the result is `blocked_by_overlay` with the dialog and its refs (the page is left as it is, the dialog open). A human-only dialog parks.
+    if (!landed && platform === 'linkedin' && d.engine.overlayState) {
+      const st = await d.engine.overlayState();
+      const ov = st.overlay;
+      if (ov) {
+        const slug = titleSlug(ov.title);
+        if (ov.human) {
+          await restore();
+          const code = `overlay_needs_human:${ov.human.rule}`;
+          return review(db, a.job_id, code, `${overlayReason(ov)}${await diag(`external_overlay_human`, popups)}`);
+        }
+        // The row carries the reason until a later resolve succeeds (setExternalApply then replaces it).
+        const res = review(db, a.job_id, `blocked_by_overlay:${slug}`, overlayReason(ov));
+        return {
+          ...res, status: 'blocked_by_overlay', code: 'blocked_by_overlay',
+          overlay: { title: ov.title, text: ov.text, buttons: ov.buttons.map((b) => ({ name: b.name, ref: b.ref })) },
+        };
+      }
+    }
     await restore();
+    if (!landed && first.failed) return fail('failed', 'click_failed', `the control click failed${await diag('external_click_failed')}`);
     if (!landed) {
       const code = first.interstitial ? 'interstitial_no_link'
         : popups.length === 0 ? 'no_popup'

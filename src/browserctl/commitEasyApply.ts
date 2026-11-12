@@ -21,7 +21,7 @@ import { diagNote, writeCommitDiag } from './diag.js';
 import type { BcPage } from './driver.js';
 import {
   clearEasyApplyState, closeEasyApplyModal, dialogButtons, easyApplyDialog, easyApplyState, jobNumericIdOfUrl, jobShowsApplied, MAX_EASY_APPLY_STEPS,
-  pageTexts, parkNeedsOwner, scanDialog, sentConfirmedNew, VALIDATION_RE, type ParkCode,
+  overlayRecovery, pageTexts, parkNeedsOwner, scanDialog, sentConfirmedNew, VALIDATION_RE, type ParkCode,
 } from './easyApply.js';
 import { dialogText, effectiveDialogKind } from './commit.js';
 import { killReason, type EngineDeps, type EngineResult } from './engineTypes.js';
@@ -139,21 +139,36 @@ export async function commitEasyApply(i: EasyApplyCommitInput): Promise<EngineRe
 
   // ---- open ----
   if (isOpen) {
-    if (!(await click())) return abort('click_failed', 'the Easy Apply click failed; nothing was entered', 'failed');
-    const t0 = Date.now();
-    let waited = 0;
-    let tree: RawTree | null = null;
-    while (waited < OPEN_WAIT_MS) {
-      await page.waitMs(deps.settleMs ?? POLL_MS).catch(() => undefined);
-      waited += deps.settleMs ?? POLL_MS;
-      try { tree = await page.snapshot(); } catch { tree = null; }
-      if (tree) {
-        const d = easyApplyDialog(tree);
-        if (d !== 'none' && d !== 'ambiguous') break;
-      }
-      if (Date.now() - t0 > OPEN_WAIT_MS || waited >= (deps.dialogWaitMs ?? OPEN_WAIT_MS)) break;
+    if (!(await click())) {
+      // The click threw: a blocking dialog may be in the way. Handle it by rule and click ONCE more.
+      const rec = await overlayRecovery(ctx);
+      if (rec.status !== 'none') return rec.out;
+      return abort('click_failed', 'the Easy Apply click failed; nothing was entered', 'failed');
     }
-    const d = tree ? easyApplyDialog(tree) : 'none';
+    const waitModal = async (): Promise<RawTree | null> => {
+      const t0 = Date.now();
+      let waited = 0;
+      let t: RawTree | null = null;
+      while (waited < OPEN_WAIT_MS) {
+        await page.waitMs(deps.settleMs ?? POLL_MS).catch(() => undefined);
+        waited += deps.settleMs ?? POLL_MS;
+        try { t = await page.snapshot(); } catch { t = null; }
+        if (t) {
+          const dd = easyApplyDialog(t);
+          if (dd !== 'none' && dd !== 'ambiguous') break;
+        }
+        if (Date.now() - t0 > OPEN_WAIT_MS || waited >= (deps.dialogWaitMs ?? OPEN_WAIT_MS)) break;
+      }
+      return t;
+    };
+    let tree: RawTree | null = await waitModal();
+    let d = tree ? easyApplyDialog(tree) : 'none';
+    if (!tree || d === 'none') {
+      // No modal after the click: an unexpected dialog ("Share your profile?", a prompt) may have taken its place. Handle it and click once more.
+      const rec = await overlayRecovery(ctx);
+      // The click went through but no modal showed and a dialog is in the way: the operator reads it, clicks a button, then clicks Easy Apply again.
+      if (rec.status !== 'none') return rec.out;
+    }
     if (!tree || d === 'none' || d === 'ambiguous') {
       const dg = await writeCommitDiag(deps, page, { platform, code: 'no_dialog_after_apply', live, urlBefore: before.url, after: tree });
       const out = await parkNeedsOwner(ctx, d === 'ambiguous' ? 'modal_ambiguous' : 'no_modal');
@@ -169,7 +184,11 @@ export async function commitEasyApply(i: EasyApplyCommitInput): Promise<EngineRe
 
   // ---- next / review ----
   if (!isSubmit) {
-    if (!(await click())) return abort('click_failed', 'the click failed', 'failed');
+    if (!(await click())) {
+      const rec = await overlayRecovery(ctx);
+      if (rec.status !== 'none') return rec.out;
+      return abort('click_failed', 'the click failed', 'failed');
+    }
     st.steps.set(key, (st.steps.get(key) ?? 0) + 1);
     await page.waitMs(deps.settleMs ?? POLL_MS).catch(() => undefined);
     let after: RawTree;
