@@ -11,11 +11,12 @@ describe('stack CLI parse', () => {
   });
 
   it('down flags', () => {
-    expect(parseArgs(['down'])).toEqual({ cmd: 'down', keepBridge: false, keepWindows: false, force: false, yes: false, verbose: false });
+    expect(parseArgs(['down'])).toEqual({ cmd: 'down', keepBridge: false, keepWindows: false, keepProtected: false, force: false, yes: false, verbose: false });
     expect(parseArgs(['down', '--keep-windows'])).toMatchObject({ cmd: 'down', keepWindows: true });
+    expect(parseArgs(['down', '--keep-protected'])).toMatchObject({ cmd: 'down', keepProtected: true });
     expect(parseArgs(['up', '--verbose'])).toMatchObject({ cmd: 'up', verbose: true });
     expect(parseArgs(['down', '--keep-bridge', '--force', '--yes'])).toEqual({
-      cmd: 'down', keepBridge: true, keepWindows: false, force: true, yes: true, verbose: false,
+      cmd: 'down', keepBridge: true, keepWindows: false, keepProtected: false, force: true, yes: true, verbose: false,
     });
   });
 

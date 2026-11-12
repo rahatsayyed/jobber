@@ -92,15 +92,15 @@ const OPTS: DownOpts = { keepBridge: false, force: false, verbose: true };
 const kills = (f: Fake): string[] => f.calls.filter((c) => c[0] === 'tmux' && c[1] === 'kill-window').map((c) => c[c.length - 1]);
 
 describe('down', () => {
-  it('stops in order web, scheduler, the windows in reverse config order, bridge; never manager', async () => {
+  it('stops in order web, scheduler, the windows in reverse config order, bridge, then manager (nothing left, session ended)', async () => {
     const f = fake({ sessions: full(), exitOnCtrlC: true });
     expect(await runDown(mk(f), OPTS)).toBe(0);
     const order = f.calls
       .filter((c) => c[0] === 'tmux' && (c[1] === 'kill-window' || c[1] === 'send-keys'))
       .map((c) => c[c.length - (c[1] === 'send-keys' ? 2 : 1)].replace(/^=.*:=?/, ''));
-    expect(order).toEqual(['web', 'scheduler', 'followups', 'hunt', 'bridge']);
-    expect(f.sessions.get('Jobber')).toEqual(['manager']);
-    expect(f.calls.flat().some((a) => a.endsWith('manager') && a.includes(':') )).toBe(false);
+    expect(order).toEqual(['web', 'scheduler', 'followups', 'hunt', 'bridge', 'manager']);
+    expect(f.sessions.get('Jobber')).toEqual([]);
+    expect(f.calls.some((c) => c[1] === 'kill-session' && c.includes('=Jobber'))).toBe(true);
   });
 
   it('scheduler gets C-c and is not killed when it stays; message printed', async () => {
@@ -125,7 +125,7 @@ describe('down', () => {
     const f = fake({ sessions: full() });
     await runDown(mk(f), { ...OPTS, force: true });
     expect(kills(f)).toContain('=Jobber:=scheduler');
-    expect(f.sessions.get('Jobber')).toEqual(['manager']);
+    expect(f.sessions.get('Jobber')).toEqual([]);
   });
 
   it('--keep-bridge skips the bridge', async () => {
@@ -150,20 +150,38 @@ describe('down', () => {
     const f = fake({ sessions: full(), exitOnCtrlC: true });
     const d = mk(f, { ask: async () => { throw new Error('must not ask'); } });
     await runDown(d, { keepBridge: false, force: false });
-    expect(f.sessions.get('Jobber')).toEqual(['manager']);
+    expect(f.sessions.get('Jobber')).toEqual([]);
   });
 
   it('prints one summary line by default and no per-component lines', async () => {
     const f = fake({ sessions: full(), exitOnCtrlC: true });
     const d = mk(f);
     await runDown(d, { keepBridge: false, force: false });
-    expect(d.out).toEqual(['Jobber stopped: web, scheduler, followups, hunt, bridge. manager and chat left running.']);
+    expect(d.out).toEqual(['Jobber stopped: web, scheduler, followups, hunt, bridge, manager.']);
   });
 
   it('--keep-windows stops only the daemons', async () => {
     const f = fake({ sessions: full(), exitOnCtrlC: true });
-    await runDown(mk(f), { ...OPTS, keepWindows: true });
+    const d = mk(f);
+    await runDown(d, { ...OPTS, keepWindows: true });
     expect(f.sessions.get('Jobber')).toEqual(['hunt', 'followups', 'manager']);
+    expect(d.out[d.out.length - 1]).toBe('Jobber stopped: web, scheduler, bridge. Left running: followups, hunt, manager.');
+  });
+
+  it('--keep-protected keeps manager and chat; everything else stops and the summary says so', async () => {
+    const f = fake({ sessions: { Jobber: [...full().Jobber, 'chat'] }, exitOnCtrlC: true });
+    const d = mk(f);
+    await runDown(d, { ...OPTS, keepProtected: true });
+    expect(f.sessions.get('Jobber')).toEqual(['manager', 'chat']);
+    expect(f.calls.some((c) => c[1] === 'kill-session')).toBe(false);
+    expect(d.out[d.out.length - 1]).toBe('Jobber stopped: web, scheduler, followups, hunt, bridge. Left running: chat, manager.');
+  });
+
+  it('stops chat and manager by default and names every stopped component in one line', async () => {
+    const f = fake({ sessions: { Jobber: [...full().Jobber, 'chat'] }, exitOnCtrlC: true });
+    const d = mk(f);
+    await runDown(d, OPTS);
+    expect(d.out[d.out.length - 1]).toBe('Jobber stopped: web, scheduler, followups, hunt, bridge, chat, manager.');
   });
 
   it('a window mid-item gets Escape then the exit command, and its unfinished item lands in the handoff file', async () => {
@@ -210,7 +228,7 @@ describe('down', () => {
   it('only issues allowed tmux subcommands and leaves STOP', async () => {
     const f = fake({ sessions: full(), exitOnCtrlC: true });
     await runDown(mk(f), OPTS);
-    const allowed = new Set(['has-session', 'list-windows', 'send-keys', 'kill-window', 'capture-pane']);
+    const allowed = new Set(['has-session', 'list-windows', 'send-keys', 'kill-window', 'kill-session', 'capture-pane']);
     for (const c of f.calls) {
       if (c[0] === 'tmux') expect(allowed.has(c[1]), c.join(' ')).toBe(true);
       else expect(['launchctl', 'systemctl']).toContain(c[0]);

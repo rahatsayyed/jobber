@@ -13,10 +13,13 @@ const CAP_PREFIXES = ['LINKEDIN_', 'NAUKRI_', 'WELLFOUND_', 'APPLY_', 'SCOUT_', 
 
 const isCapKey = (k: string): boolean => CAP_PREFIXES.some((p) => k.startsWith(p)) && /_MAX_|_LIMIT|_PER_DAY/.test(k);
 
-/** The recorded start values of `env`: the exact keys plus every cap-looking key of the listed prefixes (an unset exact key is ''). */
+// The recorded values come from the window's ALLOWLISTED launch env, not from the whole .env. A key the window does not receive is NOT
+// recorded: the old format recorded it as '' and the doctor then compared that '' with the value in .env (a false "old settings"
+// warning). The dry-run flag is always recorded (an unset flag is ''). `_fmt: '2'` marks the new format.
 export function wakeStartValues(env: Record<string, string | undefined>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const k of EXACT) out[k] = (env[k] ?? '').trim();
+  const out: Record<string, string> = { _fmt: '2' };
+  out.JOBBER_DRY_RUN = (env.JOBBER_DRY_RUN ?? '').trim();
+  for (const k of EXACT) if (k !== 'JOBBER_DRY_RUN' && typeof env[k] === 'string') out[k] = (env[k] as string).trim();
   for (const k of Object.keys(env).sort()) {
     if (isCapKey(k) && typeof env[k] === 'string') out[k] = (env[k] as string).trim();
   }
@@ -27,7 +30,9 @@ export function wakeStartValues(env: Record<string, string | undefined>): Record
 export function wakeStartDiff(started: Record<string, unknown>, now: Record<string, string | undefined>): string[] {
   const out: string[] = [];
   for (const [k, v] of Object.entries(started)) {
-    if (k === 'at' || typeof v !== 'string') continue;
+    if (k === 'at' || k === '_fmt' || typeof v !== 'string') continue;
+    // An old-format record holds '' for keys the window never received: that cannot be told from "not passed", so it is skipped.
+    if (started._fmt !== '2' && v === '' && k !== 'JOBBER_DRY_RUN') continue;
     if (v !== (now[k] ?? '').trim()) out.push(k);
   }
   return out;

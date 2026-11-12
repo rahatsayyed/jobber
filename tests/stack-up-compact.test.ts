@@ -86,6 +86,32 @@ describe('up (compact output)', () => {
     expect(d.out).toContain('MODE: DRY RUN (nothing is sent)');
   });
 
+  it('lists only problems that still exist after everything started (the doctor runs again after the start)', async () => {
+    let calls = 0;
+    const d = deps(async () => {
+      calls += 1;
+      return calls === 1 ? [w('telegram-bridge', 'the bridge window is not running', 'npm run up')] : [];
+    });
+    expect(await runUp(d, { status: false, compact: true })).toBe(0);
+    expect(calls).toBe(2);
+    expect(d.out.some((l) => l.startsWith('NEEDS YOU'))).toBe(false);
+    // a problem that is still there after the start is kept
+    const e = deps(async () => [w('telegram-bridge', 'the bridge window is not running', 'npm run up')]);
+    await runUp(e, { status: false, compact: true });
+    expect(e.out.some((l) => l.startsWith('NEEDS YOU: the bridge window is not running'))).toBe(true);
+  });
+
+  it('prints ONE dashboard line: the sign-in URL when a fresh one was made, else the plain URL', async () => {
+    const d = deps(async () => []);
+    d.dashboardLogin = async () => 'http://127.0.0.1:8787/#token=abc';
+    await runUp(d, { status: false, compact: true });
+    expect(d.out.filter((l) => l.startsWith('dashboard:'))).toEqual(['dashboard: http://127.0.0.1:8787/#token=abc  (sign-in link, shown once)']);
+    const n = deps(async () => []);
+    n.dashboardLogin = async () => null;
+    await runUp(n, { status: false, compact: true });
+    expect(n.out.filter((l) => l.startsWith('dashboard:'))).toEqual(['dashboard: http://127.0.0.1:8787']);
+  });
+
   it('a doctor failure and the kill switch are still printed in compact mode', async () => {
     const d = deps(async () => [{ id: 'x-check', title: 't', result: { status: 'fail', detail: 'bad', fix: 'do it' } }]);
     expect(await runUp(d, { status: false, compact: true })).toBe(1);

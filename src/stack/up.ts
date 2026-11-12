@@ -5,7 +5,7 @@ import { isAbsolute, join } from 'node:path';
 import { authDbPathFromEnv, resolveAuthMode } from '../web/env.js';
 import type { CheckOutcome } from '../platform/doctor.js';
 import { parseEnv } from '../platform/envFile.js';
-import { ensureManagerWindow, loadManagerConfig, sessionName, startWindowWithMemory, typeStartup } from '../platform/manager.js';
+import { ensureManagerWindow, loadManagerConfig, restartWindowWithMemory, sessionName, startWindowWithMemory, typeStartup } from '../platform/manager.js';
 import { assertName, hasSession, listWindows, newWindow, type Run } from '../platform/tmux.js';
 import { stopActive } from '../../scripts/killSwitch.js';
 import { ensureChatWindow } from '../telegram/chatwin/ensure.js';
@@ -15,6 +15,7 @@ import { nodeAtomicFs, type AtomicFs } from '../settings/atomic.js';
 import { clearForScopes } from '../settings/pendingRestart.js';
 import type { RestartScope } from '../settings/types.js';
 import { currentMode, fileFlags, shellDivergence } from './mode.js';
+import { staleKeys } from './stale.js';
 import { attentionLines, formatCompact, type UpSummary } from './summary.js';
 import { cleanEnvArgv, DEFAULT_STACK_SESSION, BRIDGE_CMD, SCHEDULER_CMD, WEB_CMD, type UpPlan } from './plan.js';
 
@@ -39,6 +40,8 @@ export interface StackDeps {
   probe(url: string): Promise<boolean>;
   // Offline read of whether the dashboard auth db holds an access token; null when unreadable. Optional.
   authTokenSet?(path: string): boolean | null;
+  // Optional: makes a fresh dashboard sign-in URL (token mode, terminal only); null when there is none. `up` then prints ONE dashboard line.
+  dashboardLogin?(): Promise<string | null>;
   // Optional fs for the pending-restart list (tests); the real one is used when absent.
   pendingFs?: AtomicFs;
 }
@@ -172,6 +175,8 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean, c
   const rows: Array<[string, string, string]> = [];
   const warnings: string[] = [];
   const started: string[] = [];
+  let settle = false; // a window was started or restarted: let claude come up before the doctor runs again
+  let outcomes: CheckOutcome[] = [];
   let startFailed = false; // a bridge, scheduler or web start error, or a window that exited at once
   const kill = stopActive(deps.root, env);
   // One definition of skipped (src/setup/skips.ts): recorded as skipped and still unconfigured.
@@ -190,10 +195,9 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean, c
       deps.say('kill switch is on: `npm run jobber:control -- resume` when you are sure');
       return 4;
     }
-    const outcomes = await deps.doctor();
+    outcomes = await deps.doctor();
     const fails = outcomes.filter((o) => o.result.status === 'fail');
     for (const o of outcomes.filter((x) => x.result.status === 'warn')) say(`warn ${o.id}: ${o.result.detail}`);
-    problems.push(...attentionLines(outcomes));
     if (fails.length > 0) {
       deps.say('doctor has failures, nothing was started:');
       for (const o of fails) deps.say(`  fail ${o.id}: ${o.result.detail}${o.result.fix ? ` (fix: ${o.result.fix})` : ''}`);
@@ -232,6 +236,21 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean, c
           // A worker window also gets its startup line (reads the handoff file and its role file).
           const s = await startWindowWithMemory(deps.run, cfg, env, name, deps.root, { sleep: deps.sleep });
           say(`window ${name}: ${s.state}${s.startup === 'skipped' ? '' : `, startup line ${s.startup}`}`);
+          if (s.state === 'started') settle = true;
+          else {
+            // A window that was already running keeps the env it started with. Restart it when its recorded start values differ from
+            // .env now and it is idle (a busy one is refused by the dispatcher lock and stays listed by the doctor below).
+            const stale = staleKeys(deps.root, deps.fs, name, env);
+            if (stale.length > 0) {
+              try {
+                const r = await restartWindowWithMemory(deps.run, cfg, env, name, deps.root, { sleep: deps.sleep });
+                say(`window ${name}: restarted (old values of ${stale.join(', ')}), startup line ${r.startup}`);
+                settle = true;
+              } catch (e) {
+                say(`window ${name}: not restarted (${(e as Error).message})`);
+              }
+            }
+          }
           if (s.startup === 'not_ready') warnings.push(`window ${name}: claude was not ready, startup line not typed; tell it to read .jobber/handoff.md by hand`);
         } catch (e) {
           warnings.push(`window ${name}: ${(e as Error).message}`);
@@ -297,6 +316,13 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean, c
   // Final table. Re-check the windows we just started: one that exited at once is not running.
   const stackNames = await windowNames(deps.run, session);
   if (!status) {
+    // The first doctor run happened BEFORE anything was started, so it still reports components that `up` has just started. Run it
+    // again now (after a short wait for the claude panes) and list only the problems that still exist.
+    if (started.length > 0 || settle) await deps.sleep(1500);
+    try {
+      outcomes = await deps.doctor();
+    } catch { /* keep the first result */ }
+    problems.push(...attentionLines(outcomes));
     for (const n of started) {
       if (!stackNames.has(n)) {
         warnings.push(`window ${n} exited immediately`);
@@ -335,11 +361,21 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean, c
     if (status && stackNames.has('web')) webState = (await deps.probe(`${webUrl(env)}/api/auth/mode`)) ? 'running' : 'window up, no answer';
     rows.push(['web', webState, `tmux attach -t ${session}`]);
   }
+  // ONE dashboard line: the sign-in URL with its token when a fresh one was made (shown once), else the plain URL.
+  let dashShown: string | null = noDashboard ? null : webUrl(env);
+  if (!status && !startFailed && !noDashboard && deps.dashboardLogin) {
+    try {
+      const login = await deps.dashboardLogin();
+      if (login) dashShown = `${login}  (sign-in link, shown once)`;
+    } catch (e) {
+      warnings.push(`dashboard sign-in URL not created: ${e instanceof Error ? e.message : 'error'}`);
+    }
+  }
   say('components:');
   for (const l of table(rows)) say(l);
   for (const w of warnings) say(`warning: ${w}`);
-  if (!noDashboard) {
-    say(`dashboard: ${webUrl(env)}`);
+  if (dashShown) {
+    say(`dashboard: ${dashShown}`);
     for (const l of dashboardAuthLines(deps, env)) say(l);
   }
   if (compact) {
@@ -348,7 +384,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean, c
     const summary: UpSummary = {
       // A skipped (setup) or disabled component is the owner's choice, not a problem.
       components: rows.map(([name, state]) => ({ name, ok: !/^not running|no answer/.test(state), state })),
-      dashboardUrl: noDashboard ? null : webUrl(env),
+      dashboardUrl: dashShown,
       modeLine: mode.line,
       modeNeedsAttention: mode.attention,
       modeWarnings: mode.warnings,

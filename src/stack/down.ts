@@ -1,14 +1,15 @@
 // src/stack/down.ts
-// `down`: stops what `up` started, in order: dashboard, scheduler (graceful), the worker windows, bridge. No questions are asked:
+// `down`: stops what `up` started, in order: dashboard, scheduler (graceful), the worker windows, bridge, then manager and chat, and ends
+// the tmux session when nothing is left. No questions are asked:
 // the owner typed it on purpose. A worker window that is mid-item gets a clean stop (Escape, then exit) and its unfinished item is
 // written to .jobber/handoff.md, like a manager handoff. `--keep-windows` stops only the daemons.
-// It never touches `manager`, `chat`, the kill switch, halts, .env, secrets or the database, and never stops a
-// scheduler that belongs to a launchd or systemd unit.
+// `--keep-protected` leaves manager and chat running (the old behaviour). It never touches the kill switch, halts, .env, secrets or the
+// database, and never stops a scheduler that belongs to a launchd or systemd unit.
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { addHandoff } from '../platform/handoff.js';
 import { loadManagerConfig, sessionName, stopWindow, type ManagerConfig } from '../platform/manager.js';
-import { assertClaudePane, sendText } from '../platform/tmux.js';
+import { assertClaudePane, hasSession, listWindows, sendText } from '../platform/tmux.js';
 import { peekLock } from '../platform/lock.js';
 import { windowLockHeld, windowLockName, WINDOW_LOCK_TTL_MS } from '../platform/windowLock.js';
 import { DEFAULT_LABEL, SERVICE_NAME } from '../scheduler/units.js';
@@ -24,6 +25,8 @@ export interface DownOpts {
   keepBridge: boolean;
   /** Stop only the daemons (web, scheduler, bridge); leave the worker windows running. */
   keepWindows?: boolean;
+  /** Leave the protected `manager` and `chat` windows running (the default stops them too). */
+  keepProtected?: boolean;
   force: boolean;
   /** Ignored: kept so `--yes` still parses. */
   yes?: boolean;
@@ -88,16 +91,30 @@ export async function runDown(deps: DownDeps, opts: DownOpts): Promise<number> {
   // Routine lines show only with --verbose; problems and the one summary line always show.
   const say = (l: string): void => { if (opts.verbose) deps.say(l); };
   const alert = (l: string): void => deps.say(l);
-  const stopped: string[] = [];
   const problems: string[] = [];
+
+  let cfg;
+  try {
+    cfg = loadManagerConfig(deps.fs.read(join(deps.root, 'config', 'manager-windows.json')));
+  } catch (e) {
+    alert(`warning: manager config unreadable: ${(e as Error).message}`);
+  }
+  const csession = cfg ? sessionName(cfg, env) : session;
+  const sessions = [...new Set([session, csession])];
+  const snapshot = async (): Promise<Set<string>> => {
+    const out = new Set<string>();
+    for (const s of sessions) for (const n of await windowNames(deps.run, s)) out.add(n);
+    return out;
+  };
+  // What is stopped is read from tmux (present before, gone after), so the summary names every component that really went away.
+  const before = await snapshot();
 
   // 1. Dashboard.
   let names = await windowNames(deps.run, session);
   if (names.has('web')) {
     const r = await deps.run('tmux', ['kill-window', '-t', `=${session}:=web`]);
     say(r.code === 0 ? 'web: stopped' : 'web: stop failed');
-    if (r.code === 0) stopped.push('web');
-    else { code = 1; problems.push('web: stop failed'); }
+    if (r.code !== 0) { code = 1; problems.push('web: stop failed'); }
   } else say('web: absent');
 
   // 2. Scheduler: Ctrl-C lets the daemon finish its wake; never killed without --force.
@@ -115,7 +132,6 @@ export async function runDown(deps: DownDeps, opts: DownOpts): Promise<number> {
   } else if (opts.force) {
     await deps.run('tmux', ['kill-window', '-t', `=${session}:=scheduler`]);
     say('scheduler: killed (--force)');
-    stopped.push('scheduler');
   } else {
     await deps.run('tmux', ['send-keys', '-t', `=${session}:=scheduler`, 'C-c']);
     const limit = waitSeconds(env);
@@ -125,16 +141,10 @@ export async function runDown(deps: DownDeps, opts: DownOpts): Promise<number> {
       if (present) await deps.sleep(1000);
     }
     if (present) alert('scheduler is finishing a wake; run npm run down again, or npm run down -- --force');
-    else { say('scheduler: stopped'); stopped.push('scheduler'); }
+    else say('scheduler: stopped');
   }
 
   // 3. worker windows from the config: no questions. A window mid-item gets a clean stop and a handoff note.
-  let cfg;
-  try {
-    cfg = loadManagerConfig(deps.fs.read(join(deps.root, 'config', 'manager-windows.json')));
-  } catch (e) {
-    alert(`warning: manager config unreadable: ${(e as Error).message}`);
-  }
   if (cfg && opts.keepWindows) {
     say('windows: kept (--keep-windows)');
   } else if (cfg) {
@@ -148,7 +158,6 @@ export async function runDown(deps: DownDeps, opts: DownOpts): Promise<number> {
       try {
         const r = await stopWorkerClean(deps, cfg, env, name);
         say(`${name}: ${r}`);
-        stopped.push(name);
         if (/handoff/.test(r)) alert(`${name}: was mid-item, stopped cleanly; the unfinished item is in .jobber/handoff.md`);
       } catch (e) {
         alert(`${name}: ${(e as Error).message}`);
@@ -156,7 +165,6 @@ export async function runDown(deps: DownDeps, opts: DownOpts): Promise<number> {
         code = 1;
       }
     }
-    if (present.has('manager')) say('manager: left running (protected)');
   }
 
   // 4. Bridge.
@@ -166,14 +174,36 @@ export async function runDown(deps: DownDeps, opts: DownOpts): Promise<number> {
   else {
     const r = await deps.run('tmux', ['kill-window', '-t', `=${session}:=bridge`]);
     say(r.code === 0 ? 'bridge: stopped' : 'bridge: stop failed');
-    if (r.code === 0) stopped.push('bridge');
-    else { code = 1; problems.push('bridge: stop failed'); }
+    if (r.code !== 0) { code = 1; problems.push('bridge: stop failed'); }
   }
+  // 5. manager and chat (protected: stopWindow refuses them, so they are killed directly). Kept with --keep-protected or --keep-windows.
+  for (const name of ['chat', 'manager']) {
+    if (!(await windowNames(deps.run, csession)).has(name)) continue;
+    if (opts.keepProtected || opts.keepWindows) {
+      say(`${name}: kept (${opts.keepProtected ? '--keep-protected' : '--keep-windows'})`);
+      continue;
+    }
+    const r = await deps.run('tmux', ['kill-window', '-t', `=${csession}:=${name}`]);
+    say(r.code === 0 ? `${name}: stopped` : `${name}: stop failed`);
+    if (r.code !== 0) { code = 1; problems.push(`${name}: stop failed`); }
+  }
+
+  // 6. End the tmux session(s) when nothing is left (tmux itself drops a session with its last window; this covers a leftover shell).
+  for (const s of sessions) {
+    try {
+      if ((await hasSession(deps.run, s)) && (await listWindows(deps.run, s)).length === 0) await deps.run('tmux', ['kill-session', '-t', `=${s}`]);
+    } catch { /* the session is gone already */ }
+  }
+
   for (const p of problems) alert(p);
-  alert(
-    stopped.length > 0
-      ? `Jobber stopped: ${stopped.join(', ')}. manager and chat left running.`
-      : 'Jobber: nothing was running (manager and chat left running).',
-  );
+  const after = await snapshot();
+  // Listed in the order they are stopped in (daemons, workers, bridge, chat, manager); unknown windows last.
+  const order = ['web', 'scheduler', ...Object.keys(cfg?.windows ?? {}).reverse(), 'bridge', 'chat', 'manager'];
+  const rank = (n: string): number => (order.includes(n) ? order.indexOf(n) : order.length);
+  const byRank = (a: string, b: string): number => rank(a) - rank(b);
+  const stopped = [...before].filter((n) => !after.has(n)).sort(byRank);
+  const left = [...before].filter((n) => after.has(n)).sort(byRank);
+  const leftText = left.length > 0 ? ` Left running: ${left.join(', ')}.` : '';
+  alert(stopped.length > 0 ? `Jobber stopped: ${stopped.join(', ')}.${leftText}` : `Jobber: nothing was stopped.${leftText || ' Nothing was running.'}`);
   return code;
 }
