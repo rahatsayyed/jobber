@@ -42,6 +42,7 @@ const JOB_BOARDS = ['naukri.com', 'naukrigulf.com', 'linkedin.com', 'indeed.com'
 const ATS_DOMAINS = ['greenhouse.io', 'greenhouse-mail.io', 'lever.co', 'ashbyhq.com', 'myworkday.com', 'workday.com', 'smartrecruiters.com', 'icims.com', 'jobvite.com', 'taleo.net',
   'workable.com', 'bamboohr.com', 'recruitee.com', 'breezy.hr', 'zohorecruit.com', 'successfactors.com', 'teamtailor.com', 'pinpointhq.com'];
 const SHARED = new Set([...FREEMAIL, ...JOB_BOARDS, ...ATS_DOMAINS]);
+const BOUNCE_SENDERS = ['mailer-daemon', 'postmaster'];
 const ATS_SENDERS = ['greenhouse.io', 'lever.co', 'ashbyhq.com', 'myworkday.com', 'smartrecruiters.com', 'icims.com'];
 const inList = (dom: string | null, list: readonly string[]) => !!dom && list.some((d) => dom === d || dom.endsWith(`.${d}`));
 const isShared = (dom: string | null) => !!dom && (SHARED.has(dom) || inList(dom, JOB_BOARDS) || inList(dom, ATS_DOMAINS));
@@ -64,7 +65,8 @@ const localOf = (addr: string | null) => (addr ? addr.slice(0, addr.lastIndexOf(
 const BOUNCE_SENDER = /\b(?:mailer-daemon|mailerdaemon|postmaster|mail delivery (?:sub)?system)\b/i;
 const BOUNCE_TEXT = [/delivery status notification/i, /\bundeliverable\b/i, /\bundelivered mail\b/i, /\b(?:wasn't|was not|could not be|couldn't be|failed to be) delivered\b/i,
   /\baddress not found\b/i, /\bdelivery has failed\b/i, /\bmail delivery failed\b/i, /\bdelivery failure\b/i, /\bno such user\b|\buser unknown\b/i,
-  /\b(?:mailbox|inbox) (?:is )?(?:full|unavailable|not found)\b/i, /\b5\d\d [45]\.\d\.\d\b/];
+  /\b(?:mailbox|inbox) (?:is )?(?:full|unavailable|not found|out of storage)\b/i, /\b5\d\d [45]\.\d\.\d\b/,
+  /\bover (?:its )?(?:disk )?quota\b|\bquota exceeded\b/i, /\baddress (?:couldn't|could not) be found\b/i, /\brecipient address rejected\b/i, /\bunknown (?:recipient|user)\b/i];
 const NOISE = [/\bjob alerts?\b/i, /\bjobs you may be interested in\b/i, /\brecommended jobs\b/i, /\bnewsletter\b/i, /\bwebinar\b/i, /\blive (?:session|webinar|event)\b/i,
   /\b(?:profile|application) (?:was |has been )?viewed\b/i, /\bviewed your (?:profile|application)\b/i];
 const OUT_OF_OFFICE = [/\bout of (?:the )?office\b/i, /\bautomatic reply\b|\bauto[- ]?repl(?:y|ied)\b|\bautoreply\b/i, /(?:^|\n)\s*auto:/i,
@@ -386,7 +388,8 @@ export function buildReplyQueries(sent: SentEmail[], newerThanDays = REPLY_WINDO
   const recipients = newest.map((s) => (s.email_to ?? '').trim().toLowerCase()).filter((a) => ADDRESS.test(a));
   const domains = uniq(recipients.map((a) => domainOf(a)).filter((d): d is string => !!d && !isShared(d)));
   const addresses = uniq(recipients.filter((a) => isShared(domainOf(a))));
-  const terms = uniq([...companies, ...[...domains, ...addresses, ...ATS_SENDERS].map((d) => `from:${d}`)]);
+  // Bounce mails (inbox full, address not found) come from the mail daemon, not from the company domain, so they are searched explicitly.
+  const terms = uniq([...companies, ...[...domains, ...addresses, ...ATS_SENDERS, ...BOUNCE_SENDERS].map((d) => `from:${d}`)]);
   const size = Math.max(1, Math.floor(maxTerms));
   const out: string[] = [];
   for (let i = 0; i < terms.length; i += size) out.push(`newer_than:${newerThanDays}d -in:sent -in:drafts {${terms.slice(i, i + size).join(' ')}}`);

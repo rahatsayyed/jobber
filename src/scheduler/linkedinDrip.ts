@@ -161,6 +161,7 @@ export function easyApplyRows(db: Db, env: NodeJS.ProcessEnv, limit = 20): EasyA
          FROM outreach_queue q JOIN jobs j ON j.id = q.job_id
         WHERE COALESCE(q.apply_status, '') IN ('', 'queued') AND COALESCE(q.status, '') <> 'needs_reprep' AND COALESCE(j.status, '') <> 'jd_pending'
           AND COALESCE(q.apply_note, '') <> 'easy_apply:not_easy_apply'
+          AND LENGTH(COALESCE(j.description, '')) >= 400
           AND q.resume_pdf_path IS NOT NULL AND q.resume_pdf_path <> ''
         ORDER BY q.id LIMIT 200`,
     ).all() as typeof rows;

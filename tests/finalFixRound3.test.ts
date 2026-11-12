@@ -165,6 +165,18 @@ describe('I1: reply queries cover every sent email', () => {
       expect(q).not.toContain('in:inbox');
     }
   });
+  it('every query set also searches the mail daemon, so bounce mails (inbox full, address not found) are read', () => {
+    const all = buildReplyQueries([sent(1)]).join(' ');
+    expect(all).toContain('from:mailer-daemon');
+    expect(all).toContain('from:postmaster');
+    expect(buildReplyQueries([]).join(' ')).toContain('from:mailer-daemon');
+  });
+  it('classifies a Gmail "inbox full" and an "address not found" bounce as bounce', () => {
+    const full = classifyReplyDetail('Delivery Status Notification (Failure)', "** Recipient inbox full **\nYour message couldn't be delivered to careers@x.com. Their inbox is full.", 'Mail Delivery Subsystem <mailer-daemon@googlemail.com>');
+    const gone = classifyReplyDetail('Delivery Status Notification (Failure)', "Address not found. Your message wasn't delivered to hr@x.com because the address couldn't be found.", 'Mail Delivery Subsystem <mailer-daemon@googlemail.com>');
+    expect(full.cls).toBe('bounce');
+    expect(gone.cls).toBe('bounce');
+  });
   it('a small set is a single query; no sent emails still searches the ATS senders', () => {
     expect(buildReplyQueries([sent(1)])).toHaveLength(1);
     expect(buildReplyQueries([])).toHaveLength(1);
