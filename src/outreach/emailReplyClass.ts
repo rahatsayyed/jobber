@@ -44,7 +44,7 @@ export const KIND_LABEL: Record<SafeKind, string> = {
 };
 
 export interface EmailReplyClass {
-  verdict: 'safe' | 'record_only' | 'owner';
+  verdict: 'safe' | 'record_only' | 'owner' | 'closed_for_now';
   /** Safe asks found (empty unless verdict is `safe`). */
   kinds: SafeKind[];
   /** Plain acknowledgements found (verdict `record_only`). */
@@ -195,6 +195,56 @@ function hasLinkAction(newText: string): boolean {
   return false;
 }
 
+// ---------------------------------------------------------------- closed for now (a polite "no opening right now", answered with ONE warm thank-you)
+
+/** The recruiter says there is no opening for now (on hold, no vacancy, not hiring, filled, frozen) or will keep the profile on file. */
+const CLOSING_STATE: readonly RegExp[] = [
+  /\b(?:openings?|positions?|roles?|vacanc(?:y|ies)|requirements?|requisitions?|hiring|recruitment|jobs?)\b[^.!?\n]{0,40}\b(?:on\s+hold|hold|paused|frozen|freeze|closed|filled|cancell?ed)\b/i,
+  /\b(?:on\s+hold|put\s+on\s+hold)\b/i,
+  /\bno\s+(?:open\s+|current\s+|active\s+|suitable\s+|relevant\s+)*(?:openings?|positions?|vacanc(?:y|ies)|roles?|requirements?)\b/i,
+  /\b(?:do\s+not|don't|does\s+not|doesn't|have\s+no|has\s+no)\s+(?:currently\s+|presently\s+)?(?:have\s+)?(?:any\s+|an\s+)?(?:open\s+|current\s+|suitable\s+|relevant\s+)*(?:openings?|positions?|vacanc(?:y|ies)|roles?|requirements?)\b/i,
+  /\b(?:not|aren't|are\s+not|isn't|is\s+not|am\s+not)\s+(?:currently\s+|actively\s+|presently\s+)?(?:hiring|recruiting)\b/i,
+  /\bhiring\s+(?:freeze|pause|is\s+paused)\b/i,
+  /\b(?:will|would|shall)\s+(?:keep|retain|hold|store)\s+your\s+(?:profile|resume|cv|details|application)\b/i,
+  /\bkeep\s+(?:you|your\s+(?:profile|resume|cv|details))\s+(?:in\s+(?:mind|our\s+records|our\s+database)|on\s+file|handy)\b/i,
+  /\b(?:will|would|shall)\s+(?:consider|contact|reach\s+out|get\s+back|revert|connect)\b[^.!?\n]{0,40}\b(?:in\s+(?:the\s+)?future|later|if\s+(?:it|any|something|a\s+\w+|there)|when\s+(?:it|any|something|a\s+\w+|there)|once\s+(?:it|any|something|a\s+\w+|there))\b/i,
+  /\bif\s+(?:it|any|something|a\s+(?:position|role|opening|vacancy)|an\s+opening|there\s+(?:is|are))\b[^.!?\n]{0,40}\b(?:arises?|opens?|open\s+up|available|comes?\s+up|materiali[sz]es?)\b/i,
+];
+
+/** A rejection of the person (not of the opening): never answered, the owner is told and the mail is only recorded. */
+const HARD_REJECTION: readonly RegExp[] = [
+  /\bregret\b/i, /\bnot\s+(?:be\s+)?(?:moving|proceeding|taking|going|progressing)\s+(?:ahead|forward|further)\b/i,
+  /\bnot\s+(?:been\s+)?(?:selected|shortlisted|chosen)\b/i, /\bnot\s+(?:a\s+)?(?:good\s+)?(?:fit|match)\b/i,
+  /\bother\s+(?:candidates?|applicants?|profiles?)\b/i, /\bunable\s+to\s+(?:proceed|move|offer|consider)\b/i, /\bwon'?t\s+be\s+moving\b/i,
+  /\bunsuccessful\b/i, /\bdecided\s+(?:not\s+)?to\b/i, /\breject\w*/i, /\bdecline\w*\b/i, /\bno\s+longer\s+(?:under\s+consideration|considering)\b/i,
+  /\b(?:does\s+not|doesn't|did\s+not|didn't)\s+(?:match|meet|fit)\b/i, /\bfound\s+(?:another|a\s+better)\b/i,
+  /\bunfortunately[^.!?\n]{0,40}\byour\s+(?:profile|application|candidature)\b/i,
+];
+
+const MAX_CLOSING_WORDS = 120;
+
+/**
+ * Is this mail a polite "no opening right now / on hold / position filled / will keep your profile" with NO question and NO ask?
+ * It tests the new text only. A rejection of the person (HARD_REJECTION) is never "closed for now". Pure.
+ */
+export function looksClosedForNow(newText: string, subject: string): boolean {
+  const text = String(newText ?? '').trim();
+  if (!text || wordCount(text) > MAX_CLOSING_WORDS) return false;
+  if (HARD_REJECTION.some((re) => re.test(`${subject}\n${text}`))) return false;
+  if (!CLOSING_STATE.some((re) => re.test(text))) return false;
+  // No question, and no ask sentence unless the sentence is itself a closing phrase or a plain filler ("thanks", "regards").
+  for (const s of sentences(text)) {
+    if (/\?/.test(s)) return false;
+    if (safeKindsOf(s).length > 0) return false;
+    if (CLOSING_STATE.some((re) => re.test(s))) continue;
+    if (!ASK_CUE.test(s)) continue;
+    const stripped = s.replace(FILLER_WORDS, ' ').replace(/\s+/g, ' ').trim();
+    if (stripped === '' || BARE_ASK.test(s.trim()) || BENIGN_ASK.test(s.trim()) || BENIGN_ASK.test(stripped)) continue;
+    return false;
+  }
+  return true;
+}
+
 /**
  * The verdict for one incoming mail. Order of rules: hard owner conditions first (bounce, automated sender, attachments, injection-like
  * text, too long, owner-only words, a link that asks for action), then record-only acknowledgements, then the safe asks (all ask sentences
@@ -208,7 +258,8 @@ export function classifyEmailReply(input: ClassifyInput): EmailReplyClass {
 
   const hard: OwnerKind[] = [];
   if (cls === 'bounce') hard.push('bounce');
-  if (cls === 'rejected') hard.push('rejection');
+  // A `rejected` class is a hard owner case, unless the mail is only a polite "no opening for now" (decided below, after every other hard rule).
+  const rejectedClass = cls === 'rejected';
   if (cls === 'offer') hard.push('offer');
   if (cls === 'interview') hard.push('interview_invite');
   if (input.automated) hard.push('automated');
@@ -220,7 +271,19 @@ export function classifyEmailReply(input: ClassifyInput): EmailReplyClass {
   const newText = unquotedText(readable);
   if (!newText.trim()) hard.push('no_text');
   if (newText.length > MAX_NEW_CHARS || newText.split('\n').length > MAX_NEW_LINES) hard.push('too_long');
+  const closing = looksClosedForNow(newText, subject);
+  if (rejectedClass && !closing) hard.push('rejection');
   if (hard.length) return owner(...hard);
+
+  // A polite "no opening right now": answered with one warm thank-you, then silence. Only when no owner-only word is left once the closing
+  // phrases are masked (an interview, time, test, document, call, offer, personal data or instruction-like text still wins).
+  if (closing) {
+    const closeMasked = maskSpans(`${subject.toLowerCase()}\n${newText.toLowerCase()}`, [...CLOSING_STATE]);
+    const left = ownerKindsOf(closeMasked).filter((k) => k !== 'rejection');
+    const link = hasLinkAction(newText);
+    if (left.length === 0 && !link) return { verdict: 'closed_for_now', kinds: [], record: [], owner: [] };
+    return owner(...left, ...(link ? (['link_action'] as OwnerKind[]) : []));
+  }
 
   if ((cls === 'noise' || cls === 'auto_ack') && !ASK_CUE.test(newText)) {
     return { verdict: 'record_only', kinds: [], record: ['application_received'], owner: [] };
@@ -273,7 +336,7 @@ export const OWNER_REASON_TEXT: Record<OwnerKind, string> = {
   references: 'asks for references',
   phone_or_call: 'asks for a phone number or a call',
   offer: 'is about an offer',
-  rejection: 'is a rejection (recorded, not answered)',
+  rejection: 'is a rejection',
   personal_data: 'asks for personal data',
   negotiation: 'is about negotiation',
   link_action: 'contains a link that asks for an action',
@@ -281,7 +344,7 @@ export const OWNER_REASON_TEXT: Record<OwnerKind, string> = {
   injection_suspect: 'contains instruction-like text',
   mixed_ask: 'has more than the plain asks the agent may answer',
   unclear_money: 'mentions pay in a way that is not clearly current or expected CTC',
-  unclear: 'is not a plain ask the agent can be sure about',
+  unclear: 'is not a plain question or request the agent can be sure about',
   too_long: 'is long',
   bounce: 'is a bounce',
   automated: 'comes from an automated sender',

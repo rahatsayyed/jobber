@@ -270,7 +270,7 @@ describe('processAutoReplies (after a reply check, before the owner notice)', ()
     expect(r.drafted).toBe(1);
     expect(w.row(safe).auto_note).toMatch(/^answered automatically: current CTC/);
     expect(w.row(safe).needs_you).toBe(0);
-    expect(w.row(owner).auto_note).toMatch(/^needs you: asks for a document or attachment/);
+    expect(w.row(owner).auto_note).toMatch(/^needs you: this mail asks for a document or attachment/);
     expect(w.row(owner).needs_you).toBe(1);
     const w2 = world();
     const ack = w2.inbound('Thanks!', { id: 'a1' });
@@ -284,7 +284,7 @@ describe('processAutoReplies (after a reply check, before the owner notice)', ()
     const r = processAutoReplies(w.db, deps(NOON_IST, ON, { status: 'unconfirmed', facts: FACTS }));
     expect(r.factsProblem).toMatch(/not confirmed/);
     expect(r.drafted).toBe(0);
-    expect(w.row(id).auto_note).toMatch(/^needs you: user-data\/reply-facts.json is not confirmed/);
+    expect(w.row(id).auto_note).toMatch(/^needs you: the agent could not answer it \(user-data\/reply-facts.json is not confirmed/);
     expect(w.row(id).needs_you).toBe(1);
   });
   it('mail the owner was already told about is never answered later', () => {
