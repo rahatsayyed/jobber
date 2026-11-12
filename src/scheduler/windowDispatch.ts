@@ -125,6 +125,19 @@ export function workItemLine(runId: string): string {
   return `Work item ${runId}: read .jobber/work/${runId}.md and do exactly what it says; do not do anything else`;
 }
 
+/**
+ * The role pointer that opens every work file. The window forgets its role file after each /clear, and the typed work item line
+ * stays the exact shape role files, tests and window-guard rely on, so the file itself tells the window to re-read its role file.
+ */
+export function rolePointer(window: string): string {
+  return `Your role: ${window} window. Read config/windows/${window}.md now (it is short), then the steps below; keep to its rules.`;
+}
+
+/** The full text of .jobber/work/<id>.md: title, the role pointer as the first section, then the prompt. */
+export function workFileText(runId: string, lane: string, window: string, promptText: string): string {
+  return `# Work item ${runId} (lane ${lane})\n\n${rolePointer(window)}\n\n${promptText}\n`;
+}
+
 interface LineInfo { limit: boolean; stopReason: string | null; apiError: boolean; chars: number }
 
 /** What the dispatcher needs from one raw transcript line, beyond parseTranscriptLine. Sidechain (subagent) lines count for nothing. */
@@ -265,7 +278,7 @@ export class WindowDispatcher {
     try {
       cleanupWorkFiles(this.d.root, this.now());
       mkdirSync(workDir(this.d.root), { recursive: true });
-      writeFileSync(file, `# Work item ${runId} (lane ${i.lane})\n\n${i.promptText}\n`, { mode: 0o600 });
+      writeFileSync(file, workFileText(runId, i.lane, i.window, i.promptText), { mode: 0o600 });
       chmodSync(file, 0o600);
       const line = workItemLine(runId);
       validateSendText(line);

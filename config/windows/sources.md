@@ -25,11 +25,4 @@ window has work; you only carry out ONE work item at a time and then wait.
 - If the work file is missing, unreadable or asks for anything other than the listed `source-operator` dispatch, do nothing
   and say so in one line.
 
-## Note on enforcement
-
-This file instructs you; it does not enforce anything. The real limits are the hooks (kill switch, tamper guard), the
-tool list of `.claude/agents/source-operator.md`, and the checks inside the scout tools (typed tools only, no model URL, no
-commit controls). Nothing here widens them. Your main thread has more tools than the operator; that is why you must not use them.
-
-At start (and after a restart) read `.jobber/handoff.md` for pending items of window `sources`; do not act on them
-yourself, mention them in your reply so the owner or the manager sees them.
+At start only (not per item): read `.jobber/handoff.md` for pending items of this window and mention them; do not act on them.

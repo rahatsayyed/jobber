@@ -3,7 +3,6 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
-import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { allDoctorChecks } from '../src/platform/checkLists.js';
 import { runChecks, type CheckOutcome, type DoctorContext } from '../src/platform/doctor.js';
@@ -15,23 +14,25 @@ import { userDataDir, userDataPath } from '../src/lib/userData.js';
 import { initTerm } from '../src/ui/term.js';
 
 export type Parsed =
-  | { cmd: 'up'; status: boolean }
+  | { cmd: 'up'; status: boolean; verbose: boolean }
   | ({ cmd: 'down' } & DownOpts)
   | { cmd: 'error'; message: string };
 
-const USAGE = 'usage: stack <up [--status] | down [--keep-bridge] [--force] [--yes]>';
+const USAGE = 'usage: stack <up [--status] [--verbose] | down [--keep-bridge] [--keep-windows] [--force] [--verbose] [--yes]>';
 
 export function parseArgs(argv: string[]): Parsed {
   const [cmd, ...rest] = argv;
   if (cmd !== 'up' && cmd !== 'down') return { cmd: 'error', message: USAGE };
-  const allowed = cmd === 'up' ? ['--status'] : ['--keep-bridge', '--force', '--yes'];
+  const allowed = cmd === 'up' ? ['--status', '--verbose'] : ['--keep-bridge', '--keep-windows', '--force', '--yes', '--verbose'];
   for (const a of rest) if (!allowed.includes(a)) return { cmd: 'error', message: `unknown argument: ${a}\n${USAGE}` };
-  if (cmd === 'up') return { cmd: 'up', status: rest.includes('--status') };
+  if (cmd === 'up') return { cmd: 'up', status: rest.includes('--status'), verbose: rest.includes('--verbose') };
   return {
     cmd: 'down',
     keepBridge: rest.includes('--keep-bridge'),
+    keepWindows: rest.includes('--keep-windows'),
     force: rest.includes('--force'),
     yes: rest.includes('--yes'),
+    verbose: rest.includes('--verbose'),
   };
 }
 
@@ -100,7 +101,7 @@ async function main(): Promise<number> {
         }
       } catch { /* the doctor check reports a missing file */ }
     }
-    const code = await runUp(base, { status: p.status });
+    const code = await runUp(base, { status: p.status, compact: !p.verbose });
     // Owner decision 2026-11-08: every `npm run up` prints a fresh dashboard sign-in URL (token mode, terminal only).
     // The token is stored only as a hash, so a new one is made each start; every old session is signed out.
     if (!p.status && code === 0) {
@@ -116,15 +117,6 @@ async function main(): Promise<number> {
   return runDown(
     {
       ...base,
-      isTTY: Boolean(process.stdin.isTTY),
-      ask: async (q) => {
-        const rl = createInterface({ input: process.stdin, output: process.stdout });
-        try {
-          return /^y(es)?$/i.test((await rl.question(q)).trim());
-        } finally {
-          rl.close();
-        }
-      },
     },
     p,
   );

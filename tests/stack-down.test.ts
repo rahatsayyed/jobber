@@ -88,7 +88,7 @@ function mk(f: Fake, over: Partial<DownDeps> = {}, env: NodeJS.ProcessEnv = {}):
 const full = (): Record<string, string[]> => ({
   Jobber: ['bridge', 'scheduler', 'web', 'hunt', 'followups', 'manager'],
 });
-const OPTS: DownOpts = { keepBridge: false, force: false, yes: true };
+const OPTS: DownOpts = { keepBridge: false, force: false, verbose: true };
 const kills = (f: Fake): string[] => f.calls.filter((c) => c[0] === 'tmux' && c[1] === 'kill-window').map((c) => c[c.length - 1]);
 
 describe('down', () => {
@@ -146,21 +146,56 @@ describe('down', () => {
     expect(d.out.filter((l) => l.endsWith('absent')).length).toBeGreaterThanOrEqual(5);
   });
 
-  it('non-TTY without --yes leaves hunt and followups', async () => {
+  it('never asks: stops every worker window without --yes or a terminal', async () => {
     const f = fake({ sessions: full(), exitOnCtrlC: true });
-    const d = mk(f);
-    await runDown(d, { ...OPTS, yes: false });
-    expect(f.sessions.get('Jobber')).toEqual(['hunt', 'followups', 'manager']);
-    expect(d.out.join('\n')).toContain('pass --yes');
+    const d = mk(f, { ask: async () => { throw new Error('must not ask'); } });
+    await runDown(d, { keepBridge: false, force: false });
+    expect(f.sessions.get('Jobber')).toEqual(['manager']);
   });
 
-  it('TTY asks once per window', async () => {
+  it('prints one summary line by default and no per-component lines', async () => {
     const f = fake({ sessions: full(), exitOnCtrlC: true });
-    const asked: string[] = [];
-    const d = mk(f, { isTTY: true, ask: async (q) => (asked.push(q), q.includes('hunt')) });
-    await runDown(d, { ...OPTS, yes: false });
-    expect(asked.length).toBe(2);
-    expect(f.sessions.get('Jobber')).toEqual(['followups', 'manager']);
+    const d = mk(f);
+    await runDown(d, { keepBridge: false, force: false });
+    expect(d.out).toEqual(['Jobber stopped: web, scheduler, followups, hunt, bridge. manager and chat left running.']);
+  });
+
+  it('--keep-windows stops only the daemons', async () => {
+    const f = fake({ sessions: full(), exitOnCtrlC: true });
+    await runDown(mk(f), { ...OPTS, keepWindows: true });
+    expect(f.sessions.get('Jobber')).toEqual(['hunt', 'followups', 'manager']);
+  });
+
+  it('a window mid-item gets Escape then the exit command, and its unfinished item lands in the handoff file', async () => {
+    const f = fake({ sessions: full() });
+    const base = f.run;
+    f.run = async (c, a, o) => {
+      // claude pane check, and the window ends when the typed exit command is submitted
+      if (c === 'tmux' && a[0] === 'list-windows') {
+        const r = await base(c, a, o);
+        return { ...r, stdout: r.stdout.replace(/\|bash/g, '|claude') };
+      }
+      if (c === 'tmux' && a[0] === 'send-keys' && a.includes('Enter') && a.includes('=Jobber:=hunt')) {
+        f.sessions.set('Jobber', (f.sessions.get('Jobber') ?? []).filter((n) => n !== 'hunt'));
+      }
+      return base(c, a, o);
+    };
+    mkdirSync(join(root, '.jobber', 'work'), { recursive: true });
+    writeFileSync(join(root, '.jobber', 'work', 'w-hunt-abc-1234.md'), 'x');
+    const { takeWindowLock } = await import('../src/platform/windowLock.js');
+    const lock = takeWindowLock(root, 'hunt', 'dispatch:hunt');
+    expect(lock).not.toBeNull();
+    const d = mk(f);
+    expect(await runDown(d, { keepBridge: false, force: true })).toBe(0);
+    lock?.release();
+    const keys = f.calls.filter((c) => c[1] === 'send-keys' && c.includes('=Jobber:=hunt'));
+    expect(keys[0][keys[0].length - 1]).toBe('Escape');
+    expect(keys.some((c) => c.includes('-l'))).toBe(true);
+    const { listHandoff } = await import('../src/platform/handoff.js');
+    const h = listHandoff(root).filter((e) => e.window === 'hunt');
+    expect(h.length).toBe(1);
+    expect(h[0].what).toContain('w-hunt-abc-1234');
+    expect(d.out.join('\n')).toContain('unfinished item is in .jobber/handoff.md');
   });
 
   it('a scheduler owned by a launchd unit is never stopped; unload hint printed', async () => {
@@ -175,7 +210,7 @@ describe('down', () => {
   it('only issues allowed tmux subcommands and leaves STOP', async () => {
     const f = fake({ sessions: full(), exitOnCtrlC: true });
     await runDown(mk(f), OPTS);
-    const allowed = new Set(['has-session', 'list-windows', 'send-keys', 'kill-window']);
+    const allowed = new Set(['has-session', 'list-windows', 'send-keys', 'kill-window', 'capture-pane']);
     for (const c of f.calls) {
       if (c[0] === 'tmux') expect(allowed.has(c[1]), c.join(' ')).toBe(true);
       else expect(['launchctl', 'systemctl']).toContain(c[0]);

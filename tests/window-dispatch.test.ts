@@ -116,6 +116,7 @@ describe('happy path', () => {
     expect(existsSync(wf)).toBe(true);
     expect(statSync(wf).mode & 0o777).toBe(0o600);
     expect(readFileSync(wf, 'utf8')).toContain('Send the email for item 1.');
+    expect(readFileSync(wf, 'utf8').split('\n')[2]).toContain('Read config/windows/mail.md now');
     const row = h.runRow(id);
     expect(row.status).toBe('ok');
     expect(row.trigger).toBe('mail_drip');
