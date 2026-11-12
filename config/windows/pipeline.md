@@ -30,11 +30,4 @@ only carry out ONE work item at a time and then wait.
 - If a tool says `halted` or `killed`, or the kill switch denies a call, stop at once and report it in the JSON line.
 - If the work file is missing, unreadable or asks for anything outside the pipeline stage, do nothing and say so in one line.
 
-## Note on enforcement
-
-This file instructs you; it does not enforce anything. The real limits are the hooks (kill switch, tamper guard, argument
-screen of the outreach tools), the tool lists of the `.claude/agents/*.md` subagents, and the checks inside the typed tools
-(evidence ceiling, vetoes, fact gate, quotas, the classifier). Nothing here widens them.
-
-At start (and after a restart) read `.jobber/handoff.md` for pending items of window `pipeline`; do not act on them
-yourself, mention them in your reply so the owner or the manager sees them.
+At start only (not per item): read `.jobber/handoff.md` for pending items of this window and mention them; do not act on them.

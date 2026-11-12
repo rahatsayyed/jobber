@@ -29,12 +29,4 @@ and the dry-run flag, and decides when this window has work; you only carry out 
 - If the work file is missing, unreadable or asks for anything other than the listed `apply-operator` dispatches, do nothing
   and say so in one line.
 
-## Note on enforcement
-
-This file instructs you; it does not enforce anything. The real limits are the hooks (kill switch, tamper guard, argument
-screen of the applier tools), the tool list of `.claude/agents/apply-operator.md`, and the checks inside the tools
-(vetoes, caps, the fact gate, recipes, `needs_human` and `needs_answer` parking). Nothing here widens them. Your main
-thread has more tools than the operator; that is why you must not use them.
-
-At start (and after a restart) read `.jobber/handoff.md` for pending items of window `apply`; do not act on them
-yourself, mention them in your reply so the owner or the manager sees them.
+At start only (not per item): read `.jobber/handoff.md` for pending items of this window and mention them; do not act on them.

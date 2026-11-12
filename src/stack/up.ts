@@ -15,6 +15,7 @@ import { nodeAtomicFs, type AtomicFs } from '../settings/atomic.js';
 import { clearForScopes } from '../settings/pendingRestart.js';
 import type { RestartScope } from '../settings/types.js';
 import { currentMode, fileFlags, shellDivergence } from './mode.js';
+import { attentionLines, formatCompact, type UpSummary } from './summary.js';
 import { cleanEnvArgv, DEFAULT_STACK_SESSION, BRIDGE_CMD, SCHEDULER_CMD, WEB_CMD, type UpPlan } from './plan.js';
 
 export { currentMode } from './mode.js';
@@ -160,8 +161,13 @@ async function startStackWindow(
   if (r.code !== 0) throw new Error(`failed to create tmux session ${session}`);
 }
 
-async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): Promise<number> {
-  const say = deps.say;
+interface ModeInfo { line: string; attention: boolean; warnings: string[] }
+
+// `compact` (the CLI default) prints only what needs the owner: one status line, the problems, the dashboard URL and
+// the MODE line when it needs attention. Routine lines stay for `--verbose` (compact false) and `npm run doctor`.
+async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean, compact: boolean, mode: ModeInfo): Promise<number> {
+  const say = compact ? (_l: string): void => {} : deps.say;
+  const problems: string[] = [];
   const session = stackSession(env);
   const rows: Array<[string, string, string]> = [];
   const warnings: string[] = [];
@@ -181,15 +187,16 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
 
   if (!status) {
     if (kill.stopped) {
-      say('kill switch is on: `npm run jobber:control -- resume` when you are sure');
+      deps.say('kill switch is on: `npm run jobber:control -- resume` when you are sure');
       return 4;
     }
     const outcomes = await deps.doctor();
     const fails = outcomes.filter((o) => o.result.status === 'fail');
     for (const o of outcomes.filter((x) => x.result.status === 'warn')) say(`warn ${o.id}: ${o.result.detail}`);
+    problems.push(...attentionLines(outcomes));
     if (fails.length > 0) {
-      say('doctor has failures, nothing was started:');
-      for (const o of fails) say(`  fail ${o.id}: ${o.result.detail}${o.result.fix ? ` (fix: ${o.result.fix})` : ''}`);
+      deps.say('doctor has failures, nothing was started:');
+      for (const o of fails) deps.say(`  fail ${o.id}: ${o.result.detail}${o.result.fix ? ` (fix: ${o.result.fix})` : ''}`);
       return 1;
     }
 
@@ -284,7 +291,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
       }
     }
   } else if (kill.stopped) {
-    say(`kill switch is ON (${kill.reason}); \`up\` would refuse`);
+    deps.say(`kill switch is ON (${kill.reason}); \`up\` would refuse`);
   }
 
   // Final table. Re-check the windows we just started: one that exited at once is not running.
@@ -335,6 +342,27 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
     say(`dashboard: ${webUrl(env)}`);
     for (const l of dashboardAuthLines(deps, env)) say(l);
   }
+  if (compact) {
+    const authLines = noDashboard ? [] : dashboardAuthLines(deps, env);
+    const bridgeDown = !noTelegram && (env.TELEGRAM_BOT_TOKEN ?? '') !== '' && !stackNames.has('bridge');
+    const summary: UpSummary = {
+      // A skipped (setup) or disabled component is the owner's choice, not a problem.
+      components: rows.map(([name, state]) => ({ name, ok: !/^not running|no answer/.test(state), state })),
+      dashboardUrl: noDashboard ? null : webUrl(env),
+      modeLine: mode.line,
+      modeNeedsAttention: mode.attention,
+      modeWarnings: mode.warnings,
+      problems: [
+        ...problems,
+        ...warnings,
+        // A missing dashboard token is not listed: `npm run up` creates a fresh sign-in URL right after this summary.
+        ...authLines.filter((l) => l.includes('invalid')),
+        ...(bridgeDown ? ['the Telegram bridge is not running. Fix: npm run up (or npm run setup -- --step telegram)'] : []),
+      ],
+    };
+    for (const l of formatCompact(summary)) deps.say(l);
+    return !status && startFailed ? 1 : 0;
+  }
   if (noTelegram) say('local-only windows: npx tsx scripts/manager.ts list');
   else say(`windows: tmux attach -t ${csess}   scheduler and web: tmux attach -t ${session}`);
   say(`ticks (run by the scheduler after a wake): auto-update ${env.AUTO_UPDATE === 'true' ? 'on' : 'off'}, backup ${env.BACKUP_ENABLED === 'true' ? 'on' : 'off'}`);
@@ -346,7 +374,7 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
   return !status && startFailed ? 1 : 0;
 }
 
-export async function runUp(deps: StackDeps, opts: { status: boolean }): Promise<number> {
+export async function runUp(deps: StackDeps, opts: { status: boolean; compact?: boolean }): Promise<number> {
   const env = mergedEnv(deps);
   const fileEnv = readFileEnv(deps);
   // The children run under `env -i` and read .env themselves: the banner shows what they will use.
@@ -358,14 +386,16 @@ export async function runUp(deps: StackDeps, opts: { status: boolean }): Promise
     deps.say(`  ${killLine}`);
     for (const w of warns) deps.say(w);
   };
-  banner();
+  const compact = opts.compact === true;
+  const mode: ModeInfo = { line: modeView.lines[0], attention: modeView.mode === 'DRY RUN' || warns.length > 0, warnings: warns };
+  if (!compact) banner();
   let code: number;
   try {
-    code = await inner(deps, env, opts.status);
+    code = await inner(deps, env, opts.status, compact, mode);
   } catch (e) {
     deps.say(`up failed: ${(e as Error).message}`);
     code = 1;
   }
-  banner();
+  if (!compact) banner();
   return code;
 }

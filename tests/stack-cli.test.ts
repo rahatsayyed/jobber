@@ -6,14 +6,16 @@ import { loopbackProbe, parseArgs } from '../scripts/stack.js';
 
 describe('stack CLI parse', () => {
   it('up and up --status', () => {
-    expect(parseArgs(['up'])).toEqual({ cmd: 'up', status: false });
-    expect(parseArgs(['up', '--status'])).toEqual({ cmd: 'up', status: true });
+    expect(parseArgs(['up'])).toEqual({ cmd: 'up', status: false, verbose: false });
+    expect(parseArgs(['up', '--status'])).toEqual({ cmd: 'up', status: true, verbose: false });
   });
 
   it('down flags', () => {
-    expect(parseArgs(['down'])).toEqual({ cmd: 'down', keepBridge: false, force: false, yes: false });
+    expect(parseArgs(['down'])).toEqual({ cmd: 'down', keepBridge: false, keepWindows: false, force: false, yes: false, verbose: false });
+    expect(parseArgs(['down', '--keep-windows'])).toMatchObject({ cmd: 'down', keepWindows: true });
+    expect(parseArgs(['up', '--verbose'])).toMatchObject({ cmd: 'up', verbose: true });
     expect(parseArgs(['down', '--keep-bridge', '--force', '--yes'])).toEqual({
-      cmd: 'down', keepBridge: true, force: true, yes: true,
+      cmd: 'down', keepBridge: true, keepWindows: false, force: true, yes: true, verbose: false,
     });
   });
 
@@ -33,7 +35,7 @@ describe('stack CLI parse', () => {
     expect(s.stop).toBe(s.down);
     const argv = [...s.up.split(' ').slice(2), '--status'];
     expect(argv).toEqual(['up', '--status']);
-    expect(parseArgs(argv)).toEqual({ cmd: 'up', status: true });
+    expect(parseArgs(argv)).toEqual({ cmd: 'up', status: true, verbose: false });
   });
 
   it('probe refuses non-loopback hosts without any request', async () => {

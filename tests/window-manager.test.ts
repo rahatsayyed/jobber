@@ -564,14 +564,14 @@ describe('up and down with two worker windows', () => {
     expect(f.wins.map((w) => w.name)).toEqual(['manager']);
   });
 
-  it('down asks for confirmation without --yes and leaves the windows when not a terminal', async () => {
+  it('down never asks: it stops the worker windows without --yes, even when not a terminal', async () => {
     writeFileSync(path.join(root, 'config', 'manager-windows.json'), JSON.stringify(workers));
     const f = fake([{ name: 'mail' }, { name: 'boards' }]);
     const out: string[] = [];
     const d = { ...stackDeps(f, out), isTTY: false, ask: async () => false };
     await runDown(d, { keepBridge: false, force: false, yes: false });
-    expect(f.wins.map((w) => w.name)).toEqual(['mail', 'boards']);
-    expect(out.join('\n')).toContain('pass --yes');
+    expect(f.wins.map((w) => w.name)).toEqual([]);
+    expect(out.join('\n')).toContain('Jobber stopped:');
   });
 });
 

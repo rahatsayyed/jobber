@@ -250,7 +250,7 @@ export function schedulerChecks(): Check[] {
               const started = (JSON.parse(ctx.fs.read(rec)) as { SEND_LIMIT_PER_RUN?: string }).SEND_LIMIT_PER_RUN;
               const now = String(mailDailyLimit(env));
               if (started !== undefined && started !== now) {
-                return warn(`the mail window started with SEND_LIMIT_PER_RUN=${started} but EMAIL_MAX_PER_DAY now gives ${now}`, 'restart the mail window: npx tsx scripts/manager.ts restart mail');
+                return warn(`the mail window is running with an old daily email limit (it started with SEND_LIMIT_PER_RUN=${started}, but EMAIL_MAX_PER_DAY in .env now gives ${now})`, 'restart it so it picks up .env: npx tsx scripts/manager.ts restart mail');
               }
             } catch {
               // unreadable record: nothing to compare
@@ -266,7 +266,7 @@ export function schedulerChecks(): Check[] {
             try {
               const diff = linkedinStartDiff(JSON.parse(ctx.fs.read(rec)) as Record<string, unknown>, env);
               if (diff.length > 0) {
-                return warn(`the linkedin window started with different values of: ${diff.join(', ')} (.env changed since)`, 'restart the linkedin window: npx tsx scripts/manager.ts restart linkedin');
+                return warn(`the linkedin window is running with old settings (it started with different values of: ${diff.join(', ')}; .env changed since)`, 'restart it so it picks up .env: npx tsx scripts/manager.ts restart linkedin');
               }
             } catch {
               // unreadable record: nothing to compare
@@ -293,7 +293,7 @@ export function schedulerChecks(): Check[] {
             // unreadable record: nothing to compare
           }
         }
-        if (diffs.length > 0) return warn(`wake windows started with different values than .env gives now: ${diffs.join('; ')}`, 'restart those windows: npx tsx scripts/manager.ts restart <window>');
+        if (diffs.length > 0) return warn(`these windows are running with old settings (they started with different values than .env gives now): ${diffs.join('; ')}`, 'restart each one so it picks up .env: npx tsx scripts/manager.ts restart <window>');
         const listed = await ctx.run('tmux', ['list-windows', '-t', '=Jobber', '-F', '#{window_name}']);
         if (listed.code === 0) {
           const running = new Set(listed.stdout.split('\n').map((l) => l.trim()).filter(Boolean));
