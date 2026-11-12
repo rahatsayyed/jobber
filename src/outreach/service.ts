@@ -336,7 +336,8 @@ export type InboundClass ='recruiter_inquiry' | 'reply' | 'rejection' | 'intervi
 
 const THREAD_RE = /^[A-Za-z0-9_:./-]{1,120}$/;
 const HASH_RE = /^[0-9a-f]{16,128}$/;
-const ESC_PLATFORMS = ['linkedin', 'naukri', 'wellfound', 'scheduler', 'apply'];
+// 'email' rows are written only by code (src/outreach/emailEscalations.ts: an email reply that needs the owner), never by an operator tool call.
+const ESC_PLATFORMS = ['linkedin', 'naukri', 'wellfound', 'scheduler', 'apply', 'email'];
 const PAUSING: InboundClass[] = ['reply', 'interview', 'rejection'];
 
 function requirePerson(db: Db, personId: number | undefined): void {

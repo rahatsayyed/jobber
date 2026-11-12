@@ -469,9 +469,14 @@ server.registerTool(
         subject: z.string().max(1000), date: z.string().max(100).nullable().optional(), body: z.string().max(200000),
       })).max(200),
       dry_run: z.boolean().optional(),
+      // Messages found with `in:sent` (read with gmail.read_email): the server decides which of them the OWNER wrote by hand in a thread we know
+      // and then stops every automated mail, follow-up, nudge and automatic reply for that job. Optional; omit it when none were found.
+      sent: z.array(z.object({
+        message_id: z.string().max(500), thread_id: z.string().max(200).nullable().optional(), date: z.string().max(100).nullable().optional(),
+      })).max(200).optional(),
     },
   },
-  async ({ messages, dry_run }) => ({ content: [{ type: 'text', text: JSON.stringify(triageReplies(db, messages, { dry_run: dry_run === true })) }] })
+  async ({ messages, dry_run, sent }) => ({ content: [{ type: 'text', text: JSON.stringify(triageReplies(db, messages, { dry_run: dry_run === true, sent })) }] })
 );
 
 server.registerTool(

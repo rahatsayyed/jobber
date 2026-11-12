@@ -26,6 +26,28 @@ It also never answers when the sender is not a verified contact, the job already
 
 An ask whose field in `reply-facts.json` is empty is never guessed: the mail comes to you.
 
+## "Closed for now": the one polite reply that needs no facts
+
+When a recruiter only says there is no opening right now ("the openings are on hold", "no vacancy at the moment", "we are not hiring right now", "the position is filled", "we will keep your profile on file", "will consider your profile if something opens up") and asks nothing, the agent sends ONE short warm thank-you (fixed text in `buildClosingText`, signed with your name from `user-data/resume.json`, subject `Re: <their subject>`). It says thanks, that you understand, and that you would be glad to stay in touch. It holds no question, no number, no claim, no link, no attachment and no promise, so it does not need `reply-facts.json`. It passes the same gates as every reply: style, fact and output gate, one reply per incoming mail, at most 3 per thread, the verified sender only, send window, quiet hours, kill switch, halts, dry run and `EMAIL_AUTO_REPLY`.
+
+Rules (in `looksClosedForNow`, `src/outreach/emailReplyClass.ts`):
+
+- It never triggers for an interview, a time or slot, an offer, a test, a document, a call, a link that asks for action, any question or ask, instruction-like text, an attachment, a bounce or an automated sender. All those stay with you ("needs you").
+- A hard rejection of the person ("we regret", "not selected", "not a good fit", "decided not to move forward", "other candidates", "unsuccessful") is NOT closed for now. It stays recorded and shown to you, and gets no reply. Decision: a thank-you to a personal rejection is not worth the risk; only "the opening is on hold or filled, your profile stays on file" gets the warm reply.
+- After it, silence for that job and company. Code (any `EMAIL_AUTO_REPLY` state, right at the reply check): the job's pending follow-ups end, queued email, connect and apply rows get status `skipped` with the reason `closed_for_now` (rows already sent, sending or submitted are never touched), and every known person of that company on LinkedIn, Naukri and Wellfound is paused (`contact_state.paused_reason = closed_for_now`), so no connect, DM or follow-up is armed. A reply from the recruiter is already on file, so `blockedJobIds` blocks follow-ups, and the one nudge never applies to such a job. The job outcome is NOT recorded: the usual proposal (`/checkreplies`) is the only way, auto-record stays off.
+
+## Telegram notice wording
+
+Every reply notice starts with the company and the sender, for example `Agent42 Labs (hello@agent42labs.com) · reply`, then the subject, the job, a one-line gist of what they said (max 200 characters, quoted), `Why:` in plain words (only when you are needed or the agent sent no answer) and one line on what the agent did or will do (`Agent: The agent will send a short thank-you in the next mail tick`) or what you must do (`You: Needs your answer: reply in Gmail yourself`).
+
+## Every mail that needs you is on the dashboard Inbox
+
+Until now an email reply that needed you was announced once on Telegram and never reached the dashboard (only the LinkedIn, Naukri and Wellfound operators wrote Inbox rows). Now each mail with `needs_you = 1` also becomes one Inbox card (platform `email`, one card per Gmail thread, group "Replies and needs you", severity CRITICAL, `escalateOwnerReplies` in `src/outreach/emailEscalations.ts`, run right after every reply check, whatever the auto reply flag says). A mail the agent answered or only recorded is not a card.
+
+## When you answer by hand in Gmail or on your phone
+
+The reply check reads `-in:sent`, so it could not see your own answers. Now `reply-watcher` also searches `in:sent newer_than:30d`, reads the messages that are not one of our recorded sends and passes them to `db.triage_replies` as `sent`. Code (`src/outreach/ownerHandled.ts`) keeps a message only when it is in a Gmail thread we sent into, its id is not one of our own cold emails, follow-ups or automatic replies, and it is dated after our last send in that thread (an undated one counts, to fail closed). It is stored in `owner_handled`. From then on that job gets no automated email, follow-up, nudge or automatic reply, its drafted and approved follow-ups and any approved automatic reply of the thread are cancelled. Known limit: an answer you wrote from Gmail before our last send in the thread is not seen, and only the last 30 days of Sent mail (50 hits per check) are searched.
+
 ## Turn it on
 
 1. Run `npm run user-data -- init` if `user-data/reply-facts.json` does not exist yet (it copies the template and never overwrites).

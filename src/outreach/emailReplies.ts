@@ -14,6 +14,8 @@ import { checkStyle, type StyleConfig } from '../safety/styleGate.js';
 import { clean } from '../platform/tgHtml.js';
 import { FACT_FIELD, KIND_LABEL, OWNER_REASON_TEXT, SAFE_KINDS, type EmailReplyClass, type SafeKind } from './emailReplyClass.js';
 import { emailAutoReplyOn } from './emailReplyFlags.js';
+import { closeJobOutreach } from './closedForNow.js';
+import { isOwnerHandledJob, isOwnerHandledThread } from './ownerHandled.js';
 import { replyFactsProblem, replyGateConfig, type FactField, type ReplyFacts, type ReplyFactsState } from './replyFacts.js';
 import type { EmailReplyStatus } from './emailRepliesSchema.js';
 
@@ -33,7 +35,7 @@ export function parseAutoClass(raw: string | null | undefined): AutoClass | null
   if (!raw) return null;
   try {
     const v = JSON.parse(raw) as Partial<AutoClass>;
-    if (!v || (v.verdict !== 'safe' && v.verdict !== 'record_only' && v.verdict !== 'owner')) return null;
+    if (!v || (v.verdict !== 'safe' && v.verdict !== 'record_only' && v.verdict !== 'owner' && v.verdict !== 'closed_for_now')) return null;
     return {
       verdict: v.verdict,
       kinds: Array.isArray(v.kinds) ? v.kinds.filter((k): k is SafeKind => (SAFE_KINDS as readonly string[]).includes(k as string)) : [],
@@ -61,6 +63,18 @@ const LINE: Record<SafeKind, (v: string) => string> = {
 };
 
 const trimDot = (v: string): string => v.replace(/[.\s]+$/g, '');
+
+/** Stored in email_replies.kind for the polite "no opening right now" thank-you. */
+export const CLOSING_KIND = 'closed_for_now';
+
+/**
+ * The ONE thank-you for a recruiter who says there is no opening for now. Fixed text: no question, no claim, no number, no link, no attachment,
+ * no promise of a call or a date. It states no fact about the owner, so it needs no reply-facts.json. Signed with the owner name when known.
+ */
+export function buildClosingText(ownerName: string | null): string {
+  const name = ownerName ? clean(ownerName, 60) : '';
+  return `Hi,\n\nThank you for letting me know, I understand. I would be glad to stay in touch, and I would be happy to hear from you if something opens up in the future.\n\nRegards${name ? `,\n${name}` : ''}`;
+}
 
 /** The reply text for these asks, or the fact fields that are empty. Short, polite, first person; Hinglish asks are answered in English. */
 export function buildReplyText(kinds: readonly SafeKind[], facts: ReplyFacts, ownerName: string | null): { ok: true; text: string } | { ok: false; missing: FactField[] } {
@@ -101,7 +115,8 @@ export function autoReplyBlock(db: Db, pm: Pick<PmRow, 'rowid' | 'message_id' | 
   if (!isVerifiedAddress(db, addr)) return 'sender is not a verified contact';
   const out = db.prepare('SELECT outcome FROM job_outcomes WHERE job_id = ? ORDER BY id DESC LIMIT 1').get(pm.job_id) as { outcome: string } | undefined;
   if (out && !QUIET_OUTCOMES.has(out.outcome)) return `job outcome is ${out.outcome}`;
-  const bad = db.prepare("SELECT 1 FROM processed_messages WHERE lower(from_addr) = ? AND (classification IN ('rejected', 'bounce') OR action = 'bounced') LIMIT 1").get(addr);
+  if (isOwnerHandledThread(db, pm.thread_id) || isOwnerHandledJob(db, pm.job_id)) return 'the owner already answered this by hand';
+  const bad = db.prepare("SELECT 1 FROM processed_messages WHERE lower(from_addr) = ? AND message_id <> ? AND (classification IN ('rejected', 'bounce') OR action = 'bounced') LIMIT 1").get(addr, pm.message_id);
   if (bad) return 'this sender rejected or bounced before';
   const esc = db.prepare('SELECT 1 FROM processed_messages WHERE thread_id = ? AND message_id <> ? AND needs_you = 1 LIMIT 1').get(pm.thread_id, pm.message_id);
   if (esc) return 'the thread is already with the owner';
@@ -138,7 +153,7 @@ export interface DraftDeps {
   ownerName?: string | null;
 }
 
-export type DraftResult = { ok: true; id: number; kinds: SafeKind[] } | { ok: false; code: string; reason: string };
+export type DraftResult = { ok: true; id: number; kinds: SafeKind[]; closing?: boolean } | { ok: false; code: string; reason: string };
 const refuse = (code: string, reason: string): DraftResult => ({ ok: false, code, reason });
 
 function ownerNameFromResume(): string | null {
@@ -154,19 +169,26 @@ function ownerNameFromResume(): string | null {
 export function draftEmailReply(db: Db, messageId: string, d: DraftDeps): DraftResult {
   try {
     if (!emailAutoReplyOn(d.env)) return refuse('flag_off', 'EMAIL_AUTO_REPLY is not true');
-    const problem = replyFactsProblem(d.facts);
-    if (problem || (d.facts.status !== 'ready')) return refuse('facts_not_ready', problem ?? 'reply facts are not ready');
     const pm = db.prepare(`SELECT ${PM_COLS} FROM processed_messages WHERE message_id = ?`).get(messageId) as PmRow | undefined;
     if (!pm) return refuse('unknown_message', 'no such processed message');
     const ac = parseAutoClass(pm.auto_class);
-    if (!ac || ac.verdict !== 'safe' || !ac.eligible || ac.kinds.length === 0) return refuse('not_safe', 'the classifier did not mark this mail as safe to answer');
+    const closing = ac?.verdict === 'closed_for_now';
+    // A "closed for now" thank-you states no fact about the owner, so it does not need a confirmed reply-facts.json. Every other reply does.
+    if (!closing) {
+      const problem = replyFactsProblem(d.facts);
+      if (problem || (d.facts.status !== 'ready')) return refuse('facts_not_ready', problem ?? 'reply facts are not ready');
+    }
+    const okVerdict = !!ac && ac.eligible && (closing || (ac.verdict === 'safe' && ac.kinds.length > 0));
+    if (!ac || !okVerdict) return refuse('not_safe', 'the classifier did not mark this mail as safe to answer');
     const block = autoReplyBlock(db, pm);
     if (block) return refuse('blocked', block);
-    const text = buildReplyText(ac.kinds, d.facts.facts, d.ownerName === undefined ? ownerNameFromResume() : d.ownerName);
+    const ownerName = d.ownerName === undefined ? ownerNameFromResume() : d.ownerName;
+    const factsForGate: ReplyFacts = d.facts.status === 'ready' || d.facts.status === 'unconfirmed' ? d.facts.facts : {};
+    const text = closing ? { ok: true as const, text: buildClosingText(ownerName) } : buildReplyText(ac.kinds, factsForGate, ownerName);
     if (!text.ok) return refuse('fact_missing', `reply-facts.json has no value for: ${text.missing.join(', ') || 'any ask'}`);
     const style = checkStyle(text.text, 'reply', d.styleCfg);
     if (!style.ok) return refuse('style_gate', `style rules failed: ${[...new Set(style.hits.map((h) => h.rule))].join(', ')}`);
-    const fact = (d.factCheck ?? makeReplyFactCheck(d.facts.facts))(text.text);
+    const fact = (d.factCheck ?? makeReplyFactCheck(closing ? {} : factsForGate))(text.text);
     if (fact.verdict === 'block') return refuse('fact_gate_block', 'fact gate blocked the text');
     const body = fact.normalized_text;
     const subject = replySubject(pm.subject);
@@ -181,10 +203,10 @@ export function draftEmailReply(db: Db, messageId: string, d: DraftDeps): DraftR
       const r = db.prepare(
         `INSERT INTO email_replies (message_id, thread_id, job_id, to_addr, subject, body, kind, status, created_at, approved_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)`,
-      ).run(pm.message_id, pm.thread_id, pm.job_id, addr, subject, body, ac.kinds.join(','), at, at);
+      ).run(pm.message_id, pm.thread_id, pm.job_id, addr, subject, body, closing ? CLOSING_KIND : ac.kinds.join(','), at, at);
       // The ask is answered by us: it no longer "needs you" (the notice says it was answered automatically).
       db.prepare('UPDATE processed_messages SET needs_you = 0 WHERE message_id = ?').run(pm.message_id);
-      return { ok: true, id: Number(r.lastInsertRowid), kinds: ac.kinds };
+      return { ok: true, id: Number(r.lastInsertRowid), kinds: ac.kinds, closing };
     } catch (e) {
       if (/UNIQUE/i.test(e instanceof Error ? e.message : '')) return refuse('already_replied', 'this message already has a reply row');
       throw e;
@@ -221,9 +243,23 @@ export function processAutoReplies(db: Db, d: DraftDeps): ProcessResult {
     if (ac.verdict === 'record_only') {
       note.run('no answer needed (acknowledgement)', 0, pm.message_id);
       res.record++;
+    } else if (ac.verdict === 'closed_for_now') {
+      // A polite "no opening right now": one warm thank-you, no reply-facts needed. If it cannot be sent the owner is NOT asked to act (the mail
+      // asks for nothing); the notice only says no reply was sent and why.
+      if (!ac.eligible) {
+        note.run('no reply sent: the mail is not safely matched to one of our emails', 0, pm.message_id);
+      } else {
+        const r = draftEmailReply(db, pm.message_id, d);
+        if (r.ok) {
+          note.run('answered automatically: a short thank-you, no more mail after it (queued, the mail drip sends it in the next tick)', 0, pm.message_id);
+          res.drafted++;
+        } else {
+          note.run(`no reply sent: ${r.reason}`, 0, pm.message_id);
+        }
+      }
     } else if (ac.verdict === 'safe' && ac.eligible) {
       if (res.factsProblem) {
-        note.run(`needs you: ${res.factsProblem}`, 1, pm.message_id);
+        note.run(`needs you: the agent could not answer it (${res.factsProblem})`, 1, pm.message_id);
         res.owner++;
         continue;
       }
@@ -232,16 +268,16 @@ export function processAutoReplies(db: Db, d: DraftDeps): ProcessResult {
         note.run(`answered automatically: ${kindsLabel(r.kinds)} (queued, the mail drip sends it)`, 0, pm.message_id);
         res.drafted++;
       } else {
-        note.run(`needs you: no automatic reply (${r.reason})`, 1, pm.message_id);
+        note.run(`needs you: the agent could not answer it (${r.reason})`, 1, pm.message_id);
         res.owner++;
       }
     } else if (ac.verdict === 'safe') {
-      note.run('needs you: a plain ask, but this mail is not safely matched to one of our emails', 1, pm.message_id);
+      note.run('needs you: it is a plain ask, but the mail is not safely matched to one of our emails', 1, pm.message_id);
       res.owner++;
     } else {
-      const why = ac.owner.map((k) => OWNER_REASON_TEXT[k]).join('; ') || 'not a plain ask';
+      const why = ac.owner.map((k) => OWNER_REASON_TEXT[k]).join(' and ') || 'is not a plain question or request the agent can be sure about';
       const rejection = ac.owner.includes('rejection') || ac.owner.includes('bounce');
-      note.run(`${rejection ? 'recorded, not answered' : 'needs you'}: ${why}`, rejection ? pm.needs_you : humanAsk ? 1 : pm.needs_you, pm.message_id);
+      note.run(`${rejection ? 'recorded, not answered' : 'needs you'}: this mail ${why}`, rejection ? pm.needs_you : humanAsk ? 1 : pm.needs_you, pm.message_id);
       if (!rejection && humanAsk) res.owner++;
     }
   }

@@ -3,6 +3,8 @@ import { listSentEmails, recordOutcome, type Outcome } from './db.js';
 import { clean } from './platform/tgHtml.js';
 import { ownerOnlyCodes, unquotedText } from './outreach/ownerOnly.js';
 import { classifyEmailReply } from './outreach/emailReplyClass.js';
+import { closeJobOutreach } from './outreach/closedForNow.js';
+import { recordOwnerSent, type OwnerSentResult, type SentMessage } from './outreach/ownerHandled.js';
 import { classifyReplyDetail, decideReply, emailAddress, isAutomatedSender, loadRepliesConfig, matchReply, type IncomingMessage, type RepliesConfig } from './replies.js';
 
 export interface TriageResult {
@@ -16,6 +18,8 @@ export interface TriageResult {
   matched_ignored: Array<{ message_id: string; job_id: string; from: string; subject: string; class: string }>;
   ignored: number;
   already_processed: number;
+  /** Owner-written Sent mail found in known threads (the owner answered by hand, see src/outreach/ownerHandled.ts). Absent when no Sent mail was passed. */
+  owner_sent?: OwnerSentResult;
 }
 
 /** Reply date -> 'YYYY-MM-DD HH:MM:SS' (UTC), or null when the header is missing or unparseable. */
@@ -33,7 +37,7 @@ export function raisesOutcome(latest: Outcome | null, proposed: Outcome): boolea
 
 const clampStr = (v: unknown, n: number): string => String(v ?? '').slice(0, n);
 
-export function triageReplies(db: BetterSqlite3.Database, messages: IncomingMessage[], opts: { dry_run?: boolean; config?: RepliesConfig } = {}): TriageResult {
+export function triageReplies(db: BetterSqlite3.Database, messages: IncomingMessage[], opts: { dry_run?: boolean; config?: RepliesConfig; sent?: SentMessage[] } = {}): TriageResult {
   const dry = opts.dry_run === true;
   const config = opts.config ?? loadRepliesConfig();
   const out: TriageResult = { dry_run: dry, auto_recorded: [], proposals: [], bounced: [], ambiguous: [], unmatched: [], matched_ignored: [], ignored: 0, already_processed: 0 };
@@ -76,11 +80,15 @@ export function triageReplies(db: BetterSqlite3.Database, messages: IncomingMess
       // Deterministic verdict for the email auto reply path (src/outreach/emailReplyClass.ts): stored always, acted on only when EMAIL_AUTO_REPLY=true.
       const automated = isAutomatedSender(m.from);
       const autoEligible = !!match.job_id && match.confidence === 'high' && (match.via === 'thread' || match.via === 'sender') && !automated && d.action !== 'report';
-      const autoClass = JSON.stringify({ ...classifyEmailReply({ subject: m.subject, body: m.body, cls, automated }), eligible: autoEligible });
+      const autoVerdict = classifyEmailReply({ subject: m.subject, body: m.body, cls, automated });
+      const autoClass = JSON.stringify({ ...autoVerdict, eligible: autoEligible });
+      // The recruiter says there is no opening for now: from this moment nothing else is sent for that job and company (any flag state).
+      const closedNow = autoVerdict.verdict === 'closed_for_now' && autoEligible && !!match.job_id;
       const record = (action: string, outcome: Outcome | null) => {
         if (dry) return;
         ins.run(m.message_id, match.job_id, cls, action, outcome, addr, subject, rd, candidates);
         db.prepare('UPDATE processed_messages SET thread_id = ?, excerpt = ?, needs_you = ?, auto_class = ? WHERE message_id = ?').run(threadId, excerptText, needsYou, autoClass, m.message_id);
+        if (closedNow && match.job_id) closeJobOutreach(db, match.job_id);
       };
       if (d.action === 'auto_record' && match.job_id && d.outcome) {
         if (!dry) recordOutcome(db, match.job_id, d.outcome, `auto: ${cls} reply via ${match.via} from ${m.from}: ${subject}`);
@@ -106,6 +114,8 @@ export function triageReplies(db: BetterSqlite3.Database, messages: IncomingMess
     }
   };
   if (dry) run(); else db.transaction(run)();
+  // The owner's own Sent mail (answered by hand in Gmail or on the phone): no further automated mail for that thread's job.
+  if (opts.sent && opts.sent.length > 0) out.owner_sent = recordOwnerSent(db, opts.sent, { dry_run: dry });
   return out;
 }
 

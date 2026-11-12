@@ -23,7 +23,10 @@ import { E, b, clean, excerpt, headline, html, i as ital, join, line, lines, lin
 import { ownerOnlyCodes } from '../outreach/ownerOnly.js';
 import { join as joinPath } from 'node:path';
 import { emailAutoReplyOn } from '../outreach/emailReplyFlags.js';
-import { processAutoReplies } from '../outreach/emailReplies.js';
+import { parseAutoClass, processAutoReplies } from '../outreach/emailReplies.js';
+import { OWNER_REASON_TEXT } from '../outreach/emailReplyClass.js';
+import { escalateOwnerReplies, senderCompany } from '../outreach/emailEscalations.js';
+import { addrOf } from '../lib/verifiedAddress.js';
 import { loadReplyFacts } from '../outreach/replyFacts.js';
 import { loadStyleConfigSafe } from '../safety/styleGate.js';
 
@@ -256,6 +259,8 @@ export async function runReplyCheck(d: DriverDeps, lock: { heartbeat: () => void
     if (!clean) await onFailure(d, item, stopReason ?? (status === 'ok' ? 'no clean check was recorded (errors, truncation or no record)' : status), now);
   } catch { /* the lane never breaks on bookkeeping */ }
   await autoReplyStep(d);
+  // Every mail that needs the owner also goes to the dashboard Inbox (flag on or off), before the Telegram notice.
+  try { escalateOwnerReplies(d.db, d.now()); } catch { /* the lane never breaks on bookkeeping */ }
   await notifyNewReplies(d);
   return { runId, status, clean, reason: clean ? null : stopReason ?? status };
 }
@@ -331,6 +336,8 @@ interface ReplyRow {
   from_addr: string | null; subject: string | null; excerpt: string | null; needs_you: number; company: string | null; title: string | null;
   /** Code-built sentence of the email auto reply path ("answered automatically: ..." / "needs you: ..."); absent while the path is off. */
   auto_note?: string | null;
+  /** The stored classifier verdict (JSON), used only for the plain-words reason. */
+  auto_class?: string | null;
 }
 
 const CLASS_LABEL: Record<string, string> = {
@@ -357,18 +364,52 @@ function worthNotice(r: ReplyRow): boolean {
 const NOTICE_MAX_CHARS = 3500;
 const NOTICE_MAX_ITEMS = 8;
 
+const cap = (s: string): string => (s ? s[0].toUpperCase() + s.slice(1) : s);
+const stripDot = (s: string): string => s.replace(/[.\s]+$/g, '');
+
+/**
+ * The two plain-words lines every reply notice ends with (built from the code-made `auto_note` and the stored verdict, never from mail text):
+ * `why` (only when the owner is needed or the agent did not answer) and `next` (what the agent did or will do, or what the owner must do).
+ * No line ever starts in the middle of a phrase.
+ */
+export function replyNoticeLines(r: Pick<ReplyRow, 'needs_you' | 'auto_note' | 'auto_class' | 'classification' | 'subject' | 'excerpt'>): { why: string | null; next: string | null } {
+  const note = String(r.auto_note ?? '').trim();
+  const lower = note.toLowerCase();
+  if (lower.startsWith('answered automatically:')) {
+    const rest = note.slice('answered automatically:'.length).trim();
+    if (/thank-you/i.test(rest)) return { why: null, next: 'The agent will send a short thank-you in the next mail tick, then stay quiet for this job. Nothing for you to do.' };
+    const what = rest.replace(/\s*\(.*$/, '').trim();
+    return { why: null, next: `The agent will answer ${what ? `your ${what} question` : 'it'} in the next mail tick. Nothing for you to do.` };
+  }
+  if (lower.startsWith('no answer needed')) return { why: null, next: 'Nothing to do: it is only an acknowledgement, no answer is needed.' };
+  if (lower.startsWith('recorded, not answered:')) return { why: stripDot(cap(note.slice('recorded, not answered:'.length).trim())), next: 'The agent recorded it and sent no reply. Proposed outcomes: approve with /checkreplies.' };
+  if (lower.startsWith('no reply sent:')) return { why: stripDot(cap(note.slice('no reply sent:'.length).trim())), next: 'The agent sent no reply. Nothing for you to do unless you want to answer yourself.' };
+  if (lower.startsWith('needs you:') || r.needs_you) {
+    let why = lower.startsWith('needs you:') ? note.slice('needs you:'.length).trim() : '';
+    if (!why) {
+      const parsed = parseAutoClass(r.auto_class);
+      const ownerWhy = parsed && parsed.verdict === 'owner' && parsed.owner.length > 0 ? `this mail ${parsed.owner.map((k) => OWNER_REASON_TEXT[k]).join(' and ')}` : '';
+      const codes = ownerOnlyCodes(r.subject, r.excerpt);
+      why = ownerWhy || (codes.length ? `this mail mentions ${codes.join(', ').replace(/_/g, ' ')}` : 'this mail needs a human reading');
+    }
+    return { why: stripDot(cap(why)), next: 'Needs your answer: reply in Gmail yourself, the agent will not answer it.' };
+  }
+  return { why: null, next: note ? cap(stripDot(note)) : null };
+}
+
 function replyBlock(r: ReplyRow): Html {
   const cls = replyClassLabel(r);
   const job = join([r.company && b(clean(r.company, 60)), clean(r.title, 80)], ' · ');
-  const reasons = r.needs_you ? ownerOnlyCodes(r.subject, r.excerpt) : [];
+  const addr = addrOf(r.from_addr) ?? clean(r.from_addr, 120);
+  const { why, next } = replyNoticeLines(r);
   return lines([
-    join([r.needs_you ? E.you : '•', b(cls), clean(r.from_addr, 120)], ' '),
+    // The company and the sender always come first, so a notice is never a sentence that starts in the middle.
+    join([b(clean(senderCompany(r.company, r.from_addr), 60)), addr ? `(${addr})` : '', '·', ital(cls), r.needs_you ? E.you : ''], ' '),
     clean(r.subject, 100) ? line('Subject', ital(clean(r.subject, 100))) : '',
     r.job_id ? line('Job', job.s ? job : 'matched job') : line('Job', ital('not matched to a job')),
-    r.excerpt ? ital(`"${excerpt(r.excerpt, 200)}"`) : '',
-    r.auto_note
-      ? (r.needs_you ? join([b('needs you'), `: ${clean(r.auto_note.replace(/^needs you:\s*/i, ''), 220)}. Answer this by hand.`], '') : ital(clean(r.auto_note, 220)))
-      : r.needs_you ? join([b('needs you'), ': answer this by hand, the agent never replies to it', reasons.length ? ` (${reasons.join(', ')})` : ''], '') : '',
+    r.excerpt ? line('They said', ital(`"${excerpt(r.excerpt, 200)}"`)) : '',
+    why ? line('Why', clean(why, 240)) : '',
+    next ? line(r.needs_you ? 'You' : 'Agent', clean(next, 240)) : '',
   ]);
 }
 
@@ -412,7 +453,7 @@ export function replyNoticeTopic(rows: ReplyRow[]): 'inbox' | 'mail' {
 export async function notifyNewReplies(d: Pick<DriverDeps, 'db' | 'tg' | 'now'>): Promise<number> {
   try {
     const rows = d.db.prepare(
-      `SELECT p.message_id, p.job_id, p.classification, p.action, p.proposed_outcome, p.from_addr, p.subject, p.excerpt, p.needs_you, p.auto_note, j.company, j.title
+      `SELECT p.message_id, p.job_id, p.classification, p.action, p.proposed_outcome, p.from_addr, p.subject, p.excerpt, p.needs_you, p.auto_note, p.auto_class, j.company, j.title
        FROM processed_messages p LEFT JOIN jobs j ON j.id = p.job_id
        WHERE p.notified_at IS NULL ORDER BY p.processed_at, p.rowid LIMIT 60`,
     ).all() as ReplyRow[];

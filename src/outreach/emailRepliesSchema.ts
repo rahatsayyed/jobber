@@ -41,5 +41,21 @@ export function migrateEmailReplies(db: BetterSqlite3.Database): void {
     // owner notice shows ("answered automatically: expected CTC" / "needs you: asks for a time").
     if (!cols.has('auto_class')) db.exec('ALTER TABLE processed_messages ADD COLUMN auto_class TEXT');
     if (!cols.has('auto_note')) db.exec('ALTER TABLE processed_messages ADD COLUMN auto_note TEXT');
+    // esc_id: the dashboard Inbox escalation row made for a mail that needs the owner (set once, so a mail is escalated at most once).
+    if (!cols.has('esc_id')) db.exec('ALTER TABLE processed_messages ADD COLUMN esc_id INTEGER');
   }
+  // owner_handled: the owner answered (or wrote in) a Gmail thread by hand. One row per owner-sent message; message_id UNIQUE makes it idempotent.
+  // A job or thread with a row here gets no further automated email, follow-up, nudge or automatic reply (src/outreach/ownerHandled.ts).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS owner_handled (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id TEXT NOT NULL UNIQUE,
+      thread_id TEXT NOT NULL,
+      job_id TEXT,
+      sent_at TEXT,
+      noted_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_owner_handled_thread ON owner_handled(thread_id);
+    CREATE INDEX IF NOT EXISTS idx_owner_handled_job ON owner_handled(job_id);
+  `);
 }

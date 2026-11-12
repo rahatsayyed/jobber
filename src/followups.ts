@@ -13,6 +13,7 @@ import type { SentEmail } from './db.js';
 import { buildEmailParts, loadEmailLinks, stripMarkers } from './emailHtml.js';
 import { emailReplyNudgeDays, emailReplyNudgeOn } from './outreach/emailReplyFlags.js';
 import { composeReason, recordMissingReason, unspecifiedReason } from './failureReason.js';
+import { isOwnerHandledJob, ownerHandledJobIds } from './outreach/ownerHandled.js';
 
 const DAY = 86_400_000;
 const parseSqlTime = (s: string) => Date.parse(`${s.replace(' ', 'T')}Z`);
@@ -65,6 +66,8 @@ export function blockedJobIds(db: BetterSqlite3.Database, o: { nudgeJobs?: Reado
   const addrs = new Set<string>();
   const all = <T,>(sql: string) => db.prepare(sql).all() as T[];
   for (const r of all<{ job_id: string }>('SELECT DISTINCT job_id FROM job_outcomes')) blocked.add(r.job_id);
+  // The owner answered a thread of this job by hand in Gmail (detected from Sent mail): no further automated mail, never lifted by the nudge exception.
+  for (const j of ownerHandledJobIds(db)) blocked.add(j);
   for (const r of all<{ job_id: string }>("SELECT DISTINCT job_id FROM processed_messages WHERE job_id IS NOT NULL AND (classification NOT IN ('noise', 'auto_ack') OR coalesce(action, '') != 'ignored')")) blocked.add(r.job_id);
   // C1: ANY processed message matched to a job from a non-automated sender blocks it, whatever its class or action (a real reply filed as
   // noise/auto-ack must never leave the job a follow-up candidate). Automated senders (no-reply, ATS, job boards, mailer-daemon) keep the rules above.
@@ -92,6 +95,9 @@ export function blockedJobIds(db: BetterSqlite3.Database, o: { nudgeJobs?: Reado
   // the recruiter's only inbound mail was answered by our own automatic reply, then silence) is a candidate for ONE nudge. Callers pass the set
   // only for the nudge flow; every other caller keeps the full block list.
   for (const j of o.nudgeJobs ?? []) blocked.delete(j);
+  for (const j of ownerHandledJobIds(db)) blocked.add(j);
+  // A "closed for now" thank-you is final: the nudge exception never lifts the block of such a job.
+  for (const r of all<{ job_id: string }>("SELECT DISTINCT job_id FROM email_replies WHERE kind = 'closed_for_now' AND job_id IS NOT NULL")) blocked.add(r.job_id);
   return blocked;
 }
 
@@ -130,6 +136,9 @@ export function nudgeEligible(db: BetterSqlite3.Database, o: { mode: 'candidate'
   for (const [jobId, rep] of latest) {
     if (ambiguous.has(jobId)) continue;
     if (db.prepare('SELECT 1 FROM job_outcomes WHERE job_id = ? LIMIT 1').get(jobId)) continue;
+    if (isOwnerHandledJob(db, jobId)) continue;
+    // A "closed for now" thank-you (the recruiter said there is no opening) is final: silence, never a nudge.
+    if (db.prepare("SELECT 1 FROM email_replies WHERE job_id = ? AND kind = 'closed_for_now' LIMIT 1").get(jobId)) continue;
     const pendingNudge = db.prepare(`SELECT COUNT(*) AS n FROM followups WHERE job_id = ? AND nudge = 1 AND status IN (${NUDGE_PENDING.map(() => '?').join(',')})`).get(jobId, ...NUDGE_PENDING) as { n: number };
     const anyNudge = db.prepare('SELECT COUNT(*) AS n FROM followups WHERE job_id = ? AND nudge = 1').get(jobId) as { n: number };
     if (o.mode === 'candidate' ? anyNudge.n > 0 : pendingNudge.n === 0) continue;
@@ -145,6 +154,7 @@ export function nudgeEligible(db: BetterSqlite3.Database, o: { mode: 'candidate'
       let verdictOwner = false;
       try { verdictOwner = (JSON.parse(m.auto_class ?? 'null') as { verdict?: string } | null)?.verdict === 'owner'; } catch { /* ignore */ }
       if (verdictOwner) { ok = false; break; }
+      try { if ((JSON.parse(m.auto_class ?? 'null') as { verdict?: string } | null)?.verdict === 'closed_for_now') { ok = false; break; } } catch { /* ignore */ }
       const answered = db.prepare("SELECT 1 FROM email_replies WHERE message_id = ? AND status = 'sent'").get(m.message_id);
       if (!answered) { ok = false; break; }
     }
