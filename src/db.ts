@@ -849,7 +849,7 @@ export function setExternalApply(
 
 /** Resolver manual_review: status plus an `external:<code>` note on the job's pending or manual_review queue rows. Never touches a submitted or later row. */
 export function setExternalManualReview(db: BetterSqlite3.Database, jobId: string, code: string): number {
-  const safe = String(code).replace(/[^\w.-]/g, '').slice(0, 60) || 'unknown';
+  const safe = String(code).replace(/[^\w.:-]/g, '').slice(0, 60) || 'unknown';
   return db.prepare("UPDATE outreach_queue SET apply_status = 'manual_review', apply_note = ?, updated_at = datetime('now') WHERE job_id = ? AND COALESCE(apply_status, '') IN ('', 'manual_review')")
     .run(`external:${safe}`, jobId).changes;
 }

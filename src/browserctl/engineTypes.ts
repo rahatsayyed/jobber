@@ -12,6 +12,7 @@ import { PROJECT_ROOT } from '../layout/config.js';
 import type { BcPage } from './driver.js';
 import type { IntentStore } from './intent.js';
 import type { PlatformPolicy } from './policy.js';
+import type { OverlayRules } from './overlay.js';
 import type { RawTree } from './snapshot.js';
 
 export interface EngineDeps {
@@ -53,6 +54,8 @@ export interface EngineDeps {
    * own lexical check only.
    */
   textGate?: (text: string, mode: 'chatbot' | 'plain') => string | null;
+  /** Blocking overlay rules (tests): undefined loads config/overlay-rules.json, null means no rules (every overlay is unknown). */
+  overlayRules?: OverlayRules | null;
   /** Repo root against which an armed attachment path is validated (default: the project root). Tests pass a temp dir. */
   attachRoot?: string;
   /** LinkedIn Easy Apply seams (tests): replaces the answer book loader. */
@@ -70,6 +73,8 @@ export interface EngineResult {
   touch_id?: number;
   /** Easy Apply fill and commit steps: a few codes, counts and flags (never page text or a value), shown to the model in the result head. */
   detail?: Record<string, string | number | boolean>;
+  /** A blocking dialog the operator must read and decide on (code `blocked_by_overlay`), or a human-only one (`overlay_needs_human`). */
+  overlay?: import('./overlay.js').OverlayInfo;
   /** screenshot only: raw pixels, never classifier screened. */
   base64?: string;
   unscreened?: boolean;

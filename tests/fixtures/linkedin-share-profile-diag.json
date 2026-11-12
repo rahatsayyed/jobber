@@ -1,0 +1,25 @@
+{
+ "platform": "linkedin",
+ "at": "2026-11-02T09:26:18.664Z",
+ "code": "external_no_popup",
+ "url_path": "/jobs/view/4389741719/",
+ "url_path_before": "/jobs/view/4389741719/",
+ "url_changed": false,
+ "clicked": { "role": "button", "name": "Apply on company website" },
+ "shadow_roots": 1,
+ "iframes": 10,
+ "closed_host_candidates": 8,
+ "dialogs": [
+  { "role": "dialog", "name": "Share your profile?", "buttons": ["Dismiss", "Test User", "Continue"] }
+ ],
+ "tree_dialogs": [],
+ "tree_nodes": 158,
+ "locator_dialogs": 1,
+ "locator_dialog_buttons": [],
+ "found_by": "none",
+ "locator_path": "none",
+ "node_cap_hit": false,
+ "popups": [],
+ "apply_responses": [],
+ "near_buttons": []
+}

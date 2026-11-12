@@ -21,6 +21,7 @@ import type { BcPage } from './driver.js';
 import { killReason, refused, type EngineDeps, type EngineResult } from './engineTypes.js';
 import { EASY_APPLY_SUBMIT_RE, normName } from './guard.js';
 import type { ArmedIntent, IntentStore } from './intent.js';
+import { escalateOverlay, overlayDetail, overlayReason, readOverlay, titleSlug } from './overlay.js';
 import type { RawNode, RawTree } from './snapshot.js';
 
 /** The modal may take at most this many Next/Review/Submit steps; one more is an unexpected flow. */
@@ -32,7 +33,7 @@ export const EASY_APPLY_HOST = 'linkedin.com';
 export const PARK_CODES = [
   'more_than_8_steps', 'unknown_button', 'verification', 'premium_upsell', 'resume_control_missing', 'resume_upload_failed', 'fill_failed',
   'validation_error', 'no_modal', 'modal_ambiguous', 'consent_required', 'unsupported_field', 'already_applied_on_page', 'unexpected_page',
-  'submit_error', 'select_unsupported', 'operator_abort',
+  'submit_error', 'select_unsupported', 'operator_abort', 'overlay_needs_human',
 ] as const;
 export type ParkCode = (typeof PARK_CODES)[number];
 
@@ -283,6 +284,25 @@ export async function parkNeedsOwner(ctx: { deps: EngineDeps; page: BcPage; jobI
   return { ok: false, status: 'manual_review', code: 'needs_owner', reason: `Easy Apply stopped (${code}); the modal is closed and the owner was told. Move to the next item.`, detail: { park: code } };
 }
 
+/**
+ * Something is in the way of the Easy Apply flow (no modal, a click that threw): look for a blocking dialog the flow does not use. The OPERATOR
+ * decides what to click: `blocked` is a `blocked_by_overlay` result carrying the dialog (title, text, buttons; the engine adds fresh refs),
+ * the armed intent stays and nothing is parked. A human-only dialog (captcha, login wall, payment, ID) parks needs_owner with the dialog title.
+ * `none` means no overlay and the original failure stands.
+ */
+export async function overlayRecovery(ctx: { deps: EngineDeps; page: BcPage; jobId: string; key: string }): Promise<{ status: 'blocked' | 'park'; out: FillOutcome } | { status: 'none' }> {
+  let tree: RawTree | null = null;
+  try { tree = await ctx.page.snapshot(); } catch { tree = null; }
+  const ov = await readOverlay(ctx.page, tree, () => null, { rules: ctx.deps.overlayRules });
+  if (!ov) return { status: 'none' };
+  if (ov.human) {
+    const out = await parkNeedsOwner(ctx, 'overlay_needs_human', `${ov.human.rule} ${titleSlug(ov.title)}`);
+    escalateOverlay(ctx.deps, ov, 'Easy Apply');
+    return { status: 'park', out: { ...out, reason: `${out.reason} ${overlayReason(ov)}`.slice(0, 600) } };
+  }
+  return { status: 'blocked', out: { ok: false, code: 'blocked_by_overlay', reason: overlayReason(ov), detail: overlayDetail(ov), overlay: ov } };
+}
+
 async function parkNeedsAnswer(ctx: FillCtx, qs: { label: string; kind: QuestionKind; options: string[] }[]): Promise<FillOutcome> {
   const { deps, page, jobId, key } = ctx;
   const now = deps.now();
@@ -377,6 +397,11 @@ export async function runEasyApplyFill(deps: EngineDeps, page: BcPage, x: EasyAp
   let tree: RawTree;
   try { tree = await page.snapshot(); } catch { return refused('no_snapshot', 'could not read the page'); }
   const dlgNode = easyApplyDialog(tree);
+  if (dlgNode === 'none') {
+    // The modal is gone from the tree: a blocking dialog may have replaced it. Handle that before giving up.
+    const rec = await overlayRecovery(base);
+    if (rec.status !== 'none') return rec.out;
+  }
   if (dlgNode === 'none') return await parkNeedsOwner(base, 'no_modal');
   if (dlgNode === 'ambiguous') return await parkNeedsOwner(base, 'modal_ambiguous');
   const dlg = dlgNode.n;

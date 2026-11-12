@@ -21,6 +21,8 @@ import { parkNeedsOwner, runEasyApplyFill } from './easyApply.js';
 import { BC_KEYS, type BcKey, type BcPage } from './driver.js';
 import { killReason, refused, type EngineDeps, type EngineResult } from './engineTypes.js';
 import { ATTACH_CONTROL_RE, EASY_APPLY_CODE_ROLES, checkType, classify, classifyKey, classifyPoint, connectPlacementRefusal, guardInputOf, isConnectControlName, normName, type ActionClass, type CommitClass } from './guard.js';
+import { escalateOverlay, overlayCode, overlayDetail, overlayReason, readOverlay, type OverlayInfo } from './overlay.js';
+import { classifyLoadedPage, classifyOpenFailure } from './openFailure.js';
 import { LINKEDIN_POLICY } from './policy.js';
 import { RefStore } from './refs.js';
 import { renderTree, type LiveNode, type RawTree } from './snapshot.js';
@@ -60,6 +62,12 @@ export interface Engine {
   easyApplyFill(): Promise<EngineResult>;
   /** LinkedIn Easy Apply, no argument: the operator saw something unexpected; code closes the modal and parks the job needs_owner. */
   easyApplyAbort(): Promise<EngineResult>;
+  /**
+   * LinkedIn only: a fresh read plus the blocking dialog the flow did not expect (for example "Share your profile?"), if any: title, text and its
+   * buttons with refs of the new epoch. Code never clicks it; the operator decides (see overlay.ts). `code` is `no_overlay`, `blocked_by_overlay`
+   * or `overlay_needs_human` (a captcha, login wall, payment, ID: never clicked). Other platforms: always `no_overlay`.
+   */
+  overlayState(): Promise<EngineResult>;
   /** The tree of the latest successful read (arm tools use it; never given to the model raw). */
   lastTree(): RawTree | null;
   /** The session page, or null. */
@@ -236,6 +244,8 @@ export function createEngine(deps: EngineDeps): Engine {
     if (cls === 'linkedin_easy_apply') {
       const res = await commitEasyApply({ deps, page, live, act, redescribe });
       if (res.code !== 'no_armed_intent') refs.invalidate();
+      // A dialog in the way of the Easy Apply step: give the operator the dialog with fresh refs (the armed intent stays).
+      if (res.code === 'blocked_by_overlay') return (await overlayBlock(page)) ?? res;
       return res;
     }
     // While an Easy Apply is armed, the modal's choice fields belong to code (linkedin_easy_apply_fill): never clicked by hand, whatever the modal is named.
@@ -298,7 +308,15 @@ export function createEngine(deps: EngineDeps): Engine {
     moreOpened = false;
     deps.intents.clearInviteOpened(P.platform);
     const prior = keepRefs && tree && refs.hasSnapshot ? { saved: refs.save(), seen: seenEpoch, sig: treeSignature(tree) } : null;
-    try { await g.page.goto(url); } catch { return refused('failed', 'open failed'); }
+    try { await g.page.goto(url); } catch (e) {
+      // A precise reason from the error, the page url path and the title (never a bare "open failed").
+      let title = '';
+      try { title = await g.page.title(); } catch { title = ''; }
+      let nowUrl = '';
+      try { nowUrl = g.page.url(); } catch { nowUrl = ''; }
+      const f = classifyOpenFailure({ error: e, url: nowUrl, title });
+      return refused(f.code, f.reason);
+    }
     refs.invalidate();
     const final = g.page.url();
     if (!P.checkUrl(final).ok) {
@@ -306,7 +324,19 @@ export function createEngine(deps: EngineDeps): Engine {
       return refused('blocked_path', 'page redirected to a blocked or off-site URL');
     }
     await settleAfterOpen(g.page);
-    const r = await read(g.page);
+    let r = await read(g.page);
+    if (r.ok && P.platform === 'linkedin' && tree) {
+      // An unexpected dialog on the freshly opened page: the operator sees it now (title, text, buttons with refs), not as a mystery failure later.
+      const ov = await readOverlay(g.page, tree, (n) => refs.refOf(n), { rules: deps.overlayRules });
+      if (ov) {
+        if (ov.human) { escalateOverlay(deps, ov, 'page open'); return blockedResult(ov, r); }
+        r = { ...r, detail: { ...(r.detail ?? {}), blocked_by_overlay: true, ...overlayDetail(ov) } };
+      }
+    }
+    if (r.ok && P.platform === 'linkedin' && tree) {
+      const gone = classifyLoadedPage(tree.title, tree.nodes.slice(0, 8).map((x) => (x.role === 'text' ? x.text : x.name)).join('\n'));
+      if (gone) r = { ...r, detail: { ...(r.detail ?? {}), page: gone } };
+    }
     if (prior && r.ok && tree && treeSignature(tree) === prior.sig) {
       // Same page as the operator's last snapshot: the stamps just re-applied carry the same ordinals,
       // so the operator's refs still point at the same elements. A screenshot must be retaken.
@@ -330,9 +360,32 @@ export function createEngine(deps: EngineDeps): Engine {
     const cls = classify(guardInputOf(t.live, P.platform, pageKind(t.page), false, dk));
     const more = isTopCardMore(t.live);
     if (more) moreOpened = true;
-    const res = await dispatch('click', t.page, cls, t.live, () => t.page.clickNode(t.n), () => t.page.describe(t.n));
+    let res = await dispatch('click', t.page, cls, t.live, () => t.page.clickNode(t.n), () => t.page.describe(t.n));
+    // A free click that threw is often a dialog in the way: return `blocked_by_overlay` with the dialog and its refs instead of a bare failure.
+    if (P.platform === 'linkedin' && !res.ok && res.code === 'action_failed' && cls === 'free') res = (await overlayBlock(t.page)) ?? res;
     await afterMenuClick(t.page, t.live, more, res);
     return res;
+  }
+
+  /** A `blocked_by_overlay` (or `overlay_needs_human`) result for a dialog read at the current epoch. */
+  function blockedResult(ov: OverlayInfo, r?: EngineResult): EngineResult {
+    return {
+      ok: false, code: overlayCode(ov), reason: overlayReason(ov), detail: overlayDetail(ov), overlay: ov,
+      ...(ov.human ? { status: 'manual_review' as const } : {}),
+      ...(r?.state ? { state: r.state } : {}), ...(r?.epoch !== undefined ? { epoch: r.epoch } : {}),
+    };
+  }
+
+  /** After a step failed: a fresh read, and the blocking dialog if there is one (null: no overlay, the original failure stands). */
+  async function overlayBlock(page: BcPage): Promise<EngineResult | null> {
+    if (P.platform !== 'linkedin') return null;
+    refs.invalidate();
+    const r = await read(page);
+    if (!r.ok) return null;
+    const ov = await readOverlay(page, tree, (n) => refs.refOf(n), { rules: deps.overlayRules });
+    if (!ov) return null;
+    if (ov.human) escalateOverlay(deps, ov, 'a page step');
+    return blockedResult(ov, r);
   }
 
   /** The menu stays open across a refused click (the page did not change); any other click closes it. */
@@ -502,6 +555,7 @@ export function createEngine(deps: EngineDeps): Engine {
     await pace(g.page);
     const r = await runEasyApplyFill(deps, g.page, deps.easyApply ?? {});
     refs.invalidate();
+    if (r.code === 'blocked_by_overlay') return (await overlayBlock(g.page)) ?? r;
     if (!r.ok || r.status === 'dry_run') return r;
     const f = await finish(g.page, r.code);
     return f.ok ? { ...f, ...(r.detail ? { detail: r.detail } : {}) } : f;
@@ -523,13 +577,32 @@ export function createEngine(deps: EngineDeps): Engine {
     refs,
     easyApplyFill: () => serial(() => doEasyApplyFill()),
     easyApplyAbort: () => serial(() => doEasyApplyAbort()),
+    overlayState: () => serial(async () => {
+      const g = await gate();
+      if (!g.ok) return g.res;
+      if (P.platform !== 'linkedin') return { ok: true, code: 'no_overlay' };
+      refs.invalidate();
+      const r = await read(g.page);
+      if (!r.ok) return r;
+      const ov = await readOverlay(g.page, tree, (n) => refs.refOf(n), { rules: deps.overlayRules });
+      if (!ov) return { ...r, code: 'no_overlay' };
+      if (ov.human) escalateOverlay(deps, ov, 'an overlay read');
+      return blockedResult(ov, r);
+    }),
     attachFile: () => serial(() => doAttach()),
     lastTree: () => tree,
     page: () => deps.getPage(),
     open: (url, opts) => serial(() => doOpen(url, opts?.keepRefs === true)),
     snapshot: () => serial(async () => {
       const g = await gate();
-      return g.ok ? read(g.page) : g.res;
+      if (!g.ok) return g.res;
+      const r = await read(g.page);
+      if (!r.ok || P.platform !== 'linkedin') return r;
+      // The operator always SEES a blocking dialog: title, text and buttons with refs next to the page text.
+      const ov = await readOverlay(g.page, tree, (n) => refs.refOf(n), { rules: deps.overlayRules });
+      if (!ov) return r;
+      if (ov.human) escalateOverlay(deps, ov, 'a snapshot');
+      return { ...r, detail: { blocked_by_overlay: true, ...overlayDetail(ov) }, overlay: ov, ...(ov.human ? { code: 'overlay_needs_human' } : {}) };
     }),
     peek: () => serial(async () => {
       const g = await gate();
