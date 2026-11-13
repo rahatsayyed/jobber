@@ -21,7 +21,7 @@ export const STREAK_ALERT_AT = 3;
 /** Visible text above which a page with no cards and no empty-state wording is treated as a broken parse. */
 export const SUBSTANTIAL_TEXT_CHARS = 1500;
 
-const EMPTY_STATE =
+export const EMPTY_STATE =
   /\b(?:no (?:matching )?(?:jobs?|results?|posts?|content)(?: (?:found|match))?|we (?:could not|couldn['’]t|didn['’]t) find|did not match any|0 results|no results (?:found|for))\b/i;
 
 /** A broken parse that lasted this long with no good read in between is critical. */
@@ -39,6 +39,8 @@ export interface PageSummary {
   login_wall: boolean;
   guest_hint: string | null;
   body_chars: number;
+  /** First visible text of the page (gated by the caller), so the operator can read what the page really was. */
+  text_sample: string;
 }
 
 export function guestHint(snap: RawSnapshot): string | null {
@@ -58,18 +60,20 @@ export function pageSummary(snap: RawSnapshot, clean: (s: string, max: number) =
     login_wall: hint !== null,
     guest_hint: hint,
     body_chars: snap.bodyText.length,
+    text_sample: clean(snap.bodyText.replace(/\s+/g, ' ').trim(), 600),
   };
 }
 
 export type ZeroKind ='real_empty' | 'broken';
 
-/** Classify a search page that produced 0 cards. Evidence: explicit empty-state text first, then links, then text volume. */
-export function classifyZeroCards(snap: RawSnapshot): ZeroKind {
-  if (EMPTY_STATE.test(snap.bodyText)) return 'real_empty';
-  const ev = snap.linkEvidence;
-  if (ev && ev.jobs + ev.posts > 0) return 'broken';
-  if (snap.bodyText.length >= SUBSTANTIAL_TEXT_CHARS) return 'broken';
-  return 'real_empty';
+/**
+ * Classify a search page that produced 0 cards. REAL empty only when the page shows LinkedIn's own empty-state wording
+ * AND the query is narrow. A blank or short page without that wording, or any zero result of a broad query, is broken
+ * (never a quiet success). A logged-out or guest page is handled before this (code `logged_out`).
+ */
+export function classifyZeroCards(snap: RawSnapshot, opts: { narrow?: boolean } = {}): ZeroKind {
+  const narrow = opts.narrow ?? true;
+  return narrow && EMPTY_STATE.test(snap.bodyText) ? 'real_empty' : 'broken';
 }
 
 export interface Streak { count: number; since: string; last_at: string; search: string; diag: string | null }

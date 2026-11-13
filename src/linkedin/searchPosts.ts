@@ -86,7 +86,7 @@ export async function searchPosts(a: SearchArgs, deps: ToolDeps, opts: SearchOpt
   const def = (opts.config ?? loadDiscoveryConfig()).posts.find((p) => p.name === a?.search);
   if (!def) return { status: 'failed', code: 'unknown_search', fetched: 0, new: 0, skipped: 0, seen: 0, job_ids: [] };
   return runDiscovery({
-    tool: 'search_posts', deps, url: buildPostsSearchUrl(def), expectKind: 'search', searchName: def.name,
+    tool: 'search_posts', deps, url: buildPostsSearchUrl(def), expectKind: 'search', searchName: def.name, narrow: def.narrow === true,
     parse: (snap) => parsePostCards(snap, def.limit, def.role, deps.now()),
     afterSave: (p) => {
       for (const au of p.authors) {

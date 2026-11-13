@@ -25,6 +25,10 @@ const postDef = z.object({
   geo: z.string().max(100).default(''),
   /** Optional hiring phrases ORed together (each is quoted unless it already is); absent means the default four. */
   phrases: z.array(z.string().min(2).max(60).regex(/^[^"()]+$/)).max(8).optional(),
+  /** LinkedIn content-search date filter (`datePosted`). Absent means no date filter. */
+  date_posted: z.enum(['past-24h', 'past-week', 'past-month']).optional(),
+  /** True only for a deliberately narrow query: only then may an explicit "no results" page count as a real empty page. */
+  narrow: z.boolean().optional(),
   limit: z.number().int().min(1).max(50).default(25),
 });
 export const discoveryConfigSchema = z.object({ jobs: z.array(jobDef).default([]), posts: z.array(postDef).default([]) });
@@ -65,5 +69,6 @@ export function buildPostsSearchUrl(d: PostSearchDef): string {
   const phrases = d.phrases?.length ? d.phrases.map((x) => `"${x.trim()}"`).join(' OR ') : `hiring OR "we're hiring" OR "we are hiring" OR "join our team"`;
   const keywords = `(${phrases}) (${d.role}) ${d.geo}`.trim();
   const p = new URLSearchParams({ keywords, origin: 'GLOBAL_SEARCH_HEADER', sortBy: '"date_posted"' });
+  if (d.date_posted) p.set('datePosted', `"${d.date_posted}"`);
   return `https://www.linkedin.com/search/results/content/?${p.toString()}`;
 }
