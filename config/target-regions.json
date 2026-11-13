@@ -1,6 +1,7 @@
 {
   "home": ["India"],
   "targets": ["United Arab Emirates", "UAE", "Dubai", "Abu Dhabi", "Sharjah", "Saudi Arabia", "KSA", "Riyadh", "Jeddah", "Qatar", "Doha", "Kuwait", "Bahrain", "Oman", "Muscat", "GCC", "Middle East", "MENA", "Manama", "Kuwait City", "Ajman", "Ras Al Khaimah", "Dammam", "Al Khobar", "Salalah", "دبي", "أبوظبي", "الرياض", "الدوحة", "مسقط", "الكويت", "المنامة", "الإمارات", "السعودية", "قطر", "البحرين"],
+  "home_onsite": ["Pune", "Pimpri-Chinchwad", "Pimpri Chinchwad", "Hinjewadi", "Hinjawadi", "Kharadi", "Baner", "Magarpatta", "Viman Nagar", "Hadapsar", "Wakad", "Aundh", "Kalyani Nagar", "Hyderabad", "Secunderabad", "HITEC City", "Hi-Tech City", "Gachibowli", "Madhapur", "Kondapur", "Bangalore", "Bengaluru", "Whitefield", "Electronic City", "Koramangala", "HSR Layout", "HSR", "Indiranagar", "Marathahalli", "Bellandur", "Sarjapur", "Hebbal", "JP Nagar", "BTM Layout"],
   "remote": true,
   "remote_anywhere": true
 }

@@ -119,7 +119,10 @@ export function targetRegionsLine(root: string): string {
     const list = (v: unknown): string => (Array.isArray(v) ? v.filter((x) => typeof x === 'string').slice(0, 60).join(', ') : '');
     const home = list(c.home);
     if (!home) throw new Error('no home');
-    return `Target regions: home=${home}; targets=${list(c.targets) || 'none'}; remote OK=${c.remote === true}; remote anywhere=${c.remote_anywhere === true}`;
+    // Owner rule: in India on-site and hybrid only in these cities, every other Indian city is remote only (src/onsiteCities.ts).
+    const onsiteList = list(c.home_onsite);
+    const onsite = onsiteList ? `; on-site or hybrid in India ONLY in=${onsiteList}; any other Indian city = remote only (on-site or hybrid there is location FAIL, unclear work mode is FLAG); Gulf targets: on-site or remote both fine` : '';
+    return `Target regions: home=${home}; targets=${list(c.targets) || 'none'}; remote OK=${c.remote === true}; remote anywhere=${c.remote_anywhere === true}${onsite}`;
   } catch {
     return 'Target regions: config/target-regions.json missing or invalid; home=unknown; targets=none; remote OK=true; remote anywhere=false';
   }
