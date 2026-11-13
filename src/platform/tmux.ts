@@ -187,6 +187,33 @@ export async function windowExists(run: Run, session: string, window: string): P
   return (await listWindows(run, session)).some((w) => w.name === window);
 }
 
+const STATE_RE = /[^A-Za-z0-9 _:.,()+-]/g;
+
+/**
+ * Makes the state of a worker window visible in tmux: the window user option `@jobber_state` (claude rewrites the pane title itself,
+ * so a user option is used instead) is shown in the pane border (`<window>: <state>`) and in the status bar entry of the window.
+ * `init` also sets the two formats once. Best effort by design: any tmux failure is swallowed, an item never fails because of it.
+ */
+export async function setWindowState(run: Run, session: string, window: string, state: string, init = true): Promise<boolean> {
+  try {
+    assertName(session);
+    assertName(window);
+    const target = `=${session}:=${window}`;
+    const text = state.replace(STATE_RE, '').trim().slice(0, 60) || '-';
+    const set = async (args: string[]): Promise<boolean> => (await run('tmux', args)).code === 0;
+    let ok = await set(['set-option', '-w', '-t', target, '@jobber_state', text]);
+    if (init) {
+      ok = (await set(['set-option', '-w', '-t', target, 'pane-border-status', 'top'])) && ok;
+      ok = (await set(['set-option', '-w', '-t', target, 'pane-border-format', ' #{window_name}: #{@jobber_state} '])) && ok;
+      ok = (await set(['set-option', '-w', '-t', target, 'window-status-format', '#I:#W [#{@jobber_state}]'])) && ok;
+      ok = (await set(['set-option', '-w', '-t', target, 'window-status-current-format', '#I:#W [#{@jobber_state}]*'])) && ok;
+    }
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Best-effort: a missing window is a no-op. */
 export async function killWindow(run: Run, session: string, window: string): Promise<void> {
   assertName(session);
