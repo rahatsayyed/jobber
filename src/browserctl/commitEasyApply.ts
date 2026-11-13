@@ -36,7 +36,7 @@ export interface EasyApplyCommitInput {
   redescribe: () => Promise<LiveNode | null>;
 }
 
-const DEFAULT_MAX_APPLIES_PER_DAY = 5;
+const DEFAULT_MAX_APPLIES_PER_DAY = 30;
 const POLL_MS = 400;
 const OPEN_WAIT_MS = 10_000;
 

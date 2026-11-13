@@ -41,7 +41,7 @@ export interface NaukriCommitInput {
   redescribe: () => Promise<LiveNode | null>;
 }
 
-export const DEFAULT_MAX_APPLIES_PER_DAY = 5;
+export const DEFAULT_MAX_APPLIES_PER_DAY = 30;
 
 // An Apply click whose result could not be confirmed: write a manual_review applications row (once) so a second arm is refused.
 // Returns an empty object so it can be spread into a return value.

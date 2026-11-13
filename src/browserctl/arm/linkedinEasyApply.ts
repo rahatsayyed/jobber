@@ -22,7 +22,7 @@ import type { ArmDeps, ArmResult } from './linkedin.js';
 import { linkedinEasyEnabled } from '../../apply/easyFlag.js';
 
 export const JOB_ID_RE = /^[\w.:@-]{1,200}$/;
-const DEFAULT_MAX_APPLIES_PER_DAY = 5;
+const DEFAULT_MAX_APPLIES_PER_DAY = 30;
 /** apply_note a row carries once its page showed no Easy Apply control: the drip picker skips it and the external-apply route owns it. */
 export const NOT_EASY_APPLY_NOTE = 'easy_apply:not_easy_apply';
 

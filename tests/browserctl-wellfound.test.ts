@@ -310,7 +310,7 @@ describe('armWellfoundMessage: arm refusals', () => {
 
   it('the ceiling follows WELLFOUND_MAX_MESSAGES_PER_DAY', () => {
     expect(loadOutreachConfig({ WELLFOUND_MAX_MESSAGES_PER_DAY: '3' } as NodeJS.ProcessEnv).wellfoundMaxMessagesPerDay).toBe(3);
-    expect(loadOutreachConfig({ WELLFOUND_MAX_APPLIES_PER_DAY: 'x' } as NodeJS.ProcessEnv).wellfoundMaxAppliesPerDay).toBe(20);
+    expect(loadOutreachConfig({ WELLFOUND_MAX_APPLIES_PER_DAY: 'x' } as NodeJS.ProcessEnv).wellfoundMaxAppliesPerDay).toBe(30);
     expect(loadOutreachConfig({}).wellfoundMaxDiscoverPerDay).toBe(12);
   });
 
@@ -668,7 +668,7 @@ describe('wellfound_apply commit path', () => {
     const w = mk({ html: jobHtml(), url: JOB_URL, env: LIVE_ENV });
     await w.armApply();
     const apply = refOf(await w.snap(), 'button', 'Apply');
-    for (let i = 0; i < 20; i++) recordEvent(w.db, 'wellfound_apply', NOW);
+    for (let i = 0; i < 30; i++) recordEvent(w.db, 'wellfound_apply', NOW);
     expect(await w.engine.click(apply)).toMatchObject({ ok: false, status: 'rate_limited' });
     expect(clicks(w)).toEqual([]);
     expect(w.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply_wellfound'").get()).toMatchObject({ count: 0 });

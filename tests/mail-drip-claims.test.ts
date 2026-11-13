@@ -56,10 +56,10 @@ describe('mail drip claims and picker', () => {
 });
 
 describe('MAX_APPLIES_PER_DAY parser', () => {
-  it('blank or invalid is the default 5, a number is kept, 0 stays 0', () => {
-    expect(parseMaxAppliesPerDay({ MAX_APPLIES_PER_DAY: '' })).toBe(5);
-    expect(parseMaxAppliesPerDay({})).toBe(5);
-    expect(parseMaxAppliesPerDay({ MAX_APPLIES_PER_DAY: 'x' })).toBe(5);
+  it('blank or invalid is the default 100, a number is kept, 0 stays 0', () => {
+    expect(parseMaxAppliesPerDay({ MAX_APPLIES_PER_DAY: '' })).toBe(100);
+    expect(parseMaxAppliesPerDay({})).toBe(100);
+    expect(parseMaxAppliesPerDay({ MAX_APPLIES_PER_DAY: 'x' })).toBe(100);
     expect(parseMaxAppliesPerDay({ MAX_APPLIES_PER_DAY: '3' })).toBe(3);
     expect(parseMaxAppliesPerDay({ MAX_APPLIES_PER_DAY: '0' })).toBe(0);
   });

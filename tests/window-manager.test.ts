@@ -558,7 +558,7 @@ describe('up and down with two worker windows', () => {
     const f = fake([{ name: 'manager' }, { name: 'mail' }, { name: 'boards' }]);
     const out: string[] = [];
     const d = { ...stackDeps(f, out), isTTY: false, ask: async () => false };
-    expect(await runDown(d, { keepBridge: false, force: false, yes: true })).toBe(0);
+    expect(await runDown(d, { keepBridge: false, force: false, yes: true, keepProtected: true })).toBe(0);
     const kills = f.calls.filter((c) => c[1] === 'kill-window').map((c) => c[c.length - 1]);
     expect(kills).toEqual(['=Jobber:=boards', '=Jobber:=mail']);
     expect(f.wins.map((w) => w.name)).toEqual(['manager']);

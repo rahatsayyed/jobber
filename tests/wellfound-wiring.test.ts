@@ -304,11 +304,11 @@ describe('doctor: wellfound session check', () => {
 
 // ---------------------------------------------------------------------------------------------
 describe('ceilings and env catalog', () => {
-  it('the three wellfound ceilings default to 20, 20 and 12 per day and appear in the limits catalog', () => {
+  it('the three wellfound ceilings default to 30, 20 and 12 per day and appear in the limits catalog', () => {
     const cfg = loadOutreachConfig({});
-    expect([cfg.wellfoundMaxAppliesPerDay, cfg.wellfoundMaxMessagesPerDay, cfg.wellfoundMaxDiscoverPerDay]).toEqual([20, 20, 12]);
+    expect([cfg.wellfoundMaxAppliesPerDay, cfg.wellfoundMaxMessagesPerDay, cfg.wellfoundMaxDiscoverPerDay]).toEqual([30, 20, 12]);
     const c = ceilings(openDb(':memory:'), cfg, new Date());
-    expect(c.wellfound_apply).toEqual({ used: 0, limit: 20, ok: true });
+    expect(c.wellfound_apply).toEqual({ used: 0, limit: 30, ok: true });
     expect(c.wellfound_message).toEqual({ used: 0, limit: 20, ok: true });
     expect(c.wellfound_discover).toEqual({ used: 0, limit: 12, ok: true });
     for (const k of ['WELLFOUND_MAX_APPLIES_PER_DAY', 'WELLFOUND_MAX_MESSAGES_PER_DAY', 'WELLFOUND_MAX_DISCOVER_PER_DAY']) {
