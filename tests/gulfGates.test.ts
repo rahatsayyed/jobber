@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { DEFAULT_TARGET_REGIONS, GULF_TERMS, loadTargetRegionsStatus, mentionedTargetRegion } from '../src/targetRegions.js';
+import { DEFAULT_HOME_ONSITE, DEFAULT_TARGET_REGIONS, GULF_TERMS, loadTargetRegionsStatus, mentionedTargetRegion } from '../src/targetRegions.js';
 import { applyVetoes, vetoResults } from '../src/vetoes.js';
 import { languageGate, type LanguageConfig } from '../src/languageGate.js';
 import { hardStops, type Requirement } from '../src/score.js';
@@ -16,7 +16,7 @@ const regions = DEFAULT_TARGET_REGIONS;
 describe('target regions config', () => {
   it('the shipped config/target-regions.json equals the built-in defaults, and every Gulf term is accepted by the portals.json location filter', () => {
     const file = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'config', 'target-regions.json');
-    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ home: ['India'], targets: GULF_TERMS, remote: true, remote_anywhere: true });
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ home: ['India'], targets: GULF_TERMS, home_onsite: DEFAULT_HOME_ONSITE, remote: true, remote_anywhere: true });
     // the shipped file differs from the built-in defaults only in remote_anywhere (shipped true, default false)
     expect(loadTargetRegionsStatus(file)).toEqual({ config: { ...DEFAULT_TARGET_REGIONS, remote_anywhere: true } });
     const { config } = loadPortals();
@@ -30,7 +30,7 @@ describe('target regions config', () => {
     expect(bad('{"home":[],"targets":[]}').invalid).toMatch(/home/);
     expect(bad('{"home":["India"],"targets":"UAE"}').invalid).toMatch(/targets/);
     expect(bad('{"home":["India"],"targets":[],"remote":"yes"}').invalid).toMatch(/remote/);
-    expect(bad('{"home":["India"],"targets":["Qatar"]}').config).toEqual({ home: ['India'], targets: ['Qatar'], remote: true, remote_anywhere: false });
+    expect(bad('{"home":["India"],"targets":["Qatar"]}').config).toEqual({ home: ['India'], targets: ['Qatar'], remote: true, remote_anywhere: false, home_onsite: DEFAULT_HOME_ONSITE });
   });
   it('mentionedTargetRegion matches whole words only', () => {
     for (const [text, hit] of [['Muscat, Oman', 'Oman'], ['based in DOHA', 'Doha'], ['Dubai Internet City', 'Dubai'], ['across the GCC', 'GCC'], ['KSA-based', 'KSA']] as const) {

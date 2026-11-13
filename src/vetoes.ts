@@ -8,6 +8,7 @@ import { mentionedTargetRegion, specificTargets, targetRegionEvidence, type Targ
 import { hasRequirementSignal, POST_EMPTY_REASON, POST_SOURCE, POST_THIN_FLAG, POST_TITLE_FALLBACK_PREFIX } from './lib/postSignals.js';
 import { NO_COMPANY_FLAG, NO_COMPANY_REASON, WELLFOUND_SOURCE } from './wellfound/company.js';
 import { checkRole, type RoleGateConfig } from './roleGate.js';
+import { onsiteCityVerdict } from './onsiteCities.js';
 import { findRestriction, isRemotePosting, REGION_WORD } from './remotePolicy.js';
 
 // Why a model location FAIL may be shown as a FLAG, or null (FAIL stays). Never when a restriction marker (src/remotePolicy.ts) is in the
@@ -67,12 +68,17 @@ export function applyVetoes(
   const soft: string[] = [];
   // Backstop for the model's location verdict: a FAIL on a posting that names a target region (Gulf by default) is shown as a FLAG, never passed silently.
   let locationVerdict = m.location_verdict;
+  // Owner rule (src/onsiteCities.ts): on-site or hybrid India work outside home_onsite (Pune, Hyderabad, Bangalore) fails whatever the model said;
+  // an unclear work mode in such a city is a visible FLAG. Gulf and remote roles are untouched.
+  const city = extras?.targetRegions ? onsiteCityVerdict(job, extras.targetRegions) : null;
+  if (city?.verdict === 'FAIL') locationVerdict = 'FAIL';
+  else if (city?.verdict === 'FLAG' && locationVerdict !== 'FAIL') { locationVerdict = 'FLAG'; soft.push(city.reason); }
   // A restriction marker (residency, "US only", right to work in a non-target place...) in the location, title or the posting text keeps the FAIL.
-  const down = locationVerdict === 'FAIL' && extras?.targetRegions ? locationDowngrade(job, extras.targetRegions) : null;
+  const down = locationVerdict === 'FAIL' && city?.verdict !== 'FAIL' && extras?.targetRegions ? locationDowngrade(job, extras.targetRegions) : null;
   if (down) {
     locationVerdict = 'FLAG';
     soft.push(down.flag);
-  } else if (locationVerdict === 'FLAG') soft.push('location FLAG');
+  } else if (locationVerdict === 'FLAG' && city?.verdict !== 'FLAG') soft.push('location FLAG');
   if (extras?.targetRegions === null) soft.push(`target regions config invalid: ${extras.targetRegionsInvalid ?? 'unreadable'}`);
   if (m.language_gate === 'FLAG' || ts?.verdict === 'FLAG') soft.push(ts?.verdict === 'FLAG' ? `language FLAG: ${ts.note}` : 'language FLAG');
   if (extras?.languages === null) soft.push(extras.languagesInvalid ? `language gate config invalid: ${extras.languagesInvalid}` : 'language gate config missing');
@@ -104,7 +110,7 @@ export function applyVetoes(
     if (role.verdict === 'borderline') soft.push(`role gate borderline: ${role.note}`);
   }
   if (extras && 'roleGateInvalid' in extras && extras.roleGateInvalid) soft.push(`role gate config invalid: ${extras.roleGateInvalid}`);
-  if (locationVerdict === 'FAIL') return out({ excluded: true, reason: 'location FAIL', flags });
+  if (locationVerdict === 'FAIL') return out({ excluded: true, reason: city?.verdict === 'FAIL' ? `location FAIL: ${city.reason.replace(/^location: /, '')}` : 'location FAIL', flags });
   if (m.language_gate === 'FAIL') return out({ excluded: true, reason: 'language FAIL', flags });
   if (ts?.verdict === 'FAIL') return out({ excluded: true, reason: `language FAIL: ${ts.note}`, flags });
   const hay = `${job.title}\n${job.description}`.toLowerCase();

@@ -14,7 +14,17 @@ export interface TargetRegions {
   remote: boolean;
   /** Remote roles based in any other country are acceptable unless the posting restricts eligibility (see src/remotePolicy.ts). Default false. */
   remote_anywhere: boolean;
+  // Cities (with aliases and metro areas) where on-site AND hybrid roles in India are acceptable; elsewhere in India only remote passes
+  // (src/onsiteCities.ts). Absent on a hand-built object = rule off; the loader fills the shipped default when the file has no key.
+  home_onsite?: string[];
 }
+
+// Shipped default for `home_onsite`: Pune, Hyderabad, Bangalore/Bengaluru with common aliases and metro areas.
+export const DEFAULT_HOME_ONSITE = [
+  'Pune', 'Pimpri-Chinchwad', 'Pimpri Chinchwad', 'Hinjewadi', 'Hinjawadi', 'Kharadi', 'Baner', 'Magarpatta', 'Viman Nagar', 'Hadapsar', 'Wakad', 'Aundh', 'Kalyani Nagar',
+  'Hyderabad', 'Secunderabad', 'HITEC City', 'Hi-Tech City', 'Gachibowli', 'Madhapur', 'Kondapur',
+  'Bangalore', 'Bengaluru', 'Whitefield', 'Electronic City', 'Koramangala', 'HSR Layout', 'HSR', 'Indiranagar', 'Marathahalli', 'Bellandur', 'Sarjapur', 'Hebbal', 'JP Nagar', 'BTM Layout',
+];
 
 export const GULF_TERMS = [
   'United Arab Emirates', 'UAE', 'Dubai', 'Abu Dhabi', 'Sharjah', 'Saudi Arabia', 'KSA', 'Riyadh', 'Jeddah', 'Qatar', 'Doha',
@@ -25,7 +35,7 @@ export const GULF_TERMS = [
 ];
 /** Region-wide words: they stay in the board allow list but never trigger the location downgrade ("we sell to the Middle East"). */
 export const BROAD_TERMS = ['GCC', 'Middle East', 'MENA'];
-export const DEFAULT_TARGET_REGIONS: TargetRegions = { home: ['India'], targets: GULF_TERMS, remote: true, remote_anywhere: false };
+export const DEFAULT_TARGET_REGIONS: TargetRegions = { home: ['India'], targets: GULF_TERMS, remote: true, remote_anywhere: false, home_onsite: DEFAULT_HOME_ONSITE };
 
 const defaultPath = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), 'config', 'target-regions.json');
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -41,8 +51,14 @@ export function loadTargetRegionsStatus(file: string = defaultPath): { config: T
     if (!home || !home.length) return { config: null, invalid: 'home must be a non-empty array of short strings' };
     if (!targets) return { config: null, invalid: 'targets must be an array of at most 100 short strings' };
     if (raw.remote !== undefined && typeof raw.remote !== 'boolean') return { config: null, invalid: 'remote must be true or false' };
+    let home_onsite = DEFAULT_HOME_ONSITE;
+    if (raw.home_onsite !== undefined) {
+      const h = terms(raw.home_onsite);
+      if (!h || !h.length) return { config: null, invalid: 'home_onsite must be a non-empty array of at most 100 short strings' };
+      home_onsite = h;
+    }
     // remote_anywhere: only the boolean true switches it on; absent or invalid means false (fail safe).
-    return { config: { home, targets, remote: raw.remote !== false, remote_anywhere: raw.remote_anywhere === true } };
+    return { config: { home, targets, remote: raw.remote !== false, remote_anywhere: raw.remote_anywhere === true, home_onsite } };
   } catch (e: any) {
     return { config: null, invalid: String(e?.message ?? e).slice(0, 120) };
   }
