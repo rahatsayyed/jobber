@@ -20,7 +20,7 @@ import { recordDryRun } from '../safety/dryRun.js';
 import { diagNote, writeCommitDiag } from './diag.js';
 import type { BcPage } from './driver.js';
 import { killReason, type EngineDeps, type EngineResult } from './engineTypes.js';
-import { dialogKindOf, normName, type CommitClass } from './guard.js';
+import { dialogKindOf, EASY_APPLY_NEXT_RE, EASY_APPLY_REVIEW_RE, EASY_APPLY_SUBMIT_RE, normName, type CommitClass } from './guard.js';
 import type { ArmedIntent } from './intent.js';
 import { OPEN_CEILING_MS } from './locatorDialogs.js';
 import { bindTouchRelease } from './intent.js';
@@ -98,8 +98,8 @@ export function effectiveDialogKind(tree: RawTree, dlg: number, name: string | n
 /** A dialog that holds the Easy Apply submit control, or its Next button beside a form progress line: the Easy Apply modal even when its name says nothing. */
 export function looksLikeEasyApply(tree: RawTree, dlg: number): boolean {
   const ctl = tree.nodes.filter((x) => x.dialog === dlg && (x.role === 'button' || x.role === 'link')).map((x) => normName(x.name));
-  if (ctl.includes('submit application')) return true;
-  return ctl.includes('next') && /\bprogress\b|\b\d{1,3}%/i.test(dialogText(tree, dlg)) && /\bapply\b|\bresume\b|contact info/i.test(dialogText(tree, dlg));
+  if (ctl.some((c) => EASY_APPLY_SUBMIT_RE.test(c))) return true;
+  return ctl.some((c) => EASY_APPLY_NEXT_RE.test(c) || EASY_APPLY_REVIEW_RE.test(c)) &&/\bprogress\b|\b\d{1,3}%/i.test(dialogText(tree, dlg)) && /\bapply\b|\bresume\b|contact info/i.test(dialogText(tree, dlg));
 }
 
 const hasControls = (tree: RawTree, dlg: number): boolean =>

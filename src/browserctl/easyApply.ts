@@ -19,7 +19,7 @@ import { recordDryRun } from '../safety/dryRun.js';
 import { dialogText, effectiveDialogKind, fileChipShown } from './commit.js';
 import type { BcPage } from './driver.js';
 import { killReason, refused, type EngineDeps, type EngineResult } from './engineTypes.js';
-import { EASY_APPLY_SUBMIT_RE, normName } from './guard.js';
+import { EASY_APPLY_DANGER_RE, EASY_APPLY_NEXT_RE, EASY_APPLY_REVIEW_RE, EASY_APPLY_SUBMIT_RE, normName } from './guard.js';
 import type { ArmedIntent, IntentStore } from './intent.js';
 import { escalateOverlay, overlayDetail, overlayReason, readOverlay, titleSlug } from './overlay.js';
 import type { RawNode, RawTree } from './snapshot.js';
@@ -71,16 +71,21 @@ export interface EasyApplyState {
   uploaded: Set<string>;
   /** Page texts before the Submit click, per job key (a confirmation is text that was NOT there before). */
   baseline: Map<string, Set<string>>;
+  /** Director decisions handed to the operator, per `<job key>#<step>` (at most MAX_DIRECTOR_DECISIONS per step, then the job is parked). */
+  director: Map<string, number>;
 }
+/** How many times one step may be handed back to the operator before the job is parked. */
+export const MAX_DIRECTOR_DECISIONS = 2;
 const states = new WeakMap<IntentStore, EasyApplyState>();
 export function easyApplyState(intents: IntentStore): EasyApplyState {
   let s = states.get(intents);
-  if (!s) { s = { opened: new Set(), steps: new Map(), fillOk: new Map(), counted: new Set(), uploaded: new Set(), baseline: new Map() }; states.set(intents, s); }
+  if (!s) { s = { opened: new Set(), steps: new Map(), fillOk: new Map(), counted: new Set(), uploaded: new Set(), baseline: new Map(), director: new Map() }; states.set(intents, s); }
   return s;
 }
 export function clearEasyApplyState(intents: IntentStore, key: string): void {
   const s = easyApplyState(intents);
   s.opened.delete(key); s.steps.delete(key); s.fillOk.delete(key); s.counted.delete(key); s.uploaded.delete(key); s.baseline.delete(key);
+  for (const k of [...s.director.keys()]) if (k.startsWith(`${key}#`)) s.director.delete(k);
 }
 
 // ---- reading the modal ----
@@ -88,7 +93,7 @@ export function clearEasyApplyState(intents: IntentStore, key: string): void {
 const RISK_RE = /captcha|verify (?:that )?you(?:'|’)?re (?:a )?human|security (?:check|verification)|verification code|we sent (?:you )?a (?:code|text)|try premium|upgrade to premium|premium (?:subscription|account)|reactivate premium|unusual activity/i;
 const PREMIUM_RE = /premium/i;
 const VALIDATION_RE = /please enter a (?:valid|whole)|is required|required field|make a selection|enter a valid|select an option/i;
-const ALLOWED_BUTTON_RE = /^(?:next|review|back|continue|continue to next step|submit application|dismiss|close|cancel|upload (?:a )?(?:resume|cv|file)|choose (?:a )?(?:resume|file)|show more|show less)$/;
+/** Director rule: an unfamiliar button is NOT a park reason (the operator reads the dialog and chooses by ref); only money and upgrade words are. */
 const UPLOAD_RE = /^(?:upload (?:a )?(?:resume|cv)|upload)$/;
 const SENT_RE = /application (?:was )?(?:sent|submitted)|your application (?:was )?(?:sent|submitted)|successfully (?:applied|submitted)/i;
 
@@ -111,7 +116,7 @@ export function scanDialog(tree: RawTree, dlg: number): ParkCode | null {
   if (RISK_RE.test(text)) return PREMIUM_RE.test(text) ? 'premium_upsell' : 'verification';
   for (const b of dialogButtons(tree, dlg)) {
     if (b.name === '' ) continue; // unnamed icon buttons (close X) are not judged by name
-    if (!ALLOWED_BUTTON_RE.test(b.name)) return 'unknown_button';
+    if (EASY_APPLY_DANGER_RE.test(b.name)) return 'unknown_button';
   }
   return null;
 }
@@ -258,7 +263,7 @@ export async function closeEasyApplyModal(page: BcPage): Promise<void> {
       await page.press('Escape');
       await page.waitMs(300).catch(() => undefined);
       const t = await page.snapshot();
-      const discard = t.nodes.find((x) => x.role === 'button' && normName(x.name) === 'discard');
+      const discard = t.nodes.find((x) => x.role === 'button' && (normName(x.name) === 'discard' || (x.dialog !== undefined && normName(x.name) === 'done')));
       if (discard) { await page.clickNode(discard.n); await page.waitMs(300).catch(() => undefined); }
       const again = await page.snapshot();
       if (easyApplyDialog(again) === 'none' && !again.nodes.some((x) => x.role === 'button' && normName(x.name) === 'discard')) return;
@@ -282,6 +287,33 @@ export async function parkNeedsOwner(ctx: { deps: EngineDeps; page: BcPage; jobI
   clearEasyApplyState(deps.intents, key);
   deps.intents.disarm('linkedin');
   return { ok: false, status: 'manual_review', code: 'needs_owner', reason: `Easy Apply stopped (${code}); the modal is closed and the owner was told. Move to the next item.`, detail: { park: code } };
+}
+
+/**
+ * The Easy Apply dialog shows no Next, Review or Submit control (a "Save this application?" prompt, a "Done" screen, a choice, a new kind of
+ * step). The OPERATOR decides: the result is `blocked_by_overlay` (detail.director) carrying the dialog title, text and buttons; the operator
+ * clicks one by ref and calls linkedin_easy_apply_fill again. At most MAX_DIRECTOR_DECISIONS per step, then the job is parked
+ * `unknown_button:<dialog title>`. A human-only dialog (captcha, verification, login, payment, ID, restriction) parks at once.
+ */
+export async function stepDirector(ctx: { deps: EngineDeps; page: BcPage; jobId: string; key: string }, tree: RawTree, dlg: RawNode): Promise<FillOutcome> {
+  const st = easyApplyState(ctx.deps.intents);
+  const dk = `${ctx.key}#${st.steps.get(ctx.key) ?? 0}`;
+  const used = st.director.get(dk) ?? 0;
+  const ov = await readOverlay(ctx.page, tree, () => null, { rules: ctx.deps.overlayRules, expected: (_t, d) => d.n !== dlg.n });
+  if (ov?.human) {
+    const out = await parkNeedsOwner(ctx, 'overlay_needs_human', `${ov.human.rule} ${titleSlug(ov.title)}`);
+    escalateOverlay(ctx.deps, ov, 'Easy Apply');
+    return { ...out, reason: `${out.reason} ${overlayReason(ov)}`.slice(0, 600) };
+  }
+  const title = ov?.title || dlg.name || 'untitled';
+  if (used >= MAX_DIRECTOR_DECISIONS) return await parkNeedsOwner(ctx, 'unknown_button', titleSlug(title));
+  st.director.set(dk, used + 1);
+  const info = ov ?? { title, text: '', buttons: [], source: 'tree' as const };
+  return {
+    ok: false, code: 'blocked_by_overlay', overlay: info,
+    reason: `Easy Apply step has no Next, Review or Submit control: dialog "${info.title.slice(0, 80)}", buttons [${info.buttons.slice(0, 8).map((b) => b.name).join(' | ')}]: read it, click the right button by ref (decision ${used + 1} of ${MAX_DIRECTOR_DECISIONS}), then call linkedin_easy_apply_fill again`,
+    detail: { ...overlayDetail(info), director: true, director_decision: used + 1 },
+  };
 }
 
 /**
@@ -342,7 +374,11 @@ async function ensureResume(ctx: FillCtx, tree: RawTree, dlg: number, x: EasyApp
   // Already on screen under our generic name (an earlier fill of this very step): nothing to upload.
   if (fileChipShown(tree, dlg, att.name)) { st.uploaded.add(key); return 'ok'; }
   const ctl = inDialog(tree, dlg).filter((n) => n.role === 'file' || ((n.role === 'button' || n.role === 'link') && UPLOAD_RE.test(normName(n.name))));
-  if (ctl.length !== 1) return 'resume_control_missing';
+  if (ctl.length === 0) {
+    // No upload control: LinkedIn lists saved resumes and one is already selected; keep it rather than park.
+    return inDialog(tree, dlg).some((n) => n.role === 'radio' && n.checked === true) ? 'none_needed' : 'resume_control_missing';
+  }
+  if (ctl.length > 1) ctl.sort((a, b) => Number(b.role === 'file') - Number(a.role === 'file'));
   // Re-validate the file right before reading it: still inside renderer/automation, a .pdf, a regular file, at most 2 MB.
   const chk = checkFile(att.path, deps.attachRoot);
   if (!chk.ok) return 'resume_upload_failed';
@@ -494,8 +530,9 @@ export async function runEasyApplyFill(deps: EngineDeps, page: BcPage, x: EasyAp
     if (!f.filled && !f.optional) return await parkNeedsOwner(base, 'fill_failed');
   }
   const names = dialogButtons(after, d3.n).map((b) => b.name);
-  const next = names.includes('submit application') ? 'submit' : names.includes('review') ? 'review' : names.some((n) => n === 'next' || n === 'continue' || n === 'continue to next step') ? 'next' : 'none';
-  if (next === 'none') return await parkNeedsOwner(base, 'unknown_button');
+  const next = names.some((n) => EASY_APPLY_SUBMIT_RE.test(n)) ? 'submit' : names.some((n) => EASY_APPLY_REVIEW_RE.test(n)) ? 'review' : names.some((n) => EASY_APPLY_NEXT_RE.test(n)) ? 'next' : 'none';
+  // No Next / Review / Submit control: do not park at once. The operator reads the dialog (title, text, buttons with refs) and chooses.
+  if (next === 'none') return await stepDirector(base, after, d3);
   st.fillOk.set(key, st.steps.get(key) ?? 0);
   return done('filled', { filled, next, step: (st.steps.get(key) ?? 0) + 1 });
 }

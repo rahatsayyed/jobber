@@ -118,8 +118,13 @@ const SEND_RE = new RegExp(`^(?:send|${EXTRA_LABELS.send.join('|')})\\b`);
 /** The job page's own Easy Apply control (also "Easy Apply to <company>"). Outside the modal it only opens the modal. */
 export const EASY_APPLY_OPEN_RE = /^easy apply(?: to .+)?$/;
 /** Modal step controls of the LinkedIn Easy Apply form: Next, Review and the final Submit application. */
-export const EASY_APPLY_STEP_RE = /^(?:next|review|continue|continue to next step|submit application)$/;
-export const EASY_APPLY_SUBMIT_RE = /^submit application$/;
+// LinkedIn names these controls by aria-label: "Next" / "Continue to next step", "Review" / "Review your application", "Submit application".
+export const EASY_APPLY_NEXT_RE = /^(?:next|continue|continue to next step|next step)$/;
+export const EASY_APPLY_REVIEW_RE = /^review(?: your)?(?: application)?$/;
+export const EASY_APPLY_SUBMIT_RE = /^submit(?: your)? application$/;
+export const EASY_APPLY_STEP_RE = new RegExp(`${EASY_APPLY_NEXT_RE.source}|${EASY_APPLY_REVIEW_RE.source}|${EASY_APPLY_SUBMIT_RE.source}`);
+/** Words that mean money or an upgrade: never clicked inside the Easy Apply modal (the flow parks for the owner). */
+export const EASY_APPLY_DANGER_RE = /\b(?:pay|payment|purchase|buy|subscribe|upgrade|start (?:my )?(?:free )?trial|try premium|premium)\b/;
 /** Roles inside the Easy Apply modal that only the code-owned fill (linkedin_easy_apply_fill) may touch. */
 export const EASY_APPLY_CODE_ROLES: ReadonlySet<string> = new Set(['radio', 'checkbox', 'combobox', 'option', 'file']);
 const NAUKRI_APPLY_RE = /^(?:apply|apply now|easy apply)$/;
@@ -179,7 +184,11 @@ export function classify(input: GuardInput): ActionClass {
     if (dk === 'easy_apply') {
       if (EASY_APPLY_STEP_RE.test(name)) return 'linkedin_easy_apply';
       if (SAFE_NAMES.has(name)) return 'free';
-      return 'irreversible_other';
+      // Director rule: the operator reads the dialog and may click any other control by ref (Done, Yes/No, Show more resumes, Keep...);
+      // only names that act irreversibly (follow, delete, send, pay, upgrade, ...) stay refused.
+      // Upload, attach and file choosers stay code-owned (linkedin_easy_apply_fill).
+      if (IRREVERSIBLE_RE.test(name) || EASY_APPLY_DANGER_RE.test(name) || /^(?:upload|attach|choose|select) (?:a |an |your )?(?:resume|cv|file|document)/.test(name)) return 'irreversible_other';
+      return 'free';
     }
     if (EASY_APPLY_OPEN_RE.test(name)) return 'linkedin_easy_apply';
     // The attach-a-file control is code-owned (linkedin_attach_file clicks it and feeds the chooser itself): the model never clicks it.
