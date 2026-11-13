@@ -18,6 +18,7 @@ import { loadOutreachConfig } from '../outreach/config.js';
 import { applyCounterUsed, atsApplyUsed } from '../lib/applyCounters.js';
 import type { Platform } from './control.js';
 import { getState } from './runLog.js';
+import { parseMaxAppliesPerDay } from '../lib/maxApplies.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -67,10 +68,9 @@ export interface DueCounts {
   manualPlatformTasks?: Record<Platform, number>;
 }
 
-// Same parsing as the apply tools: a non-negative integer, otherwise 5.
+// Same parsing as the apply tools (one shared parser): a non-negative integer, otherwise the default (100).
 function maxAppliesPerDay(env: NodeJS.ProcessEnv): number {
-  const raw = env.MAX_APPLIES_PER_DAY;
-  return raw !== undefined && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : 5;
+  return parseMaxAppliesPerDay(env);
 }
 
 /** scheduler_state key set after each code pass over the script providers. */

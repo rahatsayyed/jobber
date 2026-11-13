@@ -27,6 +27,7 @@ import type { ClassifierPort } from '../safety/inputGate.js';
 import { loadOutreachConfig } from '../outreach/config.js';
 import { ceilings } from '../outreach/limits.js';
 import { applyCounterUsed } from '../lib/applyCounters.js';
+import { parseMaxAppliesPerDay } from '../lib/maxApplies.js';
 import { resolveHostCap } from '../webcore/hostCaps.js';
 
 /**
@@ -202,12 +203,11 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
       const c = ceilings(d, loadOutreachConfig(env), at);
       const hosts = d.prepare("SELECT host, count FROM apply_host_day WHERE day = date('now') ORDER BY host").all() as Array<{ host: string; count: number }>;
       const used = d.prepare("SELECT count FROM daily_counters WHERE day = date('now') AND key = 'easy_apply'").get() as { count: number } | undefined;
-      const raw = env.MAX_APPLIES_PER_DAY;
       return json({
         halt: haltedWeb(d), dry_run: isDryRun(env), submit_mode: env.APPLY_SUBMIT_MODE === 'submit' ? 'submit' : 'hold',
         apply_attempt: c.apply_attempt,
         // applies_today is the browser (ATS) applier counter only (legacy key easy_apply, MAX_APPLIES_PER_DAY); the platform native applies have their own counters.
-        applies_today: { used: used?.count ?? 0, limit: raw !== undefined && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : 5 },
+        applies_today: { used: used?.count ?? 0, limit: parseMaxAppliesPerDay(env) },
         native_applies_today: {
           linkedin: { used: applyCounterUsed(d, 'linkedin'), limit: c.linkedin_easy_apply.limit },
           naukri: { used: applyCounterUsed(d, 'naukri'), limit: c.naukri_apply.limit },
