@@ -13,7 +13,7 @@ import { markSearchTried } from './discoverRotation.js';
 import { layoutGate } from './layoutGuard.js';
 import { telegramNotifier } from '../platform/notify.js';
 import { writeDiscoverDiag } from './discoverDiag.js';
-import { BROKEN_CODE, bumpStreak, classifyZeroCards, clearStreak, criticalAlert, maybeAlert, pageSummary, sessionAlertHtml, type PageSummary } from './discoverHealth.js';
+import { BROKEN_CODE, bumpStreak, classifyZeroCards, clearStreak, criticalAlert, guestHint, maybeAlert, pageSummary, sessionAlertHtml, type PageSummary } from './discoverHealth.js';
 import { classifyUrl } from './urls.js';
 import type { PageKind, RawSnapshot } from './types.js';
 import type { ToolDeps } from './toolDeps.js';
@@ -85,6 +85,8 @@ export async function runDiscovery(o: {
   expectKind: PageKind;
   searchName: string;
   parse: (snap: RawSnapshot) => Parsed;
+  /** Posts: true only for a deliberately narrow query; a broad query with 0 cards is never a real empty page. Default true (jobs). */
+  narrow?: boolean;
   /** Live runs only, after the jobs are saved: registers verified authors and returns how many. */
   afterSave?: (p: Parsed) => number;
 }): Promise<DiscoverResult> {
@@ -112,9 +114,17 @@ export async function runDiscovery(o: {
     ...(parsed.injection ? { injection_suspected: true } : {}),
   };
 
+  // Logged-in check FIRST: a logged-out or guest page (password field, sign-in wall) is never "no results".
+  const hint = guestHint(snap);
+  if (snap.hasPasswordInput || (parsed.fetched === 0 && hint)) {
+    const notify = deps.notify ?? (process.env.VITEST ? undefined : telegramNotifier(env));
+    await criticalAlert(db, notify, 'session:guest_page', sessionAlertHtml(`guest or logged-out page (${hint ?? 'password field'})`, new URL(snap.url).pathname), now());
+    return empty('failed', 'logged_out', { ...base, summary: pageSummary(snap, (s, max) => { const g = gateCardField(s, max); return g.blocked ? '' : g.text; }) });
+  }
+
   // A search page with results can never legitimately give 0 cards: tell a real empty page from a broken parse.
   if (parsed.fetched === 0) {
-    if (classifyZeroCards(snap) === 'broken') {
+    if (classifyZeroCards(snap, { narrow: o.narrow ?? true }) === 'broken') {
       const diag = await writeDiscoverDiag(
         { now, page: deps.rt.page(), ...(deps.diagDir ? { diagDir: deps.diagDir } : {}) },
         { tool, search: o.searchName, url: snap.url, snapshot: snap, layout: layout.layout, reason: BROKEN_CODE },

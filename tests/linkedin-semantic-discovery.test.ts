@@ -182,6 +182,57 @@ describe('discovery tools on broken and empty pages', () => {
     expect(listStreaks(db)).toEqual([]);
   });
 
+  const POSTS_EMPTY = '<html><head><title>Content</title></head><body><main><h1>No results found</h1><p>Check your spelling or try a different keyword.</p></main></body></html>';
+  const LOGIN_WALL = '<html><head><title>Sign in</title></head><body><main><h1>Sign in</h1><form><input type="text" name="session_key"><input type="password" name="session_password"></form></main></body></html>';
+  const GUEST_WALL = '<html><head><title>LinkedIn</title></head><body><main><h1>Join now to see what you are missing</h1><p>New to LinkedIn? Join now to see more posts.</p></main></body></html>';
+
+  it('posts: a broad query with an explicit empty page is still failed, with the page text sample and a diag', async () => {
+    const { deps, sent, db } = setup(POSTS_EMPTY, POSTS_URL, '/search/results/content/');
+    const r = await searchPosts({ search: 'default' }, deps, { config: CONFIG });
+    expect(r).toMatchObject({ status: 'failed', code: 'no_cards_parse_drift', fetched: 0 });
+    expect(r.summary!.text_sample).toContain('No results found');
+    expect(r.diag).toBeTruthy();
+    expect(sent).toHaveLength(0);
+    expect(readStreak(db, 'search_posts', 'default')!.count).toBe(1);
+  });
+
+  it('posts: only a narrow query on an explicit empty page may be ok no_results', async () => {
+    const { deps } = setup(POSTS_EMPTY, POSTS_URL, '/search/results/content/');
+    const narrow: DiscoveryConfig = { jobs: [], posts: [{ ...CONFIG.posts[0], narrow: true }] };
+    expect(await searchPosts({ search: 'default' }, deps, { config: narrow })).toMatchObject({ status: 'ok', code: 'no_results' });
+  });
+
+  it('posts: a blank page (no wording, no links) is failed, never no_results', async () => {
+    const { deps } = setup('<html><head><title>x</title></head><body></body></html>', POSTS_URL, '/search/results/content/');
+    const narrow: DiscoveryConfig = { jobs: [], posts: [{ ...CONFIG.posts[0], narrow: true }] };
+    expect(await searchPosts({ search: 'default' }, deps, { config: narrow })).toMatchObject({ status: 'failed', code: 'no_cards_parse_drift' });
+  });
+
+  it('guest wall without a password field: failed logged_out, critical alert, never no_results', async () => {
+    const { deps, sent, db } = setup(GUEST_WALL, POSTS_URL, '/search/results/content/');
+    const r = await searchPosts({ search: 'default' }, deps, { config: CONFIG });
+    expect(r).toMatchObject({ status: 'failed', code: 'logged_out', fetched: 0, new: 0 });
+    expect(sent.length).toBeGreaterThan(0);
+    expect(readStreak(db, 'search_posts', 'default')).toBeNull();
+  });
+
+  it('login page with a password field is stopped by the runtime block check (halted), never no_results', async () => {
+    const { deps } = setup(LOGIN_WALL, POSTS_URL, '/search/results/content/');
+    const r = await searchPosts({ search: 'default' }, deps, { config: CONFIG });
+    expect(r.status).toBe('halted');
+    expect(r.code).not.toBe('no_results');
+  });
+
+  it('posts: normal results with the old class layout and with the semantic layout are saved', async () => {
+    for (const html of [fx('posts-search-v2.html'), POSTS_NO_CLASSES()]) {
+      const { deps } = setup(html, POSTS_URL, '/search/results/content/');
+      const r = await searchPosts({ search: 'default' }, deps, { config: CONFIG });
+      expect(`${r.status}:${r.code}`).toBe('ok:saved');
+      expect(r.new).toBeGreaterThan(0);
+      await runtimes.pop()!.close();
+    }
+  });
+
   it('broken parse: failed no_cards_parse_drift, diag file (0600, structure only), streak, one alert per hour, status health line', async () => {
     const { deps, sent, db, advance } = setup(BROKEN_LINKS, JOBS_URL, '/jobs/search/');
     const r1 = await searchJobs({ search: 'react-india' }, deps, { config: CONFIG });
@@ -232,7 +283,7 @@ describe('discovery tools on broken and empty pages', () => {
       + `${TEXT_ROWS}</main></body></html>`;
     const { deps, sent, advance } = setup(guest, JOBS_URL, '/jobs/search/');
     const r = await searchJobs({ search: 'react-india' }, deps, { config: CONFIG });
-    expect(r).toMatchObject({ status: 'failed', code: 'no_cards_parse_drift' });
+    expect(r).toMatchObject({ status: 'failed', code: 'logged_out' });
     expect(r.summary).toMatchObject({ login_wall: true });
     expect(r.summary!.headings).toContain('Sign in to view more jobs');
     expect(sent).toHaveLength(1);
