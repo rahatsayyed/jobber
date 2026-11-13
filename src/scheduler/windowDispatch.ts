@@ -17,7 +17,7 @@ import path from 'node:path';
 import { type LockHandle } from '../platform/lock.js';
 import { takeWindowLock, WINDOW_LOCK_TTL_MS } from '../platform/windowLock.js';
 import { redactPane } from '../platform/redact.js';
-import { assertClaudePane, assertName, capture, sendText, validateSendText, type Run } from '../platform/tmux.js';
+import { assertClaudePane, assertName, capture, sendText, setWindowState, validateSendText, type Run } from '../platform/tmux.js';
 import {
   claudeHomeDir, findTranscriptByTypedText, projectTranscriptDir, readWindowSession, sessionIdOfFile, transcriptFile,
   writeWindowSession,
@@ -209,6 +209,8 @@ export class WindowDispatcher {
   /** Windows whose recorded transcript is stale (after /clear): the next dispatch finds the new file by the typed text. */
   private readonly stale = new Set<string>();
   private readonly active = new Map<string, Active>();
+  /** Windows whose tmux border and status formats were already set by this process. */
+  private readonly displayed = new Set<string>();
 
   constructor(private readonly d: WindowDispatchDeps) {
     this.now = d.now ?? Date.now;
@@ -222,6 +224,14 @@ export class WindowDispatcher {
 
   private paneText(window: string): Promise<string> {
     return this.d.capture ? this.d.capture(window, PANE_LINES) : capture(this.d.run, this.d.session, window, PANE_LINES);
+  }
+
+  /** Shows the state of a window in tmux (pane border and status bar). Best effort: never throws, never fails an item. */
+  private async mark(window: string, state: string): Promise<void> {
+    try {
+      const init = !this.displayed.has(window);
+      if (await setWindowState(this.d.run, this.d.session, window, state, init)) this.displayed.add(window);
+    } catch { /* display only */ }
   }
 
   private refuse(stopReason: string): DispatchResult {
@@ -281,6 +291,7 @@ export class WindowDispatcher {
       try {
         await sendText(this.d.run, this.d.session, i.window, line);
         typed = true;
+        await this.mark(i.window, `working: ${i.trigger}`);
       } catch {
         return this.refuseAndRelease(lock, file, 'send_failed');
       }
@@ -299,7 +310,7 @@ export class WindowDispatcher {
         try { finishRun(this.d.db, runId, { at: new Date(this.now()), status: 'crashed', stopReason: 'dispatch_error' }); } catch { /* ignore */ }
         this.active.delete(runId);
       }
-      if (typed) this.stale.add(i.window);
+      if (typed) { this.stale.add(i.window); await this.mark(i.window, 'waiting for work'); }
       this.cleanupFile(file);
       lock.release();
       return { status: 'failed', stopReason: `dispatch_error: ${(e as Error).message.replace(/\s+/g, ' ').slice(0, 80)}`, summary: '', toolCalls: 0, ...(typed ? { runId } : {}) };
@@ -461,8 +472,9 @@ export class WindowDispatcher {
     this.active.delete(runId);
     this.cleanupFile(a.workFile);
     this.stale.add(a.window); // the recorded transcript is stale whatever happens next
+    let idle = 'waiting for work';
     try {
-      if (this.d.killed()) return { cleared: false, reason: 'killed' };
+      if (this.d.killed()) { idle = 'stopped (kill switch)'; return { cleared: false, reason: 'killed' }; }
       if (a.status === 'timeout' || a.status === 'stalled') {
         await this.escape(a.window);
         await this.sleep(500);
@@ -476,6 +488,7 @@ export class WindowDispatcher {
       await this.sleep(this.d.settleMs ?? 1500);
       return { cleared: true };
     } finally {
+      await this.mark(a.window, idle);
       a.lock.release();
     }
   }

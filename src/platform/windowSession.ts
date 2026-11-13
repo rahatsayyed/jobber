@@ -14,7 +14,7 @@ import {
 } from '../telegram/chatwin/session.js';
 import { startupLine } from './handoff.js';
 import { SESSION_ID_RE } from './runner.js';
-import { assertClaudePane, assertName, sendText, type Run } from './tmux.js';
+import { assertClaudePane, assertName, sendText, setWindowState, type Run } from './tmux.js';
 import { WORKER_LAUNCHER } from './windowConfig.js';
 
 export { claudeHomeDir, findTranscriptByTypedText, projectTranscriptDir, sessionIdOfFile, transcriptFile };
@@ -83,6 +83,7 @@ export async function startWorkerWindow(
   const command = argv.map(shellQuote).join(' ');
   const r = await run('tmux', ['new-window', '-d', '-t', `=${o.session}:`, '-n', o.window, '-c', o.root, command]);
   if (r.code !== 0) throw new Error(`failed to start window ${o.window}`);
+  await setWindowState(run, o.session, o.window, 'starting', true); // best effort, never throws
   return 'started';
 }
 
@@ -103,7 +104,9 @@ export async function typeStartupLine(
     let ready = true;
     try { await assertClaudePane(run, session, window); } catch { ready = false; }
     if (ready) {
-      try { await sendText(run, session, window, startupLine(window)); return 'typed'; } catch { return 'not_ready'; }
+      try { await sendText(run, session, window, startupLine(window)); } catch { return 'not_ready'; }
+      await setWindowState(run, session, window, 'waiting for work', false);
+      return 'typed';
     }
     await sleep(interval);
   }

@@ -14,6 +14,7 @@ import { parseEnv } from '../src/platform/envFile.js';
 import { checkClassifierForLaunch } from '../src/platform/launchCheck.js';
 import { prepareWindowLaunch } from '../src/platform/windowLaunch.js';
 import { windowEnvLines } from '../src/platform/windowEnv.js';
+import { roleHash } from '../src/platform/windowRole.js';
 import { isDryRun } from '../src/safety/dryRun.js';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -45,32 +46,24 @@ async function main(): Promise<void> {
   }
   // The mail window's SEND_LIMIT_PER_RUN is fixed for the window's life: derive it from EMAIL_MAX_PER_DAY like the headless
   // drip does (dripEnv). A change of EMAIL_MAX_PER_DAY needs a window restart; the doctor warns when the two differ.
+  // One record per window in .jobber/window-start/<window>.json: the start values of the lane (mail, linkedin, wake lanes: dry run,
+  // limits, switches; for the doctor and the lane's dry-run guard; a change needs a window restart; never secrets) plus `role_hash`
+  // (every worker), which `npm run up` compares with the current role file to recycle idle windows that carry an old role.
+  let laneValues: Record<string, unknown> = {};
   if (w.lane === 'mail') {
     launch.env.SEND_LIMIT_PER_RUN = String(mailDailyLimit(merged));
-    try {
-      const p = resolve(ROOT, '.jobber', 'window-start', `${name}.json`);
-      mkdirSync(dirname(p), { recursive: true });
-      writeFileSync(p, `${JSON.stringify({ SEND_LIMIT_PER_RUN: launch.env.SEND_LIMIT_PER_RUN, JOBBER_DRY_RUN: (launch.env.JOBBER_DRY_RUN ?? '').trim(), at: new Date().toISOString() })}\n`, { mode: 0o600 });
-    } catch { /* the record is only for the doctor */ }
+    laneValues = { SEND_LIMIT_PER_RUN: launch.env.SEND_LIMIT_PER_RUN, JOBBER_DRY_RUN: (launch.env.JOBBER_DRY_RUN ?? '').trim() };
+  } else if (w.lane === 'linkedin') {
+    laneValues = { ...linkedinStartValues(launch.env) };
+  } else if (w.lane === 'wake') {
+    laneValues = { ...wakeStartValues(launch.env) };
   }
-  // The linkedin window also reads these once at start (dry run, Easy Apply switch, daily limits): record them for the doctor and for
-  // the lane's dry-run guard. A change needs a window restart. Values only of the listed keys, never secrets.
-  if (w.lane === 'linkedin') {
-    try {
-      const p = resolve(ROOT, '.jobber', 'window-start', `${name}.json`);
-      mkdirSync(dirname(p), { recursive: true });
-      writeFileSync(p, `${JSON.stringify({ ...linkedinStartValues(launch.env), at: new Date().toISOString() })}\n`, { mode: 0o600 });
-    } catch { /* the record is only for the doctor */ }
-  }
-  // The windows of the `wake` lane (sources, pipeline, boards, apply) also read the dry-run flag and the daily limits once at start: record them
-  // the same way (the wake refuses to type into a window that started live while the scheduler is dry; the doctor warns on a change).
-  if (w.lane === 'wake') {
-    try {
-      const p = resolve(ROOT, '.jobber', 'window-start', `${name}.json`);
-      mkdirSync(dirname(p), { recursive: true });
-      writeFileSync(p, `${JSON.stringify({ ...wakeStartValues(launch.env), at: new Date().toISOString() })}\n`, { mode: 0o600 });
-    } catch { /* the record is only for the doctor */ }
-  }
+  try {
+    const p = resolve(ROOT, '.jobber', 'window-start', `${name}.json`);
+    mkdirSync(dirname(p), { recursive: true });
+    const hash = roleHash(ROOT, name);
+    writeFileSync(p, `${JSON.stringify({ ...laneValues, ...(hash !== null ? { role_hash: hash } : {}), at: new Date().toISOString() })}\n`, { mode: 0o600 });
+  } catch { /* the record is only for the doctor and the role check */ }
   let check;
   try {
     check = await checkClassifierForLaunch(merged, ROOT, isDryRun(merged));

@@ -79,4 +79,16 @@ done <<< "$ENV_LINES"
 # (the sh caller types the startup line instead, see src/platform/windowSession.ts typeStartupLine).
 # Only the project's own MCP servers (.mcp.json) load: without --strict-mcp-config the owner's user-level servers (for example a
 # python code-review-graph server) start in EVERY worker window and eat memory and CPU for nothing.
-exec env -i ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} "$CLAUDE_BIN" "$@" --settings "$SETTINGS" --setting-sources project,local --mcp-config "$ROOT/.mcp.json" --strict-mcp-config
+# The role of the window (config/windows/<window>.md) goes in as an APPENDED SYSTEM PROMPT, so it survives the /clear the scheduler types
+# after every item (a /clear drops the conversation, never the system prompt). A missing role file only skips the option.
+# The hash of this text is recorded by scripts/window-env.ts (src/platform/windowRole.ts) so `npm run up` can recycle idle windows with an old role.
+ROLE_ARGS=()
+ROLE_FILE="$ROOT/config/windows/$WINDOW.md"
+if [ -s "$ROLE_FILE" ]; then
+  ROLE_TEXT="You are the long-lived Jobber worker window \`$WINDOW\`. This role is always valid, also right after /clear. Between work items you are idle: when asked nothing, say one short line (\`$WINDOW: waiting for work\`) and do nothing else.
+
+$(cat "$ROLE_FILE")"
+  ROLE_ARGS=(--append-system-prompt "$ROLE_TEXT")
+fi
+
+exec env -i ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} "$CLAUDE_BIN" "$@" --settings "$SETTINGS" --setting-sources project,local --mcp-config "$ROOT/.mcp.json" --strict-mcp-config ${ROLE_ARGS[@]+"${ROLE_ARGS[@]}"}

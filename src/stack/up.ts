@@ -14,6 +14,7 @@ import { skippedForRoot, type SkippableId } from '../setup/skips.js';
 import { nodeAtomicFs, type AtomicFs } from '../settings/atomic.js';
 import { clearForScopes } from '../settings/pendingRestart.js';
 import type { RestartScope } from '../settings/types.js';
+import { recycleStaleRoleWindow } from './stale.js';
 import { currentMode, fileFlags, shellDivergence } from './mode.js';
 import { cleanEnvArgv, DEFAULT_STACK_SESSION, BRIDGE_CMD, SCHEDULER_CMD, WEB_CMD, type UpPlan } from './plan.js';
 
@@ -222,6 +223,15 @@ async function inner(deps: StackDeps, env: NodeJS.ProcessEnv, status: boolean): 
       }
       for (const name of Object.keys(cfg.windows)) {
         try {
+          // An idle worker window that runs with an old role (started before the role prompt, or the role file changed) is restarted
+          // first; a busy one is left alone and reported.
+          if (cfg.windows[name].kind === 'worker') {
+            const r = await recycleStaleRoleWindow(deps.run, cfg, env, name, {
+              root: deps.root, killed: () => stopActive(deps.root, env).stopped, startup: { sleep: deps.sleep },
+            });
+            if (r.status === 'restarted') say(`window ${name}: restarted for a new role prompt, startup line ${r.startup}`);
+            else if (r.reason === 'busy' || r.reason === 'active') say(`window ${name}: old role prompt, busy now; run npm run up again when idle`);
+          }
           // A worker window also gets its startup line (reads the handoff file and its role file).
           const s = await startWindowWithMemory(deps.run, cfg, env, name, deps.root, { sleep: deps.sleep });
           say(`window ${name}: ${s.state}${s.startup === 'skipped' ? '' : `, startup line ${s.startup}`}`);
