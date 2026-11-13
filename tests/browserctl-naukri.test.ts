@@ -485,13 +485,13 @@ describe('armNaukriApply', () => {
     expect(w.page.log).toEqual([]);
   });
 
-  it('caps: naukri_apply ceiling and the shared daily counter refuse at arm', async () => {
+  it('caps: naukri_apply ceiling and the own Naukri daily counter refuse at arm', async () => {
     const w = mk({ html: jobHtml(), url: JOB_URL, env: LIVE_ENV });
     const limit = loadOutreachConfig({}).naukriMaxAppliesPerDay;
     for (let i = 0; i < limit; i++) recordEvent(w.db, 'naukri_apply', NOW);
     expect((await w.armApply()).status).toBe('rate_limited');
-    const d = mk({ html: jobHtml(), url: JOB_URL, env: { ...LIVE_ENV, MAX_APPLIES_PER_DAY: '1' } });
-    d.db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply', 1)").run();
+    const d = mk({ html: jobHtml(), url: JOB_URL, env: { ...LIVE_ENV, NAUKRI_MAX_APPLIES_PER_DAY: '1' } });
+    d.db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply_naukri', 1)").run();
     expect((await d.armApply()).status).toBe('rate_limited');
   });
 
@@ -559,7 +559,9 @@ describe('naukri_apply commit path and the chatbot', () => {
     const open = await w.engine.click(refOf(await w.snap(), 'button', 'Apply'));
     expect(open).toMatchObject({ ok: true, code: 'chatbot_opened' });
     expect(ceiling(w, 'naukri_apply')).toBe(1);
-    expect(w.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply'").get()).toMatchObject({ count: 1 });
+    expect(w.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply_naukri'").get()).toMatchObject({ count: 1 });
+    // A Naukri apply touches neither the LinkedIn counter nor the legacy ATS counter.
+    expect(w.db.prepare("SELECT count FROM daily_counters WHERE key IN ('easy_apply_linkedin', 'easy_apply', 'easy_apply_wellfound')").all()).toEqual([]);
     const s = await w.snap();
     const t = await w.engine.type(refOf(s, 'textbox', ''), '5 years');
     expect(t.ok, JSON.stringify(t)).toBe(true);
@@ -578,13 +580,13 @@ describe('naukri_apply commit path and the chatbot', () => {
     await w.engine.click(refOf(await w.snap(), 'button', 'Apply'));
     await w.engine.click(refOf(await w.snap(), 'button', 'Apply'));
     expect(ceiling(w, 'naukri_apply')).toBe(1);
-    expect(w.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply'").get()).toMatchObject({ count: 1 });
+    expect(w.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply_naukri'").get()).toMatchObject({ count: 1 });
   });
 
-  it('the shared daily counter spent after arming rolls the naukri_apply event back, and the reverse', async () => {
-    const a = mk({ html: jobHtml(), url: JOB_URL, env: { ...LIVE_ENV, MAX_APPLIES_PER_DAY: '1' } });
+  it('the Naukri daily counter spent after arming rolls the naukri_apply event back, and the reverse', async () => {
+    const a = mk({ html: jobHtml(), url: JOB_URL, env: { ...LIVE_ENV, NAUKRI_MAX_APPLIES_PER_DAY: '1' } });
     expect((await a.armApply()).status).toBe('armed');
-    a.db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply', 1)").run();
+    a.db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply_naukri', 1)").run();
     const r = await a.engine.click(refOf(await a.snap(), 'button', 'Apply'));
     expect(r).toMatchObject({ ok: false, status: 'rate_limited' });
     expect(clicks(a)).toEqual([]);
@@ -596,7 +598,7 @@ describe('naukri_apply commit path and the chatbot', () => {
     for (let i = 0; i < limit; i++) recordEvent(b.db, 'naukri_apply', NOW);
     const r2 = await b.engine.click(refOf(await b.snap(), 'button', 'Apply'));
     expect(r2).toMatchObject({ ok: false, status: 'rate_limited' });
-    expect(b.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply'").get()).toBeUndefined();
+    expect(b.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply_naukri'").get()).toMatchObject({ count: 0 });
     expect(clicks(b)).toEqual([]);
   });
 

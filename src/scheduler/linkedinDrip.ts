@@ -28,6 +28,7 @@ import { isLinkedInEasyApplyCandidate } from '../apply/easyApplyRows.js';
 import { markStaleSending } from '../linkedin/touches.js';
 import { ceilings, type CeilingStatus, type LimitKey } from '../outreach/limits.js';
 import { loadOutreachConfig } from '../outreach/config.js';
+import { applyCounterUsed } from '../lib/applyCounters.js';
 import { drawUniformMinMs, inQuietHours, quietFromConfig } from '../outreach/quiet.js';
 import { approvedReplyDrafts, draftIsStale, type DraftView } from '../outreach/replyDrafts.js';
 import { listDueTouches, nextPosterContacts, nextQueueContacts } from '../outreach/service.js';
@@ -181,13 +182,10 @@ export function easyApplyRows(db: Db, env: NodeJS.ProcessEnv, limit = 20): EasyA
   return out;
 }
 
-/** True when today's shared apply counter (MAX_APPLIES_PER_DAY) still has room. */
+/** True when today's LinkedIn-only Easy Apply counter still has room (LINKEDIN_MAX_EASY_APPLES_PER_DAY). Naukri, Wellfound and ATS applies do not count. Fail-safe: a read error means no room. */
 function sharedApplyRoom(db: Db, env: NodeJS.ProcessEnv): boolean {
-  const raw = Number(env.MAX_APPLIES_PER_DAY ?? 5);
-  const max = Number.isFinite(raw) && raw >= 0 ? raw : 5;
   try {
-    const row = db.prepare("SELECT count FROM daily_counters WHERE day = date('now') AND key = 'easy_apply'").get() as { count: number } | undefined;
-    return (row?.count ?? 0) < max;
+    return applyCounterUsed(db, 'linkedin') < loadOutreachConfig(env).linkedinMaxEasyApplesPerDay;
   } catch {
     return false;
   }

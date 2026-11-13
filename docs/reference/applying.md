@@ -20,7 +20,7 @@ answer as `apply_platform` and `apply_tier`. `none` (never applied to) covers: a
 while `APPLY_LINKEDIN_EASY` is exactly `false` (Easy Apply is on by default since 2026-11-06). A naukri.com URL is class `naukri`. A wellfound.com URL is
 class `wellfound` (tier `wellfound_agent`, apply-capable; Wellfound is not a discover-only source): the
 `apply-operator` opens the job with `wellfound_open`, calls `wellfound_arm_apply({job_id})` (code gates:
-veto, the `wellfound_apply` ceiling beside the shared `MAX_APPLIES_PER_DAY`, dry run, halts, a live
+veto, the `wellfound_apply` ceiling and its own daily counter `easy_apply_wellfound`, dry run, halts, a live
 check that the browser is on that job's page, the page screen), then clicks the native Apply control by
 ref. The note to the company is optional and never drafted by the operator: a `note` (at most 600
 characters) exists only for a human-approved text and passes the style gate, `resume.check_text`, the
@@ -47,7 +47,7 @@ by code: a submit was clicked but not confirmed, check it by hand), `held`
 submitted), `dry_run`, `needs_owner`, `rate_limited`, `halted`, `failed`.
 
 **Caps.** `apply_open` consumes the daily `apply_attempt` counter (`APPLY_MAX_ATTEMPTS_PER_DAY`) and only
-reads the per-host count; `apply_submit` consumes the shared `MAX_APPLIES_PER_DAY` and the per-host daily
+reads the per-host count; `apply_submit` consumes the ATS counter (legacy key `easy_apply`, `MAX_APPLIES_PER_DAY`) and the per-host daily
 counter in one transaction, right before the click. Per-host daily caps: `APPLY_MAX_PER_HOST` (default
 10, integer 1..50, an out-of-range value is clamped and the doctor warns) with per-platform overrides
 `APPLY_MAX_PER_HOST_<ID>` for `GREENHOUSE`, `LEVER`, `ASHBY`, `WORKABLE`, `SMARTRECRUITERS`,
@@ -55,8 +55,8 @@ counter in one transaction, right before the click. Per-host daily caps: `APPLY_
 (`src/webcore/hostCaps.ts`). `APPLY_MAX_STEPS` (default 12) bounds next/back/save clicks per
 application. Page loads are paced by `WEB_MIN_GAP_SEC`, `WEB_MAX_CALLS_PER_JOB`, `WEB_MAX_JOB_MIN`. A
 `rate_limited` result is reported and not retried; a `halted` or kill-switch denial stops the task. The
-native-apply legs have their own daily ceilings, consumed by the commit click together with the shared
-`MAX_APPLIES_PER_DAY`: `naukri_apply` (`NAUKRI_MAX_APPLIES_PER_DAY`) and `wellfound_apply`
+native-apply legs have their own daily ceilings, consumed by the commit click together with their own daily counter
+(`easy_apply_naukri`, `easy_apply_wellfound`, `easy_apply_linkedin`; never shared, see `src/lib/applyCounters.ts`): `naukri_apply` (`NAUKRI_MAX_APPLIES_PER_DAY`) and `wellfound_apply`
 (`WELLFOUND_MAX_APPLIES_PER_DAY`). A manual request (`/apply <url>`) puts its jobs first in the queue
 and in the pipeline, but they apply through the same tools and the same caps as any other job.
 

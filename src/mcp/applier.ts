@@ -26,6 +26,7 @@ import { isDryRun } from '../safety/dryRun.js';
 import type { ClassifierPort } from '../safety/inputGate.js';
 import { loadOutreachConfig } from '../outreach/config.js';
 import { ceilings } from '../outreach/limits.js';
+import { applyCounterUsed } from '../lib/applyCounters.js';
 import { resolveHostCap } from '../webcore/hostCaps.js';
 
 /**
@@ -204,7 +205,14 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
       const raw = env.MAX_APPLIES_PER_DAY;
       return json({
         halt: haltedWeb(d), dry_run: isDryRun(env), submit_mode: env.APPLY_SUBMIT_MODE === 'submit' ? 'submit' : 'hold',
-        apply_attempt: c.apply_attempt, applies_today: { used: used?.count ?? 0, limit: raw !== undefined && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : 5 },
+        apply_attempt: c.apply_attempt,
+        // applies_today is the browser (ATS) applier counter only (legacy key easy_apply, MAX_APPLIES_PER_DAY); the platform native applies have their own counters.
+        applies_today: { used: used?.count ?? 0, limit: raw !== undefined && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : 5 },
+        native_applies_today: {
+          linkedin: { used: applyCounterUsed(d, 'linkedin'), limit: c.linkedin_easy_apply.limit },
+          naukri: { used: applyCounterUsed(d, 'naukri'), limit: c.naukri_apply.limit },
+          wellfound: { used: applyCounterUsed(d, 'wellfound'), limit: c.wellfound_apply.limit },
+        },
         host_cap_default: resolveHostCap('browser', env).cap, host_today: hosts, cooling_hosts: cooledHosts(d, env, at),
         open_job: a.state.cur ? { platform: a.state.cur.platform, host: a.state.cur.host } : null,
         screenshot: screenshotEnabled(env),

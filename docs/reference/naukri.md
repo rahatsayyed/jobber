@@ -49,7 +49,7 @@ home IP; Akamai may treat a datacenter/VPS IP harder, so re-run the check from t
   with a random 2 to 5 second pause before every search after the first, and a card the site marks as promoted is saved with `jobs.promoted = 1`, a marker that is a guess no live page has confirmed), the `manual_url` task (`naukri_manual_job` reads an owner-submitted job page and saves it at priority) and the `inbox` task (reads and answers or
   escalates recruiter messages), and never applies. The manual
   Apply click honours dry run and halts and also consumes `naukri_apply`
-  (`NAUKRI_MAX_APPLIES_PER_DAY`) beside the shared `MAX_APPLIES_PER_DAY`.
+  (`NAUKRI_MAX_APPLIES_PER_DAY`) and its own daily counter `easy_apply_naukri` (same limit, not shared with LinkedIn or Wellfound).
 - **Cold Naukri outreach is not possible by design**: a message goes out only on a thread already
   verified server-side (a recruiter inquiry or reply inbound, or a prior confirmed send).
 - **Job descriptions (`naukri_fetch_jd`, task `jd_fetch`)**: a Naukri search card carries only a snippet, so a Naukri job waits (`jd_pending`) until its full description was read. The `naukri-operator` calls `naukri_fetch_jd` with no arguments, once per quota unit (planned by code before the pipeline, at most 15 pages per wake, a random 3 to 8 s between pages, ceiling `NAUKRI_MAX_JD_FETCH_PER_DAY` default 60). Code picks the job and loads its stored URL from SQLite, reads the description section (`DETAIL_SRC`), screens it and saves it when it is complete; a closed or removed job becomes `jd_unavailable`; a login redirect or block page ends the task. Read-only, never applies. The job page selectors and closed-page phrases are live-unverified.

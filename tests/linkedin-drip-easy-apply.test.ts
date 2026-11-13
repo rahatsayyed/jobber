@@ -122,16 +122,16 @@ describe('picker', () => {
     expect(await pick(s)).toBeNull();
   });
 
-  it('waits when the Easy Apply ceiling, the shared apply room or the profile-view ceiling is spent', async () => {
+  it('waits when the Easy Apply ceiling, the own LinkedIn daily counter or the profile-view ceiling is spent', async () => {
     const a = setup({ ...ON, LINKEDIN_MAX_EASY_APPLIES_PER_DAY: '1' });
     easyJob(a, '4011111111');
     inboxRead(a);
     recordEvent(a.db, 'linkedin_easy_apply', new Date(a.now().getTime() - 1000));
     expect(await pick(a)).toBeNull();
-    const b = setup({ ...ON, MAX_APPLIES_PER_DAY: '1' });
+    const b = setup({ ...ON, LINKEDIN_MAX_EASY_APPLIES_PER_DAY: '1' });
     easyJob(b, '4011111111');
     inboxRead(b);
-    b.db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply', 1)").run();
+    b.db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply_linkedin', 1)").run();
     expect(await pick(b)).toBeNull();
     const c = setup({ ...ON, LINKEDIN_MAX_PROFILE_VIEWS_PER_DAY: '0' });
     easyJob(c, '4011111111');

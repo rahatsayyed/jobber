@@ -145,11 +145,11 @@ describe('arm kind easy_apply', () => {
     expect(await nr.w.arm({ kind: 'easy_apply', job_id: JOB })).toMatchObject({ status: 'refused', code: 'attachment_no_resume' });
     expect(nr.w.page.log.some((l) => l.startsWith('goto'))).toBe(false);
   });
-  it('respects the linkedin_easy_apply ceiling, the shared apply room and the profile-view ceiling', async () => {
+  it('respects the linkedin_easy_apply ceiling, the own LinkedIn daily counter and the profile-view ceiling', async () => {
     const c = setup({ env: { LINKEDIN_MAX_EASY_APPLIES_PER_DAY: '0' } });
     expect(await c.w.arm({ kind: 'easy_apply', job_id: JOB })).toMatchObject({ status: 'rate_limited' });
-    const d = setup({ env: { MAX_APPLIES_PER_DAY: '1' } });
-    d.w.db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply', 1)").run();
+    const d = setup({ env: { LINKEDIN_MAX_EASY_APPLIES_PER_DAY: '1' } });
+    d.w.db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply_linkedin', 1)").run();
     expect(await d.w.arm({ kind: 'easy_apply', job_id: JOB })).toMatchObject({ status: 'rate_limited' });
     const v = setup({ env: { LINKEDIN_MAX_PROFILE_VIEWS_PER_DAY: '0' } });
     expect(await v.w.arm({ kind: 'easy_apply', job_id: JOB })).toMatchObject({ status: 'rate_limited', code: 'profile_view_limit' });
@@ -196,7 +196,7 @@ describe('the application flow', () => {
     expect(appRows(w)).toEqual([{ platform: 'linkedin', method: 'easy_apply', status: 'submitted' }]);
     expect(queue(w).apply_status).toBe('submitted');
     expect(countSince(w.db, 'linkedin_easy_apply', new Date(0))).toBe(1);
-    expect(w.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply'").get()).toMatchObject({ count: 1 });
+    expect(w.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply_linkedin'").get()).toMatchObject({ count: 1 });
     // The intent is gone: a second Submit does nothing.
     expect(await w.engine.click(refOf(await w.snap(), 'button', 'Easy Apply')).catch(() => ({ ok: false }))).toMatchObject({ ok: false });
   });
@@ -285,14 +285,14 @@ describe('the application flow', () => {
     expect(countSince(w.db, 'linkedin_easy_apply', new Date(0))).toBe(1);
   });
 
-  it('a spent shared daily counter stops the submit before the click and leaves both counters untouched', async () => {
-    const { w } = setup({ env: { MAX_APPLIES_PER_DAY: '1' } });
+  it('a spent LinkedIn daily counter stops the submit before the click and leaves both counters untouched', async () => {
+    const { w } = setup({ env: { LINKEDIN_MAX_EASY_APPLIES_PER_DAY: '1' } });
     await w.arm({ kind: 'easy_apply', job_id: JOB });
     await click(w, 'button', 'Easy Apply');
     await w.engine.easyApplyFill();
     await click(w, 'button', 'Next');
     await w.engine.easyApplyFill();
-    w.db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply', 1)").run();
+    w.db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply_linkedin', 1)").run();
     const r = await click(w, 'button', 'Submit application');
     expect(r).toMatchObject({ ok: false, status: 'rate_limited' });
     expect(countSince(w.db, 'linkedin_easy_apply', new Date(0))).toBe(0);

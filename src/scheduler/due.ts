@@ -14,6 +14,8 @@ import { countJdWaiting } from '../jdStore.js';
 import { dueTouchesFor } from '../outreach/dueTouches.js';
 import { normalizeProfileKey } from '../outreach/people.js';
 import { TUNING_DEFAULTS, type Tuning } from '../outreach/tuning.js';
+import { loadOutreachConfig } from '../outreach/config.js';
+import { applyCounterUsed, atsApplyUsed } from '../lib/applyCounters.js';
 import type { Platform } from './control.js';
 import { getState } from './runLog.js';
 
@@ -49,7 +51,7 @@ export interface DueCounts {
   emailFollowupsReady?: number;
   /** Queued apply rows (apply_platform set and not none, apply not yet attempted, job not excluded). */
   applyQueued?: number;
-  /** MAX_APPLIES_PER_DAY minus today's easy_apply counter, never below 0. */
+  /** Room left today for the apply-operator's paths, each against its own counter: ATS (MAX_APPLIES_PER_DAY), Naukri and Wellfound; never below 0. */
   appliesLeftToday?: number;
   /** LinkedIn invites ('sent' connections) whose acceptance is due for a check this wake: at most ACCEPT_CHECK_MAX_PER_WAKE, undefined: not tracked. */
   acceptCheckDue?: number;
@@ -140,13 +142,21 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
       )
       .get(linkedinOpen ? 1 : 0) as { n: number }
   ).n;
-  const usedToday =
-    (
-      db.prepare("SELECT count FROM daily_counters WHERE day = date('now') AND key = 'easy_apply'").get() as
-        | { count: number }
-        | undefined
-    )?.count ?? 0;
-  const appliesLeftToday = Math.max(0, maxAppliesPerDay(env) - usedToday);
+  // The apply-operator quota is the room of the paths it drives, each with its OWN daily counter: the browser (ATS) applier
+  // (legacy key `easy_apply`, MAX_APPLIES_PER_DAY), Naukri native Apply and Wellfound native Apply. LinkedIn Easy Apply is a
+  // LinkedIn drip item with its own counter and is not part of this quota. A counter that cannot be read counts as no room.
+  const ocfg = loadOutreachConfig(env);
+  const room = (limit: number, used: () => number): number => {
+    try {
+      return Math.max(0, limit - used());
+    } catch {
+      return 0;
+    }
+  };
+  const appliesLeftToday =
+    room(maxAppliesPerDay(env), () => atsApplyUsed(db)) +
+    room(ocfg.naukriMaxAppliesPerDay, () => applyCounterUsed(db, 'naukri')) +
+    room(ocfg.wellfoundMaxAppliesPerDay, () => applyCounterUsed(db, 'wellfound'));
   const sum = (r: Record<DuePlatform, number>): number => r.linkedin + r.naukri;
   const inbox = agoMs(db, 'inbox_last_checked_at', now);
   const naukri = agoMs(db, 'naukri_search_last_at', now);

@@ -16,10 +16,9 @@
 //   against it. A confirmation is only text that was NOT on the page before the Apply click (a job
 //   description can never confirm itself).
 // Anything after a click that cannot be confirmed is 'unconfirmed', never guessed.
-import { parseMaxAppliesPerDay } from '../lib/maxApplies.js';
+import { consumeApplyCounter, seedApplyCounter } from '../lib/applyCounters.js';
 import type BetterSqlite3 from 'better-sqlite3';
 import { getExcludedReason, getFirstHardStop, saveApplication } from '../db.js';
-import { checkAndIncrement } from '../lib/rateLimit.js';
 import { finishTouch } from '../linkedin/touches.js';
 import { loadOutreachConfig } from '../outreach/config.js';
 import { tryConsume } from '../outreach/limits.js';
@@ -327,16 +326,17 @@ async function commitApply(i: WellfoundCommitInput): Promise<EngineResult> {
 
   if (isApplyClick && !counted) {
     const ocfg = loadOutreachConfig(deps.env);
-    const max = parseMaxAppliesPerDay(deps.env);
-    // Consume wellfound_apply first; if the shared daily counter then refuses, remove the event just recorded
+    const max = ocfg.wellfoundMaxAppliesPerDay;
+    // Consume wellfound_apply first; if the Wellfound-only daily counter then refuses, remove the event just recorded
     // so a refusal leaves BOTH counters unconsumed.
+    seedApplyCounter(db, 'wellfound'); // before the ceiling event, so the seed never counts this apply twice
     if (!tryConsume(db, 'wellfound_apply', ocfg, now())) {
       return { ok: false, status: 'rate_limited', code: 'rate_limited', reason: 'wellfound_apply ceiling reached, Apply NOT clicked' };
     }
     const ev = db.prepare("SELECT MAX(id) AS id FROM rate_events WHERE key = 'wellfound_apply'").get() as { id: number | null };
-    if (!checkAndIncrement(db, 'easy_apply', max)) {
+    if (!consumeApplyCounter(db, 'wellfound', max)) {
       if (ev.id !== null) db.prepare('DELETE FROM rate_events WHERE id = ?').run(ev.id);
-      return { ok: false, status: 'rate_limited', code: 'rate_limited', reason: `daily apply limit (${max}) reached, Apply NOT clicked` };
+      return { ok: false, status: 'rate_limited', code: 'rate_limited', reason: `daily Wellfound apply limit (${max}) reached, Apply NOT clicked` };
     }
     st.counted.add(key);
     st.baseline.set(key, pageTexts(before));

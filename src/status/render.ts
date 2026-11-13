@@ -4,6 +4,7 @@ import type { Snapshot } from './snapshot.js';
 import type { LimitKey } from '../outreach/limits.js';
 import { inActiveHours, loadActiveHours } from '../linkedin/activeHours.js';
 import { linkedinEasyEnabled } from '../apply/easyFlag.js';
+import { parseMaxAppliesPerDay } from '../lib/maxApplies.js';
 import { STREAK_ALERT_AT } from '../linkedin/discoverHealth.js';
 
 export interface WindowInfo {
@@ -73,7 +74,19 @@ export function renderLimits(s: Snapshot, opts: { env?: NodeJS.ProcessEnv; now?:
     const c = s.ceilings[key];
     lines.push(`${key} ${c.used}/${c.limit} per ${PERIOD[key]}${c.ok ? '' : ' FULL'}`);
   }
-  for (const d of s.dailyCounters) lines.push(`${d.key} ${d.count} today`);
+  // The apply counters are per path: each platform has its own row and its own limit (the same value as its ceiling above);
+  // the legacy `easy_apply` row is the browser (ATS) applier only, against MAX_APPLIES_PER_DAY.
+  const applyLimit: Record<string, number | undefined> = {
+    easy_apply_linkedin: s.ceilings.linkedin_easy_apply?.limit,
+    easy_apply_naukri: s.ceilings.naukri_apply?.limit,
+    easy_apply_wellfound: s.ceilings.wellfound_apply?.limit,
+    easy_apply: opts.env ? parseMaxAppliesPerDay(opts.env) : undefined,
+  };
+  for (const d of s.dailyCounters) {
+    const lim = applyLimit[d.key];
+    const label = d.key === 'easy_apply' ? 'easy_apply (ATS applier)' : d.key;
+    lines.push(lim === undefined ? `${label} ${d.count} today` : `${label} ${d.count}/${lim} today`);
+  }
   if (s.jd) lines.push(`job descriptions fetched in the last 24 hours: ${s.jd.fetched24h} (fetch ceilings above: naukri_jd_fetch, linkedin_jd_fetch)`);
   lines.push(...haltLines(s), ...degradedLine(s));
   return lines.join('\n');
