@@ -25,7 +25,7 @@ import { escalateOverlay, overlayCode, overlayDetail, overlayReason, readOverlay
 import { classifyLoadedPage, classifyOpenFailure } from './openFailure.js';
 import { LINKEDIN_POLICY } from './policy.js';
 import { RefStore } from './refs.js';
-import { renderTree, type LiveNode, type RawTree } from './snapshot.js';
+import { renderTree, type LiveNode, type RawNode, type RawTree } from './snapshot.js';
 
 export type { EngineDeps, EngineResult } from './engineTypes.js';
 
@@ -377,12 +377,12 @@ export function createEngine(deps: EngineDeps): Engine {
   }
 
   /** After a step failed: a fresh read, and the blocking dialog if there is one (null: no overlay, the original failure stands). */
-  async function overlayBlock(page: BcPage): Promise<EngineResult | null> {
+  async function overlayBlock(page: BcPage, expected?: (t: RawTree, d: RawNode) => boolean): Promise<EngineResult | null> {
     if (P.platform !== 'linkedin') return null;
     refs.invalidate();
     const r = await read(page);
     if (!r.ok) return null;
-    const ov = await readOverlay(page, tree, (n) => refs.refOf(n), { rules: deps.overlayRules });
+    const ov = await readOverlay(page, tree, (n) => refs.refOf(n), { rules: deps.overlayRules, ...(expected ? { expected } : {}) });
     if (!ov) return null;
     if (ov.human) escalateOverlay(deps, ov, 'a page step');
     return blockedResult(ov, r);
@@ -555,7 +555,13 @@ export function createEngine(deps: EngineDeps): Engine {
     await pace(g.page);
     const r = await runEasyApplyFill(deps, g.page, deps.easyApply ?? {});
     refs.invalidate();
-    if (r.code === 'blocked_by_overlay') return (await overlayBlock(g.page)) ?? r;
+    if (r.code === 'blocked_by_overlay') {
+      // A director hand-back (the Easy Apply dialog itself has no step control) shows THAT dialog with fresh refs; any other overlay is a foreign dialog.
+      const asDirector = r.detail?.director === true;
+      const blocked = await overlayBlock(g.page, asDirector ? (t, d) => effectiveDialogKind(t, d.n, d.name) !== 'easy_apply' : undefined);
+      if (blocked && asDirector) return { ...blocked, reason: `${r.reason}`.slice(0, 600), detail: { ...(blocked.detail ?? {}), director: true, ...(r.detail?.director_decision !== undefined ? { director_decision: r.detail.director_decision } : {}) } };
+      return blocked ?? r;
+    }
     if (!r.ok || r.status === 'dry_run') return r;
     const f = await finish(g.page, r.code);
     return f.ok ? { ...f, ...(r.detail ? { detail: r.detail } : {}) } : f;

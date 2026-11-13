@@ -194,6 +194,11 @@ export async function commitEasyApply(i: EasyApplyCommitInput): Promise<EngineRe
     let after: RawTree;
     try { after = await page.snapshot(); } catch { return await park('no_modal'); }
     const d = easyApplyDialog(after);
+    if (d === 'none') {
+      // The modal is gone and something else may have taken its place ("Save this application?", a prompt): the operator reads it and decides.
+      const rec = await overlayRecovery(ctx);
+      if (rec.status !== 'none') return rec.out;
+    }
     if (d === 'none' || d === 'ambiguous') return await park(d === 'none' ? 'no_modal' : 'modal_ambiguous');
     const risk = scanDialog(after, d.n);
     if (risk) return await park(risk);

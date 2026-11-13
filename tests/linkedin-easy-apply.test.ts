@@ -82,7 +82,7 @@ describe('guard: Easy Apply classes', () => {
     const m = { platform: 'linkedin' as const, dialogKind: 'easy_apply' as const };
     for (const n of ['Next', 'Review', 'Submit application']) expect(classify({ ...m, role: 'button', name: n })).toBe('linkedin_easy_apply');
     expect(classify({ ...m, role: 'button', name: 'Dismiss' })).toBe('free');
-    expect(classify({ ...m, role: 'button', name: 'Done' })).toBe('irreversible_other');
+    expect(classify({ ...m, role: 'button', name: 'Done' })).toBe('free');
     expect(classify({ ...m, role: 'button', name: 'Upload resume' })).toBe('irreversible_other');
     for (const r of ['radio', 'checkbox', 'combobox', 'file']) expect(classify({ ...m, role: r, name: 'Yes' })).toBe('irreversible_other');
     // Outside LinkedIn the name is not an Easy Apply control.
@@ -326,5 +326,73 @@ describe('the application flow', () => {
     await click(w, 'button', 'Easy Apply');
     expect(await w.engine.easyApplyAbort()).toMatchObject({ ok: false, code: 'needs_owner' });
     expect(queue(w)).toMatchObject({ apply_status: 'needs_owner', apply_note: 'easy_apply:operator_abort' });
+  });
+});
+
+describe('director: step dialogs are read and decided, not parked on a fixed allow-list', () => {
+  const dlg = (body: string, title = 'Apply to Acme'): string => jobPage({ extra: `<div role="dialog" aria-label="${title}"><h2>${title}</h2><p>Progress 50%</p>${body}</div>` });
+  const open = async (o: Parameters<typeof setup>[0] = {}) => {
+    const r = setup(o);
+    await r.w.arm({ kind: 'easy_apply', job_id: JOB });
+    await click(r.w, 'button', 'Easy Apply');
+    return r;
+  };
+
+  it('guard: variant step names are step controls, neutral ones are free, money and uploads stay refused', () => {
+    const m = { platform: 'linkedin' as const, dialogKind: 'easy_apply' as const };
+    for (const n of ['Continue to next step', 'Next step', 'Review your application', 'Review application', 'Submit your application']) expect(classify({ ...m, role: 'button', name: n }), n).toBe('linkedin_easy_apply');
+    for (const n of ['Done', 'Yes', 'No', 'Show 2 more resumes', 'Keep', 'Not now']) expect(classify({ ...m, role: 'button', name: n }), n).toBe('free');
+    for (const n of ['Follow Acme', 'Pay now', 'Upgrade to Premium', 'Upload resume', 'Delete uploaded resume']) expect(classify({ ...m, role: 'button', name: n }), n).toBe('irreversible_other');
+  });
+
+  it.each([
+    ['Continue to next step', 'next'],
+    ['Next step', 'next'],
+    ['Review your application', 'review'],
+    ['Review', 'review'],
+    ['Submit your application', 'submit'],
+  ])('the control "%s" is recognised as %s', async (label, next) => {
+    const { w } = await open();
+    w.page.setHtml(dlg(`<p>Contact info</p><footer><button>Back</button><button aria-label="${label}">${label}</button></footer>`));
+    expect(await w.engine.easyApplyFill()).toMatchObject({ ok: true, code: 'filled', detail: { next } });
+  });
+
+  it('an unfamiliar button hands the dialog to the operator (title, text, button refs), twice at most, then parks with the dialog title', async () => {
+    const { w } = await open();
+    w.page.setHtml(dlg('<p>We noticed a saved draft. How do you want to go on?</p><footer><button>Resume draft</button><button>Start over</button></footer>'));
+    const a = await w.engine.easyApplyFill();
+    expect(a).toMatchObject({ ok: false, code: 'blocked_by_overlay', detail: { director: true, director_decision: 1 } });
+    expect(a.overlay?.title).toBe('Apply to Acme');
+    expect(a.overlay?.buttons.map((b) => b.name)).toEqual(['Resume draft', 'Start over']);
+    expect(a.overlay?.buttons.every((b) => typeof b.ref === 'string')).toBe(true);
+    expect(w.intents.peek('linkedin')).not.toBeNull();
+    expect(queue(w).apply_status).not.toBe('needs_owner');
+    expect(await w.engine.easyApplyFill()).toMatchObject({ code: 'blocked_by_overlay', detail: { director_decision: 2 } });
+    const c = await w.engine.easyApplyFill();
+    expect(c).toMatchObject({ ok: false, code: 'needs_owner' });
+    expect(queue(w)).toMatchObject({ apply_status: 'needs_owner', apply_note: 'easy_apply:unknown_button:apply_to_acme' });
+    expect(w.intents.peek('linkedin')).toBeNull();
+  });
+
+  it('the operator can click a neutral dialog button by ref', async () => {
+    const { w } = await open();
+    w.page.setHtml(dlg('<p>Saved draft found</p><footer><button>Keep</button></footer>'));
+    const r = await w.engine.easyApplyFill();
+    const ref = r.overlay?.buttons[0]?.ref as string;
+    expect(ref).toBeTruthy();
+    expect(await w.engine.click(ref)).toMatchObject({ ok: true });
+  });
+
+  it('a resume step with an already selected resume and no upload control keeps it', async () => {
+    const { w } = await open();
+    w.page.setHtml(dlg('<p>Resume</p><p>Be sure to include an updated resume</p><input type="radio" name="cv" checked><span>Rahat Sayyed Resume.pdf</span><footer><button>Next</button></footer>'));
+    expect(await w.engine.easyApplyFill()).toMatchObject({ ok: true, code: 'filled', detail: { next: 'next' } });
+  });
+
+  it('a resume step with no upload control and no selected resume parks with a reason', async () => {
+    const { w } = await open();
+    w.page.setHtml(dlg('<p>Resume</p><p>Be sure to include an updated resume</p><footer><button>Next</button></footer>'));
+    expect(await w.engine.easyApplyFill()).toMatchObject({ ok: false, code: 'needs_owner', detail: { park: 'resume_control_missing' } });
+    expect(queue(w).apply_note).toBe('easy_apply:resume_control_missing');
   });
 });
