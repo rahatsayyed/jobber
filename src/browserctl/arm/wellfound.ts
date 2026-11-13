@@ -10,7 +10,8 @@
 //   is opened from the stored apply_url (never a model URL). An OPTIONAL short note to the company passes
 //   the style, fact and output gates and the classifier like any outbound text; it is the only text that
 //   may later be typed into the application form's note field.
-import { parseMaxAppliesPerDay } from '../../lib/maxApplies.js';
+import { applyCounterUsed } from '../../lib/applyCounters.js';
+import { loadOutreachConfig } from '../../outreach/config.js';
 import type BetterSqlite3 from 'better-sqlite3';
 import { classifyApplyUrl } from '../../apply/registry.js';
 import { getExcludedReason, getFirstHardStop } from '../../db.js';
@@ -236,11 +237,9 @@ export const JOB_ID_RE = /^[\w.:@-]{1,200}$/;
 
 interface JobRow { id: string; source: string | null; apply_url: string | null }
 
-/** Today's easy_apply counter has room (read only; the commit path consumes it). */
-function easyApplyRoom(db: BetterSqlite3.Database, env: NodeJS.ProcessEnv): { used: number; max: number } {
-  const max = parseMaxAppliesPerDay(env);
-  const row = db.prepare("SELECT count FROM daily_counters WHERE day = date('now') AND key = 'easy_apply'").get() as { count: number } | undefined;
-  return { used: row?.count ?? 0, max };
+/** Today's Wellfound-only apply counter room (read only; the commit path consumes it). LinkedIn, Naukri and ATS applies never count here. */
+function easyApplyRoom(db: BetterSqlite3.Database, max: number): { used: number; max: number } {
+  return { used: applyCounterUsed(db, 'wellfound'), max };
 }
 
 export async function armWellfoundApply(d: WellfoundArmDeps, a: WellfoundApplyArgs): Promise<WellfoundArmResult> {
@@ -274,8 +273,8 @@ export async function armWellfoundApply(d: WellfoundArmDeps, a: WellfoundApplyAr
     if (!pageKey) return fail('refused', 'no_job_key', 'the stored apply URL has no Wellfound job id');
     const c = ceilings(db, d.cfg, now).wellfound_apply;
     if (!c.ok) return fail('rate_limited', 'rate_limited', `wellfound_apply ${c.used} of ${c.limit} today`);
-    const room = easyApplyRoom(db, d.env);
-    if (room.used >= room.max) return fail('rate_limited', 'rate_limited', `daily apply limit (${room.max}) reached`);
+    const room = easyApplyRoom(db, loadOutreachConfig(d.env).wellfoundMaxAppliesPerDay);
+    if (room.used >= room.max) return fail('rate_limited', 'rate_limited', `daily Wellfound apply limit (${room.max}) reached`);
 
     // The optional note: the same gates as any outbound text. Absent: no text may be typed into the form.
     let note: string | null = null;

@@ -5,7 +5,7 @@
 // stopped / already applied, a pending queue row of the LinkedIn class, ceilings (linkedin_easy_apply, the shared MAX_APPLIES_PER_DAY room,
 // the profile-view ceiling for the job page), the resume file, page checks (right job, an Easy Apply control, not already applied), the
 // input screen on the page text. A job whose Apply goes to the company site is handed back to the external-apply route, never opened here.
-import { parseMaxAppliesPerDay } from '../../lib/maxApplies.js';
+import { applyCounterUsed } from '../../lib/applyCounters.js';
 import { getExcludedReason, getFirstHardStop } from '../../db.js';
 import { classifyApplyUrl } from '../../apply/registry.js';
 import { isLinkedInEasyApplyCandidate } from '../../apply/easyApplyRows.js';
@@ -31,11 +31,9 @@ interface JobRow {
 }
 interface QueueRow { id: number; apply_url: string | null; apply_status: string | null; apply_note: string | null; resume_pdf_path: string | null }
 
-/** Today's shared apply counter room (read only; the commit path consumes it with the linkedin_easy_apply ceiling). */
-function sharedRoom(deps: ArmDeps): { used: number; max: number } {
-  const max = parseMaxAppliesPerDay(deps.env);
-  const row = deps.db.prepare("SELECT count FROM daily_counters WHERE day = date('now') AND key = 'easy_apply'").get() as { count: number } | undefined;
-  return { used: row?.count ?? 0, max };
+/** Today's LinkedIn-only Easy Apply counter room (read only; the commit path consumes it with the linkedin_easy_apply ceiling). Naukri, Wellfound and ATS applies never count here. */
+function ownRoom(deps: ArmDeps): { used: number; max: number } {
+  return { used: applyCounterUsed(deps.db, 'linkedin'), max: loadOutreachConfig(deps.env).linkedinMaxEasyApplesPerDay };
 }
 
 /** The numeric LinkedIn job id of a stored job row (apply_url first, then url), or null. */
@@ -84,8 +82,8 @@ export async function armEasyApply(deps: ArmDeps, a: { job_id?: string }): Promi
   // Ceilings: the Easy Apply ceiling, the shared daily apply room, and the profile-view ceiling (a job page is a view).
   const c = ceilings(db, loadOutreachConfig(deps.env), now());
   if (!c.linkedin_easy_apply.ok) return fail('rate_limited', 'rate_limited', `linkedin_easy_apply ${c.linkedin_easy_apply.used} of ${c.linkedin_easy_apply.limit} today`);
-  const room = sharedRoom(deps);
-  if (room.used >= room.max) return fail('rate_limited', 'rate_limited', `daily apply limit (${room.max}) reached`);
+  const room = ownRoom(deps);
+  if (room.used >= room.max) return fail('rate_limited', 'rate_limited', `daily LinkedIn Easy Apply limit (${room.max}) reached`);
   if (!c.linkedin_profile_view.ok) return fail('rate_limited', 'profile_view_limit', 'daily profile view limit reached');
 
   // The tailored resume, by the code-owned resolver (inside renderer/automation, re-rendered when missing, generic upload name).

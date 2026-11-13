@@ -334,7 +334,8 @@ export function hostDayCount(db: Db, host: string): number {
 }
 
 /**
- * Consumes the global daily apply counter (`easy_apply`, MAX_APPLIES_PER_DAY) and the per-host daily
+ * Consumes the browser (ATS) applier's daily counter (legacy key `easy_apply`, MAX_APPLIES_PER_DAY; LinkedIn, Naukri and
+ * Wellfound native applies have their own counters, see src/lib/applyCounters.ts) and the per-host daily
  * counter together in ONE immediate transaction: either both move or neither does. The host is
  * checked first so a host at its cap never burns a global slot.
  */

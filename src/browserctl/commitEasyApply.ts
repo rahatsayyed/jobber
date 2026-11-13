@@ -10,9 +10,8 @@
 //          MAX_APPLIES_PER_DAY counter together (rolled back together), clicks once, and confirms ONLY by a "sent" text that was not on the page
 //          before the click (or the job page now showing Applied after the modal closed). Anything else is `unconfirmed`, never retried.
 // Anything unexpected closes the modal and marks the queue row needs_owner with a closed reason code (easyApply.parkNeedsOwner).
-import { parseMaxAppliesPerDay } from '../lib/maxApplies.js';
+import { consumeApplyCounter, seedApplyCounter } from '../lib/applyCounters.js';
 import { getExcludedReason, getFirstHardStop, saveApplication } from '../db.js';
-import { checkAndIncrement } from '../lib/rateLimit.js';
 import { resolveApplyEscalationsForJob } from '../outreach/applyEscalations.js';
 import { loadOutreachConfig } from '../outreach/config.js';
 import { tryConsume } from '../outreach/limits.js';
@@ -204,20 +203,21 @@ export async function commitEasyApply(i: EasyApplyCommitInput): Promise<EngineRe
 
   // ---- submit ----
   const ocfg = loadOutreachConfig(deps.env);
-  const max = parseMaxAppliesPerDay(deps.env);
+  const max = ocfg.linkedinMaxEasyApplesPerDay;
   if (!st.counted.has(key)) {
-    // linkedin_easy_apply first; when the shared daily counter then refuses, the event just recorded is removed so a refusal leaves BOTH unconsumed.
+    // linkedin_easy_apply first; when the LinkedIn-only daily counter then refuses, the event just recorded is removed so a refusal leaves BOTH unconsumed.
+    seedApplyCounter(db, 'linkedin'); // before the ceiling event, so the seed never counts this apply twice
     if (!tryConsume(db, 'linkedin_easy_apply', ocfg, now())) {
       await closeEasyApplyModal(page);
       clearEasyApplyState(deps.intents, key);
       return abort('rate_limited', 'linkedin_easy_apply ceiling reached, Submit NOT clicked', 'rate_limited');
     }
     const ev = db.prepare("SELECT MAX(id) AS id FROM rate_events WHERE key = 'linkedin_easy_apply'").get() as { id: number | null };
-    if (!checkAndIncrement(db, 'easy_apply', max)) {
+    if (!consumeApplyCounter(db, 'linkedin', max)) {
       if (ev.id !== null) db.prepare('DELETE FROM rate_events WHERE id = ?').run(ev.id);
       await closeEasyApplyModal(page);
       clearEasyApplyState(deps.intents, key);
-      return abort('rate_limited', `daily apply limit (${max}) reached, Submit NOT clicked`, 'rate_limited');
+      return abort('rate_limited', `daily LinkedIn Easy Apply limit (${max}) reached, Submit NOT clicked`, 'rate_limited');
     }
     st.counted.add(key);
     st.baseline.set(key, pageTexts(before));

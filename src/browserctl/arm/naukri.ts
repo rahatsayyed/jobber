@@ -9,7 +9,8 @@
 // screen, reserveTouch. tryConsume('naukri_message') moves to the commit path (right before the click).
 // armNaukriApply = job known, not vetoed, not applied, apply class naukri, caps readable; the job page is
 // opened from the stored apply_url (never a model URL).
-import { parseMaxAppliesPerDay } from '../../lib/maxApplies.js';
+import { applyCounterUsed } from '../../lib/applyCounters.js';
+import { loadOutreachConfig } from '../../outreach/config.js';
 import type BetterSqlite3 from 'better-sqlite3';
 import { classifyApplyUrl } from '../../apply/registry.js';
 import { getExcludedReason, getFirstHardStop } from '../../db.js';
@@ -233,11 +234,9 @@ export const JOB_ID_RE = /^[\w.:@-]{1,200}$/;
 
 interface JobRow { id: string; source: string | null; apply_url: string | null }
 
-/** Today's easy_apply counter has room (read only; the commit path consumes it). */
-function easyApplyRoom(db: BetterSqlite3.Database, env: NodeJS.ProcessEnv): { used: number; max: number } {
-  const max = parseMaxAppliesPerDay(env);
-  const row = db.prepare("SELECT count FROM daily_counters WHERE day = date('now') AND key = 'easy_apply'").get() as { count: number } | undefined;
-  return { used: row?.count ?? 0, max };
+/** Today's Naukri-only apply counter room (read only; the commit path consumes it). LinkedIn, Wellfound and ATS applies never count here. */
+function easyApplyRoom(db: BetterSqlite3.Database, max: number): { used: number; max: number } {
+  return { used: applyCounterUsed(db, 'naukri'), max };
 }
 
 export async function armNaukriApply(d: Omit<NaukriArmDeps, 'checkText' | 'style'>, a: NaukriApplyArgs): Promise<NaukriArmResult> {
@@ -271,8 +270,8 @@ export async function armNaukriApply(d: Omit<NaukriArmDeps, 'checkText' | 'style
     if (!pageKey) return fail('refused', 'no_job_key', 'the stored apply URL has no Naukri job id');
     const c = ceilings(db, d.cfg, now).naukri_apply;
     if (!c.ok) return fail('rate_limited', 'rate_limited', `naukri_apply ${c.used} of ${c.limit} today`);
-    const room = easyApplyRoom(db, d.env);
-    if (room.used >= room.max) return fail('rate_limited', 'rate_limited', `daily apply limit (${room.max}) reached`);
+    const room = easyApplyRoom(db, loadOutreachConfig(d.env).naukriMaxAppliesPerDay);
+    if (room.used >= room.max) return fail('rate_limited', 'rate_limited', `daily Naukri apply limit (${room.max}) reached`);
 
     // Open the job page from the stored URL and verify it is that job
     const opened = await d.engine.open(url, { keepRefs: true });

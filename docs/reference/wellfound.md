@@ -29,7 +29,7 @@ it is covered by unit tests with fakes only (a supervised phase 2 run is where t
 - **No cold messaging**: a message goes out only in a thread a founder or recruiter already started (the same rule as
   Naukri). There is no Wellfound outreach queue and no `new_outreach` or `followups` task.
 - **Ceilings** (daily, rolling, in `src/outreach/limits.ts`; defaults in `src/setup/limitsCatalog.ts`):
-  `wellfound_apply` (`WELLFOUND_MAX_APPLIES_PER_DAY`, consumed beside the shared `MAX_APPLIES_PER_DAY`),
+  `wellfound_apply` (`WELLFOUND_MAX_APPLIES_PER_DAY`, consumed with its own daily counter `easy_apply_wellfound`),
   `wellfound_message` (`WELLFOUND_MAX_MESSAGES_PER_DAY`) and `wellfound_discover` (`WELLFOUND_MAX_DISCOVER_PER_DAY`).
   Halt target `wellfound` (`halt_flags`); three unconfirmed or failed sends halt it; a block page, bot wall or CAPTCHA
   stops the task and is escalated, never worked around. `JOBBER_DRY_RUN` covers every Wellfound action.

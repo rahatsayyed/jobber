@@ -260,8 +260,11 @@ describe('apply task (8G-2 task 21)', () => {
     db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply', 2)").run();
     const c = countDue(db, NOW, TUNING_DEFAULTS, { MAX_APPLIES_PER_DAY: '7' });
     expect(c.applyQueued).toBe(2);
-    expect(c.appliesLeftToday).toBe(5);
-    expect(countDue(db, NOW, TUNING_DEFAULTS, {}).appliesLeftToday).toBe(3); // default 5
+    // ATS room (7 - 2 on the legacy key) plus the untouched Naukri (30) and Wellfound (20) room: separate counters.
+    expect(c.appliesLeftToday).toBe(5 + 30 + 20);
+    expect(countDue(db, NOW, TUNING_DEFAULTS, {}).appliesLeftToday).toBe(3 + 30 + 20); // default 5
+    db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply_naukri', 4)").run();
+    expect(countDue(db, NOW, TUNING_DEFAULTS, {}).appliesLeftToday).toBe(3 + 26 + 20);
     expect(countDue(openDb(':memory:'), NOW, TUNING_DEFAULTS, {}).applyQueued).toBe(0);
   });
 

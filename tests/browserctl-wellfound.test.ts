@@ -499,12 +499,12 @@ describe('armWellfoundApply: refusals', () => {
     expect((await w.armApply({ job_id: 'other:1' })).code).toBe('class_none');
   });
 
-  it('a spent wellfound_apply ceiling or the shared daily cap refuses at arm', async () => {
+  it('a spent wellfound_apply ceiling or the own Wellfound daily counter refuses at arm', async () => {
     const w = mk({ html: jobHtml(), url: JOB_URL, env: LIVE_ENV });
     for (let i = 0; i < loadOutreachConfig({}).wellfoundMaxAppliesPerDay; i++) recordEvent(w.db, 'wellfound_apply', NOW);
     expect((await w.armApply()).status).toBe('rate_limited');
-    const c = mk({ html: jobHtml(), url: JOB_URL, env: { ...LIVE_ENV, MAX_APPLIES_PER_DAY: '1' } });
-    c.db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply', 1)").run();
+    const c = mk({ html: jobHtml(), url: JOB_URL, env: { ...LIVE_ENV, WELLFOUND_MAX_APPLIES_PER_DAY: '1' } });
+    c.db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply_wellfound', 1)").run();
     expect((await c.armApply()).code).toBe('rate_limited');
   });
 
@@ -590,7 +590,7 @@ describe('wellfound_apply commit path', () => {
     const opened = await w.engine.click(refOf(await w.snap(), 'button', 'Apply'));
     expect(opened).toMatchObject({ ok: true, code: 'form_opened' });
     expect(ceiling(w, 'wellfound_apply')).toBe(1);
-    expect(w.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply'").get()).toMatchObject({ count: 1 });
+    expect(w.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply_wellfound'").get()).toMatchObject({ count: 1 });
     let s = await w.snap();
     const box = refOf(s, 'textbox', 'Write a note to the team');
     expect((await w.engine.type(box, 'a different pitch')).code).toBe('intent_text_mismatch');
@@ -671,14 +671,14 @@ describe('wellfound_apply commit path', () => {
     for (let i = 0; i < 20; i++) recordEvent(w.db, 'wellfound_apply', NOW);
     expect(await w.engine.click(apply)).toMatchObject({ ok: false, status: 'rate_limited' });
     expect(clicks(w)).toEqual([]);
-    expect(w.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply'").get()).toBeUndefined();
+    expect(w.db.prepare("SELECT count FROM daily_counters WHERE key = 'easy_apply_wellfound'").get()).toMatchObject({ count: 0 });
   });
 
-  it('the shared daily cap at commit time rolls the wellfound_apply event back', async () => {
-    const w = mk({ html: jobHtml(), url: JOB_URL, env: { ...LIVE_ENV, MAX_APPLIES_PER_DAY: '1' } });
+  it('the Wellfound daily counter at commit time rolls the wellfound_apply event back', async () => {
+    const w = mk({ html: jobHtml(), url: JOB_URL, env: { ...LIVE_ENV, WELLFOUND_MAX_APPLIES_PER_DAY: '1' } });
     await w.armApply();
     const apply = refOf(await w.snap(), 'button', 'Apply');
-    w.db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply', 1)").run();
+    w.db.prepare("INSERT INTO daily_counters (day, key, count) VALUES (date('now'), 'easy_apply_wellfound', 1)").run();
     expect(await w.engine.click(apply)).toMatchObject({ ok: false, status: 'rate_limited' });
     expect(clicks(w)).toEqual([]);
     expect(ceiling(w, 'wellfound_apply')).toBe(0);

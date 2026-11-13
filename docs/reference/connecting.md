@@ -270,7 +270,7 @@ never contended. Order inside one tick: inbox read, owner-approved reply, accept
 due follow-ups), then ONE Easy Apply application, then new invites. Scheduler code picks the job (`easyApplyRows`: a queue row with a
 prepared resume whose job is a LinkedIn job page with no resolved company-site link, not vetoed, not applied, apply_status empty or
 `queued`; the class is recomputed from the URL with the current env, the stored `apply_platform` is not trusted). Ceilings:
-`LINKEDIN_MAX_EASY_APPLIES_PER_DAY` (ceiling `linkedin_easy_apply`, default 5, rolling 24 hours), the shared `MAX_APPLIES_PER_DAY` counter
+`LINKEDIN_MAX_EASY_APPLIES_PER_DAY` (ceiling `linkedin_easy_apply`, default 5, rolling 24 hours), its own daily counter `easy_apply_linkedin` (same limit; Naukri, Wellfound and ATS applies never count in it)
 (both consumed together right before the Submit click, rolled back together) and the profile-view ceiling (the job page is a view).
 
 The `linkedin-operator` (drip item `easy_apply`) runs: `linkedin_arm_send({kind: "easy_apply", job_id})` (no profile URL, no text; code
