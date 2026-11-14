@@ -169,6 +169,10 @@ export const SNAPSHOT_SRC = String.raw`(function () {
       if (HOST_) return HOST_;
       HOST_ = {
         anchors: qs(document, 'a[href]'), urnEls: qs(document, '[data-urn]'), buttons: qs(document, 'button,[role=button]'),
+        // Not filtered by visibility: the Dismiss button of a result card is how the card-as-button layout finds its cards (read live 14 Nov 2026).
+        dismiss: Array.prototype.slice.call(document.querySelectorAll('button[aria-label^="Dismiss "]')),
+        // Rendered text of an element (innerText lines); the live result card fails the hidden-text colour check of lines(), its text is real.
+        text: function (e) { var ls = String(e.innerText || '').split('\n'), o = []; for (var q = 0; q < ls.length; q++) { var l = ls[q].replace(/\s+/g, ' ').trim(); if (l) o.push(l); } return o; },
         parent: function (e) { return e.parentElement; },
         attr: function (e, n) { return e.getAttribute(n) || ''; },
         tag: function (e) { return String(e.tagName || '').toLowerCase(); },
@@ -285,8 +289,9 @@ export const SNAPSHOT_SRC = String.raw`(function () {
       if ((jobCards !== undefined && jobCards.length === 0) || (postCards !== undefined && postCards.length === 0)) try {
         var sem = semanticCards(host());
         linkEvidence = { jobs: sem.jobLinks, posts: sem.postLinks };
-        if (jobCards !== undefined && jobCards.length === 0 && sem.jobCards.length > 0) { jobCards = sem.jobCards; cardParser = 'semantic'; }
-        else if (jobCards !== undefined && jobCards.length === 0 && sem.buttonCards.length > 0) { jobCards = sem.buttonCards; cardParser = 'button'; }
+        // The parser that reads MORE cards wins: a lone detail-pane link must not hide a whole list of button cards.
+        if (jobCards !== undefined && jobCards.length === 0 && sem.buttonCards.length > sem.jobCards.length) { jobCards = sem.buttonCards; cardParser = 'button'; }
+        else if (jobCards !== undefined && jobCards.length === 0 && sem.jobCards.length > 0) { jobCards = sem.jobCards; cardParser = 'semantic'; }
         if (postCards !== undefined && postCards.length === 0 && sem.postCards.length > 0) { postCards = sem.postCards; cardParser = 'semantic'; }
       } catch (semErr) { }
     }
@@ -465,8 +470,9 @@ export function buildSnapshotFromHtml(html: string, url: string): RawSnapshot {
       if (out.jobCards?.length === 0 || out.postCards?.length === 0) try {
         const sem = semanticCardsFromHtml(root);
         out.linkEvidence = { jobs: sem.jobLinks, posts: sem.postLinks };
-        if (out.jobCards !== undefined && out.jobCards.length === 0 && sem.jobCards.length > 0) { out.jobCards = sem.jobCards; out.cardParser = 'semantic'; }
-        else if (out.jobCards !== undefined && out.jobCards.length === 0 && sem.buttonCards.length > 0) { out.jobCards = sem.buttonCards; out.cardParser = 'button'; }
+        // The parser that reads MORE cards wins: a lone detail-pane link must not hide a whole list of button cards.
+        if (out.jobCards !== undefined && out.jobCards.length === 0 && sem.buttonCards.length > sem.jobCards.length) { out.jobCards = sem.buttonCards; out.cardParser = 'button'; }
+        else if (out.jobCards !== undefined && out.jobCards.length === 0 && sem.jobCards.length > 0) { out.jobCards = sem.jobCards; out.cardParser = 'semantic'; }
         if (out.postCards !== undefined && out.postCards.length === 0 && sem.postCards.length > 0) { out.postCards = sem.postCards; out.cardParser = 'semantic'; }
       } catch {
         // the primary result stands

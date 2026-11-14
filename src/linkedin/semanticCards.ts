@@ -26,6 +26,10 @@ export interface SemanticHost {
   lines(el: unknown): string[];
   /** Visible buttons (button and role=button): needed only by the card-as-button job layout and the post menu boxes. */
   buttons?: unknown[];
+  /** Every `button[aria-label^="Dismiss "]` of the page, not filtered by visibility (the card-as-button layout finds its cards through them). */
+  dismiss?: unknown[];
+  /** Text lines the browser renders for an element (innerText), without the hidden-text colour check: the live result card counts as hidden to the checked `lines`. */
+  text?(el: unknown): string[];
   /** All [name, value] attribute pairs of an element. */
   attrPairs?(el: unknown): Array<[string, string]>;
   /** The element and its descendants, breadth first, at most `max`. */
@@ -188,6 +192,34 @@ function jobberButtonJobCards(A) {
     names[i] = nm(btns[i]);
     if ((m = /^Dismiss (.+) job$/.exec(names[i]))) dismiss.push(m[1]);
   }
+  // Real DOM of this layout (read live 14 Nov 2026): the card is a div[role=button] whose TEXT holds company, location, title and meta; the
+  // "Dismiss <Title> job" button inside it has only an aria-label and no text, so the accessible name above never shows it. Build the card name
+  // from the card text and the label, in the same "<Company> <Location> Dismiss <Title> job <meta>" form the name parser reads.
+  // Card lines read live: [title (maybe with "Selected, " or "(Verified job)"), title, company, location (workplace), salary or posted info,
+  // "Viewed", "·", meta ..., "·", "Easy Apply"]. The name is rebuilt in the order the name parser reads: company, location, Dismiss title job, rest.
+  var domCards = [], dis = A.dismiss || btns, di;
+  btns = btns.slice();
+  for (di = 0; di < dis.length; di++) {
+    if (!(m = /^Dismiss (.+) job$/.exec(String(A.attr(dis[di], 'aria-label') || '')))) continue;
+    var up = A.parent(dis[di]), hop = 0;
+    while (up && hop < 8 && A.attr(up, 'role') !== 'button') { up = A.parent(up); hop++; }
+    if (!up || A.attr(up, 'role') !== 'button') continue;
+    var ci = btns.indexOf(up);
+    if (ci < 0) { btns.push(up); ci = btns.length - 1; names[ci] = ''; }
+    if (domCards.indexOf(ci) >= 0) continue;
+    var cl = A.text ? A.text(up) : A.lines(up), ti = -1, q;
+    for (q = 0; q < cl.length; q++) if (cl[q] === m[1]) ti = q;
+    var rebuilt = '';
+    if (ti >= 0 && ti + 2 < cl.length) rebuilt = cl[ti + 1] + ' ' + cl[ti + 2] + ' Dismiss ' + m[1] + ' job ' + cl.slice(ti + 3).join(' ');
+    else {
+      var txt = cl.join(' ').replace(/\s+/g, ' ').trim();
+      if (txt && txt.indexOf(m[1]) >= 0) rebuilt = txt.replace(m[1], 'Dismiss ' + m[1] + ' job');
+    }
+    rebuilt = rebuilt.replace(/\s+/g, ' ').trim().slice(0, 500);
+    if (!rebuilt) continue;
+    names[ci] = rebuilt;
+    domCards.push(ci);
+  }
   var cards = [];
   for (i = 0; i < btns.length; i++) {
     if (/^Dismiss /.test(names[i]) || !/ Dismiss .+ job(?: |$)/.test(names[i])) continue;
@@ -318,6 +350,8 @@ export function htmlHost(root: HtmlNode): SemanticHost {
     anchors: findAll(root, (n) => live(n) && n.tag === 'a' && 'href' in n.attrs),
     urnEls: findAll(root, (n) => live(n) && 'data-urn' in n.attrs),
     buttons: findAll(root, (n) => live(n) && (n.tag === 'button' || n.attrs['role'] === 'button')),
+    dismiss: findAll(root, (n) => n.tag === 'button' && /^Dismiss .+ job$/.test(n.attrs['aria-label'] ?? '')),
+    text: (el) => visibleText(el as HtmlNode).split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean),
     parent: (el) => parents.get(el as HtmlNode) ?? null,
     attr: (el, name) => (el as HtmlNode).attrs[name] ?? '',
     tag: (el) => (el as HtmlNode).tag,

@@ -118,6 +118,20 @@ describe('button layout snapshot', () => {
     expect(snap.jobCards![1].title).toBe('Lead Frontend Developer (React.js, Next.js, JavaScript, and TypeScript)');
   });
 
+  it('the REAL dom shape (div[role=button] card, Dismiss button with aria-label only, one detail-pane /jobs/view link) reads all cards, not the one link', () => {
+    const snap = buildSnapshotFromHtml(fx('jobs-search-divcards.html'), JOBS_URL);
+    expect(snap.cardParser).toBe('button');
+    expect(snap.jobCards).toHaveLength(3);
+    expect(snap.jobCards!.map((c) => c.title)).toEqual(['Frontend Developer', 'Lead Frontend Developer (React.js, Next.js, JavaScript, and TypeScript)', 'Manager UI – React']);
+    const a = parseButtonCard(snap.jobCards![0].cardName ?? '');
+    expect(a).toMatchObject({ company: 'Zenithbyte', workplace: 'Remote', title: 'Frontend Developer' });
+    const b = parseButtonCard(snap.jobCards![1].cardName ?? '');
+    expect(b).toMatchObject({ company: 'Beyond Border Consultants', easyApply: true });
+    const c = parseButtonCard(snap.jobCards![2].cardName ?? '');
+    expect(c).toMatchObject({ company: 'Amgen', workplace: 'On-site', title: 'Manager UI – React' });
+    expect(snap.jobCards!.map((c) => c.cardIdx)).toEqual([0, 1, 2]);
+  });
+
   it('counts as a verified results.cards for the layout memory (the permanent drift flag was the missing cards)', () => {
     const snap = buildSnapshotFromHtml(fx('jobs-search-buttons.html'), JOBS_URL);
     expect(observeLinkedin(snap, null).landmarks).toContain('results.cards');
