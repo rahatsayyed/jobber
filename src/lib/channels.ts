@@ -21,6 +21,8 @@ export interface ChannelJob {
   company?: string | null;
   extracted_company?: string | null;
   apply_url?: string | null;
+  /** LinkedIn hiring posts: the address written in the post. */
+  apply_email?: string | null;
 }
 
 export interface ChannelContext {
@@ -106,7 +108,9 @@ export function channelsFor(job: ChannelJob, ctx: ChannelContext = {}): ChannelV
   let people: ReasonCode | null = null;
   if (!company) people = 'no_company';
   else if (policy?.hn && ctx.hnCheck !== 'matched') people = 'hn_gate_pending';
-  out.push(people ? no('email', people) : { channel: 'email', eligible: true });
+  // A hiring post with an address in its text can be emailed without a company (the address is verified separately, free-mail never).
+  const postEmail = source === 'linkedin-posts' && people === 'no_company' && !!(job.apply_email ?? '').trim();
+  out.push(people && !postEmail ? no('email', people) : { channel: 'email', eligible: true });
   // A hiring post's author is already a known contact (registered in `people` when the post is saved), so no company is needed to reach them.
   const poster = source === 'linkedin-posts' && people === 'no_company';
   out.push(people && !poster ? no('linkedin', people) : { channel: 'linkedin', eligible: true });

@@ -12,6 +12,7 @@ import { checkTextWithNormalized } from '../resumeFacts.js';
 import { getBaseResume } from '../resume.js';
 import { isLinkedInUrl, isProfileUrl, isBlockedPath, profileKeyOf } from './urls.js';
 import { employerGate } from './employer.js';
+import { posterNoDmForProfile, POSTER_NO_DM } from '../lib/postNoDm.js';
 import { validateNoteLength } from './verify.js';
 import { personByProfileKey, reserveTouch, idempotencyKey, type PersonRow } from './touches.js';
 import { effectiveDryRun, type LinkedinConfig } from './config.js';
@@ -74,6 +75,12 @@ export function preSendGuard(i: GuardInput): GuardResult {
   const person = personByProfileKey(i.db, profileKeyOf(url));
   if (!person) return refuse('unknown_recipient', 'recipient is not in people');
   if (!person.name || !person.name.trim()) return refuse('recipient_name_unknown', 'recipient name is unknown');
+
+  // Hard gate: the author of a hiring post that said "no DMs / email only / link only" gets no connect note, plain invite or
+  // message. A reply to a message THEY sent us is the one exception (they started the conversation).
+  if (i.kind !== 'reply' && posterNoDmForProfile(i.db, url)) {
+    return refuse(POSTER_NO_DM, 'the hiring post said not to DM the poster; use the email or link path');
+  }
 
   if (i.kind === 'reply') {
     // An owner-approved answer to a message THIS person sent us. They are paused for every outbound because they replied
