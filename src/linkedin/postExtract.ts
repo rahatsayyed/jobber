@@ -1,6 +1,7 @@
 // Pure parsing of one LinkedIn content-search post card (lines already passed through the input gate).
 // Nothing here fetches or follows anything: links and emails found in the text are only stored as data.
 // Every page-shape assumption (line order, relative time wording, permalink shapes) is unverified against live LinkedIn.
+import { createHash } from 'node:crypto';
 import { POST_TITLE_FALLBACK_PREFIX } from '../lib/postSignals.js';
 
 const ROLE_NOUN =
@@ -224,3 +225,18 @@ export function splitCardLines(lines: string[], authorName: string): CardLayout 
 }
 
 export const fallbackTitle = (author: string): string => `${POST_TITLE_FALLBACK_PREFIX}${author || 'unknown author'}`.slice(0, 120);
+
+// ---- identity without a permalink (content search shows none) ----------------------------------------------------------
+
+/**
+ * Stable post reference when the card has no permalink and no urn: a hash of the author path and the first 120 characters of the
+ * post text (lowercased, whitespace collapsed), so the same post dedupes across runs. `authorUrl` is the poster's canonical
+ * profile or company URL; the job url is that URL plus a `#post-<hash>` fragment (never a bare author page).
+ */
+export function syntheticPostRef(authorUrl: string, text: string): PostRef {
+  const norm = String(text ?? '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 120);
+  let p = authorUrl;
+  try { p = new URL(authorUrl).pathname.replace(/\/+$/, ''); } catch { /* keep the raw string */ }
+  const hash = createHash('sha256').update(`${p}\n${norm}`).digest('hex').slice(0, 16);
+  return { id: `li-post:${hash}`, url: `${authorUrl.replace(/\/+$/, '')}/#post-${hash}` };
+}

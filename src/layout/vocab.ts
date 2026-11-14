@@ -87,6 +87,8 @@ export const MIN_SET: Record<BasePlatform, Record<KindId, readonly LandmarkId[]>
   linkedin: {
     profile: ['profile.name', 'profile.headline'],
     search: ['results.cards'],
+    // The jobs search page (link cards or the card-as-button layout) is verified by its cards, like the people and posts search.
+    jobs: ['results.cards'],
     invitations: ['invitations.rows'],
     // Seen on real pages: the composer ("Start a post") and the "Search messages" box are always there.
     feed: ['feed.composer'],
@@ -129,7 +131,7 @@ export const TOOL_REQUIRES: Record<string, { kind: KindId; landmarks: readonly L
   // The LinkedIn action tools (connect, message, accept) are gone: the browserctl engine acts and
   // feeds layout telemetry only, so no landmark precondition exists for them.
   linkedin_find_profiles: { kind: 'search', landmarks: ['results.cards'] },
-  // Discovery pages. `jobs` has no MIN_SET until a supervised learning run, so enforce refuses it as unverified.
+  // Discovery pages. `jobs` now has a MIN_SET (results.cards), so it is learned like the other kinds; until promoted, enforce still refuses it as unverified.
   linkedin_search_jobs: { kind: 'jobs', landmarks: ['results.cards'] },
   linkedin_search_posts: { kind: 'search', landmarks: ['results.cards'] },
 };

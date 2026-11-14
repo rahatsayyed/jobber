@@ -21,6 +21,9 @@ const FREE_MAIL = new Set([
   'protonmail.com', 'aol.com', 'gmx.com', 'mail.com', 'yandex.com', 'rediffmail.com', 'zoho.com',
 ]);
 
+/** True when the address is on a free-mail host (never verified, never probed). */
+export const isFreeMail = (email: string): boolean => FREE_MAIL.has(email.slice(email.lastIndexOf('@') + 1).toLowerCase());
+
 /** The post author's address as a contact (source `post`), or null when the job is not a post or has no usable address. */
 export async function postEmailContact(job: PostEmailJob | null | undefined, company: string, verify: Verify = verifyEmail): Promise<Contact | null> {
   if (!job || job.source !== POST_SOURCE) return null;

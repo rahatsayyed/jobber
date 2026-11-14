@@ -68,15 +68,21 @@ describe('searchPosts', () => {
   it('saves each hiring post once with permalink, company, role, date and route; registers the poster', async () => {
     const { deps, db, log } = setup(page(), LIVE);
     const r = await searchPosts({ search: 'default' }, deps, { config: CONFIG });
-    // 6 cards: anika, rohan, sana are hiring; dev is a job seeker, the brand post names no role, one card has no permalink
-    expect(r).toMatchObject({ status: 'ok', code: 'saved', fetched: 6, new: 3, skipped: 3, seen: 0, people: 3 });
+    // 6 cards: anika, rohan, sana and nolink are hiring (nolink has no permalink: its id is a hash); dev is a job seeker, the brand post names no role
+    expect(r).toMatchObject({ status: 'ok', code: 'saved', fetched: 6, new: 4, skipped: 2, seen: 0, people: 4, rejected: { seeker: 1, no_role: 1 } });
     const rows = jobs(db);
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(4);
     for (const j of rows) {
       expect(j.source).toBe('linkedin-posts');
-      expect(j.url).toMatch(/^https:\/\/www\.linkedin\.com\/feed\/update\/urn:li:activity:\d+\/$/);
       expect(j.apply_url).toBe(j.url);
-      expect(j.url).not.toContain('/in/');
+      if (/^li-post:\d+$/.test(j.id)) {
+        expect(j.url).toMatch(/^https:\/\/www\.linkedin\.com\/feed\/update\/urn:li:activity:\d+\/$/);
+        expect(j.url).not.toContain('/in/');
+      } else {
+        // no permalink on the card: the id is a hash of author and text, the url the author page plus a post fragment
+        expect(j.id).toMatch(/^li-post:[0-9a-f]{16}$/);
+        expect(j.url).toMatch(/^https:\/\/www\.linkedin\.com\/in\/nolink-demo\/#post-[0-9a-f]{16}$/);
+      }
     }
     const anika = db.prepare("SELECT * FROM jobs WHERE id = 'li-post:7123456789012345678'").get() as Record<string, string>;
     expect(anika).toMatchObject({
@@ -96,14 +102,15 @@ describe('searchPosts', () => {
       ['linkedin.com/in/anika-verma-demo', 'hiring_manager', 'Quillfeather Systems'],
       ['linkedin.com/in/rohan-mehta-demo', 'hiring_manager', 'Brightloom'],
       ['linkedin.com/in/sana-iyer-demo', 'hiring_manager', ''],
+      ['linkedin.com/in/nolink-demo', 'hiring_manager', 'Ghostfield'],
     ]);
     expect(JSON.stringify(r)).not.toContain('Anika');
     expect(log.filter((l) => /^(click|fill):/.test(l))).toEqual([]);
 
     const again = await searchPosts({ search: 'default' }, deps, { config: CONFIG });
-    expect(again).toMatchObject({ status: 'ok', code: 'no_new', new: 0, seen: 3 });
-    expect(jobs(db)).toHaveLength(3);
-    expect(people(db)).toHaveLength(3);
+    expect(again).toMatchObject({ status: 'ok', code: 'no_new', new: 0, seen: 4 });
+    expect(jobs(db)).toHaveLength(4);
+    expect(people(db)).toHaveLength(4);
   });
 
   it('a post whose line carries an instruction is dropped and flagged, never saved', () => {
