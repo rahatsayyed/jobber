@@ -19,6 +19,7 @@ import { applyCounterUsed, atsApplyUsed } from '../lib/applyCounters.js';
 import type { Platform } from './control.js';
 import { getState } from './runLog.js';
 import { parseMaxAppliesPerDay } from '../lib/maxApplies.js';
+import { linkedinDiscoverDue } from './discoverNext.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -36,6 +37,8 @@ export interface DueCounts {
   wellfoundDiscoverLastHoursAgo?: number | null;
   /** Hours since the last LinkedIn discovery run (set by the discovery tools); null when never. */
   linkedinDiscoverLastHoursAgo?: number | null;
+  /** LinkedIn discovery is due by its stored next time (about hourly with random jitter, see discoverNext.ts); when set it wins over the age. */
+  linkedinDiscoverDue?: boolean;
   /** Hours since the last code pass over the script providers; null when never, undefined: not tracked (never due). */
   scriptDiscoverLastHoursAgo?: number | null;
   /** Queued source_tasks an agent operator can work (the daily dead-slug `error` rows of single companies are noise and not counted). */
@@ -209,6 +212,7 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
     naukriSearchLastHoursAgo: naukri === null ? null : naukri / 3600000,
     wellfoundDiscoverLastHoursAgo: wellfound === null ? null : wellfound / 3600000,
     linkedinDiscoverLastHoursAgo: discover === null ? null : discover / 3600000,
+    linkedinDiscoverDue: linkedinDiscoverDue(db, now),
     scriptDiscoverLastHoursAgo: script === null ? null : script / 3600000,
     sourceTasksQueued: n("SELECT COUNT(*) AS n FROM source_tasks WHERE state = 'queued' AND NOT (reason = 'error' AND company IS NOT NULL) AND NOT (reason = 'manual_url' AND platform <> 'manual')"),
     unmatchedJobs,

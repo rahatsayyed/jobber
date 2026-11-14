@@ -147,7 +147,7 @@ describe('matched backlog makes the pipeline due', () => {
     addScored(db, 'spent', 4, { offers: PREP_OFFER_LIMIT });
     const c = countDue(db, NOW, loadTuning({}), {});
     expect(c.matchedAwaitingPrepare).toBe(0);
-    expect(plan({ due: { ...c, scriptDiscoverLastHoursAgo: 1, inboxLastCheckedMinAgo: 1, naukriSearchLastHoursAgo: 1, linkedinDiscoverLastHoursAgo: 1 } })).toMatchObject({ kind: 'skip' });
+    expect(plan({ due: { ...c, scriptDiscoverLastHoursAgo: 1, inboxLastCheckedMinAgo: 1, naukriSearchLastHoursAgo: 1, linkedinDiscoverLastHoursAgo: 1, linkedinDiscoverDue: false } })).toMatchObject({ kind: 'skip' });
   });
   it('the quota adds both kinds and stays capped', () => {
     const d = run(plan({ due: due({ unmatchedJobs: 3, matchedAwaitingPrepare: 4, inboxLastCheckedMinAgo: 1 }) }));

@@ -8,7 +8,7 @@ import { ceilings, haltReason, tryConsume } from '../outreach/limits.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
 import { recordDryRun } from '../safety/dryRun.js';
 import { gateField } from '../safety/fieldGate.js';
-import { setState } from '../scheduler/runLog.js';
+import { recordDiscoverRun } from '../scheduler/discoverNext.js';
 import { markSearchTried } from './discoverRotation.js';
 import { layoutGate } from './layoutGuard.js';
 import { telegramNotifier } from '../platform/notify.js';
@@ -159,7 +159,7 @@ export async function runDiscovery(o: {
       runId: null, action: `linkedin_${tool}`, platform: 'linkedin',
       payload: { search: o.searchName, fetched: parsed.fetched, would_save: fresh.length, authors: parsed.authors.length, unscreened },
     }, now(), env);
-    setState(db, LAST_RUN_KEY, now().toISOString(), now());
+    recordDiscoverRun(db, now());
     return empty('dry_run', 'dry_run', { ...base, seen });
   }
   // A page that cleared only as "unscreened" never reaches a live save (screenUntrusted already blocks live).
@@ -176,7 +176,7 @@ export async function runDiscovery(o: {
     ids.push(j.id);
   }
   const people = o.afterSave ? o.afterSave(parsed) : undefined;
-  setState(db, LAST_RUN_KEY, now().toISOString(), now());
+  recordDiscoverRun(db, now());
   return {
     status: 'ok', code: ids.length ? 'saved' : parsed.fetched === 0 ? 'no_results' : 'no_new', ...base, new: ids.length, seen, job_ids: ids,
     ...(people !== undefined ? { people } : {}),

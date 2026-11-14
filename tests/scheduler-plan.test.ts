@@ -414,8 +414,10 @@ describe('planWake: linkedin discover task', () => {
     expect(discover({ ceilings: withDiscover([], 11) })?.quota).toBe(1);
   });
   it('waits for the interval, needs names, an open ceiling and an unhalted platform', () => {
-    expect(discover({ due: due({ linkedinDiscoverLastHoursAgo: 2 }) })).toBeUndefined();
-    expect(discover({ due: due({ linkedinDiscoverLastHoursAgo: 7 }) })).toBeDefined();
+    expect(discover({ due: due({ linkedinDiscoverLastHoursAgo: 0.5 }) })).toBeUndefined();
+    expect(discover({ due: due({ linkedinDiscoverLastHoursAgo: 2 }) })).toBeDefined();
+    expect(discover({ due: due({ linkedinDiscoverLastHoursAgo: 5, linkedinDiscoverDue: false }) })).toBeUndefined();
+    expect(discover({ due: due({ linkedinDiscoverLastHoursAgo: 0.1, linkedinDiscoverDue: true }) })).toBeDefined();
     expect(discover({ discoverSearches: { jobs: [], posts: [] } })).toBeUndefined();
     expect(discover({ discoverSearches: undefined })).toBeUndefined();
     expect(discover({ ceilings: withDiscover(['linkedin_discover']) })).toBeUndefined();
