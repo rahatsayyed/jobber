@@ -4,7 +4,7 @@
 import type { RawSnapshot, RawProfile, RawResult, RawInvitation, RawMessage, RawJobCard, RawPostCard } from './types.js';
 import { parseHtml, findAll, visibleText, type HtmlNode } from './htmlVisible.js';
 import { extractAboutText } from './verify.js';
-import { SEMANTIC_CORE_SRC, semanticCardsFromHtml } from './semanticCards.js';
+import { SEMANTIC_CORE_SRC, htmlHost, postCardsFromBoxes, postMenuBoxes, semanticCardsFromHtml } from './semanticCards.js';
 
 /**
  * In-page expression (a string on purpose, like naukri.ts: tsx/esbuild keepNames would inject
@@ -163,6 +163,26 @@ export const SNAPSHOT_SRC = String.raw`(function () {
 
     var pathname = String(location.pathname || '');
     var main = qs(document, 'main')[0] || null;
+    // Host adapter of the shared card core (semanticCards.ts), built only on a search page.
+    var HOST_ = null;
+    function host() {
+      if (HOST_) return HOST_;
+      HOST_ = {
+        anchors: qs(document, 'a[href]'), urnEls: qs(document, '[data-urn]'), buttons: qs(document, 'button,[role=button]'),
+        parent: function (e) { return e.parentElement; },
+        attr: function (e, n) { return e.getAttribute(n) || ''; },
+        tag: function (e) { return String(e.tagName || '').toLowerCase(); },
+        lines: function (e) { return lines(e); },
+        attrPairs: function (e) { var o = [], at = e.attributes; for (var q = 0; at && q < at.length; q++) o.push([at[q].name, at[q].value]); return o; },
+        walk: function (e, max) {
+          var o = [e], qu = [e];
+          while (qu.length && o.length < max) { var x = qu.shift(), kids = x.children || []; for (var q = 0; q < kids.length && o.length < max; q++) { o.push(kids[q]); qu.push(kids[q]); } }
+          return o;
+        },
+        setAttr: function (e, n, v) { try { e.setAttribute(n, v); } catch (er) { } }
+      };
+      return HOST_;
+    }
 
     var profile = null;
     if (main && /^\/in\//.test(pathname)) {
@@ -243,24 +263,19 @@ export const SNAPSHOT_SRC = String.raw`(function () {
     }
     if (pathname.indexOf('/search/results/content') === 0) {
       postCards = [];
+      // A card is a list item, or (when no list item gives a card) the box around a post's "Open control menu" button.
+      // The author is a person (/in/) or a company (/company/); a permalink is NOT needed (the code builds the post identity).
       var pcs = qs(document, '[role=listitem]');
       for (var pci = 0; pci < pcs.length && postCards.length < 50; pci++) {
-        var pls = qs(pcs[pci], 'a'), plink = null;
-        for (var pli = 0; pli < pls.length; pli++) {
-          if ((pls[pli].getAttribute('href') || '').indexOf('/in/') >= 0) { plink = pls[pli]; break; }
+        var pcard = jobberPostBox(host(), pcs[pci]);
+        if (pcard) postCards.push(pcard);
+      }
+      if (postCards.length === 0) {
+        var pbx = jobberPostMenuBoxes(host());
+        for (var pbi = 0; pbi < pbx.length && postCards.length < 50; pbi++) {
+          var pcard2 = jobberPostBox(host(), pbx[pbi]);
+          if (pcard2) postCards.push(pcard2);
         }
-        if (!plink) continue;
-        var plk = '';
-        for (var pmi = 0; pmi < pls.length && !plk; pmi++) {
-          var ph = pls[pmi].getAttribute('href') || '';
-          if (/\/feed\/update\/urn:li:|\/posts\/[^/?#]+-(?:activity|share|ugcPost)-\d+/.test(ph)) plk = ph;
-        }
-        var purn = pcs[pci].getAttribute('data-urn') || pcs[pci].getAttribute('data-id') || '';
-        if (!purn && pcs[pci].closest) { var pan = pcs[pci].closest('[data-urn]'); if (pan) purn = pan.getAttribute('data-urn') || ''; }
-        var pln = lines(pcs[pci]).slice(0, 60);
-        for (var pni = 0; pni < pln.length; pni++) pln[pni] = cap(pln[pni], 400);
-        postCards.push({ text: cap(flat(pcs[pci]), 3000), authorName: cap(lines(plink)[0] || '', 200),
-          profileHref: cap(plink.getAttribute('href') || '', 500), permalinkHref: cap(plk, 500), urn: cap(purn, 120), lines: pln });
       }
     }
 
@@ -268,15 +283,10 @@ export const SNAPSHOT_SRC = String.raw`(function () {
     if (jobCards !== undefined || postCards !== undefined) {
       cardParser = 'primary';
       if ((jobCards !== undefined && jobCards.length === 0) || (postCards !== undefined && postCards.length === 0)) try {
-        var sem = semanticCards({
-          anchors: qs(document, 'a[href]'), urnEls: qs(document, '[data-urn]'),
-          parent: function (e) { return e.parentElement; },
-          attr: function (e, n) { return e.getAttribute(n) || ''; },
-          tag: function (e) { return String(e.tagName || '').toLowerCase(); },
-          lines: function (e) { return lines(e); }
-        });
+        var sem = semanticCards(host());
         linkEvidence = { jobs: sem.jobLinks, posts: sem.postLinks };
         if (jobCards !== undefined && jobCards.length === 0 && sem.jobCards.length > 0) { jobCards = sem.jobCards; cardParser = 'semantic'; }
+        else if (jobCards !== undefined && jobCards.length === 0 && sem.buttonCards.length > 0) { jobCards = sem.buttonCards; cardParser = 'button'; }
         if (postCards !== undefined && postCards.length === 0 && sem.postCards.length > 0) { postCards = sem.postCards; cardParser = 'semantic'; }
       } catch (semErr) { }
     }
@@ -443,18 +453,10 @@ export function buildSnapshotFromHtml(html: string, url: string): RawSnapshot {
       out.jobCards = jobCards;
     }
     if (pathname.startsWith('/search/results/content')) {
-      const postCards: RawPostCard[] = [];
-      for (const c of vq(root, (n) => n.attrs['role'] === 'listitem')) {
-        if (postCards.length >= 50) break;
-        const link = vq(c, (n) => n.tag === 'a' && (n.attrs['href'] ?? '').includes('/in/'))[0];
-        if (!link) continue;
-        const permalink = vq(c, (n) => n.tag === 'a' && POST_PERMALINK.test(n.attrs['href'] ?? ''))[0];
-        postCards.push({
-          text: cap(flat(c), 3000), authorName: cap(linesOf(link)[0] ?? '', 200), profileHref: cap(link.attrs['href'] ?? '', 500),
-          permalinkHref: cap(permalink?.attrs['href'] ?? '', 500), urn: cap(c.attrs['data-urn'] ?? '', 120),
-          lines: linesOf(c).slice(0, 60).map((l) => cap(l, 400)),
-        });
-      }
+      // Same rules as the in-page script: list items first, else the box around each post's control-menu button.
+      const hostH = htmlHost(root);
+      let postCards = postCardsFromBoxes(hostH, vq(root, (n) => n.attrs['role'] === 'listitem'));
+      if (postCards.length === 0) postCards = postCardsFromBoxes(hostH, postMenuBoxes(hostH));
       out.postCards = postCards;
     }
 
@@ -464,6 +466,7 @@ export function buildSnapshotFromHtml(html: string, url: string): RawSnapshot {
         const sem = semanticCardsFromHtml(root);
         out.linkEvidence = { jobs: sem.jobLinks, posts: sem.postLinks };
         if (out.jobCards !== undefined && out.jobCards.length === 0 && sem.jobCards.length > 0) { out.jobCards = sem.jobCards; out.cardParser = 'semantic'; }
+        else if (out.jobCards !== undefined && out.jobCards.length === 0 && sem.buttonCards.length > 0) { out.jobCards = sem.buttonCards; out.cardParser = 'button'; }
         if (out.postCards !== undefined && out.postCards.length === 0 && sem.postCards.length > 0) { out.postCards = sem.postCards; out.cardParser = 'semantic'; }
       } catch {
         // the primary result stands

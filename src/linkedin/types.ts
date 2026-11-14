@@ -16,7 +16,19 @@ export interface RawProfile {
 }
 export interface RawResult { name: string; headline: string; href: string }
 /** Job search card (jobs search pages only). All fields are untrusted page text. */
-export interface RawJobCard { title: string; company: string; href: string; snippet: string; easyApply: boolean }
+export interface RawJobCard {
+  title: string; company: string; href: string; snippet: string; easyApply: boolean;
+  // Card-as-button layout only (the page has no job link): the button's accessible name, untrusted.
+  cardName?: string;
+  // Card-as-button layout only: visible lines of the card button, untrusted.
+  cardLines?: string[];
+  // Card-as-button layout only: index of the card, also written on the element as data-jobber-card so code can click it.
+  cardIdx?: number;
+  // Card-as-button layout only: digits of a job id found in a DOM attribute of the card (or an ancestor that holds only this card), '' when none.
+  idHint?: string;
+  // Which attribute shape gave idHint (a fixed code word, never page text).
+  idFrom?: string;
+}
 /** Hiring-post card (content search pages only). `text` is the visible post text, untrusted. */
 export interface RawPostCard {
   text: string; authorName: string; profileHref: string;
@@ -26,6 +38,16 @@ export interface RawPostCard {
   urn?: string;
   /** Visible lines of the card in order (author, headline, relative time, post text, action bar); untrusted. */
   lines?: string[];
+  // Name of the company the card belongs to (`View company: X` link or a company link text), '' when none; untrusted.
+  companyName?: string;
+  // Path of that company link (/company/<slug>/), '' when none.
+  companyHref?: string;
+  // Addresses of mailto: links inside the card (max 12), untrusted.
+  mailtos?: string[];
+  // Number of outbound (non-LinkedIn) https links in the card, capped at 99.
+  outLinks?: number;
+  // True when a link or label of the card carries a Hiring badge (`<Name>, Hiring Verified Profile 2nd`).
+  hiringBadge?: boolean;
 }
 export interface RawInvitation { index: number; name: string; headline: string; href: string }
 export interface RawMessage { from: 'them' | 'me'; text: string }
@@ -47,7 +69,7 @@ export interface RawSnapshot {
   /** Visible h1/h2 texts (max 8, 80 chars each), untrusted; part of the zero-card page summary. */
   headings?: string[];
   /** Which parser produced jobCards/postCards on a search page: the class-based one or the href-based fallback. */
-  cardParser?: 'primary' | 'semantic';
+  cardParser?: 'primary' | 'semantic' | 'button';
   /** Distinct job and post links on a search page (numbers only): proof the page has results even when no card parsed. */
   linkEvidence?: { jobs: number; posts: number };
   extras?: { filters?: boolean; composer?: boolean; posts?: number; inboxSearch?: boolean; conversations?: number }; // browserctl adapter only

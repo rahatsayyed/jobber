@@ -12,7 +12,7 @@ import { recordDiscoverRun } from '../scheduler/discoverNext.js';
 import { markSearchTried } from './discoverRotation.js';
 import { layoutGate } from './layoutGuard.js';
 import { telegramNotifier } from '../platform/notify.js';
-import { writeDiscoverDiag } from './discoverDiag.js';
+import { writeDiscoverDiag, writeDiscoverSummary } from './discoverDiag.js';
 import { BROKEN_CODE, bumpStreak, classifyZeroCards, clearStreak, criticalAlert, guestHint, maybeAlert, pageSummary, sessionAlertHtml, type PageSummary } from './discoverHealth.js';
 import { classifyUrl } from './urls.js';
 import type { PageKind, RawSnapshot } from './types.js';
@@ -35,14 +35,38 @@ export interface DiscoverResult {
   people?: number;
   injection_suspected?: boolean;
   layout?: string;
-  /** Which parser built the cards: the class-based one or the href-based fallback that survives a layout change. */
-  parser?: 'primary' | 'semantic';
-  /** Broken parse only: path of the evidence file under .jobber/diag. */
+  /** Which parser built the cards: the class-based one, the href-based fallback, or the card-as-button reader (jobs without job links). */
+  parser?: 'primary' | 'semantic' | 'button';
+  /** Path of the evidence file under .jobber/diag: a broken parse (no cards), or a read that found cards and saved nothing or lost some ids. */
   diag?: string;
+  /** Cards or posts dropped, COUNTED BY REASON (seeker, aggregator, no_company, no_profile, injection, not_hiring, duplicate, ...). Absent when none. */
+  rejected?: Record<string, number>;
+  /** Jobs tool, card-as-button layout: cards for which no job id could be had (never silently dropped). */
+  no_id?: number;
+  /** Why those cards have no id (click_limit, click_failed, no_current_job_id, login_wall, halted, dry_run_no_click ...). */
+  no_id_reasons?: Record<string, number>;
+  /** Jobs tool: where the ids came from: link (a job link), attr (a DOM attribute), click (the page URL after a card click). */
+  id_from?: Record<string, number>;
+  /** Jobs tool: card clicks made to read an id (at most 10 per search). */
+  clicks?: number;
+  /** Jobs tool: cards skipped before any click because a job with the same company and title is already stored. */
+  known?: number;
   /** Broken parse only: consecutive broken parses of this search (including this one). */
   streak?: number;
   /** Broken parse only: compact page summary (headings, link counts, dialog, notices, guest-wall hint) for the operator to read. */
   summary?: PageSummary;
+}
+
+/** A card of the card-as-button layout that has no id yet: the click resolver may still get one. */
+export interface PendingCard { cardIdx: number; title: string; company: string; description: string }
+/** What the id resolution of the jobs tool returns (jobs are new Job rows with a code-built url). */
+export interface EnrichOut {
+  jobs: Job[];
+  known: number;
+  no_id: number;
+  no_id_reasons: Record<string, number>;
+  id_from: Record<string, number>;
+  clicks: number;
 }
 
 export interface ParsedAuthor { profileKey: string; name: string; headline?: string; company?: string }
@@ -55,7 +79,16 @@ export interface Parsed {
   injection: boolean;
   /** Concatenated gated card text, given to the classifier. */
   screenText: string;
+  /** `skipped` broken down by reason. */
+  rejected?: Record<string, number>;
+  /** Cards that still need an id (card-as-button layout). */
+  pending?: PendingCard[];
+  /** Ids already read from the page (link or attribute), by source. */
+  idFrom?: Record<string, number>;
 }
+
+/** Add one to a reason counter. */
+export const bump = (m: Record<string, number>, k: string): void => { m[k] = (m[k] ?? 0) + 1; };
 
 /**
  * Input-gate one untrusted card field. It lives in this file because this file is the screened
@@ -89,6 +122,8 @@ export async function runDiscovery(o: {
   narrow?: boolean;
   /** Live runs only, after the jobs are saved: registers verified authors and returns how many. */
   afterSave?: (p: Parsed) => number;
+  /** Live runs only, after the ceilings were consumed and before the save: resolves the ids of cards that have none (may click, max 10). */
+  enrich?: (p: Parsed) => Promise<EnrichOut>;
 }): Promise<DiscoverResult> {
   const { deps, tool } = o;
   const { db, now, env } = deps;
@@ -112,6 +147,7 @@ export async function runDiscovery(o: {
   const base = {
     fetched: parsed.fetched, skipped: parsed.skipped, ...layout, parser: snap.cardParser ?? ('primary' as const),
     ...(parsed.injection ? { injection_suspected: true } : {}),
+    ...(parsed.rejected && Object.keys(parsed.rejected).length ? { rejected: parsed.rejected } : {}),
   };
 
   // Logged-in check FIRST: a logged-out or guest page (password field, sign-in wall) is never "no results".
@@ -152,15 +188,19 @@ export async function runDiscovery(o: {
   }
 
   const fresh = parsed.jobs.filter((j) => !isSeen(db, j.id));
-  const seen = parsed.jobs.length - fresh.length;
+  let seen = parsed.jobs.length - fresh.length;
+  const pending = parsed.pending ?? [];
 
   if (deps.cfg.dryRun) {
     recordDryRun(db, {
       runId: null, action: `linkedin_${tool}`, platform: 'linkedin',
-      payload: { search: o.searchName, fetched: parsed.fetched, would_save: fresh.length, authors: parsed.authors.length, unscreened },
+      payload: { search: o.searchName, fetched: parsed.fetched, would_save: fresh.length, authors: parsed.authors.length, unscreened, pending_ids: pending.length },
     }, now(), env);
     recordDiscoverRun(db, now());
-    return empty('dry_run', 'dry_run', { ...base, seen });
+    // A dry run never clicks a card, so the cards without an id are reported as such.
+    return empty('dry_run', 'dry_run', {
+      ...base, seen, ...(pending.length ? { no_id: pending.length, no_id_reasons: { dry_run_no_click: pending.length } } : {}),
+    });
   }
   // A page that cleared only as "unscreened" never reaches a live save (screenUntrusted already blocks live).
   if (!checkAndIncrement(db, 'linkedin_search', deps.cfg.maxSearchesPerDay)) return empty('rate_limited', 'search_limit');
@@ -170,15 +210,39 @@ export async function runDiscovery(o: {
     return empty('rate_limited', 'discover_limit');
   }
 
+  // Cards without an id: code reads it from the page (a card click) now that the ceilings are consumed; failures are counted, never dropped.
+  let enr: EnrichOut | null = null;
+  if (o.enrich && pending.length) enr = await o.enrich(parsed);
+  const toSave = [...fresh];
+  if (enr) {
+    const have = new Set(toSave.map((j) => j.id));
+    for (const j of enr.jobs) {
+      if (have.has(j.id)) continue;
+      have.add(j.id);
+      if (isSeen(db, j.id)) seen++; else toSave.push(j);
+    }
+    seen += enr.known;
+  }
   const ids: string[] = [];
-  for (const j of fresh) {
+  for (const j of toSave) {
     saveJob(db, j);
     ids.push(j.id);
   }
   const people = o.afterSave ? o.afterSave(parsed) : undefined;
   recordDiscoverRun(db, now());
-  return {
+  const idFrom: Record<string, number> = { ...(parsed.idFrom ?? {}) };
+  for (const [k, n] of Object.entries(enr?.id_from ?? {})) idFrom[k] = (idFrom[k] ?? 0) + n;
+  const result: DiscoverResult = {
     status: 'ok', code: ids.length ? 'saved' : parsed.fetched === 0 ? 'no_results' : 'no_new', ...base, new: ids.length, seen, job_ids: ids,
     ...(people !== undefined ? { people } : {}),
+    ...(Object.keys(idFrom).length ? { id_from: idFrom } : {}),
+    ...(enr ? { clicks: enr.clicks, known: enr.known, ...(enr.no_id ? { no_id: enr.no_id, no_id_reasons: enr.no_id_reasons } : {}) } : {}),
   };
+  // Cards were read but nothing came of them (or some had no id): a counts-only file shows the owner why.
+  const lost = result.no_id || (ids.length === 0 && parsed.skipped > 0);
+  if (parsed.fetched > 0 && lost && (deps.diagDir || !process.env.VITEST)) {
+    const d = await writeDiscoverSummary({ now, ...(deps.diagDir ? { diagDir: deps.diagDir } : {}) }, { tool, search: o.searchName, result });
+    if (d) result.diag = d;
+  }
+  return result;
 }
