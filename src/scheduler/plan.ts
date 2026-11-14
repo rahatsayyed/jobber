@@ -59,7 +59,8 @@ export const LINKEDIN_INBOX_MIN_GAP_MIN = 60;
 export const NAUKRI_DETAIL_QUOTA = 5;
 export const WELLFOUND_DETAIL_QUOTA = 5;
 export const WELLFOUND_DISCOVER_EVERY_HOURS_DEFAULT = 6;
-export const LINKEDIN_DISCOVER_EVERY_HOURS = 6;
+/** Fallback age in hours when `due.linkedinDiscoverDue` is not given; the real schedule is next_at, a random 45 to 90 minutes (discoverNext.ts). */
+export const LINKEDIN_DISCOVER_EVERY_HOURS = 1;
 /** Most LinkedIn searches one wake may run (spreads the daily LINKEDIN_MAX_DISCOVER_PER_DAY ceiling over several wakes; never raises it). */
 export const LINKEDIN_DISCOVER_MAX_PER_WAKE = 2;
 
@@ -259,7 +260,7 @@ export function planWake(i: {
   const nameCount = names.jobs.length + names.posts.length;
   const discoverEvery = knobs.linkedinDiscoverEveryHours ?? LINKEDIN_DISCOVER_EVERY_HOURS;
   const discoverAge = due.linkedinDiscoverLastHoursAgo;
-  const discoverDue = discoverAge === null || (discoverAge !== undefined && discoverAge >= discoverEvery);
+  const discoverDue = due.linkedinDiscoverDue ?? (discoverAge === null || (discoverAge !== undefined && discoverAge >= discoverEvery));
   const discoverRoom = ceilings.linkedin_discover ? ceilings.linkedin_discover.limit - ceilings.linkedin_discover.used : 0;
   if (allowed.has('linkedin') && discoverDue && nameCount > 0 && ceilings.linkedin_discover?.ok && discoverRoom > 0) {
     const quota = Math.min(nameCount, discoverRoom, LINKEDIN_DISCOVER_MAX_PER_WAKE);

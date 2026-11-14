@@ -153,3 +153,13 @@ different platforms are independent and one window's steps of that stretch are p
 - **A forced wake** (`/runhunt`, `./run-hunt.sh`, `npm run scheduler -- --once --now`) is a request row (`scheduler_state` key `wake_request`, `src/scheduler/wakeRequest.ts`) that the running daemon takes within its 30 second slice and runs through the same windows; with no daemon running the request is refused ("start the stack with npm run up", exit code 3). The result is stored under `wake_request_result`.
 - **Guards in an interactive window:** `.claude/hooks/window-guard.cjs` keeps the kill switch (`kill-switch.cjs`), the tamper denylist (`tamper-guard.cjs`) and the secret-path screens (`SCREENED_TOOLS`, `send_email` attachments). There is no per-item tool list any more; see `docs/reference/safety-layers.md` for what was lost.
 - **Unverified live:** real claude windows have never run a tick. Transcript completion detection, the `/clear` re-discovery, the pane text for stall and usage limit, the startup line, `--session-id` and a first positional prompt with the installed `claude`, and the bounded window start. Watch the first ticks (`docs/window-rollout.md`).
+
+### LinkedIn discovery cadence
+
+The LinkedIn `discover` wake task runs about hourly with random jitter, not every 6 hours. When a discovery search finishes
+(`recordDiscoverRun`, `src/scheduler/discoverNext.ts`) code stores `linkedin_discover_last_at` and `linkedin_discover_next_at`
+(now plus a uniform random 45 to 90 minutes, constants `DISCOVER_MIN_GAP_MIN` / `DISCOVER_MAX_GAP_MIN`, no env key) in
+`scheduler_state`. `countDue` sets `linkedinDiscoverDue` (now >= next_at; with no next_at it is last_at + 60 minutes; with neither
+marker it is due now, so clearing the markers makes it due). All other gates stay: `LINKEDIN_ACTIVE_HOURS`, quiet hours, halts, the kill
+switch, the `linkedin_discover` daily ceiling and `LINKEDIN_DISCOVER_MAX_PER_WAKE` (2 searches per wake). The scheduler passes the
+names ordered least recently tried first (`rotateNames`), so over a day every named job and post search is covered.
