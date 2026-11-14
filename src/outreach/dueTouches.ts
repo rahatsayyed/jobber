@@ -6,6 +6,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { planNextTouch, type Category, type ContactSnapshot, type TouchKind, type Variant } from './cadence.js';
 import { companyPaused, normalizeProfileKey } from './people.js';
 import type { Tuning } from './tuning.js';
+import { posterNoDmForProfile } from '../lib/postNoDm.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -126,6 +127,8 @@ export function dueTouchesFor(
     if (cooldown && cooldown > now) continue;
     if (pendingStmt.get(r.person_id, ...TERMINAL)) continue;
     if (companyPaused(db, r.platform, r.company_key)) continue;
+    // The poster of a hiring post that said "no DMs" gets no LinkedIn message (reason code poster_no_dm; the guard refuses it too).
+    if (r.platform === 'linkedin' && posterNoDmForProfile(db, r.profile_key)) continue;
 
     const touches = touchStmt.all(r.person_id, r.cycle_started_at, r.cycle_started_at) as {
       kind: TouchKind;

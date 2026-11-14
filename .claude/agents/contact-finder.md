@@ -30,6 +30,11 @@ the `linkedin-operator`. Its entry may carry `poster_url`, `apply_email` (an add
    searches (steps 2 and 3 below) as for any other job. **Company unresolved**: no email search for a guessed domain,
    no `linkedin_find_profiles`, `linkedin_profiles: []`, `notes: "company_unresolved"` (the post email, if any, still
    counts as the `contact`; the poster alone is contacted).
+4. **"No DM" posts.** When the `find_company_emails` result has `poster_no_dm: true`, the post said not to DM the poster
+   ("no DMs", "email only", "apply through the link only", "send your CV to <email>", Hinglish "DM mat karo", "sirf email").
+   Code then refuses every LinkedIn connect and message to that poster (`poster_no_dm`), so do NOT list the poster and
+   add `notes: "poster_no_dm"`. The post email (verified, `source: "post"`) is still returned as the `contact` and goes
+   through the normal cold-email path; a free-mail address (gmail.com and so on) is never verified, so it is not emailed.
 
 ## Steps, for EACH job
 

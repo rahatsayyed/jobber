@@ -9,6 +9,7 @@ import { verifyEmail } from '../lib/verify.js';
 import { hunterDomainSearch } from '../lib/hunter.js';
 import { withHnGate } from '../lib/postingDomains.js';
 import { composePostContacts } from '../lib/postEmail.js';
+import { detectNoDm } from '../lib/postNoDm.js';
 import { loadContactsEnv } from '../lib/contactsEnv.js';
 import { searchWithBudget } from '../search/index.js';
 import { resolveDomainForJob } from '../search/ladder.js';
@@ -55,8 +56,8 @@ server.registerTool(
     // LinkedIn hiring post: the post email first, the company search only when the company is known and not uncertain
     // (an empty or low-confidence company never reaches domain search: no generic-domain guesses).
     const postJob = job_id === undefined ? undefined : (db
-      .prepare("SELECT source, apply_email, company, company_confidence FROM jobs WHERE id = ? AND source = 'linkedin-posts'")
-      .get(job_id) as { source: string; apply_email: string | null; company: string | null; company_confidence: string | null } | undefined);
+      .prepare("SELECT source, apply_email, company, company_confidence, description, poster_no_dm FROM jobs WHERE id = ? AND source = 'linkedin-posts'")
+      .get(job_id) as { source: string; apply_email: string | null; company: string | null; company_confidence: string | null; description: string | null; poster_no_dm: number | null } | undefined);
     if (postJob) {
       const co = (postJob.company ?? '').trim() || company.trim();
       let domainOut: { domain: string | null; domain_source: string | null } = { domain: null, domain_source: null };
@@ -66,7 +67,9 @@ server.registerTool(
         return r.ladder.domain ? gather(co, r.ladder.domain, person_name) : [];
       });
       for (const c of composed.contacts as Contact[]) if (c.source === 'post') saveContact(db, c);
-      const result = { contacts: composed.contacts, hn_check: 'not_applicable', domain: domainOut.domain, domain_source: domainOut.domain_source, company_check: composed.company_check };
+      const result = { contacts: composed.contacts, hn_check: 'not_applicable', domain: domainOut.domain, domain_source: domainOut.domain_source, company_check: composed.company_check,
+        // true: the post said not to DM the poster; no LinkedIn connect or message goes to them (the email above is unaffected).
+        poster_no_dm: postJob.poster_no_dm === 1 || (postJob.poster_no_dm === null && detectNoDm(postJob.description).noDm) };
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
 

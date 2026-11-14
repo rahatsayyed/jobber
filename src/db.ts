@@ -14,6 +14,7 @@ import { channelsFor, type ChannelVerdict } from './lib/channels.js';
 import { checkRole, sweepRoleGate, type RoleGateConfig } from './roleGate.js';
 import { applyPipelineSkips, applyPriorityRepeats, JOB_STATUS_JD_PENDING, JOB_STATUS_REPEAT_CONTACT, planPipelineWork, QUEUE_NOT_REPREP_SQL, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_SKIP_SQL, PIPELINE_WINDOW_HOURS, PREP_OFFER_LIMIT, PREP_OFFER_LIMIT_APPLY, prepOfferLimitFor, sqlTime } from './pipelineWork.js';
 import { laneOrder } from './promoted.js';
+import { detectNoDm } from './lib/postNoDm.js';
 import { UNVERIFIED_ADDRESS, isVerifiedAddress } from './lib/verifiedAddress.js';
 import { migrateOutreachTables } from './outreach/schema.js';
 import { migrateSchedulerTables } from './scheduler/runLog.js';
@@ -326,6 +327,8 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   }
   // Count of match-save rejections per job: after MATCH_FAIL_LIMIT the wake pipeline stops re-offering it (plan 8G task 13).
   if (!jobCols.has('match_fails')) db.exec('ALTER TABLE jobs ADD COLUMN match_fails INTEGER NOT NULL DEFAULT 0');
+  // LinkedIn hiring posts: 1 when the post text says not to DM the poster (src/lib/postNoDm.ts), 0 when it does not, NULL for rows saved before.
+  if (!jobCols.has('poster_no_dm')) db.exec('ALTER TABLE jobs ADD COLUMN poster_no_dm INTEGER');
   // Owner-submitted jobs (manual requests) run at priority 1 ahead of everything else.
   if (!jobCols.has('priority')) db.exec('ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0');
   // Promoted listing on Naukri or Wellfound (set by code from a card marker, never cleared): ordering only, see src/promoted.ts.
@@ -563,6 +566,10 @@ export function saveJob(db: BetterSqlite3.Database, job: Job): void {
     job.apply_link ?? null,
     job.poster_url ?? null
   );
+  // A hiring post that says "no DMs / email only / link only" is flagged in code; the poster gates read this flag (and the text for old rows).
+  if (job.source === 'linkedin-posts') {
+    db.prepare('UPDATE jobs SET poster_no_dm = ? WHERE id = ? AND poster_no_dm IS NULL').run(detectNoDm(job.description).noDm ? 1 : 0, job.id);
+  }
   // A stored job later seen as promoted becomes promoted; nothing ever clears the flag.
   if (job.promoted === true) db.prepare('UPDATE jobs SET promoted = 1 WHERE id = ? AND COALESCE(promoted, 0) = 0').run(job.id);
 }

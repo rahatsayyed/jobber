@@ -23,6 +23,7 @@ import { cleanText } from '../dash/clean.js';
 import { deriveAskKind, linkedinThreadUrl } from './escalations.js';
 import type { Platform } from '../scheduler/control.js';
 import { noiseKind, closeGoneJob, dedupeHost } from './escalationPolicy.js';
+import { posterNoDmForProfile } from '../lib/postNoDm.js';
 import { DEFAULT_MATCH_THRESHOLD, MATCHED_SQL, matchedBinds } from '../matchRubric.js';
 
 type Db = BetterSqlite3.Database;
@@ -236,7 +237,8 @@ export function nextQueueContacts(
   for (const e of entries) {
     if (out.length >= limit) break;
     if (e.failures >= MAX_COMPANY_FAILURES) continue;
-    const eligible = nextContactsForCompany(db, cfg, platform, e.key, now);
+    // A person who authored a hiring post that said "no DMs" is never offered for a connect or message (poster_no_dm).
+    const eligible = nextContactsForCompany(db, cfg, platform, e.key, now).filter((c) => !(c.profile_url && posterNoDmForProfile(db, c.profile_url)));
     if (eligible.length === 0) continue;
     const want = normalizeProfileKey(e.row.connect_profile_url);
     const pick = eligible.find((c) => c.profile_url && normalizeProfileKey(c.profile_url) === want) ?? eligible[0];
@@ -309,6 +311,8 @@ export function nextPosterContacts(
     if (!p || seen.has(p.id)) continue;
     seen.add(p.id);
     if (p.stage !== 'new' || p.paused_reason !== null || touchedStmt.get(p.id) !== undefined) continue;
+    // The post says not to DM (poster_no_dm): no poster outreach for this job. The post email, if any, is a separate path.
+    if (posterNoDmForProfile(db, j.poster_url)) continue;
     if (noDialogAttempts(db, p.id, opts.now ?? new Date()) >= NO_DIALOG_MAX_ATTEMPTS) continue;
     const company = (j.company ?? '').trim();
     if (company) {
