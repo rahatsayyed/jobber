@@ -28,6 +28,8 @@ export const EXTRA_DENY: ReadonlyArray<{ path: string; reason: string }> = [
   { path: 'config/worker-tools.json', reason: 'tool lists of the subagents' },
   { path: 'config/manager-windows.json', reason: 'window allowlist and environment' },
   { path: 'config/windows/fixer.md', reason: 'the fixer role file (the healer never edits itself)' },
+  { path: 'config/windows/fixer.permissions.json', reason: 'the fixer permissions (the healer never widens itself)' },
+  { path: 'src/platform/windowlaunch.ts', reason: 'writes the per-window permissions (the healer never widens itself)' },
   { path: 'src/heal/', reason: 'the healer never edits itself' },
   { path: 'scripts/heal.ts', reason: 'the healer never edits itself' },
   { path: 'scripts/heal-live.ts', reason: 'the live-try runner is code-owned (the healer never edits itself)' },

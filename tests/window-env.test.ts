@@ -8,7 +8,7 @@ import { loadManagerConfig, startWindow } from '../src/platform/manager.js';
 import type { Run } from '../src/platform/tmux.js';
 import { parseWindowFields } from '../src/platform/windowConfig.js';
 import { buildWindowEnv, validateWindowEnvSpec, windowEnvLines } from '../src/platform/windowEnv.js';
-import { renderWindowSettings } from '../src/platform/windowLaunch.js';
+import { checkWindowRule, loadWindowPermissions, prepareWindowLaunch, renderWindowSettings } from '../src/platform/windowLaunch.js';
 import { readWindowSession } from '../src/platform/windowSession.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -167,6 +167,45 @@ describe('window config schema (config/manager-windows.json)', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('per-window extra permissions (fixer only)', () => {
+  it('the real fixer file passes the closed grammar and only touches the heal worktree, tsc, vitest, heal:live and read-only git', () => {
+    const rules = loadWindowPermissions(ROOT, 'fixer');
+    expect(rules.length).toBeGreaterThan(0);
+    for (const r of rules) {
+      const m = /^(Edit|Write|Bash)\((.+)\)$/.exec(r);
+      expect(m, r).not.toBeNull();
+      if (m![1] !== 'Bash') expect(m![2]).toMatch(/\.jobber\/heal\/wt\/\*\*$/);
+    }
+    expect(rules.some((r) => r.startsWith('Edit(//') && r.includes(ROOT.replace(/^\/+/, '')))).toBe(true);
+    expect(rules.join('\n')).not.toMatch(/Bash\(\*|rm |curl|sudo|git push|git reset|git checkout|git merge/);
+  });
+
+  it('every other worker window gets no extra rule', () => {
+    for (const w of ['mail', 'linkedin', 'boards', 'sources', 'pipeline', 'apply', 'chat']) expect(loadWindowPermissions(ROOT, w)).toEqual([]);
+  });
+
+  it('rules outside the closed grammar are refused (the window would not start)', () => {
+    for (const bad of ['Bash(*)', 'Bash(rm -rf *)', 'Bash(git push *)', 'Bash(curl *)', 'Edit(src/**)', 'Write(**)', 'Edit(.jobber/heal/wt/../../src/**)', 'Edit(.jobber/**)', 'Read(*)', 42, 'x'.repeat(300)]) {
+      expect(() => checkWindowRule(bad, ROOT), String(bad)).toThrow();
+    }
+  });
+
+  it('prepareWindowLaunch writes the extra rules into the fixer settings file and none into the mail one', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'wl-'));
+    try {
+      mkdirSync(path.join(dir, 'config', 'windows'), { recursive: true });
+      writeFileSync(path.join(dir, 'config', 'windows', 'fixer.permissions.json'), JSON.stringify({ allow: ['Edit(.jobber/heal/wt/**)', 'Bash(npx tsc *)'] }));
+      const f = prepareWindowLaunch(dir, 'fixer', {}, base, {});
+      const fs = JSON.parse(readFileSync(f.settingsPath, 'utf8')) as { permissions?: { allow: string[] } };
+      expect(fs.permissions?.allow).toEqual(['Edit(.jobber/heal/wt/**)', 'Bash(npx tsc *)']);
+      const m = prepareWindowLaunch(dir, 'mail', {}, base, {});
+      expect((JSON.parse(readFileSync(m.settingsPath, 'utf8')) as { permissions?: unknown }).permissions).toBeUndefined();
+      writeFileSync(path.join(dir, 'config', 'windows', 'fixer.permissions.json'), JSON.stringify({ allow: ['Bash(*)'] }));
+      expect(() => prepareWindowLaunch(dir, 'fixer', {}, base, {})).toThrow();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
 

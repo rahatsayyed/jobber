@@ -1,0 +1,15 @@
+{
+  "_comment": "Extra allow rules for the `fixer` window ONLY (src/platform/windowLaunch.ts writes them into its own per-window settings file, no other window gets them). Closed grammar: Edit and Write only under .jobber/heal/wt/, Bash only for the listed prefixes. A rule outside the grammar stops the window from starting. The healer can never edit this file (src/heal/gate.ts denylist).",
+  "allow": [
+    "Edit(.jobber/heal/wt/**)",
+    "Write(.jobber/heal/wt/**)",
+    "Edit(//{rootnoslash}/.jobber/heal/wt/**)",
+    "Write(//{rootnoslash}/.jobber/heal/wt/**)",
+    "Bash(npx tsc *)",
+    "Bash(npx vitest *)",
+    "Bash(npm run heal:live *)",
+    "Bash(git status *)",
+    "Bash(git diff *)",
+    "Bash(git log *)"
+  ]
+}
