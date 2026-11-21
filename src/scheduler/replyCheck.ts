@@ -18,7 +18,8 @@ import type { DriverDeps } from './driver.js';
 import { noteSkippedItem } from '../platform/handoff.js';
 import { getState, setState, type RunStatus } from './runLog.js';
 import { noteWindowUnavailable } from './windowReady.js';
-import { formatDripFailure, notifyTg } from './dripNotice.js';
+import { formatDripFailure } from './dripNotice.js';
+import { routeNotice } from '../platform/digest.js';
 import { E, b, clean, excerpt, headline, html, i as ital, join, line, lines, link, BLANK, type Html } from '../platform/tgHtml.js';
 import { ownerOnlyCodes } from '../outreach/ownerOnly.js';
 import { join as joinPath } from 'node:path';
@@ -283,11 +284,11 @@ async function autoReplyStep(d: DriverDeps): Promise<void> {
       const last = Date.parse(getState(d.db, STATE_FACTS_NOTICE_AT) ?? '');
       if (!Number.isFinite(last) || now.getTime() - last >= FAIL_NOTICE_GAP_MIN * 60_000) {
         setState(d.db, STATE_FACTS_NOTICE_AT, now.toISOString(), now);
-        await notifyTg(d, 'inbox', html(lines([
+        await routeNotice(d, { kind: 'reply_facts_unusable', topic: 'inbox', silent: false, text: html(lines([
           headline(E.you, 'Automatic email replies are on, but not usable'),
           line('Why', clean(r.factsProblem, 160)),
           ital('Until this is fixed nothing is answered automatically and every plain ask comes to you. At most one notice like this per hour.'),
-        ])), undefined, false);
+        ])) });
       }
     }
   } catch {
@@ -301,7 +302,7 @@ async function onFailure(d: DriverDeps, item: ReplyCheckItem, why: string, now: 
   const last = Date.parse(getState(d.db, STATE_RC_NOTICE_AT) ?? '');
   if (!Number.isFinite(last) || now.getTime() - last >= FAIL_NOTICE_GAP_MIN * 60_000) {
     setState(d.db, STATE_RC_NOTICE_AT, now.toISOString(), now);
-    await notifyTg(d, 'alerts', formatReplyCheckHeld(item, why));
+    await routeNotice(d, { kind: 'reply_check_held', topic: 'alerts', text: formatReplyCheckHeld(item, why) });
   }
   if (item.reason === 'before_reply') {
     try {
@@ -450,7 +451,7 @@ export function replyNoticeTopic(rows: ReplyRow[]): 'inbox' | 'mail' {
 }
 
 /** Posts one grouped notice for every processed mail not yet announced, then marks them. Never throws. Returns how many rows were announced. */
-export async function notifyNewReplies(d: Pick<DriverDeps, 'db' | 'tg' | 'now'>): Promise<number> {
+export async function notifyNewReplies(d: Pick<DriverDeps, 'db' | 'tg' | 'now'> & { env?: NodeJS.ProcessEnv }): Promise<number> {
   try {
     const rows = d.db.prepare(
       `SELECT p.message_id, p.job_id, p.classification, p.action, p.proposed_outcome, p.from_addr, p.subject, p.excerpt, p.needs_you, p.auto_note, p.auto_class, j.company, j.title
@@ -460,7 +461,15 @@ export async function notifyNewReplies(d: Pick<DriverDeps, 'db' | 'tg' | 'now'>)
     if (rows.length === 0) return 0;
     const worth = rows.filter(worthNotice);
     const text = formatReplyNotice(worth);
-    if (text) await notifyTg(d, replyNoticeTopic(worth), text);
+    if (text) {
+      // Urgent (at once): a mail that asks for the owner, an interview or an offer. Everything else is only counted in the digest.
+      const needs = worth.filter((r) => r.needs_you).length;
+      const big = worth.some((r) => r.classification === 'interview' || r.classification === 'offer');
+      await routeNotice(d, {
+        kind: needs ? 'reply_needs_you' : big ? 'reply_interview_offer' : 'replies_seen', topic: replyNoticeTopic(worth), text,
+        payload: { count: worth.length, needs },
+      });
+    }
     const mark = d.db.prepare("UPDATE processed_messages SET notified_at = datetime('now') WHERE message_id = ? AND notified_at IS NULL");
     d.db.transaction(() => { for (const r of rows) mark.run(r.message_id); })();
     return worth.length;

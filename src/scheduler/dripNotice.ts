@@ -9,6 +9,7 @@ import {
 } from '../platform/tgHtml.js';
 import type { TopicName } from '../telegram/topics.js';
 import type { WakeCounts } from './stream.js';
+import type { NoticeSpec } from '../platform/digest.js';
 
 export interface PostOpts { html?: boolean; silent?: boolean }
 export type TgPost = (topic: TopicName, text: string, opts?: PostOpts) => Promise<unknown>;
@@ -194,6 +195,8 @@ export interface WakeNotice {
   connectsQueued?: number | null;
   appliesQueued?: number | null;
   followups?: number | null;
+  /** New jobs per source id (digest only; not shown in the wake text). */
+  bySource?: Record<string, number>;
 }
 
 export const shortId = (id: string): string => id.slice(0, 8);
@@ -263,4 +266,29 @@ export function wakeNotice(n: WakeNotice): { topic: TopicName; text: string } | 
     out.push(section('Problems', [bullets([`source errors ${s.errors}`])]));
   }
   return { topic: 'wakes', text: html(lines(out)) };
+}
+
+// The routing spec of a finished wake (see src/platform/digest.ts): an `ok` wake is routine (digest), a skip for the kill switch or a halt
+// and every wake that did not end ok is urgent. Same topic and text as `wakeNotice`. Null when the wake should stay silent.
+export function wakeNoticeSpec(n: WakeNotice & { bySource?: Record<string, number> }): NoticeSpec | null {
+  const base = wakeNotice(n);
+  if (!base) return null;
+  if (n.status === 'skipped') {
+    const skip = (n.reason ?? '').split(':')[0] ?? '';
+    return skip === 'ceilings_exhausted'
+      ? { kind: 'wake_skipped', topic: base.topic, text: base.text, payload: { reason: skip } }
+      : { kind: 'wake_blocked', topic: base.topic, text: base.text, payload: { reason: skip } };
+  }
+  if (n.status === 'ok') {
+    return {
+      kind: 'wake_summary', topic: base.topic, text: base.text,
+      payload: {
+        newJobs: n.newJobs ?? 0, scored: n.scored ?? 0, matched: n.matched ?? 0, prepared: n.prepared ?? 0,
+        emailsQueued: n.emailsQueued ?? 0, connectsQueued: n.connectsQueued ?? 0, appliesQueued: n.appliesQueued ?? 0, followups: n.followups ?? 0,
+        sourceErrors: n.sources?.errors ?? 0, stopped: n.counts?.stopped ?? 0, escalated: n.counts?.escalated ?? 0,
+        ...(n.bySource ? { bySource: n.bySource } : {}),
+      },
+    };
+  }
+  return { kind: n.status === 'usage_limit' ? 'usage_backoff' : 'wake_failed', topic: base.topic, text: base.text, payload: { status: n.status } };
 }

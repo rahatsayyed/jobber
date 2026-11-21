@@ -11,7 +11,8 @@ import { noteSkippedItem } from '../platform/handoff.js';
 import { loadManagerConfig, sessionName, startWindowWithMemory } from '../platform/manager.js';
 import { assertClaudePane, killWindow, listWindows, type Run } from '../platform/tmux.js';
 import { E, clean, code, headline, html, i as ital, line, lines } from '../platform/tgHtml.js';
-import { notifyTg, type HasTg } from './dripNotice.js';
+import type { HasTg } from './dripNotice.js';
+import { routeNotice } from '../platform/digest.js';
 import { getState, setState } from './runLog.js';
 
 /** How many 1 second tries the start waits for a claude pane (claude can take a while to start). */
@@ -87,6 +88,7 @@ export interface UnavailableDeps extends HasTg {
   db: BetterSqlite3.Database;
   projectRoot: string;
   now: () => Date;
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -103,13 +105,13 @@ export async function noteWindowUnavailable(d: UnavailableDeps, window: string, 
     const last = Date.parse(getState(d.db, key) ?? '');
     if (Number.isFinite(last) && now.getTime() - last < ALERT_EVERY_MS) return;
     setState(d.db, key, now.toISOString(), now);
-    await notifyTg(d, 'alerts', html(lines([
+    await routeNotice(d, { kind: 'window_down', topic: 'alerts', silent: false, text: html(lines([
       headline(E.warn, `Window ${window} is not available`),
       line('Item skipped', clean(item, 120)),
       line('Why', clean(reason, 80)),
       ital('Nothing was run anywhere else. The item stays due and is tried again. Look at the window with: tmux attach -t Jobber'),
       line('Start it by hand', code(`npx tsx scripts/manager.ts start ${window}`)),
       ital('At most one notice like this per hour per window.'),
-    ])), undefined, false);
+    ])) });
   } catch { /* a notice never breaks the lane */ }
 }

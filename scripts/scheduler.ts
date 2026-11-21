@@ -37,6 +37,8 @@ import { ingestManualRequests } from '../src/manual/ingest.js';
 import { linkedinActiveNow } from '../src/linkedin/activeHours.js';
 import { finalizeManualRequests } from '../src/manual/report.js';
 import { telegramNotifier } from '../src/platform/notify.js';
+import { digestOn, digestTick, enqueueNotice, routeNotice } from '../src/platform/digest.js';
+import type { TgPost } from '../src/scheduler/dripNotice.js';
 import { linkedinDripEnabled, linkedinDripStatus, renderLinkedinDripLines } from '../src/scheduler/linkedinDrip.js';
 import { escalationDigestTick } from '../src/scheduler/escalationDigest.js';
 import { healTick } from '../src/heal/tick.js';
@@ -147,6 +149,10 @@ async function main(): Promise<void> {
     stallMs: stallMsFromEnv(env),
     ensureReady: makeEnsureReady({ root: projectRoot, env, run: defaultRun }),
   });
+  const tgPost: TgPost = async (topic, text, opts) => {
+    const silent = (opts as { silent?: boolean } | undefined)?.silent;
+    await telegramNotifier(env).send(text, { topic, ...(opts?.html ? { html: true } : {}), ...(typeof silent === 'boolean' ? { silent } : {}) });
+  };
   const deps: DriverDeps = {
     db,
     now,
@@ -161,10 +167,7 @@ async function main(): Promise<void> {
     notifier,
     // Code-sent notices to the wakes, alerts, mail and linkedin topics (zero LLM); a missing Telegram setup just returns not ok.
     // `silent` is optional: unset means the topic default (wakes, mail and linkedin silent, alerts loud); see src/telegram/silent.ts noticeUrgency.
-    tg: async (topic, text, opts) => {
-      const silent = (opts as { silent?: boolean } | undefined)?.silent;
-      await telegramNotifier(env).send(text, { topic, ...(opts?.html ? { html: true } : {}), ...(typeof silent === 'boolean' ? { silent } : {}) });
-    },
+    tg: tgPost,
     newRunId: () => randomBytes(8).toString('hex'),
     session: env.SCHEDULER_TMUX_SESSION || undefined,
     discoverSearches: () => discoverNames(db),
@@ -186,6 +189,12 @@ async function main(): Promise<void> {
       killed: () => stopActive(projectRoot, env).stopped,
       inQuiet: () => inQuietHours(now(), quietFromConfig(cfg)),
       alert: (text, o) => telegramNotifier(env).send(text, { topic: 'alerts', html: true, ...(o?.silent !== undefined ? { silent: o.silent } : {}) }),
+      routine: (spec) => routeNotice({ db, tg: tgPost, env, now }, spec),
+    }) : undefined,
+    // The hourly digest of the routine notices (src/platform/digest.ts); the daemon only. TELEGRAM_DIGEST=off turns it off (every notice goes at once).
+    noticeDigest: args.mode === 'daemon' ? digestTick({
+      db, env, now, quiet: quietFromConfig(cfg),
+      send: async (text) => telegramNotifier(env).send(text, { topic: 'wakes', html: true, silent: true }),
     }) : undefined,
     // Self-heal (src/heal): detection into the heal ledger, the `fixer` window, the landing gate, restart and rollback. HEAL_MODE off|suggest|auto
     // (default suggest: a fix waits as a ready branch until `npm run heal -- land <id>`). The daemon only.
@@ -201,7 +210,12 @@ async function main(): Promise<void> {
       const r = await finalizeManualRequests(db, runStatus, {
         now,
         matchThreshold: matchThresholdFromEnv(env),
-        send: async (text) => {
+        send: async (text, meta) => {
+          // A request that went fine is only counted in the hourly digest; one that failed or did not finish goes out at once (loud).
+          if (!meta?.failed && digestOn(env)) {
+            if (!text.includes('(continued)')) enqueueNotice(db, 'manual_report', { jobs: meta?.jobs ?? 0 }, now());
+            return;
+          }
           const sent = await tg.send(text, { topic: 'inbox', html: true, silent: false }); // the owner should look: loud
           // The text is always kept in the request row; the notify file gets only a title so a missing Telegram setup is visible.
           if (!sent.ok) {

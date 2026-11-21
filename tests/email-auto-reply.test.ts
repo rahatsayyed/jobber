@@ -399,7 +399,7 @@ function lane(opts: Opts = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'email-reply-'));
   dirs.push(dir);
   let t = (opts.start ?? NOON_IST).getTime();
-  const env = { EMAIL_AUTO_REPLY: 'true', ...(opts.env ?? {}) } as NodeJS.ProcessEnv;
+  const env = { EMAIL_AUTO_REPLY: 'true', TELEGRAM_DIGEST: 'off', ...(opts.env ?? {}) } as NodeJS.ProcessEnv;
   const w = world();
   const posts: Array<{ topic: string; text: string; silent?: boolean }> = [];
   const clock = (): Date => new Date(t);

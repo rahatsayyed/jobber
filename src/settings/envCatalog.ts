@@ -942,6 +942,23 @@ const hand: EnvSpec[] = [
     about: 'Comma-separated topic names (alerts, wakes, mail, linkedin, drips, inbox, assist, chat; drips is the old shared drip topic) whose code-sent notices arrive silent (no sound or vibration; the message still appears). Blank (the default): drips, wakes, mail and linkedin. The word none: nothing is silent. An unknown name is ignored. A notice that asks for the owner (handoff reminder, manual-request report, assist ping, escalation digest) is always loud, and replies to your own commands are never silent.',
     ...never('Decides which Telegram notices make a sound: only the owner, by hand in .env, can change it.'),
   }),
+  e('TELEGRAM_DIGEST', 'telegram', 'Telegram digest', 'enum', {
+    default: 'on',
+    allowed: ['on', 'off'],
+    exampleActive: false,
+    restart: 'scheduler',
+    restartEvidence: 'src/platform/digest.ts',
+    about: 'on (the default): routine notices (every email sent, LinkedIn invite or DM, wake summary, accept check) are collected and sent as ONE silent summary to the wakes topic every TELEGRAM_DIGEST_EVERY_MIN minutes; only urgent notices (you are needed, something is blocked or failed, a safety refusal) arrive at once. off: every notice is sent at once as before. For a status any time, send a message in the chat topic or run npx tsx scripts/status.ts digest.',
+  }),
+  e('TELEGRAM_DIGEST_EVERY_MIN', 'telegram', 'Telegram digest', 'int', {
+    default: '60',
+    min: 15,
+    max: 1440,
+    exampleActive: false,
+    restart: 'scheduler',
+    restartEvidence: 'src/platform/digest.ts',
+    about: 'Minutes between two digest messages (15 to 1440). Nothing is sent when nothing happened and none during quiet hours; the first digest after quiet hours holds the whole span. Used only when TELEGRAM_DIGEST is on.',
+  }),
 
   // ---- Matching: per-dimension minimums of the OLD five-key rubric (rubric_v2, src/matchRubric.ts). The career-ops rubric has none.
   e('MATCH_DIM_MINIMUMS', 'limits', 'matching', 'string', {
