@@ -16,6 +16,7 @@ const SYNC_ONLY = new Set([
   'src/naukri/inbound.ts',
   'src/outreach/service.ts',
   'src/lib/jobCompany.ts',
+  'src/linkedinSignals.ts', // short names and headlines (max 80 chars), ordering only, never sent or shown to a model
   'src/mcp/naukri.ts',
   'src/safety/screen.ts',
   'src/safety/inputGate.ts',

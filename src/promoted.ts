@@ -1,12 +1,28 @@
 // Promoted jobs (employers paying for visibility on Naukri and Wellfound are usually hiring now): the shared marker matcher,
 // the lane and tie-break rules. Pure, no I/O. The per-platform marker lists live in src/naukri/promoted.ts and
 // src/wellfound/promoted.ts. Promotion only changes the ORDER work is taken in: it never changes a stored score, never lowers
-// the match threshold and never bypasses a veto, hard stop or the threshold.
+// the match threshold and never bypasses a veto, hard stop or the threshold. LinkedIn social-proof signals work the same way.
+import { readHiringTeam } from './linkedinSignals.js';
 
 /** Share of one page (and of the match batch overall) the promoted-first lane may take, so the round-robin by source still runs. */
 export const PROMOTED_LANE_FRACTION = 0.4;
 /** Added to the stored score ONLY to order the prepare pool; never stored, never compared with the threshold. */
 export const PROMOTED_TIEBREAK_BONUS = 0.15; // 3 points of the old 0..100 scale, on the stored 1..5 scale
+
+/** Added (ordering only) for a LinkedIn job with connections at the company or a 1st-degree hiring-team member; a 2nd-degree one adds half. */
+export const LI_SIGNAL_BONUS = 0.1;
+
+/**
+ * The ordering bonus of LinkedIn social-proof signals (src/linkedinSignals.ts): LI_SIGNAL_BONUS when li_connections > 0 or any stored
+ * hiring-team entry is 1st degree, else half of it for a 2nd-degree entry, else 0. Pure; never a score, never compared with the threshold.
+ */
+export function linkedinSignalBonus(connections: number | null | undefined, hiringTeamJson: string | null | undefined): number {
+  if (typeof connections === 'number' && connections > 0) return LI_SIGNAL_BONUS;
+  const team = readHiringTeam(hiringTeamJson);
+  if (team.some((e) => e && e.degree === 1)) return LI_SIGNAL_BONUS;
+  if (team.some((e) => e && e.degree === 2)) return LI_SIGNAL_BONUS / 2;
+  return 0;
+}
 
 /** Largest promoted-first lane for a page of `size` rows (40 percent, rounded down). */
 export function promotedLaneSize(size: number): number {
@@ -57,8 +73,8 @@ export function matchPromotedSignals(sig: PromotedSignals | null | undefined, wo
 }
 
 /** Order for the P4 prepare pool: stored score (+0.15 for a promoted job, ordering only), then promoted, then already matched. Stable. */
-export function sortPreparePool<T extends { score: number; promoted?: boolean; already_matched?: boolean }>(pool: readonly T[]): T[] {
-  const eff = (j: T): number => Math.round((j.score + (j.promoted ? PROMOTED_TIEBREAK_BONUS : 0)) * 100) / 100; // 2 decimals: no float noise in ties
+export function sortPreparePool<T extends { score: number; promoted?: boolean; already_matched?: boolean; li_signal_bonus?: number }>(pool: readonly T[]): T[] {
+  const eff = (j: T): number => Math.round((j.score + (j.promoted ? PROMOTED_TIEBREAK_BONUS : 0) + (j.li_signal_bonus ?? 0)) * 100) / 100; // 2 decimals: no float noise in ties
   return pool
     .map((j, i) => ({ j, i }))
     .sort((a, b) =>

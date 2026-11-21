@@ -111,8 +111,73 @@ function searchesUsedToday(deps: ToolDeps): number {
   return row?.count ?? 0;
 }
 
+/** Scroll rounds for a lazy-loading result page (posts). `LINKEDIN_POST_SCROLL_ROUNDS`, default 6, clamp 0 to 12; 0 turns it off. */
+export function scrollRoundsFor(env: NodeJS.ProcessEnv): number {
+  const n = Number(env.LINKEDIN_POST_SCROLL_ROUNDS);
+  return Number.isFinite(n) && env.LINKEDIN_POST_SCROLL_ROUNDS !== '' && env.LINKEDIN_POST_SCROLL_ROUNDS !== undefined ? Math.max(0, Math.min(12, Math.trunc(n))) : 6;
+}
+
+const SCROLL_SRC = `(function(){var h=window.innerHeight||800,d=Math.round(h*0.85);window.scrollBy(0,d);
+var els=document.querySelectorAll('main,div,section'),n=0;for(var i=0;i<els.length&&n<4;i++){var e=els[i];
+if(e.scrollHeight>e.clientHeight+300&&/(auto|scroll)/.test(getComputedStyle(e).overflowY)){e.scrollTop+=d;n++;}}return n;})()`;
+
+const cardKey = (c: { urn?: string; permalinkHref?: string; profileHref?: string; text?: string }): string =>
+  c.urn || c.permalinkHref || `${c.profileHref ?? ''}|${(c.text ?? '').slice(0, 80)}`;
+
+/**
+ * A search page can be "open" (title, nav, filters: a few hundred characters) before its results rendered, most of all on a slow link
+ * (diag: `no_cards_parse_drift` with 309 body chars and no result links). When the first snapshot holds no card at all, wait a little and
+ * read again, up to `tries` times, and keep the first snapshot that has cards. Never clicks. A fake runtime or an error keeps what it has.
+ */
+export async function settleForCards(deps: ToolDeps, first: RawSnapshot, tool: 'search_jobs' | 'search_posts', tries = 4): Promise<RawSnapshot> {
+  const count = (s: RawSnapshot): number => (tool === 'search_posts' ? s.postCards?.length : s.jobCards?.length) ?? 0;
+  const page = deps.rt.page?.() ?? null;
+  if (!page || count(first) > 0) return first;
+  let best = first;
+  try {
+    for (let i = 0; i < tries; i++) {
+      await page.waitForTimeout(2500 + Math.floor(Math.random() * 1500));
+      const s = await deps.rt.snapshot();
+      if (!s) break;
+      best = s;
+      if (count(s) > 0) break;
+    }
+  } catch { /* keep what was read */ }
+  return best;
+}
+
+/**
+ * A content-search page loads a few posts per screen. One snapshot of the first screen gave 1 to 3 cards where a person scrolling sees
+ * 10 and more. Scroll like a person (a random 1.2 to 2.8 s between steps), snapshot again, merge the cards by identity, stop when two
+ * rounds add nothing or `limit` cards are in. Never clicks. A fake runtime without a page, or any error, returns what was collected.
+ */
+export async function collectByScrolling(deps: ToolDeps, first: RawSnapshot, rounds: number, limit: number): Promise<RawSnapshot> {
+  const page = deps.rt.page?.() ?? null;
+  if (!page || rounds <= 0 || !first.postCards) return first;
+  const seen = new Map<string, NonNullable<RawSnapshot['postCards']>[number]>();
+  for (const c of first.postCards) seen.set(cardKey(c), c);
+  let last = first;
+  let idle = 0;
+  try {
+    for (let i = 0; i < rounds && seen.size < limit && idle < 2; i++) {
+      await page.evaluate(SCROLL_SRC);
+      await page.waitForTimeout(1200 + Math.floor(Math.random() * 1600));
+      const s = await deps.rt.snapshot();
+      if (!s || !s.postCards) break;
+      last = s;
+      const before = seen.size;
+      for (const c of s.postCards) if (!seen.has(cardKey(c))) seen.set(cardKey(c), c);
+      idle = seen.size === before ? idle + 1 : 0;
+    }
+  } catch { /* keep what was collected */ }
+  return { ...last, postCards: Array.from(seen.values()).slice(0, 50) };
+}
+
 export async function runDiscovery(o: {
   tool: 'search_jobs' | 'search_posts';
+  /** Posts: scroll this many times to load more cards before parsing (default 0 = one snapshot). */
+  scrollRounds?: number;
+  scrollLimit?: number;
   deps: ToolDeps;
   url: string;
   expectKind: PageKind;
@@ -136,8 +201,9 @@ export async function runDiscovery(o: {
   markSearchTried(db, tool, o.searchName, now());
   const r = await deps.rt.open(o.url);
   if (!r.ok) return r.code === 'halted' ? empty('halted', 'halted') : empty('failed', r.code);
-  const snap = r.snapshot;
-  if (classifyUrl(snap.url) !== o.expectKind) return empty('failed', 'not_search_page');
+  if (classifyUrl(r.snapshot.url) !== o.expectKind) return empty('failed', 'not_search_page');
+  const settled = await settleForCards(deps, r.snapshot, o.tool);
+  const snap = o.scrollRounds ? await collectByScrolling(deps, settled, o.scrollRounds, o.scrollLimit ?? 50) : settled;
 
   const lay = layoutGate(tool, deps);
   if (!lay.ok) return empty('refused', lay.code);

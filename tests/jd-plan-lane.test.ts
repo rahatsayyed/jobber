@@ -135,6 +135,21 @@ describe('LinkedIn drip lane: jd_fetch item', () => {
     expect(await pick(s, new Set(['jd_fetch:li-job:2']))).toMatchObject({ kind: 'jd_fetch', job_id: 'li-job:1' });
     expect(await pick(s, new Set(['jd_fetch:li-job:2', 'jd_fetch:li-job:1']))).toBeNull();
   });
+  it('never takes two ticks in a row while another kind is ready, and is still picked when nothing else is', async () => {
+    const s = setup();
+    jobs(s.db, [{ id: 'li-job:1', source: 'linkedin-jobs', url: 'https://www.linkedin.com/jobs/view/1/' }, { id: 'li-job:2', source: 'linkedin-jobs', url: 'https://www.linkedin.com/jobs/view/2/' }]);
+    inboxRead(s.db);
+    s.db.prepare("INSERT INTO connections (profile_url, status, sent_at) VALUES ('https://www.linkedin.com/in/open1', 'sent', ?)").run(new Date(NOW.getTime() - 24 * 3600_000).toISOString());
+    expect(await pick(s)).toMatchObject({ kind: 'jd_fetch' });
+    setState(s.db, 'linkedin_drip_last_action', JSON.stringify({ at: NOW.toISOString(), kind: 'jd_fetch', key: 'jd_fetch:li-job:2', run_id: 'r', status: 'ok' }), NOW);
+    // the accept check (due, nothing else waiting) gets the tick after a jd_fetch
+    expect(await pick(s)).toMatchObject({ kind: 'accept_recent' });
+    // once it has run and nothing else is ready, the held-back JD read is picked at the end
+    setState(s.db, 'linkedin_drip_last_action', JSON.stringify({ at: NOW.toISOString(), kind: 'jd_fetch', key: 'x', run_id: 'r', status: 'ok' }), NOW);
+    const r = await pick(s, new Set(['accept_recent', 'accept_check']));
+    expect(r).toMatchObject({ kind: 'jd_fetch' });
+  });
+
   it('is not picked when its ceiling or the profile-view ceiling is used up, or when the job has its JD', async () => {
     const s = setup({ LINKEDIN_MAX_JD_FETCH_PER_DAY: '1' });
     inboxRead(s.db);

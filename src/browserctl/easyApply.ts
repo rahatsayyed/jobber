@@ -18,6 +18,7 @@ import { addEscalation } from '../outreach/service.js';
 import { recordDryRun } from '../safety/dryRun.js';
 import { dialogText, effectiveDialogKind, fileChipShown } from './commit.js';
 import type { BcPage } from './driver.js';
+import { writeDialogStructureDiag } from './diag.js';
 import { killReason, refused, type EngineDeps, type EngineResult } from './engineTypes.js';
 import { EASY_APPLY_DANGER_RE, EASY_APPLY_NEXT_RE, EASY_APPLY_REVIEW_RE, EASY_APPLY_SUBMIT_RE, normName } from './guard.js';
 import type { ArmedIntent, IntentStore } from './intent.js';
@@ -33,7 +34,7 @@ export const EASY_APPLY_HOST = 'linkedin.com';
 export const PARK_CODES = [
   'more_than_8_steps', 'unknown_button', 'verification', 'premium_upsell', 'resume_control_missing', 'resume_upload_failed', 'fill_failed',
   'validation_error', 'no_modal', 'modal_ambiguous', 'consent_required', 'unsupported_field', 'already_applied_on_page', 'unexpected_page',
-  'submit_error', 'select_unsupported', 'operator_abort', 'overlay_needs_human',
+  'submit_error', 'select_unsupported', 'operator_abort', 'overlay_needs_human', 'resume_mismatch',
 ] as const;
 export type ParkCode = (typeof PARK_CODES)[number];
 
@@ -368,15 +369,35 @@ async function ensureResume(ctx: FillCtx, tree: RawTree, dlg: number, x: EasyApp
     ? { path: intent.attachment.path, name: intent.attachment.name, bytes: intent.attachment.bytes, rendered: false }
     : undefined;
   if (!att) return 'resume_upload_failed';
+  if (isReview) {
+    // The review page lists the resume the application will carry. A resume file on screen that is not our tailored one means LinkedIn
+    // pre-selected an old saved CV (seen live: "Resume - ...pdf" on the review page, application sent with it). Park BEFORE Submit; the
+    // dialog structure goes to .jobber/diag so the way to change the resume can be built from real data.
+    const files = inDialog(tree, dlg).filter((n) => /\.(?:pdf|docx?)\b/i.test(n.role === 'text' ? n.text : n.name));
+    // A name match alone proves nothing (LinkedIn keeps older uploads: "Rahat_Sayyed_Resume.pdf" squashes to our "Rahat-Sayyed-Resume.pdf"),
+    // so the tailored file counts as attached only when THIS application's own upload was confirmed (st.uploaded).
+    if (files.length > 0 && !(st.uploaded.has(key) && fileChipShown(tree, dlg, att.name))) {
+      writeDialogStructureDiag({ now: deps.now, ...(deps.diagDir ? { diagDir: deps.diagDir } : {}) }, { platform: 'linkedin', code: 'resume_mismatch', tree, dlg });
+      return 'resume_mismatch';
+    }
+    return 'none_needed';
+  }
   if (st.uploaded.has(key)) return 'none_needed';
   const mentionsResume = /\b(resume|cv)\b/i.test(text);
-  if (!mentionsResume || isReview) return 'none_needed';
-  // Already on screen under our generic name (an earlier fill of this very step): nothing to upload.
-  if (fileChipShown(tree, dlg, att.name)) { st.uploaded.add(key); return 'ok'; }
-  const ctl = inDialog(tree, dlg).filter((n) => n.role === 'file' || ((n.role === 'button' || n.role === 'link') && UPLOAD_RE.test(normName(n.name))));
+  if (!mentionsResume) return 'none_needed';
+  // Always upload this job's tailored file: the saved-resume list may already hold a file of the same name (an older upload, or another
+  // job's tailored copy), which is NOT this job's resume. Success is proven by a NEW entry appearing, never by a name already on screen.
+  const want = squash(att.name);
+  const named = (t: RawTree, d: number): number => t.nodes.filter((n) => n.dialog === d && squash(n.role === 'text' ? n.text : n.name).includes(want)).length;
+  const before = named(tree, dlg);
+  let ctl = inDialog(tree, dlg).filter((n) => n.role === 'file' || ((n.role === 'button' || n.role === 'link') && UPLOAD_RE.test(normName(n.name))));
+  // A looser pass: LinkedIn words this control in several ways ("Upload resume", "Upload", "Choose file", with a hint appended).
+  if (ctl.length === 0) ctl = inDialog(tree, dlg).filter((n) => (n.role === 'button' || n.role === 'link') && /\b(upload|choose file|browse)\b/i.test(normName(n.name)));
   if (ctl.length === 0) {
-    // No upload control: LinkedIn lists saved resumes and one is already selected; keep it rather than park.
-    return inDialog(tree, dlg).some((n) => n.role === 'radio' && n.checked === true) ? 'none_needed' : 'resume_control_missing';
+    // No upload control. Keeping a saved resume would apply with a CV that never went through the fact gate (seen live: LinkedIn's own
+    // "Resume - ...pdf" went out). Park, with the dialog structure written to .jobber/diag so the control's real role and name can be fixed.
+    writeDialogStructureDiag({ now: deps.now, ...(deps.diagDir ? { diagDir: deps.diagDir } : {}) }, { platform: 'linkedin', code: 'resume_control_missing', tree, dlg });
+    return 'resume_control_missing';
   }
   if (ctl.length > 1) ctl.sort((a, b) => Number(b.role === 'file') - Number(a.role === 'file'));
   // Re-validate the file right before reading it: still inside renderer/automation, a .pdf, a regular file, at most 2 MB.
@@ -394,9 +415,19 @@ async function ensureResume(ctx: FillCtx, tree: RawTree, dlg: number, x: EasyApp
     await page.waitMs(500).catch(() => undefined);
     const after = await page.snapshot().catch(() => null);
     const d = after ? easyApplyDialog(after) : 'none';
-    if (after && d !== 'none' && d !== 'ambiguous' && fileChipShown(after, d.n, att.name)) { st.uploaded.add(key); return 'ok'; }
+    if (after && d !== 'none' && d !== 'ambiguous' && named(after, d.n) > before) {
+      // The new upload is listed first (newest on top) and LinkedIn normally selects it; select it explicitly so an older same-named file cannot stay chosen.
+      const radios = inDialog(after, d.n).filter((n) => n.role === 'radio' && squash(n.name).includes(want));
+      const newest = radios[0];
+      if (newest && newest.checked !== true) {
+        try { if (page.robustClick) await page.robustClick(newest.n); else await page.clickNode(newest.n); } catch { /* the review gate still blocks a wrong file */ }
+      }
+      st.uploaded.add(key);
+      return 'ok';
+    }
   }
   void x;
+  writeDialogStructureDiag({ now: deps.now, ...(deps.diagDir ? { diagDir: deps.diagDir } : {}) }, { platform: 'linkedin', code: 'resume_upload_failed', tree, dlg });
   return 'resume_upload_failed';
 }
 

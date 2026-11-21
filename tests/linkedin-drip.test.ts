@@ -164,13 +164,13 @@ describe('the wake planner and the lane', () => {
     }
   });
 
-  it('with the lane on a wake plans NONE of them, and keeps manual pages, discovery, the pipeline and apply', () => {
+  it('with the lane on a wake plans NONE of them (discovery too, the lane does it), and keeps manual pages, the pipeline and apply', () => {
     const d = plan(busy, true);
     expect(d.kind).toBe('run');
-    expect(liKinds(d).sort()).toEqual(['discover', 'manual_url']);
+    expect(liKinds(d).sort()).toEqual(['manual_url']);
     const steps = d.kind === 'run' ? stepOrder(d) : [];
     expect(steps.some((s) => s.operator === 'pipeline')).toBe(true);
-    expect(steps.filter((s) => s.platform === 'linkedin').map((s) => s.kind).sort()).toEqual(['discover', 'manual_url']);
+    expect(steps.filter((s) => s.platform === 'linkedin').map((s) => s.kind).sort()).toEqual(['manual_url']);
     // Naukri is untouched by the LinkedIn lane
     expect(d.kind === 'run' && d.tasks.find((a) => a.platform === 'naukri')?.tasks.map((t) => t.kind)).toEqual(expect.arrayContaining(['followups']));
   });

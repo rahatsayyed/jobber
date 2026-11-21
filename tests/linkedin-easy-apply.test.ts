@@ -383,10 +383,51 @@ describe('director: step dialogs are read and decided, not parked on a fixed all
     expect(await w.engine.click(ref)).toMatchObject({ ok: true });
   });
 
-  it('a resume step with an already selected resume and no upload control keeps it', async () => {
+  it('a resume step with an already selected resume and no upload control parks (a saved CV never went through the fact gate)', async () => {
     const { w } = await open();
     w.page.setHtml(dlg('<p>Resume</p><p>Be sure to include an updated resume</p><input type="radio" name="cv" checked><span>Rahat Sayyed Resume.pdf</span><footer><button>Next</button></footer>'));
-    expect(await w.engine.easyApplyFill()).toMatchObject({ ok: true, code: 'filled', detail: { next: 'next' } });
+    expect(await w.engine.easyApplyFill()).toMatchObject({ ok: false, code: 'needs_owner', detail: { park: 'resume_control_missing' } });
+  });
+
+  it('REGRESSION: an older saved file whose name squashes to ours does not count as our upload (the upload must still be attempted)', async () => {
+    const { w } = await open();
+    // seen live: LinkedIn lists "Rahat_Sayyed_Resume.pdf" (2025) and our generic name is "Rahat-Sayyed-Resume.pdf"; the old code took the old file for ours and skipped the upload
+    w.page.setHtml(dlg('<p>Resume</p><p>Select or upload a resume</p><input type="radio" name="cv" checked><span>Resume - Old Saved CV.pdf</span><input type="radio" name="cv"><span>Rahat_Sayyed_Resume.pdf</span><button>Upload resume</button><footer><button>Next</button></footer>'));
+    const r = await w.engine.easyApplyFill();
+    // the fake page cannot attach a file, so the attempt fails; the point is that it is made instead of reporting "already attached"
+    expect(r).toMatchObject({ ok: false, code: 'needs_owner' });
+    expect(queue(w).apply_note).toMatch(/^easy_apply:resume_upload_failed/);
+  });
+
+  it('a review page that lists a resume file other than our tailored one parks BEFORE Submit (resume_mismatch)', async () => {
+    const { w } = await open();
+    w.page.setHtml(dlg('<p>Review your application</p><p>Resume</p><span>Resume - Old Saved CV.pdf</span><footer><button>Submit application</button></footer>'));
+    expect(await w.engine.easyApplyFill()).toMatchObject({ ok: false, code: 'needs_owner', detail: { park: 'resume_mismatch' } });
+    expect(queue(w).apply_note).toBe('easy_apply:resume_mismatch');
+    expect(w.page.log.filter((l) => l.startsWith('click')).some((l) => /submit/i.test(l))).toBe(false);
+  });
+
+  it('a review page that shows a same-named file but no upload of this application parks, and one that lists no file at all passes', async () => {
+    const { w } = await open();
+    w.page.setHtml(dlg('<p>Review your application</p><p>Resume</p><span>Rahat Sayyed Resume.pdf</span><footer><button>Submit application</button></footer>'));
+    expect(await w.engine.easyApplyFill()).toMatchObject({ ok: false, code: 'needs_owner', detail: { park: 'resume_mismatch' } });
+    const o2 = await open();
+    o2.w.page.setHtml(dlg('<p>Review your application</p><p>Contact info</p><footer><button>Submit application</button></footer>'));
+    expect(await o2.w.engine.easyApplyFill()).toMatchObject({ ok: true, code: 'filled', detail: { next: 'submit' } });
+  });
+
+  it('a resume step whose selected saved resume is NOT our tailored file and has no upload control parks (never applies with another CV)', async () => {
+    const { w } = await open();
+    w.page.setHtml(dlg('<p>Resume</p><p>Be sure to include an updated resume</p><input type="radio" name="cv" checked><span>Resume - Old Saved CV.pdf</span><footer><button>Next</button></footer>'));
+    expect(await w.engine.easyApplyFill()).toMatchObject({ ok: false, code: 'needs_owner', detail: { park: 'resume_control_missing' } });
+    expect(queue(w).apply_note).toBe('easy_apply:resume_control_missing');
+  });
+
+  it('a resume step with an upload control worded loosely ("Upload resume (PDF)") still gets the tailored resume attached', async () => {
+    const { w } = await open();
+    w.page.setHtml(dlg('<p>Resume</p><p>Be sure to include an updated resume</p><input type="radio" name="cv" checked><span>Resume - Old Saved CV.pdf</span><button>Upload resume (PDF)</button><footer><button>Next</button></footer>'));
+    const r = await w.engine.easyApplyFill();
+    expect(r).not.toMatchObject({ detail: { park: 'resume_control_missing' } });
   });
 
   it('a resume step with no upload control and no selected resume parks with a reason', async () => {

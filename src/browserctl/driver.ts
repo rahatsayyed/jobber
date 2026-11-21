@@ -122,7 +122,15 @@ function realBcPageInner(basePage: RealPage): BcPage {
   return {
     url: () => page.url(),
     title: () => page.title(),
-    async goto(url) { await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' }); },
+    // 60 s by default: on a slow link LinkedIn's DOMContentLoaded can pass 30 s (seen as `nav_timeout`). Override with BROWSER_NAV_TIMEOUT_MS.
+    async goto(url) {
+      const ms = Number(process.env.BROWSER_NAV_TIMEOUT_MS);
+      const timeout = Number.isFinite(ms) && ms >= 5000 && ms <= 180000 ? ms : 60000;
+      // 'commit' (response received), then a bounded wait for DOMContentLoaded: LinkedIn's jobs search-results page is fully usable in
+      // 5 to 10 s but its DOMContentLoaded can take over 60 s on a slow link, which used to fail every search as `nav_timeout`.
+      await page.goto(url, { timeout, waitUntil: 'commit' });
+      try { await (page as unknown as { waitForLoadState?: (s: string, o: { timeout: number }) => Promise<void> }).waitForLoadState?.('domcontentloaded', { timeout: 20000 }); } catch { /* best effort, the engine's own settle step follows */ }
+    },
     async waitForLoad(timeoutMs) {
       try { await (page as unknown as { waitForLoadState?: (s: string, o: { timeout: number }) => Promise<void> }).waitForLoadState?.('load', { timeout: timeoutMs }); } catch { /* bounded, best effort */ }
     },

@@ -13,7 +13,8 @@ import { extractNaukriJobId } from './sources/naukri.js';
 import { isNaukriUrl } from './naukri/page.js';
 import { canonicalJobUrl, extractLinkedInJobId } from './linkedin/jobIds.js';
 import { cleanJdText, isJdComplete, jdFetchPlatform, JD_FETCH_MAX_ATTEMPTS } from './jdComplete.js';
-import { listJdCandidates, markJdPending, markJdUnavailable, recordJdAttempt, saveFetchedJd } from './jdStore.js';
+import { listJdCandidates, markJdPending, markJdUnavailable, recordJdAttempt, saveFetchedJd, saveLinkedinSignals } from './jdStore.js';
+import { gateSignals, LINKEDIN_SIGNALS_SRC, parseLinkedinSignals, signalsDiagDue, type LinkedinSignals } from './linkedinSignals.js';
 import { loadOutreachConfig } from './outreach/config.js';
 import { ceilings, haltReason, tryConsume, type LimitKey } from './outreach/limits.js';
 import { isDryRun, recordDryRun } from './safety/dryRun.js';
@@ -51,11 +52,13 @@ export const JD_LINKEDIN_SRC = `(() => {
   const txt = (e) => ((e && (e.innerText || e.textContent)) || '').replace(/\\s+/g, ' ').trim();
   const el = document.querySelector('#job-details, .jobs-description__content, .jobs-box__html-content, .jobs-description-content__text, .show-more-less-html__markup, [class*="jobs-description"]');
   const alerts = Array.from(document.querySelectorAll('[role="alert"], .artdeco-inline-feedback, [class*="closed-job"], [class*="apply-error"], [class*="no-longer"]')).map(txt).filter((t) => t && t.length < 300).slice(0, 6);
-  return { jd: txt(el).slice(0, 12000), title: document.title || '', heading: txt(document.querySelector('h1')), alerts: alerts, bodyHead: txt(document.body).slice(0, 1500) };
+  return { jd: txt(el).slice(0, 12000), title: document.title || '', heading: txt(document.querySelector('h1')), alerts: alerts, bodyHead: txt(document.body).slice(0, 1500), signals: ${LINKEDIN_SIGNALS_SRC} };
 })()`;
 
 /** What a page read returns. Every field is untrusted page text. */
-export interface JdPageRead { jd?: unknown; title?: unknown; heading?: unknown; alerts?: unknown; bodyHead?: unknown }
+export interface JdPageRead { jd?: unknown; title?: unknown; heading?: unknown; alerts?: unknown; bodyHead?: unknown;
+  /** LinkedIn only: raw collector output for src/linkedinSignals.ts (connections at the company, hiring team). */
+  signals?: unknown }
 
 // ---- pure page rules ----
 
@@ -83,7 +86,9 @@ export function looksLikeLoginWall(page: JdPageRead): boolean {
   return !str(page.jd, 100).trim() && LOGIN.test(`${str(page.title, 300)}\n${str(page.heading, 300)}`) && str(page.bodyHead, 1500).length < 800;
 }
 
-const LINKEDIN_END = /(set alert for similar jobs|about the company|show more|show less|see how you compare|meet the hiring team|premium|more jobs)/i;
+// Page blocks that follow the description. Each must be a line of its own: "About the Company", "premium" or "show more" inside the
+// description text (LinkedIn puts "About the Company" within the first 100 characters of many JDs) must not cut it short.
+const LINKEDIN_END = /^[ \t]*(set alert for similar jobs|show more|show less|see how you compare[^\n]*|meet the hiring team|more jobs[^\n]*)[ \t]*$/im;
 
 /** Fallback for the LinkedIn page text: the section after "About the job" up to the next page block. Pure. */
 export function jdFromLinkedinBody(bodyText: string): string {
@@ -143,6 +148,8 @@ export interface JdFetchDeps {
   screen: (t: string, p: ScreenPurpose) => Promise<ScreenVerdict>;
   /** Called before every page load; the MCP layer waits the 3 to 8 second gap here (not before the first page of a session). */
   beforeLoad?: () => Promise<void>;
+  /** LinkedIn: called once when the page's own block speaks of "connection" but nothing parsed (writes a small diag file). */
+  signalsDiag?: (s: LinkedinSignals) => void;
 }
 
 export type JdFetchStatus = 'ok' | 'dry_run' | 'halted' | 'rate_limited' | 'failed';
@@ -265,5 +272,13 @@ export async function fetchJd(platform: JdPlatform, io: JdFetchIo, deps: JdFetch
   }
   const saved = saveFetchedJd(db, job.id, g.text, now);
   if (!saved.saved) return out('failed', 'unreadable', { job_id: job.id });
+  if (platform === 'linkedin') {
+    // Social-proof signals only ORDER work; a failure here never changes the JD result.
+    try {
+      const sig = gateSignals(parseLinkedinSignals(page.signals));
+      saveLinkedinSignals(db, job.id, sig, now);
+      if (signalsDiagDue(sig)) deps.signalsDiag?.(sig);
+    } catch { /* ignored */ }
+  }
   return out('ok', 'saved', { job_id: job.id, chars: g.text.length, reset: saved.reset });
 }

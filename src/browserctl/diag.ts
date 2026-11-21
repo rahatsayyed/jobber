@@ -228,5 +228,28 @@ export async function writeCommitDiag(
   }
 }
 
+/**
+ * Structure of ONE dialog for a code that parked or stopped inside it (role, short redacted name, checked) so the owner can fix the
+ * role-and-name patterns from real data. Max 80 nodes, names through safeName (emails and phones redacted). Returns the path or null.
+ */
+export function writeDialogStructureDiag(deps: DiagDeps, i: { platform: string; code: string; tree: RawTree; dlg: number }): string | null {
+  try {
+    const nodes = i.tree.nodes.filter((x) => x.dialog === i.dlg).slice(0, 80).map((x) => ({
+      role: String(x.role).slice(0, 20),
+      name: safeName(x.role === 'text' ? x.text : x.name),
+      ...(x.checked !== undefined ? { checked: x.checked } : {}),
+    }));
+    const dir = deps.diagDir ?? path.join(PROJECT_ROOT, '.jobber', 'diag');
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const stamp = deps.now().toISOString().replace(/[:.]/g, '-');
+    const target = path.join(dir, `${i.platform}-dialog-${i.code}-${stamp}.json`);
+    writeFileSync(target, JSON.stringify({ platform: i.platform, at: deps.now().toISOString(), code: i.code, nodes }), { mode: 0o600 });
+    const rel = path.relative(PROJECT_ROOT, target);
+    return rel.startsWith('..') ? target : rel;
+  } catch {
+    return null;
+  }
+}
+
 /** Reason suffix for a result: ' (diag: <path>)' or ''. */
 export const diagNote = (p: string | null): string => (p ? ` (diag: ${p})` : '');

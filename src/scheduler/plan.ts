@@ -127,7 +127,7 @@ export function planWake(i: {
   linkedinActive?: boolean;
   /**
    * True when the LinkedIn drip lane is on (LINKEDIN_DRIP, default true; src/scheduler/linkedinDrip.ts): the lane does the LinkedIn inbox, accept
-   * check, follow-ups and new outreach one action at a time, so a wake plans NONE of them (it keeps the LinkedIn manual_url and discover tasks,
+   * check, follow-ups and new outreach one action at a time, so a wake plans NONE of them, nor LinkedIn discover (it keeps the LinkedIn manual_url task,
    * the pipeline and apply). Absent or false: today's wake behaviour.
    */
   linkedinDrip?: boolean;
@@ -262,7 +262,7 @@ export function planWake(i: {
   const discoverAge = due.linkedinDiscoverLastHoursAgo;
   const discoverDue = due.linkedinDiscoverDue ?? (discoverAge === null || (discoverAge !== undefined && discoverAge >= discoverEvery));
   const discoverRoom = ceilings.linkedin_discover ? ceilings.linkedin_discover.limit - ceilings.linkedin_discover.used : 0;
-  if (allowed.has('linkedin') && discoverDue && nameCount > 0 && ceilings.linkedin_discover?.ok && discoverRoom > 0) {
+  if (allowed.has('linkedin') && !liDrip && discoverDue && nameCount > 0 && ceilings.linkedin_discover?.ok && discoverRoom > 0) {
     const quota = Math.min(nameCount, discoverRoom, LINKEDIN_DISCOVER_MAX_PER_WAKE);
     byPlatform.linkedin.push({ kind: 'discover', quota, searches: pickDiscoverNames(names, quota) });
   }

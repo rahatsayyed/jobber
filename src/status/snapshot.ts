@@ -25,6 +25,8 @@ export interface Snapshot {
   manualApply: { count: number; easyApplyOff: number; items: ManualApplyItem[] };
   /** Job description (JD) flow: jobs waiting for their JD, JDs fetched in the last 24 hours and jobs given up as jd_unavailable. */
   jd: { waiting: number; pending: number; fetched24h: number; unavailable: number };
+  /** LinkedIn social-proof signals read with the job page: open jobs with connections at the company, and with a 1st-degree hiring-team member. */
+  liSignals?: { connections: number; firstDegree: number };
   /** Apply and send failures by reason code (open rows), plus the defect count of failures written without a reason today. */
   failures?: { byReason: { reason: string; count: number }[]; missingReasonToday: number };
   /** LinkedIn searches whose last runs read 0 cards from a page that has results (a layout change). Absent in old snapshots. */
@@ -166,6 +168,13 @@ export function buildSnapshot(db: BetterSqlite3.Database, cfg: OutreachConfig, n
       const s = jdStats(db, now);
       return { waiting: s.waiting, pending: s.pending, fetched24h: s.fetched24h, unavailable: s.unavailable };
     }, { waiting: 0, pending: 0, fetched24h: 0, unavailable: 0 }),
+    liSignals: section('liSignals', () => {
+      const one = (sql: string): number => (db.prepare(sql).get() as { n: number }).n;
+      return {
+        connections: one('SELECT COUNT(*) AS n FROM jobs WHERE excluded_reason IS NULL AND COALESCE(li_connections, 0) > 0'),
+        firstDegree: one(`SELECT COUNT(*) AS n FROM jobs WHERE excluded_reason IS NULL AND li_hiring_team LIKE '%"degree":1,%'`),
+      };
+    }, { connections: 0, firstDegree: 0 }),
     discoverBroken: listStreaks(db),
     degraded,
   };

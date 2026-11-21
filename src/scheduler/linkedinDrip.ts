@@ -44,6 +44,11 @@ import { withDripRequest } from './dripRequest.js';
 import { formatDripFailure, formatLinkedinNotice, linkedinNoticeKind, notifyTg } from './dripNotice.js';
 import { linkedinEasyEnabled } from '../apply/easyFlag.js';
 import { matchThresholdFromEnv } from '../matchRubric.js';
+import { linkedinDiscoverDue, recordDiscoverRun } from './discoverNext.js';
+import { lastTriedAny, markSearchTried, rotateNames } from '../linkedin/discoverRotation.js';
+import { loadLinkedinConfig } from '../linkedin/config.js';
+import { loadDiscoveryConfig } from '../linkedin/discoveryConfig.js';
+import type { DiscoverSearches } from './plan.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -122,6 +127,8 @@ export type LiItem =
   | { kind: 'inbox' }
   | { kind: 'reply'; draft_id: number; escalation_id: number; person_id: number; profile_url: string; name: string | null; attach_resume: boolean }
   | { kind: 'jd_fetch'; job_id: string; title: string | null }
+  | { kind: 'discover_posts'; search: string }
+  | { kind: 'discover_jobs'; search: string }
   | { kind: 'accept_recent' }
   | { kind: 'accept_check' }
   | { kind: 'dm'; touch_kind: TouchKind; person_id: number; profile_url: string; name: string | null; company: string | null; category: string; job_id: string | null; invite_had_note: boolean }
@@ -133,6 +140,8 @@ export function itemKey(i: LiItem): string {
     case 'inbox': return 'inbox';
     case 'accept_recent': return 'accept_recent';
     case 'jd_fetch': return `jd_fetch:${i.job_id}`;
+    case 'discover_posts': return `discover_posts:${i.search}`;
+    case 'discover_jobs': return `discover_jobs:${i.search}`;
     case 'accept_check': return 'accept_check';
     case 'reply': return `reply:${i.draft_id}`;
     case 'dm': return `dm:${i.person_id}`;
@@ -327,6 +336,40 @@ async function replyCandidates(d: DriverDeps, now: Date, c: Record<LimitKey, Cei
   return { ready, blocked };
 }
 
+/** Names of the configured discovery searches the lane may run (the scheduler's `discoverSearches`); absent means no discovery. */
+function discoverNamesOf(d: DriverDeps): DiscoverSearches | null {
+  const s = d.discoverSearches;
+  try { return (typeof s === 'function' ? s() : s) ?? null; } catch { return null; }
+}
+
+/** Daily search counter read without consuming it (same key the search tools use). Fail-safe: a read error counts as used up. */
+function searchesUsedUp(db: Db, env: NodeJS.ProcessEnv): boolean {
+  try {
+    const row = db.prepare("SELECT count FROM daily_counters WHERE day = date('now') AND key = 'linkedin_search'").get() as { count: number } | undefined;
+    return (row?.count ?? 0) >= loadLinkedinConfig(env).maxSearchesPerDay;
+  } catch {
+    return true;
+  }
+}
+
+/** The discovery item for this tick, or null: cadence due, ceilings with room, a name not tried recently; the kind that ran less recently goes first (posts on a tie). */
+function discoverCand(d: DriverDeps, db: Db, now: Date, c: Record<LimitKey, CeilingStatus>, gone: ReadonlySet<string>): LiItem | null {
+  try {
+    const names = discoverNamesOf(d);
+    if (!names || names.jobs.length + names.posts.length === 0) return null;
+    if (!ok(c, 'linkedin_discover') || searchesUsedUp(db, d.env) || !linkedinDiscoverDue(db, now)) return null;
+    const posts = rotateNames(db, 'search_posts', names.posts).find((n) => !gone.has(`discover_posts:${n}`));
+    const jobs = rotateNames(db, 'search_jobs', names.jobs).find((n) => !gone.has(`discover_jobs:${n}`));
+    const postsFirst = lastTriedAny(db, 'search_posts', names.posts) <= lastTriedAny(db, 'search_jobs', names.jobs);
+    const mk = (kind: 'discover_posts' | 'discover_jobs', search: string | undefined): LiItem | null => (search ? { kind, search } : null);
+    const p = mk('discover_posts', posts);
+    const j = mk('discover_jobs', jobs);
+    return postsFirst ? p ?? j : j ?? p;
+  } catch {
+    return null; // advisory: an unreadable state means no discovery this tick
+  }
+}
+
 /**
  * The next LinkedIn item, in code, in the lane's priority order. Pure reads (plus clearing stale `sending` touches). `exclude` holds item keys to skip.
  */
@@ -380,17 +423,33 @@ export async function pickLinkedinItem(d: DriverDeps, now: Date, cfg: LinkedinDr
   if (easy && streaks.easy_apply >= LI_FAIR_K) return { item: easy, waiting };
   if (inv && streaks.invite >= LI_FAIR_K) return { item: inv, waiting };
 
-  // (b2) the job description of one job found without one (a job is matched, tailored, emailed and applied to only on its full JD); one page per tick
+  // (b1) one LinkedIn Easy Apply application, before the JD reads: an application is the action the whole pipeline exists for, and a long JD
+  // backlog (one job per tick) used to keep it waiting for hours. Every gate of easyCand stays (ceilings, active hours, shared apply room).
+  if (easy) return { item: easy, waiting };
+
+  // (b1b) discovery: one named search (posts and jobs alternate), after Easy Apply and before the JD reads so new jobs reach preparation. The name
+  // is chosen HERE by the rotation (least recently tried first). Gates: the hourly-ish cadence (discoverNext), the linkedin_discover and daily search ceilings.
+  const disc = discoverCand(d, db, now, c, gone);
+  if (disc) return { item: disc, waiting };
+
+  // (b2) the job description of one job found without one (a job is matched, tailored, emailed and applied to only on its full JD); one page per tick.
+  // It never takes two ticks in a row while anything else is ready: after a jd_fetch the accept check, DMs and invites get the next tick, so a
+  // backlog of JDs cannot starve them. When nothing else is ready it is picked at the end.
+  let lastKind: string | null = null;
+  try { lastKind = (JSON.parse(getState(d.db, LI_STATE_LAST_ACTION) ?? 'null') as { kind?: string } | null)?.kind ?? null; } catch { lastKind = null; }
+  let jdItem: LiItem | null = null;
   if (ok(c, 'linkedin_jd_fetch') && ok(c, 'linkedin_profile_view')) {
     try {
       for (const j of listJdCandidates(db, 'linkedin', now, 20)) {
         if (gone.has(`jd_fetch:${j.id}`)) continue;
-        return { item: { kind: 'jd_fetch', job_id: j.id, title: j.title }, waiting };
+        jdItem = { kind: 'jd_fetch', job_id: j.id, title: j.title };
+        break;
       }
     } catch {
       // advisory: an unreadable candidate list means no JD item this tick
     }
   }
+  if (jdItem && lastKind !== 'jd_fetch') return { item: jdItem, waiting };
 
   // (c) the accept check: one page first, then the capped per-profile fallback (one profile per tick)
   if (!gone.has('accept_recent') && acceptRecentDue(db, now)) return { item: { kind: 'accept_recent' }, waiting };
@@ -413,11 +472,10 @@ export async function pickLinkedinItem(d: DriverDeps, now: Date, cfg: LinkedinDr
     }
   }
 
-  // (d2) one LinkedIn Easy Apply application (only with APPLY_LINKEDIN_EASY=true), after replies, the accept check and DMs, before new invites
-  if (easy) return { item: easy, waiting };
-
   // (e) a new invite for the next queued contact (the per-company contact limit is enforced by nextQueueContacts / nextPosterContacts)
   if (inv) return { item: inv, waiting };
+  // (f) nothing else is ready: the JD read that was held back after the previous jd_fetch
+  if (jdItem) return { item: jdItem, waiting };
   return { item: null, reason: 'nothing_to_do', ...(rep.blocked.length ? { blocked: rep.blocked } : {}) };
 }
 
@@ -443,6 +501,14 @@ export function describeItem(i: LiItem): { task: string; line: string } {
         task: 'jd_fetch quota 1',
         line: `Drip item: jd_fetch, job_id ${clean(i.job_id, 200)}, title "${clean(i.title, 100)}". Read the full job description of exactly this job: call the typed tool \`linkedin_fetch_jd\` ONCE with {job_id}. Code takes the job page URL from SQLite, opens it, reads the description, screens and saves it, or marks a removed job unavailable. Open no URL yourself, click nothing, send nothing, apply to nothing. Report the tool's status and code.`,
       };
+    case 'discover_posts':
+    case 'discover_jobs': {
+      const tool = i.kind === 'discover_posts' ? 'linkedin_search_posts' : 'linkedin_search_jobs';
+      return {
+        task: 'discover quota 1',
+        line: `Drip item: ${i.kind}, search "${clean(i.search, 80)}". Run exactly this one named LinkedIn search: call the typed tool \`${tool}\` ONCE with {search: "${clean(i.search, 80)}"}. The name was chosen by code. Never pass a URL or keywords, open no page yourself, click nothing (except the retry steps your discover task allows for a parse drift or an overlay), contact nobody. Report the tool's status, code, fetched and new.`,
+      };
+    }
     case 'accept_recent':
       return { task: 'accept_recent quota 1', line: 'Drip item: accept_recent. Call linkedin_check_accepted_recent exactly once.' };
     case 'accept_check':
@@ -701,6 +767,13 @@ async function linkedinDripTickInner(d: DriverDeps, opts: { abort?: () => boolea
     else markTried(d.db, key, start);
     const run = await runOne(d, lock, item, opts);
     const end = d.now();
+    // A discovery item advances the cadence and the rotation whatever came out (any status, even if the tool never ran): a failed search is not re-offered at once.
+    if (!run.skipped && (item.kind === 'discover_posts' || item.kind === 'discover_jobs')) {
+      try {
+        markSearchTried(d.db, item.kind === 'discover_posts' ? 'search_posts' : 'search_jobs', item.search, end);
+        recordDiscoverRun(d.db, end, d.rng);
+      } catch { /* advisory */ }
+    }
     if (run.skipped) {
       // Window path, nothing was typed: the item stays due (stamps put back), no notice; only the normal gap applies.
       try {
@@ -744,7 +817,7 @@ export interface LinkedinDripStatus {
   nextAt: string | null;
   lastAction: { at: string; kind: string; key: string; run_id: string; status: string } | null;
   inboxLastAt: string | null;
-  waiting: { jd_fetch: number; inbox: boolean; replies_approved: number; drafts_to_approve: number; accept_recent: boolean; accept_check: number; dms_due: number; easy_applies_ready: number; invites_ready: number; unhandled_inbound_people: number };
+  waiting: { discover_due: boolean; discover_searches: number; jd_fetch: number; inbox: boolean; replies_approved: number; drafts_to_approve: number; accept_recent: boolean; accept_check: number; dms_due: number; easy_applies_ready: number; invites_ready: number; unhandled_inbound_people: number };
   /** APPLY_LINKEDIN_EASY: Easy Apply applications are a lane action (true) or left to the owner's manual queue (false, the default). */
   easyApply: boolean;
 }
@@ -767,6 +840,8 @@ export function linkedinDripStatus(db: Db, env: NodeJS.ProcessEnv, d: { now: Dat
     inboxLastAt: getState(db, LI_STATE_INBOX_AT),
     easyApply: easyApplyOn(env),
     waiting: {
+      discover_due: (() => { try { return linkedinDiscoverDue(db, d.now); } catch { return false; } })(),
+      discover_searches: n(() => { const c = loadDiscoveryConfig(); return c.jobs.length + c.posts.length; }),
       jd_fetch: n(() => listJdCandidates(db, 'linkedin', d.now, 100000).length),
       inbox: inboxDue(db, d.now, cfg.inboxGapMin),
       replies_approved: n(() => approvedReplyDrafts(db).length),
@@ -792,7 +867,7 @@ export function renderLinkedinDripLines(s: LinkedinDripStatus, now: Date): strin
   lines.push(`linkedin drip lane: on, ${next}${s.problems.length ? ` WARNING: ${s.problems.join('; ')} (the lane does nothing until fixed)` : ''}`);
   lines.push(s.lastAction ? `  last action: ${s.lastAction.kind} ${s.lastAction.at} (${s.lastAction.status})` : '  last action: none yet');
   const w = s.waiting;
-  lines.push(`  waiting: job descriptions to read ${w.jd_fetch}, inbox ${w.inbox ? 'due' : 'ok'}, approved replies ${w.replies_approved}, accept check ${w.accept_recent ? 'recent page due' : 'no'}${w.accept_check ? ` + ${w.accept_check} profile(s)` : ''}, DMs due ${w.dms_due}, ${s.easyApply ? `Easy Apply ready ${w.easy_applies_ready}` : 'Easy Apply off (owner applies by hand: npm run apply:manual -- list)'}, invites ready ${w.invites_ready}`);
+  lines.push(`  waiting: discovery ${w.discover_searches === 0 ? 'no searches configured' : w.discover_due ? 'due' : 'not yet'}, job descriptions to read ${w.jd_fetch}, inbox ${w.inbox ? 'due' : 'ok'}, approved replies ${w.replies_approved}, accept check ${w.accept_recent ? 'recent page due' : 'no'}${w.accept_check ? ` + ${w.accept_check} profile(s)` : ''}, DMs due ${w.dms_due}, ${s.easyApply ? `Easy Apply ready ${w.easy_applies_ready}` : 'Easy Apply off (owner applies by hand: npm run apply:manual -- list)'}, invites ready ${w.invites_ready}`);
   lines.push(`  reply drafts approved and waiting to be sent: ${w.drafts_to_approve} (npm run replies -- list; skip one with npm run replies -- skip <id>)${w.unhandled_inbound_people ? `; people paused for an unanswered message: ${w.unhandled_inbound_people}` : ''}`);
   return lines;
 }

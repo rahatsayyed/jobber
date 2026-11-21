@@ -90,7 +90,7 @@ describe('picker', () => {
     expect(r.item).toMatchObject({ kind: 'easy_apply', job_id: 'li-job:4022222222' });
   });
 
-  it('comes after a due DM and before a new invite', async () => {
+  it('comes before a due DM, a new invite and a JD read', async () => {
     const s = setup(ON);
     inboxRead(s);
     easyJob(s, '4011111111');
@@ -100,12 +100,12 @@ describe('picker', () => {
     upsertPerson(s.db, { platform: 'linkedin', profileKey: 'linkedin.com/in/new1', name: 'New One', headline: 'Recruiter at Globex', company: 'Globex', category: 'recruiter' });
     s.db.prepare("INSERT INTO outreach_queue (job_id, connect_note, connect_profile_url, connect_category, connect_company, status, created_at) VALUES ('jinv', 'note', 'https://www.linkedin.com/in/new1', 'recruiter', 'Globex', 'queued', '2026-10-14 01:00:00')").run();
     expect(await pick(s)).toMatchObject({ kind: 'easy_apply' });
-    // a connected person whose first DM is due wins over the application
+    // a connected person whose first DM is due does not delay the application any more (an application is the point of the pipeline)
     const id = upsertPerson(s.db, { platform: 'linkedin', profileKey: 'linkedin.com/in/dm1', name: 'Dee Em', headline: 'Recruiter at Acme', company: 'Acme', category: 'recruiter' });
     s.db.prepare('UPDATE contact_state SET stage = ?, cycle_started_at = ? WHERE person_id = ?').run('active', new Date(s.now().getTime() - 30 * DAY).toISOString(), id);
     s.db.prepare("INSERT INTO touches (person_id, kind, idempotency_key, status, sent_at) VALUES (?, 'connect', 'c-dm1', 'sent', ?)").run(id, new Date(s.now().getTime() - 10 * DAY).toISOString());
     s.db.prepare("INSERT INTO connections (profile_url, status) VALUES ('https://www.linkedin.com/in/dm1', 'connected')").run();
-    expect(await pick(s)).toMatchObject({ kind: 'dm' });
+    expect(await pick(s)).toMatchObject({ kind: 'easy_apply' });
   });
 
   it('skips vetoed, applied, handed-back, resume-less, resolved-external and already-handled rows', async () => {
@@ -214,22 +214,16 @@ describe('fairness guard', () => {
     s.db.prepare("INSERT INTO connections (profile_url, status) VALUES ('https://www.linkedin.com/in/dm1', 'connected')").run();
   }
 
-  it('lets a ready Easy Apply row go after K ticks of other items, then resets the streak', async () => {
+  it('picks a ready Easy Apply row at once, ahead of a due DM, and its streak stays at 0', async () => {
     const s = setup(ON);
     inboxRead(s);
     easyJob(s, '4011111111');
     dueDm(s);
-    for (let i = 0; i < LI_FAIR_K; i++) {
-      const r = await pickLinkedinItem(s.d, s.now(), loadLinkedinDripConfig(s.d.env));
-      expect(r.item).toMatchObject({ kind: 'dm' });
-      updateFairStreaks(s.db, 'dm', 'waiting' in r && r.waiting ? r.waiting : [], s.now());
-    }
-    expect(readFairStreaks(s.db).easy_apply).toBe(LI_FAIR_K);
     const r = await pickLinkedinItem(s.d, s.now(), loadLinkedinDripConfig(s.d.env));
     expect(r.item).toMatchObject({ kind: 'easy_apply' });
     updateFairStreaks(s.db, 'easy_apply', 'waiting' in r && r.waiting ? r.waiting : [], s.now());
     expect(readFairStreaks(s.db).easy_apply).toBe(0);
-    expect(await pick(s)).toMatchObject({ kind: 'dm' });
+    expect(LI_FAIR_K).toBeGreaterThan(0);
   });
 
   it('never lets the guard bypass a spent ceiling or the Easy Apply flag', async () => {

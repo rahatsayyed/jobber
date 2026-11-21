@@ -24,3 +24,14 @@ export function rotateNames(db: Db, tool: Tool, names: string[]): string[] {
     .sort((a, b) => (a.t === b.t ? a.i - b.i : a.t < b.t ? -1 : 1))
     .map((x) => x.n);
 }
+
+/** The most recent attempt over all `names` of one tool, in ms; -Infinity when none was ever tried (the drip lane alternates posts and jobs by this). */
+export function lastTriedAny(db: Db, tool: Tool, names: string[]): number {
+  let best = -Infinity;
+  for (const n of names) {
+    const v = getState(db, searchAttemptKey(tool, n));
+    const t = v ? Date.parse(v) : NaN;
+    if (!Number.isNaN(t) && t > best) best = t;
+  }
+  return best;
+}

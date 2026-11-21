@@ -314,6 +314,13 @@ describe('page rules', () => {
     expect(jdFromLinkedinBody(body)).toBe(FULL_JD.trim());
     expect(jdFromLinkedinBody('no such section')).toBe('');
   });
+  it('jdFromLinkedinBody keeps an "About the Company" paragraph that sits inside the description', () => {
+    const body = `Top\nAbout the job\nHiring for ACME via Partner.\n\nAbout the Company\n\nAcme builds AI media tools. ${FULL_JD}\n\nSet alert for similar jobs\nMore jobs`;
+    const out = jdFromLinkedinBody(body);
+    expect(out).toContain('About the Company');
+    expect(out).toContain(FULL_JD.trim());
+    expect(out).not.toContain('Set alert');
+  });
   it('jdTextOf cleans whitespace and drops a trailing "Show less" but keeps a "Show more" tail (truncation)', () => {
     expect(jdTextOf({ jd: `a   b\n c Show less` })).toBe('a b c');
     expect(jdTextOf({ jd: `${FULL_JD} Show more` }).endsWith('Show more')).toBe(true);

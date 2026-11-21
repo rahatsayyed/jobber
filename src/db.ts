@@ -13,7 +13,7 @@ import { classifyApplyUrl } from './apply/registry.js';
 import { channelsFor, type ChannelVerdict } from './lib/channels.js';
 import { checkRole, sweepRoleGate, type RoleGateConfig } from './roleGate.js';
 import { applyPipelineSkips, applyPriorityRepeats, JOB_STATUS_JD_PENDING, JOB_STATUS_REPEAT_CONTACT, planPipelineWork, QUEUE_NOT_REPREP_SQL, PIPELINE_MAX_JOBS_PER_WAKE_CEILING, PIPELINE_SKIP_SQL, PIPELINE_WINDOW_HOURS, PREP_OFFER_LIMIT, PREP_OFFER_LIMIT_APPLY, prepOfferLimitFor, sqlTime } from './pipelineWork.js';
-import { laneOrder } from './promoted.js';
+import { laneOrder, linkedinSignalBonus } from './promoted.js';
 import { detectNoDm } from './lib/postNoDm.js';
 import { UNVERIFIED_ADDRESS, isVerifiedAddress } from './lib/verifiedAddress.js';
 import { migrateOutreachTables } from './outreach/schema.js';
@@ -333,6 +333,11 @@ export function openDb(path: string = dbPath()): BetterSqlite3.Database {
   if (!jobCols.has('priority')) db.exec('ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0');
   // Promoted listing on Naukri or Wellfound (set by code from a card marker, never cleared): ordering only, see src/promoted.ts.
   if (!jobCols.has('promoted')) db.exec('ALTER TABLE jobs ADD COLUMN promoted INTEGER DEFAULT 0');
+  // LinkedIn social-proof signals read with the job description (src/linkedinSignals.ts): ordering only, see src/promoted.ts.
+  // li_connections: NULL unknown, 0 checked and none; li_hiring_team: JSON of {name, degree, headline, profile_key}.
+  if (!jobCols.has('li_connections')) db.exec('ALTER TABLE jobs ADD COLUMN li_connections INTEGER');
+  if (!jobCols.has('li_hiring_team')) db.exec('ALTER TABLE jobs ADD COLUMN li_hiring_team TEXT');
+  if (!jobCols.has('li_signals_at')) db.exec('ALTER TABLE jobs ADD COLUMN li_signals_at TEXT');
   // Set by the 1..5 score scale migration (src/scoreScale.ts) on jobs that were already matched, queued or prepared; cleared by a new match save.
   if (!jobCols.has('grandfathered')) db.exec('ALTER TABLE jobs ADD COLUMN grandfathered INTEGER NOT NULL DEFAULT 0');
   // A manual_url source task carries the owner's URL and the request it belongs to.
@@ -1264,6 +1269,10 @@ export interface UnscoredJob extends Job {
   priority?: number;
   /** Set on a job the platform marked promoted (Naukri, Wellfound): taken first within a 40 percent lane, wins ties in the prepare pool. */
   promoted?: boolean;
+  /** LinkedIn: people the owner knows at the company, read from the job page (only when above 0). Ordering only. */
+  li_connections?: number;
+  /** Ordering-only bonus from LinkedIn social-proof signals (src/promoted.ts); never a score. */
+  li_signal_bonus?: number;
   /** Set on an owner-submitted job whose request is forced: P2c does not drop it for a score below the threshold (vetoes still apply). */
   force_prepare?: true;
   /** The role gate could not clearly place the title in a target family: the matcher is told to be strict on role_fit. */
@@ -1301,9 +1310,10 @@ export function listUnscoredJobs(
   // ROLE GATE (src/roleGate.ts, config/role-families.json): a job whose title is not a target role is marked role_mismatch and excluded here,
   // before any matcher call. Opt-in per caller (the db MCP tool passes the config). Manual requests are NOT exempt (Safety rule 18: vetoes apply, even forced).
   if (opts.roleGate) sweepRoleGate(db, { cfg: opts.roleGate, windowStart, matchThreshold: opts.matchThreshold });
+  const liBonus = (r: Record<string, string | number | null>): number => linkedinSignalBonus(r.li_connections as number | null, r.li_hiring_team as string | null);
   const pendingLimit = kind === 'matched' ? limit : Math.max(1, Math.floor(limit / 2));
   type Row = Record<string, string | number | null>;
-  const cols = 'id, source, title, company, url, apply_url, description, posted_at, score, prep_offers, COALESCE(promoted, 0) AS promoted, poster_url, apply_email, company_confidence';
+  const cols = 'id, source, title, company, url, apply_url, description, posted_at, score, prep_offers, COALESCE(promoted, 0) AS promoted, li_connections, li_hiring_team, poster_url, apply_email, company_confidence';
   // Owner-submitted jobs (priority > 0) come first, outside the normal cap (at most MANUAL_PRIORITY_PER_WAKE per call, the rest wait).
   // They bypass the window, the same-posting dedupe and prep_offers; the 90-day repeat-contact guard still applies (see applyPriorityRepeats).
   // A scored one is offered only while it has no outreach row and (it met the threshold or its request is forced).
@@ -1342,7 +1352,7 @@ export function listUnscoredJobs(
       .filter((r) => (r.prep_offers as number) < prepOfferLimitFor({ source: r.source as string | null, apply_url: r.apply_url as string | null }))
     : [];
   // Promoted jobs take at most 40 percent of the carry-over batch, first; the rest follow in the normal order (score desc).
-  const pendingTaken = laneOrder(pending.map((r) => ({ r, promoted: r.promoted === 1 })), pendingLimitRest).slice(0, pendingLimitRest).map((x) => x.r);
+  const pendingTaken = laneOrder(pending.map((r) => ({ r, promoted: r.promoted === 1 || liBonus(r) > 0 })), pendingLimitRest).slice(0, pendingLimitRest).map((x) => x.r);
   pending.length = 0;
   pending.push(...pendingTaken);
   if (pending.length) {
@@ -1357,7 +1367,7 @@ export function listUnscoredJobs(
       ORDER BY rn ASC, created_at ASC, rid ASC LIMIT ?`,
   ).all(MATCH_FAIL_LIMIT, windowStart, windowStart, PIPELINE_MAX_JOBS_PER_WAKE_CEILING) as Row[];
   // Round-robin order first, then the promoted-first lane (at most 40 percent of each page, of the whole batch in kind `all`) is pulled forward.
-  const fresh: Row[] = laneOrder(freshAll.map((r) => ({ r, promoted: r.promoted === 1 })), kind === 'all' ? freshCount : limit)
+  const fresh: Row[] = laneOrder(freshAll.map((r) => ({ r, promoted: r.promoted === 1 || liBonus(r) > 0 })), kind === 'all' ? freshCount : limit)
     .map((x) => x.r).slice(offset, offset + freshCount);
   if (kind === 'unscored') {
     const offeredSet = setFor(OFFERED_UNSCORED, db);
@@ -1384,6 +1394,8 @@ export function listUnscoredJobs(
       ...(r.company_confidence ? { company_confidence: r.company_confidence as string } : {}),
       ...(matched ? { already_matched: true as const, score: r.score as number } : {}),
       ...(r.promoted === 1 ? { promoted: true as const } : {}),
+      ...(typeof r.li_connections === 'number' && r.li_connections > 0 ? { li_connections: r.li_connections } : {}),
+      ...(liBonus(r) > 0 ? { li_signal_bonus: liBonus(r) } : {}),
       ...(manual ? { priority: 1 as const } : {}),
       ...(manual && r.forced ? { force_prepare: true as const } : {}),
       ...(opts.roleGate && checkRole(job, opts.roleGate).verdict === 'borderline' ? { role_gate: 'borderline' as const } : {}),

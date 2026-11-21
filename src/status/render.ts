@@ -104,6 +104,9 @@ export function renderWorking(s: Snapshot): string {
   if (s.jd && (s.jd.waiting > 0 || s.jd.fetched24h > 0 || s.jd.unavailable > 0)) {
     lines.push(`job descriptions: waiting ${s.jd.waiting} (jd_pending ${s.jd.pending}), fetched in 24h ${s.jd.fetched24h}, unavailable ${s.jd.unavailable}; a job is matched only after its description is read`);
   }
+  if (s.liSignals && (s.liSignals.connections > 0 || s.liSignals.firstDegree > 0)) {
+    lines.push(`linkedin connection signals: ${s.liSignals.connections} job(s) with connections at the company, ${s.liSignals.firstDegree} with a 1st-degree hiring-team member`);
+  }
   if (s.openQuestions.count > 0) lines.push(`needs your answer: ${s.openQuestions.count} question(s) pause applications (npm run answers -- list)`);
   for (const h of s.needsHuman.hosts) lines.push(`needs you: ${h.jobs} job(s) wait at ${h.host} for a login or human check (${h.command})`);
   const manual = s.manualApply ? manualApplyLine(s.manualApply) : null;

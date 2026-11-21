@@ -8,7 +8,7 @@ import { isFreeMail } from '../lib/postEmail.js';
 import { POST_SOURCE } from '../lib/postSignals.js';
 import { upsertPerson } from '../outreach/people.js';
 import { buildPostsSearchUrl, loadDiscoveryConfig } from './discoveryConfig.js';
-import { bump, gateCardField, runDiscovery, type DiscoverResult, type Parsed } from './discoverCommon.js';
+import { bump, gateCardField, runDiscovery, scrollRoundsFor, type DiscoverResult, type Parsed } from './discoverCommon.js';
 import { canonicalProfile } from './findProfiles.js';
 import {
   classifyPost, extractApplyRoute, extractCompany, extractLocation, extractRole, fallbackTitle, postRefFrom, relativeToIso, splitCardLines,
@@ -122,6 +122,7 @@ export async function searchPosts(a: SearchArgs, deps: ToolDeps, opts: SearchOpt
   if (!def) return { status: 'failed', code: 'unknown_search', fetched: 0, new: 0, skipped: 0, seen: 0, job_ids: [] };
   return runDiscovery({
     tool: 'search_posts', deps, url: buildPostsSearchUrl(def), expectKind: 'search', searchName: def.name, narrow: def.narrow === true,
+    scrollRounds: scrollRoundsFor(deps.env), scrollLimit: def.limit,
     parse: (snap) => parsePostCards(snap, def.limit, def.role, deps.now()),
     afterSave: (p) => {
       for (const au of p.authors) {

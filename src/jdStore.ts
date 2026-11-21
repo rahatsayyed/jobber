@@ -10,6 +10,7 @@ import {
   EXCLUDED_JD_UNAVAILABLE, JD_FETCH_MAX_ATTEMPTS, JD_FETCH_SOURCES, JD_NOTE_REPREP, JOB_STATUS_JD_PENDING, QUEUE_STATUS_NEEDS_REPREP,
   isJdComplete, jdFetchPlatform, needsJdFetch,
 } from './jdComplete.js';
+import type { LinkedinSignals } from './linkedinSignals.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -79,6 +80,21 @@ export function saveFetchedJd(db: Db, jobId: string, text: string, now: Date): S
     db.prepare('UPDATE jobs SET description = ?, jd_fetched_at = ? WHERE id = ?').run(text, stamp, jobId);
     return { saved: true, reset: false };
   })();
+}
+
+/**
+ * Stores the LinkedIn social-proof signals of a job whose JD was just saved: li_connections (null unknown, 0 checked and none),
+ * li_hiring_team (JSON) and li_signals_at. A stored positive count is never replaced by null or 0, and an empty team never replaces a stored one.
+ * Nothing is written when the page's own blocks were not found. True when the row changed.
+ */
+export function saveLinkedinSignals(db: Db, jobId: string, s: LinkedinSignals, now: Date): boolean {
+  if (!s.checked) return false;
+  const row = db.prepare('SELECT li_connections AS c, li_hiring_team AS t FROM jobs WHERE id = ?').get(jobId) as { c: number | null; t: string | null } | undefined;
+  if (!row) return false;
+  const found = s.connections_here ?? 0;
+  const conn = found > 0 || row.c === null || row.c === undefined ? found : row.c;
+  const team = s.hiring_team.length ? JSON.stringify(s.hiring_team.map((e) => ({ name: e.name, degree: e.degree, headline: e.headline, profile_key: e.profile_key }))) : row.t;
+  return db.prepare('UPDATE jobs SET li_connections = ?, li_hiring_team = ?, li_signals_at = ? WHERE id = ?').run(conn, team, sqlTime(now), jobId).changes > 0;
 }
 
 /**

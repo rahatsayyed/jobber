@@ -42,6 +42,7 @@ import { checkAcceptedRecent, type RecentDeps } from '../linkedin/acceptRecent.j
 import { linkedinActiveNow, OUTSIDE_ACTIVE_HOURS_CODE, loadActiveHours } from '../linkedin/activeHours.js';
 import { createNavGap, type NavGap } from '../linkedin/navGap.js';
 import type { ResolveDeps } from '../linkedin/attachment.js';
+import { writeSignalsDiag } from '../linkedin/signalsDiag.js';
 import { fetchJd, jdFromLinkedinBody, JD_LINKEDIN_SRC, type JdFetchIo, type JdPageRead } from '../jdFetch.js';
 
 /**
@@ -425,11 +426,11 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
           const fromDom = typeof dom.jd === 'string' ? dom.jd : '';
           return {
             title: dom.title || snap.title, heading: dom.heading ?? '', alerts: [...(Array.isArray(dom.alerts) ? dom.alerts : []), ...snap.notices],
-            bodyHead: dom.bodyHead || snap.bodyText.slice(0, 1500), jd: fromDom || jdFromLinkedinBody(snap.bodyText),
+            bodyHead: dom.bodyHead || snap.bodyText.slice(0, 1500), jd: fromDom || jdFromLinkedinBody(snap.bodyText), signals: dom.signals,
           };
         },
       };
-      return json(await fetchJd('linkedin', io, { db: td.db, env: td.env, now: td.now, screen: td.screen }, { job_id }));
+      return json(await fetchJd('linkedin', io, { db: td.db, env: td.env, now: td.now, screen: td.screen, signalsDiag: (sg) => { writeSignalsDiag({ now: td.now }, sg); } }, { job_id }));
     }),
     // Reads the next 'sent' invite's profile and marks the row 'connected' in code when it is a first-degree profile; sends and clicks nothing.
     linkedin_check_accepted: safe(async () => {
