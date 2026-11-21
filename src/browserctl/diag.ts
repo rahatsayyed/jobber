@@ -49,13 +49,13 @@ export interface DiagDeps {
  * directory there is none (null): a test that forgot `diagDir` must never write fixture-shaped files into the live folder, where the
  * self-heal ledger reads them as a real structural failure.
  */
-export function diagDirOf(deps: DiagDeps): string | null {
+export function diagDirOf(deps: DiagDeps | { diagDir?: string }): string | null {
   if (deps.diagDir) return deps.diagDir;
   if (process.env.VITEST !== undefined) return null;
   return path.join(PROJECT_ROOT, '.jobber', 'diag');
 }
 
-const EMAIL_RE =/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const CONTROL = new RegExp('[\\u0000-\\u001f\\u007f\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ufeff]', 'g');
 const PHONE_RE = /\+?\d[\d\s().-]{6,}\d/g;
 

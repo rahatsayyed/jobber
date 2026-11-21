@@ -15,7 +15,7 @@ describe('formatJson with the 8G-2 checks', () => {
     ]);
     expect(parsed.every((p) => ['pass', 'warn', 'fail', 'skip'].includes(p.status))).toBe(true);
     expect(parsed.filter((p) => p.status === 'fail')).toEqual([]);
-  });
+  }, 30_000); // runs the real checks on the real repo; with the stack up one of them (dashboard, browser launch) takes over the default 5 s
 });
 
 describe('formatJson', () => {

@@ -107,10 +107,12 @@ describe('inbox parsing', () => {
 });
 
 describe('discovery config and cards', () => {
-  it('ships one valid example search for remote and India full stack / React', () => {
+  it('ships valid searches: the first is remote India full stack / React (it kept returning the same 20 jobs, so three more broaden it)', () => {
     const c = loadWellfoundDiscoveryConfig();
-    expect(c.searches).toHaveLength(1);
+    expect(c.searches.length).toBeGreaterThanOrEqual(1);
     expect(c.searches[0]).toMatchObject({ name: 'full-stack-react-india-remote', role: 'full-stack-engineer', location: 'india', remote: true });
+    expect(new Set(c.searches.map((s) => s.name)).size).toBe(c.searches.length); // unique names
+    for (const s of c.searches) expect(s.limit).toBeLessThanOrEqual(40);
   });
 
   it('tolerates a missing or invalid file', () => {

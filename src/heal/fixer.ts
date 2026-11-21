@@ -118,7 +118,9 @@ export async function runFixer(d: HealDeps & { mode: string }, disp: FixerDispat
     updateAttempt(d.db, attemptId, { report: JSON.stringify(report) });
     if (report.verdict !== 'ready') return await fail('abandoned', `fixer abandoned: ${report.notes || 'no reason given'}`);
     if (report.full_suite !== 'pass' || report.mutation_check !== 'pass') return await fail('abandoned', 'fixer reported ready without a passing suite and mutation check');
-    if (report.branch !== prep.branch) return await fail('gate_failed', 'report names another branch');
+    // The report's branch and head are informational only: the window summary passes through the secret redactor, which turns the branch name
+    // and the commit hash into "[redacted]" (seen live: the first real heal ended gate_failed on this check). Everything below uses code's own
+    // `prep.branch`, and gateBranch verifies that branch itself with git.
 
     await commitLeftovers(d, prep.worktree, ledger.signature);
     const head = await git(d, ['rev-parse', prep.branch]);
