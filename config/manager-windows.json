@@ -95,6 +95,15 @@
         "BROWSER_HOST_HEADED"
       ],
       "env_prefixes": ["APPLY_", "SITE_", "NAUKRI_", "WELLFOUND_", "LINKEDIN_", "CLASSIFIER_", "LAYOUT_"]
+    },
+    "fixer": {
+      "kind": "worker",
+      "description": "Heal lane: the fixer. Works only in a git worktree branch heal/<signature>-<date>, reproduces one failure with a test, fixes it, verifies, tries to break it and reports; never merges, restarts or lands anything (code does), typed by the scheduler",
+      "lane": "heal",
+      "role_prompt": "config/windows/fixer.md",
+      "env": {
+        "JOBBER_RUN_LANE": "heal"
+      }
     }
   }
 }

@@ -39,6 +39,9 @@ import { finalizeManualRequests } from '../src/manual/report.js';
 import { telegramNotifier } from '../src/platform/notify.js';
 import { linkedinDripEnabled, linkedinDripStatus, renderLinkedinDripLines } from '../src/scheduler/linkedinDrip.js';
 import { escalationDigestTick } from '../src/scheduler/escalationDigest.js';
+import { healTick } from '../src/heal/tick.js';
+import { makeHealDeps } from '../src/heal/wire.js';
+import { isDryRun } from '../src/safety/dryRun.js';
 
 const projectRoot = resolve(process.cwd());
 const root = join(projectRoot, '.jobber');
@@ -139,6 +142,11 @@ async function main(): Promise<void> {
   const tuning = loadTuning(env);
   const dispatchSession = env.SCHEDULER_TMUX_SESSION || JOBBER_TMUX_SESSION;
   const notifier = fileNotifier(join(root, 'notify.jsonl'), now, defaultRun, env.JOBBER_NOTIFY_CMD);
+  const windows = new WindowDispatcher({
+    root: projectRoot, session: dispatchSession, run: defaultRun, db, killed: () => stopActive(projectRoot, env).stopped,
+    stallMs: stallMsFromEnv(env),
+    ensureReady: makeEnsureReady({ root: projectRoot, env, run: defaultRun }),
+  });
   const deps: DriverDeps = {
     db,
     now,
@@ -165,11 +173,7 @@ async function main(): Promise<void> {
     mailDrip: args.mode === 'daemon',
     // The dispatcher of the long-lived worker windows: the ONLY way work reaches a model (mail drip, LinkedIn drip, reply check, wake steps).
     // A missing window is started through the manager path (ensureReady) before an item is typed; there is no headless fallback.
-    windows: new WindowDispatcher({
-      root: projectRoot, session: dispatchSession, run: defaultRun, db, killed: () => stopActive(projectRoot, env).stopped,
-      stallMs: stallMsFromEnv(env),
-      ensureReady: makeEnsureReady({ root: projectRoot, env, run: defaultRun }),
-    }),
+    windows,
     // One-time cleanup at start of the leftover wake-* / drip-* windows of the retired headless design.
     cleanupLegacyWindows: async () => { await killLegacyWindows(defaultRun, dispatchSession); },
     // The slow LinkedIn lane (src/scheduler/linkedinDrip.ts); daemon only. LINKEDIN_DRIP=false turns it off and wakes plan LinkedIn again.
@@ -182,6 +186,14 @@ async function main(): Promise<void> {
       killed: () => stopActive(projectRoot, env).stopped,
       inQuiet: () => inQuietHours(now(), quietFromConfig(cfg)),
       alert: (text, o) => telegramNotifier(env).send(text, { topic: 'alerts', html: true, ...(o?.silent !== undefined ? { silent: o.silent } : {}) }),
+    }) : undefined,
+    // Self-heal (src/heal): detection into the heal ledger, the `fixer` window, the landing gate, restart and rollback. HEAL_MODE off|suggest|auto
+    // (default suggest: a fix waits as a ready branch until `npm run heal -- land <id>`). The daemon only.
+    healTick: args.mode === 'daemon' ? healTick({
+      ...makeHealDeps({ root: projectRoot, env, db, killed: () => readControl(db, controlDefaults(env, stopFile)).killed }),
+      dryRun: () => isDryRun(env),
+      inQuiet: () => inQuietHours(now(), quietFromConfig(cfg)),
+      windows,
     }) : undefined,
     manualIngest: (runId) => ingestManualRequests(db, { runId, now }),
     manualReport: async (runStatus) => {

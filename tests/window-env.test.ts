@@ -86,7 +86,7 @@ describe('window config schema (config/manager-windows.json)', () => {
 
   it('the shipped file has exactly the mail and linkedin worker windows and old entries load unchanged', () => {
     const shipped = loadManagerConfig(readFileSync(path.join(ROOT, 'config/manager-windows.json'), 'utf8'));
-    expect(Object.keys(shipped.windows)).toEqual(['mail', 'linkedin', 'sources', 'pipeline', 'boards', 'apply']);
+    expect(Object.keys(shipped.windows)).toEqual(['mail', 'linkedin', 'sources', 'pipeline', 'boards', 'apply', 'fixer']);
     for (const w of ['sources', 'pipeline', 'boards', 'apply']) {
       const c = shipped.windows[w];
       expect(c.kind).toBe('worker');

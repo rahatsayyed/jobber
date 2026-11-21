@@ -75,6 +75,8 @@ export interface DriverDeps {
   escalationDigest?: () => Promise<void>;
   /** One tick of the window upkeep (src/scheduler/windowTick.ts: handoff reminders and window recycle), run every 30 seconds in the daemon loop. Never throws. Absent: none. */
   windowTick?: () => Promise<void>;
+  /** One tick of the self-heal system (src/heal/tick.ts: detection, fixer window, landing gate, restart, rollback), run every 30 seconds in the daemon loop. Never throws. Absent: none. */
+  healTick?: () => Promise<void>;
   /** Stage `manual`, run in code before the model session when a manual request is pending: ingests the requests (src/manual/ingest.ts). Never throws into the wake. */
   manualIngest?: (runId: string) => Promise<unknown>;
   /** After every wake that launched a session: reports finished manual requests to the owner (src/manual/report.ts finalizeManualRequests). */
@@ -502,6 +504,18 @@ async function windowTickLoop(d: DriverDeps, stop: { stopped: boolean }): Promis
   }
 }
 
+async function healTickLoop(d: DriverDeps, stop: { stopped: boolean }): Promise<void> {
+  while (!stop.stopped) {
+    try {
+      await d.healTick?.();
+    } catch {
+      // the heal never stops the scheduler
+    }
+    if (stop.stopped) break;
+    await d.sleep(SLICE_MS);
+  }
+}
+
 export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Promise<void> {
   if (d.env.SCHEDULER_ENABLED === 'false') {
     await say(d, { level: 'info', title: 'scheduler disabled (SCHEDULER_ENABLED=false), exiting' });
@@ -534,6 +548,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
   let liDrip: Promise<void> | null = null;
   let digest: Promise<void> | null = null;
   let upkeep: Promise<void> | null = null;
+  let healing: Promise<void> | null = null;
   try {
     // Orphans from a previous daemon: kill their windows BEFORE marking them crashed, unless a live
     // run lock shows another process owns a run right now (then leave its rows untouched).
@@ -594,6 +609,8 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     digest = deps.escalationDigest ? digestLoop(deps, stop) : null;
     // Handoff reminders and window recycle (zero LLM), also in their own loop.
     upkeep = deps.windowTick ? windowTickLoop(deps, stop) : null;
+    // Self-heal (zero LLM in the tick itself), in its own loop so a long landing never delays a wake.
+    healing = deps.healTick ? healTickLoop(deps, stop) : null;
     // A manual request must not wait for the next random wake: every slice (30 s) the daemon checks for a pending one and wakes early,
     // outside quiet hours, at most once per backoff. The regular wake schedule (`next`) is left alone.
     let manualBackoffUntil = 0;
@@ -668,6 +685,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     if (liDrip) await liDrip;
     if (digest) await digest;
     if (upkeep) await upkeep;
+    if (healing) await healing;
     try {
       dl.release();
     } catch {

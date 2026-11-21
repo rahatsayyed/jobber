@@ -42,7 +42,7 @@ describe('config and session', () => {
   it('loads the committed config', () => {
     expect(committed.session).toBe('Jobber');
     expect(committed.protected).toEqual(['manager', 'bridge', 'chat']);
-    expect(Object.keys(committed.windows)).toEqual(['mail', 'linkedin', 'sources', 'pipeline', 'boards', 'apply']);
+    expect(Object.keys(committed.windows)).toEqual(['mail', 'linkedin', 'sources', 'pipeline', 'boards', 'apply', 'fixer']);
   });
   it('hidden_in_telegram: default, committed value, validation, every worker has a description', () => {
     const mk = (extra: Record<string, unknown>) => JSON.stringify({ session: 's', protected: [], windows: {}, ...extra });
