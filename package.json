@@ -70,6 +70,8 @@
     "render": "tsx scripts/render-resume.ts",
     "mail:release": "tsx scripts/release-email.ts",
     "replies": "tsx scripts/replies.ts",
+    "heal": "tsx scripts/heal.ts",
+    "heal:live": "tsx scripts/heal-live.ts",
     "email-replies": "tsx scripts/email-replies.ts",
     "jobber:control": "tsx scripts/jobber-control.ts",
     "scheduler": "tsx scripts/scheduler.ts",
