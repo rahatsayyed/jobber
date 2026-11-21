@@ -7,7 +7,8 @@ import { locationLine } from '../sources/boards/index.js';
 import { FETCHERS } from '../sources/boards/registry.js';
 import type { BoardFetcher, BoardJob } from '../sources/boards/greenhouse.js';
 import { redactError } from '../sources/status.js';
-import { finishManualRequest, listManualRequests, markRunning, MANUAL_MAX_JOBS_PER_REQUEST, saveManualJobs, type ManualRequest } from './requests.js';
+import type { PlatformSwitch } from '../scheduler/platformSwitch.js';
+import { finishManualRequest, listManualRequests, manualRequestAllowed, markRunning, MANUAL_MAX_JOBS_PER_REQUEST, saveManualJobs, type ManualRequest } from './requests.js';
 import { classifyManualUrl, validateManualUrl, type ManualClass } from './url.js';
 
 type Db = BetterSqlite3.Database;
@@ -18,6 +19,8 @@ export interface IngestDeps {
   /** Seam for tests (no network in tests); default is the production board fetchers. */
   fetchers?: Partial<Record<Ats, BoardFetcher>>;
   portalsPath?: string;
+  /** JOBBER_PLATFORMS: a request that needs an unlisted part is left `pending` (not ingested, not failed). */
+  platforms?: PlatformSwitch | null;
 }
 export interface IngestResult { requests: number; jobs: number; sourceTasks: number; failed: number }
 
@@ -90,6 +93,7 @@ async function ingestOne(db: Db, r: ManualRequest, d: IngestDeps): Promise<'jobs
 export async function ingestManualRequests(db: Db, deps: IngestDeps): Promise<IngestResult> {
   const out: IngestResult = { requests: 0, jobs: 0, sourceTasks: 0, failed: 0 };
   for (const r of listManualRequests(db, ['pending'])) {
+    if (!manualRequestAllowed(r.url, deps.platforms)) continue;
     out.requests++;
     let res: 'jobs' | 'task' | 'failed';
     try {

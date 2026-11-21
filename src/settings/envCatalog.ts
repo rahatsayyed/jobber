@@ -330,7 +330,14 @@ const hand: EnvSpec[] = [
     restart: 'scheduler',
     restartEvidence: 'src/scheduler/linkedinDrip.ts',
   }),
-  e('LINKEDIN_DM_ATTACH_RESUME', 'linkedin', 'LinkedIn', 'bool', {
+  e('JOBBER_PLATFORMS', 'scheduler', 'focused runs', 'list', {
+    default: null,
+    exampleActive: false,
+    about: 'Focused-run switch (scheduler daemon): a comma list of the parts that may run, from linkedin, naukri, wellfound, mail, sources, apply. Blank or unset means everything. When set, wakes plan only the listed platforms, the mail drip lane and the reply check run only with mail, the code pass and the source-operator only with sources, the apply-operator only with apply, and manual requests that need an unlisted part stay pending. It only narrows: no gate, ceiling, halt, kill switch or dry run changes. An unknown name makes the whole value read as unset and the doctor warns.',
+    restart: 'scheduler',
+    restartEvidence: 'src/scheduler/platformSwitch.ts',
+  }),
+  e('LINKEDIN_DM_ATTACH_RESUME','linkedin', 'LinkedIn', 'bool', {
     default: 'false',
     exampleActive: false,
     about: 'Lets first LinkedIn messages (role_ask, rapport, followup) carry the tailored resume PDF of the latest job tied to the person (code resolves the file; the upload name is generic). Off by default. Owner-approved replies whose draft asks for the resume always carry it, whatever this says.',

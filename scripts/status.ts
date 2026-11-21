@@ -20,6 +20,7 @@ import { emailReplyLimitLine } from '../src/outreach/emailRepliesCli.js';
 import { renderRunToolCounts, summarizeRunLog } from '../src/status/runs.js';
 import { defaultRun, JOBBER_TMUX_SESSION, listWindows } from '../src/platform/tmux.js';
 import { parseSince, renderStatusDigest } from '../src/platform/digest.js';
+import { describePlatformSwitch, readPlatformSwitch } from '../src/scheduler/platformSwitch.js';
 
 const USAGE = 'usage: npm run status -- <limits|working|health|json|layout|sources|runs|escalations|digest [--since 3h]>';
 const cmd = process.argv[2];
@@ -94,7 +95,10 @@ async function main(): Promise<number> {
     const dripLines = (): string[] => renderLinkedinDripLines(linkedinDripStatus(db!, env, { now: new Date(), tuning: loadTuning(env) }), new Date());
     const replyLines = (): string[] => (emailAutoReplyOn(env) ? [emailReplyLimitLine(db!)] : []);
     if (cmd === 'limits') console.log([renderLimits(snap, { env }), ...dripLines(), ...replyLines()].join('\n'));
-    else if (cmd === 'working') console.log([renderWorking(snap), ...dripLines()].join('\n'));
+    else if (cmd === 'working') {
+      const sw = readPlatformSwitch(env);
+      console.log([renderWorking(snap), ...(sw.active ? [`platforms: ${describePlatformSwitch(sw)} (JOBBER_PLATFORMS)`] : []), ...dripLines()].join('\n'));
+    }
     else if (cmd === 'json') console.log(JSON.stringify(snap, null, 2));
     else {
       const session = process.env.WEB_TMUX_SESSION?.trim() || JOBBER_TMUX_SESSION;

@@ -4,6 +4,7 @@ import { inQuietHours, type QuietConfig } from '../outreach/quiet.js';
 import type { ControlState, Platform } from './control.js';
 import type { DueCounts, DuePlatform } from './due.js';
 import { ACCEPT_CHECK_MAX_PER_WAKE } from '../linkedin/acceptCheck.js';
+import { switchOn, type SwitchName } from './platformSwitch.js';
 
 export type Operator = 'linkedin-operator' | 'naukri-operator' | 'wellfound-operator';
 /**
@@ -131,6 +132,12 @@ export function planWake(i: {
    * the pipeline and apply). Absent or false: today's wake behaviour.
    */
   linkedinDrip?: boolean;
+  /**
+   * JOBBER_PLATFORMS (src/scheduler/platformSwitch.ts): the parts that may run. Null or absent means everything (today's plan). It only narrows:
+   * a platform not listed is dropped from `allowed` like a halted one, `sources` gates the code pass and the source-operator, `apply` the apply-operator,
+   * `mail` the email follow-up pull-in of the pipeline. Never widens what the control state allows.
+   */
+  platforms?: ReadonlySet<SwitchName> | null;
 }): WakeDecision {
   const { control, ceilings, due, knobs } = i;
   if (control.killed) return { kind: 'skip', reason: 'killed', detail: control.killReason ?? undefined };
@@ -147,6 +154,11 @@ export function planWake(i: {
   const liDrip = i.linkedinDrip === true;
   // Outside the LinkedIn active hours LinkedIn is treated like a halted platform for planning: nothing is planned for it.
   if (i.linkedinActive === false) allowed.delete('linkedin');
+  // JOBBER_PLATFORMS narrows the same set (intersection, never widening); the drip lane of LinkedIn is not touched by naukri or wellfound entries.
+  for (const p of ['linkedin', 'naukri', 'wellfound'] as const) if (!switchOn(i.platforms, p)) allowed.delete(p);
+  const sourcesOn = switchOn(i.platforms, 'sources');
+  const applyOn = switchOn(i.platforms, 'apply');
+  const mailOn = switchOn(i.platforms, 'mail');
   const ok = (k: LimitKey): boolean => ceilings[k].ok;
   const plats = (pairs: [DuePlatform, LimitKey[]][]): DuePlatform[] =>
     pairs.filter(([p, keys]) => allowed.has(p) && !(liDrip && p === 'linkedin') && keys.some(ok)).map(([p]) => p);
@@ -184,7 +196,8 @@ export function planWake(i: {
   // LinkedIn's messaging page is opened at most every LINKEDIN_INBOX_MIN_GAP_MIN minutes whatever INBOX_EVERY_MIN says.
   const linkedinInboxDue = inboxAge === null || inboxAge >= Math.max(knobs.inboxEveryMin, LINKEDIN_INBOX_MIN_GAP_MIN);
   for (const p of control.allowed) {
-    if (p === 'linkedin' ? liDrip || !allowed.has('linkedin') || !linkedinInboxDue : !inboxDue) continue;
+    if (!allowed.has(p)) continue; // only the JOBBER_PLATFORMS switch differs here (a halted platform is already out of control.allowed)
+    if (p === 'linkedin' ? liDrip || !linkedinInboxDue : !inboxDue) continue;
     if (p !== 'wellfound' || wellfoundOn) byPlatform[p].push({ kind: 'inbox', quota: INBOX_QUOTA });
   }
 
@@ -270,20 +283,20 @@ export function planWake(i: {
   // Non-platform stages. Absent due fields mean "not tracked": nothing is planned from them.
   const stages: Stage[] = [];
   const scriptAge = due.scriptDiscoverLastHoursAgo;
-  const scriptDue = i.codePassEnabled === true && (scriptAge === null || (scriptAge !== undefined && scriptAge >= SCRIPT_DISCOVER_EVERY_HOURS));
+  const scriptDue = sourcesOn && i.codePassEnabled === true && (scriptAge === null || (scriptAge !== undefined && scriptAge >= SCRIPT_DISCOVER_EVERY_HOURS));
   // Owner-submitted requests: ingested in code at the start of the wake. They may create manual_url source tasks (unknown hosts), so
   // the source-operator and the pipeline are planned for them even though the rows do not exist yet at plan time.
   const manualPending = due.manualRequestsPending ?? 0;
   if (manualPending > 0) stages.push({ operator: 'code', kind: 'manual', quota: manualPending });
   if (scriptDue) stages.push({ operator: 'code', kind: 'discover_scripts', quota: 1 });
-  const sourceTasks = (due.sourceTasksQueued ?? 0) + manualPending;
+  const sourceTasks = sourcesOn ? (due.sourceTasksQueued ?? 0) + manualPending : 0;
   if (sourceTasks > 0) stages.push({ operator: 'source-operator', kind: 'discover_agent', quota: Math.min(sourceTasks, SOURCE_TASK_QUOTA) });
   const newJobsExpected =
     scriptDue || sourceTasks > 0 || manualPending > 0 || ORDER.some((p) => byPlatform[p].some((t) => t.kind === 'manual_url')) || byPlatform.linkedin.some((t) => t.kind === 'discover') || byPlatform.naukri.some((t) => t.kind === 'discover') || byPlatform.wellfound.some((t) => t.kind === 'discover') || byPlatform.naukri.some((t) => t.kind === 'jd_fetch') || byPlatform.linkedin.some((t) => t.kind === 'jd_fetch');
   const unmatched = due.unmatchedJobs ?? 0;
   const matchedWaiting = due.matchedAwaitingPrepare ?? 0;
   // Email follow-ups need the reply check the pipeline stage starts with (step 0b), so they pull the stage in.
-  const pipelineDue = unmatched > 0 || matchedWaiting > 0 || newJobsExpected || (due.ownerInstructionsPending ?? 0) > 0 || (due.emailFollowupsReady ?? 0) > 0 || (due.priorityWaiting ?? 0) > 0;
+  const pipelineDue = unmatched > 0 || matchedWaiting > 0 || newJobsExpected || (due.ownerInstructionsPending ?? 0) > 0 || (mailOn && (due.emailFollowupsReady ?? 0) > 0) || (due.priorityWaiting ?? 0) > 0;
 
   // The pipeline creates work in this same wake (matches, enqueued outreach rows), so like mail it pulls in LinkedIn
   // new_outreach even when the due count was 0 at plan time. The operator reads its real queue (outreach.next_contacts)
@@ -308,7 +321,7 @@ export function planWake(i: {
   const attempt = ceilings.apply_attempt;
   const applyQuota = Math.min(due.appliesLeftToday ?? 0, attempt ? Math.max(0, attempt.limit - attempt.used) : 0);
   // The pipeline pulls apply in too (it may enqueue apply rows this wake); the operator reads db.list_queued_outreach.
-  if ((applyQueued > 0 || pipelineDue) && applyQuota > 0) stages.push({ operator: 'apply-operator', kind: 'apply', quota: applyQuota });
+  if (applyOn && (applyQueued > 0 || pipelineDue) && applyQuota > 0) stages.push({ operator: 'apply-operator', kind: 'apply', quota: applyQuota });
 
   if (tasks.length > 0 || stages.length > 0) return { kind: 'run', tasks, ...(stages.length > 0 ? { stages } : {}) };
 
@@ -318,7 +331,7 @@ export function planWake(i: {
     allowedTotal(due.newOutreachReadyByPlatform) > 0 ||
     (naukriDiscoverDue && naukriNames.length > 0 && allowed.has('naukri')) ||
     (wellfoundOn && wellfoundDiscoverDue) ||
-    applyQueued > 0;
+    (applyOn && applyQueued > 0);
   return { kind: 'skip', reason: workExists ? 'ceilings_exhausted' : 'nothing_due' };
 }
 
