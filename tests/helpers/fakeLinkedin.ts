@@ -13,6 +13,7 @@ export interface FakeSite {
   clickTimeout?: boolean;
   redirects?: Record<string, string>; // requested path -> final URL
   noResponse?: boolean; // waitForResponse rejects (no send-invitation response seen)
+  evaluate?: (src: string, currentUrl: string) => unknown; // answer for any in-page script other than the snapshot one (default null)
 }
 export type FakeLauncher = LiLauncher & { closed: boolean; launches: number; browsers: Array<{ closed: boolean }>; storageStateCalls: number };
 
@@ -76,7 +77,7 @@ export function makeFakeLauncher(site: FakeSite, log: string[]): FakeLauncher {
           const d = pageDef();
           return { ...EMPTY, ...d, url: current, title: d.title ?? '' } as RawSnapshot;
         }
-        return null;
+        return site.evaluate ? site.evaluate(src, current) : null;
       }) as LiPage['evaluate'],
       locator: (sel: string) => loc(sel, 0, true),
       waitForTimeout: async () => {},

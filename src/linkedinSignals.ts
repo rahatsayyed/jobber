@@ -12,10 +12,11 @@ import { gateField } from './safety/fieldGate.js';
 const OTHER_JOBS = /(more jobs|similar jobs|jobs you may be interested in|people also viewed)/i;
 
 /** In-page collector (a string on purpose, like the other page scripts). Returns {top, hiring, hasHiring, probe}; reads the DOM only. */
-export const LINKEDIN_SIGNALS_SRC = `(() => {
+export const linkedinSignalsSrc = (root: string): string => `(() => {
+  const ROOT = ${root};
   const txt = (e) => ((e && (e.innerText || e.textContent)) || '').replace(/\\s+/g, ' ').trim();
   const BAD = /more jobs|similar jobs|jobs you may be interested in|people also viewed/i;
-  const h1 = document.querySelector('h1');
+  const h1 = ROOT.querySelector('h1');
   let top = '', topEl = null, n = h1;
   for (let i = 0; n && i < 5; i++) {
     n = n.parentElement;
@@ -25,7 +26,7 @@ export const LINKEDIN_SIGNALS_SRC = `(() => {
     topEl = n; top = t;
   }
   let hirEl = null;
-  const heads = Array.from(document.querySelectorAll('h2, h3, h4, span, p, div')).filter((e) => /^meet the hiring team$/i.test(txt(e)));
+  const heads = Array.from(ROOT.querySelectorAll('h2, h3, h4, span, p, div')).filter((e) => /^meet the hiring team$/i.test(txt(e)));
   if (heads.length) {
     let c = heads[0], last = null;
     for (let i = 0; c && i < 4; i++) {
@@ -50,6 +51,9 @@ export const LINKEDIN_SIGNALS_SRC = `(() => {
   }
   return { top: top.slice(0, 1500), hiring: hiring, hasHiring: !!hirEl, probe: probe };
 })()`;
+
+// The collector over the whole document (the job page). The jobs search pane uses linkedinSignalsSrc with the pane element.
+export const LINKEDIN_SIGNALS_SRC = linkedinSignalsSrc('document');
 
 export type LiDegree = 1 | 2 | 3 | null;
 export interface HiringEntry { name: string; degree: LiDegree; headline: string; profile_key: string }

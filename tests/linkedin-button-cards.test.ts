@@ -26,8 +26,9 @@ const POSTS_URL = 'https://www.linkedin.com/search/results/content/?keywords=hir
 const JP = '/jobs/search/'; // the tool opens /jobs/search/, LinkedIn redirects to /jobs/search-results/ (the snapshot url below)
 const PP = '/search/results/content/';
 const fx = (n: string) => readFileSync(new URL(`./fixtures/linkedin/${n}`, import.meta.url), 'utf8');
-const LIVE = { JOBBER_DRY_RUN: 'false' };
-const DRY = { JOBBER_DRY_RUN: 'true' };
+// These tests cover the old id-only click behaviour (clicks per search 0) without list scrolling; the pane read and scrolling have their own file.
+const LIVE = { JOBBER_DRY_RUN: 'false', LINKEDIN_JOB_CLICKS_PER_SEARCH: '0', LINKEDIN_JOB_SCROLL_ROUNDS: '0' };
+const DRY = { JOBBER_DRY_RUN: 'true', LINKEDIN_JOB_CLICKS_PER_SEARCH: '0', LINKEDIN_JOB_SCROLL_ROUNDS: '0' };
 const CONFIG: DiscoveryConfig = {
   jobs: [{ name: 'react-india', keyword: 'react developer', location: 'India', remote_only: true, limit: 50 }],
   posts: [{ name: 'default', role: 'react developer', geo: 'in', limit: 25 }],

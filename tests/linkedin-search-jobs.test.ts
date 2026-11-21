@@ -61,7 +61,8 @@ const jobs = (db: ReturnType<typeof openDb>) =>
   db.prepare('SELECT id, source, title, company, url, apply_url, description FROM jobs ORDER BY id').all() as Array<Record<string, string>>;
 const counter = (db: ReturnType<typeof openDb>, key: string) =>
   (db.prepare("SELECT count FROM daily_counters WHERE key = ?").get(key) as { count: number } | undefined)?.count ?? 0;
-const events = (db: ReturnType<typeof openDb>) => (db.prepare('SELECT COUNT(*) c FROM rate_events').get() as { c: number }).c;
+// Discover ceiling events only (card clicks of the pane read are counted under their own key, linkedin_card_click).
+const events = (db: ReturnType<typeof openDb>) => (db.prepare("SELECT COUNT(*) c FROM rate_events WHERE key = 'linkedin_discover'").get() as { c: number }).c;
 const opened = (log: string[]) => log.filter((l) => l.startsWith('goto:'));
 
 describe('job id derivation (moved from the deleted src/discover/linkedin-jobs.ts)', () => {

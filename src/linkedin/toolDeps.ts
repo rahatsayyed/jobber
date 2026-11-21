@@ -27,6 +27,8 @@ export interface ToolDeps {
   notify?: Notifier;
   /** Directory of the discovery diag files (default <project>/.jobber/diag); tests point it at a temp dir. */
   diagDir?: string;
+  // Kill switch or halt reason (STOP file, JOBBER_KILL, platform halt) or null. Checked between card clicks of a jobs search.
+  killed?: () => string | null;
   /** People discovery layers (linkedin_find_profiles): the search-engine and Serper providers. Absent: layer skipped. */
   dork?: SearchProvider;
   serper?: SearchProvider;

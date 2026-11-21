@@ -64,6 +64,54 @@ export const CARD_ATTR_SRC = String.raw`(function () {
   return { cards: cards, query: q };
 })()`;
 
+// In-page expression: the structure around the "About the job" heading of the jobs search pane, and the short texts of headings and
+// buttons near it, so the real pane DOM (and the name of its "more" control) can be read from data. Attributes and very short control
+// texts only, never the description. When the heading is not found: the elements whose own text mentions "about" or "more" (60 chars).
+export const PANE_DIAG_SRC = String.raw`(function () {
+  function txt(e) { return ((e && (e.innerText || e.textContent)) || '').replace(/\s+/g, ' ').trim(); }
+  function cl(e) { return String(e.getAttribute('class') || '').split(/\s+/).filter(Boolean).slice(0, 3).map(function (c) { return c.slice(0, 28); }).join(' '); }
+  function row(e) { return [e.tagName.toLowerCase(), String(e.getAttribute('role') || '').slice(0, 20), String(e.getAttribute('aria-label') || '').slice(0, 60), cl(e), e.children ? e.children.length : 0, txt(e).length]; }
+  var cand = document.querySelectorAll('h1, h2, h3, h4, span, p, div'), head = null, i;
+  for (i = 0; i < cand.length; i++) { if ((!cand[i].children || cand[i].children.length <= 2) && /^about the job$/i.test(txt(cand[i]))) { head = cand[i]; break; } }
+  var chain = [], x = head;
+  for (i = 0; x && i < 10; x = x.parentElement, i++) chain.push(row(x));
+  var near = [], root = head, k;
+  for (k = 0; root && root.parentElement && k < 6; k++) root = root.parentElement;
+  if (root) {
+    var items = root.querySelectorAll('h1, h2, h3, button, [role="button"], a');
+    for (i = 0; i < items.length && near.length < 40; i++) { var t = txt(items[i]) || String(items[i].getAttribute('aria-label') || ''); near.push(row(items[i]).slice(0, 5).concat([t.slice(0, 60)])); }
+  }
+  var hints = [];
+  if (!head) {
+    var all = document.querySelectorAll('h1, h2, h3, h4, button, [role="button"], span');
+    for (i = 0; i < all.length && hints.length < 25; i++) { var tt = txt(all[i]); if (tt.length < 60 && /about|more|description|details/i.test(tt)) hints.push(row(all[i]).slice(0, 5).concat([tt])); }
+  }
+  return { found: !!head, chain: chain, near: near, hints: hints, body_chars: txt(document.body).length };
+})()`;
+
+/** One small file per search: clicks happened but no read ever showed an "About the job" section. Structure plus very short control texts, redacted. Never throws. */
+export async function writePaneDiag(
+  deps: { now: () => Date; page: LiPage | null; diagDir?: string },
+  i: { tool: string; search: string; clicks: number },
+): Promise<string | null> {
+  try {
+    if (!deps.page) return null;
+    const r = (await deps.page.evaluate<unknown>(PANE_DIAG_SRC)) as { found?: unknown; chain?: unknown; near?: unknown; hints?: unknown; body_chars?: unknown } | null;
+    if (!r || typeof r !== 'object') return null;
+    const rows = (v: unknown, max: number): string[][] =>
+      (Array.isArray(v) ? v : []).slice(0, max).map((x) => (Array.isArray(x) ? x : []).slice(0, 7).map((c) => safeName(c)));
+    const file = {
+      kind: 'discover_pane', at: deps.now().toISOString(), tool: i.tool, search: safeName(i.search), clicks: i.clicks,
+      heading_found: r.found === true, body_chars: Number(r.body_chars) || 0,
+      columns: ['tag', 'role', 'aria_label', 'class_tokens', 'children', 'text_chars_or_text'],
+      ancestors_of_heading: rows(r.chain, 10), controls_near_pane: rows(r.near, 40), hints_without_heading: rows(r.hints, 25),
+    };
+    return persist(deps, i.tool, JSON.stringify(file).slice(0, DISCOVER_DIAG_MAX_BYTES), deps.now());
+  } catch {
+    return null;
+  }
+}
+
 export interface DiscoverDiagInput {
   tool: string;
   search: string;
@@ -180,7 +228,8 @@ export async function writeDiscoverSummary(
       status: r.status, code: r.code, layout: safeName(r.layout ?? ''), card_parser: r.parser ?? 'primary',
       fetched: r.fetched, new: r.new, seen: r.seen, skipped: r.skipped,
       rejected: r.rejected ?? {}, no_id: r.no_id ?? 0, no_id_reasons: r.no_id_reasons ?? {}, id_from: r.id_from ?? {},
-      clicks: r.clicks ?? 0, known: r.known ?? 0,
+      clicks: r.clicks ?? 0, known: r.known ?? 0, click_failed: r.click_failed ?? 0, jd_from_pane: r.jd_from_pane ?? 0,
+      jd_pane_incomplete: r.jd_pane_incomplete ?? 0, jd_pane_reasons: r.jd_pane_reasons ?? {}, jd_known_skipped: r.jd_known_skipped ?? 0, stopped: r.stopped ?? '',
     };
     return persist(deps, i.tool, JSON.stringify(file), deps.now());
   } catch {

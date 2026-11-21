@@ -13,7 +13,7 @@ import { extractNaukriJobId } from './sources/naukri.js';
 import { isNaukriUrl } from './naukri/page.js';
 import { canonicalJobUrl, extractLinkedInJobId } from './linkedin/jobIds.js';
 import { cleanJdText, isJdComplete, jdFetchPlatform, JD_FETCH_MAX_ATTEMPTS } from './jdComplete.js';
-import { listJdCandidates, markJdPending, markJdUnavailable, recordJdAttempt, saveFetchedJd, saveLinkedinSignals } from './jdStore.js';
+import { jobActedSql, listJdCandidates, markJdPending, markJdUnavailable, recordJdAttempt, saveFetchedJd, saveLinkedinSignals } from './jdStore.js';
 import { gateSignals, LINKEDIN_SIGNALS_SRC, parseLinkedinSignals, signalsDiagDue, type LinkedinSignals } from './linkedinSignals.js';
 import { loadOutreachConfig } from './outreach/config.js';
 import { ceilings, haltReason, tryConsume, type LimitKey } from './outreach/limits.js';
@@ -130,6 +130,58 @@ export function jdUrlFor(platform: JdPlatform, stored: string): string | null {
     return null;
   }
   return canonicalJobUrl(id);
+}
+
+// ---- the shared gate and save (the page fetch below and the jobs-search pane read both use them) ----
+
+export type JdGateStatus = 'ok' | 'blocked' | 'screen_error' | 'incomplete';
+
+/**
+ * Input gate, classifier screen and completeness check of one cleaned JD text, in that order. Never writes. `ok` means the returned
+ * text may be stored; `blocked` is an injection hit (gate or classifier); `screen_error` the classifier threw (fail closed).
+ */
+export async function gateJdText(
+  screen: (t: string, p: ScreenPurpose) => Promise<ScreenVerdict>, text: string,
+): Promise<{ status: JdGateStatus; text: string }> {
+  const g = gateField(text, JD_MAX_CHARS + 500);
+  if (g.blocked) return { status: 'blocked', text: '' };
+  if (g.text) {
+    let v: ScreenVerdict;
+    try { v = await screen(g.text, 'read'); } catch { return { status: 'screen_error', text: '' }; }
+    if (v.blocked) return { status: 'blocked', text: '' };
+  }
+  if (!isJdComplete(g.text)) return { status: 'incomplete', text: g.text };
+  return { status: 'ok', text: g.text };
+}
+
+export interface PaneJdSave {
+  /** saved | blocked | screen_error | incomplete | skipped (job missing, vetoed or already acted on) | save_failed */
+  code: 'saved' | 'blocked' | 'screen_error' | 'incomplete' | 'skipped' | 'save_failed';
+  chars?: number;
+}
+
+/**
+ * Stores a JD read from the right-hand pane of the jobs search for a job that already has a row: same gate, screen and save function as
+ * `fetchJd` (`gateJdText`, `saveFetchedJd`), same signals save. Charges no ceiling (no page was loaded). Never throws.
+ */
+export async function savePaneJd(
+  deps: Pick<JdFetchDeps, 'db' | 'now' | 'screen'>, jobId: string, text: string, signals: unknown,
+): Promise<PaneJdSave> {
+  try {
+    const { db } = deps;
+    const row = db.prepare(`SELECT excluded_reason AS ex, ${jobActedSql('jobs')} AS acted FROM jobs WHERE id = ?`).get(jobId) as { ex: string | null; acted: number } | undefined;
+    if (!row || row.ex || row.acted) return { code: 'skipped' };
+    const g = await gateJdText(deps.screen, text);
+    if (g.status !== 'ok') return { code: g.status };
+    const now = deps.now();
+    if (!saveFetchedJd(db, jobId, g.text, now).saved) return { code: 'save_failed' };
+    try {
+      saveLinkedinSignals(db, jobId, gateSignals(parseLinkedinSignals(signals)), now);
+    } catch { /* signals only order work */ }
+    return { code: 'saved', chars: g.text.length };
+  } catch {
+    return { code: 'save_failed' };
+  }
 }
 
 // ---- the flow ----
@@ -252,17 +304,13 @@ export async function fetchJd(platform: JdPlatform, io: JdFetchIo, deps: JdFetch
     return out('ok', 'unavailable', { job_id: job.id });
   }
 
-  const g = gateField(jdTextOf(page), JD_MAX_CHARS + 500);
-  if (g.blocked) return flagged();
-  if (g.text) {
-    let v: ScreenVerdict;
-    try { v = await deps.screen(g.text, 'read'); } catch {
-      db.prepare('UPDATE jobs SET jd_fetch_at = ? WHERE id = ?').run(sqlStamp(now), job.id);
-      return out('failed', 'classifier_unavailable', { job_id: job.id });
-    }
-    if (v.blocked) return flagged();
+  const g = await gateJdText(deps.screen, jdTextOf(page));
+  if (g.status === 'blocked') return flagged();
+  if (g.status === 'screen_error') {
+    db.prepare('UPDATE jobs SET jd_fetch_at = ? WHERE id = ?').run(sqlStamp(now), job.id);
+    return out('failed', 'classifier_unavailable', { job_id: job.id });
   }
-  if (!isJdComplete(g.text)) {
+  if (g.status === 'incomplete') {
     const attempts = recordJdAttempt(db, job.id, now);
     if (attempts >= JD_FETCH_MAX_ATTEMPTS) {
       markJdUnavailable(db, job.id, 'incomplete');

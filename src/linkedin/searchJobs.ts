@@ -5,13 +5,20 @@
 // Two card layouts: the older one has a /jobs/view link per card (id from the link); the newer one (seen live 14 Nov 2026) has NO job
 // link and one button per card (see buttonCard.ts). For that layout the id comes, in this order, from (a) a DOM attribute of the card
 // (generic scan done by the snapshot script) and (b) the real page URL after an ordinary card click (`currentJobId=<digits>`), at most
-// 10 clicks per search and never for a company+title that is already stored. A card with no id is counted with a reason.
+// LINKEDIN_JOB_CLICKS_PER_SEARCH clicks per search (0: the old id-only behaviour, at most 10) and never for a company+title that is already
+// stored. A card with no id is counted with a reason.
+//
+// The same click reads the job description from the right-hand pane (jobIdResolve.ts, paneJd.ts), so a job needs no later page load for it:
+// a card whose job already has a full description is not clicked at all. The left list is scrolled first (LINKEDIN_JOB_SCROLL_ROUNDS).
 import { type Job } from '../db.js';
 import { companyKey, titleIdentityKey } from '../reposts.js';
 import { buildJobsSearchUrl, loadDiscoveryConfig, type DiscoveryConfig } from './discoveryConfig.js';
-import { bump, gateCardField, runDiscovery, type DiscoverResult, type EnrichOut, type Parsed, type PendingCard } from './discoverCommon.js';
+import { bump, gateCardField, runDiscovery, scrollRoundsFor, type DiscoverResult, type EnrichOut, type IdCard, type Parsed, type PendingCard } from './discoverCommon.js';
+import { needsJdFetch } from '../jdComplete.js';
+import { jobActedSql } from '../jdStore.js';
+import { writePaneDiag } from './discoverDiag.js';
 import { descriptionOf, parseButtonCard } from './buttonCard.js';
-import { reasonCounts, resolveIdsByClick } from './jobIdResolve.js';
+import { clickCards, jobClicksPerSearchFor, reasonCounts, resolveIdsByClick, type ClickTarget } from './jobIdResolve.js';
 import { canonicalJobUrl, extractLinkedInJobId, linkedInJobDbId } from './jobIds.js';
 import { cleanJobTitle } from '../lib/jobTitle.js';
 import type { RawSnapshot } from './types.js';
@@ -24,6 +31,7 @@ export function parseJobCards(snap: RawSnapshot, limit: number): Parsed {
   const cards = (snap.jobCards ?? []).slice(0, limit);
   const jobs: Job[] = [];
   const pending: PendingCard[] = [];
+  const idCards: IdCard[] = [];
   const ids = new Set<string>();
   const text: string[] = [];
   const rejected: Record<string, number> = {};
@@ -31,7 +39,7 @@ export function parseJobCards(snap: RawSnapshot, limit: number): Parsed {
   let skipped = 0;
   let injection = false;
   const reject = (reason: string): void => { skipped++; bump(rejected, reason); };
-  for (const c of cards) {
+  for (const [pos, c] of cards.entries()) {
     let title: { text: string; blocked: boolean };
     let company: { text: string; blocked: boolean };
     let snippet: { text: string; blocked: boolean };
@@ -64,7 +72,7 @@ export function parseJobCards(snap: RawSnapshot, limit: number): Parsed {
     text.push(`${title.text}\n${company.text}\n${snippet.text}`);
     if (!num) {
       if (typeof c.cardName === 'string' && c.cardName && Number.isInteger(c.cardIdx)) {
-        pending.push({ cardIdx: c.cardIdx as number, title: title.text, company: company.text, description: desc });
+        pending.push({ cardIdx: c.cardIdx as number, title: title.text, company: company.text, description: desc, pos });
       } else reject('no_link');
       continue;
     }
@@ -72,10 +80,11 @@ export function parseJobCards(snap: RawSnapshot, limit: number): Parsed {
     if (ids.has(id)) { reject('duplicate'); continue; }
     ids.add(id);
     bump(idFrom, from);
+    idCards.push({ id, num, ...(Number.isInteger(c.cardIdx) ? { cardIdx: c.cardIdx as number } : {}), title: title.text, pos });
     const url = canonicalJobUrl(num);
     jobs.push({ id, source: 'linkedin-jobs', title: title.text, company: company.text, url, apply_url: url, description: desc });
   }
-  return { jobs, authors: [], fetched: cards.length, skipped, injection, screenText: text.join('\n'), rejected, pending, idFrom };
+  return { jobs, authors: [], fetched: cards.length, skipped, injection, screenText: text.join('\n'), rejected, pending, idFrom, idCards };
 }
 
 /** True when a job with this company and title is already stored (any source): such a card is never clicked. */
@@ -86,15 +95,40 @@ function knownByKeys(deps: ToolDeps, company: string, title: string): boolean {
   return deps.db.prepare('SELECT 1 FROM jobs WHERE company_key = ? AND title_key = ? LIMIT 1').get(ck, tk) !== undefined;
 }
 
-/** Resolve the ids of cards that have none: skip known company+title, then click (limited). Failures are counted by reason. */
-export async function resolvePending(deps: ToolDeps, p: Parsed, rand: () => number = Math.random): Promise<EnrichOut> {
+/** True when the job has no row yet, or has one that still waits for a JD (a snippet-only description, not vetoed, not acted on). */
+function jdWanted(deps: ToolDeps, id: string): boolean {
+  const row = deps.db.prepare(
+    `SELECT source, description, excluded_reason AS ex, status, ${jobActedSql('jobs')} AS acted FROM jobs WHERE id = ?`,
+  ).get(id) as { source: string; description: string | null; ex: string | null; status: string | null; acted: number } | undefined;
+  if (!row) return true;
+  return needsJdFetch(row.source, row.description) && !row.ex && !row.acted && row.status !== 'duplicate' && row.status !== 'repeat_contact';
+}
+
+/**
+ * Click the cards (list order), take the id of a card that has none and the description from the right-hand pane. Skips before any click:
+ * a card whose job already has a full description, and a card with no id whose company+title is already stored. With
+ * LINKEDIN_JOB_CLICKS_PER_SEARCH=0 only cards without an id are clicked (at most 10) and no pane is read. Failures are counted by reason.
+ */
+export async function resolvePending(deps: ToolDeps, p: Parsed, rand: () => number = Math.random, search = ''): Promise<EnrichOut> {
   const pending = p.pending ?? [];
   const out: EnrichOut = { jobs: [], known: 0, no_id: 0, no_id_reasons: {}, id_from: {}, clicks: 0 };
   const todo: PendingCard[] = [];
   for (const c of pending) {
     if (knownByKeys(deps, c.company, c.title)) out.known++; else todo.push(c);
   }
-  const r = await resolveIdsByClick(deps, todo.map((c) => ({ cardIdx: c.cardIdx })), rand);
+  const perSearch = jobClicksPerSearchFor(deps.env);
+  const targets: ClickTarget[] = [];
+  if (perSearch > 0) {
+    for (const c of p.idCards ?? []) {
+      if (!jdWanted(deps, c.id)) { out.jd_known_skipped = (out.jd_known_skipped ?? 0) + 1; continue; }
+      targets.push({ pos: c.pos, id: c.num, ...(c.cardIdx !== undefined ? { cardIdx: c.cardIdx } : {}), title: c.title });
+    }
+  }
+  for (const c of todo) targets.push({ pos: c.pos ?? 0, cardIdx: c.cardIdx, title: c.title });
+  targets.sort((a, b) => (a.pos ?? 0) - (b.pos ?? 0));
+  const r = perSearch > 0
+    ? await clickCards(deps, targets, { paneReads: true, maxClicks: perSearch, ceiling: true }, rand)
+    : await resolveIdsByClick(deps, targets, rand);
   out.clicks = r.clicks;
   const seen = new Set((p.jobs ?? []).map((j) => j.id));
   for (const c of todo) {
@@ -109,6 +143,17 @@ export async function resolvePending(deps: ToolDeps, p: Parsed, rand: () => numb
   }
   out.no_id = r.failed.size;
   out.no_id_reasons = reasonCounts(r.failed);
+  if (perSearch > 0) {
+    out.active = true;
+    out.click_failed = r.clickFailed;
+    out.jd_pane_reasons = r.paneReasons;
+    out.panes = [...r.panes.entries()].map(([num, pn]) => ({ id: linkedInJobDbId(num), text: pn.text, signals: pn.signals }));
+    if (r.stopped) out.stopped = r.stopped;
+    if (r.noPaneEver) {
+      const d = await writePaneDiag({ now: deps.now, page: deps.rt.page(), ...(deps.diagDir ? { diagDir: deps.diagDir } : {}) }, { tool: 'search_jobs', search, clicks: r.clicks });
+      if (d) out.pane_diag = d;
+    }
+  }
   return out;
 }
 
@@ -117,7 +162,8 @@ export async function searchJobs(a: SearchArgs, deps: ToolDeps, opts: SearchOpts
   if (!def) return { status: 'failed', code: 'unknown_search', fetched: 0, new: 0, skipped: 0, seen: 0, job_ids: [] };
   return runDiscovery({
     tool: 'search_jobs', deps, url: buildJobsSearchUrl(def), expectKind: 'jobs', searchName: def.name,
+    scrollRounds: scrollRoundsFor(deps.env, 'LINKEDIN_JOB_SCROLL_ROUNDS'), scrollLimit: def.limit,
     parse: (snap) => parseJobCards(snap, def.limit),
-    enrich: (p) => resolvePending(deps, p),
+    enrich: (p) => resolvePending(deps, p, Math.random, def.name),
   });
 }

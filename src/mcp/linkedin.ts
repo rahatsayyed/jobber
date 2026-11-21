@@ -246,6 +246,7 @@ export function buildHandlers(deps: HandlerDeps = {}): Record<ToolName, Handler>
   const toolDeps = (): ToolDeps => ({
     rt: getRt(), db: getDb(), now, cfg, env, factCheck,
     styleCfg: getStyle(), screen, layoutCfg,
+    killed: () => killReason({ db: getDb(), env, policy: LINKEDIN_POLICY }),
     dork: getDork(), ...(deps.serper ? { serper: deps.serper } : {}),
   });
   const json = (v: unknown) => JSON.stringify(v);

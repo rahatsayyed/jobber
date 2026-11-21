@@ -8,6 +8,7 @@ import { ceilings, haltReason, tryConsume } from '../outreach/limits.js';
 import { checkAndIncrement } from '../lib/rateLimit.js';
 import { recordDryRun } from '../safety/dryRun.js';
 import { gateField } from '../safety/fieldGate.js';
+import { savePaneJd } from '../jdFetch.js';
 import { recordDiscoverRun } from '../scheduler/discoverNext.js';
 import { markSearchTried } from './discoverRotation.js';
 import { layoutGate } from './layoutGuard.js';
@@ -15,7 +16,8 @@ import { telegramNotifier } from '../platform/notify.js';
 import { writeDiscoverDiag, writeDiscoverSummary } from './discoverDiag.js';
 import { BROKEN_CODE, bumpStreak, classifyZeroCards, clearStreak, criticalAlert, guestHint, maybeAlert, pageSummary, sessionAlertHtml, type PageSummary } from './discoverHealth.js';
 import { classifyUrl } from './urls.js';
-import type { PageKind, RawSnapshot } from './types.js';
+import { extractLinkedInJobId } from './jobIds.js';
+import type { PageKind, RawJobCard, RawSnapshot } from './types.js';
 import type { ToolDeps } from './toolDeps.js';
 
 export type DiscoverStatus = 'ok' | 'dry_run' | 'rate_limited' | 'halted' | 'refused' | 'failed';
@@ -47,8 +49,22 @@ export interface DiscoverResult {
   no_id_reasons?: Record<string, number>;
   /** Jobs tool: where the ids came from: link (a job link), attr (a DOM attribute), click (the page URL after a card click). */
   id_from?: Record<string, number>;
-  /** Jobs tool: card clicks made to read an id (at most 10 per search). */
+  /** Jobs tool: card clicks made to read an id and the description pane (at most LINKEDIN_JOB_CLICKS_PER_SEARCH per search). */
   clicks?: number;
+  /** Jobs tool: clicks that failed (the card could not be clicked). */
+  click_failed?: number;
+  /** Jobs tool: job descriptions read from the right-hand pane at click time and saved (those jobs are not jd_pending any more). */
+  jd_from_pane?: number;
+  /** Jobs tool: wanted descriptions the pane did not give (any reason, see jd_pane_reasons). */
+  jd_pane_incomplete?: number;
+  /** Jobs tool: why a wanted pane description was not saved (click_limit, pane_not_found, clamped_no_more, pane_title_mismatch, blocked, ...). */
+  jd_pane_reasons?: Record<string, number>;
+  /** Jobs tool: cards not clicked because their job already has a full description. */
+  jd_known_skipped?: number;
+  /** Jobs tool: why the click loop stopped early (login_wall, rate_limit, left_search_page, halted, killed, card_click_limit). */
+  stopped?: string;
+  /** Jobs tool: structure diag of the pane (written once when clicks never showed an "About the job" section). */
+  pane_diag?: string;
   /** Jobs tool: cards skipped before any click because a job with the same company and title is already stored. */
   known?: number;
   /** Broken parse only: consecutive broken parses of this search (including this one). */
@@ -58,7 +74,9 @@ export interface DiscoverResult {
 }
 
 /** A card of the card-as-button layout that has no id yet: the click resolver may still get one. */
-export interface PendingCard { cardIdx: number; title: string; company: string; description: string }
+export interface PendingCard { cardIdx: number; title: string; company: string; description: string; pos?: number }
+/** A card whose job id is already known (link or attribute): clickable only to read the description pane. */
+export interface IdCard { id: string; num: string; cardIdx?: number; title: string; pos: number }
 /** What the id resolution of the jobs tool returns (jobs are new Job rows with a code-built url). */
 export interface EnrichOut {
   jobs: Job[];
@@ -67,6 +85,15 @@ export interface EnrichOut {
   no_id_reasons: Record<string, number>;
   id_from: Record<string, number>;
   clicks: number;
+  /** Pane mode: counts and the raw pane texts to save once the jobs exist. Absent counters are 0. */
+  click_failed?: number;
+  jd_known_skipped?: number;
+  jd_pane_reasons?: Record<string, number>;
+  panes?: Array<{ id: string; text: string; signals: unknown }>;
+  stopped?: string;
+  pane_diag?: string;
+  /** True when this enrich did anything worth reporting (a click, a skip). */
+  active?: boolean;
 }
 
 export interface ParsedAuthor { profileKey: string; name: string; headline?: string; company?: string }
@@ -85,6 +112,8 @@ export interface Parsed {
   pending?: PendingCard[];
   /** Ids already read from the page (link or attribute), by source. */
   idFrom?: Record<string, number>;
+  /** Cards that have an id already (jobs tool): candidates for the description pane read. */
+  idCards?: IdCard[];
 }
 
 /** Add one to a reason counter. */
@@ -111,10 +140,11 @@ function searchesUsedToday(deps: ToolDeps): number {
   return row?.count ?? 0;
 }
 
-/** Scroll rounds for a lazy-loading result page (posts). `LINKEDIN_POST_SCROLL_ROUNDS`, default 6, clamp 0 to 12; 0 turns it off. */
-export function scrollRoundsFor(env: NodeJS.ProcessEnv): number {
-  const n = Number(env.LINKEDIN_POST_SCROLL_ROUNDS);
-  return Number.isFinite(n) && env.LINKEDIN_POST_SCROLL_ROUNDS !== '' && env.LINKEDIN_POST_SCROLL_ROUNDS !== undefined ? Math.max(0, Math.min(12, Math.trunc(n))) : 6;
+/** Scroll rounds for a lazy-loading result page. Posts: `LINKEDIN_POST_SCROLL_ROUNDS`; jobs: `LINKEDIN_JOB_SCROLL_ROUNDS`. Default 6, clamp 0 to 12; 0 turns it off. */
+export function scrollRoundsFor(env: NodeJS.ProcessEnv, key: 'LINKEDIN_POST_SCROLL_ROUNDS' | 'LINKEDIN_JOB_SCROLL_ROUNDS' = 'LINKEDIN_POST_SCROLL_ROUNDS'): number {
+  const raw = env[key];
+  const n = Number(raw);
+  return Number.isFinite(n) && raw !== '' && raw !== undefined ? Math.max(0, Math.min(12, Math.trunc(n))) : 6;
 }
 
 const SCROLL_SRC = `(function(){var h=window.innerHeight||800,d=Math.round(h*0.85);window.scrollBy(0,d);
@@ -123,6 +153,12 @@ if(e.scrollHeight>e.clientHeight+300&&/(auto|scroll)/.test(getComputedStyle(e).o
 
 const cardKey = (c: { urn?: string; permalinkHref?: string; profileHref?: string; text?: string }): string =>
   c.urn || c.permalinkHref || `${c.profileHref ?? ''}|${(c.text ?? '').slice(0, 80)}`;
+
+/** Identity of a job card across snapshots: the job id when the card has one, else its accessible name or title with the company. */
+const jobCardKey = (c: RawJobCard): string => {
+  const id = extractLinkedInJobId(String(c.href ?? '')) ?? (/^\d{6,25}$/.test(String(c.idHint ?? '')) ? String(c.idHint) : '');
+  return id ? `id:${id}` : `${String(c.cardName ?? c.title ?? '').slice(0, 160)}|${String(c.company ?? '').slice(0, 80)}`;
+};
 
 /**
  * A search page can be "open" (title, nav, filters: a few hundred characters) before its results rendered, most of all on a slow link
@@ -147,15 +183,23 @@ export async function settleForCards(deps: ToolDeps, first: RawSnapshot, tool: '
 }
 
 /**
- * A content-search page loads a few posts per screen. One snapshot of the first screen gave 1 to 3 cards where a person scrolling sees
- * 10 and more. Scroll like a person (a random 1.2 to 2.8 s between steps), snapshot again, merge the cards by identity, stop when two
- * rounds add nothing or `limit` cards are in. Never clicks. A fake runtime without a page, or any error, returns what was collected.
+ * A search page loads a few cards per screen (posts) or a page of cards in an inner scrolling list (jobs). One snapshot of the first screen gave
+ * 1 to 3 posts where a person scrolling sees 10 and more. Scroll like a person (a random 1.2 to 2.8 s between steps; the script scrolls the window
+ * and up to 4 inner scrollable elements, so the left job list moves), snapshot again, merge the cards by identity, stop when two rounds add nothing
+ * or `limit` cards are in. Never clicks. A fake runtime without a page, or any error, returns what was collected.
+ * Jobs: a card seen again takes the NEWEST snapshot's marker (`cardIdx` is rewritten on every snapshot); a card missing from the last snapshot
+ * loses its marker (it can no longer be clicked) but keeps its link or id attribute.
  */
 export async function collectByScrolling(deps: ToolDeps, first: RawSnapshot, rounds: number, limit: number): Promise<RawSnapshot> {
   const page = deps.rt.page?.() ?? null;
-  if (!page || rounds <= 0 || !first.postCards) return first;
-  const seen = new Map<string, NonNullable<RawSnapshot['postCards']>[number]>();
-  for (const c of first.postCards) seen.set(cardKey(c), c);
+  const jobs = !first.postCards && !!first.jobCards;
+  if (!page || rounds <= 0 || (!first.postCards && !first.jobCards)) return first;
+  type Card = NonNullable<RawSnapshot['postCards']>[number] & RawJobCard;
+  const cardsOf = (sn: RawSnapshot): Card[] => ((jobs ? sn.jobCards : sn.postCards) ?? []) as unknown as Card[];
+  const keyOf = (c: Card): string => (jobs ? jobCardKey(c) : cardKey(c));
+  const seen = new Map<string, Card>();
+  for (const c of cardsOf(first)) seen.set(keyOf(c), c);
+  const firstUnique = seen.size;
   let last = first;
   let idle = 0;
   try {
@@ -163,14 +207,26 @@ export async function collectByScrolling(deps: ToolDeps, first: RawSnapshot, rou
       await page.evaluate(SCROLL_SRC);
       await page.waitForTimeout(1200 + Math.floor(Math.random() * 1600));
       const s = await deps.rt.snapshot();
-      if (!s || !s.postCards) break;
+      if (!s || !(jobs ? s.jobCards : s.postCards)) break;
       last = s;
       const before = seen.size;
-      for (const c of s.postCards) if (!seen.has(cardKey(c))) seen.set(cardKey(c), c);
+      for (const c of cardsOf(s)) {
+        const k = keyOf(c);
+        if (!seen.has(k) || jobs) seen.set(k, c);
+      }
       idle = seen.size === before ? idle + 1 : 0;
     }
   } catch { /* keep what was collected */ }
-  return { ...last, postCards: Array.from(seen.values()).slice(0, 50) };
+  if (!jobs) return { ...last, postCards: Array.from(seen.values()).slice(0, 50) };
+  // Nothing new came in: the last snapshot as it is (same cards, same markers, a same-key twin inside it stays for the parser to count).
+  if (seen.size === firstUnique) return last;
+  const inLast = new Set(cardsOf(last).map(keyOf));
+  const merged = Array.from(seen.entries()).slice(0, 50).map(([k, c]) => {
+    if (inLast.has(k) || c.cardIdx === undefined) return c;
+    const { cardIdx: _gone, ...rest } = c;
+    return rest as Card;
+  });
+  return { ...last, jobCards: merged as RawJobCard[] };
 }
 
 export async function runDiscovery(o: {
@@ -187,7 +243,7 @@ export async function runDiscovery(o: {
   narrow?: boolean;
   /** Live runs only, after the jobs are saved: registers verified authors and returns how many. */
   afterSave?: (p: Parsed) => number;
-  /** Live runs only, after the ceilings were consumed and before the save: resolves the ids of cards that have none (may click, max 10). */
+  /** Live runs only, after the ceilings were consumed and before the save: resolves the ids of cards that have none and reads the description pane (may click, see jobIdResolve). */
   enrich?: (p: Parsed) => Promise<EnrichOut>;
 }): Promise<DiscoverResult> {
   const { deps, tool } = o;
@@ -278,7 +334,9 @@ export async function runDiscovery(o: {
 
   // Cards without an id: code reads it from the page (a card click) now that the ceilings are consumed; failures are counted, never dropped.
   let enr: EnrichOut | null = null;
-  if (o.enrich && pending.length) enr = await o.enrich(parsed);
+  if (o.enrich && (pending.length || parsed.idCards?.length)) enr = await o.enrich(parsed);
+  // Nothing to report from an enrich that had no card without an id and read no pane (the old id-only mode with only id'd cards).
+  if (enr && !enr.active && !pending.length) enr = null;
   const toSave = [...fresh];
   if (enr) {
     const have = new Set(toSave.map((j) => j.id));
@@ -294,6 +352,13 @@ export async function runDiscovery(o: {
     saveJob(db, j);
     ids.push(j.id);
   }
+  // Descriptions read from the detail pane: same gate, screen and save function as linkedin_fetch_jd; a job saved here is not jd_pending any more.
+  let jdSaved = 0;
+  const paneReasons: Record<string, number> = { ...(enr?.jd_pane_reasons ?? {}) };
+  for (const pn of enr?.panes ?? []) {
+    const r = await savePaneJd({ db, now, screen: deps.screen }, pn.id, pn.text, pn.signals);
+    if (r.code === 'saved') jdSaved++; else bump(paneReasons, r.code === 'blocked' ? 'blocked' : `save_${r.code}`);
+  }
   const people = o.afterSave ? o.afterSave(parsed) : undefined;
   recordDiscoverRun(db, now());
   const idFrom: Record<string, number> = { ...(parsed.idFrom ?? {}) };
@@ -303,9 +368,22 @@ export async function runDiscovery(o: {
     ...(people !== undefined ? { people } : {}),
     ...(Object.keys(idFrom).length ? { id_from: idFrom } : {}),
     ...(enr ? { clicks: enr.clicks, known: enr.known, ...(enr.no_id ? { no_id: enr.no_id, no_id_reasons: enr.no_id_reasons } : {}) } : {}),
+    ...(enr?.active ? {
+      click_failed: enr.click_failed ?? 0, jd_from_pane: jdSaved, jd_known_skipped: enr.jd_known_skipped ?? 0,
+      jd_pane_incomplete: Object.values(paneReasons).reduce((a, b) => a + b, 0),
+      ...(Object.keys(paneReasons).length ? { jd_pane_reasons: paneReasons } : {}),
+      ...(enr.stopped ? { stopped: enr.stopped } : {}),
+      ...(enr.pane_diag ? { pane_diag: enr.pane_diag } : {}),
+    } : {}),
   };
+  // Trouble seen while clicking ends the search early: what was read stays saved, the status and code say why (a 429 or warning page is
+  // rate_limited, a login wall failed, a halt or the kill switch halted). Never retried here.
+  if (enr?.stopped === 'rate_limit') { result.status = 'rate_limited'; result.code = 'page_rate_limit'; }
+  else if (enr?.stopped === 'login_wall') { result.status = 'failed'; result.code = 'login_wall'; }
+  else if (enr?.stopped === 'halted' || enr?.stopped === 'killed') { result.status = 'halted'; result.code = enr.stopped; }
+  else if (enr?.stopped === 'left_search_page') { result.status = 'failed'; result.code = 'left_search_page'; }
   // Cards were read but nothing came of them (or some had no id): a counts-only file shows the owner why.
-  const lost = result.no_id || (ids.length === 0 && parsed.skipped > 0);
+  const lost = result.no_id || (ids.length === 0 && parsed.skipped > 0) || result.jd_pane_incomplete || result.stopped;
   if (parsed.fetched > 0 && lost && (deps.diagDir || !process.env.VITEST)) {
     const d = await writeDiscoverSummary({ now, ...(deps.diagDir ? { diagDir: deps.diagDir } : {}) }, { tool, search: o.searchName, result });
     if (d) result.diag = d;

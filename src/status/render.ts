@@ -29,6 +29,7 @@ const PERIOD: Record<LimitKey, string> = {
   linkedin_profile_view: 'day',
   naukri_jd_fetch: 'day',
   linkedin_jd_fetch: 'day',
+  linkedin_card_click: 'day',
 };
 
 /** ISO instant to `YYYY-MM-DD HH:MM IST` (Asia/Kolkata); unparseable input is returned as is. */
