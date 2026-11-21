@@ -171,7 +171,8 @@ function setup(opts: { env?: NodeJS.ProcessEnv; tg?: TgPost; sends?: boolean; st
   const dir = mkdtempSync(join(tmpdir(), 'drip-notice-'));
   dirs.push(dir);
   let t = (opts.start ?? NOON_IST).getTime();
-  const env = opts.env ?? {};
+  // These tests cover the at-once path and the notice texts; the digest routing has its own file (tests/telegram-digest.test.ts).
+  const env = { TELEGRAM_DIGEST: 'off', ...(opts.env ?? {}) } as NodeJS.ProcessEnv;
   const db = openDb(':memory:');
   const clock = (): Date => new Date(t);
   const posts: Array<{ topic: TopicName; text: string }> = [];
@@ -210,6 +211,20 @@ describe('mail drip lane notices', () => {
     for (const p of s.posts) {
       expect(p.topic).toBe('mail');
       expect(p.text).toMatch(/^✅ <b>Cold email sent<\/b>\n<b>To:<\/b> <a href="mailto:person\d@co\d\.example">person\d@co\d\.example<\/a>\n<b>Job:<\/b> <b>&lt;b&gt;Acme\d&lt;\/b&gt;<\/b> · Dev_\d \*x\*\n<b>Subject:<\/b> <i>s<\/i>\n<b>Result:<\/b> sent$/);
+    }
+  });
+
+  it('digest on (the default): the real sends are queued for the hourly digest and nothing is posted', async () => {
+    const s = setup({ env: { TELEGRAM_DIGEST: 'on' } });
+    s.queue(3);
+    const r = await dripTick(s.d);
+    expect(r.status).toBe('ran');
+    expect(s.posts).toHaveLength(0);
+    const rows = s.d.db.prepare("SELECT kind, topic, urgency, payload FROM notice_queue ORDER BY id").all() as Array<{ kind: string; topic: string; urgency: string; payload: string }>;
+    expect(rows).toHaveLength(r.runs?.length ?? -1);
+    for (const x of rows) {
+      expect(x).toMatchObject({ kind: 'mail_sent', topic: 'mail', urgency: 'routine' });
+      expect(JSON.parse(x.payload)).toEqual({ kind: 'cold', dry: false }); // counts only: no address, no subject
     }
   });
 

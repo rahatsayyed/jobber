@@ -19,8 +19,9 @@ import { emailAutoReplyOn } from '../src/outreach/emailReplyFlags.js';
 import { emailReplyLimitLine } from '../src/outreach/emailRepliesCli.js';
 import { renderRunToolCounts, summarizeRunLog } from '../src/status/runs.js';
 import { defaultRun, JOBBER_TMUX_SESSION, listWindows } from '../src/platform/tmux.js';
+import { parseSince, renderStatusDigest } from '../src/platform/digest.js';
 
-const USAGE = 'usage: npm run status -- <limits|working|health|json|layout|sources|runs|escalations>';
+const USAGE = 'usage: npm run status -- <limits|working|health|json|layout|sources|runs|escalations|digest [--since 3h]>';
 const cmd = process.argv[2];
 
 // Read-only layout memory summary (plan 8B). Works without a database; halts are read when one exists.
@@ -41,7 +42,7 @@ function layoutStatus(): number {
 }
 
 async function main(): Promise<number> {
-  if (!cmd || !['limits', 'working', 'health', 'json', 'layout', 'sources', 'runs', 'escalations'].includes(cmd)) {
+  if (!cmd || !['limits', 'working', 'health', 'json', 'layout', 'sources', 'runs', 'escalations', 'digest'].includes(cmd)) {
     console.error(USAGE);
     return 2;
   }
@@ -54,6 +55,14 @@ async function main(): Promise<number> {
   let db: Database.Database | undefined;
   try {
     db = new Database(path, { readonly: true, fileMustExist: true });
+    if (cmd === 'digest') {
+      // The same builder as the hourly Telegram digest, for "now": `digest` = last hour, `digest --since 3h` (also 90m, 2d).
+      const i = process.argv.indexOf('--since');
+      const sinceMs = i >= 0 ? parseSince(process.argv[i + 1]) : 3_600_000;
+      if (sinceMs === null) { console.log('usage: npm run status -- digest [--since 1h|90m|3h|2d]'); return 2; }
+      console.log(renderStatusDigest(db, new Date(), sinceMs));
+      return 0;
+    }
     if (cmd === 'runs') {
       const row = db.prepare('SELECT id, log_path, status, stop_reason, parent_run_id FROM scheduler_runs ORDER BY planned_at DESC, rowid DESC LIMIT 1').get() as
         | { id: string; log_path: string | null; status: string; stop_reason: string | null; parent_run_id: string | null } | undefined;

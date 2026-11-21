@@ -403,7 +403,7 @@ describe('the wake lane through the driver', () => {
 
   it('the pipeline and apply items go to their windows, the wake row and the notice look like today', async () => {
     const disp = new FakeDispatcher();
-    const s = driverSetup({ env: {}, disp });
+    const s = driverSetup({ env: { TELEGRAM_DIGEST: 'off' }, disp }); // digest off: the at-once path (digest routing: tests/telegram-digest.test.ts)
     const r = await wakeOnce(s.d);
     expect(disp.inputs.map((i) => i.window)).toEqual(['pipeline', 'boards', 'apply']);
     expect(s.launcher.starts).toHaveLength(0);

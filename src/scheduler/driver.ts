@@ -22,7 +22,8 @@ import { northStarPromptLine, targetRegionsLine, type CodePassResult } from './p
 import { jdReportLine } from '../jdStore.js';
 import type { WakeCounts } from './stream.js';
 import { noticeUrgency } from '../telegram/silent.js';
-import { notifyTg, wakeNotice, type TgPost, type WakeNotice } from './dripNotice.js';
+import { wakeNoticeSpec, type TgPost, type WakeNotice } from './dripNotice.js';
+import { routeNotice } from '../platform/digest.js';
 import { dripLoop } from './mailDrip.js';
 import type { WindowDispatcher } from './windowDispatch.js';
 import type { ReplyFactsState } from '../outreach/replyFacts.js';
@@ -75,6 +76,8 @@ export interface DriverDeps {
   escalationDigest?: () => Promise<void>;
   /** One tick of the window upkeep (src/scheduler/windowTick.ts: handoff reminders and window recycle), run every 30 seconds in the daemon loop. Never throws. Absent: none. */
   windowTick?: () => Promise<void>;
+  /** One tick of the Telegram digest (src/platform/digest.ts digestTick): one silent summary per TELEGRAM_DIGEST_EVERY_MIN, run every 30 seconds in the daemon loop. Never throws. Absent: none. */
+  noticeDigest?: () => Promise<void>;
   /** Stage `manual`, run in code before the model session when a manual request is pending: ingests the requests (src/manual/ingest.ts). Never throws into the wake. */
   manualIngest?: (runId: string) => Promise<unknown>;
   /** After every wake that launched a session: reports finished manual requests to the owner (src/manual/report.ts finalizeManualRequests). */
@@ -409,6 +412,7 @@ function wakeGroups(d: DriverDeps, sinceIso: string): Partial<WakeNotice> {
         ran: rows.length, fetched: rows.reduce((n, r) => n + r.fetched, 0), fresh: rows.reduce((n, r) => n + r.new, 0),
         errors: rows.reduce((n, r) => n + r.errors, 0), fallbacks: rows.filter((r) => r.fallback_used).length,
       };
+      out.bySource = Object.fromEntries(rows.filter((r) => r.new > 0).slice(0, 12).map((r) => [r.id, r.new]));
     }
   } catch { /* leave the group out */ }
   const q = (sql: string, ...args: unknown[]): number | null => {
@@ -431,7 +435,7 @@ async function wakeFinishedNotice(
 ): Promise<void> {
   try {
     const sec = w.startAt ? Math.max(0, Math.round((d.now().getTime() - Date.parse(w.startAt)) / 1000)) : null;
-    const n = wakeNotice({
+    const n = wakeNoticeSpec({
       runId: w.runId, trigger: w.trigger, status: w.status, reason: w.stopReason, durationSec: sec, counts: w.counts, dry: w.dry,
       newJobs: w.startAt ? countSince(d, 'SELECT COUNT(*) AS n FROM jobs WHERE datetime(created_at) >= datetime(?)', w.startAt) : null,
       queued: w.startAt ? countSince(d, 'SELECT COUNT(*) AS n FROM outreach_queue WHERE datetime(created_at) >= datetime(?)', w.startAt) : null,
@@ -440,7 +444,7 @@ async function wakeFinishedNotice(
     try { setState(d.db, 'wake_skip_notified', '', d.now()); } catch { /* ignore */ }
     // Loud when the wake did not end ok or something needs the owner (escalations); else the topic default (silent) applies.
     const loud = noticeUrgency({ failed: w.status !== 'ok', needsOwner: (w.counts?.escalated ?? 0) > 0 });
-    if (n) await notifyTg(d, n.topic, n.text, undefined, loud);
+    if (n) await routeNotice(d, { ...n, silent: loud });
   } catch {
     // a notice never breaks a wake
   }
@@ -449,12 +453,12 @@ async function wakeFinishedNotice(
 /** A skipped wake is told once per reason (killed, halted, ceilings_exhausted); quiet_hours and nothing_due stay silent. */
 async function wakeSkippedNotice(d: DriverDeps, r: WakeResult, trigger: string): Promise<void> {
   try {
-    const n = wakeNotice({ runId: r.runId, trigger, status: 'skipped', reason: r.reason, dry: wakeIsDry(d.env) });
+    const n = wakeNoticeSpec({ runId: r.runId, trigger, status: 'skipped', reason: r.reason, dry: wakeIsDry(d.env) });
     if (!n) return;
     const code = (r.reason ?? '').split(':')[0] ?? '';
     if (getState(d.db, 'wake_skip_notified') === code) return;
     setState(d.db, 'wake_skip_notified', code, d.now());
-    await notifyTg(d, n.topic, n.text, undefined, noticeUrgency({ halted: true }));
+    await routeNotice(d, { ...n, silent: noticeUrgency({ halted: true }) });
   } catch {
     // a notice never breaks a wake
   }
@@ -502,6 +506,18 @@ async function windowTickLoop(d: DriverDeps, stop: { stopped: boolean }): Promis
   }
 }
 
+async function noticeDigestLoop(d: DriverDeps, stop: { stopped: boolean }): Promise<void> {
+  while (!stop.stopped) {
+    try {
+      await d.noticeDigest?.();
+    } catch {
+      // the Telegram digest never stops the scheduler
+    }
+    if (stop.stopped) break;
+    await d.sleep(SLICE_MS);
+  }
+}
+
 export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Promise<void> {
   if (d.env.SCHEDULER_ENABLED === 'false') {
     await say(d, { level: 'info', title: 'scheduler disabled (SCHEDULER_ENABLED=false), exiting' });
@@ -534,6 +550,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
   let liDrip: Promise<void> | null = null;
   let digest: Promise<void> | null = null;
   let upkeep: Promise<void> | null = null;
+  let tgDigest: Promise<void> | null = null;
   try {
     // Orphans from a previous daemon: kill their windows BEFORE marking them crashed, unless a live
     // run lock shows another process owns a run right now (then leave its rows untouched).
@@ -594,6 +611,8 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     digest = deps.escalationDigest ? digestLoop(deps, stop) : null;
     // Handoff reminders and window recycle (zero LLM), also in their own loop.
     upkeep = deps.windowTick ? windowTickLoop(deps, stop) : null;
+    // The hourly Telegram digest of the routine notices (zero LLM), also in its own loop.
+    tgDigest = deps.noticeDigest ? noticeDigestLoop(deps, stop) : null;
     // A manual request must not wait for the next random wake: every slice (30 s) the daemon checks for a pending one and wakes early,
     // outside quiet hours, at most once per backoff. The regular wake schedule (`next`) is left alone.
     let manualBackoffUntil = 0;
@@ -668,6 +687,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
     if (liDrip) await liDrip;
     if (digest) await digest;
     if (upkeep) await upkeep;
+    if (tgDigest) await tgDigest;
     try {
       dl.release();
     } catch {

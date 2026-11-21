@@ -29,7 +29,8 @@ import { noteWindowUnavailable } from './windowReady.js';
 import { windowStartedLive } from './wakeWindowStart.js';
 import { getState, setState, type RunStatus } from './runLog.js';
 import { withDripRequest } from './dripRequest.js';
-import { formatDripFailure, formatEmailReplyNotice, formatMailNotice, formatQuarantineNotice, notifyTg } from './dripNotice.js';
+import { formatDripFailure, formatEmailReplyNotice, formatMailNotice, formatQuarantineNotice } from './dripNotice.js';
+import { routeNotice } from '../platform/digest.js';
 
 export const DRIP_TRIGGER = 'mail_drip';
 export const DRIP_LOCK = 'mail';
@@ -453,7 +454,7 @@ async function holdIfUnrecorded(d: DriverDeps, item: DripItem, runId: string, wh
         level: 'warn', title: 'mail drip run ended without a recorded send, row held for the owner',
         detail: `row ${item.id} job ${item.job_id}: ${why}; check Gmail Sent before releasing`, runId,
       });
-      await notifyTg(d, 'mail', formatQuarantineNotice(item.id, item.job_id, why));
+      await routeNotice(d, { kind: 'mail_held', topic: 'mail', text: formatQuarantineNotice(item.id, item.job_id, why) });
     }
   } catch {
     // ignore
@@ -474,7 +475,7 @@ async function holdReplyIfStuck(d: DriverDeps, item: DripItem, runId: string, wh
       level: 'warn', title: 'mail drip run ended without a recorded reply, row held for the owner',
       detail: `email reply ${item.id} job ${item.job_id}: ${why}; check Gmail Sent before resolving`, runId,
     });
-    await notifyTg(d, 'alerts', formatQuarantineNotice(item.id, item.job_id, `email reply: ${why}`));
+    await routeNotice(d, { kind: 'mail_held', topic: 'alerts', text: formatQuarantineNotice(item.id, item.job_id, `email reply: ${why}`) });
     return true;
   } catch {
     return false;
@@ -566,11 +567,11 @@ async function emailReplyRunNotice(d: DriverDeps, item: Extract<DripItem, { kind
   const job = d.db.prepare('SELECT company, title FROM jobs WHERE id = ?').get(item.job_id) as { company: string | null; title: string | null } | undefined;
   const base = { address: row.to_addr, subject: row.subject, body: row.body, kinds: row.kind.split(',').filter(Boolean), company: job?.company ?? null, title: job?.title ?? null, revised: row.revisions > 0 };
   if (dry) {
-    await notifyTg(d, 'mail', formatEmailReplyNotice({ ...base, dry: true, outcome: 'sent' }), undefined, true);
+    await routeNotice(d, { kind: 'email_reply_sent', topic: 'mail', text: formatEmailReplyNotice({ ...base, dry: true, outcome: 'sent' }), silent: true, payload: { dry: true } });
   } else if (row.status === 'sent') {
-    await notifyTg(d, 'mail', formatEmailReplyNotice({ ...base, dry: false, outcome: 'sent' }), undefined, true);
+    await routeNotice(d, { kind: 'email_reply_sent', topic: 'mail', text: formatEmailReplyNotice({ ...base, dry: false, outcome: 'sent' }), silent: true, payload: { dry: false } });
   } else if (row.status === 'cancelled') {
-    await notifyTg(d, 'inbox', formatEmailReplyNotice({ ...base, dry: false, outcome: 'cancelled', note: row.note }), undefined, false);
+    await routeNotice(d, { kind: 'email_reply_cancelled', topic: 'inbox', text: formatEmailReplyNotice({ ...base, dry: false, outcome: 'cancelled', note: row.note }), silent: false });
   }
 }
 
@@ -580,7 +581,7 @@ async function mailRunNotice(d: DriverDeps, item: DripItem, r: OneRun): Promise<
     if (!d.tg || r.quarantined || r.skipped) return;
     const dry = isDryRun(d.env);
     if (r.status !== 'ok') {
-      await notifyTg(d, 'alerts', formatDripFailure('mail', itemKey(item), r.reason ?? r.status));
+      await routeNotice(d, { kind: 'drip_failed', topic: 'alerts', text: formatDripFailure('mail', itemKey(item), r.reason ?? r.status), payload: { lane: 'mail' } });
       return;
     }
     if (item.kind === 'email_reply') {
@@ -603,7 +604,11 @@ async function mailRunNotice(d: DriverDeps, item: DripItem, r: OneRun): Promise<
         : d.db.prepare('SELECT subject AS s FROM followups WHERE id = ?').get(item.id) as { s: string | null } | undefined;
       subject = s?.s ?? null;
     } catch { /* the subject is optional */ }
-    await notifyTg(d, 'mail', formatMailNotice({ kind: item.kind, company: job?.company ?? null, title: job?.title ?? null, address: item.address, subject, dry }));
+    await routeNotice(d, {
+      kind: 'mail_sent', topic: 'mail',
+      text: formatMailNotice({ kind: item.kind, company: job?.company ?? null, title: job?.title ?? null, address: item.address, subject, dry }),
+      payload: { kind: item.kind, dry },
+    });
   } catch {
     // a notice never breaks the lane
   }

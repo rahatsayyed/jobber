@@ -41,7 +41,8 @@ import { noteSkippedItem } from '../platform/handoff.js';
 import { noteWindowUnavailable } from './windowReady.js';
 import { getState, setState, type RunStatus } from './runLog.js';
 import { withDripRequest } from './dripRequest.js';
-import { formatDripFailure, formatLinkedinNotice, linkedinNoticeKind, notifyTg } from './dripNotice.js';
+import { formatDripFailure, formatLinkedinNotice, linkedinNoticeKind } from './dripNotice.js';
+import { routeNotice } from '../platform/digest.js';
 import { linkedinEasyEnabled } from '../apply/easyFlag.js';
 import { matchThresholdFromEnv } from '../matchRubric.js';
 
@@ -633,8 +634,10 @@ async function linkedinRunNotice(d: DriverDeps, item: LiItem, run: OneRun): Prom
       kind: item.kind, name, company, jobTitle, profileUrl,
       dry: isDryRun(d.env), ok, reason: run.reason ?? run.status,
     });
-    if (ok) await notifyTg(d, 'linkedin', text);
-    else await notifyTg(d, 'alerts', formatDripFailure('linkedin', item.kind, run.reason ?? run.status));
+    if (ok) {
+      const kind = item.kind === 'accept_recent' || item.kind === 'accept_check' ? 'linkedin_accept_check' : item.kind === 'inbox' ? 'linkedin_inbox_read' : 'linkedin_action';
+      await routeNotice(d, { kind, topic: 'linkedin', text, payload: { action: item.kind, dry: isDryRun(d.env) } });
+    } else await routeNotice(d, { kind: 'drip_failed', topic: 'alerts', text: formatDripFailure('linkedin', item.kind, run.reason ?? run.status), payload: { lane: 'linkedin' } });
   } catch {
     // a notice never breaks the lane
   }

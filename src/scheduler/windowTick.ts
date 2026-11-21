@@ -14,6 +14,7 @@ import { E, clean, code, headline, html, i as ital, join, line, lines, section, 
 import { formatAge, loadManagerConfig, recycleWindow, type ManagerConfig } from '../platform/manager.js';
 import { sendToWindow } from '../platform/managerTyping.js';
 import type { Run } from '../platform/tmux.js';
+import type { NoticeSpec } from '../platform/digest.js';
 
 export const HANDOFF_MIN_AGE_MS = 30 * 60_000;
 const NOTICE_LINE_MAX = 110;
@@ -92,6 +93,8 @@ export interface WindowTickDeps {
   inQuiet: () => boolean;
   /** Sends one Telegram HTML text (built with src/platform/tgHtml.ts) to the `alerts` topic. */
   alert: (text: string, opts?: { silent?: boolean }) => Promise<{ ok: boolean }>;
+  /** Routes a ROUTINE notice (a window recycle) to the digest queue (src/platform/digest.ts routeNotice). Absent: it is sent at once through `alert`. */
+  routine?: (spec: NoticeSpec) => Promise<unknown>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -140,12 +143,14 @@ export async function windowUpkeep(d: WindowTickDeps): Promise<{ reminded: strin
       const r = await recycleWindow(d.run, cfg, d.env, name, { root: d.root, killed: d.killed, now: d.now, startup: d.sleep ? { sleep: d.sleep } : undefined });
       if (r.status === 'recycled') {
         out.recycled.push(name);
-        await d.alert(html(lines([
+        const text = html(lines([
           headline(E.ok, 'Window recycled'),
           line('Window', code(name)),
           line('Age', formatAge(r.ageMs)),
           r.startup === 'typed' ? '' : line('Startup line', ital(String(r.startup))),
-        ])), { silent: true }); // routine: no sound
+        ]));
+        if (d.routine) await d.routine({ kind: 'window_recycled', topic: 'alerts', text, silent: true, payload: { window: name } });
+        else await d.alert(text, { silent: true }); // routine: no sound
       }
     } catch {
       // a failing window never stops the others

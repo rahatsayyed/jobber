@@ -190,7 +190,7 @@ export function composeManualReport(db: Db, r: ManualRequest, opts: { matchThres
 
 export interface FinalizeDeps {
   /** Receives Telegram HTML (send it with html: true). */
-  send: (text: string) => Promise<unknown>;
+  send: (text: string, meta?: { failed: boolean; jobs: number; requestId: number }) => Promise<unknown>;
   now: () => Date;
   matchThreshold?: number;
   /** False when a platform's operator is not planned right now (halted, outside active hours, no session): its open task then keeps waiting. */
@@ -232,7 +232,7 @@ export async function finalizeManualRequests(db: Db, runStatus: string, d: Final
     const messages = composeManualReportHtml(db, fresh, { matchThreshold: d.matchThreshold, extra });
     let delivered = true;
     for (const m of messages) {
-      try { await d.send(m); } catch { delivered = false; break; }
+      try { await d.send(m, { failed: ids.length === 0 || open.length > 0 || unsettled > 0, jobs: ids.length, requestId: r.id }); } catch { delivered = false; break; }
     }
     // Finish only after the report went out; otherwise the request stays running and a later wake retries (the 24 hour cutoff ends it).
     if (!delivered && !stale) { out.waiting.push(r.id); continue; }

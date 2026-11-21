@@ -8,7 +8,8 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { BLANK, E, b, clean, code, excerpt, headline, html, i as ital, join, line, lines, type Html } from '../platform/tgHtml.js';
 import { ownerOnlyAskText, ownerOnlyCodes } from '../outreach/ownerOnly.js';
 import { getState, setState } from './runLog.js';
-import { notifyTg, type HasTg } from './dripNotice.js';
+import type { HasTg } from './dripNotice.js';
+import { routeNotice } from '../platform/digest.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -64,7 +65,7 @@ export function formatDraftBlock(dr: { id: number; name: string | null; body: st
 }
 
 /** Announces new inbound threads and new approved drafts. Never throws. Returns how many items were announced. */
-export async function notifyLinkedinInbox(d: HasTg & { db: Db; now: () => Date }): Promise<number> {
+export async function notifyLinkedinInbox(d: HasTg & { db: Db; now: () => Date; env?: NodeJS.ProcessEnv }): Promise<number> {
   try {
     const db = d.db;
     const now = d.now();
@@ -108,7 +109,11 @@ export async function notifyLinkedinInbox(d: HasTg & { db: Db; now: () => Date }
       parts.push(BLANK, blk);
       used += blk.s.length + 2;
     }
-    await notifyTg(d, 'inbox', html(lines(parts)));
+    // A thread or reply that asks for the owner goes out at once; the rest is only counted in the hourly digest.
+    await routeNotice(d, {
+      kind: needs ? 'reply_needs_you' : 'linkedin_inbox_notice', topic: 'inbox', text: html(lines(parts)),
+      payload: { inbound: ins.length, drafts: drafts.length, needs },
+    });
     return blocks.length;
   } catch {
     return 0;
