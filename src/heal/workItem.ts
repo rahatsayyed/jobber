@@ -70,6 +70,7 @@ export function buildFixerPrompt(i: FixerItem): string {
     '',
     'Final report: end with exactly ONE JSON line, nothing after it:',
     `{"ledger_id": ${i.ledgerId}, "branch": "${i.branch}", "head": "<git rev-parse HEAD in the worktree>", "files": ["..."], "tests_added": <n>, "full_suite": "pass|fail", "mutation_check": "pass|fail", "verdict": "ready|abandon", "notes": "<one short line>"}`,
+    'Keep notes plain words: the summary passes a secret redactor that replaces the WHOLE report line when it sees "token:", "password:", "secret:", "api_key:" or "cookie:" (and masks long id-like runs), and then the report is lost.',
     'Use verdict "ready" only when the full suite passed, the mutation check passed and all limits above hold; otherwise "abandon" with the reason in notes.',
   ];
   return L.join('\n');
