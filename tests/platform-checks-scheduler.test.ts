@@ -73,9 +73,9 @@ describe('scheduler doctor checks', () => {
     expect(on.detail).toMatch(/is 0/);
   });
 
-  it('has the eleven kebab-case ids', () => {
+  it('has the twelve kebab-case ids', () => {
     expect(schedulerChecks().map((c) => c.id)).toEqual([
-      'scheduler-tmux', 'scheduler-lock-dir', 'scheduler-stop-file', 'scheduler-dry-run', 'mail-drip-config', 'run-budget-config', 'linkedin-active-hours', 'linkedin-drip-config', 'linkedin-easy-apply', 'dry-run-legacy-keys', 'scheduler-units', 'agents-worker-tools', 'window-foundation',
+      'scheduler-tmux', 'scheduler-lock-dir', 'scheduler-stop-file', 'scheduler-dry-run', 'mail-drip-config', 'run-budget-config', 'linkedin-active-hours', 'jobber-platforms', 'linkedin-drip-config', 'linkedin-easy-apply', 'dry-run-legacy-keys', 'scheduler-units', 'agents-worker-tools', 'window-foundation',
     ]);
   });
 

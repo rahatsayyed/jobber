@@ -7,9 +7,11 @@ import { MATCH_FAIL_LIMIT, PREP_OFFER_LIMIT } from '../db.js';
 import { DEFAULT_MATCH_THRESHOLD } from '../matchRubric.js';
 import { JOB_STATUS_JD_PENDING, JOB_STATUS_REPEAT_CONTACT, repeatContactOf } from '../pipelineWork.js';
 import {
-  E, b, clean, code, headline, htmlToPlain, i as ital, join, line, link, type Html,
+  E, b, clean, code, headline, html, htmlToPlain, i as ital, join, line, link, type Html,
 } from '../platform/tgHtml.js';
-import { finishManualRequest, jobIdsOf, listManualRequests, type ManualRequest } from './requests.js';
+import { finishManualRequest, jobIdsOf, listManualRequests, manualRequestsHeld, type ManualRequest } from './requests.js';
+import type { PlatformSwitch } from '../scheduler/platformSwitch.js';
+import { getState, setState } from '../scheduler/runLog.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -195,8 +197,30 @@ export interface FinalizeDeps {
   matchThreshold?: number;
   /** False when a platform's operator is not planned right now (halted, outside active hours, no session): its open task then keeps waiting. */
   platformActive?: (platform: string) => boolean;
+  /** JOBBER_PLATFORMS: pending requests that need an unlisted part stay pending; the owner is told once per change of that set. */
+  platforms?: PlatformSwitch | null;
+  /** Receives the one-line "held" notice (Telegram HTML). Optional. */
+  notifyHeld?: (text: string) => Promise<unknown>;
 }
-export interface FinalizeResult { reported: number[]; waiting: number[] }
+export interface FinalizeResult { reported: number[]; waiting: number[]; held: number[] }
+
+const KEY_HELD_NOTIFIED = 'manual_held_notified';
+
+/** Tells the owner (once per change) that requests wait because JOBBER_PLATFORMS does not list what they need. Never throws. */
+async function reportHeld(db: Db, d: FinalizeDeps): Promise<number[]> {
+  const held = manualRequestsHeld(db, d.platforms);
+  const sig = held.map((h) => `${h.id}:${h.needs}`).join(',');
+  try {
+    if (sig !== (getState(db, KEY_HELD_NOTIFIED) ?? '') && d.notifyHeld) {
+      if (held.length > 0) {
+        const needs = [...new Set(held.map((h) => h.needs))].join(', ');
+        await d.notifyHeld(html(headline(E.paused, `${held.length} manual request${held.length === 1 ? '' : 's'} waiting`, `JOBBER_PLATFORMS does not list: ${needs}. They stay pending and run once it is listed.`)));
+      }
+      setState(db, KEY_HELD_NOTIFIED, sig, d.now());
+    }
+  } catch { /* a notice failure never stops the report */ }
+  return held.map((h) => h.id);
+}
 
 /**
  * After a wake: report every running request whose jobs are all settled, and finish it. A request with jobs still waiting (the 10-job
@@ -204,7 +228,7 @@ export interface FinalizeResult { reported: number[]; waiting: number[] }
  * source-operator left open after a clean wake is failed here, so a request is never silently dropped.
  */
 export async function finalizeManualRequests(db: Db, runStatus: string, d: FinalizeDeps): Promise<FinalizeResult> {
-  const out: FinalizeResult = { reported: [], waiting: [] };
+  const out: FinalizeResult = { reported: [], waiting: [], held: await reportHeld(db, d) };
   for (const r of listManualRequests(db, ['running'])) {
     const ids = jobIdsOf(r);
     const open = db.prepare("SELECT id FROM source_tasks WHERE request_id = ? AND state IN ('queued', 'running')").all(r.id) as { id: number }[];

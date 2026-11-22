@@ -22,6 +22,7 @@ import { listApprovedEmailReplies } from '../outreach/emailReplies.js';
 import { drawUniformMinMs, inQuietHours, quietFromConfig } from '../outreach/quiet.js';
 import { loadBudget, type Budget } from './budget.js';
 import { readControl, statExists, type ControlDeps } from './control.js';
+import { readPlatformSwitch, switchOn } from './platformSwitch.js';
 import type { DriverDeps } from './driver.js';
 import { noteSkippedItem } from '../platform/handoff.js';
 import { NO_CAP_LIMIT } from './mailLimit.js';
@@ -396,6 +397,7 @@ function controlFor(d: DriverDeps): ControlDeps {
  * `bypassNext` (an owner /drip request) skips ONLY the stored random next-tick time; the minimum gap since the last real send stays.
  */
 export function gate(d: DriverDeps, cfg: DripConfig, now: Date, spacing: boolean, bypassNext = false): string | null {
+  if (!switchOn(readPlatformSwitch(d.env), 'mail')) return 'platform_off'; // JOBBER_PLATFORMS does not list mail
   try {
     if (readControl(d.db, controlFor(d)).killed) return 'killed';
   } catch {

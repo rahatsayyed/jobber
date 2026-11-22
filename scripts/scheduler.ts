@@ -20,6 +20,7 @@ import { configReader, windowTick } from '../src/scheduler/windowTick.js';
 import { daemonLoop, type DriverDeps } from '../src/scheduler/driver.js';
 import { runCodePass } from '../src/scheduler/pipeline.js';
 import { defaultDeps as controlDefaults, readControl } from '../src/scheduler/control.js';
+import { describePlatformSwitch, readPlatformSwitch, switchOn } from '../src/scheduler/platformSwitch.js';
 import { countDue } from '../src/scheduler/due.js';
 import { stallMsFromEnv } from '../src/scheduler/budget.js';
 import { killLegacyWindows, makeEnsureReady } from '../src/scheduler/windowReady.js';
@@ -121,6 +122,7 @@ function dryRunPlan(env: NodeJS.ProcessEnv): void {
     discoverSearches: discoverNames(db),
     codePassEnabled: true,
     linkedinDrip: linkedinDripEnabled(env),
+    platforms: readPlatformSwitch(env).active,
   });
   console.log(JSON.stringify(decision, null, 2));
   db.close();
@@ -173,14 +175,14 @@ async function main(): Promise<void> {
     discoverSearches: () => discoverNames(db),
     codePass: () => runCodePass({ db, now, projectRoot }),
     // The slow email lane beside the wakes (src/scheduler/mailDrip.ts); only the daemon runs it, never --once or --now.
-    mailDrip: args.mode === 'daemon',
+    mailDrip: args.mode === 'daemon' && switchOn(readPlatformSwitch(env), 'mail'), // JOBBER_PLATFORMS must list mail
     // The dispatcher of the long-lived worker windows: the ONLY way work reaches a model (mail drip, LinkedIn drip, reply check, wake steps).
     // A missing window is started through the manager path (ensureReady) before an item is typed; there is no headless fallback.
     windows,
     // One-time cleanup at start of the leftover wake-* / drip-* windows of the retired headless design.
     cleanupLegacyWindows: async () => { await killLegacyWindows(defaultRun, dispatchSession); },
     // The slow LinkedIn lane (src/scheduler/linkedinDrip.ts); daemon only. LINKEDIN_DRIP=false turns it off and wakes plan LinkedIn again.
-    linkedinDrip: args.mode === 'daemon',
+    linkedinDrip: args.mode === 'daemon' && switchOn(readPlatformSwitch(env), 'linkedin'), // JOBBER_PLATFORMS must list linkedin
     // New escalations go to the owner's Telegram as a batched digest (at most one per 15 minutes); the daemon only.
     escalationDigest: args.mode === 'daemon' ? escalationDigestTick(db, env, quietFromConfig(cfg), now) : undefined,
     // Handoff reminders and window recycle (src/scheduler/windowTick.ts); the daemon only. Zero LLM calls.
@@ -204,12 +206,14 @@ async function main(): Promise<void> {
       inQuiet: () => inQuietHours(now(), quietFromConfig(cfg)),
       windows,
     }) : undefined,
-    manualIngest: (runId) => ingestManualRequests(db, { runId, now }),
+    manualIngest: (runId) => ingestManualRequests(db, { runId, now, platforms: readPlatformSwitch(env) }),
     manualReport: async (runStatus) => {
       const tg = telegramNotifier(env);
       const r = await finalizeManualRequests(db, runStatus, {
         now,
         matchThreshold: matchThresholdFromEnv(env),
+        platforms: readPlatformSwitch(env),
+        notifyHeld: (text) => tg.send(text, { topic: 'inbox', html: true, silent: true }),
         send: async (text, meta) => {
           // A request that went fine is only counted in the hourly digest; one that failed or did not finish goes out at once (loud).
           if (!meta?.failed && digestOn(env)) {
@@ -257,6 +261,10 @@ async function main(): Promise<void> {
     console.log(`watch it: /working (Telegram) or npx tsx scripts/status.ts working; last request result: ${prev ? `${prev.status}${prev.reason ? ` (${safe(prev.reason)})` : ''}` : 'none yet'}`);
     db.close();
     return;
+  }
+  if (args.mode === 'daemon') {
+    const sw = readPlatformSwitch(env);
+    console.log(`scheduler platforms: ${describePlatformSwitch(sw)}${sw.invalid.length ? ` (JOBBER_PLATFORMS has unknown name(s) ${sw.invalid.join(', ')}: read as unset)` : ''}`);
   }
   await daemonLoop(deps, stop);
   db.close();

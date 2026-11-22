@@ -10,6 +10,7 @@ import { linkedinActiveNow } from '../linkedin/activeHours.js';
 import { ACCEPT_RECENT_EVERY_HOURS, hoursSinceRecentCheck } from '../linkedin/acceptRecent.js';
 import { pendingInstructionCount } from '../owner/instructions.js';
 import { manualPlatformTasks, manualRequestsPending } from '../manual/requests.js';
+import { readPlatformSwitch } from './platformSwitch.js';
 import { countJdWaiting } from '../jdStore.js';
 import { dueTouchesFor } from '../outreach/dueTouches.js';
 import { normalizeProfileKey } from '../outreach/people.js';
@@ -238,8 +239,8 @@ export function countDue(db: Db, now: Date, tuning: Tuning = TUNING_DEFAULTS, en
     jdWaiting: ((): { naukri: number; linkedin: number } => {
       try { return countJdWaiting(db, now); } catch { return { naukri: 0, linkedin: 0 }; }
     })(),
-    manualRequestsPending: manualRequestsPending(db),
+    manualRequestsPending: manualRequestsPending(db, readPlatformSwitch(env)),
     ownerInstructionsPending: pendingInstructionCount(db),
-    manualPlatformTasks: manualPlatformTasks(db),
+    manualPlatformTasks: manualPlatformTasks(db, readPlatformSwitch(env)),
   };
 }

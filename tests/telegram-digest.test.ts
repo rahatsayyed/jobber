@@ -94,11 +94,21 @@ describe('classification table', () => {
   });
 });
 
+// Real mail is counted from the database (src/platform/digestFacts.ts), so a test that expects emails writes the rows the senders would write.
+let seq = 0;
+function dbCold(db: ReturnType<typeof openDb>, at: Date): void {
+  db.prepare("INSERT INTO outreach_queue (job_id, email_status, email_sent_at) VALUES (?, 'sent', ?)").run(`j${++seq}`, at.toISOString());
+}
+function dbFollowup(db: ReturnType<typeof openDb>, at: Date): void {
+  db.prepare("INSERT INTO followups (job_id, n, status, sent_at) VALUES ('j', 1, 'sent', ?)").run(at.toISOString());
+}
+
 function filled() {
   const db = openDb(':memory:');
   const at = (m: number): Date => new Date(T0.getTime() + min(m));
-  for (let n = 0; n < 4; n++) enqueueNotice(db, 'mail_sent', { kind: 'cold', dry: false }, at(n));
+  for (let n = 0; n < 4; n++) { enqueueNotice(db, 'mail_sent', { kind: 'cold', dry: false }, at(n)); dbCold(db, at(n)); }
   enqueueNotice(db, 'mail_sent', { kind: 'followup', dry: false }, at(5));
+  dbFollowup(db, at(5));
   enqueueNotice(db, 'linkedin_action', { action: 'invite', dry: false }, at(6));
   enqueueNotice(db, 'linkedin_action', { action: 'invite', dry: false }, at(7));
   enqueueNotice(db, 'linkedin_action', { action: 'dm', dry: false }, at(8));
@@ -190,8 +200,10 @@ describe('digest tick', () => {
     await digestTickOnce(w.d());
     w.advance(600); // 10 h later: 21:30 IST (quiet hours are 22:00 to 07:00)
     enqueueNotice(w.db, 'mail_sent', { kind: 'cold' }, w.now());
+    dbCold(w.db, w.now());
     w.advance(60); // 22:30 IST
     enqueueNotice(w.db, 'mail_sent', { kind: 'cold' }, w.now());
+    dbCold(w.db, w.now());
     expect(await digestTickOnce(w.d())).toBe('quiet');
     w.advance(60 * 8); // 06:30 IST, still quiet (until 07:00)
     expect(await digestTickOnce(w.d())).toBe('quiet');
