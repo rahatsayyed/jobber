@@ -10,6 +10,7 @@ import { budgetEnvWarnings } from '../scheduler/budget.js';
 import { loadDripConfig } from '../scheduler/mailDrip.js';
 import { loadActiveHours } from '../linkedin/activeHours.js';
 import { loadLinkedinDripConfig } from '../scheduler/linkedinDrip.js';
+import { SWITCH_NAMES, describePlatformSwitch, readPlatformSwitch } from '../scheduler/platformSwitch.js';
 import { mailDailyLimit } from '../scheduler/mailLimit.js';
 import { linkedinStartDiff } from '../scheduler/linkedinWindowStart.js';
 import { wakeStartDiff } from '../scheduler/wakeWindowStart.js';
@@ -131,6 +132,15 @@ export function schedulerChecks(): Check[] {
         return h.problem === null
           ? pass(`LinkedIn work only ${hm(h.startMin)}-${hm(h.endMin)} IST`)
           : warn(h.problem, 'write LINKEDIN_ACTIVE_HOURS as HH:MM-HH:MM (IST, start before end) in .env, e.g. 09:30-20:30');
+      },
+    },
+    {
+      id: 'jobber-platforms',
+      title: 'Focused-run switch (JOBBER_PLATFORMS) is valid or unset',
+      async run(ctx) {
+        const sw = readPlatformSwitch(mergedEnv(ctx));
+        if (sw.invalid.length > 0) return warn(`unknown name(s): ${sw.invalid.join(', ')}; the whole value is read as unset, so everything runs`, `use only ${SWITCH_NAMES.join(', ')} in JOBBER_PLATFORMS, or remove the line`);
+        return pass(sw.active ? `restricted: ${describePlatformSwitch(sw)}` : 'unset: every platform and lane may run');
       },
     },
     {

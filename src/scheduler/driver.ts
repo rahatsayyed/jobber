@@ -13,6 +13,7 @@ import { claimPending, type OwnerInstruction } from '../owner/instructions.js';
 import { manualRequestsPending } from '../manual/requests.js';
 import { budgetEnvWarnings, loadBudget } from './budget.js';
 import { readControl, statExists, type ControlDeps, type ControlState } from './control.js';
+import { readPlatformSwitch } from './platformSwitch.js';
 import { countDue } from './due.js';
 import { linkedinActiveNow } from '../linkedin/activeHours.js';
 import { buildSourceRows, sourcesNotice } from '../status/sources.js';
@@ -256,6 +257,7 @@ async function inner(d: DriverDeps, opts: { force?: boolean; abort?: () => boole
         codePassEnabled: !!d.codePass,
         linkedinActive: linkedinActiveNow(d.env, now),
         linkedinDrip: linkedinDripEnabled(d.env),
+        platforms: readPlatformSwitch(d.env).active,
       });
     } catch (e) {
       await say(d, { level: 'warn', title: 'scheduler plan failed, not launching', detail: safeMsg(e), runId });
@@ -637,7 +639,7 @@ export async function daemonLoop(d: DriverDeps, stop: { stopped: boolean }): Pro
       const t = d.now();
       if (t.getTime() < manualBackoffUntil || inQuietHours(t, quiet)) return false;
       try {
-        return manualRequestsPending(d.db) > 0;
+        return manualRequestsPending(d.db, readPlatformSwitch(d.env)) > 0;
       } catch {
         return false;
       }

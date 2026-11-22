@@ -6,6 +6,26 @@
       "location": "india",
       "remote": true,
       "limit": 20
+    },
+    {
+      "name": "frontend-react-india-remote",
+      "role": "frontend-engineer",
+      "location": "india",
+      "remote": true,
+      "limit": 20
+    },
+    {
+      "name": "full-stack-worldwide-remote",
+      "role": "full-stack-engineer",
+      "remote": true,
+      "limit": 20
+    },
+    {
+      "name": "full-stack-uae",
+      "role": "full-stack-engineer",
+      "location": "united-arab-emirates",
+      "remote": false,
+      "limit": 20
     }
   ]
 }

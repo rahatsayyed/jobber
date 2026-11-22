@@ -14,6 +14,7 @@ import { isDryRun } from '../safety/dryRun.js';
 import { inQuietHours, quietFromConfig } from '../outreach/quiet.js';
 import { loadBudget, type Budget } from './budget.js';
 import { readControl, statExists, type ControlDeps } from './control.js';
+import { readPlatformSwitch, switchOn } from './platformSwitch.js';
 import type { DriverDeps } from './driver.js';
 import { noteSkippedItem } from '../platform/handoff.js';
 import { getState, setState, type RunStatus } from './runLog.js';
@@ -137,6 +138,7 @@ function safeMsg(e: unknown): string {
 
 /** The gates a reply check must pass; null when it may run. Deliberately NOT the send gates (window, brake, cap, spacing). */
 export function replyGate(d: DriverDeps, now: Date): string | null {
+  if (!switchOn(readPlatformSwitch(d.env), 'mail')) return 'platform_off'; // JOBBER_PLATFORMS does not list mail
   try {
     if (readControl(d.db, controlFor(d)).killed) return 'killed';
   } catch {

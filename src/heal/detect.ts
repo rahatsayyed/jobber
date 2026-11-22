@@ -95,6 +95,21 @@ function scanQueue(db: Db, since: string): Sighting[] {
   return out;
 }
 
+/** Codes of a commit or discovery diag that mean the action WORKED (the engine writes a diag for successes too, e.g. an invite "sent"). */
+const SUCCESS_DIAG_CODES = new Set(['sent', 'ok', 'saved', 'no_new', 'dry_run', 'already_sent', 'filled', 'applied', 'submitted', 'connected', 'accepted']);
+/** Structural diags that are written only when something went wrong. */
+const FAILURE_DIAG_KINDS = new Set(['discover_no_cards', 'discover_pane']);
+
+/** True when a diag file describes a failure: a failure-only kind, a discovery summary that did not end ok, or a commit diag with a non-success code. */
+export function isFailureDiag(file: { name: string; kind?: unknown; status?: unknown; code?: unknown }): boolean {
+  const kind = typeof file.kind === 'string' ? file.kind : '';
+  const status = typeof file.status === 'string' ? file.status : '';
+  const code = typeof file.code === 'string' ? file.code : '';
+  if (FAILURE_DIAG_KINDS.has(kind) || /-dialog-|-signals-/.test(file.name)) return true;
+  if (kind === 'discover_summary') return status !== '' && status !== 'ok';
+  return code === '' || !SUCCESS_DIAG_CODES.has(code);
+}
+
 function scanDiag(root: string, sinceMs: number): { sightings: Sighting[]; maxMs: number } {
   const sightings: Sighting[] = [];
   let maxMs = sinceMs;
@@ -106,9 +121,10 @@ function scanDiag(root: string, sinceMs: number): { sightings: Sighting[]; maxMs
       const st = statSync(path.join(dir, n));
       if (st.mtimeMs <= sinceMs) continue;
       maxMs = Math.max(maxMs, st.mtimeMs);
-      const j = JSON.parse(readFileSync(path.join(dir, n), 'utf8')) as { platform?: unknown; code?: unknown };
+      const j = JSON.parse(readFileSync(path.join(dir, n), 'utf8')) as { platform?: unknown; code?: unknown; kind?: unknown; status?: unknown; reason?: unknown };
+      if (!isFailureDiag({ name: n, kind: j.kind, status: j.status, code: j.code })) continue; // a success diag (invite sent, search saved, no new jobs) is not a failure
       const platform = typeof j.platform === 'string' ? j.platform : n.split('-')[0] ?? 'unknown';
-      const code = typeof j.code === 'string' ? j.code : 'structure';
+      const code = typeof j.code === 'string' ? j.code : typeof j.reason === 'string' ? j.reason : 'structure';
       const f: Failure = { area: 'diag', code, platform };
       sightings.push({ failure: f, verdict: classify(f), evidence: { diag: [n], note: code, platform }, at: new Date(st.mtimeMs) });
     } catch { /* unreadable file: skip */ }

@@ -470,15 +470,15 @@ describe('report', () => {
     const sent: string[] = [];
     const d = { send: async (t: string) => { sent.push(t); }, now: () => NOW, matchThreshold: 3 };
     // j4 is unscored: not settled, so wait
-    expect(await finalizeManualRequests(db, 'ok', d)).toEqual({ reported: [], waiting: [id] });
+    expect(await finalizeManualRequests(db, 'ok', d)).toEqual({ reported: [], waiting: [id], held: [] });
     expect(sent).toEqual([]);
     expect(getManualRequest(db, id)!.status).toBe('running');
     db.prepare("UPDATE jobs SET score = 1 WHERE id = 'j4'").run();
-    expect(await finalizeManualRequests(db, 'ok', d)).toEqual({ reported: [id], waiting: [] });
+    expect(await finalizeManualRequests(db, 'ok', d)).toEqual({ reported: [id], waiting: [], held: [] });
     expect(sent).toHaveLength(1);
     expect(getManualRequest(db, id)).toMatchObject({ status: 'done' });
     expect(getManualRequest(db, id)!.report).toContain('score 4.1');
-    expect(await finalizeManualRequests(db, 'ok', d)).toEqual({ reported: [], waiting: [] });
+    expect(await finalizeManualRequests(db, 'ok', d)).toEqual({ reported: [], waiting: [], held: [] });
   });
   it('finalize reports after 24 hours even when jobs are still unscored, and survives a failing sender', async () => {
     const { db, id } = seed();

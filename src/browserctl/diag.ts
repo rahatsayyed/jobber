@@ -44,6 +44,17 @@ export interface DiagDeps {
   diagDir?: string;
 }
 
+/**
+ * The directory a diag file goes to: the injected one, else the project's live `.jobber/diag`. Under the test runner with no injected
+ * directory there is none (null): a test that forgot `diagDir` must never write fixture-shaped files into the live folder, where the
+ * self-heal ledger reads them as a real structural failure.
+ */
+export function diagDirOf(deps: DiagDeps | { diagDir?: string }): string | null {
+  if (deps.diagDir) return deps.diagDir;
+  if (process.env.VITEST !== undefined) return null;
+  return path.join(PROJECT_ROOT, '.jobber', 'diag');
+}
+
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const CONTROL = new RegExp('[\\u0000-\\u001f\\u007f\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ufeff]', 'g');
 const PHONE_RE = /\+?\d[\d\s().-]{6,}\d/g;
@@ -213,7 +224,8 @@ export async function writeCommitDiag(
         near_buttons: (i.extra.nearButtons ?? []).slice(0, 10).map(safeName),
       } : {}),
     };
-    const dir = deps.diagDir ?? path.join(PROJECT_ROOT, '.jobber', 'diag');
+    const dir = diagDirOf(deps);
+    if (!dir) return null;
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     try { chmodSync(dir, 0o700); } catch { /* best effort */ }
     const stamp = deps.now().toISOString().replace(/[:.]/g, '-');
@@ -239,7 +251,8 @@ export function writeDialogStructureDiag(deps: DiagDeps, i: { platform: string; 
       name: safeName(x.role === 'text' ? x.text : x.name),
       ...(x.checked !== undefined ? { checked: x.checked } : {}),
     }));
-    const dir = deps.diagDir ?? path.join(PROJECT_ROOT, '.jobber', 'diag');
+    const dir = diagDirOf(deps);
+    if (!dir) return null;
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const stamp = deps.now().toISOString().replace(/[:.]/g, '-');
     const target = path.join(dir, `${i.platform}-dialog-${i.code}-${stamp}.json`);

@@ -3,14 +3,15 @@
 // can fix the pattern from real data. Holds only tag, role and short redacted texts (safeName). Writing never throws.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { safeName } from '../browserctl/diag.js';
+import { diagDirOf, safeName } from '../browserctl/diag.js';
 import { PROJECT_ROOT } from '../layout/config.js';
 import type { LinkedinSignals } from '../linkedinSignals.js';
 
 /** Writes `.jobber/diag/linkedin-signals-<stamp>.json`. Returns the path relative to the project, or null. */
 export function writeSignalsDiag(deps: { now: () => Date; diagDir?: string }, s: LinkedinSignals): string | null {
   try {
-    const dir = deps.diagDir ?? path.join(PROJECT_ROOT, '.jobber', 'diag');
+    const dir = diagDirOf(deps); // null under the test runner without an injected dir
+    if (!dir) return null;
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const stamp = deps.now().toISOString().replace(/[:.]/g, '-');
     const target = path.join(dir, `linkedin-signals-${stamp}.json`);

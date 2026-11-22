@@ -7,7 +7,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDb } from '../src/db.js';
 import { healCooldownHours, healMaxPerDay, healMode, healWatchMin } from '../src/heal/config.js';
-import { failureOfQueueRow, failureOfRun, ingestFailures } from '../src/heal/detect.js';
+import { failureOfQueueRow, failureOfRun, ingestFailures, isFailureDiag } from '../src/heal/detect.js';
 import {
   attemptsLast24h, getLedgerBySignature, ignoreSignature, inCooldown, migrateHealTables, nextEligible, recordSighting, releaseStaleHealing,
   setLedgerState, startAttempt, takeHealLock, updateAttempt,
@@ -101,9 +101,9 @@ describe('detection into the ledger', () => {
     db.prepare("INSERT INTO outreach_queue (job_id, apply_platform, apply_status, apply_note, updated_at) VALUES ('j1','linkedin','needs_owner','easy_apply:resume_upload_failed - x', datetime('now'))").run();
     mkdirSync(path.join(dir, '.jobber', 'diag'));
     writeFileSync(path.join(dir, '.jobber', 'diag', 'linkedin-2026.json'), JSON.stringify({ platform: 'linkedin', code: 'dialog_controls_missing' }));
-    setState(db, 'drip_last_refusal_mail', JSON.stringify({ at: new Date().toISOString(), reason: 'dispatch_error' }), new Date());
+    setState(db, 'drip_last_refusal_mail', JSON.stringify({ at: NOW.toISOString(), reason: 'dispatch_error' }), NOW);
     for (let i = 0; i < 5; i++) db.prepare("INSERT INTO jobs (id, status, created_at) VALUES (?, 'jd_pending', datetime('now', '-3 days'))").run(`jd${i}`);
-    ingestFailures(db, dir, new Date());
+    ingestFailures(db, dir, NOW);
     const sig = (s: string) => getLedgerBySignature(db, s);
     expect(sig('run:crashed:dispatch_error')).toMatchObject({ count: 2, state: 'open', verdict: 'heal' });
     expect(sig('run:failed:api_error')).toMatchObject({ state: 'ignored', verdict: 'never' });
@@ -113,7 +113,7 @@ describe('detection into the ledger', () => {
     expect(sig('jd:pending_stuck')?.state).toBe('open');
     // a second scan counts nothing twice
     const before = sig('run:crashed:dispatch_error')?.count;
-    ingestFailures(db, dir, new Date());
+    ingestFailures(db, dir, NOW);
     expect(sig('run:crashed:dispatch_error')?.count).toBe(before);
     expect(sig('jd:pending_stuck')?.count).toBe(1);
   });
@@ -246,5 +246,23 @@ describe('config and declarations', () => {
     expect(role).toMatch(/never merge/i);
     expect(JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8')).scripts.heal).toBe('tsx scripts/heal.ts');
     expect(existsSync(path.join(ROOT, 'scripts/heal.ts'))).toBe(true);
+  });
+});
+
+describe('isFailureDiag: a diag of a success is not a failure', () => {
+  it('ignores commit diags of a worked action and ok discovery summaries (seen live: an invite "sent" opened a heal)', () => {
+    expect(isFailureDiag({ name: 'linkedin-2026-11-21T07-06-49-981Z.json', code: 'sent' })).toBe(false);
+    expect(isFailureDiag({ name: 'linkedin-discover-search_jobs-x.json', kind: 'discover_summary', status: 'ok', code: 'no_new' })).toBe(false);
+    expect(isFailureDiag({ name: 'linkedin-discover-search_jobs-x.json', kind: 'discover_summary', status: 'ok', code: 'saved' })).toBe(false);
+    expect(isFailureDiag({ name: 'linkedin-x.json', code: 'dry_run' })).toBe(false);
+  });
+  it('keeps real failures: failure-only kinds, a failed summary, dialog and signals structure files, and a commit diag with another code', () => {
+    expect(isFailureDiag({ name: 'linkedin-discover-search_posts-x.json', kind: 'discover_no_cards' })).toBe(true);
+    expect(isFailureDiag({ name: 'linkedin-discover-search_jobs-x.json', kind: 'discover_pane' })).toBe(true);
+    expect(isFailureDiag({ name: 'linkedin-discover-search_jobs-x.json', kind: 'discover_summary', status: 'failed', code: 'nav_timeout' })).toBe(true);
+    expect(isFailureDiag({ name: 'linkedin-dialog-resume_mismatch-x.json' })).toBe(true);
+    expect(isFailureDiag({ name: 'linkedin-signals-x.json' })).toBe(true);
+    expect(isFailureDiag({ name: 'linkedin-x.json', code: 'more_menu_missing' })).toBe(true);
+    expect(isFailureDiag({ name: 'linkedin-x.json' })).toBe(true);
   });
 });

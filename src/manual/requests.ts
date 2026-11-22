@@ -2,6 +2,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { saveJob, type Job } from '../db.js';
 import { classifyManualUrl, validateManualUrl, type ManualPlatform } from './url.js';
+import { switchOn, type PlatformSwitch, type SwitchName } from '../scheduler/platformSwitch.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -40,7 +41,42 @@ export function createManualRequest(db: Db, rawUrl: unknown, opts: { force?: boo
   return { ok: true, id: Number(r.lastInsertRowid), duplicate: false, kind: cls.requestKind };
 }
 
-export function manualRequestsPending(db: Db): number {
+/**
+ * Which JOBBER_PLATFORMS part a request needs: a LinkedIn, Naukri or Wellfound job page its platform, anything else (known ATS board, other page)
+ * `sources` (read by the code board providers or the source-operator). Unsupported urls need nothing (they fail at ingest, as before).
+ */
+export function manualRequestNeeds(url: string): SwitchName | null {
+  const c = classifyManualUrl(url);
+  if (c.kind === 'platform') return c.platform;
+  return c.kind === 'unsupported' ? null : 'sources';
+}
+
+/** True when the switch lets this request run. A held request stays `pending` (never dropped) and runs once its part is listed. */
+export function manualRequestAllowed(url: string, sw?: PlatformSwitch | null): boolean {
+  if (!sw?.active) return true;
+  const need = manualRequestNeeds(url);
+  return need === null || switchOn(sw, need);
+}
+
+/** Pending requests the JOBBER_PLATFORMS switch holds back: [{id, needs}]. Empty without a switch. */
+export function manualRequestsHeld(db: Db, sw?: PlatformSwitch | null): Array<{ id: number; needs: SwitchName }> {
+  if (!sw?.active) return [];
+  try {
+    const out: Array<{ id: number; needs: SwitchName }> = [];
+    for (const r of db.prepare("SELECT id, url FROM manual_requests WHERE status = 'pending' ORDER BY id").all() as { id: number; url: string }[]) {
+      const need = manualRequestNeeds(r.url);
+      if (need && !switchOn(sw, need)) out.push({ id: r.id, needs: need });
+    }
+    return out;
+  } catch { return []; }
+}
+
+export function manualRequestsPending(db: Db, sw?: PlatformSwitch | null): number {
+  if (sw?.active) {
+    try {
+      return (db.prepare("SELECT url FROM manual_requests WHERE status = 'pending'").all() as { url: string }[]).filter((r) => manualRequestAllowed(r.url, sw)).length;
+    } catch { return 0; }
+  }
   try {
     return (db.prepare("SELECT COUNT(*) AS n FROM manual_requests WHERE status = 'pending'").get() as { n: number }).n;
   } catch {
@@ -52,7 +88,7 @@ export function manualRequestsPending(db: Db): number {
  * Owner-submitted job pages per platform operator: queued manual_url tasks of that platform, plus pending requests whose URL classifies to it
  * (their task is created when the wake starts, after the plan was made).
  */
-export function manualPlatformTasks(db: Db): Record<ManualPlatform, number> {
+export function manualPlatformTasks(db: Db, sw?: PlatformSwitch | null): Record<ManualPlatform, number> {
   const out: Record<ManualPlatform, number> = { linkedin: 0, naukri: 0, wellfound: 0 };
   try {
     for (const r of db.prepare("SELECT platform, COUNT(*) AS n FROM source_tasks WHERE reason = 'manual_url' AND state = 'queued' AND platform <> 'manual' GROUP BY platform").all() as { platform: string; n: number }[]) {
@@ -60,7 +96,7 @@ export function manualPlatformTasks(db: Db): Record<ManualPlatform, number> {
     }
     for (const r of db.prepare("SELECT url FROM manual_requests WHERE status = 'pending'").all() as { url: string }[]) {
       const c = classifyManualUrl(r.url);
-      if (c.kind === 'platform') out[c.platform]++;
+      if (c.kind === 'platform' && manualRequestAllowed(r.url, sw)) out[c.platform]++;
     }
   } catch {
     // counts are advisory

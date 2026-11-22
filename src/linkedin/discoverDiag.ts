@@ -5,7 +5,7 @@
 // no cookies, nothing typed; anything email- or phone-like is redacted by safeName. Writing never throws.
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { safeName } from '../browserctl/diag.js';
+import { diagDirOf, safeName } from '../browserctl/diag.js';
 import { PROJECT_ROOT } from '../layout/config.js';
 import type { DiscoverResult } from './discoverCommon.js';
 import type { LiPage, RawSnapshot } from './types.js';
@@ -203,7 +203,8 @@ export async function writeDiscoverDiag(deps: DiscoverDiagDeps, i: DiscoverDiagI
 }
 
 function persist(deps: { diagDir?: string }, tool: string, text: string, at: Date): string | null {
-  const dir = deps.diagDir ?? path.join(PROJECT_ROOT, '.jobber', 'diag');
+  const dir = diagDirOf(deps); // null under the test runner without an injected dir: fixture files never reach the live folder
+  if (!dir) return null;
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   try { chmodSync(dir, 0o700); } catch { /* best effort */ }
   const stamp = at.toISOString().replace(/[:.]/g, '-');

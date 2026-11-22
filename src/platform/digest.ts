@@ -8,6 +8,7 @@ import { E, bullets, clean, headline, html, htmlToPlain, lines, section, BLANK }
 import { inQuietHours, IST_OFFSET_MINUTES, type QuietConfig } from '../outreach/quiet.js';
 import { getState, setState } from '../scheduler/runLog.js';
 import type { TopicName } from '../telegram/topics.js';
+import { factsEmpty, readDigestFacts, type DigestFacts } from './digestFacts.js';
 
 type Db = BetterSqlite3.Database;
 
@@ -244,9 +245,14 @@ export function needsYouCount(db: Db): number {
   } catch { return 0; }
 }
 
-/** The digest of some queue rows over a time span. Pure: reads nothing but its arguments. */
-export function composeDigest(rows: QueueRow[], span: { from: Date; to: Date }, needsYou: number): DigestContent {
-  if (rows.length === 0) return { empty: true, text: '', needsYou };
+/**
+ * The digest of some queue rows over a time span. Pure: reads nothing but its arguments.
+ * `facts` (read from SQLite by `readDigestFacts`) is the source of truth for real mail, applies, JD reads and hiring posts: when given, the queued
+ * kinds of those facts are ignored so nothing is counted twice. Without it the queue alone is used (as before).
+ */
+export function composeDigest(rows: QueueRow[], span: { from: Date; to: Date }, needsYou: number, facts?: DigestFacts): DigestContent {
+  if (rows.length === 0 && (!facts || factsEmpty(facts))) return { empty: true, text: '', needsYou };
+  const fromDb = facts !== undefined;
   let coldM = 0, followM = 0, dryMail = 0, autoReply = 0;
   const li = new Map<string, number>();
   let dryLi = 0;
@@ -260,16 +266,19 @@ export function composeDigest(rows: QueueRow[], span: { from: Date; to: Date }, 
   for (const r of rows) {
     const p = r.payload;
     switch (r.kind) {
-      case 'mail_sent': if (p.dry === true) dryMail++; else if (s(p.kind) === 'followup') followM++; else coldM++; break;
-      case 'email_reply_sent': if (p.dry !== true) autoReply++; else dryMail++; break;
-      case 'linkedin_action': if (p.dry === true) dryLi++; else bump(li, s(p.action) || 'action'); break;
+      case 'mail_sent': if (p.dry === true) dryMail++; else if (!fromDb) { if (s(p.kind) === 'followup') followM++; else coldM++; } break;
+      case 'email_reply_sent': if (p.dry === true) dryMail++; else if (!fromDb) autoReply++; break;
+      case 'linkedin_action':
+        if (p.dry === true) dryLi++;
+        else if (!(fromDb && /easy/i.test(s(p.action)))) bump(li, s(p.action) || 'action'); // Easy Apply submits come from `applications` when facts are given
+        break;
       case 'linkedin_accept_check': acceptChecks++; break;
       case 'linkedin_inbox_read': inboxReads++; break;
       case 'linkedin_inbox_notice': liThreads += n(p.inbound); liReplies += n(p.drafts); liNeed += n(p.needs); break;
       case 'replies_seen': mailReplies += n(p.count); mailNeed += n(p.needs); break;
-      case 'apply_done': bump(applies, s(p.platform) || 'web'); break;
-      case 'jd_read': jdRead += Math.max(1, n(p.count)); break;
-      case 'hiring_posts': hiringPosts += n(p.count); break;
+      case 'apply_done': if (!fromDb) bump(applies, s(p.platform) || 'web'); break;
+      case 'jd_read': if (!fromDb) jdRead += Math.max(1, n(p.count)); break;
+      case 'hiring_posts': if (!fromDb) hiringPosts += n(p.count); break;
       case 'window_recycled': recycled++; break;
       case 'manual_report': manual++; manualJobs += n(p.jobs); break;
       case 'wake_skipped': bump(problems, 'skipped_ceilings'); break;
@@ -288,6 +297,14 @@ export function composeDigest(rows: QueueRow[], span: { from: Date; to: Date }, 
     }
     if (NOTICE_KINDS[r.kind as NoticeKind]?.urgency === 'urgent') bump(problems, r.kind);
   }
+  const jdSplit = new Map<string, number>();
+  if (facts) {
+    coldM = facts.mail.cold; followM = facts.mail.followup; autoReply = facts.mail.autoReply;
+    for (const a of facts.applies) bump(applies, a.method === 'native' || a.method === 'apply' ? a.platform : `${a.platform} ${a.method.replace(/_/g, ' ')}`, a.count);
+    for (const j of facts.jdBySource) { jdRead += j.count; bump(jdSplit, j.source, j.count); }
+    // a hiring post is also a new job: when the wake summary already lists `linkedin-posts` in its sources, count only the rest
+    hiringPosts = Math.max(0, facts.hiringPosts - (bySource.get('linkedin-posts') ?? 0));
+  }
   const sentLines: string[] = [];
   const emails = coldM + followM + autoReply;
   if (emails) sentLines.push(`${plural(emails, 'email')}${coldM || followM || autoReply ? ` (${[coldM && `${coldM} cold`, followM && `${followM} follow-up`, autoReply && `${autoReply} auto reply`].filter(Boolean).join(', ')})` : ''}`);
@@ -297,7 +314,7 @@ export function composeDigest(rows: QueueRow[], span: { from: Date; to: Date }, 
   const foundLines: string[] = [];
   if (newJobs) foundLines.push(`${plural(newJobs, 'new job')}${bySource.size ? ` (${listOf(bySource)})` : ''}`);
   if (hiringPosts) foundLines.push(plural(hiringPosts, 'hiring post'));
-  if (jdRead) foundLines.push(`${plural(jdRead, 'job description')} read`);
+  if (jdRead) foundLines.push(`${plural(jdRead, 'job description')} read${jdSplit.size ? ` (${listOf(jdSplit)})` : ''}`);
   const workLines: string[] = [];
   if (scored || matched) workLines.push(`scored ${scored}, matched ${matched}`);
   if (prepared) workLines.push(`${prepared} prepared for outreach`);
@@ -330,7 +347,7 @@ export function composeDigest(rows: QueueRow[], span: { from: Date; to: Date }, 
 /** Digest of the queue over a span for the status command: plain text, or the "nothing happened" line. */
 export function renderStatusDigest(db: Db, now: Date, sinceMs: number): string {
   const from = new Date(now.getTime() - sinceMs);
-  const c = composeDigest(rowsSince(db, from.toISOString()), { from, to: now }, needsYouCount(db));
+  const c = composeDigest(rowsSince(db, from.toISOString()), { from, to: now }, needsYouCount(db), readDigestFacts(db, from, now));
   const hours = sinceMs % 3_600_000 === 0 ? `${sinceMs / 3_600_000}h` : `${Math.round(sinceMs / 60_000)} min`;
   if (c.empty) return `nothing happened in the last ${hours}${c.needsYou ? `; ${c.needsYou} item${c.needsYou === 1 ? '' : 's'} need you (/escalations)` : ''}`;
   return htmlToPlain(c.text);
@@ -371,9 +388,11 @@ export async function digestTickOnce(d: DigestTickDeps): Promise<DigestTickResul
   if (inQuietHours(now, d.quiet)) return 'quiet';
   ensureNoticeQueue(d.db);
   const rows = unsentRows(d.db);
-  if (rows.length === 0) { setState(d.db, KEY_DIGEST_LAST_AT, now.toISOString(), now); pruneQueue(d.db, now); return 'empty'; }
-  const from = new Date(Math.min(last, Date.parse(rows[0].at)));
-  const c = composeDigest(rows, { from, to: now }, needsYouCount(d.db));
+  // The facts of the span come from SQLite (their writers run in other processes); a span with facts but no queued rows is still worth one message.
+  const from = new Date(rows.length ? Math.min(last, Date.parse(rows[0].at)) : last);
+  const facts = readDigestFacts(d.db, from, now);
+  if (rows.length === 0 && factsEmpty(facts)) { setState(d.db, KEY_DIGEST_LAST_AT, now.toISOString(), now); pruneQueue(d.db, now); return 'empty'; }
+  const c = composeDigest(rows, { from, to: now }, needsYouCount(d.db), facts);
   const r = await d.send(c.text);
   if (!r.ok) return 'send_failed'; // rows stay queued; the next tick retries
   markSent(d.db, rows.map((x) => x.id), now);
